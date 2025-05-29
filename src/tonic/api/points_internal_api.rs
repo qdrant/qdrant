@@ -97,7 +97,7 @@ impl PointsInternalService {
             upsert_points.collection_name.clone(),
         );
 
-        let (response, _inference_usage) = upsert(
+        upsert(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             upsert_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
@@ -105,9 +105,7 @@ impl PointsInternalService {
             inference_token.clone(),
             hw_metrics,
         )
-        .await?
-        .into_inner();
-        Ok(Response::new(response))
+        .await
     }
 
     async fn delete_internal(
@@ -153,8 +151,7 @@ impl PointsInternalService {
             update_point_vectors.collection_name.clone(),
         );
 
-        // Exclude the `inference_usage` for internal call
-        let (response, _inference_usage) = crate::tonic::api::update_common::update_vectors(
+        crate::tonic::api::update_common::update_vectors(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             update_point_vectors,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
@@ -162,10 +159,7 @@ impl PointsInternalService {
             inference_token.clone(),
             hw_metrics,
         )
-        .await?
-        .into_inner();
-
-        Ok(Response::new(response))
+        .await
     }
 
     async fn delete_vectors_internal(
@@ -383,7 +377,8 @@ pub async fn query_batch_internal(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: request_hw_data.to_grpc_api(),
+        hardware_usage: request_hw_data.to_grpc_api(),
+        inference_usage: None, // No inference in internal API
     };
 
     Ok(Response::new(response))
@@ -609,7 +604,7 @@ impl PointsInternal for PointsInternalService {
             };
             let mut response = result.into_inner();
 
-            if let Some(usage) = response.usage.take() {
+            if let Some(usage) = response.hardware_usage.take() {
                 total_usage.add(usage);
             }
 
@@ -617,14 +612,15 @@ impl PointsInternal for PointsInternalService {
         }
 
         if let Some(mut last_result) = last_result.take() {
-            last_result.usage = Some(total_usage);
+            last_result.hardware_usage = Some(total_usage);
             Ok(Response::new(last_result))
         } else {
             // This response is possible if there are no operations in the request
             Ok(Response::new(PointsOperationResponseInternal {
                 result: None,
                 time: 0.0,
-                usage: None,
+                hardware_usage: None,
+                inference_usage: None, // No inference in internal API
             }))
         }
     }

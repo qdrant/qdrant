@@ -72,9 +72,8 @@ impl Points for PointsService {
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
-        let hardware_usage = hw_metrics.clone().to_grpc_api();
 
-        let result = upsert(
+        upsert(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
@@ -82,14 +81,8 @@ impl Points for PointsService {
             inference_token,
             hw_metrics,
         )
-        .await?;
-
-        let (internal, inference_usage) = result.into_inner();
-        let mut response = PointsOperationResponse::from(internal);
-
-        response.usage = Usage::new(hardware_usage, Some(inference_usage)).into_non_empty();
-
-        Ok(Response::new(response))
+        .await
+        .map(|resp| resp.map(PointsOperationResponse::from))
     }
 
     async fn delete(
@@ -112,7 +105,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(Into::into))
+        .map(|resp| resp.map(PointsOperationResponse::from))
     }
 
     async fn get(&self, mut request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
@@ -149,9 +142,8 @@ impl Points for PointsService {
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
-        let hardware_usage = hw_metrics.clone().to_grpc_api();
 
-        let response = update_vectors(
+        update_vectors(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
@@ -159,13 +151,8 @@ impl Points for PointsService {
             inference_token,
             hw_metrics,
         )
-        .await?;
-
-        let (internal, inference_usage) = response.into_inner();
-        let mut response = PointsOperationResponse::from(internal);
-        response.usage = Usage::new(hardware_usage, Some(inference_usage)).into_non_empty();
-
-        Ok(Response::new(response))
+        .await
+        .map(|resp| resp.map(PointsOperationResponse::from))
     }
 
     async fn delete_vectors(

@@ -35,6 +35,7 @@ use super::qdrant::{
 };
 use super::{Expression, Formula, RecoQuery, Usage};
 use crate::conversions::json::{self, json_to_proto};
+use crate::grpc;
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -2238,14 +2239,15 @@ impl From<PointsOperationResponseInternal> for PointsOperationResponse {
         let PointsOperationResponseInternal {
             result,
             time,
-            usage,
+            hardware_usage,
+            inference_usage,
         } = resp;
         Self {
-            result: result.map(Into::into),
+            result: result.map(grpc::UpdateResult::from),
             time,
             usage: Some(Usage {
-                hardware: usage,
-                inference: None,
+                hardware: hardware_usage,
+                inference: inference_usage,
             }),
         }
     }
@@ -2259,10 +2261,15 @@ impl From<PointsOperationResponse> for PointsOperationResponseInternal {
             time,
             usage,
         } = resp;
+        let Usage {
+            hardware,
+            inference,
+        } = usage.unwrap_or_default();
         Self {
             result: result.map(Into::into),
             time,
-            usage: usage.unwrap_or_default().hardware,
+            hardware_usage: hardware,
+            inference_usage: inference,
         }
     }
 }

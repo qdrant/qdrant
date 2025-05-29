@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use api::conversions::json::{json_path_from_proto, proto_to_payloads};
+use api::grpc;
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointStructList};
 use api::grpc::qdrant::{
@@ -43,7 +44,7 @@ pub async fn upsert(
     access: Access,
     inference_token: InferenceToken,
     request_hw_counter: RequestHwCounter,
-) -> Result<Response<(PointsOperationResponseInternal, InferenceUsage)>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpsertPoints {
         collection_name,
         wait,
@@ -64,7 +65,7 @@ pub async fn upsert(
         .await?;
 
     let timing = Instant::now();
-    let (result, usage) = do_upsert_points(
+    let (result, inference_usage) = do_upsert_points(
         toc.clone(),
         collection_name,
         operation,
@@ -76,9 +77,13 @@ pub async fn upsert(
     )
     .await?;
 
-    let response =
-        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
-    Ok(Response::new((response, usage.unwrap_or_default().into())))
+    let response = points_operation_response_internal_with_inference_usage(
+        timing,
+        result,
+        request_hw_counter.to_grpc_api(),
+        inference_usage.map(grpc::InferenceUsage::from),
+    );
+    Ok(Response::new(response))
 }
 
 pub async fn delete(
@@ -129,7 +134,7 @@ pub async fn update_vectors(
     access: Access,
     inference_token: InferenceToken,
     request_hw_counter: RequestHwCounter,
-) -> Result<Response<(PointsOperationResponseInternal, InferenceUsage)>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpdatePointVectors {
         collection_name,
         wait,
@@ -174,9 +179,13 @@ pub async fn update_vectors(
     )
     .await?;
 
-    let response =
-        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
-    Ok(Response::new((response, usage.unwrap_or_default().into())))
+    let response = points_operation_response_internal_with_inference_usage(
+        timing,
+        result,
+        request_hw_counter.to_grpc_api(),
+        usage.map(grpc::InferenceUsage::from),
+    );
+    Ok(Response::new(response))
 }
 
 pub async fn delete_vectors(
@@ -429,7 +438,7 @@ pub async fn update_batch(
 
     let timing = Instant::now();
     let mut results = Vec::with_capacity(operations.len());
-    let mut total_inference_usage = InferenceUsage::with_capacity(operations.len());
+    let mut total_inference_usage = InferenceUsage::default();
 
     for op in operations {
         let operation = op
@@ -437,7 +446,7 @@ pub async fn update_batch(
             .ok_or_else(|| Status::invalid_argument("Operation is missing"))?;
         let collection_name = collection_name.clone();
         let ordering = ordering.clone();
-        let result = match operation {
+        let mut result = match operation {
             points_update_operation::Operation::Upsert(PointStructList {
                 points,
                 shard_key_selector,
@@ -458,21 +467,22 @@ pub async fn update_batch(
                 )
                 .await
             }
-            points_update_operation::Operation::DeleteDeprecated(points) => delete(
-                StrictModeCheckedTocProvider::new(dispatcher),
-                DeletePoints {
-                    collection_name,
-                    wait,
-                    points: Some(points),
-                    ordering,
-                    shard_key_selector: None,
-                },
-                internal_params,
-                access.clone(),
-                request_hw_counter.clone(),
-            )
-            .await
-            .map(|response| response.map(|inner| (inner, InferenceUsage::new()))),
+            points_update_operation::Operation::DeleteDeprecated(points) => {
+                delete(
+                    StrictModeCheckedTocProvider::new(dispatcher),
+                    DeletePoints {
+                        collection_name,
+                        wait,
+                        points: Some(points),
+                        ordering,
+                        shard_key_selector: None,
+                    },
+                    internal_params,
+                    access.clone(),
+                    request_hw_counter.clone(),
+                )
+                .await
+            }
             points_update_operation::Operation::SetPayload(
                 points_update_operation::SetPayload {
                     payload,
@@ -480,23 +490,24 @@ pub async fn update_batch(
                     shard_key_selector,
                     key,
                 },
-            ) => set_payload(
-                StrictModeCheckedTocProvider::new(dispatcher),
-                SetPayloadPoints {
-                    collection_name,
-                    wait,
-                    payload,
-                    points_selector,
-                    ordering,
-                    shard_key_selector,
-                    key,
-                },
-                internal_params,
-                access.clone(),
-                request_hw_counter.clone(),
-            )
-            .await
-            .map(|response| response.map(|inner| (inner, InferenceUsage::new()))),
+            ) => {
+                set_payload(
+                    StrictModeCheckedTocProvider::new(dispatcher),
+                    SetPayloadPoints {
+                        collection_name,
+                        wait,
+                        payload,
+                        points_selector,
+                        ordering,
+                        shard_key_selector,
+                        key,
+                    },
+                    internal_params,
+                    access.clone(),
+                    request_hw_counter.clone(),
+                )
+                .await
+            }
             points_update_operation::Operation::OverwritePayload(
                 points_update_operation::OverwritePayload {
                     payload,
@@ -522,7 +533,6 @@ pub async fn update_batch(
                     request_hw_counter.clone(),
                 )
                 .await
-                .map(|response| response.map(|inner| (inner, InferenceUsage::new())))
             }
             points_update_operation::Operation::DeletePayload(
                 points_update_operation::DeletePayload {
@@ -530,40 +540,42 @@ pub async fn update_batch(
                     points_selector,
                     shard_key_selector,
                 },
-            ) => delete_payload(
-                StrictModeCheckedTocProvider::new(dispatcher),
-                DeletePayloadPoints {
-                    collection_name,
-                    wait,
-                    keys,
-                    points_selector,
-                    ordering,
-                    shard_key_selector,
-                },
-                internal_params,
-                access.clone(),
-                request_hw_counter.clone(),
-            )
-            .await
-            .map(|response| response.map(|inner| (inner, InferenceUsage::new()))),
+            ) => {
+                delete_payload(
+                    StrictModeCheckedTocProvider::new(dispatcher),
+                    DeletePayloadPoints {
+                        collection_name,
+                        wait,
+                        keys,
+                        points_selector,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    internal_params,
+                    access.clone(),
+                    request_hw_counter.clone(),
+                )
+                .await
+            }
             points_update_operation::Operation::ClearPayload(ClearPayload {
                 points,
                 shard_key_selector,
-            }) => clear_payload(
-                StrictModeCheckedTocProvider::new(dispatcher),
-                ClearPayloadPoints {
-                    collection_name,
-                    wait,
-                    points,
-                    ordering,
-                    shard_key_selector,
-                },
-                internal_params,
-                access.clone(),
-                request_hw_counter.clone(),
-            )
-            .await
-            .map(|response| response.map(|inner| (inner, InferenceUsage::new()))),
+            }) => {
+                clear_payload(
+                    StrictModeCheckedTocProvider::new(dispatcher),
+                    ClearPayloadPoints {
+                        collection_name,
+                        wait,
+                        points,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    internal_params,
+                    access.clone(),
+                    request_hw_counter.clone(),
+                )
+                .await
+            }
             points_update_operation::Operation::UpdateVectors(
                 points_update_operation::UpdateVectors {
                     points,
@@ -592,70 +604,72 @@ pub async fn update_batch(
                     vectors,
                     shard_key_selector,
                 },
-            ) => delete_vectors(
-                StrictModeCheckedTocProvider::new(dispatcher),
-                DeletePointVectors {
-                    collection_name,
-                    wait,
-                    points_selector,
-                    vectors,
-                    ordering,
-                    shard_key_selector,
-                },
-                internal_params,
-                access.clone(),
-                request_hw_counter.clone(),
-            )
-            .await
-            .map(|response| response.map(|inner| (inner, InferenceUsage::new()))),
-            Operation::ClearPayloadDeprecated(selector) => clear_payload(
-                StrictModeCheckedTocProvider::new(dispatcher),
-                ClearPayloadPoints {
-                    collection_name,
-                    wait,
-                    points: Some(selector),
-                    ordering,
-                    shard_key_selector: None,
-                },
-                internal_params,
-                access.clone(),
-                request_hw_counter.clone(),
-            )
-            .await
-            .map(|response| response.map(|inner| (inner, InferenceUsage::new()))),
+            ) => {
+                delete_vectors(
+                    StrictModeCheckedTocProvider::new(dispatcher),
+                    DeletePointVectors {
+                        collection_name,
+                        wait,
+                        points_selector,
+                        vectors,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    internal_params,
+                    access.clone(),
+                    request_hw_counter.clone(),
+                )
+                .await
+            }
+            Operation::ClearPayloadDeprecated(selector) => {
+                clear_payload(
+                    StrictModeCheckedTocProvider::new(dispatcher),
+                    ClearPayloadPoints {
+                        collection_name,
+                        wait,
+                        points: Some(selector),
+                        ordering,
+                        shard_key_selector: None,
+                    },
+                    internal_params,
+                    access.clone(),
+                    request_hw_counter.clone(),
+                )
+                .await
+            }
             Operation::DeletePoints(points_update_operation::DeletePoints {
                 points,
                 shard_key_selector,
-            }) => delete(
-                StrictModeCheckedTocProvider::new(dispatcher),
-                DeletePoints {
-                    collection_name,
-                    wait,
-                    points,
-                    ordering,
-                    shard_key_selector,
-                },
-                internal_params,
-                access.clone(),
-                request_hw_counter.clone(),
-            )
-            .await
-            .map(|response| response.map(|inner| (inner, InferenceUsage::new()))),
+            }) => {
+                delete(
+                    StrictModeCheckedTocProvider::new(dispatcher),
+                    DeletePoints {
+                        collection_name,
+                        wait,
+                        points,
+                        ordering,
+                        shard_key_selector,
+                    },
+                    internal_params,
+                    access.clone(),
+                    request_hw_counter.clone(),
+                )
+                .await
+            }
         }?;
 
-        let (response, usage) = result.into_inner();
-        total_inference_usage.merge(usage);
-        results.push(Response::new(response));
+        total_inference_usage.merge_opt(result.get_mut().inference_usage.take());
+        results.push(result);
     }
     Ok(Response::new(UpdateBatchResponse {
         result: results
             .into_iter()
-            .map(|response| response.into_inner().result.unwrap().into())
+            .map(|response| grpc::UpdateResult::from(response.into_inner().result.unwrap()))
             .collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::new(
             request_hw_counter.to_grpc_api(),
-            Some(total_inference_usage),
+            total_inference_usage.into_non_empty(),
         )
         .into_non_empty(),
     }))
@@ -847,17 +861,31 @@ pub async fn sync(
     Ok(Response::new((response, usage.unwrap_or_default().into())))
 }
 
-pub fn points_operation_response_internal(
+pub fn points_operation_response_internal_with_inference_usage(
     timing: Instant,
     update_result: collection::operations::types::UpdateResult,
-    usage_hardware: Option<HardwareUsage>,
+    hardware_usage: Option<HardwareUsage>,
+    inference_usage: Option<InferenceUsage>,
 ) -> PointsOperationResponseInternal {
     PointsOperationResponseInternal {
         result: Some(update_result.into()),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_hardware,
-        // usage: Some(hw_measurement_acc.api)
+        hardware_usage,
+        inference_usage,
     }
+}
+
+pub fn points_operation_response_internal(
+    timing: Instant,
+    update_result: collection::operations::types::UpdateResult,
+    hardware_usage: Option<HardwareUsage>,
+) -> PointsOperationResponseInternal {
+    points_operation_response_internal_with_inference_usage(
+        timing,
+        update_result,
+        hardware_usage,
+        None, // No inference usage for this operation
+    )
 }
 
 fn extract_points_selector(

@@ -87,18 +87,10 @@ impl Usage {
     }
 }
 
-type InferenceUsageModelMap = HashMap<String, ModelUsage>;
-
 impl InferenceUsage {
     pub fn new() -> Self {
         Self {
             models: HashMap::new(),
-        }
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            models: InferenceUsageModelMap::with_capacity(capacity),
         }
     }
 

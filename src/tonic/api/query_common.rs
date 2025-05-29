@@ -836,7 +836,7 @@ pub async fn query_batch(
 ) -> Result<Response<QueryBatchResponse>, Status> {
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
     let mut requests = Vec::with_capacity(points.len());
-    let mut total_inference_usage = InferenceUsage::with_capacity(points.len());
+    let mut total_inference_usage = InferenceUsage::default();
 
     for query_points in points {
         let shard_key_selector = query_points.shard_key_selector.clone();
@@ -879,7 +879,7 @@ pub async fn query_batch(
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::new(
             request_hw_counter.to_grpc_api(),
-            Some(total_inference_usage),
+            total_inference_usage.into_non_empty(),
         )
         .into_non_empty(),
     };
