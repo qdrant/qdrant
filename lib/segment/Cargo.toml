@@ -38,7 +38,7 @@ humantime = { workspace = true }
 indicatif = { workspace = true }
 rmp-serde = "~1.3"
 rand_distr = "0.5.1"
-walkdir = "2.5.0"
+walkdir = { workspace = true }
 rstest = { workspace = true }
 segment = { path = ".", features = ["testing"] }
 proptest = { workspace = true }
