@@ -1,4 +1,3 @@
-pub mod bitvec;
 pub mod fmt;
 pub mod fs;
 pub mod mem;

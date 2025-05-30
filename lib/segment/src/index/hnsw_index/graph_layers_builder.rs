@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use bitvec::prelude::BitVec;
-use common::ext::BitSliceExt;
+use common::ext::{BitSliceExt, BitVecExt};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::atomic_save_bin;
@@ -23,7 +23,6 @@ use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
-use crate::utils::bitvec::bitvec_set_all;
 use crate::vector_storage::RawScorer;
 
 pub type LockedLinkContainer = RwLock<LinksContainer>;
@@ -74,7 +73,7 @@ impl GraphLayersBase for GraphLayersBuilder {
 }
 
 /// Budget of how many checks have to be done at minimum to consider subgraph-connectivity approximation correct.
-const SUBGRARPH_CONNECTIVITY_SEARCH_BUDGET: usize = 64;
+const SUBGRAPH_CONNECTIVITY_SEARCH_BUDGET: usize = 64;
 
 impl GraphLayersBuilder {
     pub fn get_entry_points(&self) -> MutexGuard<EntryPoints> {
@@ -132,34 +131,26 @@ impl GraphLayersBuilder {
         let mut reached_points = 1;
 
         // Total points visited (also across retries).
-        let mut visited_points_total = 0;
+        let mut spent_budget = 0;
 
         // Retry loop, in case some budget is left.
         loop {
+            visited.set(entry_point as usize, true);
+
             // Points visited in the previous layer (Get used as entry point in the iteration over the next layer)
             let mut previous_visited_points = vec![entry_point];
 
-            // For each layer in HNSW...
+            // For each layer in HNSW lower than the entry point layer
             for current_layer in (0..=entry_layer).rev() {
                 // Set entry points to visited points of previous layer.
-                if previous_visited_points.is_empty() {
-                    // If we didn't find points on previous layer, use entrypoint again.
-                    queue.push(entry_point);
-                } else {
-                    queue.append(&mut previous_visited_points);
-                }
-
-                // Set entry points to visited=true.
-                for i in queue.iter() {
-                    visited.set(*i as usize, true);
-                }
+                queue.extend_from_slice(&previous_visited_points);
 
                 // Do BFS through all points on the current layer.
                 while let Some(current_point) = queue.pop() {
                     let links = self.links_layers[current_point as usize][current_layer].read();
 
                     for link in links.iter() {
-                        visited_points_total += 1;
+                        spent_budget += 1;
 
                         // Flip a coin to decide if the edge is removed or not
                         let coin_flip = rnd.random_range(0.0..1.0);
@@ -178,18 +169,16 @@ impl GraphLayersBuilder {
                         }
                     }
                 }
-
-                // Reset visited points to do BFS again on the next layer.
-                bitvec_set_all(&mut visited, false);
             }
 
             // Budget exhausted, don't retry.
-            if visited_points_total > SUBGRARPH_CONNECTIVITY_SEARCH_BUDGET {
+            if spent_budget > SUBGRAPH_CONNECTIVITY_SEARCH_BUDGET {
                 break;
             }
 
             queue.clear();
             reached_points = 1; // Reset reached points
+            visited.set_all(false);
         }
 
         reached_points as f32 / points.len() as f32
