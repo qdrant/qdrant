@@ -834,6 +834,9 @@ pub struct TextIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
+    /// If true - support phrase matching.
+    #[prost(bool, optional, tag = "6")]
+    pub phrase_matching: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

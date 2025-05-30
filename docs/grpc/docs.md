@@ -1597,6 +1597,7 @@ Note: 1kB = 1 vector of size 256. |
 | min_token_len | [uint64](#uint64) | optional | Minimal token length |
 | max_token_len | [uint64](#uint64) | optional | Maximal token length |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
+| phrase_matching | [bool](#bool) | optional | If true - support phrase matching. |
 
 
 

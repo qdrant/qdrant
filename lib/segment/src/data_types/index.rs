@@ -191,13 +191,13 @@ pub struct TextIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lowercase: Option<bool>,
 
+    /// If true, support phrase matching. Default: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phrase_matching: Option<bool>,
+
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
-
-    // todo(phrase_match): remove skip
-    #[serde(skip)]
-    pub phrase_matching: Option<bool>,
 }
 
 // Bool

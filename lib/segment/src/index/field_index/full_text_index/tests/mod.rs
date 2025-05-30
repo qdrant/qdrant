@@ -160,8 +160,8 @@ fn test_prefix_search() {
         min_token_len: None,
         max_token_len: None,
         lowercase: None,
-        on_disk: None,
         phrase_matching: None,
+        on_disk: None,
     };
 
     let mut index =
