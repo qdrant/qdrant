@@ -485,6 +485,24 @@ impl<V: Blob> Gridstore<V> {
         Some(value)
     }
 
+    /// Clear the storage, going back to the initial state
+    ///
+    /// Completely wipes the storage, and recreates it with a single empty page.
+    pub fn clear(&mut self) -> Result<()> {
+        let create_options = StorageOptions::from(self.config);
+        let base_path = self.base_path.clone();
+
+        // Wipe
+        self.pages.clear();
+        std::fs::remove_dir_all(&base_path).unwrap();
+
+        // Recreate
+        std::fs::create_dir_all(&base_path)
+            .map_err(|err| format!("Failed to create gridstore storage directory: {err}"))?;
+        *self = Self::new(base_path, create_options)?;
+        Ok(())
+    }
+
     /// Wipe the storage, drop all pages and delete the base directory
     pub fn wipe(&mut self) {
         // clear pages

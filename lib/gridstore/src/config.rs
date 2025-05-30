@@ -107,3 +107,14 @@ impl TryFrom<StorageOptions> for StorageConfig {
         })
     }
 }
+
+impl From<StorageConfig> for StorageOptions {
+    fn from(config: StorageConfig) -> Self {
+        Self {
+            page_size_bytes: Some(config.page_size_bytes),
+            block_size_bytes: Some(config.block_size_bytes),
+            region_size_blocks: Some(config.region_size_blocks as u16),
+            compression: Some(config.compression),
+        }
+    }
+}
