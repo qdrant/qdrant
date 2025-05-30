@@ -494,7 +494,8 @@ impl<V: Blob> Gridstore<V> {
 
         // Wipe
         self.pages.clear();
-        std::fs::remove_dir_all(&base_path).unwrap();
+        std::fs::remove_dir_all(&base_path)
+            .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))?;
 
         // Recreate
         std::fs::create_dir_all(&base_path)
@@ -507,11 +508,12 @@ impl<V: Blob> Gridstore<V> {
     ///
     /// Takes ownership because this function leaves Gridstore in an inconsistent state which does
     /// not allow further usage. Use [`clear`] instead to clear and reuse the storage.
-    pub fn wipe(mut self) {
+    pub fn wipe(mut self) -> Result<()> {
         // clear pages
         self.pages.clear();
         // deleted base directory
-        std::fs::remove_dir_all(&self.base_path).unwrap();
+        std::fs::remove_dir_all(&self.base_path)
+            .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))
     }
 
     /// Iterate over all the values in the storage
@@ -1193,7 +1195,7 @@ mod tests {
 
         // wipe storage manually
         assert!(dir.path().exists());
-        storage.wipe();
+        storage.wipe().unwrap();
         assert!(!dir.path().exists());
     }
 
