@@ -27,7 +27,7 @@ const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
     block_size_bytes: Some(size_of::<u128>()),
     // Compressing numeric values is unreasonable
     compression: Some(gridstore::config::Compression::None),
-    page_size_bytes: None,
+    page_size_bytes: Some(4 * 1024 * 1024), // 4 MiB = 16 * 8192 * 32
     region_size_blocks: None,
 };
 
