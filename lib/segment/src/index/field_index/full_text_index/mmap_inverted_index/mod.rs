@@ -16,10 +16,8 @@ use super::inverted_index::{InvertedIndex, ParsedQuery};
 use super::postings_iterator::intersect_compressed_postings_iterator;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::immutable_inverted_index::{
-    ImmutableInvertedIndex,
-};
-use crate::index::field_index::full_text_index::inverted_index::TokenId;
+use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
+use crate::index::field_index::full_text_index::inverted_index::{TokenId, TokenSet};
 
 mod mmap_postings;
 
@@ -147,9 +145,9 @@ impl MmapInvertedIndex {
         !is_deleted
     }
 
-    pub fn intersection_filter<'a>(
+    pub fn filter_has_subset<'a>(
         &'a self,
-        tokens: Vec<TokenId>,
+        tokens: TokenSet,
         hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // in case of mmap immutable index, deleted points are still in the postings
@@ -157,11 +155,12 @@ impl MmapInvertedIndex {
 
         fn intersection<'a>(
             postings: &'a MmapPostings,
-            tokens: Vec<TokenId>,
+            tokens: TokenSet,
             filter: impl Fn(u32) -> bool + 'a,
             hw_counter: &'a HardwareCounterCell,
         ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
             let postings_opt: Option<Vec<_>> = tokens
+                .tokens()
                 .iter()
                 .map(|&token_id| postings.get(token_id, hw_counter))
                 .collect();
@@ -181,9 +180,9 @@ impl MmapInvertedIndex {
         intersection(&self.postings, tokens, filter, hw_counter)
     }
 
-    fn check_intersection_match(
+    fn check_has_subset(
         &self,
-        tokens: &[TokenId],
+        tokens: &TokenSet,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
@@ -199,12 +198,12 @@ impl MmapInvertedIndex {
 
         fn check_intersection(
             postings: &MmapPostings,
-            tokens: &[TokenId],
+            tokens: &TokenSet,
             point_id: PointOffsetType,
             hw_counter: &HardwareCounterCell,
         ) -> bool {
             // Check that all tokens are in document
-            tokens.iter().all(|query_token| {
+            tokens.tokens().iter().all(|query_token| {
                 postings
                     .get(*query_token, hw_counter)
                     // unwrap safety: all tokens exist in the vocabulary, otherwise there'd be no query tokens
@@ -304,7 +303,7 @@ impl InvertedIndex for MmapInvertedIndex {
         hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match query {
-            ParsedQuery::Tokens(tokens) => self.intersection_filter(tokens, hw_counter),
+            ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens, hw_counter),
         }
     }
 
@@ -333,9 +332,7 @@ impl InvertedIndex for MmapInvertedIndex {
         hw_counter: &HardwareCounterCell,
     ) -> bool {
         match parsed_query {
-            ParsedQuery::Tokens(tokens) => {
-                self.check_intersection_match(tokens, point_id, hw_counter)
-            }
+            ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id, hw_counter),
         }
     }
 

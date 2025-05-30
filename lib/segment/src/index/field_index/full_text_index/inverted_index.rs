@@ -33,6 +33,10 @@ impl TokenSet {
     pub fn contains(&self, token: &TokenId) -> bool {
         self.0.binary_search(token).is_ok()
     }
+
+    pub fn has_subset(&self, subset: &TokenSet) -> bool {
+        subset.0.iter().all(|token| self.contains(token))
+    }
 }
 
 impl From<AHashSet<TokenId>> for TokenSet {
@@ -71,12 +75,14 @@ impl Document {
 #[derive(Debug, Clone)]
 pub enum ParsedQuery {
     /// All these tokens must be present in the document, regardless of order.
-    Tokens(Vec<TokenId>),
+    ///
+    /// In other words this should be a subset of the document's token set.
+    Tokens(TokenSet),
     // Phrase(Vec<TokenId>),
 }
 
 impl ParsedQuery {
-    pub fn check_match(&self, tokenset: &TokenSet) -> bool {
+    pub fn check_match(&self, document: &TokenSet) -> bool {
         match self {
             ParsedQuery::Tokens(query_tokens) => {
                 if query_tokens.is_empty() {
@@ -84,9 +90,7 @@ impl ParsedQuery {
                 }
 
                 // Check that all tokens are in document
-                query_tokens
-                    .iter()
-                    .all(|query_token| tokenset.contains(query_token))
+                document.has_subset(query_tokens)
             }
         }
     }
@@ -154,20 +158,21 @@ pub trait InvertedIndex {
     ) -> CardinalityEstimation {
         match query {
             ParsedQuery::Tokens(tokens) => {
-                self.estimate_intersection_cardinality(tokens, condition, hw_counter)
+                self.estimate_has_subset_cardinality(tokens, condition, hw_counter)
             }
         }
     }
 
-    fn estimate_intersection_cardinality(
+    fn estimate_has_subset_cardinality(
         &self,
-        tokens: &[TokenId],
+        tokens: &TokenSet,
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
         let points_count = self.points_count();
 
         let posting_lengths: Option<Vec<usize>> = tokens
+            .tokens()
             .iter()
             .map(|&vocab_idx| self.get_posting_len(vocab_idx, hw_counter))
             .collect();
@@ -294,7 +299,7 @@ mod tests {
         let tokens = query
             .into_iter()
             .map(token_to_id)
-            .collect::<Option<Vec<_>>>()?;
+            .collect::<Option<TokenSet>>()?;
         Some(ParsedQuery::Tokens(tokens))
     }
 

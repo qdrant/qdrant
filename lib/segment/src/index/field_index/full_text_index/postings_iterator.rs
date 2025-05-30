@@ -1,5 +1,5 @@
 use common::types::PointOffsetType;
-use posting_list::{IdsPostingListView, PostingListView};
+use posting_list::{PostingListView, PostingValue};
 
 use super::posting_list::PostingList;
 
@@ -21,8 +21,8 @@ pub fn intersect_postings_iterator<'a>(
     Box::new(and_iter)
 }
 
-pub fn intersect_compressed_postings_iterator<'a>(
-    mut postings: Vec<IdsPostingListView<'a>>,
+pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
+    mut postings: Vec<PostingListView<'a, V>>,
     filter: impl Fn(PointOffsetType) -> bool + 'a,
 ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
     let smallest_posting_idx = postings

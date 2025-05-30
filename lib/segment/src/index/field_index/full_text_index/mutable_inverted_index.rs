@@ -71,11 +71,12 @@ impl MutableInvertedIndex {
         self.point_to_tokens.get(idx as usize)?.as_ref()
     }
 
-    fn intersection_filter(
+    fn filter_has_subset(
         &self,
-        tokens: Vec<TokenId>,
+        tokens: TokenSet,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let postings_opt: Option<Vec<_>> = tokens
+            .tokens()
             .iter()
             .map(|&vocab_idx| {
                 // if a ParsedQuery token was given an index, then it must exist in the vocabulary
@@ -204,7 +205,7 @@ impl InvertedIndex for MutableInvertedIndex {
         _hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         match query {
-            ParsedQuery::Tokens(tokens) => self.intersection_filter(tokens),
+            ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens),
         }
     }
 

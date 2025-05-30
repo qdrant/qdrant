@@ -256,7 +256,7 @@ impl FullTextIndex {
         Tokenizer::tokenize_query(text, self.config(), |token| {
             tokens.insert(self.get_token(token, hw_counter));
         });
-        let tokens = tokens.into_iter().collect::<Option<Vec<_>>>()?;
+        let tokens = tokens.into_iter().collect::<Option<TokenSet>>()?;
         Some(ParsedQuery::Tokens(tokens))
     }
 
@@ -617,7 +617,7 @@ mod tests {
         let tokens = query
             .iter()
             .map(|token| token_to_id(token.as_str()))
-            .collect::<Option<Vec<_>>>()?;
+            .collect::<Option<TokenSet>>()?;
         Some(ParsedQuery::Tokens(tokens))
     }
 

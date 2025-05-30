@@ -4,7 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use posting_list::{IdsPostingList, IdsPostingListView, PostingBuilder, PostingList};
 
-use super::inverted_index::InvertedIndex;
+use super::inverted_index::{InvertedIndex, TokenSet};
 use super::mmap_inverted_index::MmapInvertedIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, TokenId};
@@ -21,9 +21,9 @@ pub struct ImmutableInvertedIndex {
 }
 
 impl ImmutableInvertedIndex {
-    fn intersection_filter(
+    fn filter_has_subset(
         &self,
-        tokens: Vec<TokenId>,
+        tokens: TokenSet,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         // in case of immutable index, deleted documents are still in the postings
         let filter =
@@ -31,10 +31,11 @@ impl ImmutableInvertedIndex {
 
         fn intersection<'a>(
             postings: &'a [PostingList<()>],
-            tokens: Vec<TokenId>,
+            tokens: TokenSet,
             filter: impl Fn(PointOffsetType) -> bool + 'a,
         ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
             let postings_opt: Option<Vec<_>> = tokens
+                .tokens()
                 .iter()
                 .map(|&token_id| postings.get(token_id as usize))
                 .collect();
@@ -50,10 +51,10 @@ impl ImmutableInvertedIndex {
             intersect_compressed_postings_iterator(posting_readers, filter)
         }
 
-        intersection(&self.postings,  tokens, filter)
+        intersection(&self.postings, tokens, filter)
     }
 
-    fn check_intersection_match(&self, tokens: &[TokenId], point_id: PointOffsetType) -> bool {
+    fn check_has_subset(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
         if tokens.is_empty() {
             return false;
         }
@@ -65,11 +66,11 @@ impl ImmutableInvertedIndex {
 
         fn check_intersection(
             postings: &[PostingList<()>],
-            tokens: &[TokenId],
+            tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> bool {
             // Check that all tokens are in document
-            tokens.iter().all(|token_id| {
+            tokens.tokens().iter().all(|token_id| {
                 let posting_list = &postings[*token_id as usize];
                 posting_list.visitor().contains(point_id)
             })
@@ -121,7 +122,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         _hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match query {
-            ParsedQuery::Tokens(tokens) => self.intersection_filter(tokens),
+            ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens),
         }
     }
 
@@ -141,10 +142,10 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
+        _: &HardwareCounterCell,
     ) -> bool {
         match parsed_query {
-            ParsedQuery::Tokens(tokens) => self.check_intersection_match(tokens, point_id),
+            ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id),
         }
     }
 
