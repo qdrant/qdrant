@@ -395,6 +395,10 @@ impl<T: Encodable + Numericable + Blob + Send + Sync + Default> MutableNumericIn
                     hw_cell_wb.incr_delta(size_of_val(&key) + size_of_val(&idx));
                 }
             }
+            // We cannot store empty value, then delete instead
+            Storage::Gridstore(ref mut store) if values.is_empty() => {
+                store.write().delete_value(idx);
+            }
             Storage::Gridstore(ref mut store) => {
                 let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
                 store
