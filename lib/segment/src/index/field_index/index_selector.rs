@@ -310,9 +310,13 @@ impl IndexSelector<'_> {
 
     fn bool_builder(&self, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
         match self {
-            IndexSelector::RocksDb(index_selector_rocks_db) => Ok(FieldIndexBuilder::BoolIndex(
-                SimpleBoolIndex::builder(index_selector_rocks_db.db.clone(), &field.to_string()),
-            )),
+            IndexSelector::RocksDb(IndexSelectorRocksDb {
+                db,
+                is_appendable: _,
+            }) => Ok(FieldIndexBuilder::BoolIndex(SimpleBoolIndex::builder(
+                Arc::clone(db),
+                &field.to_string(),
+            ))),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 let dir = bool_dir(dir, field);
                 Ok(FieldIndexBuilder::BoolMmapIndex(MmapBoolIndex::builder(
@@ -325,12 +329,13 @@ impl IndexSelector<'_> {
 
     fn bool_new(&self, field: &JsonPath) -> OperationResult<FieldIndex> {
         Ok(match self {
-            IndexSelector::RocksDb(index_selector_rocks_db) => {
-                FieldIndex::BoolIndex(BoolIndex::Simple(SimpleBoolIndex::new(
-                    index_selector_rocks_db.db.clone(),
-                    &field.to_string(),
-                )))
-            }
+            IndexSelector::RocksDb(IndexSelectorRocksDb {
+                db,
+                is_appendable: _,
+            }) => FieldIndex::BoolIndex(BoolIndex::Simple(SimpleBoolIndex::new(
+                Arc::clone(db),
+                &field.to_string(),
+            ))),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 let dir = bool_dir(dir, field);
                 FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open_or_create(
