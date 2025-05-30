@@ -1,3 +1,5 @@
+#![expect(dead_code)]
+
 use itertools::Itertools;
 use posting_list::UnsizedValue;
 
