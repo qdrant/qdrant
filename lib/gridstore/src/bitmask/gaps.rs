@@ -430,8 +430,7 @@ mod tests {
             RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
             RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
         ];
-        let bitmask_gaps =
-            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config.clone());
+        let bitmask_gaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
 
         // Find space for blocks covering up to 2 regions
         assert!(bitmask_gaps.find_fitting_gap(1).is_some());
@@ -471,8 +470,7 @@ mod tests {
             RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
             RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
         ];
-        let bitmask_gaps =
-            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config.clone());
+        let bitmask_gaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
 
         // Find space for blocks covering up to 2 regions
         assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());

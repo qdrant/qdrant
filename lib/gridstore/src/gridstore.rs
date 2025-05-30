@@ -131,9 +131,9 @@ impl<V: Blob> Gridstore<V> {
         let mut storage = Self {
             tracker: RwLock::new(Tracker::new(&base_path, None)),
             pages: Default::default(),
-            bitmask: RwLock::new(Bitmask::create(&base_path, config.clone())?),
+            bitmask: RwLock::new(Bitmask::create(&base_path, config)?),
             base_path,
-            config: config.clone(),
+            config,
             _value_type: std::marker::PhantomData,
         };
 
@@ -167,7 +167,7 @@ impl<V: Blob> Gridstore<V> {
 
         let page_tracker = Tracker::open(&path)?;
 
-        let bitmask = Bitmask::open(&path, config.clone())?;
+        let bitmask = Bitmask::open(&path, config)?;
 
         let num_pages = bitmask.infer_num_pages();
 
