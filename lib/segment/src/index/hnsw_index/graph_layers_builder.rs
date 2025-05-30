@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use bitvec::prelude::BitVec;
-use common::ext::{BitSliceExt, BitVecExt};
+use common::ext::BitSliceExt;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::atomic_save_bin;
@@ -178,7 +178,7 @@ impl GraphLayersBuilder {
 
             queue.clear();
             reached_points = 1; // Reset reached points
-            visited.set_all(false);
+            visited.fill(false);
         }
 
         reached_points as f32 / points.len() as f32
