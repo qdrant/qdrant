@@ -541,7 +541,7 @@ impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P> N
     where
         Self: ValueIndexer<ValueType = P>,
     {
-        NumericIndexGridstoreBuilder(Self::new_gridstore(dir).unwrap())
+        NumericIndexGridstoreBuilder::new(dir)
     }
 
     pub fn inner(&self) -> &NumericIndexInner<T> {
@@ -714,9 +714,22 @@ where
 pub struct NumericIndexGridstoreBuilder<
     T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default,
     P,
->(NumericIndex<T, P>)
+> where
+    NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+{
+    dir: PathBuf,
+    index: Option<NumericIndex<T, P>>,
+}
+
+impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P>
+    NumericIndexGridstoreBuilder<T, P>
 where
-    NumericIndex<T, P>: ValueIndexer<ValueType = P>;
+    NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+{
+    fn new(dir: PathBuf) -> Self {
+        Self { dir, index: None }
+    }
+}
 
 impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P>
     FieldIndexBuilderTrait for NumericIndexGridstoreBuilder<T, P>
@@ -726,11 +739,13 @@ where
     type FieldIndexType = NumericIndex<T, P>;
 
     fn init(&mut self) -> OperationResult<()> {
-        match &mut self.0.inner {
-            NumericIndexInner::Mutable(index) => index.clear(),
-            NumericIndexInner::Immutable(_) => unreachable!(),
-            NumericIndexInner::Mmap(_) => unreachable!(),
-        }
+        assert!(
+            self.index.is_none(),
+            "index must be initialized exactly once",
+        );
+        self.index
+            .replace(NumericIndex::new_gridstore(self.dir.clone())?);
+        Ok(())
     }
 
     fn add_point(
@@ -739,12 +754,22 @@ where
         payload: &[&Value],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.0.add_point(id, payload, hw_counter)
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "NumericIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.add_point(id, payload, hw_counter)
     }
 
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        self.0.inner.flusher()()?;
-        Ok(self.0)
+    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+        let Some(index) = self.index.take() else {
+            return Err(OperationError::service_error(
+                "NumericIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.inner.flusher()()?;
+        Ok(index)
     }
 }
 
