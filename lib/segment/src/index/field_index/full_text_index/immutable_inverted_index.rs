@@ -1,26 +1,95 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use posting_list::{IdsPostingList, IdsPostingListView, PostingBuilder, PostingList, PostingValue};
+use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
-use super::inverted_index::{InvertedIndex, TokenSet};
+use super::inverted_index::{Document, InvertedIndex, TokenSet};
 use super::mmap_inverted_index::MmapInvertedIndex;
+use super::mmap_inverted_index::mmap_postings::MmapPostingValue;
+use super::positions::Positions;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, TokenId};
+use crate::index::field_index::full_text_index::mmap_inverted_index::MmapPostingsEnum;
+use crate::index::field_index::full_text_index::mmap_inverted_index::mmap_postings::MmapPostings;
 use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
 use crate::index::field_index::full_text_index::postings_iterator::intersect_compressed_postings_iterator;
 
 #[cfg_attr(test, derive(Clone))]
-#[derive(Default, Debug)]
+#[derive(Debug)]
+pub enum ImmutablePostings {
+    Ids(Vec<PostingList<()>>),
+    WithPositions(Vec<PostingList<Positions>>),
+}
+
+impl ImmutablePostings {
+    pub fn len(&self) -> usize {
+        match self {
+            ImmutablePostings::Ids(lists) => lists.len(),
+            ImmutablePostings::WithPositions(lists) => lists.len(),
+        }
+    }
+
+    fn posting_len(&self, token: TokenId) -> Option<usize> {
+        match self {
+            ImmutablePostings::Ids(postings) => {
+                postings.get(token as usize).map(|posting| posting.len())
+            }
+            ImmutablePostings::WithPositions(postings) => {
+                postings.get(token as usize).map(|posting| posting.len())
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub fn iter_ids(
+        &self,
+        token_id: TokenId,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        match self {
+            ImmutablePostings::Ids(postings) => postings.get(token_id as usize).map(|posting| {
+                Box::new(posting.iter().map(|elem| elem.id))
+                    as Box<dyn Iterator<Item = PointOffsetType>>
+            }),
+            ImmutablePostings::WithPositions(postings) => {
+                postings.get(token_id as usize).map(|posting| {
+                    Box::new(posting.iter().map(|elem| elem.id))
+                        as Box<dyn Iterator<Item = PointOffsetType>>
+                })
+            }
+        }
+    }
+}
+
+#[cfg_attr(test, derive(Clone))]
+#[derive(Debug)]
 pub struct ImmutableInvertedIndex {
-    pub(in crate::index::field_index::full_text_index) postings: Vec<IdsPostingList>,
+    pub(in crate::index::field_index::full_text_index) postings: ImmutablePostings,
     pub(in crate::index::field_index::full_text_index) vocab: HashMap<String, TokenId>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count: Vec<Option<usize>>,
     pub(in crate::index::field_index::full_text_index) points_count: usize,
 }
 
 impl ImmutableInvertedIndex {
+    pub fn ids_empty() -> Self {
+        Self {
+            postings: ImmutablePostings::Ids(Vec::new()),
+            vocab: HashMap::new(),
+            point_to_tokens_count: Vec::new(),
+            points_count: 0,
+        }
+    }
+
+    pub fn positions_empty() -> Self {
+        Self {
+            postings: ImmutablePostings::WithPositions(Vec::new()),
+            vocab: HashMap::new(),
+            point_to_tokens_count: Vec::new(),
+            points_count: 0,
+        }
+    }
+
     fn filter_has_subset(
         &self,
         tokens: TokenSet,
@@ -53,7 +122,10 @@ impl ImmutableInvertedIndex {
             intersect_compressed_postings_iterator(postings, filter)
         }
 
-        intersection(&self.postings, tokens, filter)
+        match &self.postings {
+            ImmutablePostings::Ids(postings) => intersection(postings, tokens, filter),
+            ImmutablePostings::WithPositions(postings) => intersection(postings, tokens, filter),
+        }
     }
 
     fn check_has_subset(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
@@ -78,7 +150,12 @@ impl ImmutableInvertedIndex {
             })
         }
 
-        check_intersection(&self.postings, tokens, point_id)
+        match &self.postings {
+            ImmutablePostings::Ids(postings) => check_intersection(postings, tokens, point_id),
+            ImmutablePostings::WithPositions(postings) => {
+                check_intersection(postings, tokens, point_id)
+            }
+        }
     }
 }
 
@@ -129,14 +206,14 @@ impl InvertedIndex for ImmutableInvertedIndex {
     }
 
     fn get_posting_len(&self, token_id: TokenId, _: &HardwareCounterCell) -> Option<usize> {
-        self.postings.get(token_id as usize).map(|p| p.len())
+        self.postings.posting_len(token_id)
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
-        self.vocab.iter().filter_map(|(token, &posting_idx)| {
+        self.vocab.iter().filter_map(|(token, &token_id)| {
             self.postings
-                .get(posting_idx as usize)
-                .map(|posting| (token.as_str(), posting.len()))
+                .posting_len(token_id)
+                .map(|len| (token.as_str(), len))
         })
     }
 
@@ -144,7 +221,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        _: &HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
     ) -> bool {
         match parsed_query {
             ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id),
@@ -175,91 +252,184 @@ impl InvertedIndex for ImmutableInvertedIndex {
 
 impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
     fn from(index: MutableInvertedIndex) -> Self {
-        // Keep only tokens that have non-empty postings
-        let (postings, orig_to_new_token): (Vec<_>, HashMap<_, _>) = index
-            .postings
-            .into_iter()
-            .enumerate()
-            .filter_map(|(orig_token, posting)| {
-                (!posting.is_empty()).then_some((orig_token, posting))
-            })
-            .enumerate()
-            .map(|(new_token, (orig_token, posting))| {
-                (posting, (orig_token as TokenId, new_token as TokenId))
-            })
-            .unzip();
+        let MutableInvertedIndex {
+            postings,
+            vocab,
+            point_to_tokens,
+            point_to_doc,
+            points_count,
+        } = index;
 
-        // Update vocab entries
-        let mut vocab: HashMap<String, TokenId> = index
-            .vocab
-            .into_iter()
-            .filter_map(|(key, orig_token)| {
-                orig_to_new_token
-                    .get(&orig_token)
-                    .map(|new_token| (key, *new_token))
-            })
-            .collect();
+        let (postings, vocab, orig_to_new_token) = optimized_postings_and_vocab(postings, vocab);
 
-        vocab.shrink_to_fit();
-
-        let postings: Vec<IdsPostingList> = postings
-            .into_iter()
-            .map(|posting| {
-                let mut builder = PostingBuilder::new();
-                for id in posting.iter() {
-                    builder.add_id(id);
-                }
-                builder.build()
-            })
-            .collect();
+        let postings = match point_to_doc {
+            None => ImmutablePostings::Ids(create_compressed_postings(postings)),
+            Some(point_to_doc) => {
+                ImmutablePostings::WithPositions(create_compressed_postings_with_positions(
+                    postings,
+                    point_to_doc,
+                    &orig_to_new_token,
+                ))
+            }
+        };
 
         ImmutableInvertedIndex {
             postings,
             vocab,
-            point_to_tokens_count: index
-                .point_to_tokens
+            point_to_tokens_count: point_to_tokens
                 .iter()
-                .map(|doc| doc.as_ref().map(|doc| doc.len()))
+                .map(|tokenset| tokenset.as_ref().map(|tokenset| tokenset.len()))
                 .collect(),
-            points_count: index.points_count,
+            points_count,
         }
     }
 }
 
+fn optimized_postings_and_vocab(
+    postings: Vec<super::posting_list::PostingList>,
+    vocab: HashMap<String, u32>,
+) -> (
+    Vec<super::posting_list::PostingList>,
+    HashMap<String, u32>,
+    HashMap<u32, u32>,
+) {
+    // Keep only tokens that have non-empty postings
+    let (postings, orig_to_new_token): (Vec<_>, HashMap<_, _>) = postings
+        .into_iter()
+        .enumerate()
+        .filter_map(|(orig_token, posting)| (!posting.is_empty()).then_some((orig_token, posting)))
+        .enumerate()
+        .map(|(new_token, (orig_token, posting))| {
+            (posting, (orig_token as TokenId, new_token as TokenId))
+        })
+        .unzip();
+
+    // Update vocab entries
+    let mut vocab: HashMap<String, TokenId> = vocab
+        .into_iter()
+        .filter_map(|(key, orig_token)| {
+            orig_to_new_token
+                .get(&orig_token)
+                .map(|new_token| (key, *new_token))
+        })
+        .collect();
+
+    vocab.shrink_to_fit();
+
+    (postings, vocab, orig_to_new_token)
+}
+
+fn create_compressed_postings(
+    postings: Vec<super::posting_list::PostingList>,
+) -> Vec<PostingList<()>> {
+    postings
+        .into_iter()
+        .map(|posting| {
+            let mut builder = PostingBuilder::new();
+            for id in posting.iter() {
+                builder.add_id(id);
+            }
+            builder.build()
+        })
+        .collect()
+}
+
+fn create_compressed_postings_with_positions(
+    postings: Vec<super::posting_list::PostingList>,
+    point_to_doc: Vec<Option<Document>>,
+    orig_to_new_token: &HashMap<TokenId, TokenId>,
+) -> Vec<PostingList<Positions>> {
+    // precalculate positions for each token in each document
+    let mut point_to_tokens_positions: Vec<HashMap<TokenId, Positions>> = point_to_doc
+        .into_iter()
+        .map(|doc_opt| {
+            let Some(doc) = doc_opt else {
+                return HashMap::new();
+            };
+
+            // get positions for each token in the document
+            let doc_len = doc.len();
+            (0u32..).zip(doc).fold(
+                HashMap::with_capacity(doc_len),
+                |mut map: HashMap<u32, Positions>, (position, token)| {
+                    // use translation of original token to new token from postings optimization
+                    let new_token = orig_to_new_token[&token];
+                    map.entry(new_token).or_default().push(position);
+                    map
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+
+    (0u32..)
+        .zip(postings)
+        .map(|(token, posting)| {
+            posting
+                .iter()
+                .map(|id| {
+                    let positions = point_to_tokens_positions[id as usize].remove(&token).expect(
+                        "If id is this token's posting list, it should have at least one position",
+                    );
+                    (id, positions)
+                })
+                .collect()
+        })
+        .collect()
+}
+
 impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
     fn from(index: &MmapInvertedIndex) -> Self {
-        let hw_counter = HardwareCounterCell::disposable();
+        fn optimized_postings_and_vocab<V: MmapPostingValue>(
+            postings: &MmapPostings<V>,
+            index: &MmapInvertedIndex,
+        ) -> (Vec<PostingList<V>>, HashMap<String, TokenId>) {
+            let hw_counter = HardwareCounterCell::disposable();
 
-        // Keep only tokens that have non-empty postings
-        let (postings, orig_to_new_token): (Vec<_>, HashMap<_, _>) = index
-            .iter_postings(&hw_counter)
-            .enumerate()
-            .filter_map(|(orig_token, posting)| {
-                posting
-                    .filter(|posting| !posting.is_empty())
-                    .map(|posting| (orig_token, posting))
-            })
-            .enumerate()
-            .map(|(new_token, (orig_token, posting))| {
-                (posting, (orig_token as TokenId, new_token as TokenId))
-            })
-            .unzip();
+            // Keep only tokens that have non-empty postings
+            let (posting_views, orig_to_new_token): (Vec<_>, HashMap<_, _>) = postings
+                .iter_postings(&hw_counter)
+                .enumerate()
+                .filter_map(|(orig_token, posting)| {
+                    posting
+                        .filter(|posting| !posting.is_empty())
+                        .map(|posting| (orig_token, posting))
+                })
+                .enumerate()
+                .map(|(new_token, (orig_token, posting))| {
+                    (posting, (orig_token as TokenId, new_token as TokenId))
+                })
+                .unzip();
 
-        // Update vocab entries
-        let mut vocab: HashMap<String, TokenId> = index
-            .iter_vocab()
-            .filter_map(|(key, orig_token)| {
-                orig_to_new_token
-                    .get(orig_token)
-                    .map(|new_token| (key.to_string(), *new_token))
-            })
-            .collect();
+            // Update vocab entries
+            let mut vocab: HashMap<String, TokenId> = index
+                .iter_vocab()
+                .filter_map(|(key, orig_token)| {
+                    orig_to_new_token
+                        .get(orig_token)
+                        .map(|new_token| (key.to_string(), *new_token))
+                })
+                .collect();
 
-        let postings: Vec<IdsPostingList> = postings
-            .into_iter()
-            .map(IdsPostingListView::to_owned)
-            .collect();
-        vocab.shrink_to_fit();
+            let postings: Vec<PostingList<V>> = posting_views
+                .into_iter()
+                .map(PostingListView::to_owned)
+                .collect();
+
+            vocab.shrink_to_fit();
+
+            (postings, vocab)
+        }
+
+        let (postings, vocab) = match &index.postings {
+            MmapPostingsEnum::Ids(postings) => {
+                let (postings, vocab) = optimized_postings_and_vocab(postings, index);
+                (ImmutablePostings::Ids(postings), vocab)
+            }
+            MmapPostingsEnum::WithPositions(postings) => {
+                let (postings, vocab) = optimized_postings_and_vocab(postings, index);
+                (ImmutablePostings::WithPositions(postings), vocab)
+            }
+        };
 
         debug_assert!(
             postings.len() == vocab.len(),

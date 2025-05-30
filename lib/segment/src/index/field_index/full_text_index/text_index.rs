@@ -366,7 +366,10 @@ impl ValueIndexer for FullTextIndex {
         match self {
             FullTextIndex::Mutable(index) => index.remove_point(id),
             FullTextIndex::Immutable(index) => index.remove_point(id),
-            FullTextIndex::Mmap(index) => index.remove_point(id),
+            FullTextIndex::Mmap(index) => {
+                index.remove_point(id);
+                Ok(())
+            }
         }
     }
 }

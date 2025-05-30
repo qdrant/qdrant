@@ -4,6 +4,7 @@ use common::types::PointOffsetType;
 
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::inverted_index::InvertedIndex;
+use super::mmap_inverted_index::MmapPostingsEnum;
 use super::mmap_text_index::MmapFullTextIndex;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::text_index::FullTextIndex;
@@ -33,7 +34,7 @@ impl ImmutableFullTextIndex {
         config: TextIndexParams,
     ) -> Self {
         Self {
-            inverted_index: Default::default(),
+            inverted_index: ImmutableInvertedIndex::ids_empty(),
             config,
             storage: Storage::RocksDb(db_wrapper),
         }
@@ -43,8 +44,12 @@ impl ImmutableFullTextIndex {
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
     pub fn open_mmap(index: MmapFullTextIndex) -> Self {
+        let inverted_index = match index.inverted_index.postings {
+            MmapPostingsEnum::Ids(_) => ImmutableInvertedIndex::ids_empty(),
+            MmapPostingsEnum::WithPositions(_) => ImmutableInvertedIndex::positions_empty(),
+        };
         Self {
-            inverted_index: Default::default(),
+            inverted_index,
             config: index.config.clone(),
             storage: Storage::Mmap(Box::new(index)),
         }
@@ -102,14 +107,6 @@ impl ImmutableFullTextIndex {
         true
     }
 
-    #[cfg(test)]
-    pub fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
-        match self.storage {
-            Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
-            Storage::Mmap(_) => None,
-        }
-    }
-
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         if self.inverted_index.remove(id) {
             match self.storage {
@@ -118,7 +115,7 @@ impl ImmutableFullTextIndex {
                     db_wrapper.remove(db_doc_id)?;
                 }
                 Storage::Mmap(ref mut index) => {
-                    index.remove_point(id)?;
+                    index.remove_point(id);
                 }
             }
         }
