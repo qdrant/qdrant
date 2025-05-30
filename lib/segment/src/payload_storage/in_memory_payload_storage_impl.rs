@@ -100,7 +100,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
     }
 
     #[cfg(test)]
-    fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
+    fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
         self.payload = ahash::AHashMap::new();
         Ok(())
     }
@@ -213,12 +213,12 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
         assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
     }
 
     #[test]

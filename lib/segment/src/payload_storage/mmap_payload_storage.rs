@@ -210,9 +210,10 @@ impl PayloadStorage for MmapPayloadStorage {
     }
 
     #[cfg(test)]
-    fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
-        self.storage.write().wipe();
-        Ok(())
+    fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.write().clear().map_err(|err| {
+            OperationError::service_error(format!("Failed to clear mmap payload storage: {err}"))
+        })
     }
 
     fn flusher(&self) -> Flusher {

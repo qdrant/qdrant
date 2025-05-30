@@ -168,13 +168,13 @@ impl PayloadStorage for PayloadStorageEnum {
     }
 
     #[cfg(test)]
-    fn wipe(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+    fn clear_all(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.wipe(hw_counter),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.wipe(hw_counter),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.wipe(hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.wipe(hw_counter),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear_all(hw_counter),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.clear_all(hw_counter),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.clear_all(hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_all(hw_counter),
         }
     }
 
@@ -267,12 +267,12 @@ mod tests {
         let mut storage: PayloadStorageEnum = SimplePayloadStorage::open(db).unwrap().into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
         assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
         assert_eq!(storage.get(100, &hw_counter).unwrap(), Default::default());
     }
 
@@ -287,12 +287,12 @@ mod tests {
             .into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
         assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
         assert_eq!(storage.get(100, &hw_counter).unwrap(), Default::default());
     }
 

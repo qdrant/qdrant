@@ -107,7 +107,7 @@ impl PayloadStorage for SimplePayloadStorage {
     }
 
     #[cfg(test)]
-    fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
+    fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
         self.payload = ahash::AHashMap::new();
         self.db_wrapper.recreate_column_family()
     }
@@ -156,12 +156,12 @@ mod tests {
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
         assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
-        storage.wipe(&hw_counter).unwrap();
+        storage.clear_all(&hw_counter).unwrap();
         assert_eq!(storage.get(100, &hw_counter).unwrap(), Default::default());
     }
 

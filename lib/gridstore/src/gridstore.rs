@@ -504,7 +504,7 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Wipe the storage, drop all pages and delete the base directory
-    pub fn wipe(&mut self) {
+    pub fn wipe(mut self) {
         // clear pages
         self.pages.clear();
         // deleted base directory
