@@ -16,7 +16,9 @@ use super::inverted_index::{InvertedIndex, ParsedQuery};
 use super::postings_iterator::intersect_compressed_postings_iterator;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
+use crate::index::field_index::full_text_index::immutable_inverted_index::{
+    ImmutableInvertedIndex,
+};
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
 
 mod mmap_postings;
@@ -145,6 +147,76 @@ impl MmapInvertedIndex {
         !is_deleted
     }
 
+    pub fn intersection_filter<'a>(
+        &'a self,
+        tokens: Vec<TokenId>,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        // in case of mmap immutable index, deleted points are still in the postings
+        let filter = move |idx| self.is_active(idx);
+
+        fn intersection<'a>(
+            postings: &'a MmapPostings,
+            tokens: Vec<TokenId>,
+            filter: impl Fn(u32) -> bool + 'a,
+            hw_counter: &'a HardwareCounterCell,
+        ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+            let postings_opt: Option<Vec<_>> = tokens
+                .iter()
+                .map(|&token_id| postings.get(token_id, hw_counter))
+                .collect();
+            let Some(posting_readers) = postings_opt else {
+                // There are unseen tokens -> no matches
+                return Box::new(std::iter::empty());
+            };
+
+            if posting_readers.is_empty() {
+                // Empty request -> no matches
+                return Box::new(std::iter::empty());
+            }
+
+            intersect_compressed_postings_iterator(posting_readers, filter)
+        }
+
+        intersection(&self.postings, tokens, filter, hw_counter)
+    }
+
+    fn check_intersection_match(
+        &self,
+        tokens: &[TokenId],
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        // check non-empty query
+        if tokens.is_empty() {
+            return false;
+        }
+
+        // check presence of the document
+        if self.values_is_empty(point_id) {
+            return false;
+        }
+
+        fn check_intersection(
+            postings: &MmapPostings,
+            tokens: &[TokenId],
+            point_id: PointOffsetType,
+            hw_counter: &HardwareCounterCell,
+        ) -> bool {
+            // Check that all tokens are in document
+            tokens.iter().all(|query_token| {
+                postings
+                    .get(*query_token, hw_counter)
+                    // unwrap safety: all tokens exist in the vocabulary, otherwise there'd be no query tokens
+                    .unwrap()
+                    .visitor()
+                    .contains(point_id)
+            })
+        }
+
+        check_intersection(&self.postings, tokens, point_id, hw_counter)
+    }
+
     pub fn files(&self) -> Vec<PathBuf> {
         vec![
             self.path.join(POSTINGS_FILE),
@@ -231,25 +303,9 @@ impl InvertedIndex for MmapInvertedIndex {
         query: ParsedQuery,
         hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let postings_opt: Option<Vec<_>> = query
-            .tokens
-            .iter()
-            .map(|&token_id| self.postings.get(token_id, hw_counter))
-            .collect();
-        let Some(posting_readers) = postings_opt else {
-            // There are unseen tokens -> no matches
-            return Box::new(std::iter::empty());
-        };
-
-        if posting_readers.is_empty() {
-            // Empty request -> no matches
-            return Box::new(std::iter::empty());
+        match query {
+            ParsedQuery::Tokens(tokens) => self.intersection_filter(tokens, hw_counter),
         }
-
-        // in case of mmap immutable index, deleted points are still in the postings
-        let filter = move |idx| self.is_active(idx);
-
-        intersect_compressed_postings_iterator(posting_readers, filter)
     }
 
     fn get_posting_len(
@@ -276,24 +332,11 @@ impl InvertedIndex for MmapInvertedIndex {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
-        // check non-empty query
-        if parsed_query.tokens.is_empty() {
-            return false;
+        match parsed_query {
+            ParsedQuery::Tokens(tokens) => {
+                self.check_intersection_match(tokens, point_id, hw_counter)
+            }
         }
-
-        // check presence of the document
-        if self.values_is_empty(point_id) {
-            return false;
-        }
-        // Check that all tokens are in document
-        parsed_query.tokens.iter().all(|query_token| {
-            self.postings
-                .get(*query_token, hw_counter)
-                // unwrap safety: all tokens exist in the vocabulary, otherwise there'd be no query tokens
-                .unwrap()
-                .visitor()
-                .contains(point_id)
-        })
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {

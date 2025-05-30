@@ -69,20 +69,26 @@ impl Document {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedQuery {
-    pub tokens: Vec<TokenId>,
+pub enum ParsedQuery {
+    /// All these tokens must be present in the document, regardless of order.
+    Tokens(Vec<TokenId>),
+    // Phrase(Vec<TokenId>),
 }
 
 impl ParsedQuery {
-    pub fn check_match(&self, tokens: &TokenSet) -> bool {
-        if self.tokens.is_empty() {
-            return false;
-        }
+    pub fn check_match(&self, tokenset: &TokenSet) -> bool {
+        match self {
+            ParsedQuery::Tokens(query_tokens) => {
+                if query_tokens.is_empty() {
+                    return false;
+                }
 
-        // Check that all tokens are in document
-        self.tokens
-            .iter()
-            .all(|query_token| tokens.contains(query_token))
+                // Check that all tokens are in document
+                query_tokens
+                    .iter()
+                    .all(|query_token| tokenset.contains(query_token))
+            }
+        }
     }
 }
 
@@ -146,10 +152,22 @@ pub trait InvertedIndex {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
+        match query {
+            ParsedQuery::Tokens(tokens) => {
+                self.estimate_intersection_cardinality(tokens, condition, hw_counter)
+            }
+        }
+    }
+
+    fn estimate_intersection_cardinality(
+        &self,
+        tokens: &[TokenId],
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
         let points_count = self.points_count();
 
-        let posting_lengths: Option<Vec<usize>> = query
-            .tokens
+        let posting_lengths: Option<Vec<usize>> = tokens
             .iter()
             .map(|&vocab_idx| self.get_posting_len(vocab_idx, hw_counter))
             .collect();
@@ -277,7 +295,7 @@ mod tests {
             .into_iter()
             .map(token_to_id)
             .collect::<Option<Vec<_>>>()?;
-        Some(ParsedQuery { tokens })
+        Some(ParsedQuery::Tokens(tokens))
     }
 
     fn mutable_inverted_index(indexed_count: u32, deleted_count: u32) -> MutableInvertedIndex {
