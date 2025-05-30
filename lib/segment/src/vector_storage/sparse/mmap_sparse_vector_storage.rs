@@ -50,8 +50,6 @@ impl MmapSparseVectorStorage {
     }
 
     fn open(path: &Path) -> OperationResult<Self> {
-        let path = path.to_path_buf();
-
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
         let storage = Gridstore::open(storage_dir).map_err(|err| {

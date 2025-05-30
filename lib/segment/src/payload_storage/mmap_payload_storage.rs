@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -32,7 +32,7 @@ pub struct MmapPayloadStorage {
 }
 
 impl MmapPayloadStorage {
-    pub fn open_or_create(path: &Path) -> OperationResult<Self> {
+    pub fn open_or_create(path: PathBuf) -> OperationResult<Self> {
         let path = path.join(STORAGE_PATH);
         if path.exists() {
             Self::open(path)
