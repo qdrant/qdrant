@@ -189,6 +189,12 @@ impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default> Nume
         }
     }
 
+    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
+        Ok(NumericIndexInner::Mutable(
+            MutableNumericIndex::open_gridstore(dir)?,
+        ))
+    }
+
     pub fn load(&mut self) -> OperationResult<bool> {
         match self {
             NumericIndexInner::Mutable(index) => index.load(),
@@ -490,6 +496,13 @@ impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P> N
         })
     }
 
+    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
+        Ok(Self {
+            inner: NumericIndexInner::new_gridstore(dir)?,
+            _phantom: PhantomData,
+        })
+    }
+
     pub fn builder_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> NumericIndexBuilder<T, P>
     where
         Self: ValueIndexer<ValueType = P>,
@@ -522,6 +535,13 @@ impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P> N
             is_on_disk,
             _phantom: PhantomData,
         }
+    }
+
+    pub fn builder_gridstore(dir: PathBuf) -> NumericIndexGridstoreBuilder<T, P>
+    where
+        Self: ValueIndexer<ValueType = P>,
+    {
+        NumericIndexGridstoreBuilder(Self::new_gridstore(dir).unwrap())
     }
 
     pub fn inner(&self) -> &NumericIndexInner<T> {
@@ -688,6 +708,43 @@ where
             inner: NumericIndexInner::Mmap(inner),
             _phantom: PhantomData,
         })
+    }
+}
+
+pub struct NumericIndexGridstoreBuilder<
+    T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default,
+    P,
+>(NumericIndex<T, P>)
+where
+    NumericIndex<T, P>: ValueIndexer<ValueType = P>;
+
+impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P>
+    FieldIndexBuilderTrait for NumericIndexGridstoreBuilder<T, P>
+where
+    NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+{
+    type FieldIndexType = NumericIndex<T, P>;
+
+    fn init(&mut self) -> OperationResult<()> {
+        match &mut self.0.inner {
+            NumericIndexInner::Mutable(index) => index.clear(),
+            NumericIndexInner::Immutable(_) => unreachable!(),
+            NumericIndexInner::Mmap(_) => unreachable!(),
+        }
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.0.add_point(id, payload, hw_counter)
+    }
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        self.0.inner.flusher()()?;
+        Ok(self.0)
     }
 }
 
