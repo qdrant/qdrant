@@ -448,22 +448,27 @@ impl<T: Encodable + Numericable + Blob + Send + Sync + Default> MutableNumericIn
     pub fn total_unique_values_count(&self) -> usize {
         self.in_memory_index.total_unique_values_count()
     }
+
     #[inline]
     pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
         self.in_memory_index.check_values_any(idx, check_fn)
     }
+
     #[inline]
     pub fn get_points_count(&self) -> usize {
         self.in_memory_index.get_points_count()
     }
+
     #[inline]
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         self.in_memory_index.get_values(idx)
     }
+
     #[inline]
     pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
         self.in_memory_index.values_count(idx)
     }
+
     #[inline]
     pub fn values_range(
         &self,
@@ -472,6 +477,7 @@ impl<T: Encodable + Numericable + Blob + Send + Sync + Default> MutableNumericIn
     ) -> impl Iterator<Item = PointOffsetType> {
         self.in_memory_index.values_range(start_bound, end_bound)
     }
+
     #[inline]
     pub fn orderable_values_range(
         &self,
@@ -481,10 +487,12 @@ impl<T: Encodable + Numericable + Blob + Send + Sync + Default> MutableNumericIn
         self.in_memory_index
             .orderable_values_range(start_bound, end_bound)
     }
+
     #[inline]
     pub fn get_histogram(&self) -> &Histogram<T> {
         self.in_memory_index.get_histogram()
     }
+
     #[inline]
     pub fn get_max_values_per_point(&self) -> usize {
         self.in_memory_index.get_max_values_per_point()
