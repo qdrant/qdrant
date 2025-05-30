@@ -504,6 +504,9 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Wipe the storage, drop all pages and delete the base directory
+    ///
+    /// Takes ownership because this function leaves Gridstore in an inconsistent state which does
+    /// not allow further usage. Use [`clear`] instead to clear and reuse the storage.
     pub fn wipe(mut self) {
         // clear pages
         self.pages.clear();
