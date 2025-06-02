@@ -25,6 +25,17 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &mut self.vocab
     }
 
+    fn index_tokens(
+        &mut self,
+        _idx: PointOffsetType,
+        _tokens: super::inverted_index::TokenSet,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        Err(OperationError::service_error(
+            "Can't add values to immutable text index",
+        ))
+    }
+
     fn index_document(
         &mut self,
         _idx: PointOffsetType,
@@ -36,7 +47,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         ))
     }
 
-    fn remove_document(&mut self, idx: PointOffsetType) -> bool {
+    fn remove(&mut self, idx: PointOffsetType) -> bool {
         if self.values_is_empty(idx) {
             return false; // Already removed or never actually existed
         }
@@ -176,7 +187,7 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             postings,
             vocab,
             point_to_tokens_count: index
-                .point_to_docs
+                .point_to_tokens
                 .iter()
                 .map(|doc| doc.as_ref().map(|doc| doc.len()))
                 .collect(),
