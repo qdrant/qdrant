@@ -17,7 +17,7 @@ impl PostingValue for Positions {
 
 impl UnsizedValue for Positions {
     fn write_len(&self) -> usize {
-        self.0.len() * std::mem::size_of::<u32>()
+        self.0.as_bytes().len()
     }
 
     fn write_to(&self, dst: &mut [u8]) {

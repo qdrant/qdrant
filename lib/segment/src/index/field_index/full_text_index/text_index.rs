@@ -677,10 +677,16 @@ mod tests {
     }
 
     #[cfg(feature = "testing")]
-    fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Arc<RwLock<DB>>) {
+    fn create_builder(
+        index_type: IndexType,
+        phrase_matching: bool,
+    ) -> (IndexBuilder, TempDir, Arc<RwLock<DB>>) {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-        let config = TextIndexParams::default();
+        let config = TextIndexParams {
+            phrase_matching: Some(phrase_matching),
+            ..TextIndexParams::default()
+        };
         let mut builder = match index_type {
             IndexType::Mutable => IndexBuilder::Mutable(FullTextIndex::builder_rocksdb(
                 db.clone(),
@@ -721,10 +727,11 @@ mod tests {
         num_keywords: usize,
         keyword_len: usize,
         index_type: IndexType,
+        phrase_matching: bool,
         deleted: bool,
     ) -> (FullTextIndex, TempDir, Arc<RwLock<DB>>) {
         let mut rnd = StdRng::seed_from_u64(42);
-        let (mut builder, temp_dir, db) = create_builder(index_type);
+        let (mut builder, temp_dir, db) = create_builder(index_type, phrase_matching);
 
         for idx in 0..num_points {
             let keywords = random_full_text_payload(
@@ -791,9 +798,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(false)]
-    #[case(true)]
-    fn test_congruence(#[case] deleted: bool) {
+    fn test_congruence(
+        #[values(false, true)] deleted: bool,
+        #[values(false, true)] phrase_matching: bool,
+    ) {
         use std::collections::HashSet;
 
         use crate::json_path::JsonPath;
@@ -813,6 +821,7 @@ mod tests {
                     KEYWORD_COUNT,
                     KEYWORD_LEN,
                     index_type,
+                    phrase_matching,
                     deleted,
                 );
                 ((index, index_type), (temp_dir, db))

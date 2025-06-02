@@ -88,9 +88,10 @@ pub struct FullTextMmapIndexBuilder {
 
 impl FullTextMmapIndexBuilder {
     pub fn new(path: PathBuf, config: TextIndexParams, is_on_disk: bool) -> Self {
+        let with_positions = config.phrase_matching == Some(true);
         Self {
             path,
-            mutable_index: MutableInvertedIndex::default(),
+            mutable_index: MutableInvertedIndex::new(with_positions),
             config,
             is_on_disk,
         }

@@ -44,8 +44,9 @@ impl MutableFullTextIndex {
         db_wrapper: DatabaseColumnScheduledDeleteWrapper,
         config: TextIndexParams,
     ) -> Self {
+        let with_positions = config.phrase_matching == Some(true);
         Self {
-            inverted_index: Default::default(),
+            inverted_index: MutableInvertedIndex::new(with_positions),
             config,
             storage: Storage::RocksDb(db_wrapper),
         }
@@ -60,8 +61,11 @@ impl MutableFullTextIndex {
                 "failed to open mutable full text index on gridstore: {err}"
             ))
         })?;
+
+        let phrase_matching = config.phrase_matching.unwrap_or_default();
+
         Ok(Self {
-            inverted_index: Default::default(),
+            inverted_index: MutableInvertedIndex::new(phrase_matching),
             config,
             storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
         })
@@ -234,7 +238,9 @@ impl MutableFullTextIndex {
 
         let tokens = self.inverted_index.register_tokens(&str_tokens);
 
-        if self.inverted_index.point_to_doc.is_some() {
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
+
+        if phrase_matching {
             let document = Document::new(tokens.clone());
             self.inverted_index
                 .index_document(idx, document, hw_counter)?;
@@ -245,8 +251,6 @@ impl MutableFullTextIndex {
             .index_tokens(idx, token_set, hw_counter)?;
 
         let db_idx = FullTextIndex::store_key(idx);
-
-        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
 
         let db_document = if phrase_matching {
             FullTextIndex::serialize_document(str_tokens)?

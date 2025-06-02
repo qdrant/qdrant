@@ -109,11 +109,7 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
             .windows(2)
             .map(|w| w[0].get() as usize..w[1].get() as usize)
             // the last one is not included in windows, but goes until the end
-            .chain(
-                last_offset
-                    .iter()
-                    .map(|&last| last.get() as usize..current_offset as usize),
-            );
+            .chain(last_offset.map(|&last| last.get() as usize..current_offset as usize));
 
         let mut var_sized_data = vec![0; current_offset as usize];
         for (value, range) in values.iter().zip(ranges) {
