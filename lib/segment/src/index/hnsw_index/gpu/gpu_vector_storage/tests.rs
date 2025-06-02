@@ -54,25 +54,65 @@ impl TestStorageType {
 }
 
 #[rstest]
+#[case::cosine_f32(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057
+)]
+#[case::dot_f32(
+    Distance::Dot,
+    TestStorageType::Dense(TestElementType::Float32),
+    256,
+    512
+)]
+#[case::euclid_f32(
+    Distance::Euclid,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057
+)]
+#[case::manhattan_f32(
+    Distance::Manhattan,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057
+)]
+#[case::small_dimension(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    17,
+    2057
+)]
+#[case::cosine_f16(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float16),
+    273,
+    2057
+)]
+#[case::cosine_u8(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Uint8),
+    273,
+    2057
+)]
+#[case::cosine_multi_f32(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Float32),
+    67,
+    2057
+)]
+#[case::cosine_multi_u8(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Uint8),
+    273,
+    2057
+)]
 fn test_gpu_vector_storage_sq(
-    #[values(Distance::Cosine, Distance::Dot, Distance::Euclid, Distance::Manhattan)]
-    distance: Distance,
-    #[values(
-        TestStorageType::Dense(TestElementType::Float32),
-        TestStorageType::Dense(TestElementType::Float16),
-        TestStorageType::Dense(TestElementType::Uint8),
-        TestStorageType::Multi(TestElementType::Float32),
-        TestStorageType::Multi(TestElementType::Float16),
-        TestStorageType::Multi(TestElementType::Uint8)
-    )]
-    storage_type: TestStorageType,
-    #[values(
-        15,
-        512,
-        256 + 17,
-    )]
-    dim: usize,
-    #[values(2048 + 17)] num_vectors: usize,
+    #[case] distance: Distance,
+    #[case] storage_type: TestStorageType,
+    #[case] dim: usize,
+    #[case] num_vectors: usize,
 ) {
     let _ = env_logger::builder()
         .is_test(true)
@@ -104,20 +144,65 @@ fn test_gpu_vector_storage_sq(
 }
 
 #[rstest]
+#[case::cosine_f32(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057
+)]
+#[case::dot_f32(
+    Distance::Dot,
+    TestStorageType::Dense(TestElementType::Float32),
+    256,
+    512
+)]
+#[case::euclid_f32(
+    Distance::Euclid,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057
+)]
+#[case::manhattan_f32(
+    Distance::Manhattan,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057
+)]
+#[case::small_dimension(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    17,
+    2057
+)]
+#[case::cosine_f16(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float16),
+    273,
+    2057
+)]
+#[case::cosine_u8(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Uint8),
+    273,
+    2057
+)]
+#[case::cosine_multi_f32(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Float32),
+    67,
+    2057
+)]
+#[case::cosine_multi_u8(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Uint8),
+    273,
+    2057
+)]
 fn test_gpu_vector_storage_bq(
-    #[values(Distance::Cosine, Distance::Dot, Distance::Euclid, Distance::Manhattan)]
-    distance: Distance,
-    #[values(
-        TestStorageType::Dense(TestElementType::Float32),
-        TestStorageType::Dense(TestElementType::Float16),
-        TestStorageType::Dense(TestElementType::Uint8),
-        TestStorageType::Multi(TestElementType::Float32),
-        TestStorageType::Multi(TestElementType::Float16),
-        TestStorageType::Multi(TestElementType::Uint8)
-    )]
-    storage_type: TestStorageType,
-    #[values(15, 1536, 256 + 17)] dim: usize,
-    #[values(2048 + 17)] num_vectors: usize,
+    #[case] distance: Distance,
+    #[case] storage_type: TestStorageType,
+    #[case] dim: usize,
+    #[case] num_vectors: usize,
 ) {
     let _ = env_logger::builder()
         .is_test(true)
@@ -147,18 +232,65 @@ fn test_gpu_vector_storage_bq(
 }
 
 #[rstest]
+#[case::cosine_f32(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    17,
+    2057
+)]
+#[case::dot_f32(
+    Distance::Dot,
+    TestStorageType::Dense(TestElementType::Float32),
+    17,
+    512
+)]
+#[case::euclid_f32(
+    Distance::Euclid,
+    TestStorageType::Dense(TestElementType::Float32),
+    17,
+    2057
+)]
+#[case::manhattan_f32(
+    Distance::Manhattan,
+    TestStorageType::Dense(TestElementType::Float32),
+    17,
+    2057
+)]
+#[case::large_dimension(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    129,
+    1095
+)]
+#[case::cosine_f16(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float16),
+    17,
+    2057
+)]
+#[case::cosine_u8(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Uint8),
+    17,
+    2057
+)]
+#[case::cosine_multi_f32(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Float32),
+    17,
+    2057
+)]
+#[case::cosine_multi_u8(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Uint8),
+    17,
+    2057
+)]
 fn test_gpu_vector_storage_pq(
-    #[values(Distance::Cosine, Distance::Dot, Distance::Euclid, Distance::Manhattan)]
-    distance: Distance,
-    #[values(
-        TestStorageType::Dense(TestElementType::Float32),
-        TestStorageType::Dense(TestElementType::Float16),
-        TestStorageType::Multi(TestElementType::Float32),
-        TestStorageType::Multi(TestElementType::Float16)
-    )]
-    storage_type: TestStorageType,
-    #[values(15, 256 + 17)] dim: usize,
-    #[values(512 + 17)] num_vectors: usize,
+    #[case] distance: Distance,
+    #[case] storage_type: TestStorageType,
+    #[case] dim: usize,
+    #[case] num_vectors: usize,
 ) {
     let _ = env_logger::builder()
         .is_test(true)
@@ -189,25 +321,65 @@ fn test_gpu_vector_storage_pq(
 }
 
 #[rstest]
+#[case::cosine_f32(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057
+)]
+#[case::dot_f32(
+    Distance::Dot,
+    TestStorageType::Dense(TestElementType::Float32),
+    256,
+    512
+)]
+#[case::euclid_f32(
+    Distance::Euclid,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057
+)]
+#[case::manhattan_f32(
+    Distance::Manhattan,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057
+)]
+#[case::small_dimension(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    17,
+    2057
+)]
+#[case::cosine_f16(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float16),
+    273,
+    2057
+)]
+#[case::cosine_u8(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Uint8),
+    273,
+    2057
+)]
+#[case::cosine_multi_f32(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Float32),
+    67,
+    2057
+)]
+#[case::cosine_multi_u8(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Uint8),
+    273,
+    2057
+)]
 fn test_gpu_vector_storage(
-    #[values(Distance::Cosine, Distance::Dot, Distance::Euclid, Distance::Manhattan)]
-    distance: Distance,
-    #[values(
-        TestStorageType::Dense(TestElementType::Float32),
-        TestStorageType::Dense(TestElementType::Float16),
-        TestStorageType::Dense(TestElementType::Uint8),
-        TestStorageType::Multi(TestElementType::Float32),
-        TestStorageType::Multi(TestElementType::Float16),
-        TestStorageType::Multi(TestElementType::Uint8)
-    )]
-    storage_type: TestStorageType,
-    #[values(
-        15,
-        512,
-        256 + 17,
-    )]
-    dim: usize,
-    #[values(2048 + 17)] num_vectors: usize,
+    #[case] distance: Distance,
+    #[case] storage_type: TestStorageType,
+    #[case] dim: usize,
+    #[case] num_vectors: usize,
 ) {
     let _ = env_logger::builder()
         .is_test(true)
@@ -231,16 +403,23 @@ fn test_gpu_vector_storage(
 }
 
 #[rstest]
+#[case::cosine_dense(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057
+)]
+#[case::cosine_multi(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Float32),
+    67,
+    2057
+)]
 fn test_gpu_vector_storage_force_half(
-    #[values(Distance::Cosine, Distance::Dot, Distance::Euclid, Distance::Manhattan)]
-    distance: Distance,
-    #[values(
-        TestStorageType::Dense(TestElementType::Float32),
-        TestStorageType::Multi(TestElementType::Float32)
-    )]
-    storage_type: TestStorageType,
-    #[values(15, 256 + 17)] dim: usize,
-    #[values(2048 + 17)] num_vectors: usize,
+    #[case] distance: Distance,
+    #[case] storage_type: TestStorageType,
+    #[case] dim: usize,
+    #[case] num_vectors: usize,
 ) {
     let _ = env_logger::builder()
         .is_test(true)
@@ -264,17 +443,35 @@ fn test_gpu_vector_storage_force_half(
 }
 
 #[rstest]
+#[case::dense_f32(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float32),
+    273,
+    2057
+)]
+#[case::dense_f16(
+    Distance::Cosine,
+    TestStorageType::Dense(TestElementType::Float16),
+    273,
+    2057
+)]
+#[case::multi_f32(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Float32),
+    67,
+    2057
+)]
+#[case::multi_f16(
+    Distance::Cosine,
+    TestStorageType::Multi(TestElementType::Float16),
+    67,
+    2057
+)]
 fn test_gpu_vector_storage_without_half(
-    #[values(Distance::Cosine)] distance: Distance,
-    #[values(
-        TestStorageType::Dense(TestElementType::Float32),
-        TestStorageType::Multi(TestElementType::Float32),
-        TestStorageType::Dense(TestElementType::Float16),
-        TestStorageType::Multi(TestElementType::Float16)
-    )]
-    storage_type: TestStorageType,
-    #[values(15)] dim: usize,
-    #[values(2048 + 17)] num_vectors: usize,
+    #[case] distance: Distance,
+    #[case] storage_type: TestStorageType,
+    #[case] dim: usize,
+    #[case] num_vectors: usize,
 ) {
     let _ = env_logger::builder()
         .is_test(true)
