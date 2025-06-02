@@ -70,6 +70,31 @@ impl MutableInvertedIndex {
     fn get_tokens(&self, idx: PointOffsetType) -> Option<&TokenSet> {
         self.point_to_tokens.get(idx as usize)?.as_ref()
     }
+
+    fn filter_has_subset(
+        &self,
+        tokens: TokenSet,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        let postings_opt: Option<Vec<_>> = tokens
+            .tokens()
+            .iter()
+            .map(|&vocab_idx| {
+                // if a ParsedQuery token was given an index, then it must exist in the vocabulary
+                // dictionary. Posting list entry can be None but it exists.
+
+                self.postings.get(vocab_idx as usize)
+            })
+            .collect();
+        let Some(postings) = postings_opt else {
+            // There are unseen tokens -> no matches
+            return Box::new(std::iter::empty());
+        };
+        if postings.is_empty() {
+            // Empty request -> no matches
+            return Box::new(std::iter::empty());
+        }
+        intersect_postings_iterator(postings)
+    }
 }
 
 impl InvertedIndex for MutableInvertedIndex {
@@ -179,25 +204,9 @@ impl InvertedIndex for MutableInvertedIndex {
         query: ParsedQuery,
         _hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let postings_opt: Option<Vec<_>> = query
-            .tokens
-            .iter()
-            .map(|&vocab_idx| {
-                // if a ParsedQuery token was given an index, then it must exist in the vocabulary
-                // dictionary. Posting list entry can be None but it exists.
-
-                self.postings.get(vocab_idx as usize)
-            })
-            .collect();
-        let Some(postings) = postings_opt else {
-            // There are unseen tokens -> no matches
-            return Box::new(std::iter::empty());
-        };
-        if postings.is_empty() {
-            // Empty request -> no matches
-            return Box::new(std::iter::empty());
+        match query {
+            ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens),
         }
-        intersect_postings_iterator(postings)
     }
 
     fn get_posting_len(&self, token_id: TokenId, _: &HardwareCounterCell) -> Option<usize> {
