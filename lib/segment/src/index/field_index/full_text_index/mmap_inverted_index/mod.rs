@@ -183,6 +183,17 @@ impl InvertedIndex for MmapInvertedIndex {
         unreachable!("MmapInvertedIndex does not support mutable operations")
     }
 
+    fn index_tokens(
+        &mut self,
+        _idx: PointOffsetType,
+        _tokens: super::inverted_index::TokenSet,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        Err(OperationError::service_error(
+            "Can't add values to mmap immutable text index",
+        ))
+    }
+
     fn index_document(
         &mut self,
         _idx: PointOffsetType,
@@ -194,7 +205,7 @@ impl InvertedIndex for MmapInvertedIndex {
         ))
     }
 
-    fn remove_document(&mut self, idx: PointOffsetType) -> bool {
+    fn remove(&mut self, idx: PointOffsetType) -> bool {
         let Some(is_deleted) = self.deleted_points.get(idx as usize) else {
             return false; // Never existed
         };
@@ -211,6 +222,7 @@ impl InvertedIndex for MmapInvertedIndex {
             // Only if the index is within bounds of `point_to_tokens_count`, we decrement the active points count.
             self.active_points_count -= 1;
         }
+
         true
     }
 
