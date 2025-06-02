@@ -19,16 +19,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use self::dispatcher::TocDispatcher;
-use crate::ConsensusOperations;
-use crate::content_manager::alias_mapping::AliasPersistence;
-use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
-use crate::content_manager::collections_ops::{Checker, Collections};
-use crate::content_manager::consensus::operation_sender::OperationSender;
-use crate::content_manager::errors::StorageError;
-use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::rbac::{Access, AccessRequirements, CollectionPass};
-use crate::types::StorageConfig;
 use api::rest::models::HardwareUsage;
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{
@@ -46,6 +36,17 @@ use dashmap::DashMap;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use tokio::runtime::{Handle, Runtime};
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
+
+use self::dispatcher::TocDispatcher;
+use crate::ConsensusOperations;
+use crate::content_manager::alias_mapping::AliasPersistence;
+use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
+use crate::content_manager::collections_ops::{Checker, Collections};
+use crate::content_manager::consensus::operation_sender::OperationSender;
+use crate::content_manager::errors::StorageError;
+use crate::content_manager::shard_distribution::ShardDistributionProposal;
+use crate::rbac::{Access, AccessRequirements, CollectionPass};
+use crate::types::StorageConfig;
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";

@@ -4,10 +4,10 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use collection::common::snapshots_manager::SnapshotsConfig;
-use collection::config::{default_on_disk_payload, WalConfig};
+use collection::config::{WalConfig, default_on_disk_payload};
 use collection::operations::config_diff::OptimizersConfigDiff;
 use collection::operations::shared_storage_config::{
-    SharedStorageConfig, DEFAULT_IO_SHARD_TRANSFER_LIMIT, DEFAULT_SNAPSHOTS_PATH,
+    DEFAULT_IO_SHARD_TRANSFER_LIMIT, DEFAULT_SNAPSHOTS_PATH, SharedStorageConfig,
 };
 use collection::operations::types::{NodeType, PeerMetadata};
 use collection::optimizers_builder::OptimizersConfig;
@@ -15,12 +15,12 @@ use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
 use memory::madvise;
 use schemars::JsonSchema;
-use segment::common::anonymize::{anonymize_collection_with_u64_hashable_key, Anonymize};
+use segment::common::anonymize::{Anonymize, anonymize_collection_with_u64_hashable_key};
+use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
 use validator::Validate;
-use segment::data_types::collection_defaults::CollectionConfigDefaults;
 
 pub type PeerAddressById = HashMap<PeerId, Uri>;
 pub type PeerMetadataById = HashMap<PeerId, PeerMetadata>;

@@ -1,6 +1,7 @@
-use crate::types::{QuantizationConfig, StrictModeConfig, VectorsConfigDefaults};
 use serde::Deserialize;
 use validator::Validate;
+
+use crate::types::{QuantizationConfig, StrictModeConfig, VectorsConfigDefaults};
 
 /// Collection default values
 #[derive(Debug, Deserialize, Validate, Clone, PartialEq, Eq)]

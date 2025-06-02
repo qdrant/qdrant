@@ -1,4 +1,5 @@
 pub mod build_index_result;
+pub mod collection_defaults;
 pub mod facets;
 pub mod groups;
 pub mod index;
@@ -9,4 +10,3 @@ pub mod query_context;
 pub mod segment_manifest;
 pub mod tiny_map;
 pub mod vectors;
-pub mod collection_defaults;
