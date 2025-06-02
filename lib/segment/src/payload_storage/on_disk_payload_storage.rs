@@ -173,7 +173,7 @@ impl PayloadStorage for OnDiskPayloadStorage {
     }
 
     #[cfg(test)]
-    fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
+    fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
         self.db_wrapper.recreate_column_family()
     }
 
