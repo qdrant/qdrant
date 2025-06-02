@@ -13,6 +13,8 @@ use crate::{
     VectorParameters,
 };
 
+const BITS_PER_ELEMENT_COUNT: usize = 2;
+
 pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
@@ -26,6 +28,8 @@ pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
 #[derive(Serialize, Deserialize)]
 struct Metadata {
     vector_parameters: VectorParameters,
+    bits_per_element_count: usize,
+    distr: Vec<(f32, f32)>,
 }
 
 pub trait BitsStoreType:
@@ -43,7 +47,7 @@ pub trait BitsStoreType:
     fn xor_popcnt(v1: &[Self], v2: &[Self]) -> usize;
 
     /// Estimates how many `StorageType` elements are needed to store `size` bits
-    fn get_storage_size(size: usize) -> usize;
+    fn get_storage_size(size: usize, bits_per_element_count: usize) -> usize;
 }
 
 impl BitsStoreType for u8 {
@@ -101,7 +105,8 @@ impl BitsStoreType for u8 {
         result
     }
 
-    fn get_storage_size(size: usize) -> usize {
+    fn get_storage_size(size: usize, bits_per_element_count: usize) -> usize {
+        let size = size * bits_per_element_count;
         let bytes_count = if size > 128 {
             std::mem::size_of::<u128>()
         } else if size > 64 {
@@ -154,7 +159,8 @@ impl BitsStoreType for u128 {
         result
     }
 
-    fn get_storage_size(size: usize) -> usize {
+    fn get_storage_size(size: usize, bits_per_element_count: usize) -> usize {
+        let size = size * bits_per_element_count;
         let bits_count = 8 * std::mem::size_of::<Self>();
         let mut result = size / bits_count;
         if size % bits_count != 0 {
@@ -171,6 +177,42 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         &self.encoded_vectors
     }
 
+    fn find_distr<'a>(
+        orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+    ) -> Vec<(f32, f32)> {
+        let dimension = orig_data.clone().next().map_or(0, |v| v.as_ref().len());
+        let count = orig_data.clone().count();
+        if count == 0 || dimension == 0 {
+            return vec![];
+        }
+
+        let mut means = vec![0.0; dimension];
+        for vector in orig_data.clone() {
+            for (i, &value) in vector.as_ref().iter().enumerate() {
+                means[i] += value / (count as f32);
+            }
+        }
+
+        let mut sds = vec![0.0; dimension];
+        for vector in orig_data {
+            for (i, &value) in vector.as_ref().iter().enumerate() {
+                let diff = value - means[i];
+                sds[i] += diff * diff / (count as f32);
+            }
+        }
+        sds.iter_mut().for_each(|sd| {
+            // TODO: handle zero case
+            *sd = sd.sqrt();
+        });
+
+        let distr: Vec<(f32, f32)> = means
+            .into_iter()
+            .zip(sds.into_iter())
+            .map(|(mean, sd)| (mean, sd.max(1e-6))) // Avoid division by zero
+            .collect();
+        distr
+    }
+
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<TStorage>,
@@ -179,12 +221,21 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
 
+        let bits_per_element_count = BITS_PER_ELEMENT_COUNT;
+
+        let distr: Vec<(f32, f32)> = if bits_per_element_count > 1 {
+            Self::find_distr(orig_data.clone())
+        } else {
+            vec![]
+        };
+
         for vector in orig_data {
             if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
             }
 
-            let encoded_vector = Self::encode_vector(vector.as_ref());
+            let encoded_vector =
+                Self::encode_vector(vector.as_ref(), bits_per_element_count, &distr);
             let encoded_vector_slice = encoded_vector.encoded_vector.as_slice();
             let bytes = transmute_to_u8_slice(encoded_vector_slice);
             storage_builder.push_vector_data(bytes);
@@ -194,22 +245,47 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             encoded_vectors: storage_builder.build(),
             metadata: Metadata {
                 vector_parameters: vector_parameters.clone(),
+                bits_per_element_count,
+                distr,
             },
             bits_store_type: PhantomData,
         })
     }
 
-    fn encode_vector(vector: &[f32]) -> EncodedBinVector<TBitsStoreType> {
+    fn encode_vector(
+        vector: &[f32],
+        bits_per_element_count: usize,
+        distr: &[(f32, f32)],
+    ) -> EncodedBinVector<TBitsStoreType> {
         let mut encoded_vector =
-            vec![Default::default(); TBitsStoreType::get_storage_size(vector.len())];
+            vec![
+                Default::default();
+                TBitsStoreType::get_storage_size(vector.len(), bits_per_element_count)
+            ];
 
         let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
         for (i, &v) in vector.iter().enumerate() {
-            // flag is true if the value is positive
-            // It's expected that the vector value is in range [-1; 1]
-            if v > 0.0 {
-                encoded_vector[i / bits_count] |= one << (i % bits_count);
+            if bits_per_element_count == 1 {
+                // flag is true if the value is positive
+                // It's expected that the vector value is in range [-1; 1]
+                if v > 0.0 {
+                    encoded_vector[i / bits_count] |= one << (i % bits_count);
+                }
+            } else {
+                let (mean, sd) = distr[i];
+                let ranges = bits_per_element_count + 1;
+                let v_z = (v - mean) / sd;
+                let index = (v_z + 2.0) / (4.0 / ranges as f32);
+
+                let bit_position = i * bits_per_element_count;
+                if index >= 1.0 {
+                    let count_ones = (index.floor() as usize).min(bits_per_element_count);
+                    for j in 0..count_ones {
+                        encoded_vector[(bit_position + j) / bits_count] |=
+                            one << ((bit_position + j) % bits_count);
+                    }
+                }
             }
         }
 
@@ -217,7 +293,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     }
 
     pub fn get_quantized_vector_size_from_params(vector_parameters: &VectorParameters) -> usize {
-        TBitsStoreType::get_storage_size(vector_parameters.dim)
+        TBitsStoreType::get_storage_size(vector_parameters.dim, BITS_PER_ELEMENT_COUNT)
             * std::mem::size_of::<TBitsStoreType>()
     }
 
@@ -312,7 +388,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
     fn encode_query(&self, query: &[f32]) -> EncodedBinVector<TBitsStoreType> {
         debug_assert!(query.len() == self.metadata.vector_parameters.dim);
-        Self::encode_vector(query)
+        Self::encode_vector(
+            query,
+            self.metadata.bits_per_element_count,
+            &self.metadata.distr,
+        )
     }
 
     fn score_point(
