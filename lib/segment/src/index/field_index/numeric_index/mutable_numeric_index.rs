@@ -22,14 +22,20 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::mmap_point_to_values::MmapValue;
 
-const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
-    // Largest numeric value used
-    block_size_bytes: Some(size_of::<u128>()),
-    // Compressing numeric values is unreasonable
-    compression: Some(gridstore::config::Compression::None),
-    page_size_bytes: Some(4 * 1024 * 1024), // 4 MiB = 16 * 8192 * 32
-    region_size_blocks: None,
-};
+/// Default page size used in Gridstore
+pub const DEFAULT_PAGE_SIZE_BYTES: usize = 4 * 1024 * 1024; // 4 MiB = 16 * 8192 * 32
+
+/// Default options for Gridstore storage
+const fn default_gridstore_options<T: Sized>() -> StorageOptions {
+    StorageOptions {
+        // Size of numeric values in index
+        block_size_bytes: Some(size_of::<T>()),
+        // Compressing numeric values is unreasonable
+        compression: Some(gridstore::config::Compression::None),
+        page_size_bytes: Some(DEFAULT_PAGE_SIZE_BYTES), // 4 MiB = 16 * 8192 * 32
+        region_size_blocks: None,
+    }
+}
 
 pub struct MutableNumericIndex<T: Encodable + Numericable + Blob> {
     // Backing storage, source of state, persists deletions
@@ -248,7 +254,8 @@ impl<T: Encodable + Numericable + Blob + Send + Sync + Default> MutableNumericIn
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
     pub fn open_gridstore(path: PathBuf) -> OperationResult<Self> {
-        let store = Gridstore::open_or_create(path, GRIDSTORE_OPTIONS).map_err(|err| {
+        let options = default_gridstore_options::<T>();
+        let store = Gridstore::open_or_create(path, options).map_err(|err| {
             OperationError::service_error(format!(
                 "failed to open mutable numeric index on gridstore: {err}"
             ))
