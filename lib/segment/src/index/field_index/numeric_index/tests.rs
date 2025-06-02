@@ -14,6 +14,7 @@ const COLUMN_NAME: &str = "test";
 #[derive(Clone, Copy)]
 enum IndexType {
     Mutable,
+    MutableGridstore,
     Immutable,
     Mmap,
     RamMmap,
@@ -21,6 +22,7 @@ enum IndexType {
 
 enum IndexBuilder {
     Mutable(NumericIndexBuilder<FloatPayloadType, FloatPayloadType>),
+    MutableGridstore(NumericIndexGridstoreBuilder<FloatPayloadType, FloatPayloadType>),
     Immutable(NumericIndexImmutableBuilder<FloatPayloadType, FloatPayloadType>),
     Mmap(NumericIndexMmapBuilder<FloatPayloadType, FloatPayloadType>),
 }
@@ -29,6 +31,7 @@ impl IndexBuilder {
     fn finalize(self) -> OperationResult<NumericIndex<FloatPayloadType, FloatPayloadType>> {
         match self {
             IndexBuilder::Mutable(builder) => builder.finalize(),
+            IndexBuilder::MutableGridstore(builder) => builder.finalize(),
             IndexBuilder::Immutable(builder) => builder.finalize(),
             IndexBuilder::Mmap(builder) => builder.finalize(),
         }
@@ -42,6 +45,7 @@ impl IndexBuilder {
     ) -> OperationResult<()> {
         match self {
             IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
+            IndexBuilder::MutableGridstore(builder) => builder.add_point(id, payload, hw_counter),
             IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
             IndexBuilder::Mmap(builder) => builder.add_point(id, payload, hw_counter),
         }
@@ -59,6 +63,12 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
             FloatPayloadType,
             FloatPayloadType,
         >::builder_rocksdb(db, COLUMN_NAME)),
+        IndexType::MutableGridstore => IndexBuilder::MutableGridstore(NumericIndex::<
+            FloatPayloadType,
+            FloatPayloadType,
+        >::builder_gridstore(
+            temp_dir.path().to_path_buf(),
+        )),
         IndexType::Immutable => IndexBuilder::Immutable(NumericIndex::<
             FloatPayloadType,
             FloatPayloadType,
@@ -74,6 +84,7 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
     };
     match &mut builder {
         IndexBuilder::Mutable(builder) => builder.init().unwrap(),
+        IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
         IndexBuilder::Immutable(builder) => builder.init().unwrap(),
         IndexBuilder::Mmap(builder) => builder.init().unwrap(),
     }
@@ -165,6 +176,7 @@ fn test_set_empty_payload() {
 
 #[rstest]
 #[case(IndexType::Mutable)]
+#[case(IndexType::MutableGridstore)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
@@ -239,6 +251,7 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
 
 #[rstest]
 #[case(IndexType::Mutable)]
+#[case(IndexType::MutableGridstore)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
@@ -279,6 +292,7 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
 
 #[rstest]
 #[case(IndexType::Mutable)]
+#[case(IndexType::MutableGridstore)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
@@ -317,6 +331,7 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
 
 #[rstest]
 #[case(IndexType::Mutable)]
+#[case(IndexType::MutableGridstore)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
@@ -347,12 +362,7 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
     let index = index_builder.finalize().unwrap();
 
     let db = match index.inner() {
-        NumericIndexInner::Mutable(index) => Some(
-            index
-                .db_wrapper()
-                .expect("expect RocksDB based index")
-                .get_database(),
-        ),
+        NumericIndexInner::Mutable(index) => index.db_wrapper().map(|db| db.get_database()),
         NumericIndexInner::Immutable(index) => index.db_wrapper().map(|db| db.get_database()),
         NumericIndexInner::Mmap(_) => None,
     };
@@ -361,6 +371,10 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
     let mut new_index = match index_type {
         IndexType::Mutable => {
             NumericIndexInner::<FloatPayloadType>::new_rocksdb(db.unwrap(), COLUMN_NAME, false)
+        }
+        IndexType::MutableGridstore => {
+            NumericIndexInner::<FloatPayloadType>::new_gridstore(temp_dir.path().to_path_buf())
+                .unwrap()
         }
         IndexType::Immutable => {
             NumericIndexInner::<FloatPayloadType>::new_rocksdb(db.unwrap(), COLUMN_NAME, true)
