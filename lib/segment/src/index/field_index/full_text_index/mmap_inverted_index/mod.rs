@@ -164,6 +164,7 @@ impl MmapInvertedIndex {
                 .iter()
                 .map(|&token_id| postings.get(token_id, hw_counter))
                 .collect();
+
             let Some(posting_readers) = postings_opt else {
                 // There are unseen tokens -> no matches
                 return Box::new(std::iter::empty());

@@ -37,18 +37,20 @@ impl ImmutableInvertedIndex {
             let postings_opt: Option<Vec<_>> = tokens
                 .tokens()
                 .iter()
-                .map(|&token_id| postings.get(token_id as usize))
+                .map(|&token_id| postings.get(token_id as usize).map(PostingList::view))
                 .collect();
 
-            let postings = match postings_opt {
-                // All tokens must have postings and query must not be empty
-                Some(postings) if !postings.is_empty() => postings,
-                _ => return Box::new(std::iter::empty()),
+            // All tokens must have postings
+            let Some(postings) = postings_opt else {
+                return Box::new(std::iter::empty());
             };
 
-            let posting_readers: Vec<_> = postings.iter().map(|posting| posting.view()).collect();
+            // Query must not be empty
+            if postings.is_empty() {
+                return Box::new(std::iter::empty());
+            };
 
-            intersect_compressed_postings_iterator(posting_readers, filter)
+            intersect_compressed_postings_iterator(postings, filter)
         }
 
         intersection(&self.postings, tokens, filter)

@@ -78,11 +78,11 @@ pub enum ParsedQuery {
     ///
     /// In other words this should be a subset of the document's token set.
     Tokens(TokenSet),
-    // Phrase(Vec<TokenId>),
+    // Phrase(Document),
 }
 
 impl ParsedQuery {
-    pub fn check_match(&self, document: &TokenSet) -> bool {
+    pub fn check_match(&self, tokenset: &TokenSet) -> bool {
         match self {
             ParsedQuery::Tokens(query_tokens) => {
                 if query_tokens.is_empty() {
@@ -90,7 +90,7 @@ impl ParsedQuery {
                 }
 
                 // Check that all tokens are in document
-                document.has_subset(query_tokens)
+                tokenset.has_subset(query_tokens)
             }
         }
     }
