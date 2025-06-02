@@ -172,13 +172,34 @@ where
     ) -> ScoreType {
         let offset = self.offsets.get_offset(vector_index);
         let mut sum = 0.0;
+
+        // TODO get vector dimension from underlying quantized storage
+        let vec_dim = 128;
+
+        // account for point retrieval only once
+        hw_counter
+            .vector_io_read()
+            .incr_delta(vec_dim * offset.count as usize);
+
+        // account for nested CPU ops
+        hw_counter
+            .cpu_counter()
+            .incr_delta(vec_dim * offset.count as usize * query.len());
+
+        // e.g. recommend best score query, 5 positives examples
+        // each example is a multivector with 4 vectors
+        // query len is 20!
         for inner_query in query {
             let mut max_sim = ScoreType::NEG_INFINITY;
             // manual `max_by` for performance
             for i in 0..offset.count {
-                let sim =
-                    self.quantized_storage
-                        .score_point(inner_query, offset.start + i, hw_counter);
+                // inside we compute the CPU cost and IO cost once per stored sub vector per multivector
+                // eg. 20 query * 4 sub vectors = 80
+                let sim = self.quantized_storage.score_point(
+                    inner_query,
+                    offset.start + i,
+                    &HardwareCounterCell::disposable(), // compute hardward cost outside
+                );
                 if sim > max_sim {
                     max_sim = sim;
                 }
