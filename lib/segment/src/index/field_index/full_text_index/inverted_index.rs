@@ -18,12 +18,6 @@ pub type TokenId = u32;
 pub struct TokenSet(Vec<TokenId>);
 
 impl TokenSet {
-    pub fn new(tokens: AHashSet<TokenId>) -> Self {
-        let sorted_unique = tokens.into_iter().sorted_unstable().collect();
-
-        Self(sorted_unique)
-    }
-
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -41,6 +35,14 @@ impl TokenSet {
     }
 }
 
+impl From<AHashSet<TokenId>> for TokenSet {
+    fn from(tokens: AHashSet<TokenId>) -> Self {
+        let sorted_unique = tokens.into_iter().sorted_unstable().collect();
+
+        Self(sorted_unique)
+    }
+}
+
 impl FromIterator<TokenId> for TokenSet {
     fn from_iter<T: IntoIterator<Item = TokenId>>(iter: T) -> Self {
         let tokens = iter
@@ -54,6 +56,8 @@ impl FromIterator<TokenId> for TokenSet {
 }
 
 /// Contains the token ids that make up a document, in the same order that appear in the document.
+///
+/// In contrast to `TokenSet`, it can contain the same token in multiple places.
 #[derive(Clone)]
 #[expect(dead_code)]
 pub struct Document(Vec<TokenId>);
@@ -89,9 +93,9 @@ pub trait InvertedIndex {
     /// If it is an unseen token, it is added to the vocabulary and a new token id is generated.
     ///
     /// The order of the tokens is preserved.
-    fn token_ids<'a>(
+    fn register_tokens<'a>(
         &mut self,
-        str_tokens: impl IntoIterator<Item = &'a String> + 'a,
+        str_tokens: impl IntoIterator<Item = &'a str> + 'a,
     ) -> Vec<TokenId> {
         let vocab = self.get_vocab_mut();
         let mut token_ids = vec![];
@@ -282,10 +286,10 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         for idx in 0..indexed_count {
-            // Generate 10 tot 30-word documents
+            // Generate 10 to 30-word documents
             let doc_len = rand::rng().random_range(10..=30);
-            let tokens: BTreeSet<String> = (0..doc_len).map(|_| generate_word()).collect();
-            let token_ids = index.token_ids(&tokens);
+            let str_tokens: BTreeSet<String> = (0..doc_len).map(|_| generate_word()).collect();
+            let token_ids = index.register_tokens(str_tokens.iter().map(String::as_str));
             let token_set = TokenSet::from_iter(token_ids);
             index.index_tokens(idx, token_set, &hw_counter).unwrap();
         }

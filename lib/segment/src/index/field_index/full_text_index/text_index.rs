@@ -267,7 +267,7 @@ impl FullTextIndex {
                 document_tokens.insert(token_id);
             }
         });
-        TokenSet::new(document_tokens)
+        TokenSet::from(document_tokens)
     }
 
     #[cfg(test)]

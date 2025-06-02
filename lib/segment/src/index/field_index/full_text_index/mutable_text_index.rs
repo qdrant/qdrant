@@ -63,7 +63,9 @@ impl MutableFullTextIndex {
             });
         }
 
-        let tokens = self.inverted_index.token_ids(&str_tokens);
+        let tokens = self
+            .inverted_index
+            .register_tokens(str_tokens.iter().map(String::as_str));
 
         if self.inverted_index.point_to_doc.is_some() {
             let document = Document::new(tokens.clone());

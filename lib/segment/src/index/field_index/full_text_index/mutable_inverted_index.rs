@@ -40,7 +40,7 @@ impl MutableInvertedIndex {
                     .resize_with(idx as usize + 1, Default::default);
             }
 
-            let tokens = index.token_ids(&str_tokens);
+            let tokens = index.register_tokens(str_tokens.iter().map(String::as_str));
             let tokens_set = TokenSet::from_iter(tokens);
             index.point_to_tokens[idx as usize] = Some(tokens_set);
         }
@@ -155,8 +155,7 @@ impl InvertedIndex for MutableInvertedIndex {
             return false; // Already removed or never actually existed
         }
 
-        let Some(removed_token_set) = std::mem::take(&mut self.point_to_tokens[idx as usize])
-        else {
+        let Some(removed_token_set) = self.point_to_tokens[idx as usize].take() else {
             return false;
         };
 
