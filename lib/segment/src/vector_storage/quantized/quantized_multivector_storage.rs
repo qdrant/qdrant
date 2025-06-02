@@ -173,18 +173,15 @@ where
         let offset = self.offsets.get_offset(vector_index);
         let mut sum = 0.0;
 
-        // TODO get vector dimension from underlying quantized storage
-        let vec_dim = 128;
-
         // account for point retrieval only once
         hw_counter
             .vector_io_read()
-            .incr_delta(vec_dim * offset.count as usize);
+            .incr_delta(self.dim * offset.count as usize);
 
         // account for nested CPU ops
         hw_counter
             .cpu_counter()
-            .incr_delta(vec_dim * offset.count as usize * query.len());
+            .incr_delta(self.dim * offset.count as usize * query.len());
 
         // e.g. recommend best score query, 5 positives examples
         // each example is a multivector with 4 vectors
@@ -198,7 +195,7 @@ where
                 let sim = self.quantized_storage.score_point(
                     inner_query,
                     offset.start + i,
-                    &HardwareCounterCell::disposable(), // compute hardward cost outside
+                    &HardwareCounterCell::disposable(), // compute hardware cost outside to avoid duplicated io cost
                 );
                 if sim > max_sim {
                     max_sim = sim;
