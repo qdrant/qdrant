@@ -15,7 +15,7 @@ type BitPackerImpl = bitpacking::BitPacker4x;
 const CHUNK_LEN: usize = 128;
 const _: () = assert!(128 == BitPackerImpl::BLOCK_LEN);
 
-pub trait SizedValue: Sized + Copy {}
+pub trait SizedValue: Sized + Copy + std::fmt::Debug {}
 
 impl SizedValue for () {}
 impl SizedValue for u32 {}
@@ -30,25 +30,13 @@ pub trait UnsizedValue {
 }
 
 /// Posting list of ids, where ids are compressed.
-pub type IdsPostingList = PostingList<SizedHandler<()>>;
-
-/// Posting list of ids + small fixed-sized values, where ids are compressed.
-pub type WeightsPostingList<W> = PostingList<SizedHandler<W>>;
-
-/// Posting list of ids + variably-sized values, where ids are compressed.
-pub type VarPostingList<V> = PostingList<UnsizedHandler<V>>;
+pub type IdsPostingList = PostingList<()>;
 
 /// Non-owning posting list of ids, where ids are compressed.
-pub type IdsPostingListView<'a> = PostingListView<'a, SizedHandler<()>>;
-
-/// Non-owning posting list of ids + small fixed-sized values, where ids are compressed.
-pub type WeightsPostingListView<'a, W> = PostingListView<'a, SizedHandler<W>>;
-
-/// Non-owning posting list of ids + variably-sized values, where ids are compressed.
-pub type VarPostingListView<'a, V> = PostingListView<'a, UnsizedHandler<V>>;
+pub type IdsPostingListView<'a> = PostingListView<'a, ()>;
 
 pub use builder::PostingBuilder;
 pub use posting_list::{PostingChunk, PostingElement, PostingList, RemainderPosting};
-pub use value_handler::{SizedHandler, UnsizedHandler, ValueHandler};
+pub use value_handler::{PostingValue, SizedHandler, UnsizedHandler};
 pub use view::{PostingListComponents, PostingListView};
 pub use visitor::PostingVisitor;

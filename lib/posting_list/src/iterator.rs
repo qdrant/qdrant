@@ -3,20 +3,17 @@ use std::iter::FusedIterator;
 use common::types::PointOffsetType;
 
 use crate::PostingElement;
-use crate::value_handler::ValueHandler;
+use crate::value_handler::PostingValue;
 use crate::visitor::PostingVisitor;
 
-pub struct PostingIterator<'a, H: ValueHandler> {
-    visitor: PostingVisitor<'a, H>,
-    current_elem: Option<PostingElement<H::Value>>,
+pub struct PostingIterator<'a, V: PostingValue> {
+    visitor: PostingVisitor<'a, V>,
+    current_elem: Option<PostingElement<V>>,
     offset: usize,
 }
 
-impl<'a, H: ValueHandler> PostingIterator<'a, H>
-where
-    H::Value: Clone,
-{
-    pub fn new(visitor: PostingVisitor<'a, H>) -> Self {
+impl<'a, V: PostingValue> PostingIterator<'a, V> {
+    pub fn new(visitor: PostingVisitor<'a, V>) -> Self {
         Self {
             visitor,
             current_elem: None,
@@ -33,7 +30,7 @@ where
     pub fn advance_until_greater_or_equal(
         &mut self,
         target_id: PointOffsetType,
-    ) -> Option<PostingElement<H::Value>> {
+    ) -> Option<PostingElement<V>> {
         if let Some(current) = &self.current_elem {
             if current.id >= target_id {
                 return Some(current.clone());
@@ -63,11 +60,8 @@ where
     }
 }
 
-impl<H: ValueHandler> Iterator for PostingIterator<'_, H>
-where
-    H::Value: Clone,
-{
-    type Item = PostingElement<H::Value>;
+impl<V: PostingValue> Iterator for PostingIterator<'_, V> {
+    type Item = PostingElement<V>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next_opt = self.visitor.get_by_offset(self.offset).inspect(|_| {
@@ -89,13 +83,10 @@ where
     }
 }
 
-impl<H: ValueHandler> ExactSizeIterator for PostingIterator<'_, H>
-where
-    H::Value: Clone,
-{
+impl<V: PostingValue> ExactSizeIterator for PostingIterator<'_, V> {
     fn len(&self) -> usize {
         self.visitor.list.len().saturating_sub(self.offset)
     }
 }
 
-impl<H: ValueHandler> FusedIterator for PostingIterator<'_, H> where H::Value: Clone {}
+impl<V: PostingValue> FusedIterator for PostingIterator<'_, V> {}
