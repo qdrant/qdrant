@@ -19,7 +19,7 @@ testing = []
 bitvec = { workspace = true }
 bytemuck = { workspace = true }
 num-traits = { workspace = true }
-num_cpus = "1.16"
+num_cpus = "1.17"
 ordered-float = { workspace = true }
 ph = { workspace = true }
 rand = { workspace = true }
