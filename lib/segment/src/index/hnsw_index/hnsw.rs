@@ -1625,18 +1625,18 @@ impl OldIndex<'_> {
 
         let level_m = if level == 0 { self.m0 } else { self.m };
         let mut new_links = Vec::with_capacity(level_m);
-        let mut need_fixing = 0;
+        let mut need_fixing = false;
 
         for link in links.links(src_old, level).take(level_m) {
             if let Some(new_link) = self.old_to_new[link as usize] {
                 new_links.push(new_link);
             } else {
-                need_fixing += 1;
+                need_fixing = true;
             }
         }
 
         // The "healing" case
-        if need_fixing > 0 {
+        if need_fixing {
             // First: generate list of candidates
             let shortcuts = builder
                 .search_shortcuts_on_level(src_old, level, old_scorer, self)
@@ -1649,7 +1649,8 @@ impl OldIndex<'_> {
                 let b_old = self.new_to_old[b as usize].unwrap();
                 old_scorer.score_internal(a_old, b_old)
             };
-            container.fill_from_sorted_with_heuristic(shortcuts, need_fixing, new_scorer);
+            let links_needed = level_m - new_links.len();
+            container.fill_from_sorted_with_heuristic(shortcuts, links_needed, new_scorer);
             new_links.extend_from_slice(container.links());
         }
 
