@@ -5,13 +5,15 @@ use rand::distr::{Alphanumeric, SampleString};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
-use crate::value_handler::ValueHandler;
-use crate::{CHUNK_LEN, PostingBuilder, PostingList, SizedHandler, UnsizedHandler, UnsizedValue};
+use crate::{CHUNK_LEN, PostingBuilder, PostingList, PostingValue, UnsizedHandler, UnsizedValue};
 
 // Simple struct that implements VarSizedValue for testing
 #[derive(Debug, Clone, PartialEq)]
 struct TestString(String);
 
+impl PostingValue for TestString {
+    type Handler = UnsizedHandler<TestString>;
+}
 impl UnsizedValue for TestString {
     fn write_len(&self) -> usize {
         self.0.len()
@@ -30,25 +32,25 @@ impl UnsizedValue for TestString {
 #[test]
 fn test_just_ids_against_vec() {
     check_various_lengths(|len| {
-        let posting_list = check_against_sorted_vec::<_, SizedHandler<()>>(|_rng, _id| (), len);
+        let posting_list = check_against_sorted_vec(|_rng, _id| (), len);
 
-        // validate that chunks' sized values are empty
-        if let Some(first_chunk) = posting_list.chunks.first() {
-            let chunks_size = size_of_val(first_chunk);
-            let expected_chunk_size = size_of::<u32>() * 2;
-            assert_eq!(chunks_size, expected_chunk_size);
+        // validate that chunks' sized values are empty, so we only have initial_id and offset
+        if let Some(chunk) = posting_list.chunks.first() {
+            assert_eq!(size_of_val(chunk), size_of::<u32>() * 2);
         }
 
-        // validate var_sized_data is empty
-        assert_eq!(posting_list.var_size_data.len(), 0);
-    })
+        // similarly, validate that the remainder is equivalent to just one id
+        if let Some(remainder) = posting_list.remainders.first() {
+            assert_eq!(size_of_val(remainder), size_of::<u32>());
+        }
+    });
 }
 
 #[test]
 fn test_var_sized_against_vec() {
     let alphanumeric = Alphanumeric;
     check_various_lengths(|len| {
-        check_against_sorted_vec::<_, UnsizedHandler<TestString>>(
+        check_against_sorted_vec(
             |rng, id| {
                 let len = rng.random_range(1..=20);
                 let s = alphanumeric.sample_string(rng, len);
@@ -62,7 +64,7 @@ fn test_var_sized_against_vec() {
 #[test]
 fn test_fixed_sized_against_vec() {
     check_various_lengths(|len| {
-        check_against_sorted_vec::<_, SizedHandler<u64>>(|_rng, id| u64::from(id) * 100, len);
+        check_against_sorted_vec(|_rng, id| u64::from(id) * 100, len);
     });
 }
 
@@ -103,11 +105,10 @@ fn check_various_lengths(check: impl Fn(u32)) {
     }
 }
 
-fn check_against_sorted_vec<G, H>(gen_value: G, postings_count: u32) -> PostingList<H>
+fn check_against_sorted_vec<G, V>(gen_value: G, postings_count: u32) -> PostingList<V>
 where
-    G: Fn(&mut StdRng, PointOffsetType) -> H::Value,
-    H: ValueHandler,
-    H::Value: Clone + PartialEq + std::fmt::Debug,
+    G: Fn(&mut StdRng, PointOffsetType) -> V,
+    V: PostingValue + PartialEq + std::fmt::Debug,
 {
     let rng = &mut StdRng::seed_from_u64(42);
     let test_data = generate_data(postings_count, rng, gen_value);
@@ -123,7 +124,7 @@ where
     }
 
     // Build the actual posting list
-    let posting_list = builder.build_generic();
+    let posting_list = builder.build();
 
     // Access the posting list
     let mut visitor = posting_list.visitor();

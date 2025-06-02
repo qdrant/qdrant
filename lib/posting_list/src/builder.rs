@@ -5,10 +5,8 @@ use common::types::PointOffsetType;
 use zerocopy::little_endian::U32;
 
 use crate::posting_list::{PostingChunk, PostingElement, PostingList, RemainderPosting};
-use crate::value_handler::{SizedHandler, UnsizedHandler, ValueHandler};
-use crate::{
-    BitPackerImpl, CHUNK_LEN, SizedValue, UnsizedValue, VarPostingList, WeightsPostingList,
-};
+use crate::value_handler::{PostingValue, ValueHandler};
+use crate::{BitPackerImpl, CHUNK_LEN};
 
 pub struct PostingBuilder<V> {
     elements: Vec<PostingElement<V>>,
@@ -35,9 +33,9 @@ impl<V> PostingBuilder<V> {
     ///
     /// This method uses the `ValueHandler::process_values` trait function to abstract the
     /// differences between the two implementations, allowing us to share the common logic.
-    pub(crate) fn build_generic<H>(mut self) -> PostingList<H>
+    pub fn build(mut self) -> PostingList<V>
     where
-        H: ValueHandler<Value = V>,
+        V: PostingValue,
     {
         self.elements.sort_unstable_by_key(|e| e.id);
 
@@ -48,7 +46,7 @@ impl<V> PostingBuilder<V> {
             self.elements.into_iter().map(|e| (e.id, e.value)).unzip();
 
         // process values
-        let (sized_values, var_size_data) = H::process_values(values);
+        let (sized_values, var_size_data) = V::Handler::process_values(values);
 
         let bitpacker = BitPackerImpl::new();
         let mut chunks = Vec::with_capacity(ids.len() / CHUNK_LEN);
@@ -119,36 +117,10 @@ impl PostingBuilder<()> {
     pub fn add_id(&mut self, id: PointOffsetType) {
         self.add(id, ());
     }
-
-    /// Build a posting list with just the compressed ids.
-    pub fn build(self) -> PostingList<SizedHandler<()>> {
-        self.build_generic::<SizedHandler<()>>()
-    }
 }
 
-impl<W: SizedValue> PostingBuilder<W> {
-    /// Build a posting list with fixed-sized values to store them directly in the PostingChunk
-    pub fn build_sized(self) -> WeightsPostingList<W> {
-        self.build_generic::<SizedHandler<W>>()
-    }
-}
-
-// Variable-sized value implementation.
-impl<V: UnsizedValue> PostingBuilder<V> {
-    /// Build a posting list with variable-sized values to store them in the `var_size_data` field.
-    ///
-    /// For variable-size values, we store offsets along with each id to point into a flattened array
-    /// where the var-sized data lives.
-    pub fn build_unsized(self) -> VarPostingList<V> {
-        self.build_generic::<UnsizedHandler<V>>()
-    }
-}
-
-impl<V, H> From<PostingBuilder<V>> for PostingList<H>
-where
-    H: ValueHandler<Value = V>,
-{
+impl<V: PostingValue> From<PostingBuilder<V>> for PostingList<V> {
     fn from(value: PostingBuilder<V>) -> Self {
-        value.build_generic::<H>()
+        value.build()
     }
 }
