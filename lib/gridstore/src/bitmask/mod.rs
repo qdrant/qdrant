@@ -90,7 +90,7 @@ impl Bitmask {
         let num_regions = mmap_bitslice.len() / config.region_size_blocks;
         let region_gaps = vec![RegionGaps::all_free(config.region_size_blocks as u16); num_regions];
 
-        let mmap_region_gaps = BitmaskGaps::create(dir, region_gaps.into_iter(), config.clone());
+        let mmap_region_gaps = BitmaskGaps::create(dir, region_gaps.into_iter(), config);
 
         Ok(Self {
             config,
@@ -114,7 +114,7 @@ impl Bitmask {
             .map_err(|err| err.to_string())?;
         let mmap_bitslice = MmapBitSlice::from(mmap, 0);
 
-        let bitmask_gaps = BitmaskGaps::open(dir, config.clone())?;
+        let bitmask_gaps = BitmaskGaps::open(dir, config)?;
 
         Ok(Self {
             config,

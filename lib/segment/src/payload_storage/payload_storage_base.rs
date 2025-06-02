@@ -65,7 +65,7 @@ pub trait PayloadStorage {
 
     /// Completely delete payload storage, without keeping allocated memory. Pufff!
     #[cfg(test)]
-    fn wipe(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()>;
+    fn clear_all(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()>;
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;
