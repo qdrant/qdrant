@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use posting_list::{IdsPostingList, IdsPostingListView, PostingBuilder};
+use posting_list::{IdsPostingList, IdsPostingListView, PostingBuilder, PostingList};
 
-use super::inverted_index::InvertedIndex;
+use super::inverted_index::{InvertedIndex, TokenSet};
 use super::mmap_inverted_index::MmapInvertedIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, TokenId};
@@ -18,6 +18,68 @@ pub struct ImmutableInvertedIndex {
     pub(in crate::index::field_index::full_text_index) vocab: HashMap<String, TokenId>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count: Vec<Option<usize>>,
     pub(in crate::index::field_index::full_text_index) points_count: usize,
+}
+
+impl ImmutableInvertedIndex {
+    fn filter_has_subset(
+        &self,
+        tokens: TokenSet,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        // in case of immutable index, deleted documents are still in the postings
+        let filter =
+            move |idx| matches!(self.point_to_tokens_count.get(idx as usize), Some(Some(_)));
+
+        fn intersection<'a>(
+            postings: &'a [PostingList<()>],
+            tokens: TokenSet,
+            filter: impl Fn(PointOffsetType) -> bool + 'a,
+        ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+            let postings_opt: Option<Vec<_>> = tokens
+                .tokens()
+                .iter()
+                .map(|&token_id| postings.get(token_id as usize).map(PostingList::view))
+                .collect();
+
+            // All tokens must have postings
+            let Some(postings) = postings_opt else {
+                return Box::new(std::iter::empty());
+            };
+
+            // Query must not be empty
+            if postings.is_empty() {
+                return Box::new(std::iter::empty());
+            };
+
+            intersect_compressed_postings_iterator(postings, filter)
+        }
+
+        intersection(&self.postings, tokens, filter)
+    }
+
+    fn check_has_subset(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
+        if tokens.is_empty() {
+            return false;
+        }
+
+        // check presence of the document
+        if self.values_is_empty(point_id) {
+            return false;
+        }
+
+        fn check_intersection(
+            postings: &[PostingList<()>],
+            tokens: &TokenSet,
+            point_id: PointOffsetType,
+        ) -> bool {
+            // Check that all tokens are in document
+            tokens.tokens().iter().all(|token_id| {
+                let posting_list = &postings[*token_id as usize];
+                posting_list.visitor().contains(point_id)
+            })
+        }
+
+        check_intersection(&self.postings, tokens, point_id)
+    }
 }
 
 impl InvertedIndex for ImmutableInvertedIndex {
@@ -61,30 +123,9 @@ impl InvertedIndex for ImmutableInvertedIndex {
         query: ParsedQuery,
         _hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let postings_opt: Option<Vec<_>> = query
-            .tokens
-            .iter()
-            .map(|&token_id| self.postings.get(token_id as usize))
-            .collect();
-
-        let postings = match postings_opt {
-            // All tokens must have postings and query must not be empty
-            Some(postings) if !postings.is_empty() => postings,
-            _ => return Box::new(std::iter::empty()),
-        };
-
-        let posting_readers: Vec<_> = postings
-            .iter()
-            // We can safely pass hw_counter here because it's not measured.
-            // Due to lifetime issues, we can't return a disposable counter.
-            .map(|posting| posting.view())
-            .collect();
-
-        // in case of immutable index, deleted documents are still in the postings
-        let filter =
-            move |idx| matches!(self.point_to_tokens_count.get(idx as usize), Some(Some(_)));
-
-        intersect_compressed_postings_iterator(posting_readers, filter)
+        match query {
+            ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens),
+        }
     }
 
     fn get_posting_len(&self, token_id: TokenId, _: &HardwareCounterCell) -> Option<usize> {
@@ -105,20 +146,9 @@ impl InvertedIndex for ImmutableInvertedIndex {
         point_id: PointOffsetType,
         _: &HardwareCounterCell,
     ) -> bool {
-        if parsed_query.tokens.is_empty() {
-            return false;
+        match parsed_query {
+            ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id),
         }
-
-        // check presence of the document
-        if self.values_is_empty(point_id) {
-            return false;
-        }
-
-        // Check that all tokens are in document
-        parsed_query.tokens.iter().all(|token_id| {
-            let posting_list = &self.postings[*token_id as usize];
-            posting_list.visitor().contains(point_id)
-        })
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {

@@ -33,6 +33,10 @@ impl TokenSet {
     pub fn contains(&self, token: &TokenId) -> bool {
         self.0.binary_search(token).is_ok()
     }
+
+    pub fn has_subset(&self, subset: &TokenSet) -> bool {
+        subset.0.iter().all(|token| self.contains(token))
+    }
 }
 
 impl From<AHashSet<TokenId>> for TokenSet {
@@ -69,20 +73,26 @@ impl Document {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedQuery {
-    pub tokens: Vec<TokenId>,
+pub enum ParsedQuery {
+    /// All these tokens must be present in the document, regardless of order.
+    ///
+    /// In other words this should be a subset of the document's token set.
+    Tokens(TokenSet),
+    // Phrase(Document),
 }
 
 impl ParsedQuery {
-    pub fn check_match(&self, tokens: &TokenSet) -> bool {
-        if self.tokens.is_empty() {
-            return false;
-        }
+    pub fn check_match(&self, tokenset: &TokenSet) -> bool {
+        match self {
+            ParsedQuery::Tokens(query_tokens) => {
+                if query_tokens.is_empty() {
+                    return false;
+                }
 
-        // Check that all tokens are in document
-        self.tokens
-            .iter()
-            .all(|query_token| tokens.contains(query_token))
+                // Check that all tokens are in document
+                tokenset.has_subset(query_tokens)
+            }
+        }
     }
 }
 
@@ -146,10 +156,23 @@ pub trait InvertedIndex {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
+        match query {
+            ParsedQuery::Tokens(tokens) => {
+                self.estimate_has_subset_cardinality(tokens, condition, hw_counter)
+            }
+        }
+    }
+
+    fn estimate_has_subset_cardinality(
+        &self,
+        tokens: &TokenSet,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
         let points_count = self.points_count();
 
-        let posting_lengths: Option<Vec<usize>> = query
-            .tokens
+        let posting_lengths: Option<Vec<usize>> = tokens
+            .tokens()
             .iter()
             .map(|&vocab_idx| self.get_posting_len(vocab_idx, hw_counter))
             .collect();
@@ -276,8 +299,8 @@ mod tests {
         let tokens = query
             .into_iter()
             .map(token_to_id)
-            .collect::<Option<Vec<_>>>()?;
-        Some(ParsedQuery { tokens })
+            .collect::<Option<TokenSet>>()?;
+        Some(ParsedQuery::Tokens(tokens))
     }
 
     fn mutable_inverted_index(indexed_count: u32, deleted_count: u32) -> MutableInvertedIndex {

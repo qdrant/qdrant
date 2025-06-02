@@ -256,8 +256,8 @@ impl FullTextIndex {
         Tokenizer::tokenize_query(text, self.config(), |token| {
             tokens.insert(self.get_token(token, hw_counter));
         });
-        let tokens = tokens.into_iter().collect::<Option<Vec<_>>>()?;
-        Some(ParsedQuery { tokens })
+        let tokens = tokens.into_iter().collect::<Option<TokenSet>>()?;
+        Some(ParsedQuery::Tokens(tokens))
     }
 
     pub fn parse_document(&self, text: &str, hw_counter: &HardwareCounterCell) -> TokenSet {
@@ -617,8 +617,8 @@ mod tests {
         let tokens = query
             .iter()
             .map(|token| token_to_id(token.as_str()))
-            .collect::<Option<Vec<_>>>()?;
-        Some(ParsedQuery { tokens })
+            .collect::<Option<TokenSet>>()?;
+        Some(ParsedQuery::Tokens(tokens))
     }
 
     fn parse_query(query: &[String], index: &FullTextIndex) -> ParsedQuery {
