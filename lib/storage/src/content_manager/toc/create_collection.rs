@@ -86,7 +86,7 @@ impl TableOfContent {
         let collection_defaults_config = self.storage_config.collection.as_ref();
 
         let default_shard_number = collection_defaults_config
-            .map(|x| x.shard_number)
+            .and_then(|x| x.shard_number)
             .unwrap_or_else(|| config::default_shard_number().get());
 
         let shard_number = match sharding_method.unwrap_or_default() {
@@ -117,11 +117,11 @@ impl TableOfContent {
         };
 
         let replication_factor = replication_factor
-            .or_else(|| collection_defaults_config.map(|i| i.replication_factor))
+            .or_else(|| collection_defaults_config.and_then(|i| i.replication_factor))
             .unwrap_or_else(|| config::default_replication_factor().get());
 
         let write_consistency_factor = write_consistency_factor
-            .or_else(|| collection_defaults_config.map(|i| i.write_consistency_factor))
+            .or_else(|| collection_defaults_config.and_then(|i| i.write_consistency_factor))
             .unwrap_or_else(|| config::default_write_consistency_factor().get());
 
         // Apply default vector config values if not set.

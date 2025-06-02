@@ -19,21 +19,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use api::rest::models::HardwareUsage;
-use collection::collection::{Collection, RequestShardTransfer};
-use collection::config::{CollectionConfigInternal, default_replication_factor};
-use collection::operations::types::*;
-use collection::shards::channel_service::ChannelService;
-use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
-use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::{CollectionId, replica_set};
-use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwSharedDrain;
-use common::cpu::get_num_cpus;
-use dashmap::DashMap;
-use tokio::runtime::{Handle, Runtime};
-use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
-
 use self::dispatcher::TocDispatcher;
 use crate::ConsensusOperations;
 use crate::content_manager::alias_mapping::AliasPersistence;
@@ -44,6 +29,23 @@ use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::types::StorageConfig;
+use api::rest::models::HardwareUsage;
+use collection::collection::{Collection, RequestShardTransfer};
+use collection::config::{
+    CollectionConfigInternal, default_replication_factor, default_shard_number,
+};
+use collection::operations::types::*;
+use collection::shards::channel_service::ChannelService;
+use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
+use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::{CollectionId, replica_set};
+use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwSharedDrain;
+use common::cpu::get_num_cpus;
+use dashmap::DashMap;
+use segment::data_types::collection_defaults::CollectionConfigDefaults;
+use tokio::runtime::{Handle, Runtime};
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
@@ -356,13 +358,23 @@ impl TableOfContent {
     pub fn suggest_shard_distribution(
         &self,
         op: &CreateCollectionOperation,
-        suggested_shard_number: NonZeroU32,
+        collection_defaults: Option<&CollectionConfigDefaults>,
+        number_of_peers: usize,
     ) -> ShardDistributionProposal {
+        let non_zero_number_of_peers =
+            NonZeroU32::new(number_of_peers as u32).expect("NUmber of peers must be at least 1");
+
+        let suggested_shard_number = collection_defaults
+            .map(|cd| cd.get_shard_number(number_of_peers as u32))
+            .map(|x| NonZeroU32::new(x).expect("Shard number must be at least 1"))
+            .unwrap_or_else(|| default_shard_number().saturating_mul(non_zero_number_of_peers));
+
         let shard_number = op
             .create_collection
             .shard_number
             .and_then(NonZeroU32::new)
             .unwrap_or(suggested_shard_number);
+
         let mut known_peers_set: HashSet<_> = self
             .channel_service
             .id_to_address
@@ -372,11 +384,17 @@ impl TableOfContent {
             .collect();
         known_peers_set.insert(self.this_peer_id());
         let known_peers: Vec<_> = known_peers_set.into_iter().collect();
+
+        let suggested_replication_factor = collection_defaults
+            .and_then(|cd| cd.replication_factor)
+            .and_then(NonZeroU32::new)
+            .unwrap_or_else(default_replication_factor);
+
         let replication_factor = op
             .create_collection
             .replication_factor
             .and_then(NonZeroU32::new)
-            .unwrap_or_else(default_replication_factor);
+            .unwrap_or(suggested_replication_factor);
 
         let shard_distribution =
             ShardDistributionProposal::new(shard_number, replication_factor, &known_peers);

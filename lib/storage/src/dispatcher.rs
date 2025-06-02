@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -8,7 +7,6 @@ use collection::config::ShardingMethod;
 use collection::operations::verification::VerificationPass;
 use common::counter::hardware_accumulator::HwSharedDrain;
 use common::defaults::CONSENSUS_META_OP_WAIT;
-use segment::types::default_shard_number_per_node_const;
 
 use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
@@ -87,20 +85,13 @@ impl Dispatcher {
                                 // Suggest even distribution of shards across nodes
                                 let number_of_peers = state.0.peer_count();
 
-                                let shard_nr_per_node = self
-                                    .toc
-                                    .storage_config
-                                    .collection
-                                    .as_ref()
-                                    .map(|i| i.shard_number_per_node)
-                                    .unwrap_or(default_shard_number_per_node_const());
-
-                                let suggested_shard_nr = number_of_peers as u32 * shard_nr_per_node;
+                                let collection_defaults =
+                                    self.toc.storage_config.collection.as_ref();
 
                                 let shard_distribution = self.toc.suggest_shard_distribution(
                                     &op,
-                                    NonZeroU32::new(suggested_shard_nr)
-                                        .expect("Peer count should be always >= 1"),
+                                    collection_defaults,
+                                    number_of_peers,
                                 );
 
                                 // Expect all replicas to become active eventually

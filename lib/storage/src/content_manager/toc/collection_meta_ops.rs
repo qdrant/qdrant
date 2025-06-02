@@ -41,13 +41,15 @@ impl TableOfContent {
                         .unwrap_or_default()
                     {
                         ShardingMethod::Auto => {
-                            let shard_number =
-                                operation.create_collection.shard_number.or_else(|| {
-                                    self.storage_config
-                                        .collection
-                                        .as_ref()
-                                        .map(|i| i.shard_number_per_node)
-                                });
+                            let collection_defaults = self.storage_config.collection.as_ref();
+
+                            let suggested_shard_number =
+                                collection_defaults.map(|config| config.get_shard_number(1));
+
+                            let shard_number = operation
+                                .create_collection
+                                .shard_number
+                                .or(suggested_shard_number);
                             CollectionShardDistribution::all_local(shard_number, self.this_peer_id)
                         }
                         ShardingMethod::Custom => ShardDistributionProposal::empty().into(),
