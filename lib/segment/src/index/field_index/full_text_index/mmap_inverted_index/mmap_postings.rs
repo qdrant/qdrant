@@ -13,7 +13,7 @@ use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops::open_read_mmap;
 use posting_list::{
     PostingChunk, PostingList, PostingListComponents, PostingListView, PostingValue,
-    RemainderPosting, ValueHandler,
+    RemainderPosting, SizedTypeFor, ValueHandler,
 };
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
@@ -21,8 +21,6 @@ use crate::index::field_index::full_text_index::inverted_index::TokenId;
 use crate::index::field_index::full_text_index::positions::Positions;
 
 const ALIGNMENT: usize = 4;
-
-pub type JustIds = ();
 
 /// Trait marker to enrich [`posting_list::PostingValue`] for handling mmap files with the posting list.
 pub(in crate::index::field_index::full_text_index) trait MmapPostingValue:
@@ -32,77 +30,11 @@ pub(in crate::index::field_index::full_text_index) trait MmapPostingValue:
                  + Debug,
 >
 {
-    /// Length in bytes of the variable size data section.
-    fn var_size_data_len(var_size_data: &<Self::Handler as ValueHandler>::VarSizeData) -> usize;
-
-    /// Writes the two sections of data together, and pads them to [`ALIGNMENT`]
-    fn write_data(
-        writer: &mut impl Write,
-        id_data: &[u8],
-        var_data: &<Self::Handler as ValueHandler>::VarSizeData,
-    ) -> Result<(), std::io::Error>;
-
-    /// Splits the data into the corresponding var_size_data, and the rest of the data
-    fn split_var_size_data(
-        bytes: &[u8],
-        var_size_data_len: usize,
-    ) -> (&<Self::Handler as ValueHandler>::VarSizeData, &[u8]);
 }
 
-impl MmapPostingValue for JustIds {
-    fn var_size_data_len(_var_size_data: &()) -> usize {
-        0
-    }
+impl MmapPostingValue for () {}
 
-    fn write_data(
-        writer: &mut impl Write,
-        id_data: &[u8],
-        _var_data: &(),
-    ) -> Result<(), std::io::Error> {
-        writer.write_all(id_data)?;
-
-        // Example:
-        // For data size = 5, alignment = 3 as (5 + 3 = 8)
-        // alignment = 8 - 5 = 3
-        let data_len = id_data.len();
-        writer.write_zeros(data_len.next_multiple_of(ALIGNMENT) - data_len)
-    }
-
-    fn split_var_size_data(
-        bytes: &[u8],
-        var_size_data_len: usize,
-    ) -> (&<Self::Handler as ValueHandler>::VarSizeData, &[u8]) {
-        debug_assert_eq!(var_size_data_len, 0);
-        (&(), bytes)
-    }
-}
-
-impl MmapPostingValue for Positions {
-    fn var_size_data_len(var_size_data: &[u8]) -> usize {
-        var_size_data.len()
-    }
-
-    fn write_data(
-        writer: &mut impl Write,
-        id_data: &[u8],
-        var_data: &[u8],
-    ) -> Result<(), std::io::Error> {
-        writer.write_all(id_data)?;
-
-        // write var_size_data if it exists
-        writer.write_all(var_data)?;
-
-        // Example:
-        // For data size = 5, alignment = 3 as (5 + 3 = 8)
-        // alignment = 8 - 5 = 3
-        let data_len = id_data.len() + var_data.len();
-        writer.write_zeros(data_len.next_multiple_of(ALIGNMENT) - data_len)
-    }
-
-    fn split_var_size_data(bytes: &[u8], var_size_data_len: usize) -> (&[u8], &[u8]) {
-        bytes.split_at(var_size_data_len)
-    }
-}
+impl MmapPostingValue for Positions {}
 
 #[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
@@ -140,10 +72,8 @@ impl PostingListHeader {
         self.ids_data_bytes_count as usize
             + self.var_size_data_bytes_count as usize
             + self.alignment_bytes_count as usize
-            + self.remainder_count as usize
-                * size_of::<RemainderPosting<<V::Handler as ValueHandler>::Sized>>()
-            + self.chunks_count as usize
-                * size_of::<PostingChunk<<V::Handler as ValueHandler>::Sized>>()
+            + self.remainder_count as usize * size_of::<RemainderPosting<SizedTypeFor<V>>>()
+            + self.chunks_count as usize * size_of::<PostingChunk<SizedTypeFor<V>>>()
             + size_of::<PointOffsetType>() // last_doc_id
     }
 }
@@ -200,23 +130,22 @@ impl<V: MmapPostingValue> MmapPostings<V> {
 
         let (last_doc_id, bytes) = PointOffsetType::read_from_prefix(bytes).ok()?;
 
-        counter.incr_delta(size_of::<PostingChunk<<V::Handler as ValueHandler>::Sized>>());
-        let (chunks, bytes) =
-            <[PostingChunk<<V::Handler as ValueHandler>::Sized>]>::ref_from_prefix_with_elems(
-                bytes,
-                header.chunks_count as usize,
-            )
-            .ok()?;
+        counter.incr_delta(size_of::<PostingChunk<SizedTypeFor<V>>>());
+        let (chunks, bytes) = <[PostingChunk<SizedTypeFor<V>>]>::ref_from_prefix_with_elems(
+            bytes,
+            header.chunks_count as usize,
+        )
+        .ok()?;
 
         let (id_data, bytes) = bytes.split_at(header.ids_data_bytes_count as usize);
 
-        let (var_size_data, bytes) =
-            V::split_var_size_data(bytes, header.var_size_data_bytes_count as usize);
+        let (var_size_data, bytes) = bytes.split_at(header.var_size_data_bytes_count as usize);
 
+        // skip padding
         let bytes = bytes.get(header.alignment_bytes_count as usize..)?;
 
         let (remainder_postings, _) =
-            <[RemainderPosting<<V::Handler as ValueHandler>::Sized>]>::ref_from_prefix_with_elems(
+            <[RemainderPosting<SizedTypeFor<V>>]>::ref_from_prefix_with_elems(
                 bytes,
                 header.remainder_count as usize,
             )
@@ -280,7 +209,7 @@ impl<V: MmapPostingValue> MmapPostings<V> {
             } = view.components();
 
             let id_data_len = id_data.len();
-            let var_size_data_len = V::var_size_data_len(var_size_data);
+            let var_size_data_len = var_size_data.len();
             let data_len = id_data_len + var_size_data_len;
             let alignment_len = data_len.next_multiple_of(ALIGNMENT) - data_len;
 
@@ -320,8 +249,20 @@ impl<V: MmapPostingValue> MmapPostings<V> {
                 bufw.write_all(chunk.as_bytes())?;
             }
 
-            // write all unaligned data together, and align it accordingly
-            V::write_data(&mut bufw, id_data, var_size_data)?;
+            // write all unaligned data together
+            bufw.write_all(id_data)?;
+
+            // write var_size_data if it exists
+            if !var_size_data.is_empty() {
+                bufw.write_all(var_size_data)?;
+            }
+
+            // write alignment padding
+            // Example:
+            // For data size = 5, alignment = 3 as (5 + 3 = 8)
+            // alignment = 8 - 5 = 3
+            let data_len = id_data.len() + var_size_data.len();
+            bufw.write_zeros(data_len.next_multiple_of(ALIGNMENT) - data_len)?;
 
             for element in remainders {
                 bufw.write_all(element.as_bytes())?;

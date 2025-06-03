@@ -37,16 +37,11 @@ pub trait ValueHandler {
     /// The value to store within each chunk, or alongside each id.
     type Sized: std::marker::Sized + Copy + Debug;
 
-    /// The type to store variable-size data
-    type VarSizeData: ToOwned<Owned: Clone + Debug> + Debug + ?Sized;
-
     /// Process values before storage and return the necessary var_sized_data
     ///
     /// - For fixed-size values, this returns the values themselves and an empty var_sized_data.
     /// - For variable-size values, this returns offsets and the flattened serialized data.
-    fn process_values(
-        values: Vec<Self::Value>,
-    ) -> (Vec<Self::Sized>, <Self::VarSizeData as ToOwned>::Owned);
+    fn process_values(values: Vec<Self::Value>) -> (Vec<Self::Sized>, Vec<u8>);
 
     /// Retrieve a value.
     ///
@@ -55,7 +50,7 @@ pub trait ValueHandler {
     fn get_value<N>(
         sized_value: Self::Sized,
         next_sized_value: N,
-        var_data: &Self::VarSizeData,
+        var_data: &[u8],
         hw_counter: &ConditionedCounter,
     ) -> Self::Value
     where
@@ -69,16 +64,15 @@ pub struct SizedHandler<V: SizedValue>(PhantomData<V>);
 impl<V: SizedValue> ValueHandler for SizedHandler<V> {
     type Value = V;
     type Sized = V;
-    type VarSizeData = ();
 
-    fn process_values(values: Vec<V>) -> (Vec<V>, ()) {
-        (values, ())
+    fn process_values(values: Vec<V>) -> (Vec<V>, Vec<u8>) {
+        (values, Vec::new())
     }
 
     fn get_value<N>(
         sized_value: V,
         _next_sized_value: N,
-        _var_data: &(),
+        _var_data: &[u8],
         _hw_counter: &ConditionedCounter,
     ) -> V
     where
@@ -95,8 +89,6 @@ pub struct UnsizedHandler<V: UnsizedValue>(PhantomData<V>);
 impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
     type Value = V;
     type Sized = U32;
-
-    type VarSizeData = [u8];
 
     fn process_values(values: Vec<Self::Value>) -> (Vec<Self::Sized>, Vec<u8>) {
         let mut offsets = Vec::with_capacity(values.len());
