@@ -402,6 +402,7 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
 
 #[rstest]
 #[case(IndexType::Mutable)]
+#[case(IndexType::MutableGridstore)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
@@ -566,6 +567,7 @@ fn test_cond<
 // Check we don't panic on an empty index. See <https://github.com/qdrant/qdrant/pull/2933>.
 #[rstest]
 #[case(IndexType::Mutable)]
+#[case(IndexType::MutableGridstore)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
