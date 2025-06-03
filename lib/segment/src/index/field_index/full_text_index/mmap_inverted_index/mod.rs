@@ -10,16 +10,19 @@ use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use mmap_postings::{MmapPostingValue, MmapPostings};
-use posting_list::IdsPostingListView;
 
 use super::inverted_index::{InvertedIndex, ParsedQuery};
+use super::positions::Positions;
 use super::postings_iterator::intersect_compressed_postings_iterator;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
+use crate::index::field_index::full_text_index::immutable_postings_enum::ImmutablePostings;
 use crate::index::field_index::full_text_index::inverted_index::{TokenId, TokenSet};
+use crate::index::field_index::full_text_index::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 
-mod mmap_postings;
+pub(super) mod mmap_postings;
+pub(super) mod mmap_postings_enum;
 
 /// Old implementation of mmap postings, used to test backwards compatibility temporarily
 #[cfg(test)]
@@ -34,7 +37,7 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 
 pub struct MmapInvertedIndex {
     pub(in crate::index::field_index::full_text_index) path: PathBuf,
-    pub(in crate::index::field_index::full_text_index) postings: MmapPostings<()>,
+    pub(in crate::index::field_index::full_text_index) postings: MmapPostingsEnum,
     pub(in crate::index::field_index::full_text_index) vocab: MmapHashMap<str, TokenId>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count: MmapSlice<usize>,
     pub(in crate::index::field_index::full_text_index) deleted_points:
@@ -60,7 +63,12 @@ impl MmapInvertedIndex {
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
         let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
-        MmapPostings::<()>::create(postings_path, &postings)?;
+        match postings {
+            ImmutablePostings::Ids(postings) => MmapPostings::create(postings_path, &postings)?,
+            ImmutablePostings::WithPositions(postings) => {
+                MmapPostings::create(postings_path, &postings)?
+            }
+        }
 
         // Currently MmapHashMap maps str -> [u32], but we only need to map str -> u32.
         // TODO: Consider making another mmap structure for this case.
@@ -88,13 +96,20 @@ impl MmapInvertedIndex {
         Ok(())
     }
 
-    pub fn open(path: PathBuf, populate: bool) -> OperationResult<Self> {
+    pub fn open(path: PathBuf, populate: bool, has_positions: bool) -> OperationResult<Self> {
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
         let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
-        let postings = MmapPostings::open(&postings_path, populate)?;
+        let postings = if !has_positions {
+            MmapPostingsEnum::Ids(MmapPostings::<()>::open(&postings_path, populate)?)
+        } else {
+            MmapPostingsEnum::WithPositions(MmapPostings::<Positions>::open(
+                &postings_path,
+                populate,
+            )?)
+        };
         let vocab = MmapHashMap::<str, TokenId>::open(&vocab_path, false)?;
 
         let point_to_tokens_count = unsafe {
@@ -129,15 +144,6 @@ impl MmapInvertedIndex {
         self.vocab.iter().map(|(k, v)| (k, v.first().unwrap()))
     }
 
-    /// Iterate over posting lists, returning a view for each
-    #[inline]
-    pub(super) fn iter_postings<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = Option<IdsPostingListView<'a>>> {
-        self.postings.iter_postings(hw_counter)
-    }
-
     /// Returns whether the point id is valid and active.
     pub fn is_active(&self, point_id: PointOffsetType) -> bool {
         let is_deleted = self.deleted_points.get(point_id as usize).unwrap_or(true);
@@ -145,6 +151,7 @@ impl MmapInvertedIndex {
         !is_deleted
     }
 
+    /// Iterate over point ids whose documents contain all given tokens
     pub fn filter_has_subset<'a>(
         &'a self,
         tokens: TokenSet,
@@ -178,7 +185,12 @@ impl MmapInvertedIndex {
             intersect_compressed_postings_iterator(posting_readers, filter)
         }
 
-        intersection(&self.postings, tokens, filter, hw_counter)
+        match &self.postings {
+            MmapPostingsEnum::Ids(postings) => intersection(postings, tokens, filter, hw_counter),
+            MmapPostingsEnum::WithPositions(postings) => {
+                intersection(postings, tokens, filter, hw_counter)
+            }
+        }
     }
 
     fn check_has_subset(
@@ -214,7 +226,14 @@ impl MmapInvertedIndex {
             })
         }
 
-        check_intersection(&self.postings, tokens, point_id, hw_counter)
+        match &self.postings {
+            MmapPostingsEnum::Ids(postings) => {
+                check_intersection(postings, tokens, point_id, hw_counter)
+            }
+            MmapPostingsEnum::WithPositions(postings) => {
+                check_intersection(postings, tokens, point_id, hw_counter)
+            }
+        }
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
@@ -313,7 +332,7 @@ impl InvertedIndex for MmapInvertedIndex {
         token_id: TokenId,
         hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
-        self.postings.get(token_id, hw_counter).map(|p| p.len())
+        self.postings.posting_len(token_id, hw_counter)
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
@@ -321,8 +340,8 @@ impl InvertedIndex for MmapInvertedIndex {
 
         self.iter_vocab().filter_map(move |(token, &token_id)| {
             self.postings
-                .get(token_id, &hw_counter)
-                .map(|posting| (token, posting.len()))
+                .posting_len(token_id, &hw_counter)
+                .map(|posting_len| (token, posting_len))
         })
     }
 

@@ -255,6 +255,7 @@ mod tests {
                 max_token_len: Some(4),
                 lowercase: Some(true),
                 on_disk: None,
+                phrase_matching: None,
             },
             |token| tokens.push(token.to_owned()),
         );

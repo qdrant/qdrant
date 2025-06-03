@@ -71,6 +71,7 @@ impl MutableInvertedIndex {
         self.point_to_tokens.get(idx as usize)?.as_ref()
     }
 
+    /// Iterate over point ids whose documents contain all given tokens
     fn filter_has_subset(
         &self,
         tokens: TokenSet,
