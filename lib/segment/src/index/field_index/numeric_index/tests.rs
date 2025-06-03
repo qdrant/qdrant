@@ -548,21 +548,14 @@ fn test_numeric_index(#[case] index_type: IndexType) {
 }
 
 fn test_cond<
-    T: Encodable
-        + Numericable
-        + PartialOrd
-        + Clone
-        + MmapValue
-        + BlobFixedSize
-        + Send
-        + Sync
-        + Default
-        + 'static,
+    T: Encodable + Numericable + PartialOrd + Clone + MmapValue + Send + Sync + Default + 'static,
 >(
     index: &NumericIndexInner<T>,
     rng: Range<FloatPayloadType>,
     result: Vec<u32>,
-) {
+) where
+    Vec<T>: Blob,
+{
     let condition = FieldCondition::new_range(JsonPath::new("unused"), rng);
     let hw_acc = HwMeasurementAcc::new();
     let hw_counter = hw_acc.get_counter_cell();

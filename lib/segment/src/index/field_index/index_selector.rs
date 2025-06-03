@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gridstore::blob::BlobFixedSize;
+use gridstore::Blob;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -210,13 +210,13 @@ impl IndexSelector<'_> {
         }
     }
 
-    fn numeric_new<
-        T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default,
-        P,
-    >(
+    fn numeric_new<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
-    ) -> OperationResult<NumericIndex<T, P>> {
+    ) -> OperationResult<NumericIndex<T, P>>
+    where
+        Vec<T>: Blob,
+    {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 NumericIndex::new_rocksdb(Arc::clone(db), &field.to_string(), *is_appendable)
@@ -230,10 +230,7 @@ impl IndexSelector<'_> {
         })
     }
 
-    fn numeric_builder<
-        T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default,
-        P,
-    >(
+    fn numeric_builder<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
         make_rocksdb: fn(NumericIndexBuilder<T, P>) -> FieldIndexBuilder,
@@ -242,6 +239,7 @@ impl IndexSelector<'_> {
     ) -> FieldIndexBuilder
     where
         NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
+        Vec<T>: Blob,
     {
         match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb {

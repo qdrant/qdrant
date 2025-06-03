@@ -17,7 +17,7 @@ use chrono::DateTime;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use delegate::delegate;
-use gridstore::blob::BlobFixedSize;
+use gridstore::Blob;
 use mmap_numeric_index::MmapNumericIndex;
 use mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
 use parking_lot::RwLock;
@@ -160,16 +160,18 @@ impl<T: Encodable + Numericable> Range<T> {
     }
 }
 
-pub enum NumericIndexInner<
-    T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default,
-> {
+pub enum NumericIndexInner<T: Encodable + Numericable + MmapValue + Send + Sync + Default>
+where
+    Vec<T>: Blob,
+{
     Mutable(MutableNumericIndex<T>),
     Immutable(ImmutableNumericIndex<T>),
     Mmap(MmapNumericIndex<T>),
 }
 
-impl<T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default>
-    NumericIndexInner<T>
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default> NumericIndexInner<T>
+where
+    Vec<T>: Blob,
 {
     pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         if is_appendable {
@@ -475,10 +477,10 @@ impl<T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Defa
     }
 }
 
-pub struct NumericIndex<
-    T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default,
-    P,
-> {
+pub struct NumericIndex<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>
+where
+    Vec<T>: Blob,
+{
     inner: NumericIndexInner<T>,
     _phantom: PhantomData<P>,
 }
@@ -487,8 +489,9 @@ pub trait NumericIndexIntoInnerValue<T, P> {
     fn into_inner_value(value: P) -> T;
 }
 
-impl<T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default, P>
-    NumericIndex<T, P>
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> NumericIndex<T, P>
+where
+    Vec<T>: Blob,
 {
     pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         Self {
@@ -577,17 +580,18 @@ impl<T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Defa
     }
 }
 
-pub struct NumericIndexBuilder<
-    T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default,
-    P,
->(NumericIndex<T, P>)
-where
-    NumericIndex<T, P>: ValueIndexer<ValueType = P>;
-
-impl<T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default, P>
-    FieldIndexBuilderTrait for NumericIndexBuilder<T, P>
+pub struct NumericIndexBuilder<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
+    NumericIndex<T, P>,
+)
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob;
+
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> FieldIndexBuilderTrait
+    for NumericIndexBuilder<T, P>
+where
+    NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
 {
     type FieldIndexType = NumericIndex<T, P>;
 
@@ -616,10 +620,11 @@ where
 
 #[cfg(test)]
 pub struct NumericIndexImmutableBuilder<
-    T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default,
+    T: Encodable + Numericable + MmapValue + Send + Sync + Default,
     P,
 > where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
 {
     index: NumericIndex<T, P>,
     field: String,
@@ -627,10 +632,11 @@ pub struct NumericIndexImmutableBuilder<
 }
 
 #[cfg(test)]
-impl<T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default, P>
-    FieldIndexBuilderTrait for NumericIndexImmutableBuilder<T, P>
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> FieldIndexBuilderTrait
+    for NumericIndexImmutableBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
 {
     type FieldIndexType = NumericIndex<T, P>;
 
@@ -666,8 +672,9 @@ where
 
 pub struct NumericIndexMmapBuilder<T, P>
 where
-    T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default,
+    T: Encodable + Numericable + MmapValue + Send + Sync + Default,
     NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
+    Vec<T>: Blob,
 {
     path: PathBuf,
     in_memory_index: InMemoryNumericIndex<T>,
@@ -675,10 +682,11 @@ where
     _phantom: PhantomData<P>,
 }
 
-impl<T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default, P>
-    FieldIndexBuilderTrait for NumericIndexMmapBuilder<T, P>
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> FieldIndexBuilderTrait
+    for NumericIndexMmapBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
+    Vec<T>: Blob,
 {
     type FieldIndexType = NumericIndex<T, P>;
 
@@ -721,29 +729,32 @@ where
 }
 
 pub struct NumericIndexGridstoreBuilder<
-    T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default,
+    T: Encodable + Numericable + MmapValue + Send + Sync + Default,
     P,
 > where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
 {
     dir: PathBuf,
     index: Option<NumericIndex<T, P>>,
 }
 
-impl<T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default, P>
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>
     NumericIndexGridstoreBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
 {
     fn new(dir: PathBuf) -> Self {
         Self { dir, index: None }
     }
 }
 
-impl<T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default, P>
-    FieldIndexBuilderTrait for NumericIndexGridstoreBuilder<T, P>
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> FieldIndexBuilderTrait
+    for NumericIndexGridstoreBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
 {
     type FieldIndexType = NumericIndex<T, P>;
 
@@ -782,8 +793,10 @@ where
     }
 }
 
-impl<T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default>
-    PayloadFieldIndex for NumericIndexInner<T>
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default> PayloadFieldIndex
+    for NumericIndexInner<T>
+where
+    Vec<T>: Blob,
 {
     fn count_indexed_points(&self) -> usize {
         self.get_points_count()
@@ -1115,7 +1128,8 @@ impl NumericIndexIntoInnerValue<UuidIntType, UuidPayloadType>
 
 impl<T> StreamRange<T> for NumericIndexInner<T>
 where
-    T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default,
+    T: Encodable + Numericable + MmapValue + Send + Sync + Default,
+    Vec<T>: Blob,
 {
     fn stream_range(
         &self,
