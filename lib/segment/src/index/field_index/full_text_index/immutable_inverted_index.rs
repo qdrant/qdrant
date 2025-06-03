@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use posting_list::{IdsPostingList, IdsPostingListView, PostingBuilder, PostingList};
+use posting_list::{IdsPostingList, IdsPostingListView, PostingBuilder, PostingList, PostingValue};
 
 use super::inverted_index::{InvertedIndex, TokenSet};
 use super::mmap_inverted_index::MmapInvertedIndex;
@@ -29,8 +29,8 @@ impl ImmutableInvertedIndex {
         let filter =
             move |idx| matches!(self.point_to_tokens_count.get(idx as usize), Some(Some(_)));
 
-        fn intersection<'a>(
-            postings: &'a [PostingList<()>],
+        fn intersection<'a, V: PostingValue>(
+            postings: &'a [PostingList<V>],
             tokens: TokenSet,
             filter: impl Fn(PointOffsetType) -> bool + 'a,
         ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
@@ -66,8 +66,8 @@ impl ImmutableInvertedIndex {
             return false;
         }
 
-        fn check_intersection(
-            postings: &[PostingList<()>],
+        fn check_intersection<V: PostingValue>(
+            postings: &[PostingList<V>],
             tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> bool {

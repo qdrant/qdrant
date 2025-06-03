@@ -7,10 +7,10 @@ use zerocopy::little_endian::U32;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::iterator::PostingIterator;
-use crate::value_handler::{PostingValue, ValueHandler};
+use crate::value_handler::PostingValue;
 use crate::view::PostingListView;
 use crate::visitor::PostingVisitor;
-use crate::{CHUNK_LEN, PostingBuilder};
+use crate::{CHUNK_LEN, PostingBuilder, SizedTypeFor};
 
 /// Generic compressed posting list.
 ///
@@ -27,9 +27,9 @@ use crate::{CHUNK_LEN, PostingBuilder};
 #[derive(Debug, Clone)]
 pub struct PostingList<V: PostingValue> {
     pub(crate) id_data: Vec<u8>,
-    pub(crate) chunks: Vec<PostingChunk<<V::Handler as ValueHandler>::Sized>>,
-    pub(crate) remainders: Vec<RemainderPosting<<V::Handler as ValueHandler>::Sized>>,
-    pub(crate) var_size_data: <<V::Handler as ValueHandler>::VarSizeData as ToOwned>::Owned,
+    pub(crate) chunks: Vec<PostingChunk<SizedTypeFor<V>>>,
+    pub(crate) remainders: Vec<RemainderPosting<SizedTypeFor<V>>>,
+    pub(crate) var_size_data: Vec<u8>,
     pub(crate) last_id: Option<PointOffsetType>,
     pub(crate) _phantom: PhantomData<V>,
 }

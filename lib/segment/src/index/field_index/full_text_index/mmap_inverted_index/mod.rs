@@ -9,7 +9,7 @@ use memory::fadvise::clear_disk_cache;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
-use mmap_postings::MmapPostings;
+use mmap_postings::{MmapPostingValue, MmapPostings};
 use posting_list::IdsPostingListView;
 
 use super::inverted_index::{InvertedIndex, ParsedQuery};
@@ -34,7 +34,7 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 
 pub struct MmapInvertedIndex {
     pub(in crate::index::field_index::full_text_index) path: PathBuf,
-    pub(in crate::index::field_index::full_text_index) postings: MmapPostings,
+    pub(in crate::index::field_index::full_text_index) postings: MmapPostings<()>,
     pub(in crate::index::field_index::full_text_index) vocab: MmapHashMap<str, TokenId>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count: MmapSlice<usize>,
     pub(in crate::index::field_index::full_text_index) deleted_points:
@@ -60,7 +60,7 @@ impl MmapInvertedIndex {
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
         let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
-        MmapPostings::create(postings_path, &postings)?;
+        MmapPostings::<()>::create(postings_path, &postings)?;
 
         // Currently MmapHashMap maps str -> [u32], but we only need to map str -> u32.
         // TODO: Consider making another mmap structure for this case.
@@ -153,8 +153,8 @@ impl MmapInvertedIndex {
         // in case of mmap immutable index, deleted points are still in the postings
         let filter = move |idx| self.is_active(idx);
 
-        fn intersection<'a>(
-            postings: &'a MmapPostings,
+        fn intersection<'a, V: MmapPostingValue>(
+            postings: &'a MmapPostings<V>,
             tokens: TokenSet,
             filter: impl Fn(u32) -> bool + 'a,
             hw_counter: &'a HardwareCounterCell,
@@ -197,8 +197,8 @@ impl MmapInvertedIndex {
             return false;
         }
 
-        fn check_intersection(
-            postings: &MmapPostings,
+        fn check_intersection<V: MmapPostingValue>(
+            postings: &MmapPostings<V>,
             tokens: &TokenSet,
             point_id: PointOffsetType,
             hw_counter: &HardwareCounterCell,
