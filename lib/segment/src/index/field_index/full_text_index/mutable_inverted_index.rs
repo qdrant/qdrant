@@ -35,7 +35,7 @@ impl MutableInvertedIndex {
     }
 
     pub fn build_index(
-        iter: impl Iterator<Item = OperationResult<(PointOffsetType, impl Iterator<Item = String>)>>,
+        iter: impl Iterator<Item = OperationResult<(PointOffsetType, Vec<String>)>>,
         phrase_matching: bool,
     ) -> OperationResult<Self> {
         let mut builder = MutableInvertedIndexBuilder::new(phrase_matching);

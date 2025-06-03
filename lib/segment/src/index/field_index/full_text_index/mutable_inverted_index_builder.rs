@@ -44,7 +44,7 @@ impl MutableInvertedIndexBuilder {
 
     pub fn add_iter(
         &mut self,
-        iter: impl Iterator<Item = OperationResult<(PointOffsetType, impl Iterator<Item = String>)>>,
+        iter: impl Iterator<Item = OperationResult<(PointOffsetType, Vec<String>)>>,
         // TODO(phrase-index): add param for including phrase field
     ) -> OperationResult<()> {
         for item in iter {

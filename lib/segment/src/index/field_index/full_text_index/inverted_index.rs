@@ -30,6 +30,10 @@ impl TokenSet {
         &self.0
     }
 
+    pub fn inner(self) -> Vec<TokenId> {
+        self.0
+    }
+
     pub fn contains(&self, token: &TokenId) -> bool {
         self.0.binary_search(token).is_ok()
     }

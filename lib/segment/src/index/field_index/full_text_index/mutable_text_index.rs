@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -5,7 +6,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
-use itertools::Either;
 use parking_lot::RwLock;
 
 use super::inverted_index::{Document, InvertedIndex, TokenSet};
@@ -99,13 +99,7 @@ impl MutableFullTextIndex {
         let phrase_matching = self.config.phrase_matching.unwrap_or_default();
         let iter = db.iter()?.map(|(key, value)| {
             let idx = FullTextIndex::restore_key(&key);
-
-            let str_tokens = if phrase_matching {
-                Either::Left(FullTextIndex::deserialize_document(&value)?.into_iter())
-            } else {
-                Either::Right(FullTextIndex::deserialize_token_set(&value)?.into_iter())
-            };
-
+            let str_tokens = FullTextIndex::deserialize_document(&value)?;
             Ok((idx, str_tokens))
         });
 
@@ -134,11 +128,7 @@ impl MutableFullTextIndex {
             .read()
             .iter::<_, OperationError>(
                 |idx, value| {
-                    let str_tokens = if phrase_matching {
-                        Either::Left(FullTextIndex::deserialize_document(&value)?.into_iter())
-                    } else {
-                        Either::Right(FullTextIndex::deserialize_token_set(&value)?.into_iter())
-                    };
+                    let str_tokens = FullTextIndex::deserialize_document(value)?;
                     builder.add(idx, str_tokens);
                     Ok(true)
                 },
@@ -252,11 +242,15 @@ impl MutableFullTextIndex {
 
         let db_idx = FullTextIndex::store_key(idx);
 
-        let db_document = if phrase_matching {
-            FullTextIndex::serialize_document(str_tokens)?
+        let tokens_to_store = if phrase_matching {
+            // store ordered tokens
+            str_tokens
         } else {
-            FullTextIndex::serialize_token_set(str_tokens.into_iter().collect())?
+            // store unique tokens
+            BTreeSet::from_iter(str_tokens).into_iter().collect()
         };
+
+        let db_document = FullTextIndex::serialize_document(tokens_to_store)?;
 
         // Update persisted storage
         match &self.storage {

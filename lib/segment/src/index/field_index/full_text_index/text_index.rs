@@ -1,3 +1,4 @@
+#[cfg(test)]
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -226,6 +227,11 @@ impl FullTextIndex {
         bincode::deserialize(data).unwrap()
     }
 
+    /// CBOR representation is the same for BTreeSet<String> and Vec<String> if the elements are sorted, thus, we can resort to
+    /// the vec implementation always. Let's just keep this to prove this works fine during https://github.com/qdrant/qdrant/pull/6493
+    ///
+    /// We can remove this afterwards
+    #[cfg(test)]
     pub(super) fn serialize_token_set(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
         #[derive(Serialize)]
         struct StoredTokens {
@@ -237,6 +243,11 @@ impl FullTextIndex {
         })
     }
 
+    /// CBOR representation is the same for BTreeSet<String> and Vec<String> if the elements are sorted, thus, we can resort to
+    /// the vec implementation always. Let's just keep this to prove this works fine during https://github.com/qdrant/qdrant/pull/6493
+    ///
+    /// We can delete this afterwards
+    #[cfg(test)]
     pub(super) fn deserialize_token_set(data: &[u8]) -> OperationResult<BTreeSet<String>> {
         #[derive(Deserialize)]
         struct StoredTokens {
@@ -933,5 +944,48 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Test that Vec and BTreeSet are serialized the same way in CBOR
+    #[test]
+    fn test_tokenset_and_document_serde() {
+        let str_tokens = [
+            "the", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog",
+        ]
+        .map(String::from);
+
+        let str_tokens_set = BTreeSet::from_iter(str_tokens.clone());
+        let str_tokens_set_as_vec = str_tokens_set.iter().cloned().collect::<Vec<_>>();
+
+        let serialized_set = FullTextIndex::serialize_token_set(str_tokens_set.clone()).unwrap();
+        let serialized_vec =
+            FullTextIndex::serialize_document(str_tokens_set_as_vec.clone()).unwrap();
+
+        assert_eq!(serialized_set, serialized_vec);
+
+        eprintln!(
+            "Serialized set: {:?}",
+            serialized_set
+                .iter()
+                .map(|&b| b as char)
+                .collect::<String>()
+        );
+        eprintln!(
+            "Serialized vec: {:?}",
+            serialized_vec
+                .iter()
+                .map(|&b| b as char)
+                .collect::<String>()
+        );
+
+        // cross serialization/deserialization also gives the same result
+        assert_eq!(
+            FullTextIndex::deserialize_document(&serialized_set).unwrap(),
+            str_tokens_set_as_vec
+        );
+        assert_eq!(
+            FullTextIndex::deserialize_token_set(&serialized_vec).unwrap(),
+            str_tokens_set
+        );
     }
 }

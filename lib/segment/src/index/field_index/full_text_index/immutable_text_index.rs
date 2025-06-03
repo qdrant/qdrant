@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
-use itertools::Either;
 
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::inverted_index::InvertedIndex;
@@ -84,13 +83,7 @@ impl ImmutableFullTextIndex {
         let phrase_matching = self.config.phrase_matching.unwrap_or_default();
         let iter = db.iter()?.map(|(key, value)| {
             let idx = FullTextIndex::restore_key(&key);
-
-            let tokens = if phrase_matching {
-                Either::Left(FullTextIndex::deserialize_document(&value)?.into_iter())
-            } else {
-                Either::Right(FullTextIndex::deserialize_token_set(&value)?.into_iter())
-            };
-
+            let tokens = FullTextIndex::deserialize_document(&value)?;
             Ok((idx, tokens))
         });
 
