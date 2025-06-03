@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use gridstore::Blob;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -13,7 +14,10 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 
-pub struct MutableMapIndex<N: MapIndexKey + ?Sized> {
+pub struct MutableMapIndex<N: MapIndexKey + ?Sized>
+where
+    Vec<N::Owned>: Blob,
+{
     pub(super) map: HashMap<N::Owned, BTreeSet<PointOffsetType>>,
     pub(super) point_to_values: Vec<Vec<N::Owned>>,
     /// Amount of point which have at least one indexed payload value
@@ -22,8 +26,11 @@ pub struct MutableMapIndex<N: MapIndexKey + ?Sized> {
     pub(super) db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
-impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
-    pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
+impl<N: MapIndexKey + ?Sized> MutableMapIndex<N>
+where
+    Vec<N::Owned>: Blob,
+{
+    pub fn open_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
         let store_cf_name = MapIndex::<N>::storage_cf_name(field_name);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,

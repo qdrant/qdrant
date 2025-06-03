@@ -8,6 +8,7 @@ use std::sync::Arc;
 use bitvec::vec::BitVec;
 use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
+use gridstore::Blob;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -47,7 +48,10 @@ pub(super) struct ContainerSegment {
     count: u32,
 }
 
-impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
+impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
+where
+    Vec<N::Owned>: Blob,
+{
     /// Open immutable numeric index from RocksDB storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].

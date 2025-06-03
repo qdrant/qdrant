@@ -12,6 +12,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
 use ecow::EcoString;
+use gridstore::Blob;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use mmap_map_index::MmapMapIndex;
@@ -76,16 +77,22 @@ impl MapIndexKey for UuidIntType {
     }
 }
 
-pub enum MapIndex<N: MapIndexKey + ?Sized> {
+pub enum MapIndex<N: MapIndexKey + ?Sized>
+where
+    Vec<N::Owned>: Blob,
+{
     Mutable(MutableMapIndex<N>),
     Immutable(ImmutableMapIndex<N>),
     Mmap(Box<MmapMapIndex<N>>),
 }
 
-impl<N: MapIndexKey + ?Sized> MapIndex<N> {
+impl<N: MapIndexKey + ?Sized> MapIndex<N>
+where
+    Vec<N::Owned>: Blob,
+{
     pub fn new_rocksdb(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
         if is_appendable {
-            MapIndex::Mutable(MutableMapIndex::new(db, field_name))
+            MapIndex::Mutable(MutableMapIndex::open_rocksdb(db, field_name))
         } else {
             MapIndex::Immutable(ImmutableMapIndex::open_rocksdb(db, field_name))
         }
@@ -106,7 +113,9 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     }
 
     pub fn builder_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
-        MapIndexBuilder(MapIndex::Mutable(MutableMapIndex::new(db, field_name)))
+        MapIndexBuilder(MapIndex::Mutable(MutableMapIndex::open_rocksdb(
+            db, field_name,
+        )))
     }
 
     pub fn builder_mmap(path: &Path, is_on_disk: bool) -> MapIndexMmapBuilder<N> {
@@ -479,11 +488,14 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     }
 }
 
-pub struct MapIndexBuilder<N: MapIndexKey + ?Sized>(MapIndex<N>);
+pub struct MapIndexBuilder<N: MapIndexKey + ?Sized>(MapIndex<N>)
+where
+    Vec<N::Owned>: Blob;
 
 impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexBuilder<N>
 where
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
+    Vec<N::Owned>: Blob,
 {
     type FieldIndexType = MapIndex<N>;
 
@@ -518,6 +530,7 @@ pub struct MapIndexMmapBuilder<N: MapIndexKey + ?Sized> {
 
 impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexMmapBuilder<N>
 where
+    Vec<N::Owned>: Blob,
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
     <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
 {
@@ -1064,9 +1077,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 }
 
-impl<N> FacetIndex for MapIndex<N>
+impl<N: MapIndexKey + ?Sized> FacetIndex for MapIndex<N>
 where
-    N: MapIndexKey + ?Sized,
+    Vec<N::Owned>: Blob,
     for<'a> N::Referenced<'a>: Into<FacetValueRef<'a>>,
     for<'a> &'a N: Into<FacetValueRef<'a>>,
 {
@@ -1221,6 +1234,7 @@ mod tests {
         into_value: impl Fn(&N::Owned) -> Value,
     ) where
         N: MapIndexKey + ?Sized,
+        Vec<N::Owned>: Blob,
         MapIndex<N>: PayloadFieldIndex + ValueIndexer,
         <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
     {
@@ -1261,7 +1275,10 @@ mod tests {
         data: &[Vec<N::Owned>],
         path: &Path,
         index_type: IndexType,
-    ) -> MapIndex<N> {
+    ) -> MapIndex<N>
+    where
+        Vec<N::Owned>: Blob,
+    {
         let mut index = match index_type {
             IndexType::Mutable => MapIndex::<N>::new_rocksdb(
                 open_db_with_existing_cf(path).unwrap(),

@@ -175,7 +175,10 @@ impl IndexSelector<'_> {
         Ok(builders)
     }
 
-    fn map_new<N: MapIndexKey + ?Sized>(&self, field: &JsonPath) -> OperationResult<MapIndex<N>> {
+    fn map_new<N: MapIndexKey + ?Sized>(&self, field: &JsonPath) -> OperationResult<MapIndex<N>>
+    where
+        Vec<N::Owned>: Blob,
+    {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 MapIndex::new_rocksdb(Arc::clone(db), &field.to_string(), *is_appendable)
@@ -195,7 +198,10 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         make_rocksdb: fn(MapIndexBuilder<N>) -> FieldIndexBuilder,
         make_mmap: fn(MapIndexMmapBuilder<N>) -> FieldIndexBuilder,
-    ) -> FieldIndexBuilder {
+    ) -> FieldIndexBuilder
+    where
+        Vec<N::Owned>: Blob,
+    {
         match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => make_rocksdb(
                 MapIndex::builder_rocksdb(Arc::clone(db), &field.to_string()),
