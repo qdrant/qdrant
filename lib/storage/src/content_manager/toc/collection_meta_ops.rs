@@ -43,8 +43,9 @@ impl TableOfContent {
                         ShardingMethod::Auto => {
                             let collection_defaults = self.storage_config.collection.as_ref();
 
-                            let suggested_shard_number =
-                                collection_defaults.map(|config| config.get_shard_number(1));
+                            let number_of_peers = 1; // this is a single node deployment
+                            let suggested_shard_number = collection_defaults
+                                .map(|config| config.get_shard_number(number_of_peers));
 
                             let shard_number = operation
                                 .create_collection
