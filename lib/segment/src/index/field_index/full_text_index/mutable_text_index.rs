@@ -151,6 +151,7 @@ mod tests {
             max_token_len: None,
             lowercase: None,
             on_disk: None,
+            phrase_matching: None,
         };
 
         {

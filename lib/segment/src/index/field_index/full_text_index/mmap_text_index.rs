@@ -24,7 +24,10 @@ pub struct MmapFullTextIndex {
 impl MmapFullTextIndex {
     pub fn open(path: PathBuf, config: TextIndexParams, is_on_disk: bool) -> OperationResult<Self> {
         let populate = !is_on_disk;
-        let inverted_index = MmapInvertedIndex::open(path, populate)?;
+
+        let has_positions = config.phrase_matching == Some(true);
+
+        let inverted_index = MmapInvertedIndex::open(path, populate, has_positions)?;
 
         Ok(Self {
             inverted_index,
@@ -50,9 +53,8 @@ impl MmapFullTextIndex {
         Ok(())
     }
 
-    pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+    pub fn remove_point(&mut self, id: PointOffsetType) {
         self.inverted_index.remove(id);
-        Ok(())
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -177,7 +179,8 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         MmapInvertedIndex::create(path.clone(), immutable)?;
 
         let populate = !is_on_disk;
-        let inverted_index = MmapInvertedIndex::open(path, populate)?;
+        let has_positions = config.phrase_matching == Some(true);
+        let inverted_index = MmapInvertedIndex::open(path, populate, has_positions)?;
 
         let mmap_index = MmapFullTextIndex {
             inverted_index,

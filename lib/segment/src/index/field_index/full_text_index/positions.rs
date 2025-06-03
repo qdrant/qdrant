@@ -2,8 +2,14 @@ use posting_list::{PostingValue, UnsizedHandler, UnsizedValue};
 use zerocopy::{FromBytes, IntoBytes};
 
 /// Represents a list of positions of a token in a document.
-#[derive(Clone, Debug)]
+#[derive(Default, Clone, Debug)]
 pub(super) struct Positions(Vec<u32>);
+
+impl Positions {
+    pub fn push(&mut self, position: u32) {
+        self.0.push(position);
+    }
+}
 
 impl PostingValue for Positions {
     type Handler = UnsizedHandler<Self>;

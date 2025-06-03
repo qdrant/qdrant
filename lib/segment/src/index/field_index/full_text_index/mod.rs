@@ -1,3 +1,4 @@
+mod immutable_postings_enum;
 mod immutable_text_index;
 mod inverted_index;
 mod mmap_inverted_index;
