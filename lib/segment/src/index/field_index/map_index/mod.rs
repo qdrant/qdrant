@@ -112,6 +112,10 @@ where
         }
     }
 
+    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
+        Ok(MapIndex::Mutable(MutableMapIndex::open_gridstore(dir)?))
+    }
+
     pub fn builder_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
         MapIndexBuilder(MapIndex::Mutable(MutableMapIndex::open_rocksdb(
             db, field_name,
@@ -125,6 +129,10 @@ where
             values_to_points: Default::default(),
             is_on_disk,
         }
+    }
+
+    pub fn builder_gridstore(dir: PathBuf) -> MapIndexGridstoreBuilder<N> {
+        MapIndexGridstoreBuilder::new(dir)
     }
 
     fn load(&mut self) -> OperationResult<bool> {
@@ -586,6 +594,66 @@ where
             self.values_to_points,
             self.is_on_disk,
         )?)))
+    }
+}
+
+pub struct MapIndexGridstoreBuilder<N: MapIndexKey + ?Sized>
+where
+    Vec<N::Owned>: Blob + Send + Sync,
+{
+    dir: PathBuf,
+    index: Option<MapIndex<N>>,
+}
+
+impl<N: MapIndexKey + ?Sized> MapIndexGridstoreBuilder<N>
+where
+    Vec<N::Owned>: Blob + Send + Sync,
+{
+    fn new(dir: PathBuf) -> Self {
+        Self { dir, index: None }
+    }
+}
+
+impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexGridstoreBuilder<N>
+where
+    Vec<N::Owned>: Blob + Send + Sync,
+    MapIndex<N>: PayloadFieldIndex + ValueIndexer,
+    <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
+{
+    type FieldIndexType = MapIndex<N>;
+
+    fn init(&mut self) -> OperationResult<()> {
+        assert!(
+            self.index.is_none(),
+            "index must be initialized exactly once",
+        );
+        self.index
+            .replace(MapIndex::new_gridstore(self.dir.clone())?);
+        Ok(())
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "MapIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.add_point(id, payload, hw_counter)
+    }
+
+    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+        let Some(index) = self.index.take() else {
+            return Err(OperationError::service_error(
+                "MapIndexGridstoreBuilder: index must be initialized to finalize",
+            ));
+        };
+        index.flusher()()?;
+        Ok(index)
     }
 }
 
