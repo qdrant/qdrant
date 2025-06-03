@@ -194,7 +194,7 @@ nix = { version = "0.29", features = ["fs"] }
 num-traits = "0.2.19"
 ordered-float = "5.0.0"
 rayon = "1.10.0"
-parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
+parking_lot = { version = "0.12.4", features = ["deadlock_detection", "serde"] }
 ph = "0.8.5"
 pprof = { version = "0.14.0", features = ["flamegraph", "prost-codec"] }
 proptest = { version = "1.6.0", default-features = false, features = ["std"] }
