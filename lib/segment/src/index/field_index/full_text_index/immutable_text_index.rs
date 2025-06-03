@@ -4,7 +4,6 @@ use common::types::PointOffsetType;
 
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::inverted_index::InvertedIndex;
-use super::mmap_inverted_index::MmapPostingsEnum;
 use super::mmap_text_index::MmapFullTextIndex;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::text_index::FullTextIndex;
@@ -12,6 +11,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::full_text_index::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 
 pub struct ImmutableFullTextIndex {
     pub(super) inverted_index: ImmutableInvertedIndex,

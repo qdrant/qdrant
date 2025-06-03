@@ -10,57 +10,12 @@ use super::mmap_inverted_index::MmapInvertedIndex;
 use super::mmap_inverted_index::mmap_postings::MmapPostingValue;
 use super::positions::Positions;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::full_text_index::immutable_postings_enum::ImmutablePostings;
 use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, TokenId};
-use crate::index::field_index::full_text_index::mmap_inverted_index::MmapPostingsEnum;
 use crate::index::field_index::full_text_index::mmap_inverted_index::mmap_postings::MmapPostings;
+use crate::index::field_index::full_text_index::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
 use crate::index::field_index::full_text_index::postings_iterator::intersect_compressed_postings_iterator;
-
-#[cfg_attr(test, derive(Clone))]
-#[derive(Debug)]
-pub enum ImmutablePostings {
-    Ids(Vec<PostingList<()>>),
-    WithPositions(Vec<PostingList<Positions>>),
-}
-
-impl ImmutablePostings {
-    pub fn len(&self) -> usize {
-        match self {
-            ImmutablePostings::Ids(lists) => lists.len(),
-            ImmutablePostings::WithPositions(lists) => lists.len(),
-        }
-    }
-
-    fn posting_len(&self, token: TokenId) -> Option<usize> {
-        match self {
-            ImmutablePostings::Ids(postings) => {
-                postings.get(token as usize).map(|posting| posting.len())
-            }
-            ImmutablePostings::WithPositions(postings) => {
-                postings.get(token as usize).map(|posting| posting.len())
-            }
-        }
-    }
-
-    #[cfg(test)]
-    pub fn iter_ids(
-        &self,
-        token_id: TokenId,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        match self {
-            ImmutablePostings::Ids(postings) => postings.get(token_id as usize).map(|posting| {
-                Box::new(posting.iter().map(|elem| elem.id))
-                    as Box<dyn Iterator<Item = PointOffsetType>>
-            }),
-            ImmutablePostings::WithPositions(postings) => {
-                postings.get(token_id as usize).map(|posting| {
-                    Box::new(posting.iter().map(|elem| elem.id))
-                        as Box<dyn Iterator<Item = PointOffsetType>>
-                })
-            }
-        }
-    }
-}
 
 #[cfg_attr(test, derive(Clone))]
 #[derive(Debug)]
@@ -90,6 +45,7 @@ impl ImmutableInvertedIndex {
         }
     }
 
+    /// Iterate over point ids whose documents contain all given tokens
     fn filter_has_subset(
         &self,
         tokens: TokenSet,

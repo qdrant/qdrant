@@ -16,12 +16,13 @@ use super::positions::Positions;
 use super::postings_iterator::intersect_compressed_postings_iterator;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::immutable_inverted_index::{
-    ImmutableInvertedIndex, ImmutablePostings,
-};
+use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
+use crate::index::field_index::full_text_index::immutable_postings_enum::ImmutablePostings;
 use crate::index::field_index::full_text_index::inverted_index::{TokenId, TokenSet};
+use crate::index::field_index::full_text_index::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 
 pub(super) mod mmap_postings;
+pub(super) mod mmap_postings_enum;
 
 /// Old implementation of mmap postings, used to test backwards compatibility temporarily
 #[cfg(test)]
@@ -33,55 +34,6 @@ const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
 const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
 const DELETED_POINTS_FILE: &str = "deleted_points.dat";
-
-pub enum MmapPostingsEnum {
-    Ids(MmapPostings<()>),
-    WithPositions(MmapPostings<Positions>),
-}
-
-impl MmapPostingsEnum {
-    pub fn populate(&self) {
-        match self {
-            MmapPostingsEnum::Ids(postings) => postings.populate(),
-            MmapPostingsEnum::WithPositions(postings) => postings.populate(),
-        }
-    }
-
-    pub fn posting_len(
-        &self,
-        token_id: TokenId,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<usize> {
-        match self {
-            MmapPostingsEnum::Ids(postings) => {
-                postings.get(token_id, hw_counter).map(|view| view.len())
-            }
-            MmapPostingsEnum::WithPositions(postings) => {
-                postings.get(token_id, hw_counter).map(|view| view.len())
-            }
-        }
-    }
-
-    #[cfg(test)]
-    pub fn iter_ids<'a>(
-        &'a self,
-        token_id: TokenId,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        match self {
-            MmapPostingsEnum::Ids(postings) => postings.get(token_id, hw_counter).map(|view| {
-                Box::new(view.into_iter().map(|elem| elem.id))
-                    as Box<dyn Iterator<Item = PointOffsetType>>
-            }),
-            MmapPostingsEnum::WithPositions(postings) => {
-                postings.get(token_id, hw_counter).map(|view| {
-                    Box::new(view.into_iter().map(|elem| elem.id))
-                        as Box<dyn Iterator<Item = PointOffsetType>>
-                })
-            }
-        }
-    }
-}
 
 pub struct MmapInvertedIndex {
     pub(in crate::index::field_index::full_text_index) path: PathBuf,
@@ -199,6 +151,7 @@ impl MmapInvertedIndex {
         !is_deleted
     }
 
+    /// Iterate over point ids whose documents contain all given tokens
     pub fn filter_has_subset<'a>(
         &'a self,
         tokens: TokenSet,
