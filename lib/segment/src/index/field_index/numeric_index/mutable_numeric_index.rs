@@ -24,7 +24,7 @@ use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::mmap_point_to_values::MmapValue;
 
 /// Default page size used in Gridstore
-pub const DEFAULT_PAGE_SIZE_BYTES: usize = 4 * 1024 * 1024; // 4 MiB = 16 * 8192 * 32
+pub const DEFAULT_PAGE_SIZE_BYTES: usize = 16 * 8192 * 32; // 4 MiB = block_size * region_blocks * regions
 
 /// Default options for Gridstore storage
 const fn default_gridstore_options<T: Sized>() -> StorageOptions {
