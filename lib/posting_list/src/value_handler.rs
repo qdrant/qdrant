@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use common::counter::conditioned_counter::ConditionedCounter;
+use zerocopy::little_endian::U32;
 
 use crate::{SizedValue, UnsizedValue};
 
@@ -36,16 +37,11 @@ pub trait ValueHandler {
     /// The value to store within each chunk, or alongside each id.
     type Sized: std::marker::Sized + Copy + Debug;
 
-    /// The type to store variable-size data
-    type VarSizeData: ToOwned<Owned: Clone + Debug> + Debug + ?Sized;
-
     /// Process values before storage and return the necessary var_sized_data
     ///
     /// - For fixed-size values, this returns the values themselves and an empty var_sized_data.
     /// - For variable-size values, this returns offsets and the flattened serialized data.
-    fn process_values(
-        values: Vec<Self::Value>,
-    ) -> (Vec<Self::Sized>, <Self::VarSizeData as ToOwned>::Owned);
+    fn process_values(values: Vec<Self::Value>) -> (Vec<Self::Sized>, Vec<u8>);
 
     /// Retrieve a value.
     ///
@@ -54,7 +50,7 @@ pub trait ValueHandler {
     fn get_value<N>(
         sized_value: Self::Sized,
         next_sized_value: N,
-        var_data: &Self::VarSizeData,
+        var_data: &[u8],
         hw_counter: &ConditionedCounter,
     ) -> Self::Value
     where
@@ -68,16 +64,15 @@ pub struct SizedHandler<V: SizedValue>(PhantomData<V>);
 impl<V: SizedValue> ValueHandler for SizedHandler<V> {
     type Value = V;
     type Sized = V;
-    type VarSizeData = ();
 
-    fn process_values(values: Vec<V>) -> (Vec<V>, ()) {
-        (values, ())
+    fn process_values(values: Vec<V>) -> (Vec<V>, Vec<u8>) {
+        (values, Vec::new())
     }
 
     fn get_value<N>(
         sized_value: V,
         _next_sized_value: N,
-        _var_data: &(),
+        _var_data: &[u8],
         _hw_counter: &ConditionedCounter,
     ) -> V
     where
@@ -93,16 +88,14 @@ pub struct UnsizedHandler<V: UnsizedValue>(PhantomData<V>);
 
 impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
     type Value = V;
-    type Sized = u32;
-
-    type VarSizeData = [u8];
+    type Sized = U32;
 
     fn process_values(values: Vec<Self::Value>) -> (Vec<Self::Sized>, Vec<u8>) {
         let mut offsets = Vec::with_capacity(values.len());
         let mut current_offset = 0u32;
 
         for value in &values {
-            offsets.push(current_offset);
+            offsets.push(U32::from(current_offset));
             let value_len = u32::try_from(value.write_len())
                 .expect("Value larger than 4GB, use u64 offsets instead");
             // prepare next starting offset
@@ -114,12 +107,12 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
         let last_offset = offsets.last();
         let ranges = offsets
             .windows(2)
-            .map(|w| w[0] as usize..w[1] as usize)
+            .map(|w| w[0].get() as usize..w[1].get() as usize)
             // the last one is not included in windows, but goes until the end
             .chain(
                 last_offset
                     .iter()
-                    .map(|&last| *last as usize..current_offset as usize),
+                    .map(|&last| last.get() as usize..current_offset as usize),
             );
 
         let mut var_sized_data = vec![0; current_offset as usize];
@@ -140,8 +133,8 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
         N: Fn() -> Option<Self::Sized>,
     {
         let range = match next_sized_value() {
-            Some(next_value) => sized_value as usize..next_value as usize,
-            None => sized_value as usize..var_data.len(),
+            Some(next_value) => sized_value.get() as usize..next_value.get() as usize,
+            None => sized_value.get() as usize..var_data.len(),
         };
 
         hw_counter

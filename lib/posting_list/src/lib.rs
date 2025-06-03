@@ -29,6 +29,11 @@ pub trait UnsizedValue {
     fn from_bytes(data: &[u8]) -> Self;
 }
 
+/// Sized value attached to each id in the posting list.
+///
+/// Concrete values are usually just `()` or `u32`.
+pub type SizedTypeFor<V> = <<V as PostingValue>::Handler as ValueHandler>::Sized;
+
 /// Posting list of ids, where ids are compressed.
 pub type IdsPostingList = PostingList<()>;
 
@@ -37,6 +42,6 @@ pub type IdsPostingListView<'a> = PostingListView<'a, ()>;
 
 pub use builder::PostingBuilder;
 pub use posting_list::{PostingChunk, PostingElement, PostingList, RemainderPosting};
-pub use value_handler::{PostingValue, SizedHandler, UnsizedHandler};
+pub use value_handler::{PostingValue, SizedHandler, UnsizedHandler, ValueHandler};
 pub use view::{PostingListComponents, PostingListView};
 pub use visitor::PostingVisitor;
