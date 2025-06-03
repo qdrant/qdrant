@@ -327,7 +327,7 @@ where
         };
 
         let hw_counter = HardwareCounterCell::disposable();
-        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
             .read()
             .iter(
@@ -416,7 +416,7 @@ where
                 store.write().delete_value(idx);
             }
             Storage::Gridstore(store) => {
-                let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+                let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
                 store
                     .write()
                     .put_value(idx, &values, hw_counter_ref)
