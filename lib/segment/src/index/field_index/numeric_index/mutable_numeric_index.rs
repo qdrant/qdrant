@@ -22,17 +22,15 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::mmap_point_to_values::MmapValue;
 
-/// Default page size used in Gridstore
-pub const DEFAULT_PAGE_SIZE_BYTES: usize = 16 * 8192 * 32; // 4 MiB = block_size * region_blocks * regions
-
 /// Default options for Gridstore storage
 const fn default_gridstore_options<T: Sized>() -> StorageOptions {
+    let block_size = size_of::<T>();
     StorageOptions {
         // Size of numeric values in index
-        block_size_bytes: Some(size_of::<T>()),
+        block_size_bytes: Some(block_size),
         // Compressing numeric values is unreasonable
         compression: Some(gridstore::config::Compression::None),
-        page_size_bytes: Some(DEFAULT_PAGE_SIZE_BYTES), // 4 MiB = 16 * 8192 * 32
+        page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
         region_size_blocks: None,
     }
 }
