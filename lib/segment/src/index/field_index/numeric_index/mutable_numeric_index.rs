@@ -367,6 +367,21 @@ where
         }
     }
 
+    /// Clear cache
+    ///
+    /// Only clears cache of Gridstore storage if used. Does not clear in-memory representation of
+    /// index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match &self.storage {
+            Storage::RocksDb(_) => Ok(()),
+            Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to clear mutable numeric index gridstore cache: {err}"
+                ))
+            }),
+        }
+    }
+
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match &self.storage {

@@ -468,7 +468,8 @@ where
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            NumericIndexInner::Mutable(_) => {} // Not a mmap
+            // Only clears backing mmap storage if used, not in-memory representation
+            NumericIndexInner::Mutable(index) => index.clear_cache()?,
             // Only clears backing mmap storage if used, not in-memory representation
             NumericIndexInner::Immutable(index) => index.clear_cache()?,
             NumericIndexInner::Mmap(index) => index.clear_cache()?,
