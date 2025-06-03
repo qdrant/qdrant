@@ -50,7 +50,7 @@ pub(super) struct ContainerSegment {
 
 impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
 where
-    Vec<N::Owned>: Blob,
+    Vec<N::Owned>: Blob + Send + Sync,
 {
     /// Open immutable numeric index from RocksDB storage
     ///
@@ -110,14 +110,8 @@ where
         // To avoid code duplication, use `MutableMapIndex` to load data from db
         // and convert to immutable state
 
-        let mut mutable = MutableMapIndex::<N> {
-            map: Default::default(),
-            point_to_values: Vec::new(),
-            indexed_points: 0,
-            values_count: 0,
-            db_wrapper: db_wrapper.clone(),
-        };
-        let result = mutable.load()?;
+        let mut mutable = MutableMapIndex::<N>::open_rocksdb_db_wrapper(db_wrapper.clone());
+        let result = mutable.load_rocksdb()?;
         let MutableMapIndex::<N> {
             map,
             point_to_values,

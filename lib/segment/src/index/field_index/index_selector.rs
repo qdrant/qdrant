@@ -177,7 +177,7 @@ impl IndexSelector<'_> {
 
     fn map_new<N: MapIndexKey + ?Sized>(&self, field: &JsonPath) -> OperationResult<MapIndex<N>>
     where
-        Vec<N::Owned>: Blob,
+        Vec<N::Owned>: Blob + Send + Sync,
     {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
@@ -200,7 +200,7 @@ impl IndexSelector<'_> {
         make_mmap: fn(MapIndexMmapBuilder<N>) -> FieldIndexBuilder,
     ) -> FieldIndexBuilder
     where
-        Vec<N::Owned>: Blob,
+        Vec<N::Owned>: Blob + Send + Sync,
     {
         match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => make_rocksdb(

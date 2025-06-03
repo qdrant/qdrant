@@ -48,7 +48,7 @@ pub type IdRefIter<'a> = Box<dyn Iterator<Item = &'a PointOffsetType> + 'a>;
 pub type IdIter<'a> = Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
 pub trait MapIndexKey: Key + MmapValue + Eq + Display + Debug {
-    type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default;
+    type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default + 'static;
 
     fn to_owned(&self) -> Self::Owned;
 }
@@ -79,7 +79,7 @@ impl MapIndexKey for UuidIntType {
 
 pub enum MapIndex<N: MapIndexKey + ?Sized>
 where
-    Vec<N::Owned>: Blob,
+    Vec<N::Owned>: Blob + Send + Sync,
 {
     Mutable(MutableMapIndex<N>),
     Immutable(ImmutableMapIndex<N>),
@@ -88,7 +88,7 @@ where
 
 impl<N: MapIndexKey + ?Sized> MapIndex<N>
 where
-    Vec<N::Owned>: Blob,
+    Vec<N::Owned>: Blob + Send + Sync,
 {
     pub fn new_rocksdb(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
         if is_appendable {
@@ -245,7 +245,7 @@ where
 
     fn flusher(&self) -> Flusher {
         match self {
-            MapIndex::Mutable(index) => index.db_wrapper().flusher(),
+            MapIndex::Mutable(index) => index.flusher(),
             MapIndex::Immutable(index) => index.flusher(),
             MapIndex::Mmap(index) => index.flusher(),
         }
@@ -302,7 +302,7 @@ where
 
     fn clear(self) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.db_wrapper().remove_column_family(),
+            MapIndex::Mutable(index) => index.clear(),
             MapIndex::Immutable(index) => index.clear(),
             MapIndex::Mmap(index) => index.clear(),
         }
@@ -321,7 +321,7 @@ where
 
     fn files(&self) -> Vec<PathBuf> {
         match self {
-            MapIndex::Mutable(_) => vec![],
+            MapIndex::Mutable(index) => index.files(),
             MapIndex::Immutable(index) => index.files(),
             MapIndex::Mmap(index) => index.files(),
         }
@@ -479,7 +479,8 @@ where
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(_) => {} // Not a mmap
+            // Only clears backing mmap storage if used, not in-memory representation
+            MapIndex::Mutable(index) => index.clear_cache()?,
             // Only clears backing mmap storage if used, not in-memory representation
             MapIndex::Immutable(index) => index.clear_cache()?,
             MapIndex::Mmap(index) => index.clear_cache()?,
@@ -490,18 +491,18 @@ where
 
 pub struct MapIndexBuilder<N: MapIndexKey + ?Sized>(MapIndex<N>)
 where
-    Vec<N::Owned>: Blob;
+    Vec<N::Owned>: Blob + Send + Sync;
 
 impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexBuilder<N>
 where
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
-    Vec<N::Owned>: Blob,
+    Vec<N::Owned>: Blob + Send + Sync,
 {
     type FieldIndexType = MapIndex<N>;
 
     fn init(&mut self) -> OperationResult<()> {
         match &mut self.0 {
-            MapIndex::Mutable(index) => index.db_wrapper().recreate_column_family(),
+            MapIndex::Mutable(index) => index.clear(),
             MapIndex::Immutable(_) => unreachable!(),
             MapIndex::Mmap(_) => unreachable!(),
         }
@@ -530,7 +531,7 @@ pub struct MapIndexMmapBuilder<N: MapIndexKey + ?Sized> {
 
 impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexMmapBuilder<N>
 where
-    Vec<N::Owned>: Blob,
+    Vec<N::Owned>: Blob + Send + Sync,
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
     <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
 {
@@ -1079,7 +1080,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
 
 impl<N: MapIndexKey + ?Sized> FacetIndex for MapIndex<N>
 where
-    Vec<N::Owned>: Blob,
+    Vec<N::Owned>: Blob + Send + Sync,
     for<'a> N::Referenced<'a>: Into<FacetValueRef<'a>>,
     for<'a> &'a N: Into<FacetValueRef<'a>>,
 {
@@ -1234,7 +1235,7 @@ mod tests {
         into_value: impl Fn(&N::Owned) -> Value,
     ) where
         N: MapIndexKey + ?Sized,
-        Vec<N::Owned>: Blob,
+        Vec<N::Owned>: Blob + Send + Sync,
         MapIndex<N>: PayloadFieldIndex + ValueIndexer,
         <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
     {
@@ -1277,7 +1278,7 @@ mod tests {
         index_type: IndexType,
     ) -> MapIndex<N>
     where
-        Vec<N::Owned>: Blob,
+        Vec<N::Owned>: Blob + Send + Sync,
     {
         let mut index = match index_type {
             IndexType::Mutable => MapIndex::<N>::new_rocksdb(
