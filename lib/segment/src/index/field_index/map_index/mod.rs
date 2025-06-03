@@ -1291,6 +1291,7 @@ mod tests {
     #[derive(Clone, Copy)]
     enum IndexType {
         Mutable,
+        MutableGridstore,
         Immutable,
         Mmap,
         RamMmap,
@@ -1315,6 +1316,18 @@ mod tests {
                     open_db_with_existing_cf(path).unwrap(),
                     FIELD_NAME,
                 );
+                builder.init().unwrap();
+                for (idx, values) in data.iter().enumerate() {
+                    let values: Vec<Value> = values.iter().map(&into_value).collect();
+                    let values: Vec<_> = values.iter().collect();
+                    builder
+                        .add_point(idx as PointOffsetType, &values, &hw_counter)
+                        .unwrap();
+                }
+                builder.finalize().unwrap();
+            }
+            IndexType::MutableGridstore => {
+                let mut builder = MapIndex::<N>::builder_gridstore(path.to_path_buf());
                 builder.init().unwrap();
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -1354,6 +1367,9 @@ mod tests {
                 FIELD_NAME,
                 true,
             ),
+            IndexType::MutableGridstore => {
+                MapIndex::<N>::new_gridstore(path.to_path_buf()).unwrap()
+            }
             IndexType::Immutable => MapIndex::<N>::new_rocksdb(
                 open_db_with_existing_cf(path).unwrap(),
                 FIELD_NAME,
@@ -1408,6 +1424,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1436,6 +1453,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1480,6 +1498,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
