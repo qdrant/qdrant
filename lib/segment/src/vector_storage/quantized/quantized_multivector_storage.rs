@@ -173,25 +173,20 @@ where
         let offset = self.offsets.get_offset(vector_index);
         let mut sum = 0.0;
 
-        // account for point retrieval only once
+        // account for sub vectors retrieval only once to account for caching
         hw_counter
             .vector_io_read()
             .incr_delta(self.dim * offset.count as usize);
 
-        // account for nested CPU ops
+        // account for all nested CPU ops
         hw_counter
             .cpu_counter()
             .incr_delta(self.dim * offset.count as usize * query.len());
 
-        // e.g. recommend best score query, 5 positives examples
-        // each example is a multivector with 4 vectors
-        // query len is 20!
         for inner_query in query {
             let mut max_sim = ScoreType::NEG_INFINITY;
             // manual `max_by` for performance
             for i in 0..offset.count {
-                // inside we compute the CPU cost and IO cost once per stored sub vector per multivector
-                // eg. 20 query * 4 sub vectors = 80
                 let sim = self.quantized_storage.score_point(
                     inner_query,
                     offset.start + i,
