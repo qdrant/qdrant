@@ -266,8 +266,8 @@ where
 
     #[cfg(test)]
     pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
-        match self.storage {
-            Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => Some(db_wrapper),
             Storage::Mmap(_) => None,
         }
     }
@@ -285,25 +285,25 @@ where
     /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        match self.storage {
+        match &self.storage {
             Storage::RocksDb(_) => Ok(()),
-            Storage::Mmap(ref index) => index.clear_cache(),
+            Storage::Mmap(index) => index.clear_cache(),
         }
     }
 
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
-        match self.storage {
+        match &self.storage {
             Storage::RocksDb(_) => vec![],
-            Storage::Mmap(ref index) => index.files(),
+            Storage::Mmap(index) => index.files(),
         }
     }
 
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
-        match self.storage {
-            Storage::RocksDb(ref db_wrapper) => db_wrapper.flusher(),
-            Storage::Mmap(ref index) => index.flusher(),
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
+            Storage::Mmap(index) => index.flusher(),
         }
     }
 
@@ -368,12 +368,12 @@ where
                 Self::remove_from_map(&mut self.map, &mut self.histogram, &key);
 
                 // Update persisted storage
-                match self.storage {
-                    Storage::RocksDb(ref db_wrapper) => {
+                match &mut self.storage {
+                    Storage::RocksDb(db_wrapper) => {
                         let encoded = value.encode_key(idx);
                         db_wrapper.remove(encoded)?;
                     }
-                    Storage::Mmap(ref mut index) => {
+                    Storage::Mmap(index) => {
                         index.remove_point(idx);
                     }
                 }

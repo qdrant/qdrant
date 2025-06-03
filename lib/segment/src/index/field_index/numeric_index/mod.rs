@@ -808,7 +808,7 @@ where
 
     fn cleanup(self) -> OperationResult<()> {
         match self {
-            NumericIndexInner::Mutable(mut index) => index.clear(),
+            NumericIndexInner::Mutable(index) => index.clear(),
             NumericIndexInner::Immutable(index) => index.clear(),
             NumericIndexInner::Mmap(index) => index.clear(),
         }

@@ -349,17 +349,17 @@ where
 
     #[cfg(test)]
     pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
-        match self.storage {
-            Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => Some(db_wrapper),
             Storage::Gridstore(_) => None,
         }
     }
 
     #[inline]
-    pub(super) fn clear(&mut self) -> OperationResult<()> {
-        match self.storage {
-            Storage::RocksDb(ref db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Gridstore(ref mut store) => store.write().clear().map_err(|err| {
+    pub(super) fn clear(&self) -> OperationResult<()> {
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
+            Storage::Gridstore(store) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable numeric index: {err}",
                 ))
@@ -369,17 +369,17 @@ where
 
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
-        match self.storage {
+        match &self.storage {
             Storage::RocksDb(_) => vec![],
-            Storage::Gridstore(ref store) => store.read().files(),
+            Storage::Gridstore(store) => store.read().files(),
         }
     }
 
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
-        match self.storage {
-            Storage::RocksDb(ref db_wrapper) => db_wrapper.flusher(),
-            Storage::Gridstore(ref store) => {
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
+            Storage::Gridstore(store) => {
                 let store = store.clone();
                 Box::new(move || {
                     store.read().flush().map_err(|err| {
@@ -403,8 +403,8 @@ where
             .write_back_counter();
 
         // Update persisted storage
-        match self.storage {
-            Storage::RocksDb(ref db_wrapper) => {
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => {
                 for value in &values {
                     let key = value.encode_key(idx);
                     db_wrapper.put(&key, idx.to_be_bytes())?;
@@ -412,10 +412,10 @@ where
                 }
             }
             // We cannot store empty value, then delete instead
-            Storage::Gridstore(ref mut store) if values.is_empty() => {
+            Storage::Gridstore(store) if values.is_empty() => {
                 store.write().delete_value(idx);
             }
-            Storage::Gridstore(ref mut store) => {
+            Storage::Gridstore(store) => {
                 let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
                 store
                     .write()
@@ -435,8 +435,8 @@ where
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
-        match self.storage {
-            Storage::RocksDb(ref db_wrapper) => {
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => {
                 self.in_memory_index
                     .get_values(idx)
                     .map(|mut values| {
@@ -447,7 +447,7 @@ where
                     })
                     .transpose()?;
             }
-            Storage::Gridstore(ref mut store) => {
+            Storage::Gridstore(store) => {
                 store.write().delete_value(idx);
             }
         }
