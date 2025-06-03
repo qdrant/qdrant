@@ -178,6 +178,7 @@ chrono = { version = "0.4.41", features = ["serde"] }
 criterion = "0.6.0"
 data-encoding = "2.9.0"
 delegate = "0.13.3"
+ecow = { version = "0.2.5", features = ["serde"] }
 fnv = "1.0"
 futures = "0.3.31"
 futures-util = "0.3.31"

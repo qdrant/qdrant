@@ -90,7 +90,7 @@ fs_extra = "1.3.0"
 tinyvec = { version = "1.9.0", features = ["alloc", "latest_stable_rust"] }
 validator = { workspace = true }
 chrono = { workspace = true }
-ecow = { version = "0.2.5", features = ["serde"] }
+ecow = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { workspace = true }
