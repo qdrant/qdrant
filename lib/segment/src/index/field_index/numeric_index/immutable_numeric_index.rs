@@ -6,7 +6,7 @@ use std::sync::Arc;
 use bitvec::vec::BitVec;
 use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
-use gridstore::Blob;
+use gridstore::blob::BlobFixedSize;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -152,7 +152,7 @@ impl<T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVecIter
     }
 }
 
-impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default>
+impl<T: Encodable + Numericable + MmapValue + BlobFixedSize + Send + Sync + Default>
     ImmutableNumericIndex<T>
 {
     /// Open immutable numeric index from RocksDB storage

@@ -553,7 +553,7 @@ fn test_cond<
         + PartialOrd
         + Clone
         + MmapValue
-        + Blob
+        + BlobFixedSize
         + Send
         + Sync
         + Default

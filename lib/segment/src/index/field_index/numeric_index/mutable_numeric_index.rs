@@ -6,8 +6,9 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use gridstore::Gridstore;
+use gridstore::blob::BlobFixedSize;
 use gridstore::config::StorageOptions;
-use gridstore::{Blob, Gridstore};
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -37,13 +38,13 @@ const fn default_gridstore_options<T: Sized>() -> StorageOptions {
     }
 }
 
-pub struct MutableNumericIndex<T: Encodable + Numericable + Blob> {
+pub struct MutableNumericIndex<T: Encodable + Numericable + BlobFixedSize> {
     // Backing storage, source of state, persists deletions
     storage: Storage<T>,
     in_memory_index: InMemoryNumericIndex<T>,
 }
 
-enum Storage<T: Encodable + Numericable + Blob> {
+enum Storage<T: Encodable + Numericable + BlobFixedSize> {
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Gridstore(Arc<RwLock<Gridstore<Vec<T>>>>),
 }
@@ -230,7 +231,7 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable + Blob + Send + Sync + Default> MutableNumericIndex<T> {
+impl<T: Encodable + Numericable + BlobFixedSize + Send + Sync + Default> MutableNumericIndex<T> {
     /// Open mutable numeric index from RocksDB storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
