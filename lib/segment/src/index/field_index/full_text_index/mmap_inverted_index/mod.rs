@@ -82,14 +82,12 @@ impl MmapInvertedIndex {
         // None values are represented as deleted in the bitslice
         let deleted_bitslice: BitVec = point_to_tokens_count
             .iter()
-            .map(|count| count.is_none())
+            .map(|count| *count == 0)
             .collect();
         MmapBitSlice::create(&deleted_points_path, &deleted_bitslice)?;
 
         // The actual values go in the slice
-        let point_to_tokens_count_iter = point_to_tokens_count
-            .into_iter()
-            .map(|count| count.unwrap_or(0));
+        let point_to_tokens_count_iter = point_to_tokens_count.into_iter();
 
         MmapSlice::create(&point_to_tokens_count_path, point_to_tokens_count_iter)?;
 
