@@ -8,7 +8,7 @@ use super::mmap_text_index::MmapFullTextIndex;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::text_index::FullTextIndex;
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
@@ -61,7 +61,7 @@ impl ImmutableFullTextIndex {
     pub fn load(&mut self) -> OperationResult<bool> {
         match self.storage {
             Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Mmap(_) => Ok(self.load_mmap()),
+            Storage::Mmap(_) => self.load_mmap(),
         }
     }
 
@@ -70,7 +70,9 @@ impl ImmutableFullTextIndex {
     /// Loads in-memory index from RocksDB storage.
     fn load_rocksdb(&mut self) -> OperationResult<bool> {
         let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Ok(false);
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
         };
 
         if !db_wrapper.has_column_family()? {
@@ -93,9 +95,11 @@ impl ImmutableFullTextIndex {
     /// Load from mmap storage
     ///
     /// Loads in-memory index from mmap storage.
-    fn load_mmap(&mut self) -> bool {
+    fn load_mmap(&mut self) -> OperationResult<bool> {
         let Storage::Mmap(index) = &self.storage else {
-            return false;
+            return Err(OperationError::service_error(
+                "Failed to load index from mmap, using different storage backend",
+            ));
         };
         self.inverted_index = ImmutableInvertedIndex::from(&index.inverted_index);
 
@@ -104,7 +108,7 @@ impl ImmutableFullTextIndex {
             log::warn!("Failed to clear mmap cache of ram mmap full text index: {err}");
         }
 
-        true
+        Ok(true)
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {

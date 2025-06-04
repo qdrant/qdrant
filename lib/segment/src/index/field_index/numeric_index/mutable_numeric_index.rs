@@ -279,7 +279,7 @@ where
     pub(super) fn load(&mut self) -> OperationResult<bool> {
         match self.storage {
             Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Gridstore(_) => Ok(self.load_gridstore()),
+            Storage::Gridstore(_) => self.load_gridstore(),
         }
     }
 
@@ -288,7 +288,9 @@ where
     /// Loads in-memory index from RocksDB storage.
     fn load_rocksdb(&mut self) -> OperationResult<bool> {
         let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Ok(false);
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
         };
 
         if !db_wrapper.has_column_family()? {
@@ -319,9 +321,11 @@ where
     /// Load from Gridstore storage
     ///
     /// Loads in-memory index from Gridstore storage.
-    fn load_gridstore(&mut self) -> bool {
+    fn load_gridstore(&mut self) -> OperationResult<bool> {
         let Storage::Gridstore(store) = &self.storage else {
-            return false;
+            return Err(OperationError::service_error(
+                "Failed to load index from Gridstore, using different storage backend",
+            ));
         };
 
         let hw_counter = HardwareCounterCell::disposable();
@@ -338,7 +342,7 @@ where
             // unwrap safety: never returns an error
             .unwrap();
 
-        true
+        Ok(true)
     }
 
     pub fn into_in_memory_index(self) -> InMemoryNumericIndex<T> {

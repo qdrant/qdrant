@@ -16,7 +16,7 @@ use super::{
     Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION, numeric_index_storage_cf_name,
 };
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
@@ -203,7 +203,7 @@ where
     pub(super) fn load(&mut self) -> OperationResult<bool> {
         match self.storage {
             Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Mmap(_) => Ok(self.load_mmap()),
+            Storage::Mmap(_) => self.load_mmap(),
         }
     }
 
@@ -212,7 +212,9 @@ where
     /// Loads in-memory index from RocksDB storage.
     fn load_rocksdb(&mut self) -> OperationResult<bool> {
         let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Ok(false);
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
         };
 
         let mut mutable = MutableNumericIndex::<T>::open_rocksdb_db_wrapper(db_wrapper.clone());
@@ -237,9 +239,11 @@ where
     /// Load from mmap storage
     ///
     /// Loads in-memory index from mmap storage.
-    fn load_mmap(&mut self) -> bool {
+    fn load_mmap(&mut self) -> OperationResult<bool> {
         let Storage::Mmap(index) = &self.storage else {
-            return false;
+            return Err(OperationError::service_error(
+                "Failed to load index from mmap, using different storage backend",
+            ));
         };
 
         let InMemoryNumericIndex {
@@ -261,7 +265,7 @@ where
         self.max_values_per_point = max_values_per_point;
         self.point_to_values = ImmutablePointToValues::new(point_to_values);
 
-        true
+        Ok(true)
     }
 
     #[cfg(test)]
