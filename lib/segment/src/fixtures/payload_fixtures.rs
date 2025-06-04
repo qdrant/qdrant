@@ -14,7 +14,6 @@ use crate::types::{
     AnyVariants, Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition,
     IsEmptyCondition, Match, MatchAny, Payload, PayloadField, Range as RangeCondition, ValuesCount,
 };
-use crate::utils::maybe_arc::MaybeArc;
 
 const ADJECTIVE: &[&str] = &[
     "jobless",
@@ -186,11 +185,9 @@ pub fn random_uncommon_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition 
             },
         )),
         2 => Condition::HasId(HasIdCondition {
-            has_id: MaybeArc::NoArc(
-                (0..rnd_gen.random_range(10..50))
-                    .map(|_| ExtendedPointId::NumId(rnd_gen.random_range(0..1000)))
-                    .collect(),
-            ),
+            has_id: (0..rnd_gen.random_range(10..50))
+                .map(|_| ExtendedPointId::NumId(rnd_gen.random_range(0..1000)))
+                .collect(),
         }),
         3 => Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {

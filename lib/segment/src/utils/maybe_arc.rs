@@ -14,6 +14,7 @@ pub enum MaybeArc<T> {
 }
 
 impl<T> MaybeArc<T> {
+    /// Create a new `MaybeArc` wrapper that uses an `Arc` internally.
     #[inline]
     pub fn arc(t: T) -> Self {
         Self::Arc(Arc::new(t))
@@ -24,10 +25,22 @@ impl<T> MaybeArc<T> {
     pub fn no_arc(t: T) -> Self {
         Self::NoArc(t)
     }
+
+    /// Returns `true` if the value is wrapped around an `Arc`.
+    pub fn is_arc(&self) -> bool {
+        matches!(self, Self::Arc(..))
+    }
+}
+
+impl<T> AsRef<T> for MaybeArc<T> {
+    #[inline]
+    fn as_ref(&self) -> &T {
+        self
+    }
 }
 
 impl<T: Clone> MaybeArc<T> {
-    /// Converts the `MaybeArc` back to `T`, potentially cloning the inner vaule
+    /// Converts the `MaybeArc` back to `T`, potentially cloning the inner value
     /// in case it's an `Arc` that has existing references.
     #[inline]
     pub fn into_inner(self) -> T {
@@ -66,7 +79,33 @@ where
 
 #[cfg(test)]
 mod test {
-    // use super::*;
+    use super::*;
 
-    //
+    #[test]
+    fn test_serializing() {
+        let original = String::from("42");
+
+        let ma_original = MaybeArc::arc(original.clone());
+
+        let encoded = serde_json::to_string(&ma_original).unwrap();
+
+        let decoded: MaybeArc<String> = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.as_ref(), &original);
+        assert!(!decoded.is_arc()); // Always using `NoArc` to deserialize.
+
+        // `MaybeArc` can be deserialized as inner type, since information about arc is not serialized.
+        let decoded: String = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn test_deserializing() {
+        let original = String::from("42");
+        let encoded = serde_json::to_string(&original).unwrap();
+
+        // Any type can be deserialized as `MaybeArc`, defaulting to `NoArc`.
+        let decoded: MaybeArc<String> = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.as_ref(), &original);
+        assert!(!decoded.is_arc());
+    }
 }

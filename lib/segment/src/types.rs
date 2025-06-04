@@ -2625,7 +2625,7 @@ impl From<VectorNameBuf> for HasVectorCondition {
 }
 
 /// Threshold determining when to use an `Arc` in `HasIdCondition` if the condition includes many points.
-/// Since we're cloning filters quite alot, using an Arc for larger conditions reduces risk of memory leaks
+/// Since we're cloning filters quite a lot, using an Arc for larger conditions reduces risk of memory leaks
 /// and potentially improves performance in some places.
 const HAS_ID_CONDITION_ARC_THRESHOLD: usize = 1_000;
 
