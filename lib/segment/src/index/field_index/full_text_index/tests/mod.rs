@@ -164,6 +164,7 @@ fn test_prefix_search() {
         lowercase: None,
         on_disk: None,
         phrase_matching: None,
+        stopwords: None,
     };
 
     let mut index =

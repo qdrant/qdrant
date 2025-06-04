@@ -374,6 +374,7 @@ mod tests {
             lowercase: None,
             phrase_matching: None,
             on_disk: None,
+            stopwords: None,
         };
 
         {

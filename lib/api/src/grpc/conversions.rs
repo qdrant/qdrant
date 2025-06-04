@@ -214,6 +214,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
             lowercase,
             on_disk,
             phrase_matching: _, // todo(phrase_matching): populate this
+            stopwords: _,
         } = params;
         let tokenizer = TokenizerType::from(tokenizer);
         PayloadIndexParams {
@@ -421,6 +422,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             max_token_len: max_token_len.map(|x| x as usize),
             on_disk,
             phrase_matching: None, // todo(phrase_matching): populate this
+            stopwords: None,
         })
     }
 }
