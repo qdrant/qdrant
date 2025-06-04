@@ -415,13 +415,12 @@ where
         values: Vec<T>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let mut hw_cell_wb = hw_counter
-            .payload_index_io_write_counter()
-            .write_back_counter();
-
         // Update persisted storage
         match &self.storage {
             Storage::RocksDb(db_wrapper) => {
+                let mut hw_cell_wb = hw_counter
+                    .payload_index_io_write_counter()
+                    .write_back_counter();
                 for value in &values {
                     let key = value.encode_key(idx);
                     db_wrapper.put(&key, idx.to_be_bytes())?;
@@ -442,7 +441,6 @@ where
                             "failed to put value in mutable numeric index gridstore: {err}"
                         ))
                     })?;
-                hw_cell_wb.incr_delta(size_of_val(&idx) + size_of::<T>() * values.len());
             }
         }
 
