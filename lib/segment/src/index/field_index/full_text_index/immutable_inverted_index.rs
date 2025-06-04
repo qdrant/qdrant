@@ -22,7 +22,7 @@ use crate::index::field_index::full_text_index::postings_iterator::intersect_com
 pub struct ImmutableInvertedIndex {
     pub(in crate::index::field_index::full_text_index) postings: ImmutablePostings,
     pub(in crate::index::field_index::full_text_index) vocab: HashMap<String, TokenId>,
-    pub(in crate::index::field_index::full_text_index) point_to_tokens_count: Vec<Option<usize>>,
+    pub(in crate::index::field_index::full_text_index) point_to_tokens_count: Vec<usize>,
     pub(in crate::index::field_index::full_text_index) points_count: usize,
 }
 
@@ -51,8 +51,11 @@ impl ImmutableInvertedIndex {
         tokens: TokenSet,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         // in case of immutable index, deleted documents are still in the postings
-        let filter =
-            move |idx| matches!(self.point_to_tokens_count.get(idx as usize), Some(Some(_)));
+        let filter = move |idx| {
+            self.point_to_tokens_count
+                .get(idx as usize)
+                .is_some_and(|x| *x > 0)
+        };
 
         fn intersection<'a, V: PostingValue>(
             postings: &'a [PostingList<V>],
@@ -146,7 +149,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         if self.values_is_empty(idx) {
             return false; // Already removed or never actually existed
         }
-        self.point_to_tokens_count[idx as usize] = None;
+        self.point_to_tokens_count[idx as usize] = 0;
         self.points_count -= 1;
         true
     }
@@ -187,13 +190,13 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         self.point_to_tokens_count
             .get(point_id as usize)
-            .is_none_or(|count| count.is_none())
+            .is_none_or(|count| *count == 0)
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {
         self.point_to_tokens_count
             .get(point_id as usize)
-            .and_then(|&count| count)
+            .copied()
             .unwrap_or(0)
     }
 
@@ -234,7 +237,12 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             vocab,
             point_to_tokens_count: point_to_tokens
                 .iter()
-                .map(|tokenset| tokenset.as_ref().map(|tokenset| tokenset.len()))
+                .map(|tokenset| {
+                    tokenset
+                        .as_ref()
+                        .map(|tokenset| tokenset.len())
+                        .unwrap_or(0)
+                })
                 .collect(),
             points_count,
         }
@@ -401,7 +409,7 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
                     index.is_active(i as u32) || n == 0,
                     "deleted point index {i} has {n} tokens, expected zero",
                 );
-                (n > 0).then_some(n)
+                n
             })
             .collect();
 

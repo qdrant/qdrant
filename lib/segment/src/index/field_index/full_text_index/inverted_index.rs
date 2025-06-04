@@ -429,15 +429,12 @@ mod tests {
             // Check same deleted points
             assert_eq!(
                 mmap.deleted_points.get(point_id).unwrap(),
-                count.is_none(),
+                *count == 0,
                 "point_id: {point_id}",
             );
 
             // Check same count
-            assert_eq!(
-                *mmap.point_to_tokens_count.get(point_id).unwrap(),
-                count.unwrap_or(0)
-            );
+            assert_eq!(*mmap.point_to_tokens_count.get(point_id).unwrap(), *count);
             assert_eq!(imm_mmap.point_to_tokens_count[point_id], *count);
         }
 
