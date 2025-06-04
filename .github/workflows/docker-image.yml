@@ -17,9 +17,18 @@ jobs:
     - name: Get current tag
       id: vars
       run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+    - name: Get minor and major tags
+      id: version
+      run: |
+        MAJOR_VERSION=$(echo "${{ steps.vars.outputs.tag }}" | cut -d '.' -f 1)
+        MINOR_VERSION=$(echo "${{ steps.vars.outputs.tag }}" | cut -d '.' -f 1-2)
+        echo ::set-output name=major_version::${MAJOR_VERSION}
+        echo ::set-output name=minor_version::${MINOR_VERSION}
     - name: Build the Docker image
       env:
         RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+        MAJOR_VERSION: ${{ steps.version.outputs.major_version }}
+        MINOR_VERSION: ${{ steps.version.outputs.minor_version }}
       run: |
         # Create build container
         docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
@@ -32,7 +41,9 @@ jobs:
         # Build regular image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}"
         DOCKERHUB_TAG_LATEST="qdrant/qdrant:latest"
-        TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST}"
+        DOCKERHUB_TAG_MINOR="qdrant/qdrant:${MINOR_VERSION}"
+        DOCKERHUB_TAG_MAJOR="qdrant/qdrant:${MAJOR_VERSION}"
+        TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST} -t ${DOCKERHUB_TAG_MINOR} -t ${DOCKERHUB_TAG_MAJOR}"
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
 
         # Pull, retag and push to GitHub packages
@@ -44,7 +55,9 @@ jobs:
         # Build unprivileged image for Docker Hub
         DOCKERHUB_TAG_UNPRIVILEGED="qdrant/qdrant:${{ github.ref_name }}-unprivileged"
         DOCKERHUB_TAG_LATEST_UNPRIVILEGED="qdrant/qdrant:latest-unprivileged"
-        TAGS_UNPRIVILEGED="-t ${DOCKERHUB_TAG_UNPRIVILEGED} -t ${DOCKERHUB_TAG_LATEST_UNPRIVILEGED}"
+        DOCKERHUB_TAG_MINOR_UNPRIVILEGED="qdrant/qdrant:${MINOR_VERSION}-unprivileged"
+        DOCKERHUB_TAG_MAJOR_UNPRIVILEGED="qdrant/qdrant:${MAJOR_VERSION}-unprivileged"
+        TAGS_UNPRIVILEGED="-t ${DOCKERHUB_TAG_UNPRIVILEGED} -t ${DOCKERHUB_TAG_LATEST_UNPRIVILEGED} -t ${DOCKERHUB_TAG_MINOR_UNPRIVILEGED} -t ${DOCKERHUB_TAG_MAJOR_UNPRIVILEGED}"
         GITHUB_TAG_UNPRIVILEGED="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-unprivileged"
 
         # Pull, retag and push to GitHub packages
@@ -61,9 +74,18 @@ jobs:
     - name: Get current tag
       id: vars
       run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+    - name: Get minor and major tags
+      id: version
+      run: |
+        MAJOR_VERSION=$(echo "${{ steps.vars.outputs.tag }}" | cut -d '.' -f 1)
+        MINOR_VERSION=$(echo "${{ steps.vars.outputs.tag }}" | cut -d '.' -f 1-2)
+        echo ::set-output name=major_version::${MAJOR_VERSION}
+        echo ::set-output name=minor_version::${MINOR_VERSION}
     - name: Build the Docker image
       env:
         RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+        MAJOR_VERSION: ${{ steps.version.outputs.major_version }}
+        MINOR_VERSION: ${{ steps.version.outputs.minor_version }}
       run: |
         # Create build container
         docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
@@ -76,7 +98,9 @@ jobs:
         # Build GPU NVIDIA image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}-gpu-nvidia"
         DOCKERHUB_TAG_LATEST="qdrant/qdrant:gpu-nvidia-latest"
-        TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST}"
+        DOCKERHUB_TAG_MINOR="qdrant/qdrant:${MINOR_VERSION}-gpu-nvidia"
+        DOCKERHUB_TAG_MAJOR="qdrant/qdrant:${MAJOR_VERSION}-gpu-nvidia"
+        TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST} -t ${DOCKERHUB_TAG_MINOR} -t ${DOCKERHUB_TAG_MAJOR}"
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-gpu-nvidia"
 
         # Pull, retag and push to GitHub packages
@@ -88,7 +112,9 @@ jobs:
         # Build GPU AMD image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}-gpu-amd"
         DOCKERHUB_TAG_LATEST="qdrant/qdrant:gpu-amd-latest"
-        TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST}"
+        DOCKERHUB_TAG_MINOR="qdrant/qdrant:${MINOR_VERSION}-gpu-amd"
+        DOCKERHUB_TAG_MAJOR="qdrant/qdrant:${MAJOR_VERSION}-gpu-amd"
+        TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST} -t ${DOCKERHUB_TAG_MINOR} -t ${DOCKERHUB_TAG_MAJOR}"
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-gpu-amd"
 
         # Pull, retag and push to GitHub packages
