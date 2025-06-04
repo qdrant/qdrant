@@ -7,7 +7,9 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
-use common::flags::FeatureFlags;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::{FeatureFlags, feature_flags};
+use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
@@ -47,18 +49,14 @@ use crate::types::{
     VectorStorageType,
 };
 use crate::vector_storage::dense::appendable_dense_vector_storage::{
-    open_appendable_in_ram_vector_storage, open_appendable_in_ram_vector_storage_byte,
-    open_appendable_in_ram_vector_storage_half, open_appendable_memmap_vector_storage,
+    open_appendable_in_ram_vector_storage, open_appendable_memmap_vector_storage,
     open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_half,
 };
 use crate::vector_storage::dense::memmap_dense_vector_storage::{
     open_memmap_vector_storage, open_memmap_vector_storage_byte, open_memmap_vector_storage_half,
 };
 #[cfg(feature = "rocksdb")]
-use crate::vector_storage::dense::simple_dense_vector_storage::{
-    open_simple_dense_byte_vector_storage, open_simple_dense_half_vector_storage,
-    open_simple_dense_vector_storage,
-};
+use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
     open_appendable_in_ram_multi_vector_storage, open_appendable_in_ram_multi_vector_storage_byte,
     open_appendable_in_ram_multi_vector_storage_half, open_appendable_memmap_multi_vector_storage,
@@ -152,29 +150,25 @@ pub(crate) fn open_vector_storage(
                     ),
                 }
             } else {
-                match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_simple_dense_vector_storage(
-                        db_builder.require()?,
-                        &db_column_name,
+                let storage = open_simple_dense_vector_storage(
+                    storage_element_type,
+                    db_builder.require()?,
+                    &db_column_name,
+                    vector_config.size,
+                    vector_config.distance,
+                    stopped,
+                )?;
+
+                // Actively migrate away from RocksDB
+                if feature_flags().migrate_rocksdb_vector_storage {
+                    return migrate_rocksdb_dense_vector_storage_to_mmap(
+                        storage,
                         vector_config.size,
-                        vector_config.distance,
-                        stopped,
-                    ),
-                    VectorStorageDatatype::Uint8 => open_simple_dense_byte_vector_storage(
-                        db_builder.require()?,
-                        &db_column_name,
-                        vector_config.size,
-                        vector_config.distance,
-                        stopped,
-                    ),
-                    VectorStorageDatatype::Float16 => open_simple_dense_half_vector_storage(
-                        db_builder.require()?,
-                        &db_column_name,
-                        vector_config.size,
-                        vector_config.distance,
-                        stopped,
-                    ),
+                        vector_storage_path,
+                    );
                 }
+
+                Ok(storage)
             }
         }
         // Mmap on disk, not appendable
@@ -299,23 +293,12 @@ pub(crate) fn open_vector_storage(
                     }
                 }
             } else {
-                match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_appendable_in_ram_vector_storage(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                    VectorStorageDatatype::Uint8 => open_appendable_in_ram_vector_storage_byte(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                    VectorStorageDatatype::Float16 => open_appendable_in_ram_vector_storage_half(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                }
+                open_appendable_in_ram_vector_storage(
+                    storage_element_type,
+                    vector_storage_path,
+                    vector_config.size,
+                    vector_config.distance,
+                )
             }
         }
     }
@@ -959,9 +942,12 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
     old_id_tracker: SimpleIdTracker,
     segment_path: &Path,
 ) -> OperationResult<MutableIdTracker> {
-    log::info!("Migrating ID tracker from RocksDB into new format");
+    log::info!(
+        "Migrating {} points in ID tracker from RocksDB into new format",
+        old_id_tracker.total_point_count(),
+    );
 
-    fn make_mutable(
+    fn migrate(
         old_id_tracker: &SimpleIdTracker,
         segment_path: &Path,
     ) -> OperationResult<MutableIdTracker> {
@@ -990,9 +976,9 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
         Ok(new_id_tracker)
     }
 
-    let new_id_tracker = match make_mutable(&old_id_tracker, segment_path) {
+    let new_id_tracker = match migrate(&old_id_tracker, segment_path) {
         Ok(new_id_tracker) => new_id_tracker,
-        // On migration error, remove al mutable ID tracker files
+        // On migration error, clean up and remove all new ID tracker files
         Err(err) => {
             for file in MutableIdTracker::segment_files(segment_path) {
                 if let Err(err) = std::fs::remove_file(&file) {
@@ -1010,4 +996,95 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
     old_id_tracker.destroy()?;
 
     Ok(new_id_tracker)
+}
+
+/// Migrate a RocksDB based dense vector storage into the mmap format
+///
+/// Creates a new mutable in-memory vector storage on top of memory maps, and copies all vectors
+/// from the RocksDB based storage into it. The persisted RocksDB data is deleted so that only the
+/// new vector storage will be loaded next time. The new vector storage is returned.
+#[cfg(feature = "rocksdb")]
+pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
+    old_storage: VectorStorageEnum,
+    dim: usize,
+    vector_storage_path: &Path,
+) -> OperationResult<VectorStorageEnum> {
+    use crate::vector_storage::dense::appendable_dense_vector_storage::find_storage_files;
+
+    log::info!(
+        "Migrating {} points in dense vector storage from RocksDB into new format",
+        old_storage.total_vector_count(),
+    );
+
+    fn migrate(
+        old_storage: &VectorStorageEnum,
+        dim: usize,
+        vector_storage_path: &Path,
+    ) -> OperationResult<VectorStorageEnum> {
+        // Construct mmap based dense vector storage
+        let mut new_storage = open_appendable_in_ram_vector_storage(
+            old_storage.datatype(),
+            vector_storage_path,
+            dim,
+            old_storage.distance(),
+        )?;
+        debug_assert_eq!(
+            new_storage.total_vector_count(),
+            0,
+            "new dense vector storage must be empty",
+        );
+
+        // Copy all vectors and deletes into new storage
+        let hw_counter = HardwareCounterCell::disposable();
+        for internal_id in 0..old_storage.total_vector_count() as PointOffsetType {
+            let vector = old_storage.get_vector_sequential(internal_id);
+            new_storage.insert_vector(internal_id, vector.as_vec_ref(), &hw_counter)?;
+
+            let is_deleted = old_storage.is_deleted_vector(internal_id);
+            if is_deleted {
+                new_storage.delete_vector(internal_id)?;
+            }
+        }
+
+        // Flush new storage
+        new_storage.flusher()()?;
+
+        Ok(new_storage)
+    }
+
+    let new_storage = match migrate(&old_storage, dim, vector_storage_path) {
+        Ok(new_storage) => new_storage,
+        // On migration error, clean up and remove all new storage files
+        Err(err) => {
+            let files = find_storage_files(vector_storage_path);
+            match files {
+                Ok(files) => {
+                    for file in files {
+                        if let Err(err) = std::fs::remove_file(&file) {
+                            log::error!(
+                                "Dense vector storage migration to mmap failed, failed to remove mmap file {} for cleanup: {err}",
+                                file.display(),
+                            );
+                        }
+                    }
+                }
+                Err(err) => {
+                    log::error!(
+                        "Dense vector storage migration to mmap failed, failed to list its storage files, they will be left behind: {err}",
+                    );
+                }
+            }
+            return Err(err);
+        }
+    };
+
+    // Destroy persisted RocksDB dense vector data
+    match old_storage {
+        VectorStorageEnum::DenseSimple(storage) => storage.destroy()?,
+        VectorStorageEnum::DenseSimpleByte(storage) => storage.destroy()?,
+        VectorStorageEnum::DenseSimpleHalf(storage) => storage.destroy()?,
+        _ => unreachable!("unexpected vector storage type"),
+    }
+
+    Ok(new_storage)
 }
