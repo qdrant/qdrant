@@ -105,6 +105,13 @@ impl FullTextIndex {
         FullTextMmapIndexBuilder::new(path, config, is_on_disk)
     }
 
+    pub fn builder_gridstore(
+        dir: PathBuf,
+        config: TextIndexParams,
+    ) -> FullTextGridstoreIndexBuilder {
+        FullTextGridstoreIndexBuilder::new(dir, config)
+    }
+
     fn storage_cf_name(field: &str) -> String {
         format!("{field}_fts")
     }
@@ -452,6 +459,94 @@ impl PayloadFieldIndex for FullTextIndex {
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         self.payload_blocks(threshold, key)
+    }
+}
+
+pub struct FullTextGridstoreIndexBuilder {
+    dir: PathBuf,
+    config: TextIndexParams,
+    index: Option<FullTextIndex>,
+}
+
+impl FullTextGridstoreIndexBuilder {
+    pub fn new(dir: PathBuf, config: TextIndexParams) -> Self {
+        Self {
+            dir,
+            config,
+            index: None,
+        }
+    }
+}
+
+impl ValueIndexer for FullTextGridstoreIndexBuilder {
+    type ValueType = String;
+
+    fn get_value(value: &Value) -> Option<String> {
+        match value {
+            Value::String(s) => Some(s.clone()),
+            _ => None,
+        }
+    }
+
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<Self::ValueType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        // TODO: skip these intermediate conversions!
+        let values: Vec<Value> = values.into_iter().map(Value::String).collect();
+        let values: Vec<&Value> = values.iter().collect();
+        FieldIndexBuilderTrait::add_point(self, id, &values, hw_counter)
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "FullTextIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.remove_point(id)
+    }
+}
+
+impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
+    type FieldIndexType = FullTextIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        assert!(
+            self.index.is_none(),
+            "index must be initialized exactly once",
+        );
+        self.index.replace(FullTextIndex::new_gridstore(
+            self.dir.clone(),
+            self.config.clone(),
+        )?);
+        Ok(())
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "FullTextIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.add_point(id, payload, hw_counter)
+    }
+
+    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+        let Some(index) = self.index.take() else {
+            return Err(OperationError::service_error(
+                "FullTextIndexGridstoreBuilder: index must be initialized to finalize",
+            ));
+        };
+        index.flusher()()?;
+        Ok(index)
     }
 }
 
