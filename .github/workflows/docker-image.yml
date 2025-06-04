@@ -16,14 +16,14 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - name: Get current tag
       id: vars
-      run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+      run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
     - name: Get minor and major tags
       id: version
       run: |
         MAJOR_VERSION=$(echo "${{ steps.vars.outputs.tag }}" | cut -d '.' -f 1)
         MINOR_VERSION=$(echo "${{ steps.vars.outputs.tag }}" | cut -d '.' -f 1-2)
-        echo ::set-output name=major_version::${MAJOR_VERSION}
-        echo ::set-output name=minor_version::${MINOR_VERSION}
+        echo "major_version=${MAJOR_VERSION}" >> $GITHUB_OUTPUT
+        echo "minor_version=${MINOR_VERSION}" >> $GITHUB_OUTPUT
     - name: Build the Docker image
       env:
         RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
@@ -73,14 +73,14 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - name: Get current tag
       id: vars
-      run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+      run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
     - name: Get minor and major tags
       id: version
       run: |
         MAJOR_VERSION=$(echo "${{ steps.vars.outputs.tag }}" | cut -d '.' -f 1)
         MINOR_VERSION=$(echo "${{ steps.vars.outputs.tag }}" | cut -d '.' -f 1-2)
-        echo ::set-output name=major_version::${MAJOR_VERSION}
-        echo ::set-output name=minor_version::${MINOR_VERSION}
+        echo "major_version=${MAJOR_VERSION}" >> $GITHUB_OUTPUT
+        echo "minor_version=${MINOR_VERSION}" >> $GITHUB_OUTPUT
     - name: Build the Docker image
       env:
         RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
