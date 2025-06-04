@@ -484,56 +484,11 @@ pub struct SearchParams {
     pub indexed_only: bool,
 }
 
-/// Collection default values
-#[derive(Debug, Deserialize, Validate, Clone, PartialEq, Eq)]
-pub struct CollectionConfigDefaults {
-    #[serde(default)]
-    pub vectors: Option<VectorsConfigDefaults>,
-
-    #[validate(nested)]
-    pub quantization: Option<QuantizationConfig>,
-
-    #[validate(range(min = 1))]
-    #[serde(default = "default_shard_number_const")]
-    pub shard_number: u32,
-
-    #[validate(range(min = 1))]
-    #[serde(default = "default_shard_number_per_node_const")]
-    pub shard_number_per_node: u32,
-
-    #[validate(range(min = 1))]
-    #[serde(default = "default_replication_factor_const")]
-    pub replication_factor: u32,
-
-    #[serde(default = "default_write_consistency_factor_const")]
-    #[validate(range(min = 1))]
-    pub write_consistency_factor: u32,
-
-    #[validate(nested)]
-    pub strict_mode: Option<StrictModeConfig>,
-}
-
 /// Configuration for vectors.
 #[derive(Debug, Deserialize, Validate, Clone, PartialEq, Eq)]
 pub struct VectorsConfigDefaults {
     #[serde(default)]
     pub on_disk: Option<bool>,
-}
-
-pub const fn default_shard_number_per_node_const() -> u32 {
-    1
-}
-
-pub const fn default_shard_number_const() -> u32 {
-    1
-}
-
-pub const fn default_replication_factor_const() -> u32 {
-    1
-}
-
-pub const fn default_write_consistency_factor_const() -> u32 {
-    1
 }
 
 /// Vector index configuration
