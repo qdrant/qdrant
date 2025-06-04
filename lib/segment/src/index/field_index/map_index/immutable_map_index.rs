@@ -445,6 +445,14 @@ where
     }
 
     #[inline]
+    pub(super) fn immutable_files(&self) -> Vec<PathBuf> {
+        match &self.storage {
+            Storage::RocksDb(_) => vec![],
+            Storage::Mmap(index) => index.immutable_files(),
+        }
+    }
+
+    #[inline]
     pub(super) fn flusher(&self) -> Flusher {
         match self.storage {
             #[cfg(feature = "rocksdb")]

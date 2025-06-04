@@ -354,6 +354,14 @@ where
         }
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            MapIndex::Mutable(_) => vec![],
+            MapIndex::Immutable(index) => index.immutable_files(),
+            MapIndex::Mmap(index) => index.immutable_files(),
+        }
+    }
+
     /// Estimates cardinality for `except` clause
     ///
     /// # Arguments
@@ -697,6 +705,10 @@ impl PayloadFieldIndex for MapIndex<str> {
         self.files()
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.immutable_files()
+    }
+
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
@@ -845,6 +857,10 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
 
     fn files(&self) -> Vec<PathBuf> {
         self.files()
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.immutable_files()
     }
 
     fn filter<'a>(
@@ -1036,6 +1052,10 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
 
     fn files(&self) -> Vec<PathBuf> {
         self.files()
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.immutable_files()
     }
 
     fn filter<'a>(

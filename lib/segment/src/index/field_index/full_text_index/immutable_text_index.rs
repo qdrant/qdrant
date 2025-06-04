@@ -180,6 +180,13 @@ impl ImmutableFullTextIndex {
         }
     }
 
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        match self.storage {
+            Storage::RocksDb(_) => vec![],
+            Storage::Mmap(ref index) => index.immutable_files(),
+        }
+    }
+
     pub fn flusher(&self) -> Flusher {
         match self.storage {
             #[cfg(feature = "rocksdb")]

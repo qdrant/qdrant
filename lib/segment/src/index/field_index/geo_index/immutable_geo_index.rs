@@ -284,6 +284,13 @@ impl ImmutableGeoMapIndex {
         }
     }
 
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        match &self.storage {
+            Storage::RocksDb(_) => vec![],
+            Storage::Mmap(index) => index.immutable_files(),
+        }
+    }
+
     /// Clear cache
     ///
     /// Only clears cache of mmap storage if used. Does not clear in-memory representation of

@@ -165,6 +165,13 @@ impl PayloadFieldIndex for BoolIndex {
         }
     }
 
+    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
+        match self {
+            BoolIndex::Simple(_) => vec![],
+            BoolIndex::Mmap(index) => index.immutable_files(),
+        }
+    }
+
     fn filter<'a>(
         &'a self,
         condition: &'a crate::types::FieldCondition,
