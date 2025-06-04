@@ -183,6 +183,8 @@ where
             .cpu_counter()
             .incr_delta(self.dim * offset.count as usize * query.len());
 
+        // compute hardware cost outside to avoid duplicated io cost
+        let disposable_measurements = HardwareCounterCell::disposable();
         for inner_query in query {
             let mut max_sim = ScoreType::NEG_INFINITY;
             // manual `max_by` for performance
@@ -190,7 +192,7 @@ where
                 let sim = self.quantized_storage.score_point(
                     inner_query,
                     offset.start + i,
-                    &HardwareCounterCell::disposable(), // compute hardware cost outside to avoid duplicated io cost
+                    &disposable_measurements,
                 );
                 if sim > max_sim {
                     max_sim = sim;
