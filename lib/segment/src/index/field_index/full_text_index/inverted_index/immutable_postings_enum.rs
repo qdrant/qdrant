@@ -2,12 +2,12 @@
 use common::types::PointOffsetType;
 use posting_list::PostingList;
 
+use super::positions::Positions;
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
-use crate::index::field_index::full_text_index::positions::Positions;
 
 #[cfg_attr(test, derive(Clone))]
 #[derive(Debug)]
-pub(super) enum ImmutablePostings {
+pub enum ImmutablePostings {
     Ids(Vec<PostingList<()>>),
     WithPositions(Vec<PostingList<Positions>>),
 }

@@ -3,7 +3,7 @@ use zerocopy::{FromBytes, IntoBytes};
 
 /// Represents a list of positions of a token in a document.
 #[derive(Default, Clone, Debug)]
-pub(super) struct Positions(Vec<u32>);
+pub struct Positions(Vec<u32>);
 
 impl Positions {
     pub fn push(&mut self, position: u32) {

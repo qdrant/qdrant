@@ -5,17 +5,15 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
-use super::inverted_index::{Document, InvertedIndex, TokenSet};
+use super::immutable_postings_enum::ImmutablePostings;
 use super::mmap_inverted_index::MmapInvertedIndex;
-use super::mmap_inverted_index::mmap_postings::MmapPostingValue;
+use super::mmap_inverted_index::mmap_postings::{MmapPostingValue, MmapPostings};
+use super::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
+use super::mutable_inverted_index::MutableInvertedIndex;
 use super::positions::Positions;
+use super::postings_iterator::intersect_compressed_postings_iterator;
+use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::immutable_postings_enum::ImmutablePostings;
-use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, TokenId};
-use crate::index::field_index::full_text_index::mmap_inverted_index::mmap_postings::MmapPostings;
-use crate::index::field_index::full_text_index::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
-use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
-use crate::index::field_index::full_text_index::postings_iterator::intersect_compressed_postings_iterator;
 
 #[cfg_attr(test, derive(Clone))]
 #[derive(Debug)]
@@ -126,7 +124,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn index_tokens(
         &mut self,
         _idx: PointOffsetType,
-        _tokens: super::inverted_index::TokenSet,
+        _tokens: super::TokenSet,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
@@ -137,7 +135,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn index_document(
         &mut self,
         _idx: PointOffsetType,
-        _document: super::inverted_index::Document,
+        _document: super::Document,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(

@@ -11,24 +11,18 @@ use memory::mmap_ops;
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use mmap_postings::{MmapPostingValue, MmapPostings};
 
-use super::inverted_index::{InvertedIndex, ParsedQuery};
+use super::immutable_inverted_index::ImmutableInvertedIndex;
+use super::immutable_postings_enum::ImmutablePostings;
+use super::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 use super::positions::Positions;
 use super::postings_iterator::intersect_compressed_postings_iterator;
+use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
-use crate::index::field_index::full_text_index::immutable_postings_enum::ImmutablePostings;
-use crate::index::field_index::full_text_index::inverted_index::{TokenId, TokenSet};
-use crate::index::field_index::full_text_index::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
+use crate::index::field_index::full_text_index::inverted_index::Document;
 
 pub(super) mod mmap_postings;
-pub(super) mod mmap_postings_enum;
-
-/// Old implementation of mmap postings, used to test backwards compatibility temporarily
-#[cfg(test)]
-mod old_mmap_postings;
-#[cfg(test)]
-mod tests;
+pub mod mmap_postings_enum;
 
 const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
@@ -274,7 +268,7 @@ impl InvertedIndex for MmapInvertedIndex {
     fn index_tokens(
         &mut self,
         _idx: PointOffsetType,
-        _tokens: super::inverted_index::TokenSet,
+        _tokens: super::TokenSet,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
@@ -285,7 +279,7 @@ impl InvertedIndex for MmapInvertedIndex {
     fn index_document(
         &mut self,
         _idx: PointOffsetType,
-        _document: super::inverted_index::Document,
+        _document: Document,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(

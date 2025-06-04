@@ -3,8 +3,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
-use crate::index::field_index::full_text_index::mmap_inverted_index::mmap_postings::MmapPostings;
-use crate::index::field_index::full_text_index::positions::Positions;
+use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::mmap_postings::MmapPostings;
+use super::super::positions::Positions;
 
 pub enum MmapPostingsEnum {
     Ids(MmapPostings<()>),
