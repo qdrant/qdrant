@@ -7,7 +7,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
-use common::flags::FeatureFlags;
+use common::flags::{FeatureFlags, feature_flags};
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
@@ -590,6 +590,7 @@ fn create_segment(
         vector_storages.clone(),
         &payload_index_path,
         appendable_flag,
+        feature_flags(),
     )?);
 
     let mut vector_data = HashMap::new();

@@ -253,7 +253,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         self.pairs.len()
     }
 
-    pub(super) fn values_range<'a>(
+    pub fn values_range<'a>(
         &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
