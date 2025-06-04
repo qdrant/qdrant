@@ -368,7 +368,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
+    use crate::common::rocksdb_wrapper::open_db;
     use crate::segment_constructor::migrate_rocksdb_id_tracker_to_mutable;
 
     const RAND_SEED: u64 = 42;
@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn test_iterator() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let db = open_db(dir.path(), &[DB_MAPPING_CF, DB_VERSIONS_CF]).unwrap();
 
         let mut id_tracker = SimpleIdTracker::open(db).unwrap();
 
@@ -438,7 +438,7 @@ mod tests {
     #[test]
     fn test_mixed_types_iterator() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let db = open_db(dir.path(), &[DB_MAPPING_CF, DB_VERSIONS_CF]).unwrap();
 
         let mut id_tracker = SimpleIdTracker::open(db).unwrap();
 
@@ -477,7 +477,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
 
         let db_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let db = open_db(db_dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let db = open_db(db_dir.path(), &[DB_MAPPING_CF, DB_VERSIONS_CF]).unwrap();
 
         // Create RocksDB ID tracker and insert test points
         let mut id_tracker = SimpleIdTracker::open(db).unwrap();
