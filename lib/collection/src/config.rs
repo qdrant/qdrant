@@ -13,8 +13,7 @@ use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, Spars
 use segment::types::{
     Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SparseVectorDataConfig,
     StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype,
-    VectorStorageType, default_replication_factor_const, default_shard_number_const,
-    default_write_consistency_factor_const,
+    VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -181,15 +180,15 @@ impl CollectionParams {
 }
 
 pub fn default_shard_number() -> NonZeroU32 {
-    NonZeroU32::new(default_shard_number_const()).unwrap()
+    NonZeroU32::new(1).unwrap()
 }
 
 pub fn default_replication_factor() -> NonZeroU32 {
-    NonZeroU32::new(default_replication_factor_const()).unwrap()
+    NonZeroU32::new(1).unwrap()
 }
 
 pub fn default_write_consistency_factor() -> NonZeroU32 {
-    NonZeroU32::new(default_write_consistency_factor_const()).unwrap()
+    NonZeroU32::new(1).unwrap()
 }
 
 pub const fn default_on_disk_payload() -> bool {
