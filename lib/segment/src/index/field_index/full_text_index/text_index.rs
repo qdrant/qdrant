@@ -46,7 +46,7 @@ impl FullTextIndex {
             &store_cf_name,
         ));
         if is_appendable {
-            Self::Mutable(MutableFullTextIndex::new(db_wrapper, config))
+            Self::Mutable(MutableFullTextIndex::open_rocksdb(db_wrapper, config))
         } else {
             Self::Immutable(ImmutableFullTextIndex::open_rocksdb(db_wrapper, config))
         }
@@ -67,6 +67,12 @@ impl FullTextIndex {
                 mmap_index,
             )))
         }
+    }
+
+    pub fn new_gridstore(dir: PathBuf, config: TextIndexParams) -> OperationResult<Self> {
+        Ok(Self::Mutable(MutableFullTextIndex::open_gridstore(
+            dir, config,
+        )?))
     }
 
     pub fn init(&mut self) -> OperationResult<()> {
@@ -304,12 +310,12 @@ impl FullTextIndex {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            FullTextIndex::Mutable(_) => {}
             // Only clears backing mmap storage if used, not in-memory representation
-            FullTextIndex::Immutable(index) => index.clear_cache()?,
-            FullTextIndex::Mmap(index) => index.clear_cache()?,
+            FullTextIndex::Mutable(index) => index.clear_cache(),
+            // Only clears backing mmap storage if used, not in-memory representation
+            FullTextIndex::Immutable(index) => index.clear_cache(),
+            FullTextIndex::Mmap(index) => index.clear_cache(),
         }
-        Ok(())
     }
 }
 
@@ -398,7 +404,7 @@ impl PayloadFieldIndex for FullTextIndex {
 
     fn flusher(&self) -> Flusher {
         match self {
-            Self::Mutable(index) => index.db_wrapper.flusher(),
+            Self::Mutable(index) => index.flusher(),
             Self::Immutable(index) => index.flusher(),
             Self::Mmap(index) => index.flusher(),
         }
@@ -406,7 +412,7 @@ impl PayloadFieldIndex for FullTextIndex {
 
     fn files(&self) -> Vec<PathBuf> {
         match self {
-            Self::Mutable(_) => vec![],
+            Self::Mutable(index) => index.files(),
             Self::Immutable(index) => index.files(),
             Self::Mmap(index) => index.files(),
         }

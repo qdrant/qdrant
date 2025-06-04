@@ -6,6 +6,16 @@ pub trait Blob {
     fn from_bytes(bytes: &[u8]) -> Self;
 }
 
+impl Blob for Vec<u8> {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.clone()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        bytes.to_vec()
+    }
+}
+
 impl Blob for Vec<ecow::EcoString> {
     fn to_bytes(&self) -> Vec<u8> {
         serde_cbor::to_vec(self).expect("Failed to serialize Vec<ecow::EcoString>")
