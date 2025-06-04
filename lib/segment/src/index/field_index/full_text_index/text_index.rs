@@ -304,8 +304,9 @@ impl FullTextIndex {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            FullTextIndex::Mutable(_) => {}   // Not a mmap
-            FullTextIndex::Immutable(_) => {} // Not a mmap
+            FullTextIndex::Mutable(_) => {}
+            // Only clears backing mmap storage if used, not in-memory representation
+            FullTextIndex::Immutable(index) => index.clear_cache()?,
             FullTextIndex::Mmap(index) => index.clear_cache()?,
         }
         Ok(())
