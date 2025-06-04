@@ -44,6 +44,12 @@ pub mod immutable_map_index;
 pub mod mmap_map_index;
 pub mod mutable_map_index;
 
+/// Block size in Gridstore for keyword map index.
+/// Keyword(s) are stored as cbor vector.
+/// - "text" - 6 bytes
+/// - "some", "text", "here" - 16 bytes
+pub(super) const BLOCK_SIZE_KEYWORD: usize = 16;
+
 pub type IdRefIter<'a> = Box<dyn Iterator<Item = &'a PointOffsetType> + 'a>;
 pub type IdIter<'a> = Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
@@ -51,6 +57,10 @@ pub trait MapIndexKey: Key + MmapValue + Eq + Display + Debug {
     type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default + 'static;
 
     fn to_owned(&self) -> Self::Owned;
+
+    fn gridstore_block_size() -> usize {
+        size_of::<Self::Owned>()
+    }
 }
 
 impl MapIndexKey for str {
@@ -58,6 +68,10 @@ impl MapIndexKey for str {
 
     fn to_owned(&self) -> Self::Owned {
         EcoString::from(self)
+    }
+
+    fn gridstore_block_size() -> usize {
+        BLOCK_SIZE_KEYWORD
     }
 }
 

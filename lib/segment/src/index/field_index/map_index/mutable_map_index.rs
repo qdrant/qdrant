@@ -17,12 +17,17 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 
-const DEFAULT_GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
-    block_size_bytes: Some(32),
-    compression: Some(gridstore::config::Compression::None),
-    page_size_bytes: Some(32 * 8192 * 32), // 8 MiB = block_size * region_blocks * regions,
-    region_size_blocks: None,
-};
+/// Default options for Gridstore storage
+const fn default_gridstore_options(block_size: usize) -> StorageOptions {
+    StorageOptions {
+        // Size of numeric values in index
+        block_size_bytes: Some(block_size),
+        // Compressing numeric values is unreasonable
+        compression: Some(gridstore::config::Compression::None),
+        page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
+        region_size_blocks: None,
+    }
+}
 
 pub struct MutableMapIndex<N: MapIndexKey + ?Sized>
 where
@@ -74,7 +79,8 @@ where
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
     pub fn open_gridstore(path: PathBuf) -> OperationResult<Self> {
-        let store = Gridstore::open_or_create(path, DEFAULT_GRIDSTORE_OPTIONS).map_err(|err| {
+        let options = default_gridstore_options(N::gridstore_block_size());
+        let store = Gridstore::open_or_create(path, options).map_err(|err| {
             OperationError::service_error(format!(
                 "failed to open mutable map index on gridstore: {err}"
             ))
