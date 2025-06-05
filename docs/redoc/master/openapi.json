@@ -7639,6 +7639,16 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "stopwords": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StopwordsOption"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7656,6 +7666,69 @@
           "word",
           "multilingual"
         ]
+      },
+      "StopwordsOption": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Language"
+          },
+          {
+            "$ref": "#/components/schemas/StopwordsSet"
+          }
+        ]
+      },
+      "Language": {
+        "type": "string",
+        "enum": [
+          "arabic",
+          "azerbaijani",
+          "basque",
+          "bengali",
+          "catalan",
+          "chinese",
+          "danish",
+          "dutch",
+          "english",
+          "finnish",
+          "french",
+          "german",
+          "greek",
+          "hebrew",
+          "hinglish",
+          "hungarian",
+          "indonesian",
+          "italian",
+          "kazakh",
+          "nepali",
+          "norwegian",
+          "portuguese",
+          "romanian",
+          "russian",
+          "slovene",
+          "spanish",
+          "swedish",
+          "tajik",
+          "turkish"
+        ]
+      },
+      "StopwordsSet": {
+        "type": "object",
+        "properties": {
+          "languages": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Language"
+            }
+          },
+          "custom": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "BoolIndexParams": {
         "type": "object",
