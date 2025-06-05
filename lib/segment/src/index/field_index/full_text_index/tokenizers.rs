@@ -145,7 +145,7 @@ impl Tokenizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_types::index::{StopwordsOption, StopwordsSet, TextIndexType};
+    use crate::data_types::index::{StopwordsInterface, StopwordsSet, TextIndexType};
 
     #[test]
     fn test_whitespace_tokenizer() {
@@ -294,7 +294,7 @@ mod tests {
                 lowercase: Some(true),
                 on_disk: None,
                 phrase_matching: None,
-                stopwords: Some(StopwordsOption::Language(Language::English)),
+                stopwords: Some(StopwordsInterface::Language(Language::English)),
             },
             |token| tokens.push(token.to_owned()),
         );
@@ -327,7 +327,7 @@ mod tests {
                 lowercase: Some(true),
                 on_disk: None,
                 phrase_matching: None,
-                stopwords: Some(StopwordsOption::Set(StopwordsSet {
+                stopwords: Some(StopwordsInterface::Set(StopwordsSet {
                     languages: vec![],
                     custom: vec![
                         "quick".to_string(),
@@ -370,7 +370,7 @@ mod tests {
                 lowercase: Some(true),
                 on_disk: None,
                 phrase_matching: None,
-                stopwords: Some(StopwordsOption::Set(StopwordsSet {
+                stopwords: Some(StopwordsInterface::Set(StopwordsSet {
                     languages: vec![Language::English],
                     custom: vec!["quick".to_string(), "fox".to_string()],
                 })),

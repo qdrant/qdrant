@@ -9,22 +9,22 @@ use super::stop_words_container::{
     ROMANIAN_STOPWORDS, RUSSIAN_STOPWORDS, SLOVENE_STOPWORDS, SPANISH_STOPWORDS, SWEDISH_STOPWORDS,
     TAJIK_STOPWORDS, TURKISH_STOPWORDS,
 };
-use crate::data_types::index::{Language, StopwordsOption};
+use crate::data_types::index::{Language, StopwordsInterface};
 
 pub struct StopwordsFilter {
     stopwords: HashSet<String>,
 }
 
 impl StopwordsFilter {
-    pub fn new(option: &Option<StopwordsOption>) -> Self {
+    pub fn new(option: &Option<StopwordsInterface>) -> Self {
         let mut stopwords = HashSet::new();
 
         if let Some(option) = option {
             match option {
-                StopwordsOption::Language(lang) => {
+                StopwordsInterface::Language(lang) => {
                     Self::add_language_stopwords(&mut stopwords, lang);
                 }
-                StopwordsOption::Set(set) => {
+                StopwordsInterface::Set(set) => {
                     // A language stopwords
                     for lang in &set.languages {
                         Self::add_language_stopwords(&mut stopwords, lang);
@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn test_language_stopwords() {
-        let option = Some(StopwordsOption::Language(Language::English));
+        let option = Some(StopwordsInterface::Language(Language::English));
         let filter = StopwordsFilter::new(&option);
 
         assert!(filter.is_stopword("the"));
@@ -111,7 +111,7 @@ mod tests {
 
     #[test]
     fn test_custom_stopwords() {
-        let option = Some(StopwordsOption::Set(StopwordsSet {
+        let option = Some(StopwordsInterface::Set(StopwordsSet {
             languages: vec![],
             custom: vec!["hello".to_string(), "world".to_string()],
         }));
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn test_mixed_stopwords() {
-        let option = Some(StopwordsOption::Set(StopwordsSet {
+        let option = Some(StopwordsInterface::Set(StopwordsSet {
             languages: vec![Language::English],
             custom: vec!["hello".to_string(), "world".to_string()],
         }));
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_case_insensitivity() {
-        let option = Some(StopwordsOption::Set(StopwordsSet {
+        let option = Some(StopwordsInterface::Set(StopwordsSet {
             languages: vec![Language::English],
             custom: vec!["Hello".to_string()],
         }));
@@ -189,7 +189,7 @@ mod tests {
         ];
 
         for (language, stopword) in languages {
-            let option = Some(StopwordsOption::Language(language.clone()));
+            let option = Some(StopwordsInterface::Language(language.clone()));
             let filter = StopwordsFilter::new(&option);
             assert!(
                 filter.is_stopword(stopword),

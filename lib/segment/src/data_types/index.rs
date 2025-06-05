@@ -200,12 +200,12 @@ pub struct TextIndexParams {
     pub phrase_matching: Option<bool>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stopwords: Option<StopwordsOption>,
+    pub stopwords: Option<StopwordsInterface>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(untagged)]
-pub enum StopwordsOption {
+pub enum StopwordsInterface {
     Language(Language),
     Set(StopwordsSet),
 }
@@ -303,17 +303,17 @@ mod tests {
 
     #[test]
     fn test_stopwords_option_language_serialization() {
-        let stopwords = StopwordsOption::Language(Language::English);
+        let stopwords = StopwordsInterface::Language(Language::English);
         let json = serde_json::to_string(&stopwords).unwrap();
         assert_eq!(json, r#""english""#);
 
-        let deserialized: StopwordsOption = serde_json::from_str(&json).unwrap();
+        let deserialized: StopwordsInterface = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, stopwords);
     }
 
     #[test]
     fn test_stopwords_option_set_serialization() {
-        let stopwords = StopwordsOption::Set(StopwordsSet {
+        let stopwords = StopwordsInterface::Set(StopwordsSet {
             languages: vec![Language::English, Language::Spanish],
             custom: vec!["AAA".to_string()],
         });
@@ -321,15 +321,15 @@ mod tests {
         let expected = r#"{"languages":["english","spanish"],"custom":["AAA"]}"#;
         assert_eq!(json, expected);
 
-        let deserialized: StopwordsOption = serde_json::from_str(&json).unwrap();
+        let deserialized: StopwordsInterface = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, stopwords);
     }
 
     #[test]
     fn test_deserialize_stopwords_from_json_examples() {
         let json1 = r#"{"custom": ["as", "the", "a"]}"#;
-        let stopwords1: StopwordsOption = serde_json::from_str(json1).unwrap();
-        if let StopwordsOption::Set(set) = stopwords1 {
+        let stopwords1: StopwordsInterface = serde_json::from_str(json1).unwrap();
+        if let StopwordsInterface::Set(set) = stopwords1 {
             assert_eq!(set.custom, vec!["as", "the", "a"]);
             assert_eq!(set.languages, Vec::<Language>::new());
         } else {
@@ -337,16 +337,16 @@ mod tests {
         }
 
         let json2 = r#""english""#;
-        let stopwords2: StopwordsOption = serde_json::from_str(json2).unwrap();
-        if let StopwordsOption::Language(lang) = stopwords2 {
+        let stopwords2: StopwordsInterface = serde_json::from_str(json2).unwrap();
+        if let StopwordsInterface::Language(lang) = stopwords2 {
             assert_eq!(lang, Language::English);
         } else {
             panic!("Expected Language");
         }
 
         let json3 = r#"{"languages": ["english", "spanish"], "custom": ["AAA"]}"#;
-        let stopwords3: StopwordsOption = serde_json::from_str(json3).unwrap();
-        if let StopwordsOption::Set(set) = stopwords3 {
+        let stopwords3: StopwordsInterface = serde_json::from_str(json3).unwrap();
+        if let StopwordsInterface::Set(set) = stopwords3 {
             assert_eq!(set.languages, vec![Language::English, Language::Spanish]);
             assert_eq!(set.custom, vec!["AAA"]);
         } else {

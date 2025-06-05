@@ -7643,7 +7643,7 @@
           "stopwords": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/StopwordsOption"
+                "$ref": "#/components/schemas/StopwordsInterface"
               },
               {
                 "nullable": true
@@ -7667,7 +7667,7 @@
           "multilingual"
         ]
       },
-      "StopwordsOption": {
+      "StopwordsInterface": {
         "anyOf": [
           {
             "$ref": "#/components/schemas/Language"
