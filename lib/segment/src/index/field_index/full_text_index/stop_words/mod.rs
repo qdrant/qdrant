@@ -1,15 +1,66 @@
 use std::collections::HashSet;
 
-use super::stop_words_container::{
-    ARABIC_STOPWORDS, AZERBAIJANI_STOPWORDS, BASQUE_STOPWORDS, BENGALI_STOPWORDS,
-    CATALAN_STOPWORDS, CHINESE_STOPWORDS, DANISH_STOPWORDS, DUTCH_STOPWORDS, ENGLISH_STOPWORDS,
-    FINNISH_STOPWORDS, FRENCH_STOPWORDS, GERMAN_STOPWORDS, GREEK_STOPWORDS, HEBREW_STOPWORDS,
-    HINGLISH_STOPWORDS, HUNGARIAN_STOPWORDS, INDONESIAN_STOPWORDS, ITALIAN_STOPWORDS,
-    KAZAKH_STOPWORDS, NEPALI_STOPWORDS, NORWEGIAN_STOPWORDS, PORTUGUESE_STOPWORDS,
-    ROMANIAN_STOPWORDS, RUSSIAN_STOPWORDS, SLOVENE_STOPWORDS, SPANISH_STOPWORDS, SWEDISH_STOPWORDS,
-    TAJIK_STOPWORDS, TURKISH_STOPWORDS,
-};
 use crate::data_types::index::{Language, StopwordsInterface};
+
+pub mod arabic;
+pub mod azerbaijani;
+pub mod basque;
+pub mod bengali;
+pub mod catalan;
+pub mod chinese;
+pub mod danish;
+pub mod dutch;
+pub mod english;
+pub mod finnish;
+pub mod french;
+pub mod german;
+pub mod greek;
+pub mod hebrew;
+pub mod hinglish;
+pub mod hungarian;
+pub mod indonesian;
+pub mod italian;
+pub mod kazakh;
+pub mod nepali;
+pub mod norwegian;
+pub mod portuguese;
+pub mod romanian;
+pub mod russian;
+pub mod slovene;
+pub mod spanish;
+pub mod swedish;
+pub mod tajik;
+pub mod turkish;
+
+pub use arabic::ARABIC_STOPWORDS;
+pub use azerbaijani::AZERBAIJANI_STOPWORDS;
+pub use basque::BASQUE_STOPWORDS;
+pub use bengali::BENGALI_STOPWORDS;
+pub use catalan::CATALAN_STOPWORDS;
+pub use chinese::CHINESE_STOPWORDS;
+pub use danish::DANISH_STOPWORDS;
+pub use dutch::DUTCH_STOPWORDS;
+pub use english::ENGLISH_STOPWORDS;
+pub use finnish::FINNISH_STOPWORDS;
+pub use french::FRENCH_STOPWORDS;
+pub use german::GERMAN_STOPWORDS;
+pub use greek::GREEK_STOPWORDS;
+pub use hebrew::HEBREW_STOPWORDS;
+pub use hinglish::HINGLISH_STOPWORDS;
+pub use hungarian::HUNGARIAN_STOPWORDS;
+pub use indonesian::INDONESIAN_STOPWORDS;
+pub use italian::ITALIAN_STOPWORDS;
+pub use kazakh::KAZAKH_STOPWORDS;
+pub use nepali::NEPALI_STOPWORDS;
+pub use norwegian::NORWEGIAN_STOPWORDS;
+pub use portuguese::PORTUGUESE_STOPWORDS;
+pub use romanian::ROMANIAN_STOPWORDS;
+pub use russian::RUSSIAN_STOPWORDS;
+pub use slovene::SLOVENE_STOPWORDS;
+pub use spanish::SPANISH_STOPWORDS;
+pub use swedish::SWEDISH_STOPWORDS;
+pub use tajik::TAJIK_STOPWORDS;
+pub use turkish::TURKISH_STOPWORDS;
 
 pub struct StopwordsFilter {
     stopwords: HashSet<String>,
