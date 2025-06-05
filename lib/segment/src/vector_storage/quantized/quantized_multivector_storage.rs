@@ -172,6 +172,12 @@ where
     ) -> ScoreType {
         let offset = self.offsets.get_offset(vector_index);
         let mut sum = 0.0;
+
+        // compute `vector_io_read` for sub-vectors only once instead of `query.len()` times to account for caching
+        hw_counter
+            .vector_io_read()
+            .incr_delta(self.quantized_storage.quantized_vector_size() * offset.count as usize);
+
         for inner_query in query {
             let mut max_sim = ScoreType::NEG_INFINITY;
             // manual `max_by` for performance
@@ -289,6 +295,10 @@ where
         match self.multi_vector_config.comparator {
             MultiVectorComparator::MaxSim => self.score_internal_max_similarity(i, j, hw_counter),
         }
+    }
+
+    fn quantized_vector_size(&self) -> usize {
+        self.quantized_storage.quantized_vector_size()
     }
 }
 

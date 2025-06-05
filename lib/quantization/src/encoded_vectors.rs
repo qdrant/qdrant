@@ -36,6 +36,8 @@ pub trait EncodedVectors<TEncodedQuery: Sized>: Sized {
     fn score_point(&self, query: &TEncodedQuery, i: u32, hw_counter: &HardwareCounterCell) -> f32;
 
     fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32;
+
+    fn quantized_vector_size(&self) -> usize;
 }
 
 impl DistanceType {

@@ -60,6 +60,7 @@ impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScor
             .get_sparse(idx)
             .expect("Failed to get sparse vector");
 
+        // not exactly correct for Gridstore where the indices are compressed into u8
         self.hardware_counter
             .vector_io_read()
             .incr_delta(stored.indices.len() + stored.values.len());

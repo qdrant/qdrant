@@ -508,10 +508,6 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
             .cpu_counter()
             .incr_delta(self.metadata.vector_division.len());
 
-        hw_counter
-            .vector_io_read()
-            .incr_delta(self.metadata.vector_division.len());
-
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if is_x86_feature_detected!("sse4.1") {
             return unsafe { self.score_point_sse(query, i) };
@@ -571,5 +567,9 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
         } else {
             distance
         }
+    }
+
+    fn quantized_vector_size(&self) -> usize {
+        self.metadata.vector_division.len()
     }
 }
