@@ -26,10 +26,10 @@ const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
 pub struct MutableFullTextIndex {
     pub(super) inverted_index: MutableInvertedIndex,
     pub(super) config: TextIndexParams,
-    storage: Storage,
+    pub(super) storage: Storage,
 }
 
-enum Storage {
+pub(super) enum Storage {
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Gridstore(Arc<RwLock<Gridstore<Vec<u8>>>>),
 }
@@ -135,14 +135,6 @@ impl MutableFullTextIndex {
         self.inverted_index = MutableInvertedIndex::build_index(iter)?;
 
         Ok(true)
-    }
-
-    #[cfg(test)]
-    pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
-        match &self.storage {
-            Storage::RocksDb(db_wrapper) => Some(db_wrapper),
-            Storage::Gridstore(_) => None,
-        }
     }
 
     #[inline]

@@ -561,6 +561,7 @@ mod tests {
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::fixtures::payload_fixtures::random_full_text_payload;
     use crate::index::field_index::field_index_base::FieldIndexBuilderTrait;
+    use crate::index::field_index::full_text_index::mutable_text_index;
     use crate::types::ValuesCount;
 
     const FIELD_NAME: &str = "test";
@@ -609,10 +610,13 @@ mod tests {
 
                     // Deconstruct mutable index, flush pending changes
                     let MutableFullTextIndex {
-                        db_wrapper,
+                        storage,
                         inverted_index: _,
                         config,
                     } = index;
+                    let mutable_text_index::Storage::RocksDb(db_wrapper) = storage else {
+                        panic!("expected RocksDB storage for immutable index");
+                    };
                     db_wrapper.flusher()().expect("failed to flush");
 
                     // Open and load immutable index
