@@ -10,12 +10,16 @@ use delegate::delegate;
 use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
 use parking_lot::RwLock;
+#[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 
+#[cfg(feature = "rocksdb")]
 use super::GeoMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::types::{GeoPoint, RawGeoPoint};
@@ -37,6 +41,7 @@ pub struct MutableGeoMapIndex {
 }
 
 enum Storage {
+    #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Gridstore(Arc<RwLock<Gridstore<Vec<RawGeoPoint>>>>),
 }
@@ -73,6 +78,7 @@ impl MutableGeoMapIndex {
     /// Open mutable geo index from RocksDB storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    #[cfg(feature = "rocksdb")]
     pub fn open_rocksdb(db: Arc<RwLock<DB>>, store_cf_name: &str) -> Self {
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
@@ -104,6 +110,7 @@ impl MutableGeoMapIndex {
     /// Loads in-memory index from backing RocksDB or Gridstore storage.
     pub(super) fn load(&mut self) -> OperationResult<bool> {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => self.load_rocksdb(),
             Storage::Gridstore(_) => self.load_gridstore(),
         }
@@ -112,6 +119,7 @@ impl MutableGeoMapIndex {
     /// Load from RocksDB storage
     ///
     /// Loads in-memory index from RocksDB storage.
+    #[cfg(feature = "rocksdb")]
     fn load_rocksdb(&mut self) -> OperationResult<bool> {
         let Storage::RocksDb(db_wrapper) = &self.storage else {
             return Err(OperationError::service_error(
@@ -167,6 +175,7 @@ impl MutableGeoMapIndex {
     ///
     /// Loads in-memory index from Gridstore storage.
     fn load_gridstore(&mut self) -> OperationResult<bool> {
+        #[allow(irrefutable_let_patterns)]
         let Storage::Gridstore(store) = &self.storage else {
             return Err(OperationError::service_error(
                 "Failed to load index from Gridstore, using different storage backend",
@@ -237,6 +246,7 @@ impl MutableGeoMapIndex {
     #[inline]
     pub(super) fn clear(&self) -> OperationResult<()> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
             Storage::Gridstore(store) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!("Failed to clear mutable geo index: {err}",))
@@ -250,6 +260,7 @@ impl MutableGeoMapIndex {
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
             Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
@@ -262,6 +273,7 @@ impl MutableGeoMapIndex {
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
             Storage::Gridstore(store) => store.read().files(),
         }
@@ -270,6 +282,7 @@ impl MutableGeoMapIndex {
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(store) => {
                 let store = store.clone();
@@ -292,6 +305,7 @@ impl MutableGeoMapIndex {
     ) -> OperationResult<()> {
         // Update persisted storage
         match &mut self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
                 for added_point in values {
                     let added_geo_hash: GeoHash =
@@ -332,14 +346,16 @@ impl MutableGeoMapIndex {
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let Some(geo_points_to_remove) = self.in_memory_index.point_to_values.get(idx as usize)
-        else {
-            return Ok(());
-        };
-
         // Update persisted storage
         match &mut self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
+                let Some(geo_points_to_remove) =
+                    self.in_memory_index.point_to_values.get(idx as usize)
+                else {
+                    return Ok(());
+                };
+
                 for removed_geo_point in geo_points_to_remove {
                     let geo_hash_to_remove: GeoHash =
                         encode_max_precision(removed_geo_point.lon, removed_geo_point.lat)
