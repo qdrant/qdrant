@@ -13,12 +13,6 @@ pub struct FeatureFlags {
     /// Note that this will only be applied to all flags when passed into [`init_feature_flags`].
     all: bool,
 
-    /// Whether to skip usage of RocksDB in immutable payload indices.
-    ///
-    /// First implemented in Qdrant 1.13.5.
-    /// Enabled by default in Qdrant 1.14.1
-    pub payload_index_skip_rocksdb: bool,
-
     /// Whether to skip usage of RocksDB in mutable payload indices.
     // TODO(1.15): enable by default
     pub payload_index_skip_mutable_rocksdb: bool,
@@ -44,7 +38,6 @@ impl Default for FeatureFlags {
     fn default() -> FeatureFlags {
         FeatureFlags {
             all: false,
-            payload_index_skip_rocksdb: true,
             payload_index_skip_mutable_rocksdb: false,
             incremental_hnsw_building: true,
             hnsw_healing: false,
@@ -66,7 +59,6 @@ impl FeatureFlags {
 pub fn init_feature_flags(mut flags: FeatureFlags) {
     let FeatureFlags {
         all,
-        payload_index_skip_rocksdb,
         payload_index_skip_mutable_rocksdb,
         incremental_hnsw_building,
         hnsw_healing,
@@ -76,7 +68,6 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
 
     // If all is set, explicitly set all feature flags
     if *all {
-        *payload_index_skip_rocksdb = true;
         *payload_index_skip_mutable_rocksdb = true;
         *incremental_hnsw_building = true;
         *hnsw_healing = true;
