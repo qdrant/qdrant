@@ -374,10 +374,6 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
         let q_ptr = query.encoded_query.as_ptr();
         let (vector_offset, v_ptr) = self.get_vec_ptr(i);
 
-        hw_counter
-            .vector_io_read()
-            .incr_delta(self.metadata.vector_parameters.dim);
-
         #[cfg(target_arch = "x86_64")]
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             unsafe {
@@ -504,6 +500,10 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
         };
 
         self.metadata.multiplier * score as f32 + offset
+    }
+
+    fn quantized_vector_size(&self) -> usize {
+        self.metadata.vector_parameters.dim
     }
 }
 
