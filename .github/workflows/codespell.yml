@@ -22,4 +22,4 @@ jobs:
       - name: Codespell
         uses: codespell-project/actions-codespell@v2
         with:
-          skip: '**/stop_words_container.rs'
+          skip: '**/stop_words/*.rs'
