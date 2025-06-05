@@ -133,6 +133,21 @@ impl ImmutableFullTextIndex {
         }
     }
 
+    /// Clear cache
+    ///
+    /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
+    /// index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match &self.storage {
+            Storage::RocksDb(_) => Ok(()),
+            Storage::Mmap(index) => index.clear_cache().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to clear immutable full text index gridstore cache: {err}"
+                ))
+            }),
+        }
+    }
+
     pub fn files(&self) -> Vec<PathBuf> {
         match self.storage {
             Storage::RocksDb(_) => vec![],

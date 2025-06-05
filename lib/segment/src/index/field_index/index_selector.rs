@@ -339,9 +339,8 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 FullTextIndex::new_mmap(text_dir(dir, field), config, *is_on_disk)?
             }
-            // TODO(payload-index-gridstore): replace with Gridstore implementation
-            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
-                FullTextIndex::new_rocksdb(Arc::clone(db), config, &field.to_string(), true)
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+                FullTextIndex::new_gridstore(text_dir(dir, field), config)?
             }
         })
     }
@@ -363,12 +362,10 @@ impl IndexSelector<'_> {
                     *is_on_disk,
                 ))
             }
-            // TODO(payload-index-gridstore): replace with Gridstore implementation
-            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
-                FieldIndexBuilder::FullTextIndex(FullTextIndex::builder_rocksdb(
-                    Arc::clone(db),
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+                FieldIndexBuilder::FullTextGridstoreIndex(FullTextIndex::builder_gridstore(
+                    text_dir(dir, field),
                     config,
-                    &field.to_string(),
                 ))
             }
         }

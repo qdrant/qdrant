@@ -14,5 +14,6 @@ mod tokenizers;
 mod compressed_posting;
 mod immutable_inverted_index;
 mod mutable_inverted_index;
+mod mutable_inverted_index_builder;
 #[cfg(test)]
 mod tests;

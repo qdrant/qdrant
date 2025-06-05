@@ -1,39 +1,96 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use gridstore::Gridstore;
+use gridstore::config::StorageOptions;
+use parking_lot::RwLock;
 
 use super::inverted_index::{Document, InvertedIndex, TokenSet};
 use super::mutable_inverted_index::MutableInvertedIndex;
+use super::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::text_index::FullTextIndex;
 use super::tokenizers::Tokenizer;
-use crate::common::operation_error::OperationResult;
+use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::data_types::index::TextIndexParams;
 
+const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
+    compression: Some(gridstore::config::Compression::None),
+    page_size_bytes: None,
+    block_size_bytes: None,
+    region_size_blocks: None,
+};
+
 pub struct MutableFullTextIndex {
     pub(super) inverted_index: MutableInvertedIndex,
-    pub(super) db_wrapper: DatabaseColumnScheduledDeleteWrapper,
     pub(super) config: TextIndexParams,
+    pub(super) storage: Storage,
+}
+
+pub(super) enum Storage {
+    RocksDb(DatabaseColumnScheduledDeleteWrapper),
+    Gridstore(Arc<RwLock<Gridstore<Vec<u8>>>>),
 }
 
 impl MutableFullTextIndex {
-    pub fn new(db_wrapper: DatabaseColumnScheduledDeleteWrapper, config: TextIndexParams) -> Self {
+    /// Open mutable full text index from RocksDB storage
+    ///
+    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    pub fn open_rocksdb(
+        db_wrapper: DatabaseColumnScheduledDeleteWrapper,
+        config: TextIndexParams,
+    ) -> Self {
         Self {
             inverted_index: Default::default(),
-            db_wrapper,
             config,
+            storage: Storage::RocksDb(db_wrapper),
         }
     }
 
-    pub fn init(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
+    /// Open mutable full text index from Gridstore storage
+    ///
+    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    pub fn open_gridstore(path: PathBuf, config: TextIndexParams) -> OperationResult<Self> {
+        let store = Gridstore::open_or_create(path, GRIDSTORE_OPTIONS).map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to open mutable full text index on gridstore: {err}"
+            ))
+        })?;
+        Ok(Self {
+            inverted_index: Default::default(),
+            config,
+            storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
+        })
     }
 
-    pub fn load(&mut self) -> OperationResult<bool> {
-        if !self.db_wrapper.has_column_family()? {
+    /// Load storage
+    ///
+    /// Loads in-memory index from backing RocksDB or Gridstore storage.
+    pub(super) fn load(&mut self) -> OperationResult<bool> {
+        match self.storage {
+            Storage::RocksDb(_) => self.load_rocksdb(),
+            Storage::Gridstore(_) => self.load_gridstore(),
+        }
+    }
+
+    /// Load from RocksDB storage
+    ///
+    /// Loads in-memory index from RocksDB storage.
+    pub fn load_rocksdb(&mut self) -> OperationResult<bool> {
+        let Storage::RocksDb(db_wrapper) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
+        };
+
+        if !db_wrapper.has_column_family()? {
             return Ok(false);
         };
 
-        let db = self.db_wrapper.lock_db();
+        let db = db_wrapper.lock_db();
         let iter = db.iter()?.map(|(key, value)| {
             let idx = FullTextIndex::restore_key(&key);
             let str_tokens = FullTextIndex::deserialize_document(&value)?;
@@ -43,6 +100,104 @@ impl MutableFullTextIndex {
         self.inverted_index = MutableInvertedIndex::build_index(iter)?;
 
         Ok(true)
+    }
+
+    /// Load from Gridstore storage
+    ///
+    /// Loads in-memory index from Gridstore storage.
+    fn load_gridstore(&mut self) -> OperationResult<bool> {
+        let Storage::Gridstore(store) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from Gridstore, using different storage backend",
+            ));
+        };
+
+        let hw_counter = HardwareCounterCell::disposable();
+        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
+
+        let mut builder = MutableInvertedIndexBuilder::default();
+        store
+            .read()
+            .iter::<_, OperationError>(
+                |idx, value| {
+                    let tokens = FullTextIndex::deserialize_document(value)?;
+                    builder.add(idx, tokens);
+                    Ok(true)
+                },
+                hw_counter_ref,
+            )
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to load mutable full text index from gridstore: {err}"
+                ))
+            })?;
+        self.inverted_index = builder.build();
+
+        Ok(true)
+    }
+
+    #[inline]
+    pub(super) fn init(&self) -> OperationResult<()> {
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
+            Storage::Gridstore(store) => store.write().clear().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to clear mutable full text index: {err}",
+                ))
+            }),
+        }
+    }
+
+    #[inline]
+    pub(super) fn clear(self) -> OperationResult<()> {
+        match self.storage {
+            Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
+            Storage::Gridstore(store) => store.write().clear().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to clear mutable full text index: {err}",
+                ))
+            }),
+        }
+    }
+
+    /// Clear cache
+    ///
+    /// Only clears cache of Gridstore storage if used. Does not clear in-memory representation of
+    /// index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match &self.storage {
+            Storage::RocksDb(_) => Ok(()),
+            Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to clear mutable full text index gridstore cache: {err}"
+                ))
+            }),
+        }
+    }
+
+    #[inline]
+    pub(super) fn files(&self) -> Vec<PathBuf> {
+        match &self.storage {
+            Storage::RocksDb(_) => vec![],
+            Storage::Gridstore(store) => store.read().files(),
+        }
+    }
+
+    #[inline]
+    pub(super) fn flusher(&self) -> Flusher {
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
+            Storage::Gridstore(store) => {
+                let store = store.clone();
+                Box::new(move || {
+                    store.read().flush().map_err(|err| {
+                        OperationError::service_error(format!(
+                            "Failed to flush mutable full text index gridstore: {err}"
+                        ))
+                    })
+                })
+            }
+        }
     }
 
     pub fn add_many(
@@ -82,22 +237,48 @@ impl MutableFullTextIndex {
         let db_document =
             FullTextIndex::serialize_document_tokens(str_tokens.into_iter().collect())?;
 
-        self.db_wrapper.put(db_idx, db_document)?;
-
-        Ok(())
-    }
-
-    pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        if self.inverted_index.remove(id) {
-            let db_doc_id = FullTextIndex::store_key(id);
-            self.db_wrapper.remove(db_doc_id)?;
+        // Update persisted storage
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => {
+                db_wrapper.put(db_idx, db_document)?;
+            }
+            Storage::Gridstore(store) => {
+                let hw_counter = HardwareCounterCell::disposable();
+                store
+                    .write()
+                    .put_value(
+                        idx,
+                        &db_document,
+                        hw_counter.ref_payload_index_io_write_counter(),
+                    )
+                    .map_err(|err| {
+                        OperationError::service_error(format!(
+                            "failed to put value in mutable full text index gridstore: {err}"
+                        ))
+                    })?;
+            }
         }
 
         Ok(())
     }
 
-    pub fn clear(self) -> OperationResult<()> {
-        self.db_wrapper.remove_column_family()
+    pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        // Update persisted storage
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => {
+                if self.inverted_index.remove(id) {
+                    let db_doc_id = FullTextIndex::store_key(id);
+                    db_wrapper.remove(db_doc_id)?;
+                }
+            }
+            Storage::Gridstore(store) => {
+                if self.inverted_index.remove(id) {
+                    store.write().delete_value(id);
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

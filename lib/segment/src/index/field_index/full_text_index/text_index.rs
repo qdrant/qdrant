@@ -46,7 +46,7 @@ impl FullTextIndex {
             &store_cf_name,
         ));
         if is_appendable {
-            Self::Mutable(MutableFullTextIndex::new(db_wrapper, config))
+            Self::Mutable(MutableFullTextIndex::open_rocksdb(db_wrapper, config))
         } else {
             Self::Immutable(ImmutableFullTextIndex::open_rocksdb(db_wrapper, config))
         }
@@ -67,6 +67,12 @@ impl FullTextIndex {
                 mmap_index,
             )))
         }
+    }
+
+    pub fn new_gridstore(dir: PathBuf, config: TextIndexParams) -> OperationResult<Self> {
+        Ok(Self::Mutable(MutableFullTextIndex::open_gridstore(
+            dir, config,
+        )?))
     }
 
     pub fn init(&mut self) -> OperationResult<()> {
@@ -97,6 +103,13 @@ impl FullTextIndex {
         is_on_disk: bool,
     ) -> FullTextMmapIndexBuilder {
         FullTextMmapIndexBuilder::new(path, config, is_on_disk)
+    }
+
+    pub fn builder_gridstore(
+        dir: PathBuf,
+        config: TextIndexParams,
+    ) -> FullTextGridstoreIndexBuilder {
+        FullTextGridstoreIndexBuilder::new(dir, config)
     }
 
     fn storage_cf_name(field: &str) -> String {
@@ -304,11 +317,12 @@ impl FullTextIndex {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            FullTextIndex::Mutable(_) => {}   // Not a mmap
-            FullTextIndex::Immutable(_) => {} // Not a mmap
-            FullTextIndex::Mmap(index) => index.clear_cache()?,
+            // Only clears backing mmap storage if used, not in-memory representation
+            FullTextIndex::Mutable(index) => index.clear_cache(),
+            // Only clears backing mmap storage if used, not in-memory representation
+            FullTextIndex::Immutable(index) => index.clear_cache(),
+            FullTextIndex::Mmap(index) => index.clear_cache(),
         }
-        Ok(())
     }
 }
 
@@ -397,7 +411,7 @@ impl PayloadFieldIndex for FullTextIndex {
 
     fn flusher(&self) -> Flusher {
         match self {
-            Self::Mutable(index) => index.db_wrapper.flusher(),
+            Self::Mutable(index) => index.flusher(),
             Self::Immutable(index) => index.flusher(),
             Self::Mmap(index) => index.flusher(),
         }
@@ -405,7 +419,7 @@ impl PayloadFieldIndex for FullTextIndex {
 
     fn files(&self) -> Vec<PathBuf> {
         match self {
-            Self::Mutable(_) => vec![],
+            Self::Mutable(index) => index.files(),
             Self::Immutable(index) => index.files(),
             Self::Mmap(index) => index.files(),
         }
@@ -448,6 +462,93 @@ impl PayloadFieldIndex for FullTextIndex {
     }
 }
 
+pub struct FullTextGridstoreIndexBuilder {
+    dir: PathBuf,
+    config: TextIndexParams,
+    index: Option<FullTextIndex>,
+}
+
+impl FullTextGridstoreIndexBuilder {
+    pub fn new(dir: PathBuf, config: TextIndexParams) -> Self {
+        Self {
+            dir,
+            config,
+            index: None,
+        }
+    }
+}
+
+impl ValueIndexer for FullTextGridstoreIndexBuilder {
+    type ValueType = String;
+
+    fn get_value(value: &Value) -> Option<String> {
+        match value {
+            Value::String(s) => Some(s.clone()),
+            _ => None,
+        }
+    }
+
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<Self::ValueType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let values: Vec<Value> = values.into_iter().map(Value::String).collect();
+        let values: Vec<&Value> = values.iter().collect();
+        FieldIndexBuilderTrait::add_point(self, id, &values, hw_counter)
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "FullTextIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.remove_point(id)
+    }
+}
+
+impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
+    type FieldIndexType = FullTextIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        assert!(
+            self.index.is_none(),
+            "index must be initialized exactly once",
+        );
+        self.index.replace(FullTextIndex::new_gridstore(
+            self.dir.clone(),
+            self.config.clone(),
+        )?);
+        Ok(())
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "FullTextIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.add_point(id, payload, hw_counter)
+    }
+
+    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+        let Some(index) = self.index.take() else {
+            return Err(OperationError::service_error(
+                "FullTextIndexGridstoreBuilder: index must be initialized to finalize",
+            ));
+        };
+        index.flusher()()?;
+        Ok(index)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;
@@ -459,13 +560,22 @@ mod tests {
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::fixtures::payload_fixtures::random_full_text_payload;
     use crate::index::field_index::field_index_base::FieldIndexBuilderTrait;
+    use crate::index::field_index::full_text_index::mutable_text_index;
     use crate::types::ValuesCount;
 
     const FIELD_NAME: &str = "test";
+    const TYPES: [IndexType; 5] = [
+        IndexType::Mutable,
+        IndexType::MutableGridstore,
+        IndexType::Immutable,
+        IndexType::Mmap,
+        IndexType::RamMmap,
+    ];
 
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum IndexType {
         Mutable,
+        MutableGridstore,
         Immutable,
         Mmap,
         RamMmap,
@@ -473,6 +583,7 @@ mod tests {
 
     enum IndexBuilder {
         Mutable(FullTextIndexBuilder),
+        MutableGridstore(FullTextGridstoreIndexBuilder),
         Immutable(FullTextIndexBuilder),
         Mmap(FullTextMmapIndexBuilder),
         RamMmap(FullTextMmapIndexBuilder),
@@ -487,6 +598,9 @@ mod tests {
         ) -> OperationResult<()> {
             match self {
                 IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
+                IndexBuilder::MutableGridstore(builder) => {
+                    FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+                }
                 IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::Mmap(builder) => {
                     FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
@@ -500,6 +614,7 @@ mod tests {
         fn finalize(self) -> OperationResult<FullTextIndex> {
             match self {
                 IndexBuilder::Mutable(builder) => builder.finalize(),
+                IndexBuilder::MutableGridstore(builder) => builder.finalize(),
                 IndexBuilder::Immutable(builder) => {
                     let FullTextIndex::Mutable(index) = builder.finalize()? else {
                         panic!("expected mutable index");
@@ -507,10 +622,13 @@ mod tests {
 
                     // Deconstruct mutable index, flush pending changes
                     let MutableFullTextIndex {
-                        db_wrapper,
+                        storage,
                         inverted_index: _,
                         config,
                     } = index;
+                    let mutable_text_index::Storage::RocksDb(db_wrapper) = storage else {
+                        panic!("expected RocksDB storage for immutable index");
+                    };
                     db_wrapper.flusher()().expect("failed to flush");
 
                     // Open and load immutable index
@@ -546,6 +664,9 @@ mod tests {
                 config,
                 FIELD_NAME,
             )),
+            IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
+                FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config),
+            ),
             IndexType::Immutable => IndexBuilder::Immutable(FullTextIndex::builder_rocksdb(
                 db.clone(),
                 config,
@@ -564,6 +685,7 @@ mod tests {
         };
         match &mut builder {
             IndexBuilder::Mutable(builder) => builder.init().unwrap(),
+            IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
             IndexBuilder::Immutable(builder) => builder.init().unwrap(),
             IndexBuilder::Mmap(builder) => builder.init().unwrap(),
             IndexBuilder::RamMmap(builder) => builder.init().unwrap(),
@@ -653,12 +775,6 @@ mod tests {
 
         use crate::json_path::JsonPath;
 
-        const TYPES: [IndexType; 4] = [
-            IndexType::Mutable,
-            IndexType::Immutable,
-            IndexType::Mmap,
-            IndexType::RamMmap,
-        ];
         const POINT_COUNT: usize = 500;
         const KEYWORD_COUNT: usize = 5;
         const KEYWORD_LEN: usize = 2;
