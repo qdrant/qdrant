@@ -282,9 +282,10 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let mut storage: PayloadStorageEnum = MmapPayloadStorage::open_or_create(dir.path())
-            .unwrap()
-            .into();
+        let mut storage: PayloadStorageEnum =
+            MmapPayloadStorage::open_or_create(dir.path().to_path_buf())
+                .unwrap()
+                .into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
         storage.clear_all(&hw_counter).unwrap();

@@ -24,6 +24,7 @@ lz4_flex = { version = "0.11.3", default-features = false }
 rand = { workspace = true }
 bitvec = { workspace = true }
 itertools = { workspace = true }
+zerocopy = { workspace = true }
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
 dataset = { path = "../common/dataset" }

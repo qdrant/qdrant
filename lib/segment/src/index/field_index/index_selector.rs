@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use gridstore::Blob;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -12,7 +13,8 @@ use super::histogram::Numericable;
 use super::map_index::{MapIndex, MapIndexBuilder, MapIndexKey, MapIndexMmapBuilder};
 use super::mmap_point_to_values::MmapValue;
 use super::numeric_index::{
-    Encodable, NumericIndexBuilder, NumericIndexIntoInnerValue, NumericIndexMmapBuilder,
+    Encodable, NumericIndexBuilder, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue,
+    NumericIndexMmapBuilder,
 };
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::OperationResult;
@@ -28,8 +30,12 @@ use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 /// Selects index and index builder types based on field type.
 #[derive(Copy, Clone)]
 pub enum IndexSelector<'a> {
+    /// In-memory index on RocksDB, appendable or non-appendable
     RocksDb(IndexSelectorRocksDb<'a>),
+    /// On disk or in-memory index on mmaps, non-appendable
     Mmap(IndexSelectorMmap<'a>),
+    /// In-memory index on gridstore, appendable
+    Gridstore(IndexSelectorGridstore<'a>),
 }
 
 #[derive(Copy, Clone)]
@@ -42,6 +48,15 @@ pub struct IndexSelectorRocksDb<'a> {
 pub struct IndexSelectorMmap<'a> {
     pub dir: &'a Path,
     pub is_on_disk: bool,
+}
+
+#[derive(Copy, Clone)]
+pub struct IndexSelectorGridstore<'a> {
+    pub dir: &'a Path,
+
+    // Temporary fallback to RocksDB for indices that don't support Gridstore yet
+    // TODO(payload-index-gridstore): remove once all indices use Gridstore
+    pub db: &'a Arc<RwLock<DB>>,
 }
 
 impl IndexSelector<'_> {
@@ -114,6 +129,7 @@ impl IndexSelector<'_> {
                         field,
                         FieldIndexBuilder::IntIndex,
                         FieldIndexBuilder::IntMmapIndex,
+                        FieldIndexBuilder::IntGridstoreIndex,
                     )
                 }),
             )
@@ -123,6 +139,7 @@ impl IndexSelector<'_> {
                     field,
                     FieldIndexBuilder::FloatIndex,
                     FieldIndexBuilder::FloatMmapIndex,
+                    FieldIndexBuilder::FloatGridstoreIndex,
                 )]
             }
             PayloadSchemaParams::Geo(_) => {
@@ -143,6 +160,7 @@ impl IndexSelector<'_> {
                     field,
                     FieldIndexBuilder::DatetimeIndex,
                     FieldIndexBuilder::DatetimeMmapIndex,
+                    FieldIndexBuilder::DatetimeGridstoreIndex,
                 )]
             }
             PayloadSchemaParams::Uuid(_) => {
@@ -165,6 +183,10 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
+            // TODO(payload-index-gridstore): replace with Gridstore implementation
+            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
+                MapIndex::new_rocksdb(Arc::clone(db), &field.to_string(), true)
+            }
         })
     }
 
@@ -181,13 +203,20 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 make_mmap(MapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk))
             }
+            // TODO(payload-index-gridstore): replace with Gridstore implementation
+            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => make_rocksdb(
+                MapIndex::builder_rocksdb(Arc::clone(db), &field.to_string()),
+            ),
         }
     }
 
-    fn numeric_new<T: Encodable + Numericable + MmapValue + Default, P>(
+    fn numeric_new<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
-    ) -> OperationResult<NumericIndex<T, P>> {
+    ) -> OperationResult<NumericIndex<T, P>>
+    where
+        Vec<T>: Blob,
+    {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 NumericIndex::new_rocksdb(Arc::clone(db), &field.to_string(), *is_appendable)
@@ -195,17 +224,22 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk)?
             }
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+                NumericIndex::new_gridstore(numeric_dir(dir, field))?
+            }
         })
     }
 
-    fn numeric_builder<T: Encodable + Numericable + MmapValue + Default, P>(
+    fn numeric_builder<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
         make_rocksdb: fn(NumericIndexBuilder<T, P>) -> FieldIndexBuilder,
         make_mmap: fn(NumericIndexMmapBuilder<T, P>) -> FieldIndexBuilder,
+        make_gridstore: fn(NumericIndexGridstoreBuilder<T, P>) -> FieldIndexBuilder,
     ) -> FieldIndexBuilder
     where
         NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
+        Vec<T>: Blob,
     {
         match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb {
@@ -218,6 +252,9 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => make_mmap(
                 NumericIndex::builder_mmap(&numeric_dir(dir, field), *is_on_disk),
             ),
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+                make_gridstore(NumericIndex::builder_gridstore(numeric_dir(dir, field)))
+            }
         }
     }
 
@@ -228,6 +265,10 @@ impl IndexSelector<'_> {
             }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 GeoMapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
+            }
+            // TODO(payload-index-gridstore): replace with Gridstore implementation
+            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
+                GeoMapIndex::new_memory(Arc::clone(db), &field.to_string(), true)
             }
         })
     }
@@ -264,6 +305,10 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 make_mmap(GeoMapIndex::mmap_builder(&map_dir(dir, field), *is_on_disk))
             }
+            // TODO(payload-index-gridstore): replace with Gridstore implementation
+            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
+                make_rocksdb(GeoMapIndex::builder(Arc::clone(db), &field.to_string()))
+            }
         }
     }
 
@@ -283,6 +328,10 @@ impl IndexSelector<'_> {
             }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 FullTextIndex::new_mmap(text_dir(dir, field), config, *is_on_disk)?
+            }
+            // TODO(payload-index-gridstore): replace with Gridstore implementation
+            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
+                FullTextIndex::new_rocksdb(Arc::clone(db), config, &field.to_string(), true)
             }
         })
     }
@@ -304,14 +353,26 @@ impl IndexSelector<'_> {
                     *is_on_disk,
                 ))
             }
+            // TODO(payload-index-gridstore): replace with Gridstore implementation
+            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
+                FieldIndexBuilder::FullTextIndex(FullTextIndex::builder_rocksdb(
+                    Arc::clone(db),
+                    config,
+                    &field.to_string(),
+                ))
+            }
         }
     }
 
     fn bool_builder(&self, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
         match self {
-            IndexSelector::RocksDb(index_selector_rocks_db) => Ok(FieldIndexBuilder::BoolIndex(
-                SimpleBoolIndex::builder(index_selector_rocks_db.db.clone(), &field.to_string()),
-            )),
+            IndexSelector::RocksDb(IndexSelectorRocksDb {
+                db,
+                is_appendable: _,
+            }) => Ok(FieldIndexBuilder::BoolIndex(SimpleBoolIndex::builder(
+                Arc::clone(db),
+                &field.to_string(),
+            ))),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 let dir = bool_dir(dir, field);
                 Ok(FieldIndexBuilder::BoolMmapIndex(MmapBoolIndex::builder(
@@ -319,23 +380,38 @@ impl IndexSelector<'_> {
                     *is_on_disk,
                 )?))
             }
+            // TODO(payload-index-gridstore): replace with Gridstore implementation
+            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
+                Ok(FieldIndexBuilder::BoolIndex(SimpleBoolIndex::builder(
+                    Arc::clone(db),
+                    &field.to_string(),
+                )))
+            }
         }
     }
 
     fn bool_new(&self, field: &JsonPath) -> OperationResult<FieldIndex> {
         Ok(match self {
-            IndexSelector::RocksDb(index_selector_rocks_db) => {
-                FieldIndex::BoolIndex(BoolIndex::Simple(SimpleBoolIndex::new(
-                    index_selector_rocks_db.db.clone(),
-                    &field.to_string(),
-                )))
-            }
+            IndexSelector::RocksDb(IndexSelectorRocksDb {
+                db,
+                is_appendable: _,
+            }) => FieldIndex::BoolIndex(BoolIndex::Simple(SimpleBoolIndex::new(
+                Arc::clone(db),
+                &field.to_string(),
+            ))),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 let dir = bool_dir(dir, field);
                 FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open_or_create(
                     &dir,
                     *is_on_disk,
                 )?))
+            }
+            // TODO(payload-index-gridstore): replace with Gridstore implementation
+            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
+                FieldIndex::BoolIndex(BoolIndex::Simple(SimpleBoolIndex::new(
+                    Arc::clone(db),
+                    &field.to_string(),
+                )))
             }
         })
     }

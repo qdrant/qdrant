@@ -136,7 +136,7 @@ fn test_in_memory_storage() {
 
 #[test]
 fn test_mmap_storage() {
-    test_trait_impl(|path| MmapPayloadStorage::open_or_create(path).unwrap());
+    test_trait_impl(|path| MmapPayloadStorage::open_or_create(path.to_path_buf()).unwrap());
 }
 
 #[test]

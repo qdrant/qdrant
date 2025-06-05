@@ -316,9 +316,9 @@ pub(crate) fn create_payload_storage(
         PayloadStorageType::OnDisk => {
             PayloadStorageEnum::from(OnDiskPayloadStorage::open(db_builder.require()?)?)
         }
-        PayloadStorageType::Mmap => {
-            PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(segment_path)?)
-        }
+        PayloadStorageType::Mmap => PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(
+            segment_path.to_path_buf(),
+        )?),
     };
     Ok(payload_storage)
 }

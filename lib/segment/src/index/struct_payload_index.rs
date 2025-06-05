@@ -17,7 +17,9 @@ use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndexBuilderTrait as _;
 use super::field_index::facet_index::FacetIndexEnum;
-use super::field_index::index_selector::{IndexSelector, IndexSelectorMmap, IndexSelectorRocksDb};
+use super::field_index::index_selector::{
+    IndexSelector, IndexSelectorGridstore, IndexSelectorMmap, IndexSelectorRocksDb,
+};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
@@ -433,10 +435,19 @@ impl StructPayloadIndex {
         let is_on_disk = payload_schema.is_on_disk();
 
         match &self.storage_type {
-            StorageType::Appendable(db) => IndexSelector::RocksDb(IndexSelectorRocksDb {
-                db,
-                is_appendable: true,
-            }),
+            StorageType::Appendable(db) => {
+                if feature_flags().payload_index_skip_mutable_rocksdb {
+                    IndexSelector::Gridstore(IndexSelectorGridstore {
+                        dir: &self.path,
+                        db,
+                    })
+                } else {
+                    IndexSelector::RocksDb(IndexSelectorRocksDb {
+                        db,
+                        is_appendable: true,
+                    })
+                }
+            }
             StorageType::NonAppendableRocksDb(db) => {
                 // legacy logic: we keep rocksdb, but load mmap indexes
                 if is_on_disk {

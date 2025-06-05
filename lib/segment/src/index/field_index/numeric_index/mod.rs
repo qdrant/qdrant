@@ -17,6 +17,7 @@ use chrono::DateTime;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use delegate::delegate;
+use gridstore::Blob;
 use mmap_numeric_index::MmapNumericIndex;
 use mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
 use parking_lot::RwLock;
@@ -159,16 +160,22 @@ impl<T: Encodable + Numericable> Range<T> {
     }
 }
 
-pub enum NumericIndexInner<T: Encodable + Numericable + MmapValue + Default> {
+pub enum NumericIndexInner<T: Encodable + Numericable + MmapValue + Send + Sync + Default>
+where
+    Vec<T>: Blob,
+{
     Mutable(MutableNumericIndex<T>),
     Immutable(ImmutableNumericIndex<T>),
     Mmap(MmapNumericIndex<T>),
 }
 
-impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default> NumericIndexInner<T>
+where
+    Vec<T>: Blob,
+{
     pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         if is_appendable {
-            NumericIndexInner::Mutable(MutableNumericIndex::new(db, field))
+            NumericIndexInner::Mutable(MutableNumericIndex::open_rocksdb(db, field))
         } else {
             NumericIndexInner::Immutable(ImmutableNumericIndex::open_rocksdb(db, field))
         }
@@ -186,6 +193,12 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
                 ImmutableNumericIndex::open_mmap(mmap_index),
             ))
         }
+    }
+
+    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
+        Ok(NumericIndexInner::Mutable(
+            MutableNumericIndex::open_gridstore(dir)?,
+        ))
     }
 
     pub fn load(&mut self) -> OperationResult<bool> {
@@ -223,7 +236,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
 
     pub fn flusher(&self) -> Flusher {
         match self {
-            NumericIndexInner::Mutable(index) => index.db_wrapper().flusher(),
+            NumericIndexInner::Mutable(index) => index.flusher(),
             NumericIndexInner::Immutable(index) => index.flusher(),
             NumericIndexInner::Mmap(index) => index.flusher(),
         }
@@ -231,7 +244,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
 
     pub fn files(&self) -> Vec<PathBuf> {
         match self {
-            NumericIndexInner::Mutable(_) => vec![],
+            NumericIndexInner::Mutable(index) => index.files(),
             NumericIndexInner::Immutable(index) => index.files(),
             NumericIndexInner::Mmap(index) => index.files(),
         }
@@ -455,7 +468,8 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            NumericIndexInner::Mutable(_) => {} // Not a mmap
+            // Only clears backing mmap storage if used, not in-memory representation
+            NumericIndexInner::Mutable(index) => index.clear_cache()?,
             // Only clears backing mmap storage if used, not in-memory representation
             NumericIndexInner::Immutable(index) => index.clear_cache()?,
             NumericIndexInner::Mmap(index) => index.clear_cache()?,
@@ -464,7 +478,10 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
     }
 }
 
-pub struct NumericIndex<T: Encodable + Numericable + MmapValue + Default, P> {
+pub struct NumericIndex<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>
+where
+    Vec<T>: Blob,
+{
     inner: NumericIndexInner<T>,
     _phantom: PhantomData<P>,
 }
@@ -473,7 +490,10 @@ pub trait NumericIndexIntoInnerValue<T, P> {
     fn into_inner_value(value: P) -> T;
 }
 
-impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> NumericIndex<T, P>
+where
+    Vec<T>: Blob,
+{
     pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         Self {
             inner: NumericIndexInner::new_rocksdb(db, field, is_appendable),
@@ -485,6 +505,13 @@ impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         Ok(Self {
             inner: NumericIndexInner::new_mmap(path, is_on_disk)?,
+            _phantom: PhantomData,
+        })
+    }
+
+    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
+        Ok(Self {
+            inner: NumericIndexInner::new_gridstore(dir)?,
             _phantom: PhantomData,
         })
     }
@@ -523,6 +550,13 @@ impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
         }
     }
 
+    pub fn builder_gridstore(dir: PathBuf) -> NumericIndexGridstoreBuilder<T, P>
+    where
+        Self: ValueIndexer<ValueType = P>,
+    {
+        NumericIndexGridstoreBuilder::new(dir)
+    }
+
     pub fn inner(&self) -> &NumericIndexInner<T> {
         &self.inner
     }
@@ -547,22 +581,24 @@ impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
     }
 }
 
-pub struct NumericIndexBuilder<T: Encodable + Numericable + MmapValue + Default, P>(
+pub struct NumericIndexBuilder<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
     NumericIndex<T, P>,
 )
 where
-    NumericIndex<T, P>: ValueIndexer<ValueType = P>;
+    NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob;
 
-impl<T: Encodable + Numericable + MmapValue + Default, P> FieldIndexBuilderTrait
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> FieldIndexBuilderTrait
     for NumericIndexBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
 {
     type FieldIndexType = NumericIndex<T, P>;
 
     fn init(&mut self) -> OperationResult<()> {
         match &mut self.0.inner {
-            NumericIndexInner::Mutable(index) => index.db_wrapper().recreate_column_family(),
+            NumericIndexInner::Mutable(index) => index.clear(),
             NumericIndexInner::Immutable(_) => unreachable!(),
             NumericIndexInner::Mmap(_) => unreachable!(),
         }
@@ -584,9 +620,12 @@ where
 }
 
 #[cfg(test)]
-pub struct NumericIndexImmutableBuilder<T: Encodable + Numericable + MmapValue + Default, P>
-where
+pub struct NumericIndexImmutableBuilder<
+    T: Encodable + Numericable + MmapValue + Send + Sync + Default,
+    P,
+> where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
 {
     index: NumericIndex<T, P>,
     field: String,
@@ -594,16 +633,17 @@ where
 }
 
 #[cfg(test)]
-impl<T: Encodable + Numericable + MmapValue + Default, P> FieldIndexBuilderTrait
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> FieldIndexBuilderTrait
     for NumericIndexImmutableBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
 {
     type FieldIndexType = NumericIndex<T, P>;
 
     fn init(&mut self) -> OperationResult<()> {
         match &mut self.index.inner {
-            NumericIndexInner::Mutable(index) => index.db_wrapper().recreate_column_family(),
+            NumericIndexInner::Mutable(index) => index.clear(),
             NumericIndexInner::Immutable(_) => unreachable!(),
             NumericIndexInner::Mmap(_) => unreachable!(),
         }
@@ -633,8 +673,9 @@ where
 
 pub struct NumericIndexMmapBuilder<T, P>
 where
-    T: Encodable + Numericable + MmapValue + Default,
+    T: Encodable + Numericable + MmapValue + Send + Sync + Default,
     NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
+    Vec<T>: Blob,
 {
     path: PathBuf,
     in_memory_index: InMemoryNumericIndex<T>,
@@ -642,10 +683,11 @@ where
     _phantom: PhantomData<P>,
 }
 
-impl<T: Encodable + Numericable + MmapValue + Default, P> FieldIndexBuilderTrait
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> FieldIndexBuilderTrait
     for NumericIndexMmapBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
+    Vec<T>: Blob,
 {
     type FieldIndexType = NumericIndex<T, P>;
 
@@ -687,7 +729,76 @@ where
     }
 }
 
-impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for NumericIndexInner<T> {
+pub struct NumericIndexGridstoreBuilder<
+    T: Encodable + Numericable + MmapValue + Send + Sync + Default,
+    P,
+> where
+    NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
+{
+    dir: PathBuf,
+    index: Option<NumericIndex<T, P>>,
+}
+
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>
+    NumericIndexGridstoreBuilder<T, P>
+where
+    NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
+{
+    fn new(dir: PathBuf) -> Self {
+        Self { dir, index: None }
+    }
+}
+
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> FieldIndexBuilderTrait
+    for NumericIndexGridstoreBuilder<T, P>
+where
+    NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+    Vec<T>: Blob,
+{
+    type FieldIndexType = NumericIndex<T, P>;
+
+    fn init(&mut self) -> OperationResult<()> {
+        assert!(
+            self.index.is_none(),
+            "index must be initialized exactly once",
+        );
+        self.index
+            .replace(NumericIndex::new_gridstore(self.dir.clone())?);
+        Ok(())
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "NumericIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.add_point(id, payload, hw_counter)
+    }
+
+    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+        let Some(index) = self.index.take() else {
+            return Err(OperationError::service_error(
+                "NumericIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.inner.flusher()()?;
+        Ok(index)
+    }
+}
+
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default> PayloadFieldIndex
+    for NumericIndexInner<T>
+where
+    Vec<T>: Blob,
+{
     fn count_indexed_points(&self) -> usize {
         self.get_points_count()
     }
@@ -698,7 +809,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
 
     fn cleanup(self) -> OperationResult<()> {
         match self {
-            NumericIndexInner::Mutable(index) => index.db_wrapper().recreate_column_family(),
+            NumericIndexInner::Mutable(index) => index.clear(),
             NumericIndexInner::Immutable(index) => index.clear(),
             NumericIndexInner::Mmap(index) => index.clear(),
         }
@@ -1018,7 +1129,8 @@ impl NumericIndexIntoInnerValue<UuidIntType, UuidPayloadType>
 
 impl<T> StreamRange<T> for NumericIndexInner<T>
 where
-    T: Encodable + Numericable + MmapValue + Default,
+    T: Encodable + Numericable + MmapValue + Send + Sync + Default,
+    Vec<T>: Blob,
 {
     fn stream_range(
         &self,

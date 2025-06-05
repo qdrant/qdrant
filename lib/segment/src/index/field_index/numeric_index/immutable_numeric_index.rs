@@ -6,6 +6,7 @@ use std::sync::Arc;
 use bitvec::vec::BitVec;
 use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
+use gridstore::Blob;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -15,7 +16,7 @@ use super::{
     Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION, numeric_index_storage_cf_name,
 };
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
@@ -151,8 +152,11 @@ impl<T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVecIter
     }
 }
 
-impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> {
-    /// Open immutable map index from RocksDB storage
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default> ImmutableNumericIndex<T>
+where
+    Vec<T>: Blob,
+{
+    /// Open immutable numeric index from RocksDB storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
     pub(super) fn open_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> Self {
@@ -175,7 +179,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> 
         }
     }
 
-    /// Open immutable map index from mmap storage
+    /// Open immutable numeric index from mmap storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
     pub(super) fn open_mmap(index: MmapNumericIndex<T>) -> Self {
@@ -199,7 +203,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> 
     pub(super) fn load(&mut self) -> OperationResult<bool> {
         match self.storage {
             Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Mmap(_) => Ok(self.load_mmap()),
+            Storage::Mmap(_) => self.load_mmap(),
         }
     }
 
@@ -208,10 +212,12 @@ impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> 
     /// Loads in-memory index from RocksDB storage.
     fn load_rocksdb(&mut self) -> OperationResult<bool> {
         let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Ok(false);
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
         };
 
-        let mut mutable = MutableNumericIndex::<T>::new_from_db_wrapper(db_wrapper.clone());
+        let mut mutable = MutableNumericIndex::<T>::open_rocksdb_db_wrapper(db_wrapper.clone());
         mutable.load()?;
         let InMemoryNumericIndex {
             map,
@@ -233,9 +239,11 @@ impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> 
     /// Load from mmap storage
     ///
     /// Loads in-memory index from mmap storage.
-    fn load_mmap(&mut self) -> bool {
+    fn load_mmap(&mut self) -> OperationResult<bool> {
         let Storage::Mmap(index) = &self.storage else {
-            return false;
+            return Err(OperationError::service_error(
+                "Failed to load index from mmap, using different storage backend",
+            ));
         };
 
         let InMemoryNumericIndex {
@@ -257,13 +265,13 @@ impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> 
         self.max_values_per_point = max_values_per_point;
         self.point_to_values = ImmutablePointToValues::new(point_to_values);
 
-        true
+        Ok(true)
     }
 
     #[cfg(test)]
     pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
-        match self.storage {
-            Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => Some(db_wrapper),
             Storage::Mmap(_) => None,
         }
     }
@@ -281,25 +289,25 @@ impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> 
     /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        match self.storage {
+        match &self.storage {
             Storage::RocksDb(_) => Ok(()),
-            Storage::Mmap(ref index) => index.clear_cache(),
+            Storage::Mmap(index) => index.clear_cache(),
         }
     }
 
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
-        match self.storage {
+        match &self.storage {
             Storage::RocksDb(_) => vec![],
-            Storage::Mmap(ref index) => index.files(),
+            Storage::Mmap(index) => index.files(),
         }
     }
 
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
-        match self.storage {
-            Storage::RocksDb(ref db_wrapper) => db_wrapper.flusher(),
-            Storage::Mmap(ref index) => index.flusher(),
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
+            Storage::Mmap(index) => index.flusher(),
         }
     }
 
@@ -364,12 +372,12 @@ impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> 
                 Self::remove_from_map(&mut self.map, &mut self.histogram, &key);
 
                 // Update persisted storage
-                match self.storage {
-                    Storage::RocksDb(ref db_wrapper) => {
+                match &mut self.storage {
+                    Storage::RocksDb(db_wrapper) => {
                         let encoded = value.encode_key(idx);
                         db_wrapper.remove(encoded)?;
                     }
-                    Storage::Mmap(ref mut index) => {
+                    Storage::Mmap(index) => {
                         index.remove_point(idx);
                     }
                 }
