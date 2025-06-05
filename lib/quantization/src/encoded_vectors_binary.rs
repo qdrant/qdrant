@@ -106,7 +106,11 @@ impl BitsStoreType for u8 {
     }
 
     fn get_storage_size(size: usize, bits_per_element_count: usize) -> usize {
-        let size = size * bits_per_element_count;
+        let size = if bits_per_element_count == 1 {
+            size
+        } else {
+            (size as f32 * 1.5).ceil() as usize
+        };
         let bytes_count = if size > 128 {
             std::mem::size_of::<u128>()
         } else if size > 64 {
@@ -160,7 +164,11 @@ impl BitsStoreType for u128 {
     }
 
     fn get_storage_size(size: usize, bits_per_element_count: usize) -> usize {
-        let size = size * bits_per_element_count;
+        let size = if bits_per_element_count == 1 {
+            size
+        } else {
+            (size as f32 * 1.5).ceil() as usize
+        };
         let bits_count = 8 * std::mem::size_of::<Self>();
         let mut result = size / bits_count;
         if size % bits_count != 0 {
@@ -265,25 +273,29 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
         let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
-        for (i, &v) in vector.iter().enumerate() {
-            if bits_per_element_count == 1 {
+        if bits_per_element_count == 1 {
+            for (i, &v) in vector.iter().enumerate() {
                 // flag is true if the value is positive
                 // It's expected that the vector value is in range [-1; 1]
                 if v > 0.0 {
                     encoded_vector[i / bits_count] |= one << (i % bits_count);
                 }
-            } else {
+            }
+        } else {
+            for (i, &v) in vector.iter().enumerate() {
                 let (mean, sd) = distr[i];
                 let ranges = bits_per_element_count + 1;
                 let v_z = (v - mean) / sd;
                 let index = (v_z + 2.0) / (4.0 / ranges as f32);
 
-                let bit_position = i * bits_per_element_count;
                 if index >= 1.0 {
                     let count_ones = (index.floor() as usize).min(bits_per_element_count);
-                    for j in 0..count_ones {
-                        encoded_vector[(bit_position + j) / bits_count] |=
-                            one << ((bit_position + j) % bits_count);
+                    if count_ones > 0 {
+                        encoded_vector[i / bits_count] |= one << (i % bits_count);
+                    }
+                    if count_ones > 1 {
+                        let j = vector.len() + i / 2;
+                        encoded_vector[j / bits_count] |= one << (j % bits_count);
                     }
                 }
             }
