@@ -436,7 +436,7 @@ pub(crate) fn create_sparse_vector_storage(
                 open_simple_sparse_vector_storage(db_builder.require()?, &db_column_name, stopped)?;
 
             // Actively migrate away from RocksDB
-            if feature_flags().migrate_rocksdb_vector_storage {
+            if common::flags::feature_flags().migrate_rocksdb_vector_storage {
                 return migrate_rocksdb_sparse_vector_storage_to_mmap(storage, path);
             }
 
@@ -1154,6 +1154,9 @@ pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
     old_storage: VectorStorageEnum,
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::PointOffsetType;
+
     use crate::vector_storage::sparse::mmap_sparse_vector_storage::find_storage_files;
 
     log::info!(
