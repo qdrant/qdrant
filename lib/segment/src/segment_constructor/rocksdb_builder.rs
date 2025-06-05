@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "rocksdb"), expect(dead_code))]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -11,7 +13,6 @@ use crate::types::SegmentConfig;
 /// Struct to optionally create and open a RocksDB instance in a lazy way.
 /// Used as helper to eventually completely remove RocksDB.
 #[derive(Debug)]
-#[cfg_attr(not(feature = "rocksdb"), expect(dead_code))]
 pub struct RocksDbBuilder {
     path: PathBuf,
     column_families: Vec<String>,

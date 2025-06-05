@@ -19,6 +19,7 @@ use rocksdb::DB;
 use serde::Deserialize;
 use uuid::Uuid;
 
+#[cfg(feature = "rocksdb")]
 use super::rocksdb_builder::RocksDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
@@ -460,7 +461,7 @@ fn create_segment(
     config: &SegmentConfig,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
-    #[allow(unused_mut)]
+    #[cfg(feature = "rocksdb")]
     let mut db_builder = RocksDbBuilder::new(segment_path, config)?;
 
     let payload_storage = sp(create_payload_storage(
@@ -636,6 +637,7 @@ fn create_segment(
         payload_storage,
         segment_config: config.clone(),
         error_status: None,
+        #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
         flush_thread: Mutex::new(None),
     })
