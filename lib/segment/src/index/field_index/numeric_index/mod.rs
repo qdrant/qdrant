@@ -786,7 +786,7 @@ where
     fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
         let Some(index) = self.index.take() else {
             return Err(OperationError::service_error(
-                "NumericIndexGridstoreBuilder: index must be initialized before adding points",
+                "NumericIndexGridstoreBuilder: index must be initialized to finalize",
             ));
         };
         index.inner.flusher()()?;
