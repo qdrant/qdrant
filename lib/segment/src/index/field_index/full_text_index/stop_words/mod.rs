@@ -132,7 +132,7 @@ impl StopwordsFilter {
         };
 
         for &word in stopwords_array {
-            stopwords.insert(word.to_string());
+            stopwords.insert(word.to_lowercase());
         }
     }
 }
