@@ -20,10 +20,14 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::types::{GeoPoint, RawGeoPoint};
 
+/// Default options for Gridstore storage
 const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
-    block_size_bytes: Some(size_of::<GeoPoint>()),
+    // Size of geo point values in index
+    block_size_bytes: Some(size_of::<RawGeoPoint>()),
+    // Compressing geo point values is unreasonable
     compression: Some(gridstore::config::Compression::None),
-    page_size_bytes: None,
+    // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
+    page_size_bytes: Some(size_of::<RawGeoPoint>() * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
     region_size_blocks: None,
 };
 
