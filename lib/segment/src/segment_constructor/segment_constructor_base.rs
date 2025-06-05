@@ -7,9 +7,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::{FeatureFlags, feature_flags};
-use common::types::PointOffsetType;
+use common::flags::FeatureFlags;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
@@ -130,7 +128,7 @@ pub(crate) fn open_vector_storage(
                 )?;
 
                 // Actively migrate away from RocksDB
-                if feature_flags().migrate_rocksdb_vector_storage {
+                if common::flags::feature_flags().migrate_rocksdb_vector_storage {
                     return migrate_rocksdb_multi_dense_vector_storage_to_mmap(
                         storage,
                         vector_config.size,
@@ -151,7 +149,7 @@ pub(crate) fn open_vector_storage(
                 )?;
 
                 // Actively migrate away from RocksDB
-                if feature_flags().migrate_rocksdb_vector_storage {
+                if common::flags::feature_flags().migrate_rocksdb_vector_storage {
                     return migrate_rocksdb_dense_vector_storage_to_mmap(
                         storage,
                         vector_config.size,
@@ -966,6 +964,9 @@ pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
     dim: usize,
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::PointOffsetType;
+
     use crate::vector_storage::dense::appendable_dense_vector_storage::find_storage_files;
 
     log::info!(
@@ -1058,6 +1059,9 @@ pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
     multi_vector_config: MultiVectorConfig,
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::PointOffsetType;
+
     use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::find_storage_files;
 
     log::info!(

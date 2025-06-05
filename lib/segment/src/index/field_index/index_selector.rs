@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
+#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
 use gridstore::Blob;
-use parking_lot::RwLock;
-use rocksdb::DB;
 
 use super::bool_index::BoolIndex;
 use super::bool_index::mmap_bool_index::MmapBoolIndex;
+#[cfg(feature = "rocksdb")]
 use super::bool_index::simple_bool_index::SimpleBoolIndex;
 use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use super::histogram::Numericable;
@@ -33,6 +33,7 @@ use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 #[derive(Copy, Clone)]
 pub enum IndexSelector<'a> {
     /// In-memory index on RocksDB, appendable or non-appendable
+    #[cfg(feature = "rocksdb")]
     RocksDb(IndexSelectorRocksDb<'a>),
     /// On disk or in-memory index on mmaps, non-appendable
     Mmap(IndexSelectorMmap<'a>),
@@ -40,9 +41,10 @@ pub enum IndexSelector<'a> {
     Gridstore(IndexSelectorGridstore<'a>),
 }
 
+#[cfg(feature = "rocksdb")]
 #[derive(Copy, Clone)]
 pub struct IndexSelectorRocksDb<'a> {
-    pub db: &'a Arc<RwLock<DB>>,
+    pub db: &'a Arc<parking_lot::RwLock<rocksdb::DB>>,
     pub is_appendable: bool,
 }
 
@@ -182,6 +184,7 @@ impl IndexSelector<'_> {
         Vec<N::Owned>: Blob + Send + Sync,
     {
         Ok(match self {
+            #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 MapIndex::new_rocksdb(Arc::clone(db), &field.to_string(), *is_appendable)
             }
@@ -205,6 +208,7 @@ impl IndexSelector<'_> {
         Vec<N::Owned>: Blob + Send + Sync,
     {
         match self {
+            #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => make_rocksdb(
                 MapIndex::builder_rocksdb(Arc::clone(db), &field.to_string()),
             ),
@@ -225,6 +229,7 @@ impl IndexSelector<'_> {
         Vec<T>: Blob,
     {
         Ok(match self {
+            #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 NumericIndex::new_rocksdb(Arc::clone(db), &field.to_string(), *is_appendable)
             }
@@ -249,6 +254,7 @@ impl IndexSelector<'_> {
         Vec<T>: Blob,
     {
         match self {
+            #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb {
                 db,
                 is_appendable: _,
@@ -267,6 +273,7 @@ impl IndexSelector<'_> {
 
     fn geo_new(&self, field: &JsonPath) -> OperationResult<GeoMapIndex> {
         Ok(match self {
+            #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 GeoMapIndex::new_memory(Arc::clone(db), &field.to_string(), *is_appendable)
             }
@@ -287,6 +294,7 @@ impl IndexSelector<'_> {
         make_gridstore: fn(GeoMapIndexGridstoreBuilder) -> FieldIndexBuilder,
     ) -> FieldIndexBuilder {
         match self {
+            #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => {
                 make_rocksdb(GeoMapIndex::builder(Arc::clone(db), &field.to_string()))
             }
@@ -324,6 +332,7 @@ impl IndexSelector<'_> {
         config: TextIndexParams,
     ) -> OperationResult<FullTextIndex> {
         Ok(match self {
+            #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 FullTextIndex::new_rocksdb(
                     Arc::clone(db),
@@ -343,6 +352,7 @@ impl IndexSelector<'_> {
 
     fn text_builder(&self, field: &JsonPath, config: TextIndexParams) -> FieldIndexBuilder {
         match self {
+            #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb {
                 db,
                 is_appendable: _,
@@ -369,6 +379,7 @@ impl IndexSelector<'_> {
 
     fn bool_builder(&self, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
         match self {
+            #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb {
                 db,
                 is_appendable: _,
@@ -395,6 +406,7 @@ impl IndexSelector<'_> {
 
     fn bool_new(&self, field: &JsonPath) -> OperationResult<FieldIndex> {
         Ok(match self {
+            #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb {
                 db,
                 is_appendable: _,
