@@ -118,7 +118,7 @@ impl MutableFullTextIndex {
         let mut iter: Vec<(PointOffsetType, Vec<u8>)> = vec![];
         store
             .read()
-            .iter(
+            .iter::<_, ()>(
                 |idx, value| {
                     iter.push((idx, value.clone()));
                     Ok(true)

@@ -333,7 +333,7 @@ where
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
             .read()
-            .iter(
+            .iter::<_, ()>(
                 |idx, values| {
                     self.in_memory_index.add_many_to_list(idx, values.clone());
                     Ok(true)
