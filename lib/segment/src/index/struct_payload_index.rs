@@ -7,7 +7,6 @@ use ahash::AHashSet;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
-use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use itertools::Either;
 use log::debug;
@@ -185,12 +184,19 @@ impl StructPayloadIndex {
         let config = if config_path.exists() {
             PayloadConfig::load(&config_path)?
         } else {
-            let mut new_config = PayloadConfig::default();
             #[cfg(feature = "rocksdb")]
-            if feature_flags().payload_index_skip_rocksdb && !is_appendable {
-                new_config.skip_rocksdb = Some(true);
+            {
+                let mut new_config = PayloadConfig::default();
+                if common::flags::feature_flags().payload_index_skip_rocksdb && !is_appendable {
+                    new_config.skip_rocksdb = Some(true);
+                }
+                new_config
             }
-            new_config
+
+            #[cfg(not(feature = "rocksdb"))]
+            {
+                PayloadConfig::default()
+            }
         };
 
         let storage_type = if is_appendable {
@@ -457,7 +463,7 @@ impl StructPayloadIndex {
         match &self.storage_type {
             #[cfg(feature = "rocksdb")]
             StorageType::Appendable(db) => {
-                if !feature_flags().payload_index_skip_mutable_rocksdb {
+                if !common::flags::feature_flags().payload_index_skip_mutable_rocksdb {
                     return IndexSelector::RocksDb(IndexSelectorRocksDb {
                         db,
                         is_appendable: true,

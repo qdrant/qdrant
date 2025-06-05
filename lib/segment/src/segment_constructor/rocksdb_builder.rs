@@ -11,6 +11,7 @@ use crate::types::SegmentConfig;
 /// Struct to optionally create and open a RocksDB instance in a lazy way.
 /// Used as helper to eventually completely remove RocksDB.
 #[derive(Debug)]
+#[cfg_attr(not(feature = "rocksdb"), expect(dead_code))]
 pub struct RocksDbBuilder {
     path: PathBuf,
     column_families: Vec<String>,
@@ -66,6 +67,7 @@ impl RocksDbBuilder {
         self.rocksdb.as_ref().map(|db| db.read())
     }
 
+    #[cfg(feature = "rocksdb")]
     pub fn require(&mut self) -> OperationResult<Arc<RwLock<rocksdb::DB>>> {
         let db = match &self.rocksdb {
             Some(db) => db,

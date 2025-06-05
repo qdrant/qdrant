@@ -1139,17 +1139,27 @@ impl Default for Indexes {
 #[serde(tag = "type", content = "options", rename_all = "snake_case")]
 pub enum PayloadStorageType {
     // Store payload in memory and use persistence storage only if vectors are changed
+    #[cfg(feature = "rocksdb")]
     InMemory,
     // Store payload on disk only, read each time it is requested
-    #[default]
+    #[cfg(feature = "rocksdb")]
+    #[cfg_attr(feature = "rocksdb", default)]
     OnDisk,
     // Store payload on disk and in memory, read from memory if possible
+    #[cfg_attr(not(feature = "rocksdb"), default)]
     Mmap,
 }
 
 impl PayloadStorageType {
     pub fn is_on_disk(&self) -> bool {
-        matches!(self, PayloadStorageType::OnDisk | PayloadStorageType::Mmap)
+        #[cfg(feature = "rocksdb")]
+        {
+            matches!(self, PayloadStorageType::OnDisk | PayloadStorageType::Mmap)
+        }
+        #[cfg(not(feature = "rocksdb"))]
+        {
+            matches!(self, PayloadStorageType::Mmap)
+        }
     }
 }
 

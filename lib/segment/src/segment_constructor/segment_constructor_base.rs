@@ -37,8 +37,10 @@ use crate::index::sparse_index::sparse_vector_index::{
 };
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
+#[cfg(feature = "rocksdb")]
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+#[cfg(feature = "rocksdb")]
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
 #[cfg(feature = "rocksdb")]
@@ -243,14 +245,16 @@ pub(crate) fn open_vector_storage(
 }
 
 pub(crate) fn create_payload_storage(
-    db_builder: &mut RocksDbBuilder,
+    #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<PayloadStorageEnum> {
     let payload_storage = match config.payload_storage_type {
+        #[cfg(feature = "rocksdb")]
         PayloadStorageType::InMemory => {
             PayloadStorageEnum::from(SimplePayloadStorage::open(db_builder.require()?)?)
         }
+        #[cfg(feature = "rocksdb")]
         PayloadStorageType::OnDisk => {
             PayloadStorageEnum::from(OnDiskPayloadStorage::open(db_builder.require()?)?)
         }
@@ -456,9 +460,11 @@ fn create_segment(
     config: &SegmentConfig,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
+    #[allow(unused_mut)]
     let mut db_builder = RocksDbBuilder::new(segment_path, config)?;
 
     let payload_storage = sp(create_payload_storage(
+        #[cfg(feature = "rocksdb")]
         &mut db_builder,
         segment_path,
         config,
