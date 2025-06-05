@@ -169,26 +169,27 @@ impl MutableGeoMapIndex {
             ));
         };
 
-        let mut points_to_hashes: BTreeMap<PointOffsetType, Vec<GeoHash>> = Default::default();
-
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
             .read()
             .iter::<_, OperationError>(
                 |idx, values| {
-                    let values = values
+                    let geo_points = values
                         .iter()
                         .cloned()
                         .map(GeoPoint::from)
                         .collect::<Vec<_>>();
-
-                    for geo_point in values {
-                        let geo_hash: GeoHash = encode_max_precision(geo_point.lon, geo_point.lat)
-                            .map_err(|e| {
+                    let geo_hashes = geo_points
+                        .iter()
+                        .map(|geo_point| {
+                            encode_max_precision(geo_point.lon, geo_point.lat).map_err(|e| {
                                 OperationError::service_error(format!("Malformed geo points: {e}"))
-                            })?;
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
 
+                    for geo_point in geo_points {
                         if self.in_memory_index.point_to_values.len() <= idx as usize {
                             self.in_memory_index
                                 .point_to_values
@@ -199,16 +200,21 @@ impl MutableGeoMapIndex {
                             self.in_memory_index.points_count += 1;
                         }
 
-                        points_to_hashes.entry(idx).or_default().push(geo_hash);
-
                         self.in_memory_index.point_to_values[idx as usize].push(geo_point);
+                        self.in_memory_index.points_values_count += 1;
+                    }
+
+                    self.in_memory_index.max_values_per_point =
+                        max(self.in_memory_index.max_values_per_point, geo_hashes.len());
+                    self.in_memory_index
+                        .increment_hash_point_counts(&geo_hashes);
+                    for geo_hash in geo_hashes {
+                        self.in_memory_index.increment_hash_value_counts(&geo_hash);
                         self.in_memory_index
                             .points_map
                             .entry(geo_hash)
                             .or_default()
                             .insert(idx);
-
-                        self.in_memory_index.points_values_count += 1;
                     }
 
                     Ok(true)
@@ -220,16 +226,6 @@ impl MutableGeoMapIndex {
                     "Failed to load mutable geo index from gridstore: {err}"
                 ))
             })?;
-
-        for (_idx, geo_hashes) in points_to_hashes {
-            self.in_memory_index.max_values_per_point =
-                max(self.in_memory_index.max_values_per_point, geo_hashes.len());
-            self.in_memory_index
-                .increment_hash_point_counts(&geo_hashes);
-            for geo_hash in geo_hashes {
-                self.in_memory_index.increment_hash_value_counts(&geo_hash);
-            }
-        }
 
         Ok(true)
     }
