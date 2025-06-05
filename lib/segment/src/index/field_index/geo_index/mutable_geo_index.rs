@@ -18,7 +18,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
-use crate::types::GeoPoint;
+use crate::types::{GeoPoint, RawGeoPoint};
 
 const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
     block_size_bytes: Some(size_of::<GeoPoint>()),
@@ -34,8 +34,7 @@ pub struct MutableGeoMapIndex {
 
 enum Storage {
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
-    #[allow(clippy::type_complexity)]
-    Gridstore(Arc<RwLock<Gridstore<Vec<(f64, f64)>>>>),
+    Gridstore(Arc<RwLock<Gridstore<Vec<RawGeoPoint>>>>),
 }
 
 pub struct InMemoryGeoMapIndex {
@@ -180,10 +179,8 @@ impl MutableGeoMapIndex {
                 |idx, values| {
                     let values = values
                         .iter()
-                        .map(|(lon, lat)| GeoPoint {
-                            lon: *lon,
-                            lat: *lat,
-                        })
+                        .cloned()
+                        .map(GeoPoint::from)
                         .collect::<Vec<_>>();
 
                     for geo_point in values {
@@ -310,7 +307,11 @@ impl MutableGeoMapIndex {
             }
             Storage::Gridstore(store) => {
                 let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
-                let values = values.iter().map(|g| (g.lon, g.lat)).collect::<Vec<_>>();
+                let values = values
+                    .iter()
+                    .cloned()
+                    .map(RawGeoPoint::from)
+                    .collect::<Vec<_>>();
                 store
                     .write()
                     .put_value(idx, &values, hw_counter_ref)
