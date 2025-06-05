@@ -49,6 +49,10 @@ impl MutableInvertedIndex {
         self.point_to_tokens.get(idx as usize)?.as_ref()
     }
 
+    fn get_document(&self, idx: PointOffsetType) -> Option<&Document> {
+        self.point_to_doc.as_ref()?.get(idx as usize)?.as_ref()
+    }
+
     /// Iterate over point ids whose documents contain all given tokens
     fn filter_has_subset(
         &self,
@@ -73,6 +77,28 @@ impl MutableInvertedIndex {
             return Box::new(std::iter::empty());
         }
         intersect_postings_iterator(postings)
+    }
+
+    pub fn filter_has_phrase(
+        &self,
+        phrase: Document,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        let Some(point_to_doc) = self.point_to_doc.as_ref() else {
+            // Return empty iterator when not enabled
+            return Box::new(std::iter::empty());
+        };
+
+        let iter = self
+            .filter_has_subset(phrase.to_token_set())
+            .filter(move |id| {
+                let doc = point_to_doc[*id as usize]
+                    .as_ref()
+                    .expect("if it passed the intersection filter, it must exist");
+
+                doc.has_phrase(&phrase)
+            });
+
+        Box::new(iter)
     }
 }
 
@@ -185,6 +211,7 @@ impl InvertedIndex for MutableInvertedIndex {
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         match query {
             ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens),
+            ParsedQuery::Phrase(phrase) => self.filter_has_phrase(phrase),
         }
     }
 
@@ -206,10 +233,23 @@ impl InvertedIndex for MutableInvertedIndex {
         point_id: PointOffsetType,
         _: &HardwareCounterCell,
     ) -> bool {
-        if let Some(doc) = self.get_tokens(point_id) {
-            parsed_query.check_match(doc)
-        } else {
-            false
+        match parsed_query {
+            ParsedQuery::Tokens(query) => {
+                let Some(doc) = self.get_tokens(point_id) else {
+                    return false;
+                };
+
+                // Check that all tokens are in document
+                doc.has_subset(query)
+            }
+            ParsedQuery::Phrase(document) => {
+                let Some(doc) = self.get_document(point_id) else {
+                    return false;
+                };
+
+                // Check that all tokens are in document, in order
+                doc.has_phrase(document)
+            }
         }
     }
 

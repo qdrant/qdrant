@@ -47,7 +47,13 @@ impl TokenSet {
         self.0.binary_search(token).is_ok()
     }
 
+    /// Checks if the current set is a subset of the given set.
+    ///
+    /// Returns false if the subset is empty
     pub fn has_subset(&self, subset: &TokenSet) -> bool {
+        if subset.is_empty() {
+            return false;
+        }
         subset.0.iter().all(|token| self.contains(token))
     }
 }
@@ -75,7 +81,7 @@ impl FromIterator<TokenId> for TokenSet {
 /// Contains the token ids that make up a document, in the same order that appear in the document.
 ///
 /// In contrast to `TokenSet`, it can contain the same token in multiple places.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Document(Vec<TokenId>);
 
 impl Document {
@@ -85,6 +91,33 @@ impl Document {
 
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn tokens(&self) -> &[TokenId] {
+        &self.0
+    }
+
+    pub fn to_token_set(&self) -> TokenSet {
+        self.0.iter().copied().collect()
+    }
+
+    /// Checks if the current document contains the given phrase.
+    ///
+    /// Returns false if the phrase is empty
+    pub fn has_phrase(&self, phrase: &Document) -> bool {
+        let doc = self.0.as_slice();
+        let phrase = phrase.0.as_slice();
+
+        if doc.is_empty() {
+            return false;
+        }
+
+        // simple check for tokens in the same order as phrase
+        doc.windows(phrase.len()).any(|window| window == phrase)
     }
 }
 
@@ -103,21 +136,9 @@ pub enum ParsedQuery {
     ///
     /// In other words this should be a subset of the document's token set.
     Tokens(TokenSet),
-    // Phrase(Document),
-}
-impl ParsedQuery {
-    pub fn check_match(&self, tokenset: &TokenSet) -> bool {
-        match self {
-            ParsedQuery::Tokens(query_tokens) => {
-                if query_tokens.is_empty() {
-                    return false;
-                }
 
-                // Check that all tokens are in document
-                tokenset.has_subset(query_tokens)
-            }
-        }
-    }
+    /// All these tokens must be present in the document, in the same order as this query.
+    Phrase(Document),
 }
 
 pub trait InvertedIndex {
@@ -186,6 +207,9 @@ pub trait InvertedIndex {
             ParsedQuery::Tokens(tokens) => {
                 self.estimate_has_subset_cardinality(tokens, condition, hw_counter)
             }
+            ParsedQuery::Phrase(phrase) => {
+                self.estimate_has_phrase_cardinality(phrase, condition, hw_counter)
+            }
         }
     }
 
@@ -204,45 +228,60 @@ pub trait InvertedIndex {
             .collect();
         if posting_lengths.is_none() || points_count == 0 {
             // There are unseen tokens -> no matches
-            return CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
-                min: 0,
-                exp: 0,
-                max: 0,
-            };
+            return CardinalityEstimation::exact(0)
+                .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));
         }
         let postings = posting_lengths.unwrap();
         if postings.is_empty() {
             // Empty request -> no matches
-            return CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
-                min: 0,
-                exp: 0,
-                max: 0,
-            };
+            return CardinalityEstimation::exact(0)
+                .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));
         }
         // Smallest posting is the largest possible cardinality
         let smallest_posting = postings.iter().min().copied().unwrap();
 
         if postings.len() == 1 {
-            CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
-                min: smallest_posting,
-                exp: smallest_posting,
-                max: smallest_posting,
-            }
-        } else {
-            let expected_frac: f64 = postings
-                .iter()
-                .map(|posting| *posting as f64 / points_count as f64)
-                .product();
-            let exp = (expected_frac * points_count as f64) as usize;
-            CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
-                min: 0, // ToDo: make better estimation
-                exp,
-                max: smallest_posting,
-            }
+            return CardinalityEstimation::exact(smallest_posting)
+                .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())))
+        }
+
+        let expected_frac: f64 = postings
+            .iter()
+            .map(|posting| *posting as f64 / points_count as f64)
+            .product();
+        let exp = (expected_frac * points_count as f64) as usize;
+        CardinalityEstimation {
+            primary_clauses: vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
+            min: 0, // ToDo: make better estimation
+            exp,
+            max: smallest_posting,
+        }
+    }
+
+    fn estimate_has_phrase_cardinality(
+        &self,
+        phrase: &Document,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
+        if phrase.is_empty() {
+            return CardinalityEstimation::exact(0)
+                .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));
+        }
+
+        // Start with same cardinality estimation as has_subset
+        let tokenset = phrase.to_token_set();
+        let subset_estimation =
+            self.estimate_has_subset_cardinality(&tokenset, condition, hw_counter);
+
+        // But we can restrict it by considering the phrase length
+        let phrase_sq = phrase.len() * phrase.len();
+
+        CardinalityEstimation {
+            primary_clauses: vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
+            min: subset_estimation.min / phrase_sq,
+            exp: subset_estimation.exp / phrase_sq,
+            max: subset_estimation.max / phrase_sq,
         }
     }
 

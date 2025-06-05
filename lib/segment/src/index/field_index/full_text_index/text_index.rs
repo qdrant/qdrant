@@ -24,12 +24,13 @@ use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDelet
 #[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::full_text_index::inverted_index::Document;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
     ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, Match, PayloadKeyType};
+use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType};
 
 pub enum FullTextIndex {
     Mutable(MutableFullTextIndex),
@@ -286,14 +287,24 @@ impl FullTextIndex {
         Some(ParsedQuery::Tokens(tokens))
     }
 
-    pub fn parse_document(&self, text: &str, hw_counter: &HardwareCounterCell) -> TokenSet {
-        let mut document_tokens = AHashSet::new();
+    pub fn parse_tokenset(&self, text: &str, hw_counter: &HardwareCounterCell) -> TokenSet {
+        let mut tokenset = AHashSet::new();
         Tokenizer::tokenize_doc(text, self.config(), |token| {
             if let Some(token_id) = self.get_token(token, hw_counter) {
-                document_tokens.insert(token_id);
+                tokenset.insert(token_id);
             }
         });
-        TokenSet::from(document_tokens)
+        TokenSet::from(tokenset)
+    }
+
+    pub fn parse_document(&self, text: &str, hw_counter: &HardwareCounterCell) -> Document {
+        let mut document_tokens = Vec::new();
+        Tokenizer::tokenize_doc(text, self.config(), |token| {
+            if let Some(token_id) = self.get_token(token, hw_counter) {
+                document_tokens.push(token_id);
+            }
+        });
+        Document::new(document_tokens)
     }
 
     #[cfg(test)]
@@ -306,6 +317,34 @@ impl FullTextIndex {
             return Box::new(std::iter::empty());
         };
         self.filter_query(parsed_query, hw_counter)
+    }
+
+    /// Checks the [`MatchText`] directly against the payload value
+    pub fn check_payload_match(
+        &self,
+        payload_value: &serde_json::Value,
+        match_text: &MatchText,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        let MatchText { text } = match_text;
+
+        let Some(query) = self.parse_query(text, hw_counter) else {
+            return false;
+        };
+
+        for value in FullTextIndex::get_values(payload_value) {
+            match &query {
+                ParsedQuery::Tokens(query) => {
+                    let tokenset = self.parse_tokenset(&value, hw_counter);
+                    tokenset.has_subset(query)
+                }
+                ParsedQuery::Phrase(query) => {
+                    let document = self.parse_document(&value, hw_counter);
+                    document.has_phrase(query)
+                }
+            };
+        }
+        false
     }
 
     pub fn is_on_disk(&self) -> bool {
