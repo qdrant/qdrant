@@ -305,6 +305,10 @@ impl MutableGeoMapIndex {
                     db_wrapper.put(&key, value)?;
                 }
             }
+            // We cannot store empty value, then delete instead
+            Storage::Gridstore(store) if values.is_empty() => {
+                store.write().delete_value(idx);
+            }
             Storage::Gridstore(store) => {
                 let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
                 let values = values
