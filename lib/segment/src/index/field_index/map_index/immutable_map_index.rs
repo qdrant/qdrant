@@ -3,21 +3,27 @@ use std::collections::HashMap;
 use std::iter;
 use std::ops::Range;
 use std::path::PathBuf;
+#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
 use bitvec::vec::BitVec;
 use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
 use gridstore::Blob;
+#[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
+#[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 
+#[cfg(feature = "rocksdb")]
+use super::MapIndex;
 use super::mmap_map_index::MmapMapIndex;
-use super::mutable_map_index::MutableMapIndex;
-use super::{IdIter, IdRefIter, MapIndex, MapIndexKey};
+use super::{IdIter, IdRefIter, MapIndexKey};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::index::field_index::mmap_point_to_values::MmapValue;
@@ -37,6 +43,7 @@ pub struct ImmutableMapIndex<N: MapIndexKey + Key + ?Sized> {
 }
 
 enum Storage<N: MapIndexKey + Key + ?Sized> {
+    #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Mmap(Box<MmapMapIndex<N>>),
 }
@@ -55,6 +62,7 @@ where
     /// Open immutable numeric index from RocksDB storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    #[cfg(feature = "rocksdb")]
     pub fn open_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
         let store_cf_name = MapIndex::<N>::storage_cf_name(field_name);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
@@ -92,6 +100,7 @@ where
     /// Loads in-memory index from backing RocksDB or mmap storage.
     pub fn load(&mut self) -> OperationResult<bool> {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => self.load_rocksdb(),
             Storage::Mmap(_) => self.load_mmap(),
         }
@@ -100,7 +109,10 @@ where
     /// Load from RocksDB storage
     ///
     /// Loads in-memory index from RocksDB storage.
+    #[cfg(feature = "rocksdb")]
     fn load_rocksdb(&mut self) -> OperationResult<bool> {
+        use super::mutable_map_index::MutableMapIndex;
+
         let Storage::RocksDb(db_wrapper) = &self.storage else {
             return Err(OperationError::service_error(
                 "Failed to load index from RocksDB, using different storage backend",
@@ -171,6 +183,7 @@ where
     ///
     /// Loads in-memory index from mmap storage.
     fn load_mmap(&mut self) -> OperationResult<bool> {
+        #[allow(irrefutable_let_patterns)]
         let Storage::Mmap(index) = &self.storage else {
             return Err(OperationError::service_error(
                 "Failed to load index from mmap, using different storage backend",
@@ -368,6 +381,7 @@ where
 
                 // Update persisted storage
                 match self.storage {
+                    #[cfg(feature = "rocksdb")]
                     Storage::RocksDb(ref db_wrapper) => {
                         let key = MapIndex::encode_db_record(value.borrow(), idx);
                         db_wrapper.remove(key)?;
@@ -394,6 +408,7 @@ where
     #[cfg(test)]
     pub fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
             Storage::Mmap(_) => None,
         }
@@ -402,6 +417,7 @@ where
     #[inline]
     pub(super) fn clear(self) -> OperationResult<()> {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
             Storage::Mmap(index) => index.clear(),
         }
@@ -413,6 +429,7 @@ where
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
             Storage::Mmap(ref index) => index.clear_cache(),
         }
@@ -421,6 +438,7 @@ where
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
             Storage::Mmap(ref index) => index.files(),
         }
@@ -429,6 +447,7 @@ where
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(ref db_wrapper) => db_wrapper.flusher(),
             Storage::Mmap(ref index) => index.flusher(),
         }
