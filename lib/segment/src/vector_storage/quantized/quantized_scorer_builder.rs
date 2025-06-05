@@ -13,6 +13,8 @@ use crate::data_types::vectors::{
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
+use crate::vector_storage::quantized::quantized_multi_custom_query_scorer::QuantizedMultiCustomQueryScorer;
+use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
 use crate::vector_storage::query::{
     ContextQuery, DiscoveryQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
 };
@@ -201,7 +203,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
 
     fn new_multi_quantized_scorer<TElement, TMetric, TEncodedQuery>(
         self,
-        quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
+        quantized_multivector_storage: &'a impl EncodedVectors<TEncodedQuery>,
     ) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
         TElement: PrimitiveVectorElement,
@@ -219,9 +221,9 @@ impl<'a> QuantizedScorerBuilder<'a> {
 
         match query {
             QueryVector::Nearest(vector) => {
-                let query_scorer = QuantizedQueryScorer::<TElement, TMetric, _, _>::new_multi(
+                let query_scorer = QuantizedMultiQueryScorer::<TElement, TMetric, _, _>::new_multi(
                     &MultiDenseVectorInternal::try_from(vector)?,
-                    quantized_storage,
+                    quantized_multivector_storage,
                     quantization_config,
                     hardware_counter,
                 );
@@ -231,9 +233,9 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 let reco_query: RecoQuery<MultiDenseVectorInternal> =
                     reco_query.transform_into()?;
                 let query_scorer =
-                    QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
+                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
                         RecoBestScoreQuery::from(reco_query),
-                        quantized_storage,
+                        quantized_multivector_storage,
                         quantization_config,
                         hardware_counter,
                     );
@@ -243,9 +245,9 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 let reco_query: RecoQuery<MultiDenseVectorInternal> =
                     reco_query.transform_into()?;
                 let query_scorer =
-                    QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
+                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
                         RecoSumScoresQuery::from(reco_query),
-                        quantized_storage,
+                        quantized_multivector_storage,
                         quantization_config,
                         hardware_counter,
                     );
@@ -255,9 +257,9 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 let discovery_query: DiscoveryQuery<MultiDenseVectorInternal> =
                     discovery_query.transform_into()?;
                 let query_scorer =
-                    QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
+                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
                         discovery_query,
-                        quantized_storage,
+                        quantized_multivector_storage,
                         quantization_config,
                         hardware_counter,
                     );
@@ -267,9 +269,9 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 let context_query: ContextQuery<MultiDenseVectorInternal> =
                     context_query.transform_into()?;
                 let query_scorer =
-                    QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
+                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
                         context_query,
-                        quantized_storage,
+                        quantized_multivector_storage,
                         quantization_config,
                         hardware_counter,
                     );

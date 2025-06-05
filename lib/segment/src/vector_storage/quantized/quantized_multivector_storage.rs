@@ -173,27 +173,18 @@ where
         let offset = self.offsets.get_offset(vector_index);
         let mut sum = 0.0;
 
-        // account for sub vectors retrieval only once to account for caching
+        // compute `vector_io_read` for sub-vectors only once instead of `query.len()` times to account for caching
         hw_counter
             .vector_io_read()
-            .incr_delta(self.dim * offset.count as usize);
+            .incr_delta(self.quantized_storage.quantized_vector_size() * offset.count as usize);
 
-        // account for all nested CPU ops
-        hw_counter
-            .cpu_counter()
-            .incr_delta(self.dim * offset.count as usize * query.len());
-
-        // compute hardware cost outside to avoid duplicated io cost
-        let disposable_measurements = HardwareCounterCell::disposable();
         for inner_query in query {
             let mut max_sim = ScoreType::NEG_INFINITY;
             // manual `max_by` for performance
             for i in 0..offset.count {
-                let sim = self.quantized_storage.score_point(
-                    inner_query,
-                    offset.start + i,
-                    &disposable_measurements,
-                );
+                let sim =
+                    self.quantized_storage
+                        .score_point(inner_query, offset.start + i, hw_counter);
                 if sim > max_sim {
                     max_sim = sim;
                 }
@@ -304,6 +295,10 @@ where
         match self.multi_vector_config.comparator {
             MultiVectorComparator::MaxSim => self.score_internal_max_similarity(i, j, hw_counter),
         }
+    }
+
+    fn quantized_vector_size(&self) -> usize {
+        self.quantized_storage.quantized_vector_size()
     }
 }
 
