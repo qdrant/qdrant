@@ -10,7 +10,9 @@ use super::bool_index::mmap_bool_index::MmapBoolIndexBuilder;
 use super::bool_index::simple_bool_index::BoolIndexBuilder;
 use super::facet_index::FacetIndexEnum;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
-use super::full_text_index::text_index::{FullTextIndex, FullTextIndexBuilder};
+use super::full_text_index::text_index::{
+    FullTextGridstoreIndexBuilder, FullTextIndex, FullTextIndexBuilder,
+};
 use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexMmapBuilder};
 use super::map_index::{MapIndex, MapIndexBuilder, MapIndexGridstoreBuilder, MapIndexMmapBuilder};
 use super::numeric_index::{
@@ -525,6 +527,7 @@ pub enum FieldIndexBuilder {
     GeoMmapIndex(GeoMapIndexMmapBuilder),
     FullTextIndex(FullTextIndexBuilder),
     FullTextMmapIndex(FullTextMmapIndexBuilder),
+    FullTextGridstoreIndex(FullTextGridstoreIndexBuilder),
     BoolIndex(BoolIndexBuilder),
     BoolMmapIndex(MmapBoolIndexBuilder),
     UuidIndex(MapIndexBuilder<UuidIntType>),
@@ -559,6 +562,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::BoolMmapIndex(index) => index.init(),
             Self::FullTextIndex(index) => index.init(),
             Self::FullTextMmapIndex(builder) => builder.init(),
+            Self::FullTextGridstoreIndex(builder) => builder.init(),
             Self::UuidIndex(index) => index.init(),
             Self::UuidMmapIndex(index) => index.init(),
             Self::UuidGridstoreIndex(index) => index.init(),
@@ -596,6 +600,9 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FullTextMmapIndex(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
+            Self::FullTextGridstoreIndex(builder) => {
+                FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+            }
             Self::UuidIndex(index) => index.add_point(id, payload, hw_counter),
             Self::UuidMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::UuidGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
@@ -626,6 +633,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::BoolMmapIndex(index) => FieldIndex::BoolIndex(index.finalize()?),
             Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
             Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
+            Self::FullTextGridstoreIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::UuidIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidGridstoreIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),

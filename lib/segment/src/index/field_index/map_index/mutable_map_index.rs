@@ -156,7 +156,7 @@ where
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
             .read()
-            .iter(
+            .iter::<_, ()>(
                 |idx, values| {
                     for value in values {
                         if self.point_to_values.len() <= idx as usize {

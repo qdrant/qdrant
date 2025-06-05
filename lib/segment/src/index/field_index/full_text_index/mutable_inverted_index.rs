@@ -4,6 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::inverted_index::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
+use super::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator;
 use crate::common::operation_error::OperationResult;
@@ -25,46 +26,11 @@ pub struct MutableInvertedIndex {
 impl MutableInvertedIndex {
     pub fn build_index(
         iter: impl Iterator<Item = OperationResult<(PointOffsetType, BTreeSet<String>)>>,
-        // TODO: add param for including phrase field.
+        // TODO(phrase-index): add param for including phrase field
     ) -> OperationResult<Self> {
-        let mut index = Self::default();
-
-        // update point_to_docs
-        for item in iter {
-            index.points_count += 1;
-            let (idx, str_tokens) = item?;
-
-            if index.point_to_tokens.len() <= idx as usize {
-                index
-                    .point_to_tokens
-                    .resize_with(idx as usize + 1, Default::default);
-            }
-
-            let tokens = index.register_tokens(str_tokens.iter().map(String::as_str));
-            let tokens_set = TokenSet::from_iter(tokens);
-            index.point_to_tokens[idx as usize] = Some(tokens_set);
-        }
-
-        // build postings from point_to_docs
-        // build in order to increase document id
-        for (idx, doc) in index.point_to_tokens.iter().enumerate() {
-            if let Some(doc) = doc {
-                for token_idx in doc.tokens() {
-                    if index.postings.len() <= *token_idx as usize {
-                        index
-                            .postings
-                            .resize_with(*token_idx as usize + 1, Default::default);
-                    }
-                    index
-                        .postings
-                        .get_mut(*token_idx as usize)
-                        .expect("posting must exist")
-                        .insert(idx as PointOffsetType);
-                }
-            }
-        }
-
-        Ok(index)
+        let mut builder = MutableInvertedIndexBuilder::default();
+        builder.add_iter(iter)?;
+        Ok(builder.build())
     }
 
     fn get_tokens(&self, idx: PointOffsetType) -> Option<&TokenSet> {

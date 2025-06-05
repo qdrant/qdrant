@@ -517,9 +517,13 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Iterate over all the values in the storage
-    pub fn iter<F>(&self, mut callback: F, hw_counter: HwMetricRefCounter) -> std::io::Result<()>
+    pub fn iter<F, E>(
+        &self,
+        mut callback: F,
+        hw_counter: HwMetricRefCounter,
+    ) -> std::result::Result<(), E>
     where
-        F: FnMut(PointOffset, &V) -> std::io::Result<bool>,
+        F: FnMut(PointOffset, &V) -> std::result::Result<bool, E>,
     {
         for (point_offset, pointer) in
             self.tracker
