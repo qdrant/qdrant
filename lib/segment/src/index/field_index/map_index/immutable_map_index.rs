@@ -15,7 +15,7 @@ use super::mmap_map_index::MmapMapIndex;
 use super::mutable_map_index::MutableMapIndex;
 use super::{IdIter, IdRefIter, MapIndex, MapIndexKey};
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
@@ -89,7 +89,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     pub fn load(&mut self) -> OperationResult<bool> {
         match self.storage {
             Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Mmap(_) => Ok(self.load_mmap()),
+            Storage::Mmap(_) => self.load_mmap(),
         }
     }
 
@@ -98,7 +98,9 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     /// Loads in-memory index from RocksDB storage.
     fn load_rocksdb(&mut self) -> OperationResult<bool> {
         let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Ok(false);
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
         };
 
         // To avoid code duplication, use `MutableMapIndex` to load data from db
@@ -170,9 +172,11 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     /// Load from mmap storage
     ///
     /// Loads in-memory index from mmap storage.
-    fn load_mmap(&mut self) -> bool {
+    fn load_mmap(&mut self) -> OperationResult<bool> {
         let Storage::Mmap(index) = &self.storage else {
-            return false;
+            return Err(OperationError::service_error(
+                "Failed to load index from mmap, using different storage backend",
+            ));
         };
 
         // Construct intermediate values to points map from backing storage
@@ -256,7 +260,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             log::warn!("Failed to clear mmap cache of ram mmap map index: {err}");
         }
 
-        true
+        Ok(true)
     }
 
     /// Return mutable slice of a container which holds point_ids for given value.

@@ -50,8 +50,6 @@ impl MmapSparseVectorStorage {
     }
 
     fn open(path: &Path) -> OperationResult<Self> {
-        let path = path.to_path_buf();
-
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
         let storage = Gridstore::open(storage_dir).map_err(|err| {
@@ -300,8 +298,7 @@ impl VectorStorage for MmapSparseVectorStorage {
                 OperationError::service_error(format!(
                     "Failed to flush mmap sparse vector storage: {err}"
                 ))
-            })?;
-            Ok(())
+            })
         })
     }
 

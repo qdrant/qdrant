@@ -151,23 +151,23 @@ impl<V: Blob> Gridstore<V> {
 
     /// Open an existing storage at the given path
     /// Returns None if the storage does not exist
-    pub fn open(path: PathBuf) -> Result<Self> {
-        if !path.exists() {
-            return Err(format!("Path '{path:?}' does not exist"));
+    pub fn open(base_path: PathBuf) -> Result<Self> {
+        if !base_path.exists() {
+            return Err(format!("Path '{base_path:?}' does not exist"));
         }
-        if !path.is_dir() {
-            return Err(format!("Path '{path:?}' is not a directory"));
+        if !base_path.is_dir() {
+            return Err(format!("Path '{base_path:?}' is not a directory"));
         }
 
         // read config file first
-        let config_path = path.join(CONFIG_FILENAME);
+        let config_path = base_path.join(CONFIG_FILENAME);
         let config_file = BufReader::new(File::open(&config_path).map_err(|err| err.to_string())?);
         let config: StorageConfig =
             serde_json::from_reader(config_file).map_err(|err| err.to_string())?;
 
-        let page_tracker = Tracker::open(&path)?;
+        let page_tracker = Tracker::open(&base_path)?;
 
-        let bitmask = Bitmask::open(&path, config)?;
+        let bitmask = Bitmask::open(&base_path, config)?;
 
         let num_pages = bitmask.infer_num_pages();
 
@@ -176,7 +176,7 @@ impl<V: Blob> Gridstore<V> {
             config,
             pages: Vec::with_capacity(num_pages),
             bitmask: RwLock::new(bitmask),
-            base_path: path.clone(),
+            base_path,
             _value_type: std::marker::PhantomData,
         };
         // load pages
@@ -1065,7 +1065,7 @@ mod tests {
         }
 
         // reopen storage
-        let storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+        let storage = Gridstore::<Payload>::open(path).unwrap();
         assert_eq!(storage.pages.len(), 1);
 
         let stored_payload = storage.get_value(0, &hw_counter);
