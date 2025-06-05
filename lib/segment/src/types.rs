@@ -38,6 +38,7 @@ use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::json_path::JsonPath;
 use crate::spaces::metric::MetricPostProcessing;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
+use crate::utils::maybe_arc::MaybeArc;
 
 pub type PayloadKeyType = JsonPath;
 pub type PayloadKeyTypeRef<'a> = &'a JsonPath;
@@ -2608,7 +2609,7 @@ impl From<JsonPath> for IsEmptyCondition {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct HasIdCondition {
     #[schemars(schema_with = "HashSet::<PointIdType>::json_schema")]
-    pub has_id: AHashSet<PointIdType>,
+    pub has_id: MaybeArc<AHashSet<PointIdType>>,
 }
 
 /// Filter points which have specific vector assigned
@@ -2623,17 +2624,30 @@ impl From<VectorNameBuf> for HasVectorCondition {
     }
 }
 
+/// Threshold determining when to use an `Arc` in `HasIdCondition` if the condition includes many points.
+/// Since we're cloning filters quite a lot, using an Arc for larger conditions reduces risk of memory leaks
+/// and potentially improves performance in some places.
+const HAS_ID_CONDITION_ARC_THRESHOLD: usize = 1_000;
+
 impl From<AHashSet<PointIdType>> for HasIdCondition {
     fn from(has_id: AHashSet<PointIdType>) -> Self {
-        HasIdCondition { has_id }
+        if has_id.len() > HAS_ID_CONDITION_ARC_THRESHOLD {
+            HasIdCondition {
+                has_id: MaybeArc::arc(has_id),
+            }
+        } else {
+            HasIdCondition {
+                has_id: MaybeArc::no_arc(has_id),
+            }
+        }
     }
 }
 
 impl FromIterator<PointIdType> for HasIdCondition {
     fn from_iter<T: IntoIterator<Item = PointIdType>>(iter: T) -> Self {
-        HasIdCondition {
-            has_id: iter.into_iter().collect(),
-        }
+        let items: AHashSet<_> = iter.into_iter().collect();
+        // Arc-Threshold applies here, since we're reusing the From implementation from AHashSet.
+        Self::from(items)
     }
 }
 

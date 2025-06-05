@@ -1345,14 +1345,14 @@ impl TryFrom<HasIdCondition> for segment::types::HasIdCondition {
             .into_iter()
             .map(|p| p.try_into())
             .collect::<Result<_, _>>()?;
-        Ok(Self { has_id: set })
+        Ok(Self::from(set))
     }
 }
 
 impl From<segment::types::HasIdCondition> for HasIdCondition {
     fn from(value: segment::types::HasIdCondition) -> Self {
         let segment::types::HasIdCondition { has_id } = value;
-        let set: Vec<PointId> = has_id.into_iter().map(|p| p.into()).collect();
+        let set: Vec<PointId> = has_id.into_inner().into_iter().map(PointId::from).collect();
         Self { has_id: set }
     }
 }
