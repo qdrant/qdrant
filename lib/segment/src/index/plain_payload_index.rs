@@ -245,6 +245,7 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
+    #[cfg(feature = "rocksdb")]
     fn take_database_snapshot(&self, _: &Path) -> OperationResult<()> {
         unreachable!()
     }

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -155,7 +155,8 @@ pub trait PayloadIndex {
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;
 
-    fn take_database_snapshot(&self, path: &Path) -> OperationResult<()>;
+    #[cfg(feature = "rocksdb")]
+    fn take_database_snapshot(&self, path: &std::path::Path) -> OperationResult<()>;
 
     fn files(&self) -> Vec<PathBuf>;
 

@@ -837,8 +837,8 @@ impl PayloadIndex for StructPayloadIndex {
         })
     }
 
+    #[cfg(feature = "rocksdb")]
     fn take_database_snapshot(&self, path: &Path) -> OperationResult<()> {
-        #[cfg(feature = "rocksdb")]
         match &self.storage_type {
             StorageType::Appendable(db) => {
                 let db_guard = db.read();
@@ -848,11 +848,6 @@ impl PayloadIndex for StructPayloadIndex {
                 let db_guard = db.read();
                 crate::rocksdb_backup::create(&db_guard, path)
             }
-            StorageType::NonAppendable => Ok(()),
-        }
-        #[cfg(not(feature = "rocksdb"))]
-        match &self.storage_type {
-            StorageType::Appendable => Ok(()),
             StorageType::NonAppendable => Ok(()),
         }
     }
