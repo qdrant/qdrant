@@ -768,6 +768,7 @@ mod tests {
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum IndexType {
         Mutable,
+        MutableGridstore,
         Immutable,
         Mmap,
         RamMmap,
@@ -775,6 +776,7 @@ mod tests {
 
     enum IndexBuilder {
         Mutable(GeoMapIndexBuilder),
+        MutableGridstore(GeoMapIndexGridstoreBuilder),
         Immutable(GeoMapImmutableIndexBuilder),
         Mmap(GeoMapIndexMmapBuilder),
         RamMmap(GeoMapIndexMmapBuilder),
@@ -789,6 +791,9 @@ mod tests {
         ) -> OperationResult<()> {
             match self {
                 IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
+                IndexBuilder::MutableGridstore(builder) => {
+                    builder.add_point(id, payload, hw_counter)
+                }
                 IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::Mmap(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::RamMmap(builder) => builder.add_point(id, payload, hw_counter),
@@ -798,6 +803,7 @@ mod tests {
         fn finalize(self) -> OperationResult<GeoMapIndex> {
             match self {
                 IndexBuilder::Mutable(builder) => builder.finalize(),
+                IndexBuilder::MutableGridstore(builder) => builder.finalize(),
                 IndexBuilder::Immutable(builder) => builder.finalize(),
                 IndexBuilder::Mmap(builder) => builder.finalize(),
                 IndexBuilder::RamMmap(builder) => {
@@ -861,6 +867,9 @@ mod tests {
             IndexType::Mutable => {
                 IndexBuilder::Mutable(GeoMapIndex::builder(db.clone(), FIELD_NAME))
             }
+            IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
+                GeoMapIndex::builder_gridstore(temp_dir.path().to_path_buf()),
+            ),
             IndexType::Immutable => {
                 IndexBuilder::Immutable(GeoMapIndex::builder_immutable(db.clone(), FIELD_NAME))
             }
@@ -871,6 +880,7 @@ mod tests {
         };
         match &mut builder {
             IndexBuilder::Mutable(builder) => builder.init().unwrap(),
+            IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
             IndexBuilder::Immutable(builder) => builder.init().unwrap(),
             IndexBuilder::Mmap(builder) => builder.init().unwrap(),
             IndexBuilder::RamMmap(builder) => builder.init().unwrap(),
@@ -947,6 +957,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1089,6 +1100,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1142,6 +1154,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1208,6 +1221,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1240,6 +1254,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1327,6 +1342,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1373,6 +1389,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1399,6 +1416,9 @@ mod tests {
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = match index_type {
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
+            IndexType::MutableGridstore => {
+                GeoMapIndex::new_gridstore(temp_dir.path().to_path_buf()).unwrap()
+            }
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
@@ -1436,6 +1456,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1473,6 +1494,9 @@ mod tests {
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = match index_type {
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
+            IndexType::MutableGridstore => {
+                GeoMapIndex::new_gridstore(temp_dir.path().to_path_buf()).unwrap()
+            }
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
@@ -1488,6 +1512,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1583,6 +1608,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1646,8 +1672,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(&[IndexType::Mutable, IndexType::Immutable, IndexType::Mmap, IndexType::RamMmap], false)]
-    #[case(&[IndexType::Mutable, IndexType::Immutable, IndexType::RamMmap], true)]
+    #[case(&[IndexType::Mutable, IndexType::MutableGridstore, IndexType::Immutable, IndexType::Mmap, IndexType::RamMmap], false)]
+    #[case(&[IndexType::Mutable, IndexType::MutableGridstore, IndexType::Immutable, IndexType::RamMmap], true)]
     fn test_congruence(#[case] types: &[IndexType], #[case] deleted: bool) {
         const POINT_COUNT: usize = 500;
 
