@@ -38,7 +38,7 @@ use crate::common::inference::query_requests_grpc::{
     convert_query_point_groups_from_grpc, convert_query_points_from_grpc,
 };
 use crate::common::query::*;
-use crate::tonic::verification::CheckedTocProvider;
+use crate::common::strict_mode::*;
 
 pub(crate) fn convert_shard_selector_for_read(
     shard_id_selector: Option<ShardId>,

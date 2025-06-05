@@ -5,22 +5,20 @@ use api::rest::UpdateVectors;
 use api::rest::schema::PointInsertOperations;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::PointsSelector;
-use collection::operations::types::UpdateResult;
 use collection::operations::vector_ops::DeleteVectors;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::json_path::JsonPath;
 use serde::Deserialize;
-use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
-    get_request_hardware_counter, process_response, process_response_error,
-    process_response_with_inference_usage,
+    get_request_hardware_counter, process_response, process_response_with_inference_usage,
 };
 use crate::common::inference::InferenceToken;
+use crate::common::strict_mode::*;
 use crate::common::update::*;
 use crate::settings::ServiceConfig;
 
@@ -40,12 +38,6 @@ async fn upsert_points(
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
-    let pass =
-        match check_strict_mode(&operation.0, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-
     let operation = operation.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
@@ -57,7 +49,7 @@ async fn upsert_points(
     let timing = Instant::now();
 
     let result_with_usage = do_upsert_points(
-        dispatcher.toc(&access, &pass).clone(),
+        StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
@@ -91,11 +83,6 @@ async fn delete_points(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -106,7 +93,7 @@ async fn delete_points(
     let timing = Instant::now();
 
     let res = do_delete_points(
-        dispatcher.toc(&access, &pass).clone(),
+        StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
@@ -131,12 +118,6 @@ async fn update_vectors(
 ) -> impl Responder {
     let operation = operation.into_inner();
 
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
         collection.name.clone(),
@@ -146,7 +127,7 @@ async fn update_vectors(
     let timing = Instant::now();
 
     let res = do_update_vectors(
-        dispatcher.toc(&access, &pass).clone(),
+        StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
@@ -179,14 +160,7 @@ async fn delete_vectors(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-
     let operation = operation.into_inner();
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, timing, None),
-        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -197,7 +171,7 @@ async fn delete_vectors(
     let timing = Instant::now();
 
     let response = do_delete_vectors(
-        dispatcher.toc(&access, &pass).clone(),
+        StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
@@ -221,12 +195,6 @@ async fn set_payload(
 ) -> impl Responder {
     let operation = operation.into_inner();
 
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
         collection.name.clone(),
@@ -236,7 +204,7 @@ async fn set_payload(
     let timing = Instant::now();
 
     let res = do_set_payload(
-        dispatcher.toc(&access, &pass).clone(),
+        StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
@@ -259,11 +227,6 @@ async fn overwrite_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -274,7 +237,7 @@ async fn overwrite_payload(
     let timing = Instant::now();
 
     let res = do_overwrite_payload(
-        dispatcher.toc(&access, &pass).clone(),
+        StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
@@ -297,11 +260,6 @@ async fn delete_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -312,7 +270,7 @@ async fn delete_payload(
     let timing = Instant::now();
 
     let res = do_delete_payload(
-        dispatcher.toc(&access, &pass).clone(),
+        StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
@@ -335,11 +293,6 @@ async fn clear_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -350,7 +303,7 @@ async fn clear_payload(
     let timing = Instant::now();
 
     let res = do_clear_payload(
-        dispatcher.toc(&access, &pass).clone(),
+        StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
@@ -373,24 +326,7 @@ async fn update_batch(
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
-    let timing = Instant::now();
     let operations = operations.into_inner();
-
-    let mut vpass = None;
-    for operation in operations.operations.iter() {
-        let pass = match check_strict_mode(operation, None, &collection.name, &dispatcher, &access)
-            .await
-        {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-        vpass = Some(pass);
-    }
-
-    // vpass == None => No update operation available
-    let Some(pass) = vpass else {
-        return process_response::<Vec<UpdateResult>>(Ok(vec![]), timing, None);
-    };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -402,7 +338,7 @@ async fn update_batch(
     let timing = Instant::now();
 
     let result_with_usage = do_batch_update_points(
-        dispatcher.toc(&access, &pass).clone(),
+        StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().name,
         operations.operations,
         InternalUpdateParams::default(),

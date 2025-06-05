@@ -33,9 +33,9 @@ use super::query_common::*;
 use super::update_common::*;
 use super::validate_and_log;
 use crate::common::inference::{InferenceToken, extract_token};
+use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
-use crate::tonic::verification::{StrictModeCheckedInternalTocProvider, UncheckedTocProvider};
 
 const FULL_ACCESS: Access = Access::full("Internal API");
 
