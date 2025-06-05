@@ -8,15 +8,12 @@ use super::bool_index::BoolIndex;
 use super::bool_index::mmap_bool_index::MmapBoolIndex;
 #[cfg(feature = "rocksdb")]
 use super::bool_index::simple_bool_index::SimpleBoolIndex;
-use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
+use super::geo_index::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use super::histogram::Numericable;
-use super::map_index::{
-    MapIndex, MapIndexBuilder, MapIndexGridstoreBuilder, MapIndexKey, MapIndexMmapBuilder,
-};
+use super::map_index::{MapIndex, MapIndexGridstoreBuilder, MapIndexKey, MapIndexMmapBuilder};
 use super::mmap_point_to_values::MmapValue;
 use super::numeric_index::{
-    Encodable, NumericIndexBuilder, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue,
-    NumericIndexMmapBuilder,
+    Encodable, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue, NumericIndexMmapBuilder,
 };
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::OperationResult;
@@ -112,6 +109,7 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Keyword(_) => {
                 vec![self.map_builder(
                     field,
+                    #[cfg(feature = "rocksdb")]
                     FieldIndexBuilder::KeywordIndex,
                     FieldIndexBuilder::KeywordMmapIndex,
                     FieldIndexBuilder::KeywordGridstoreIndex,
@@ -121,6 +119,7 @@ impl IndexSelector<'_> {
                 integer_params.lookup.unwrap_or(true).then(|| {
                     self.map_builder(
                         field,
+                        #[cfg(feature = "rocksdb")]
                         FieldIndexBuilder::IntMapIndex,
                         FieldIndexBuilder::IntMapMmapIndex,
                         FieldIndexBuilder::IntMapGridstoreIndex,
@@ -129,6 +128,7 @@ impl IndexSelector<'_> {
                 integer_params.range.unwrap_or(true).then(|| {
                     self.numeric_builder(
                         field,
+                        #[cfg(feature = "rocksdb")]
                         FieldIndexBuilder::IntIndex,
                         FieldIndexBuilder::IntMmapIndex,
                         FieldIndexBuilder::IntGridstoreIndex,
@@ -139,6 +139,7 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Float(_) => {
                 vec![self.numeric_builder(
                     field,
+                    #[cfg(feature = "rocksdb")]
                     FieldIndexBuilder::FloatIndex,
                     FieldIndexBuilder::FloatMmapIndex,
                     FieldIndexBuilder::FloatGridstoreIndex,
@@ -147,6 +148,7 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Geo(_) => {
                 vec![self.geo_builder(
                     field,
+                    #[cfg(feature = "rocksdb")]
                     FieldIndexBuilder::GeoIndex,
                     FieldIndexBuilder::GeoMmapIndex,
                     FieldIndexBuilder::GeoGridstoreIndex,
@@ -161,6 +163,7 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Datetime(_) => {
                 vec![self.numeric_builder(
                     field,
+                    #[cfg(feature = "rocksdb")]
                     FieldIndexBuilder::DatetimeIndex,
                     FieldIndexBuilder::DatetimeMmapIndex,
                     FieldIndexBuilder::DatetimeGridstoreIndex,
@@ -169,6 +172,7 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Uuid(_) => {
                 vec![self.map_builder(
                     field,
+                    #[cfg(feature = "rocksdb")]
                     FieldIndexBuilder::UuidIndex,
                     FieldIndexBuilder::UuidMmapIndex,
                     FieldIndexBuilder::UuidGridstoreIndex,
@@ -200,7 +204,9 @@ impl IndexSelector<'_> {
     fn map_builder<N: MapIndexKey + ?Sized>(
         &self,
         field: &JsonPath,
-        make_rocksdb: fn(MapIndexBuilder<N>) -> FieldIndexBuilder,
+        #[cfg(feature = "rocksdb")] make_rocksdb: fn(
+            super::map_index::MapIndexBuilder<N>,
+        ) -> FieldIndexBuilder,
         make_mmap: fn(MapIndexMmapBuilder<N>) -> FieldIndexBuilder,
         make_gridstore: fn(MapIndexGridstoreBuilder<N>) -> FieldIndexBuilder,
     ) -> FieldIndexBuilder
@@ -245,7 +251,9 @@ impl IndexSelector<'_> {
     fn numeric_builder<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
-        make_rocksdb: fn(NumericIndexBuilder<T, P>) -> FieldIndexBuilder,
+        #[cfg(feature = "rocksdb")] make_rocksdb: fn(
+            super::numeric_index::NumericIndexBuilder<T, P>,
+        ) -> FieldIndexBuilder,
         make_mmap: fn(NumericIndexMmapBuilder<T, P>) -> FieldIndexBuilder,
         make_gridstore: fn(NumericIndexGridstoreBuilder<T, P>) -> FieldIndexBuilder,
     ) -> FieldIndexBuilder
@@ -289,7 +297,9 @@ impl IndexSelector<'_> {
     fn geo_builder(
         &self,
         field: &JsonPath,
-        make_rocksdb: fn(GeoMapIndexBuilder) -> FieldIndexBuilder,
+        #[cfg(feature = "rocksdb")] make_rocksdb: fn(
+            super::geo_index::GeoMapIndexBuilder,
+        ) -> FieldIndexBuilder,
         make_mmap: fn(GeoMapIndexMmapBuilder) -> FieldIndexBuilder,
         make_gridstore: fn(GeoMapIndexGridstoreBuilder) -> FieldIndexBuilder,
     ) -> FieldIndexBuilder {

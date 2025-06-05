@@ -7,17 +7,17 @@ use serde_json::Value;
 
 use super::bool_index::BoolIndex;
 use super::bool_index::mmap_bool_index::MmapBoolIndexBuilder;
-use super::bool_index::simple_bool_index::BoolIndexBuilder;
 use super::facet_index::FacetIndexEnum;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
-use super::full_text_index::text_index::{
-    FullTextGridstoreIndexBuilder, FullTextIndex, FullTextIndexBuilder,
-};
-use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
-use super::map_index::{MapIndex, MapIndexBuilder, MapIndexGridstoreBuilder, MapIndexMmapBuilder};
+use super::full_text_index::text_index::{FullTextGridstoreIndexBuilder, FullTextIndex};
+use super::geo_index::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
+#[cfg(feature = "rocksdb")]
+use super::map_index::MapIndexBuilder;
+use super::map_index::{MapIndex, MapIndexGridstoreBuilder, MapIndexMmapBuilder};
+#[cfg(feature = "rocksdb")]
+use super::numeric_index::NumericIndexBuilder;
 use super::numeric_index::{
-    NumericIndex, NumericIndexBuilder, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder,
-    StreamRange,
+    NumericIndex, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder, StreamRange,
 };
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -508,29 +508,38 @@ pub trait FieldIndexBuilderTrait {
 
 /// Builders for all index types
 pub enum FieldIndexBuilder {
+    #[cfg(feature = "rocksdb")]
     IntIndex(NumericIndexBuilder<IntPayloadType, IntPayloadType>),
     IntMmapIndex(NumericIndexMmapBuilder<IntPayloadType, IntPayloadType>),
     IntGridstoreIndex(NumericIndexGridstoreBuilder<IntPayloadType, IntPayloadType>),
+    #[cfg(feature = "rocksdb")]
     DatetimeIndex(NumericIndexBuilder<IntPayloadType, DateTimePayloadType>),
     DatetimeMmapIndex(NumericIndexMmapBuilder<IntPayloadType, DateTimePayloadType>),
     DatetimeGridstoreIndex(NumericIndexGridstoreBuilder<IntPayloadType, DateTimePayloadType>),
+    #[cfg(feature = "rocksdb")]
     IntMapIndex(MapIndexBuilder<IntPayloadType>),
     IntMapMmapIndex(MapIndexMmapBuilder<IntPayloadType>),
     IntMapGridstoreIndex(MapIndexGridstoreBuilder<IntPayloadType>),
+    #[cfg(feature = "rocksdb")]
     KeywordIndex(MapIndexBuilder<str>),
     KeywordMmapIndex(MapIndexMmapBuilder<str>),
     KeywordGridstoreIndex(MapIndexGridstoreBuilder<str>),
+    #[cfg(feature = "rocksdb")]
     FloatIndex(NumericIndexBuilder<FloatPayloadType, FloatPayloadType>),
     FloatMmapIndex(NumericIndexMmapBuilder<FloatPayloadType, FloatPayloadType>),
     FloatGridstoreIndex(NumericIndexGridstoreBuilder<FloatPayloadType, FloatPayloadType>),
-    GeoIndex(GeoMapIndexBuilder),
+    #[cfg(feature = "rocksdb")]
+    GeoIndex(super::geo_index::GeoMapIndexBuilder),
     GeoMmapIndex(GeoMapIndexMmapBuilder),
     GeoGridstoreIndex(GeoMapIndexGridstoreBuilder),
-    FullTextIndex(FullTextIndexBuilder),
+    #[cfg(feature = "rocksdb")]
+    FullTextIndex(super::full_text_index::text_index::FullTextIndexBuilder),
     FullTextMmapIndex(FullTextMmapIndexBuilder),
     FullTextGridstoreIndex(FullTextGridstoreIndexBuilder),
-    BoolIndex(BoolIndexBuilder),
+    #[cfg(feature = "rocksdb")]
+    BoolIndex(super::bool_index::simple_bool_index::BoolIndexBuilder),
     BoolMmapIndex(MmapBoolIndexBuilder),
+    #[cfg(feature = "rocksdb")]
     UuidIndex(MapIndexBuilder<UuidIntType>),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
     UuidGridstoreIndex(MapIndexGridstoreBuilder<UuidIntType>),
@@ -542,29 +551,38 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
 
     fn init(&mut self) -> OperationResult<()> {
         match self {
+            #[cfg(feature = "rocksdb")]
             Self::IntIndex(index) => index.init(),
             Self::IntMmapIndex(index) => index.init(),
             Self::IntGridstoreIndex(index) => index.init(),
+            #[cfg(feature = "rocksdb")]
             Self::DatetimeIndex(index) => index.init(),
             Self::DatetimeMmapIndex(index) => index.init(),
             Self::DatetimeGridstoreIndex(index) => index.init(),
+            #[cfg(feature = "rocksdb")]
             Self::IntMapIndex(index) => index.init(),
             Self::IntMapMmapIndex(index) => index.init(),
             Self::IntMapGridstoreIndex(index) => index.init(),
+            #[cfg(feature = "rocksdb")]
             Self::KeywordIndex(index) => index.init(),
             Self::KeywordMmapIndex(index) => index.init(),
             Self::KeywordGridstoreIndex(index) => index.init(),
+            #[cfg(feature = "rocksdb")]
             Self::FloatIndex(index) => index.init(),
             Self::FloatMmapIndex(index) => index.init(),
             Self::FloatGridstoreIndex(index) => index.init(),
+            #[cfg(feature = "rocksdb")]
             Self::GeoIndex(index) => index.init(),
             Self::GeoMmapIndex(index) => index.init(),
             Self::GeoGridstoreIndex(index) => index.init(),
+            #[cfg(feature = "rocksdb")]
             Self::BoolIndex(index) => index.init(),
             Self::BoolMmapIndex(index) => index.init(),
+            #[cfg(feature = "rocksdb")]
             Self::FullTextIndex(index) => index.init(),
             Self::FullTextMmapIndex(builder) => builder.init(),
             Self::FullTextGridstoreIndex(builder) => builder.init(),
+            #[cfg(feature = "rocksdb")]
             Self::UuidIndex(index) => index.init(),
             Self::UuidMmapIndex(index) => index.init(),
             Self::UuidGridstoreIndex(index) => index.init(),
@@ -579,26 +597,34 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
+            #[cfg(feature = "rocksdb")]
             Self::IntIndex(index) => index.add_point(id, payload, hw_counter),
             Self::IntMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::IntGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
+            #[cfg(feature = "rocksdb")]
             Self::DatetimeIndex(index) => index.add_point(id, payload, hw_counter),
             Self::DatetimeMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::DatetimeGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
+            #[cfg(feature = "rocksdb")]
             Self::IntMapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::IntMapMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::IntMapGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
+            #[cfg(feature = "rocksdb")]
             Self::KeywordIndex(index) => index.add_point(id, payload, hw_counter),
             Self::KeywordMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::KeywordGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
+            #[cfg(feature = "rocksdb")]
             Self::FloatIndex(index) => index.add_point(id, payload, hw_counter),
             Self::FloatMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::FloatGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
+            #[cfg(feature = "rocksdb")]
             Self::GeoIndex(index) => index.add_point(id, payload, hw_counter),
             Self::GeoMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::GeoGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
+            #[cfg(feature = "rocksdb")]
             Self::BoolIndex(index) => index.add_point(id, payload, hw_counter),
             Self::BoolMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            #[cfg(feature = "rocksdb")]
             Self::FullTextIndex(index) => index.add_point(id, payload, hw_counter),
             Self::FullTextMmapIndex(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
@@ -606,6 +632,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FullTextGridstoreIndex(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
+            #[cfg(feature = "rocksdb")]
             Self::UuidIndex(index) => index.add_point(id, payload, hw_counter),
             Self::UuidMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::UuidGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
@@ -615,29 +642,38 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
 
     fn finalize(self) -> OperationResult<FieldIndex> {
         Ok(match self {
+            #[cfg(feature = "rocksdb")]
             Self::IntIndex(index) => FieldIndex::IntIndex(index.finalize()?),
             Self::IntMmapIndex(index) => FieldIndex::IntIndex(index.finalize()?),
             Self::IntGridstoreIndex(index) => FieldIndex::IntIndex(index.finalize()?),
+            #[cfg(feature = "rocksdb")]
             Self::DatetimeIndex(index) => FieldIndex::DatetimeIndex(index.finalize()?),
             Self::DatetimeMmapIndex(index) => FieldIndex::DatetimeIndex(index.finalize()?),
             Self::DatetimeGridstoreIndex(index) => FieldIndex::DatetimeIndex(index.finalize()?),
+            #[cfg(feature = "rocksdb")]
             Self::IntMapIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
             Self::IntMapMmapIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
             Self::IntMapGridstoreIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
+            #[cfg(feature = "rocksdb")]
             Self::KeywordIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
             Self::KeywordMmapIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
             Self::KeywordGridstoreIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
+            #[cfg(feature = "rocksdb")]
             Self::FloatIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
             Self::FloatMmapIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
             Self::FloatGridstoreIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
+            #[cfg(feature = "rocksdb")]
             Self::GeoIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::GeoMmapIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::GeoGridstoreIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
+            #[cfg(feature = "rocksdb")]
             Self::BoolIndex(index) => FieldIndex::BoolIndex(index.finalize()?),
             Self::BoolMmapIndex(index) => FieldIndex::BoolIndex(index.finalize()?),
+            #[cfg(feature = "rocksdb")]
             Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
             Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::FullTextGridstoreIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
+            #[cfg(feature = "rocksdb")]
             Self::UuidIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidGridstoreIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
