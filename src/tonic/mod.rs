@@ -2,7 +2,6 @@ mod api;
 mod auth;
 mod logging;
 mod tonic_telemetry;
-pub(super) mod verification;
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};

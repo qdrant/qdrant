@@ -4,34 +4,35 @@ use collection::operations::verification::StrictModeVerification;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch, check_strict_mode_toc, check_strict_mode_toc_batch,
 };
+use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
-use tonic::Status;
 
 /// Trait for different ways of providing something with `toc` that may do additional checks eg. for Strict mode.
 pub trait CheckedTocProvider {
-    async fn check_strict_mode<'b>(
-        &'b self,
+    async fn check_strict_mode(
+        &self,
         request: &impl StrictModeVerification,
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status>;
+    ) -> Result<&Arc<TableOfContent>, StorageError>;
 
-    async fn check_strict_mode_batch<'b, I, R>(
-        &'b self,
+    async fn check_strict_mode_batch<I, R>(
+        &self,
         requests: &[I],
         conv: impl Fn(&I) -> &R,
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status>
+    ) -> Result<&Arc<TableOfContent>, StorageError>
     where
         R: StrictModeVerification;
 }
 
 /// Simple provider for TableOfContent that doesn't do any checks.
+#[derive(Clone)]
 pub struct UncheckedTocProvider<'a> {
     toc: &'a Arc<TableOfContent>,
 }
@@ -43,25 +44,25 @@ impl<'a> UncheckedTocProvider<'a> {
 }
 
 impl CheckedTocProvider for UncheckedTocProvider<'_> {
-    async fn check_strict_mode<'b>(
-        &'b self,
+    async fn check_strict_mode(
+        &self,
         _request: &impl StrictModeVerification,
         _collection_name: &str,
         _timeout: Option<usize>,
         _access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status> {
+    ) -> Result<&Arc<TableOfContent>, StorageError> {
         // No checks here
         Ok(self.toc)
     }
 
-    async fn check_strict_mode_batch<'b, I, R>(
-        &'b self,
+    async fn check_strict_mode_batch<I, R>(
+        &self,
         _requests: &[I],
         _conv: impl Fn(&I) -> &R,
         _collection_name: &str,
         _timeout: Option<usize>,
         _access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status>
+    ) -> Result<&Arc<TableOfContent>, StorageError>
     where
         R: StrictModeVerification,
     {
@@ -71,6 +72,7 @@ impl CheckedTocProvider for UncheckedTocProvider<'_> {
 }
 
 /// Provider for TableOfContent that requires Strict mode to be checked.
+#[derive(Clone)]
 pub struct StrictModeCheckedTocProvider<'a> {
     dispatcher: &'a Dispatcher,
 }
@@ -88,20 +90,20 @@ impl CheckedTocProvider for StrictModeCheckedTocProvider<'_> {
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&Arc<TableOfContent>, Status> {
+    ) -> Result<&Arc<TableOfContent>, StorageError> {
         let pass =
             check_strict_mode(request, timeout, collection_name, self.dispatcher, access).await?;
         Ok(self.dispatcher.toc(access, &pass))
     }
 
-    async fn check_strict_mode_batch<'b, I, R>(
-        &'b self,
+    async fn check_strict_mode_batch<I, R>(
+        &self,
         requests: &[I],
         conv: impl Fn(&I) -> &R,
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status>
+    ) -> Result<&Arc<TableOfContent>, StorageError>
     where
         R: StrictModeVerification,
     {
@@ -138,19 +140,19 @@ impl CheckedTocProvider for StrictModeCheckedInternalTocProvider<'_> {
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&Arc<TableOfContent>, Status> {
+    ) -> Result<&Arc<TableOfContent>, StorageError> {
         check_strict_mode_toc(request, timeout, collection_name, self.toc, access).await?;
         Ok(self.toc)
     }
 
-    async fn check_strict_mode_batch<'b, I, R>(
-        &'b self,
+    async fn check_strict_mode_batch<I, R>(
+        &self,
         requests: &[I],
         conv: impl Fn(&I) -> &R,
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status>
+    ) -> Result<&Arc<TableOfContent>, StorageError>
     where
         R: StrictModeVerification,
     {
