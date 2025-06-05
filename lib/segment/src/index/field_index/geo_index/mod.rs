@@ -65,6 +65,12 @@ impl GeoMapIndex {
         }
     }
 
+    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
+        Ok(GeoMapIndex::Mutable(MutableGeoMapIndex::open_gridstore(
+            dir,
+        )?))
+    }
+
     pub fn builder(db: Arc<RwLock<DB>>, field: &str) -> GeoMapIndexBuilder {
         GeoMapIndexBuilder(Self::new_memory(db, field, true))
     }
@@ -78,12 +84,16 @@ impl GeoMapIndex {
         }
     }
 
-    pub fn mmap_builder(path: &Path, is_on_disk: bool) -> GeoMapIndexMmapBuilder {
+    pub fn builder_mmap(path: &Path, is_on_disk: bool) -> GeoMapIndexMmapBuilder {
         GeoMapIndexMmapBuilder {
             path: path.to_owned(),
             in_memory_index: InMemoryGeoMapIndex::new(),
             is_on_disk,
         }
+    }
+
+    pub fn builder_gridstore(dir: PathBuf) -> GeoMapIndexGridstoreBuilder {
+        GeoMapIndexGridstoreBuilder::new(dir)
     }
 
     fn points_count(&self) -> usize {
@@ -540,6 +550,55 @@ impl ValueIndexer for GeoMapIndex {
     }
 }
 
+pub struct GeoMapIndexGridstoreBuilder {
+    dir: PathBuf,
+    index: Option<GeoMapIndex>,
+}
+
+impl GeoMapIndexGridstoreBuilder {
+    fn new(dir: PathBuf) -> Self {
+        Self { dir, index: None }
+    }
+}
+
+impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
+    type FieldIndexType = GeoMapIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        assert!(
+            self.index.is_none(),
+            "index must be initialized exactly once",
+        );
+        self.index
+            .replace(GeoMapIndex::new_gridstore(self.dir.clone())?);
+        Ok(())
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "GeoMapIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.add_point(id, payload, hw_counter)
+    }
+
+    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+        let Some(index) = self.index.take() else {
+            return Err(OperationError::service_error(
+                "GeoMapIndexGridstoreBuilder: index must be initialized to finalize",
+            ));
+        };
+        index.flusher()()?;
+        Ok(index)
+    }
+}
+
 impl PayloadFieldIndex for GeoMapIndex {
     fn count_indexed_points(&self) -> usize {
         self.points_count()
@@ -805,9 +864,9 @@ mod tests {
             IndexType::Immutable => {
                 IndexBuilder::Immutable(GeoMapIndex::builder_immutable(db.clone(), FIELD_NAME))
             }
-            IndexType::Mmap => IndexBuilder::Mmap(GeoMapIndex::mmap_builder(temp_dir.path(), true)),
+            IndexType::Mmap => IndexBuilder::Mmap(GeoMapIndex::builder_mmap(temp_dir.path(), true)),
             IndexType::RamMmap => {
-                IndexBuilder::RamMmap(GeoMapIndex::mmap_builder(temp_dir.path(), false))
+                IndexBuilder::RamMmap(GeoMapIndex::builder_mmap(temp_dir.path(), false))
             }
         };
         match &mut builder {

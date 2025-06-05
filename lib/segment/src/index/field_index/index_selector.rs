@@ -8,7 +8,7 @@ use rocksdb::DB;
 use super::bool_index::BoolIndex;
 use super::bool_index::mmap_bool_index::MmapBoolIndex;
 use super::bool_index::simple_bool_index::SimpleBoolIndex;
-use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexMmapBuilder};
+use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use super::histogram::Numericable;
 use super::map_index::{
     MapIndex, MapIndexBuilder, MapIndexGridstoreBuilder, MapIndexKey, MapIndexMmapBuilder,
@@ -151,6 +151,7 @@ impl IndexSelector<'_> {
                     field,
                     FieldIndexBuilder::GeoIndex,
                     FieldIndexBuilder::GeoMmapIndex,
+                    FieldIndexBuilder::GeoGridstoreIndex,
                 )]
             }
             PayloadSchemaParams::Text(text_index_params) => {
@@ -276,11 +277,30 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 GeoMapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
-            // TODO(payload-index-gridstore): replace with Gridstore implementation
-            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
-                GeoMapIndex::new_memory(Arc::clone(db), &field.to_string(), true)
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+                GeoMapIndex::new_gridstore(map_dir(dir, field))?
             }
         })
+    }
+
+    fn geo_builder(
+        &self,
+        field: &JsonPath,
+        make_rocksdb: fn(GeoMapIndexBuilder) -> FieldIndexBuilder,
+        make_mmap: fn(GeoMapIndexMmapBuilder) -> FieldIndexBuilder,
+        make_gridstore: fn(GeoMapIndexGridstoreBuilder) -> FieldIndexBuilder,
+    ) -> FieldIndexBuilder {
+        match self {
+            IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => {
+                make_rocksdb(GeoMapIndex::builder(Arc::clone(db), &field.to_string()))
+            }
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                make_mmap(GeoMapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk))
+            }
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+                make_gridstore(GeoMapIndex::builder_gridstore(map_dir(dir, field)))
+            }
+        }
     }
 
     pub fn null_builder(dir: &Path, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
@@ -300,26 +320,6 @@ impl IndexSelector<'_> {
             MmapNullIndex::open_if_exists(&null_dir(dir, field), total_point_count)?
                 .map(FieldIndex::NullIndex),
         )
-    }
-
-    fn geo_builder(
-        &self,
-        field: &JsonPath,
-        make_rocksdb: fn(GeoMapIndexBuilder) -> FieldIndexBuilder,
-        make_mmap: fn(GeoMapIndexMmapBuilder) -> FieldIndexBuilder,
-    ) -> FieldIndexBuilder {
-        match self {
-            IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => {
-                make_rocksdb(GeoMapIndex::builder(Arc::clone(db), &field.to_string()))
-            }
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
-                make_mmap(GeoMapIndex::mmap_builder(&map_dir(dir, field), *is_on_disk))
-            }
-            // TODO(payload-index-gridstore): replace with Gridstore implementation
-            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
-                make_rocksdb(GeoMapIndex::builder(Arc::clone(db), &field.to_string()))
-            }
-        }
     }
 
     fn text_new(
