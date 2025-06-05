@@ -11,6 +11,7 @@ use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
 use chrono::DateTime;
@@ -20,7 +21,9 @@ use delegate::delegate;
 use gridstore::Blob;
 use mmap_numeric_index::MmapNumericIndex;
 use mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
+#[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
+#[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -173,6 +176,7 @@ impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default> NumericInde
 where
     Vec<T>: Blob,
 {
+    #[cfg(feature = "rocksdb")]
     pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         if is_appendable {
             NumericIndexInner::Mutable(MutableNumericIndex::open_rocksdb(db, field))
@@ -494,6 +498,7 @@ impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> NumericI
 where
     Vec<T>: Blob,
 {
+    #[cfg(feature = "rocksdb")]
     pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         Self {
             inner: NumericIndexInner::new_rocksdb(db, field, is_appendable),
@@ -516,6 +521,7 @@ where
         })
     }
 
+    #[cfg(feature = "rocksdb")]
     pub fn builder_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> NumericIndexBuilder<T, P>
     where
         Self: ValueIndexer<ValueType = P>,
@@ -523,7 +529,7 @@ where
         NumericIndexBuilder(Self::new_rocksdb(db, field, true))
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "rocksdb"))]
     pub fn builder_rocksdb_immutable(
         db: Arc<RwLock<DB>>,
         field: &str,
@@ -619,7 +625,7 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rocksdb"))]
 pub struct NumericIndexImmutableBuilder<
     T: Encodable + Numericable + MmapValue + Send + Sync + Default,
     P,
@@ -632,7 +638,7 @@ pub struct NumericIndexImmutableBuilder<
     db: Arc<RwLock<DB>>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rocksdb"))]
 impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> FieldIndexBuilderTrait
     for NumericIndexImmutableBuilder<T, P>
 where
@@ -1164,6 +1170,7 @@ where
     }
 }
 
+#[cfg(feature = "rocksdb")]
 fn numeric_index_storage_cf_name(field: &str) -> String {
     format!("{field}_numeric")
 }
