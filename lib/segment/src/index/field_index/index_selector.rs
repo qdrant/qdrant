@@ -10,7 +10,9 @@ use super::bool_index::mmap_bool_index::MmapBoolIndex;
 use super::bool_index::simple_bool_index::SimpleBoolIndex;
 use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexMmapBuilder};
 use super::histogram::Numericable;
-use super::map_index::{MapIndex, MapIndexBuilder, MapIndexKey, MapIndexMmapBuilder};
+use super::map_index::{
+    MapIndex, MapIndexBuilder, MapIndexGridstoreBuilder, MapIndexKey, MapIndexMmapBuilder,
+};
 use super::mmap_point_to_values::MmapValue;
 use super::numeric_index::{
     Encodable, NumericIndexBuilder, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue,
@@ -114,6 +116,7 @@ impl IndexSelector<'_> {
                     field,
                     FieldIndexBuilder::KeywordIndex,
                     FieldIndexBuilder::KeywordMmapIndex,
+                    FieldIndexBuilder::KeywordGridstoreIndex,
                 )]
             }
             PayloadSchemaParams::Integer(integer_params) => itertools::chain(
@@ -122,6 +125,7 @@ impl IndexSelector<'_> {
                         field,
                         FieldIndexBuilder::IntMapIndex,
                         FieldIndexBuilder::IntMapMmapIndex,
+                        FieldIndexBuilder::IntMapGridstoreIndex,
                     )
                 }),
                 integer_params.range.unwrap_or(true).then(|| {
@@ -168,6 +172,7 @@ impl IndexSelector<'_> {
                     field,
                     FieldIndexBuilder::UuidIndex,
                     FieldIndexBuilder::UuidMmapIndex,
+                    FieldIndexBuilder::UuidGridstoreIndex,
                 )]
             }
         };
@@ -175,7 +180,10 @@ impl IndexSelector<'_> {
         Ok(builders)
     }
 
-    fn map_new<N: MapIndexKey + ?Sized>(&self, field: &JsonPath) -> OperationResult<MapIndex<N>> {
+    fn map_new<N: MapIndexKey + ?Sized>(&self, field: &JsonPath) -> OperationResult<MapIndex<N>>
+    where
+        Vec<N::Owned>: Blob + Send + Sync,
+    {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 MapIndex::new_rocksdb(Arc::clone(db), &field.to_string(), *is_appendable)
@@ -183,9 +191,8 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
-            // TODO(payload-index-gridstore): replace with Gridstore implementation
-            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
-                MapIndex::new_rocksdb(Arc::clone(db), &field.to_string(), true)
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+                MapIndex::new_gridstore(map_dir(dir, field))?
             }
         })
     }
@@ -195,7 +202,11 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         make_rocksdb: fn(MapIndexBuilder<N>) -> FieldIndexBuilder,
         make_mmap: fn(MapIndexMmapBuilder<N>) -> FieldIndexBuilder,
-    ) -> FieldIndexBuilder {
+        make_gridstore: fn(MapIndexGridstoreBuilder<N>) -> FieldIndexBuilder,
+    ) -> FieldIndexBuilder
+    where
+        Vec<N::Owned>: Blob + Send + Sync,
+    {
         match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => make_rocksdb(
                 MapIndex::builder_rocksdb(Arc::clone(db), &field.to_string()),
@@ -203,10 +214,9 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 make_mmap(MapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk))
             }
-            // TODO(payload-index-gridstore): replace with Gridstore implementation
-            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => make_rocksdb(
-                MapIndex::builder_rocksdb(Arc::clone(db), &field.to_string()),
-            ),
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+                make_gridstore(MapIndex::builder_gridstore(map_dir(dir, field)))
+            }
         }
     }
 

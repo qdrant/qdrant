@@ -6,6 +6,16 @@ pub trait Blob {
     fn from_bytes(bytes: &[u8]) -> Self;
 }
 
+impl Blob for Vec<ecow::EcoString> {
+    fn to_bytes(&self) -> Vec<u8> {
+        serde_cbor::to_vec(self).expect("Failed to serialize Vec<ecow::EcoString>")
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        serde_cbor::from_slice(bytes).expect("Failed to deserialize Vec<ecow::EcoString>")
+    }
+}
+
 macro_rules! impl_blob_vec_zerocopy {
     ($type:ty) => {
         impl Blob for Vec<$type>

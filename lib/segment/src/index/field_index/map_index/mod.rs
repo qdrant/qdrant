@@ -12,6 +12,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
 use ecow::EcoString;
+use gridstore::Blob;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use mmap_map_index::MmapMapIndex;
@@ -43,13 +44,23 @@ pub mod immutable_map_index;
 pub mod mmap_map_index;
 pub mod mutable_map_index;
 
+/// Block size in Gridstore for keyword map index.
+/// Keyword(s) are stored as cbor vector.
+/// - "text" - 6 bytes
+/// - "some", "text", "here" - 16 bytes
+pub(super) const BLOCK_SIZE_KEYWORD: usize = 16;
+
 pub type IdRefIter<'a> = Box<dyn Iterator<Item = &'a PointOffsetType> + 'a>;
 pub type IdIter<'a> = Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
 pub trait MapIndexKey: Key + MmapValue + Eq + Display + Debug {
-    type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default;
+    type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default + 'static;
 
     fn to_owned(&self) -> Self::Owned;
+
+    fn gridstore_block_size() -> usize {
+        size_of::<Self::Owned>()
+    }
 }
 
 impl MapIndexKey for str {
@@ -57,6 +68,10 @@ impl MapIndexKey for str {
 
     fn to_owned(&self) -> Self::Owned {
         EcoString::from(self)
+    }
+
+    fn gridstore_block_size() -> usize {
+        BLOCK_SIZE_KEYWORD
     }
 }
 
@@ -76,16 +91,22 @@ impl MapIndexKey for UuidIntType {
     }
 }
 
-pub enum MapIndex<N: MapIndexKey + ?Sized> {
+pub enum MapIndex<N: MapIndexKey + ?Sized>
+where
+    Vec<N::Owned>: Blob + Send + Sync,
+{
     Mutable(MutableMapIndex<N>),
     Immutable(ImmutableMapIndex<N>),
     Mmap(Box<MmapMapIndex<N>>),
 }
 
-impl<N: MapIndexKey + ?Sized> MapIndex<N> {
+impl<N: MapIndexKey + ?Sized> MapIndex<N>
+where
+    Vec<N::Owned>: Blob + Send + Sync,
+{
     pub fn new_rocksdb(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
         if is_appendable {
-            MapIndex::Mutable(MutableMapIndex::new(db, field_name))
+            MapIndex::Mutable(MutableMapIndex::open_rocksdb(db, field_name))
         } else {
             MapIndex::Immutable(ImmutableMapIndex::open_rocksdb(db, field_name))
         }
@@ -105,8 +126,14 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
+    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
+        Ok(MapIndex::Mutable(MutableMapIndex::open_gridstore(dir)?))
+    }
+
     pub fn builder_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
-        MapIndexBuilder(MapIndex::Mutable(MutableMapIndex::new(db, field_name)))
+        MapIndexBuilder(MapIndex::Mutable(MutableMapIndex::open_rocksdb(
+            db, field_name,
+        )))
     }
 
     pub fn builder_mmap(path: &Path, is_on_disk: bool) -> MapIndexMmapBuilder<N> {
@@ -116,6 +143,10 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             values_to_points: Default::default(),
             is_on_disk,
         }
+    }
+
+    pub fn builder_gridstore(dir: PathBuf) -> MapIndexGridstoreBuilder<N> {
+        MapIndexGridstoreBuilder::new(dir)
     }
 
     fn load(&mut self) -> OperationResult<bool> {
@@ -236,7 +267,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     fn flusher(&self) -> Flusher {
         match self {
-            MapIndex::Mutable(index) => index.db_wrapper().flusher(),
+            MapIndex::Mutable(index) => index.flusher(),
             MapIndex::Immutable(index) => index.flusher(),
             MapIndex::Mmap(index) => index.flusher(),
         }
@@ -293,7 +324,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     fn clear(self) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.db_wrapper().remove_column_family(),
+            MapIndex::Mutable(index) => index.clear(),
             MapIndex::Immutable(index) => index.clear(),
             MapIndex::Mmap(index) => index.clear(),
         }
@@ -312,7 +343,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     fn files(&self) -> Vec<PathBuf> {
         match self {
-            MapIndex::Mutable(_) => vec![],
+            MapIndex::Mutable(index) => index.files(),
             MapIndex::Immutable(index) => index.files(),
             MapIndex::Mmap(index) => index.files(),
         }
@@ -470,7 +501,8 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(_) => {} // Not a mmap
+            // Only clears backing mmap storage if used, not in-memory representation
+            MapIndex::Mutable(index) => index.clear_cache()?,
             // Only clears backing mmap storage if used, not in-memory representation
             MapIndex::Immutable(index) => index.clear_cache()?,
             MapIndex::Mmap(index) => index.clear_cache()?,
@@ -479,17 +511,20 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     }
 }
 
-pub struct MapIndexBuilder<N: MapIndexKey + ?Sized>(MapIndex<N>);
+pub struct MapIndexBuilder<N: MapIndexKey + ?Sized>(MapIndex<N>)
+where
+    Vec<N::Owned>: Blob + Send + Sync;
 
 impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexBuilder<N>
 where
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
+    Vec<N::Owned>: Blob + Send + Sync,
 {
     type FieldIndexType = MapIndex<N>;
 
     fn init(&mut self) -> OperationResult<()> {
         match &mut self.0 {
-            MapIndex::Mutable(index) => index.db_wrapper().recreate_column_family(),
+            MapIndex::Mutable(index) => index.clear(),
             MapIndex::Immutable(_) => unreachable!(),
             MapIndex::Mmap(_) => unreachable!(),
         }
@@ -518,6 +553,7 @@ pub struct MapIndexMmapBuilder<N: MapIndexKey + ?Sized> {
 
 impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexMmapBuilder<N>
 where
+    Vec<N::Owned>: Blob + Send + Sync,
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
     <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
 {
@@ -572,6 +608,66 @@ where
             self.values_to_points,
             self.is_on_disk,
         )?)))
+    }
+}
+
+pub struct MapIndexGridstoreBuilder<N: MapIndexKey + ?Sized>
+where
+    Vec<N::Owned>: Blob + Send + Sync,
+{
+    dir: PathBuf,
+    index: Option<MapIndex<N>>,
+}
+
+impl<N: MapIndexKey + ?Sized> MapIndexGridstoreBuilder<N>
+where
+    Vec<N::Owned>: Blob + Send + Sync,
+{
+    fn new(dir: PathBuf) -> Self {
+        Self { dir, index: None }
+    }
+}
+
+impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexGridstoreBuilder<N>
+where
+    Vec<N::Owned>: Blob + Send + Sync,
+    MapIndex<N>: PayloadFieldIndex + ValueIndexer,
+    <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
+{
+    type FieldIndexType = MapIndex<N>;
+
+    fn init(&mut self) -> OperationResult<()> {
+        assert!(
+            self.index.is_none(),
+            "index must be initialized exactly once",
+        );
+        self.index
+            .replace(MapIndex::new_gridstore(self.dir.clone())?);
+        Ok(())
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "MapIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.add_point(id, payload, hw_counter)
+    }
+
+    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+        let Some(index) = self.index.take() else {
+            return Err(OperationError::service_error(
+                "MapIndexGridstoreBuilder: index must be initialized to finalize",
+            ));
+        };
+        index.flusher()()?;
+        Ok(index)
     }
 }
 
@@ -1064,9 +1160,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 }
 
-impl<N> FacetIndex for MapIndex<N>
+impl<N: MapIndexKey + ?Sized> FacetIndex for MapIndex<N>
 where
-    N: MapIndexKey + ?Sized,
+    Vec<N::Owned>: Blob + Send + Sync,
     for<'a> N::Referenced<'a>: Into<FacetValueRef<'a>>,
     for<'a> &'a N: Into<FacetValueRef<'a>>,
 {
@@ -1209,6 +1305,7 @@ mod tests {
     #[derive(Clone, Copy)]
     enum IndexType {
         Mutable,
+        MutableGridstore,
         Immutable,
         Mmap,
         RamMmap,
@@ -1221,6 +1318,7 @@ mod tests {
         into_value: impl Fn(&N::Owned) -> Value,
     ) where
         N: MapIndexKey + ?Sized,
+        Vec<N::Owned>: Blob + Send + Sync,
         MapIndex<N>: PayloadFieldIndex + ValueIndexer,
         <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
     {
@@ -1232,6 +1330,18 @@ mod tests {
                     open_db_with_existing_cf(path).unwrap(),
                     FIELD_NAME,
                 );
+                builder.init().unwrap();
+                for (idx, values) in data.iter().enumerate() {
+                    let values: Vec<Value> = values.iter().map(&into_value).collect();
+                    let values: Vec<_> = values.iter().collect();
+                    builder
+                        .add_point(idx as PointOffsetType, &values, &hw_counter)
+                        .unwrap();
+                }
+                builder.finalize().unwrap();
+            }
+            IndexType::MutableGridstore => {
+                let mut builder = MapIndex::<N>::builder_gridstore(path.to_path_buf());
                 builder.init().unwrap();
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -1261,13 +1371,19 @@ mod tests {
         data: &[Vec<N::Owned>],
         path: &Path,
         index_type: IndexType,
-    ) -> MapIndex<N> {
+    ) -> MapIndex<N>
+    where
+        Vec<N::Owned>: Blob + Send + Sync,
+    {
         let mut index = match index_type {
             IndexType::Mutable => MapIndex::<N>::new_rocksdb(
                 open_db_with_existing_cf(path).unwrap(),
                 FIELD_NAME,
                 true,
             ),
+            IndexType::MutableGridstore => {
+                MapIndex::<N>::new_gridstore(path.to_path_buf()).unwrap()
+            }
             IndexType::Immutable => MapIndex::<N>::new_rocksdb(
                 open_db_with_existing_cf(path).unwrap(),
                 FIELD_NAME,
@@ -1322,6 +1438,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1350,6 +1467,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1394,6 +1512,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]

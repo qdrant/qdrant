@@ -12,7 +12,7 @@ use super::facet_index::FacetIndexEnum;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use super::full_text_index::text_index::{FullTextIndex, FullTextIndexBuilder};
 use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexMmapBuilder};
-use super::map_index::{MapIndex, MapIndexBuilder, MapIndexMmapBuilder};
+use super::map_index::{MapIndex, MapIndexBuilder, MapIndexGridstoreBuilder, MapIndexMmapBuilder};
 use super::numeric_index::{
     NumericIndex, NumericIndexBuilder, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder,
     StreamRange,
@@ -514,8 +514,10 @@ pub enum FieldIndexBuilder {
     DatetimeGridstoreIndex(NumericIndexGridstoreBuilder<IntPayloadType, DateTimePayloadType>),
     IntMapIndex(MapIndexBuilder<IntPayloadType>),
     IntMapMmapIndex(MapIndexMmapBuilder<IntPayloadType>),
+    IntMapGridstoreIndex(MapIndexGridstoreBuilder<IntPayloadType>),
     KeywordIndex(MapIndexBuilder<str>),
     KeywordMmapIndex(MapIndexMmapBuilder<str>),
+    KeywordGridstoreIndex(MapIndexGridstoreBuilder<str>),
     FloatIndex(NumericIndexBuilder<FloatPayloadType, FloatPayloadType>),
     FloatMmapIndex(NumericIndexMmapBuilder<FloatPayloadType, FloatPayloadType>),
     FloatGridstoreIndex(NumericIndexGridstoreBuilder<FloatPayloadType, FloatPayloadType>),
@@ -527,6 +529,7 @@ pub enum FieldIndexBuilder {
     BoolMmapIndex(MmapBoolIndexBuilder),
     UuidIndex(MapIndexBuilder<UuidIntType>),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
+    UuidGridstoreIndex(MapIndexGridstoreBuilder<UuidIntType>),
     NullIndex(MmapNullIndexBuilder),
 }
 
@@ -543,8 +546,10 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::DatetimeGridstoreIndex(index) => index.init(),
             Self::IntMapIndex(index) => index.init(),
             Self::IntMapMmapIndex(index) => index.init(),
+            Self::IntMapGridstoreIndex(index) => index.init(),
             Self::KeywordIndex(index) => index.init(),
             Self::KeywordMmapIndex(index) => index.init(),
+            Self::KeywordGridstoreIndex(index) => index.init(),
             Self::FloatIndex(index) => index.init(),
             Self::FloatMmapIndex(index) => index.init(),
             Self::FloatGridstoreIndex(index) => index.init(),
@@ -556,6 +561,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FullTextMmapIndex(builder) => builder.init(),
             Self::UuidIndex(index) => index.init(),
             Self::UuidMmapIndex(index) => index.init(),
+            Self::UuidGridstoreIndex(index) => index.init(),
             Self::NullIndex(index) => index.init(),
         }
     }
@@ -575,8 +581,10 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::DatetimeGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
             Self::IntMapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::IntMapMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::IntMapGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
             Self::KeywordIndex(index) => index.add_point(id, payload, hw_counter),
             Self::KeywordMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::KeywordGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
             Self::FloatIndex(index) => index.add_point(id, payload, hw_counter),
             Self::FloatMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::FloatGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
@@ -590,6 +598,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             }
             Self::UuidIndex(index) => index.add_point(id, payload, hw_counter),
             Self::UuidMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::UuidGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
             Self::NullIndex(index) => index.add_point(id, payload, hw_counter),
         }
     }
@@ -604,8 +613,10 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::DatetimeGridstoreIndex(index) => FieldIndex::DatetimeIndex(index.finalize()?),
             Self::IntMapIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
             Self::IntMapMmapIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
+            Self::IntMapGridstoreIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
             Self::KeywordIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
             Self::KeywordMmapIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
+            Self::KeywordGridstoreIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
             Self::FloatIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
             Self::FloatMmapIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
             Self::FloatGridstoreIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
@@ -617,6 +628,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::UuidIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
+            Self::UuidGridstoreIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::NullIndex(index) => FieldIndex::NullIndex(index.finalize()?),
         })
     }
