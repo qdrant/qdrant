@@ -245,6 +245,6 @@ def upsert(peer_url: str, points: int, offset = 0):
 
 def delete(peer_url: str, until_id: int, from_id = 0):
     resp = requests.post(f"{peer_url}/collections/{COLLECTION}/points/delete?wait=true", json = {
-        "points": [id for id in range(from_id, until_id)],
+        "points": list(range(from_id, until_id)),
     })
     assert_http_ok(resp)
