@@ -387,12 +387,12 @@ impl IndexSelector<'_> {
                     *is_on_disk,
                 )?))
             }
-            // TODO(payload-index-gridstore): replace with Gridstore implementation
-            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
-                Ok(FieldIndexBuilder::BoolIndex(SimpleBoolIndex::builder(
-                    Arc::clone(db),
-                    &field.to_string(),
-                )))
+            // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+                let dir = bool_dir(dir, field);
+                Ok(FieldIndexBuilder::BoolMmapIndex(MmapBoolIndex::builder(
+                    &dir, false,
+                )?))
             }
         }
     }
@@ -413,12 +413,10 @@ impl IndexSelector<'_> {
                     *is_on_disk,
                 )?))
             }
-            // TODO(payload-index-gridstore): replace with Gridstore implementation
-            IndexSelector::Gridstore(IndexSelectorGridstore { db, dir: _ }) => {
-                FieldIndex::BoolIndex(BoolIndex::Simple(SimpleBoolIndex::new(
-                    Arc::clone(db),
-                    &field.to_string(),
-                )))
+            // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+                let dir = bool_dir(dir, field);
+                FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open_or_create(&dir, false)?))
             }
         })
     }
