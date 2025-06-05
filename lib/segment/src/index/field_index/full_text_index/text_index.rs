@@ -494,7 +494,6 @@ impl ValueIndexer for FullTextGridstoreIndexBuilder {
         values: Vec<Self::ValueType>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        // TODO: skip these intermediate conversions!
         let values: Vec<Value> = values.into_iter().map(Value::String).collect();
         let values: Vec<&Value> = values.iter().collect();
         FieldIndexBuilderTrait::add_point(self, id, &values, hw_counter)
