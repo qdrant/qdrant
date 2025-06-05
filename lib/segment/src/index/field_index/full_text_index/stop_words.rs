@@ -193,9 +193,7 @@ mod tests {
             let filter = StopwordsFilter::new(&option);
             assert!(
                 filter.is_stopword(stopword),
-                "Expected '{}' to be a stopword in {:?}",
-                stopword,
-                language
+                "Expected '{stopword}' to be a stopword in {language:?}"
             );
             assert!(
                 !filter.is_stopword("qdrant"),
