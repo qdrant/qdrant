@@ -272,8 +272,9 @@ impl MutableFullTextIndex {
                 }
             }
             Storage::Gridstore(store) => {
-                self.inverted_index.remove(id);
-                store.write().delete_value(id);
+                if self.inverted_index.remove(id) {
+                    store.write().delete_value(id);
+                }
             }
         }
 

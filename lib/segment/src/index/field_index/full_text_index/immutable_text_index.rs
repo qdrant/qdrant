@@ -142,7 +142,7 @@ impl ImmutableFullTextIndex {
             Storage::RocksDb(_) => Ok(()),
             Storage::Mmap(index) => index.clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
-                    "Failed to clear mutable numeric index gridstore cache: {err}"
+                    "Failed to clear immutable full text index gridstore cache: {err}"
                 ))
             }),
         }
