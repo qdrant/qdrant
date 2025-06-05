@@ -565,10 +565,18 @@ mod tests {
     use crate::types::ValuesCount;
 
     const FIELD_NAME: &str = "test";
+    const TYPES: [IndexType; 5] = [
+        IndexType::Mutable,
+        IndexType::MutableGridstore,
+        IndexType::Immutable,
+        IndexType::Mmap,
+        IndexType::RamMmap,
+    ];
 
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum IndexType {
         Mutable,
+        MutableGridstore,
         Immutable,
         Mmap,
         RamMmap,
@@ -576,6 +584,7 @@ mod tests {
 
     enum IndexBuilder {
         Mutable(FullTextIndexBuilder),
+        MutableGridstore(FullTextGridstoreIndexBuilder),
         Immutable(FullTextIndexBuilder),
         Mmap(FullTextMmapIndexBuilder),
         RamMmap(FullTextMmapIndexBuilder),
@@ -590,6 +599,9 @@ mod tests {
         ) -> OperationResult<()> {
             match self {
                 IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
+                IndexBuilder::MutableGridstore(builder) => {
+                    FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+                }
                 IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::Mmap(builder) => {
                     FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
@@ -603,6 +615,7 @@ mod tests {
         fn finalize(self) -> OperationResult<FullTextIndex> {
             match self {
                 IndexBuilder::Mutable(builder) => builder.finalize(),
+                IndexBuilder::MutableGridstore(builder) => builder.finalize(),
                 IndexBuilder::Immutable(builder) => {
                     let FullTextIndex::Mutable(index) = builder.finalize()? else {
                         panic!("expected mutable index");
@@ -652,6 +665,9 @@ mod tests {
                 config,
                 FIELD_NAME,
             )),
+            IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
+                FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config),
+            ),
             IndexType::Immutable => IndexBuilder::Immutable(FullTextIndex::builder_rocksdb(
                 db.clone(),
                 config,
@@ -670,6 +686,7 @@ mod tests {
         };
         match &mut builder {
             IndexBuilder::Mutable(builder) => builder.init().unwrap(),
+            IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
             IndexBuilder::Immutable(builder) => builder.init().unwrap(),
             IndexBuilder::Mmap(builder) => builder.init().unwrap(),
             IndexBuilder::RamMmap(builder) => builder.init().unwrap(),
@@ -759,12 +776,6 @@ mod tests {
 
         use crate::json_path::JsonPath;
 
-        const TYPES: [IndexType; 4] = [
-            IndexType::Mutable,
-            IndexType::Immutable,
-            IndexType::Mmap,
-            IndexType::RamMmap,
-        ];
         const POINT_COUNT: usize = 500;
         const KEYWORD_COUNT: usize = 5;
         const KEYWORD_LEN: usize = 2;

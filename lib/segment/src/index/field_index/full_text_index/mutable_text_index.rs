@@ -243,10 +243,6 @@ impl MutableFullTextIndex {
             Storage::RocksDb(db_wrapper) => {
                 db_wrapper.put(db_idx, db_document)?;
             }
-            // We cannot store empty value, then delete instead
-            Storage::Gridstore(store) if db_document.is_empty() => {
-                store.write().delete_value(idx);
-            }
             Storage::Gridstore(store) => {
                 let hw_counter = HardwareCounterCell::disposable();
                 store
