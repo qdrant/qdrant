@@ -9,6 +9,7 @@ use parking_lot::RwLock;
 
 use super::inverted_index::{Document, InvertedIndex, TokenSet};
 use super::mutable_inverted_index::MutableInvertedIndex;
+use super::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::text_index::FullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
@@ -114,25 +115,23 @@ impl MutableFullTextIndex {
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
-        // TODO: remove intermediate buffer and iterator!
-        let mut iter: Vec<(PointOffsetType, Vec<u8>)> = vec![];
+        let mut builder = MutableInvertedIndexBuilder::default();
         store
             .read()
-            .iter::<_, ()>(
+            .iter::<_, OperationError>(
                 |idx, value| {
-                    iter.push((idx, value.clone()));
+                    let tokens = FullTextIndex::deserialize_document(value)?;
+                    builder.add(idx, tokens);
                     Ok(true)
                 },
                 hw_counter_ref,
             )
-            // unwrap safety: never returns an error
-            .unwrap();
-        let iter = iter.into_iter().map(|(idx, value)| {
-            let tokens = FullTextIndex::deserialize_document(&value)?;
-            Ok((idx, tokens))
-        });
-
-        self.inverted_index = MutableInvertedIndex::build_index(iter)?;
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to load mutable full text index from gridstore: {err}"
+                ))
+            })?;
+        self.inverted_index = builder.build();
 
         Ok(true)
     }
