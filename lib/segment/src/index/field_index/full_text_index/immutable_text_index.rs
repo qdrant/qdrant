@@ -4,6 +4,7 @@ use common::types::PointOffsetType;
 
 use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
 use super::inverted_index::InvertedIndex;
+#[cfg(feature = "rocksdb")]
 use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::mmap_text_index::MmapFullTextIndex;
 #[cfg(feature = "rocksdb")]
