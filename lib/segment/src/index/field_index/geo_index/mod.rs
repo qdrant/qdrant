@@ -48,7 +48,7 @@ impl GeoMapIndex {
     pub fn new_memory(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         let store_cf_name = GeoMapIndex::storage_cf_name(field);
         if is_appendable {
-            GeoMapIndex::Mutable(MutableGeoMapIndex::new(db, &store_cf_name))
+            GeoMapIndex::Mutable(MutableGeoMapIndex::open_rocksdb(db, &store_cf_name))
         } else {
             GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_rocksdb(db, &store_cf_name))
         }
@@ -187,14 +187,6 @@ impl GeoMapIndex {
         result[0..8].clone_from_slice(&value.lat.to_be_bytes());
         result[8..16].clone_from_slice(&value.lon.to_be_bytes());
         result
-    }
-
-    pub fn flusher(&self) -> Flusher {
-        match self {
-            GeoMapIndex::Mutable(index) => index.db_wrapper().flusher(),
-            GeoMapIndex::Immutable(index) => index.flusher(),
-            GeoMapIndex::Mmap(index) => index.flusher(),
-        }
     }
 
     pub fn check_values_any(
@@ -385,11 +377,12 @@ impl GeoMapIndex {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            GeoMapIndex::Mutable(_) => {}   // Not a mmap
-            GeoMapIndex::Immutable(_) => {} // Not a mmap
-            GeoMapIndex::Mmap(index) => index.clear_cache()?,
+            // Only clears backing mmap storage if used, not in-memory representation
+            GeoMapIndex::Mutable(index) => index.clear_cache(),
+            // Only clears backing mmap storage if used, not in-memory representation
+            GeoMapIndex::Immutable(index) => index.clear_cache(),
+            GeoMapIndex::Mmap(index) => index.clear_cache(),
         }
-        Ok(())
     }
 }
 
@@ -400,7 +393,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexBuilder {
 
     fn init(&mut self) -> OperationResult<()> {
         match &self.0 {
-            GeoMapIndex::Mutable(index) => index.db_wrapper().recreate_column_family(),
+            GeoMapIndex::Mutable(index) => index.clear(),
             GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Cannot use immutable index as a builder type",
             )),
@@ -437,7 +430,7 @@ impl FieldIndexBuilderTrait for GeoMapImmutableIndexBuilder {
 
     fn init(&mut self) -> OperationResult<()> {
         match &self.index {
-            GeoMapIndex::Mutable(index) => index.db_wrapper().recreate_column_family(),
+            GeoMapIndex::Mutable(index) => index.clear(),
             GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Cannot use immutable index as a builder type",
             )),
@@ -563,19 +556,23 @@ impl PayloadFieldIndex for GeoMapIndex {
 
     fn cleanup(self) -> OperationResult<()> {
         match self {
-            GeoMapIndex::Mutable(index) => index.db_wrapper().remove_column_family(),
+            GeoMapIndex::Mutable(index) => index.clear(),
             GeoMapIndex::Immutable(index) => index.clear(),
             GeoMapIndex::Mmap(index) => index.clear(),
         }
     }
 
     fn flusher(&self) -> Flusher {
-        GeoMapIndex::flusher(self)
+        match self {
+            GeoMapIndex::Mutable(index) => index.flusher(),
+            GeoMapIndex::Immutable(index) => index.flusher(),
+            GeoMapIndex::Mmap(index) => index.flusher(),
+        }
     }
 
     fn files(&self) -> Vec<PathBuf> {
         match &self {
-            GeoMapIndex::Mutable(_) => vec![],
+            GeoMapIndex::Mutable(index) => index.files(),
             GeoMapIndex::Immutable(index) => index.files(),
             GeoMapIndex::Mmap(index) => index.files(),
         }

@@ -112,8 +112,10 @@ impl ImmutableGeoMapIndex {
             ));
         };
 
-        let mut mutable_geo_index =
-            MutableGeoMapIndex::new(db_wrapper.get_database(), db_wrapper.get_column_name());
+        let mut mutable_geo_index = MutableGeoMapIndex::open_rocksdb(
+            db_wrapper.get_database(),
+            db_wrapper.get_column_name(),
+        );
         let result = mutable_geo_index.load()?;
 
         let InMemoryGeoMapIndex {
@@ -268,6 +270,21 @@ impl ImmutableGeoMapIndex {
         match self.storage {
             Storage::RocksDb(_) => vec![],
             Storage::Mmap(ref index) => index.files(),
+        }
+    }
+
+    /// Clear cache
+    ///
+    /// Only clears cache of mmap storage if used. Does not clear in-memory representation of
+    /// index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match &self.storage {
+            Storage::RocksDb(_) => Ok(()),
+            Storage::Mmap(index) => index.clear_cache().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to clear immutable geo index gridstore cache: {err}"
+                ))
+            }),
         }
     }
 
