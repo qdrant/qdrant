@@ -387,6 +387,7 @@ impl StructPayloadIndex {
             .collect()
     }
 
+    #[cfg(feature = "rocksdb")]
     pub fn restore_database_snapshot(
         snapshot_path: &Path,
         segment_path: &Path,

@@ -38,7 +38,9 @@ pub const SEGMENT_STATE_FILE: &str = "segment.json";
 const SNAPSHOT_PATH: &str = "snapshot";
 
 // Sub-directories of `SNAPSHOT_PATH`:
+#[cfg(feature = "rocksdb")]
 const DB_BACKUP_PATH: &str = "db_backup";
+#[cfg(feature = "rocksdb")]
 const PAYLOAD_DB_BACKUP_PATH: &str = "payload_index_db_backup";
 const SNAPSHOT_FILES_PATH: &str = "files";
 

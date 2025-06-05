@@ -9,10 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 
-use super::{
-    DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH,
-    Segment,
-};
+use super::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};
 use crate::common::operation_error::{
     OperationError, OperationResult, SegmentFailedState, get_service_error,
 };
@@ -21,7 +18,6 @@ use crate::common::{check_named_vectors, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorInternal;
 use crate::entry::entry_point::SegmentEntry;
-use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::types::{
     Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,
@@ -709,16 +705,22 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
 }
 
 fn unpack_snapshot(segment_path: &Path) -> OperationResult<()> {
-    let db_backup_path = segment_path.join(DB_BACKUP_PATH);
-    if db_backup_path.is_dir() {
-        crate::rocksdb_backup::restore(&db_backup_path, segment_path)?;
-        std::fs::remove_dir_all(&db_backup_path)?;
-    }
+    #[cfg(feature = "rocksdb")]
+    {
+        use super::{DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH};
+        use crate::index::struct_payload_index::StructPayloadIndex;
 
-    let payload_index_db_backup = segment_path.join(PAYLOAD_DB_BACKUP_PATH);
-    if payload_index_db_backup.is_dir() {
-        StructPayloadIndex::restore_database_snapshot(&payload_index_db_backup, segment_path)?;
-        std::fs::remove_dir_all(&payload_index_db_backup)?;
+        let db_backup_path = segment_path.join(DB_BACKUP_PATH);
+        if db_backup_path.is_dir() {
+            crate::rocksdb_backup::restore(&db_backup_path, segment_path)?;
+            std::fs::remove_dir_all(&db_backup_path)?;
+        }
+
+        let payload_index_db_backup = segment_path.join(PAYLOAD_DB_BACKUP_PATH);
+        if payload_index_db_backup.is_dir() {
+            StructPayloadIndex::restore_database_snapshot(&payload_index_db_backup, segment_path)?;
+            std::fs::remove_dir_all(&payload_index_db_backup)?;
+        }
     }
 
     let files_path = segment_path.join(SNAPSHOT_FILES_PATH);
