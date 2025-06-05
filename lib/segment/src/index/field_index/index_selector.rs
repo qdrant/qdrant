@@ -55,10 +55,6 @@ pub struct IndexSelectorMmap<'a> {
 #[derive(Copy, Clone)]
 pub struct IndexSelectorGridstore<'a> {
     pub dir: &'a Path,
-
-    // Temporary fallback to RocksDB for indices that don't support Gridstore yet
-    // TODO(payload-index-gridstore): remove once all indices use Gridstore
-    pub db: &'a Arc<RwLock<DB>>,
 }
 
 impl IndexSelector<'_> {
@@ -192,7 +188,7 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 MapIndex::new_gridstore(map_dir(dir, field))?
             }
         })
@@ -215,7 +211,7 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 make_mmap(MapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk))
             }
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 make_gridstore(MapIndex::builder_gridstore(map_dir(dir, field)))
             }
         }
@@ -235,7 +231,7 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk)?
             }
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 NumericIndex::new_gridstore(numeric_dir(dir, field))?
             }
         })
@@ -263,7 +259,7 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => make_mmap(
                 NumericIndex::builder_mmap(&numeric_dir(dir, field), *is_on_disk),
             ),
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 make_gridstore(NumericIndex::builder_gridstore(numeric_dir(dir, field)))
             }
         }
@@ -277,7 +273,7 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 GeoMapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 GeoMapIndex::new_gridstore(map_dir(dir, field))?
             }
         })
@@ -297,7 +293,7 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 make_mmap(GeoMapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk))
             }
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 make_gridstore(GeoMapIndex::builder_gridstore(map_dir(dir, field)))
             }
         }
@@ -339,7 +335,7 @@ impl IndexSelector<'_> {
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 FullTextIndex::new_mmap(text_dir(dir, field), config, *is_on_disk)?
             }
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 FullTextIndex::new_gridstore(text_dir(dir, field), config)?
             }
         })
@@ -362,7 +358,7 @@ impl IndexSelector<'_> {
                     *is_on_disk,
                 ))
             }
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 FieldIndexBuilder::FullTextGridstoreIndex(FullTextIndex::builder_gridstore(
                     text_dir(dir, field),
                     config,
@@ -388,7 +384,7 @@ impl IndexSelector<'_> {
                 )?))
             }
             // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 let dir = bool_dir(dir, field);
                 Ok(FieldIndexBuilder::BoolMmapIndex(MmapBoolIndex::builder(
                     &dir, false,
@@ -414,7 +410,7 @@ impl IndexSelector<'_> {
                 )?))
             }
             // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir, db: _ }) => {
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 let dir = bool_dir(dir, field);
                 FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open_or_create(&dir, false)?))
             }

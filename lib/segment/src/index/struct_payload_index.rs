@@ -437,10 +437,7 @@ impl StructPayloadIndex {
         match &self.storage_type {
             StorageType::Appendable(db) => {
                 if feature_flags().payload_index_skip_mutable_rocksdb {
-                    IndexSelector::Gridstore(IndexSelectorGridstore {
-                        dir: &self.path,
-                        db,
-                    })
+                    IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
                 } else {
                     IndexSelector::RocksDb(IndexSelectorRocksDb {
                         db,
