@@ -20,9 +20,8 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 /// Default options for Gridstore storage
 const fn default_gridstore_options(block_size: usize) -> StorageOptions {
     StorageOptions {
-        // Size of numeric values in index
+        // Size dependent on map value type
         block_size_bytes: Some(block_size),
-        // Compressing numeric values is unreasonable
         compression: Some(gridstore::config::Compression::None),
         page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
         region_size_blocks: None,
@@ -219,10 +218,6 @@ where
                     db_wrapper.put(db_record, [])?;
                 }
             }
-            // We cannot store empty value, then delete instead
-            Storage::Gridstore(store) if values.is_empty() => {
-                store.write().delete_value(idx);
-            }
             Storage::Gridstore(store) => {
                 let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
@@ -300,7 +295,7 @@ where
             Storage::RocksDb(_) => Ok(()),
             Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
-                    "Failed to clear mutable numeric index gridstore cache: {err}"
+                    "Failed to clear mutable map index gridstore cache: {err}"
                 ))
             }),
         }
