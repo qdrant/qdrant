@@ -142,7 +142,7 @@ impl MutableFullTextIndex {
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
             Storage::Gridstore(store) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!(
-                    "Failed to clear mutable numeric index: {err}",
+                    "Failed to clear mutable full text index: {err}",
                 ))
             }),
         }
@@ -154,7 +154,7 @@ impl MutableFullTextIndex {
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
             Storage::Gridstore(store) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!(
-                    "Failed to clear mutable numeric index: {err}",
+                    "Failed to clear mutable full text index: {err}",
                 ))
             }),
         }
@@ -169,7 +169,7 @@ impl MutableFullTextIndex {
             Storage::RocksDb(_) => Ok(()),
             Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
-                    "Failed to clear mutable numeric index gridstore cache: {err}"
+                    "Failed to clear mutable full text index gridstore cache: {err}"
                 ))
             }),
         }
@@ -192,7 +192,7 @@ impl MutableFullTextIndex {
                 Box::new(move || {
                     store.read().flush().map_err(|err| {
                         OperationError::service_error(format!(
-                            "Failed to flush mutable numeric index gridstore: {err}"
+                            "Failed to flush mutable full text index gridstore: {err}"
                         ))
                     })
                 })
