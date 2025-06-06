@@ -44,14 +44,16 @@ use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     CollectionDescription, CollectionOperationResponse, Condition, Distance, FieldCondition,
     Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition, HealthCheckReply,
-    HnswConfigDiff, IntegerIndexParams, IsEmptyCondition, IsNullCondition, ListCollectionsResponse,
-    Match, MinShould, NamedVectors, NestedCondition, PayloadExcludeSelector,
-    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
-    PointStruct, PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
-    QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
-    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StrictModeConfig,
-    TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount,
-    VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key, with_vectors_selector,
+    HnswConfigDiff, IntegerIndexParams, IsEmptyCondition, IsNullCondition, Language,
+    ListCollectionsResponse, Match, MinShould, NamedVectors, NestedCondition,
+    PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
+    PayloadSchemaType, PointId, PointStruct, PointsOperationResponse,
+    PointsOperationResponseInternal, ProductQuantization, QuantizationConfig,
+    QuantizationSearchParams, QuantizationType, RepeatedIntegers, RepeatedStrings,
+    ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StopwordsInterface, StopwordsSet,
+    StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
+    ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key,
+    with_vectors_selector,
 };
 use crate::grpc::{
     DecayParamsExpression, DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
@@ -143,6 +145,80 @@ impl From<segment::data_types::index::TokenizerType> for TokenizerType {
     }
 }
 
+impl From<segment::data_types::index::Language> for Language {
+    fn from(language: segment::data_types::index::Language) -> Self {
+        match language {
+            segment::data_types::index::Language::Arabic => Language::Arabic,
+            segment::data_types::index::Language::Azerbaijani => Language::Azerbaijani,
+            segment::data_types::index::Language::Basque => Language::Basque,
+            segment::data_types::index::Language::Bengali => Language::Bengali,
+            segment::data_types::index::Language::Catalan => Language::Catalan,
+            segment::data_types::index::Language::Chinese => Language::Chinese,
+            segment::data_types::index::Language::Danish => Language::Danish,
+            segment::data_types::index::Language::Dutch => Language::Dutch,
+            segment::data_types::index::Language::English => Language::English,
+            segment::data_types::index::Language::Finnish => Language::Finnish,
+            segment::data_types::index::Language::French => Language::French,
+            segment::data_types::index::Language::German => Language::German,
+            segment::data_types::index::Language::Greek => Language::Greek,
+            segment::data_types::index::Language::Hebrew => Language::Hebrew,
+            segment::data_types::index::Language::Hinglish => Language::Hinglish,
+            segment::data_types::index::Language::Hungarian => Language::Hungarian,
+            segment::data_types::index::Language::Indonesian => Language::Indonesian,
+            segment::data_types::index::Language::Italian => Language::Italian,
+            segment::data_types::index::Language::Kazakh => Language::Kazakh,
+            segment::data_types::index::Language::Nepali => Language::Nepali,
+            segment::data_types::index::Language::Norwegian => Language::Norwegian,
+            segment::data_types::index::Language::Portuguese => Language::Portuguese,
+            segment::data_types::index::Language::Romanian => Language::Romanian,
+            segment::data_types::index::Language::Russian => Language::Russian,
+            segment::data_types::index::Language::Slovene => Language::Slovene,
+            segment::data_types::index::Language::Spanish => Language::Spanish,
+            segment::data_types::index::Language::Swedish => Language::Swedish,
+            segment::data_types::index::Language::Tajik => Language::Tajik,
+            segment::data_types::index::Language::Turkish => Language::Turkish,
+        }
+    }
+}
+
+impl TryFrom<Language> for segment::data_types::index::Language {
+    type Error = Status;
+
+    fn try_from(language: Language) -> Result<Self, Self::Error> {
+        match language {
+            Language::Arabic => Ok(segment::data_types::index::Language::Arabic),
+            Language::Azerbaijani => Ok(segment::data_types::index::Language::Azerbaijani),
+            Language::Basque => Ok(segment::data_types::index::Language::Basque),
+            Language::Bengali => Ok(segment::data_types::index::Language::Bengali),
+            Language::Catalan => Ok(segment::data_types::index::Language::Catalan),
+            Language::Chinese => Ok(segment::data_types::index::Language::Chinese),
+            Language::Danish => Ok(segment::data_types::index::Language::Danish),
+            Language::Dutch => Ok(segment::data_types::index::Language::Dutch),
+            Language::English => Ok(segment::data_types::index::Language::English),
+            Language::Finnish => Ok(segment::data_types::index::Language::Finnish),
+            Language::French => Ok(segment::data_types::index::Language::French),
+            Language::German => Ok(segment::data_types::index::Language::German),
+            Language::Greek => Ok(segment::data_types::index::Language::Greek),
+            Language::Hebrew => Ok(segment::data_types::index::Language::Hebrew),
+            Language::Hinglish => Ok(segment::data_types::index::Language::Hinglish),
+            Language::Hungarian => Ok(segment::data_types::index::Language::Hungarian),
+            Language::Indonesian => Ok(segment::data_types::index::Language::Indonesian),
+            Language::Italian => Ok(segment::data_types::index::Language::Italian),
+            Language::Kazakh => Ok(segment::data_types::index::Language::Kazakh),
+            Language::Nepali => Ok(segment::data_types::index::Language::Nepali),
+            Language::Norwegian => Ok(segment::data_types::index::Language::Norwegian),
+            Language::Portuguese => Ok(segment::data_types::index::Language::Portuguese),
+            Language::Romanian => Ok(segment::data_types::index::Language::Romanian),
+            Language::Russian => Ok(segment::data_types::index::Language::Russian),
+            Language::Slovene => Ok(segment::data_types::index::Language::Slovene),
+            Language::Spanish => Ok(segment::data_types::index::Language::Spanish),
+            Language::Swedish => Ok(segment::data_types::index::Language::Swedish),
+            Language::Tajik => Ok(segment::data_types::index::Language::Tajik),
+            Language::Turkish => Ok(segment::data_types::index::Language::Turkish),
+        }
+    }
+}
+
 impl From<segment::data_types::index::KeywordIndexParams> for PayloadIndexParams {
     fn from(params: segment::data_types::index::KeywordIndexParams) -> Self {
         let segment::data_types::index::KeywordIndexParams {
@@ -214,9 +290,35 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
             lowercase,
             on_disk,
             phrase_matching: _, // todo(phrase_matching): populate this
-            stopwords: _,
+            stopwords,
         } = params;
         let tokenizer = TokenizerType::from(tokenizer);
+
+        // Convert stopwords if present
+        let stopwords_interface = stopwords.map(|sw| match sw {
+            segment::data_types::index::StopwordsInterface::Language(lang) => StopwordsInterface {
+                stopwords: Some(grpc::qdrant::stopwords_interface::Stopwords::Language(
+                    Language::from(lang) as i32,
+                )),
+            },
+            segment::data_types::index::StopwordsInterface::Set(set) => {
+                let languages = set
+                    .languages
+                    .into_iter()
+                    .map(|lang| Language::from(lang) as i32)
+                    .collect();
+
+                StopwordsInterface {
+                    stopwords: Some(grpc::qdrant::stopwords_interface::Stopwords::Set(
+                        StopwordsSet {
+                            languages,
+                            custom: set.custom,
+                        },
+                    )),
+                }
+            }
+        });
+
         PayloadIndexParams {
             index_params: Some(IndexParams::TextIndexParams(TextIndexParams {
                 tokenizer: tokenizer as i32,
@@ -224,6 +326,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                 min_token_len: min_token_len.map(|x| x as u64),
                 max_token_len: max_token_len.map(|x| x as u64),
                 on_disk,
+                stopwords: stopwords_interface,
             })),
         }
     }
@@ -411,7 +514,44 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             min_token_len,
             max_token_len,
             on_disk,
+            stopwords,
         } = params;
+
+        // Convert stopwords if present
+        let stopwords_converted = if let Some(sw) = stopwords {
+            match sw.stopwords {
+                Some(grpc::qdrant::stopwords_interface::Stopwords::Language(lang)) => {
+                    let lang = Language::try_from(lang)
+                        .map_err(|_| Status::invalid_argument("unknown language"))?;
+
+                    Some(segment::data_types::index::StopwordsInterface::Language(
+                        lang.try_into()?,
+                    ))
+                }
+                Some(grpc::qdrant::stopwords_interface::Stopwords::Set(set)) => {
+                    let languages = set
+                        .languages
+                        .into_iter()
+                        .map(|lang| {
+                            Language::try_from(lang)
+                                .map_err(|_| Status::invalid_argument("unknown language"))
+                                .and_then(|l| l.try_into())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    Some(segment::data_types::index::StopwordsInterface::Set(
+                        segment::data_types::index::StopwordsSet {
+                            languages,
+                            custom: set.custom,
+                        },
+                    ))
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
+
         Ok(segment::data_types::index::TextIndexParams {
             r#type: TextIndexType::Text,
             tokenizer: TokenizerType::try_from(tokenizer)
@@ -422,7 +562,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             max_token_len: max_token_len.map(|x| x as usize),
             on_disk,
             phrase_matching: None, // todo(phrase_matching): populate this
-            stopwords: None,
+            stopwords: stopwords_converted,
         })
     }
 }

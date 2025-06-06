@@ -70,6 +70,8 @@
     - [SparseVectorConfig](#qdrant-SparseVectorConfig)
     - [SparseVectorConfig.MapEntry](#qdrant-SparseVectorConfig-MapEntry)
     - [SparseVectorParams](#qdrant-SparseVectorParams)
+    - [StopwordsInterface](#qdrant-StopwordsInterface)
+    - [StopwordsSet](#qdrant-StopwordsSet)
     - [StrictModeConfig](#qdrant-StrictModeConfig)
     - [StrictModeMultivector](#qdrant-StrictModeMultivector)
     - [StrictModeMultivectorConfig](#qdrant-StrictModeMultivectorConfig)
@@ -96,6 +98,7 @@
     - [CompressionRatio](#qdrant-CompressionRatio)
     - [Datatype](#qdrant-Datatype)
     - [Distance](#qdrant-Distance)
+    - [Language](#qdrant-Language)
     - [MaxOptimizationThreads.Setting](#qdrant-MaxOptimizationThreads-Setting)
     - [Modifier](#qdrant-Modifier)
     - [MultiVectorComparator](#qdrant-MultiVectorComparator)
@@ -1460,6 +1463,38 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+<a name="qdrant-StopwordsInterface"></a>
+
+### StopwordsInterface
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| language | [Language](#qdrant-Language) |  | Single language stopwords |
+| set | [StopwordsSet](#qdrant-StopwordsSet) |  | Multiple languages and custom stopwords |
+
+
+
+
+
+
+<a name="qdrant-StopwordsSet"></a>
+
+### StopwordsSet
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| languages | [Language](#qdrant-Language) | repeated | List of languages to use stopwords from |
+| custom | [string](#string) | repeated | List of custom stopwords |
+
+
+
+
+
+
 <a name="qdrant-StrictModeConfig"></a>
 
 ### StrictModeConfig
@@ -1597,6 +1632,7 @@ Note: 1kB = 1 vector of size 256. |
 | min_token_len | [uint64](#uint64) | optional | Minimal token length |
 | max_token_len | [uint64](#uint64) | optional | Maximal token length |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
+| stopwords | [StopwordsInterface](#qdrant-StopwordsInterface) | optional | Stopwords for the text index |
 
 
 
@@ -1886,6 +1922,45 @@ Note: 1kB = 1 vector of size 256. |
 | Euclid | 2 |  |
 | Dot | 3 |  |
 | Manhattan | 4 |  |
+
+
+
+<a name="qdrant-Language"></a>
+
+### Language
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Arabic | 0 |  |
+| Azerbaijani | 1 |  |
+| Basque | 2 |  |
+| Bengali | 3 |  |
+| Catalan | 4 |  |
+| Chinese | 5 |  |
+| Danish | 6 |  |
+| Dutch | 7 |  |
+| English | 8 |  |
+| Finnish | 9 |  |
+| French | 10 |  |
+| German | 11 |  |
+| Greek | 12 |  |
+| Hebrew | 13 |  |
+| Hinglish | 14 |  |
+| Hungarian | 15 |  |
+| Indonesian | 16 |  |
+| Italian | 17 |  |
+| Kazakh | 18 |  |
+| Nepali | 19 |  |
+| Norwegian | 20 |  |
+| Portuguese | 21 |  |
+| Romanian | 22 |  |
+| Russian | 23 |  |
+| Slovene | 24 |  |
+| Spanish | 25 |  |
+| Swedish | 26 |  |
+| Tajik | 27 |  |
+| Turkish | 28 |  |
 
 
 

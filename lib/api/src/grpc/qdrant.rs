@@ -818,6 +818,38 @@ pub struct GeoIndexParams {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StopwordsSet {
+    /// List of languages to use stopwords from
+    #[prost(enumeration = "Language", repeated, tag = "1")]
+    pub languages: ::prost::alloc::vec::Vec<i32>,
+    /// List of custom stopwords
+    #[prost(string, repeated, tag = "2")]
+    pub custom: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StopwordsInterface {
+    #[prost(oneof = "stopwords_interface::Stopwords", tags = "1, 2")]
+    pub stopwords: ::core::option::Option<stopwords_interface::Stopwords>,
+}
+/// Nested message and enum types in `StopwordsInterface`.
+pub mod stopwords_interface {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Stopwords {
+        /// Single language stopwords
+        #[prost(enumeration = "super::Language", tag = "1")]
+        Language(i32),
+        /// Multiple languages and custom stopwords
+        #[prost(message, tag = "2")]
+        Set(super::StopwordsSet),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TextIndexParams {
     /// Tokenizer type
     #[prost(enumeration = "TokenizerType", tag = "1")]
@@ -834,6 +866,9 @@ pub struct TextIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Stopwords for the text index
+    #[prost(message, optional, tag = "6")]
+    pub stopwords: ::core::option::Option<StopwordsInterface>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1694,6 +1729,114 @@ impl TokenizerType {
             "Whitespace" => Some(Self::Whitespace),
             "Word" => Some(Self::Word),
             "Multilingual" => Some(Self::Multilingual),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Language {
+    Arabic = 0,
+    Azerbaijani = 1,
+    Basque = 2,
+    Bengali = 3,
+    Catalan = 4,
+    Chinese = 5,
+    Danish = 6,
+    Dutch = 7,
+    English = 8,
+    Finnish = 9,
+    French = 10,
+    German = 11,
+    Greek = 12,
+    Hebrew = 13,
+    Hinglish = 14,
+    Hungarian = 15,
+    Indonesian = 16,
+    Italian = 17,
+    Kazakh = 18,
+    Nepali = 19,
+    Norwegian = 20,
+    Portuguese = 21,
+    Romanian = 22,
+    Russian = 23,
+    Slovene = 24,
+    Spanish = 25,
+    Swedish = 26,
+    Tajik = 27,
+    Turkish = 28,
+}
+impl Language {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Language::Arabic => "Arabic",
+            Language::Azerbaijani => "Azerbaijani",
+            Language::Basque => "Basque",
+            Language::Bengali => "Bengali",
+            Language::Catalan => "Catalan",
+            Language::Chinese => "Chinese",
+            Language::Danish => "Danish",
+            Language::Dutch => "Dutch",
+            Language::English => "English",
+            Language::Finnish => "Finnish",
+            Language::French => "French",
+            Language::German => "German",
+            Language::Greek => "Greek",
+            Language::Hebrew => "Hebrew",
+            Language::Hinglish => "Hinglish",
+            Language::Hungarian => "Hungarian",
+            Language::Indonesian => "Indonesian",
+            Language::Italian => "Italian",
+            Language::Kazakh => "Kazakh",
+            Language::Nepali => "Nepali",
+            Language::Norwegian => "Norwegian",
+            Language::Portuguese => "Portuguese",
+            Language::Romanian => "Romanian",
+            Language::Russian => "Russian",
+            Language::Slovene => "Slovene",
+            Language::Spanish => "Spanish",
+            Language::Swedish => "Swedish",
+            Language::Tajik => "Tajik",
+            Language::Turkish => "Turkish",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Arabic" => Some(Self::Arabic),
+            "Azerbaijani" => Some(Self::Azerbaijani),
+            "Basque" => Some(Self::Basque),
+            "Bengali" => Some(Self::Bengali),
+            "Catalan" => Some(Self::Catalan),
+            "Chinese" => Some(Self::Chinese),
+            "Danish" => Some(Self::Danish),
+            "Dutch" => Some(Self::Dutch),
+            "English" => Some(Self::English),
+            "Finnish" => Some(Self::Finnish),
+            "French" => Some(Self::French),
+            "German" => Some(Self::German),
+            "Greek" => Some(Self::Greek),
+            "Hebrew" => Some(Self::Hebrew),
+            "Hinglish" => Some(Self::Hinglish),
+            "Hungarian" => Some(Self::Hungarian),
+            "Indonesian" => Some(Self::Indonesian),
+            "Italian" => Some(Self::Italian),
+            "Kazakh" => Some(Self::Kazakh),
+            "Nepali" => Some(Self::Nepali),
+            "Norwegian" => Some(Self::Norwegian),
+            "Portuguese" => Some(Self::Portuguese),
+            "Romanian" => Some(Self::Romanian),
+            "Russian" => Some(Self::Russian),
+            "Slovene" => Some(Self::Slovene),
+            "Spanish" => Some(Self::Spanish),
+            "Swedish" => Some(Self::Swedish),
+            "Tajik" => Some(Self::Tajik),
+            "Turkish" => Some(Self::Turkish),
             _ => None,
         }
     }
