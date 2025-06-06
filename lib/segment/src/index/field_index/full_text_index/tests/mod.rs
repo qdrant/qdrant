@@ -1,8 +1,6 @@
 use common::types::PointOffsetType;
-use rstest::rstest;
 use tempfile::Builder;
 
-use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait as _, PayloadFieldIndex, ValueIndexer};
@@ -150,10 +148,8 @@ fn get_texts() -> Vec<String> {
     ]
 }
 
-#[rstest]
-#[case(true)]
-#[case(false)]
-fn test_prefix_search(#[case] immutable: bool) {
+#[test]
+fn test_prefix_search() {
     use common::counter::hardware_counter::HardwareCounterCell;
 
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
@@ -167,10 +163,8 @@ fn test_prefix_search(#[case] immutable: bool) {
         phrase_matching: None,
     };
 
-    let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-    let mut index = FullTextIndex::builder_rocksdb(db.clone(), config.clone(), "text")
-        .make_empty()
-        .unwrap();
+    let mut index =
+        FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config.clone()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -180,11 +174,6 @@ fn test_prefix_search(#[case] immutable: bool) {
         index
             .add_many(i as PointOffsetType, vec![text.to_string()], &hw_counter)
             .unwrap();
-    }
-
-    if immutable {
-        index = FullTextIndex::new_rocksdb(db, config, "text", false);
-        index.load().unwrap();
     }
 
     let res: Vec<_> = index.query("ROBO", &hw_counter).collect();

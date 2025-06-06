@@ -794,6 +794,7 @@ pub(super) mod tests {
     use super::*;
     use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
     use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
+    #[cfg(feature = "rocksdb")]
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
     const RAND_SEED: u64 = 42;

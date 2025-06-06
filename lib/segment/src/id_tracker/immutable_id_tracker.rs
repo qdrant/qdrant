@@ -513,6 +513,7 @@ pub(super) mod test {
     use uuid::Uuid;
 
     use super::*;
+    #[cfg(feature = "rocksdb")]
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
     const RAND_SEED: u64 = 42;

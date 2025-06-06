@@ -600,11 +600,13 @@ mod tests {
     use parking_lot::RwLock;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
+    #[cfg(feature = "rocksdb")]
     use rocksdb::DB;
     use rstest::rstest;
     use tempfile::{Builder, TempDir};
 
     use super::*;
+    #[cfg(feature = "rocksdb")]
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::fixtures::payload_fixtures::random_full_text_payload;
     use crate::index::field_index::field_index_base::FieldIndexBuilderTrait;
@@ -622,17 +624,21 @@ mod tests {
 
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum IndexType {
+        #[cfg(feature = "rocksdb")]
         Mutable,
         MutableGridstore,
+        #[cfg(feature = "rocksdb")]
         Immutable,
         Mmap,
         RamMmap,
     }
 
     enum IndexBuilder {
+        #[cfg(feature = "rocksdb")]
         Mutable(FullTextIndexBuilder),
         MutableGridstore(FullTextGridstoreIndexBuilder),
-        Immutable(FullTextIndexBuilder),
+        #[cfg(feature = "rocksdb")]
+        Immutable(FullTextGridstoreIndexBuilder),
         Mmap(FullTextMmapIndexBuilder),
         RamMmap(FullTextMmapIndexBuilder),
     }
@@ -645,10 +651,12 @@ mod tests {
             hw_counter: &HardwareCounterCell,
         ) -> OperationResult<()> {
             match self {
+                #[cfg(feature = "rocksdb")]
                 IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::MutableGridstore(builder) => {
                     FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
                 }
+                #[cfg(feature = "rocksdb")]
                 IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::Mmap(builder) => {
                     FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
@@ -661,8 +669,10 @@ mod tests {
 
         fn finalize(self) -> OperationResult<FullTextIndex> {
             match self {
+                #[cfg(feature = "rocksdb")]
                 IndexBuilder::Mutable(builder) => builder.finalize(),
                 IndexBuilder::MutableGridstore(builder) => builder.finalize(),
+                #[cfg(feature = "rocksdb")]
                 IndexBuilder::Immutable(builder) => {
                     let FullTextIndex::Mutable(index) = builder.finalize()? else {
                         panic!("expected mutable index");
@@ -713,6 +723,7 @@ mod tests {
             ..TextIndexParams::default()
         };
         let mut builder = match index_type {
+            #[cfg(feature = "rocksdb")]
             IndexType::Mutable => IndexBuilder::Mutable(FullTextIndex::builder_rocksdb(
                 db.clone(),
                 config,
@@ -721,6 +732,7 @@ mod tests {
             IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
                 FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config),
             ),
+            #[cfg(feature = "rocksdb")]
             IndexType::Immutable => IndexBuilder::Immutable(FullTextIndex::builder_rocksdb(
                 db.clone(),
                 config,
@@ -738,8 +750,10 @@ mod tests {
             )),
         };
         match &mut builder {
+            #[cfg(feature = "rocksdb")]
             IndexBuilder::Mutable(builder) => builder.init().unwrap(),
             IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
+            #[cfg(feature = "rocksdb")]
             IndexBuilder::Immutable(builder) => builder.init().unwrap(),
             IndexBuilder::Mmap(builder) => builder.init().unwrap(),
             IndexBuilder::RamMmap(builder) => builder.init().unwrap(),
