@@ -7,6 +7,7 @@ use rand::Rng;
 use super::graph_links::GraphLinksFormat;
 use crate::data_types::vectors::VectorElementType;
 use crate::fixtures::index_fixtures::TestRawScorerProducer;
+use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::spaces::metric::Metric;
@@ -29,8 +30,7 @@ where
 
     let mut graph_layers_builder = GraphLayersBuilder::new(
         num_vectors,
-        m,
-        m * 2,
+        HnswM::new2(m),
         ef_construct,
         entry_points_num,
         use_heuristic,

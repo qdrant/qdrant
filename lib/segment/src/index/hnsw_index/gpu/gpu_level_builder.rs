@@ -103,6 +103,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::index::hnsw_index::HnswM;
     use crate::index::hnsw_index::gpu::batched_points::BatchedPoints;
     use crate::index::hnsw_index::gpu::create_graph_layers_builder;
     use crate::index::hnsw_index::gpu::gpu_vector_storage::GpuVectorStorage;
@@ -119,8 +120,7 @@ mod tests {
         visited_flags_factor: usize,
     ) -> GraphLayersBuilder {
         let num_vectors = test.graph_layers_builder.links_layers().len();
-        let m = test.graph_layers_builder.m();
-        let m0 = test.graph_layers_builder.m0();
+        let hnsw_m = test.graph_layers_builder.hnsw_m();
         let ef = test.graph_layers_builder.ef_construct();
 
         let batched_points = BatchedPoints::new(
@@ -131,7 +131,7 @@ mod tests {
         .unwrap();
 
         let mut graph_layers_builder =
-            create_graph_layers_builder(&batched_points, num_vectors, m, m0, ef, 1);
+            create_graph_layers_builder(&batched_points, num_vectors, hnsw_m, ef, 1);
 
         graph_layers_builder.fill_ready_list();
 
@@ -150,8 +150,7 @@ mod tests {
         let mut gpu_search_context = GpuInsertContext::new(
             &gpu_vector_storage,
             groups_count,
-            m,
-            m0,
+            hnsw_m,
             ef,
             true,
             visited_flags_factor..=32,
@@ -189,11 +188,10 @@ mod tests {
 
         let num_vectors = 1024;
         let dim = 64;
-        let m = 8;
-        let m0 = 16;
+        let hnsw_m = HnswM::new2(8);
         let ef = 32;
 
-        let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, 0);
+        let test = create_gpu_graph_test_data(num_vectors, dim, hnsw_m, ef, 0);
         let graph_layers_builder = build_gpu_graph(&test, 1, 1);
 
         compare_graph_layers_builders(&test.graph_layers_builder, &graph_layers_builder);
@@ -208,14 +206,13 @@ mod tests {
 
         let num_vectors = 1024;
         let dim = 64;
-        let m = 8;
-        let m0 = 16;
+        let hnsw_m = HnswM::new2(8);
         let ef = 32;
         let groups_count = 4;
         let searches_count = 20;
         let top = 10;
 
-        let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, searches_count);
+        let test = create_gpu_graph_test_data(num_vectors, dim, hnsw_m, ef, searches_count);
         let graph_layers_builder = build_gpu_graph(&test, groups_count, visited_flags_factor);
 
         check_graph_layers_builders_quality(graph_layers_builder, test, top, ef, 0.8)

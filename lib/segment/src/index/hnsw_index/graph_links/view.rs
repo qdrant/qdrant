@@ -11,6 +11,7 @@ use zerocopy::{FromBytes, Immutable};
 use super::GraphLinksFormat;
 use super::header::{HEADER_VERSION_COMPRESSED, HeaderCompressed, HeaderPlain};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::hnsw_index::HnswM;
 
 /// An (almost) zero-copy, non-owning view into serialized graph links stored
 /// as a `&[u8]` slice.
@@ -37,8 +38,7 @@ pub(super) enum CompressionInfo<'a> {
     Compressed {
         compressed_links: &'a [u8],
         offsets: bitpacking_ordered::Reader<'a>,
-        m: usize,
-        m0: usize,
+        hnsw_m: HnswM,
         bits_per_unsorted: u8,
     },
 }
@@ -87,8 +87,7 @@ impl GraphLinksView<'_> {
             compression: CompressionInfo::Compressed {
                 compressed_links,
                 offsets,
-                m: header.m.get() as usize,
-                m0: header.m0.get() as usize,
+                hnsw_m: HnswM::new(header.m.get() as usize, header.m0.get() as usize),
                 bits_per_unsorted: MIN_BITS_PER_VALUE.max(packed_bits(
                     u32::try_from(header.point_count.get().saturating_sub(1)).map_err(|_| {
                         OperationError::service_error("Too many points in GraphLinks file")
@@ -114,8 +113,7 @@ impl GraphLinksView<'_> {
             CompressionInfo::Compressed {
                 compressed_links,
                 ref offsets,
-                m,
-                m0,
+                ref hnsw_m,
                 bits_per_unsorted,
             } => {
                 let links_range =
@@ -123,7 +121,7 @@ impl GraphLinksView<'_> {
                 Either::Right(iterate_packed_links(
                     &compressed_links[links_range],
                     bits_per_unsorted,
-                    if level == 0 { m0 } else { m },
+                    hnsw_m.level_m(level),
                 ))
             }
         }

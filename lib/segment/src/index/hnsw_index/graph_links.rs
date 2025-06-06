@@ -172,12 +172,12 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+    use crate::index::hnsw_index::HnswM;
 
     fn random_links(
         points_count: usize,
         max_levels_count: usize,
-        m: usize,
-        m0: usize,
+        hnsw_m: &HnswM,
     ) -> Vec<Vec<Vec<PointOffsetType>>> {
         let mut rng = rand::rng();
         (0..points_count)
@@ -185,7 +185,7 @@ mod tests {
                 let levels_count = rng.random_range(1..max_levels_count);
                 (0..levels_count)
                     .map(|level| {
-                        let mut max_links_count = if level == 0 { m0 } else { m };
+                        let mut max_links_count = hnsw_m.level_m(level);
                         max_links_count *= 2; // Simulate additional payload links.
                         let links_count = rng.random_range(0..max_links_count);
                         (0..links_count)
@@ -201,8 +201,7 @@ mod tests {
         mut left: Vec<Vec<Vec<PointOffsetType>>>,
         mut right: Vec<Vec<Vec<PointOffsetType>>>,
         format: GraphLinksFormat,
-        m: usize,
-        m0: usize,
+        hnsw_m: HnswM,
     ) {
         for links in [&mut left, &mut right].iter_mut() {
             links.iter_mut().for_each(|levels| {
@@ -212,13 +211,7 @@ mod tests {
                     .for_each(|(level_idx, links)| {
                         *links = normalize_links(
                             match format {
-                                GraphLinksFormat::Compressed => {
-                                    if level_idx == 0 {
-                                        m0
-                                    } else {
-                                        m
-                                    }
-                                }
+                                GraphLinksFormat::Compressed => hnsw_m.level_m(level_idx),
                                 GraphLinksFormat::Plain => 0,
                             },
                             std::mem::take(links),
@@ -236,51 +229,48 @@ mod tests {
         max_levels_count: usize,
         on_disk: bool,
         format: GraphLinksFormat,
-        m: usize,
-        m0: usize,
+        hnsw_m: HnswM,
     ) {
         let path = Builder::new().prefix("graph_dir").tempdir().unwrap();
         let links_file = path.path().join("links.bin");
-        let links = random_links(points_count, max_levels_count, m, m0);
-        GraphLinksSerializer::new(links.clone(), format, m, m0)
+        let links = random_links(points_count, max_levels_count, &hnsw_m);
+        GraphLinksSerializer::new(links.clone(), format, hnsw_m)
             .save_as(&links_file)
             .unwrap();
         let cmp_links = GraphLinks::load_from_file(&links_file, on_disk, format)
             .unwrap()
             .into_edges();
-        compare_links(links, cmp_links, format, m, m0);
+        compare_links(links, cmp_links, format, hnsw_m);
     }
 
     #[rstest]
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
     fn test_graph_links_construction(#[case] format: GraphLinksFormat) {
-        let m = 2;
-        let m0 = m * 2;
+        let hnsw_m = HnswM::new2(8);
 
         let make_cmp_links = |links: Vec<Vec<Vec<PointOffsetType>>>,
-                              m: usize,
-                              m0: usize|
+                              hnsw_m: HnswM|
          -> Vec<Vec<Vec<PointOffsetType>>> {
-            GraphLinksSerializer::new(links, format, m, m0)
+            GraphLinksSerializer::new(links, format, hnsw_m)
                 .to_graph_links_ram()
                 .into_edges()
         };
 
         // no points
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![];
-        let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, format, m, m0);
+        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
+        compare_links(links, cmp_links, format, hnsw_m);
 
         // 2 points without any links
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![]], vec![vec![]]];
-        let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, format, m, m0);
+        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
+        compare_links(links, cmp_links, format, hnsw_m);
 
         // one link at level 0
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![1]], vec![vec![0]]];
-        let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, format, m, m0);
+        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
+        compare_links(links, cmp_links, format, hnsw_m);
 
         // 3 levels with no links at second level
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
@@ -288,8 +278,8 @@ mod tests {
             vec![vec![0, 2], vec![], vec![2]],
             vec![vec![0, 1], vec![], vec![1]],
         ];
-        let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, format, m, m0);
+        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
+        compare_links(links, cmp_links, format, hnsw_m);
 
         // 3 levels with no links at last level
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
@@ -297,8 +287,8 @@ mod tests {
             vec![vec![0, 2], vec![1], vec![]],
             vec![vec![0, 1]],
         ];
-        let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, format, m, m0);
+        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
+        compare_links(links, cmp_links, format, hnsw_m);
 
         // 4 levels with random nonexistent links
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
@@ -308,24 +298,22 @@ mod tests {
             vec![vec![0, 1, 5, 6], vec![1, 5, 0]],
             vec![vec![0, 1, 9, 18], vec![1, 5, 6], vec![5], vec![9]],
         ];
-        let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, format, m, m0);
+        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
+        compare_links(links, cmp_links, format, hnsw_m);
 
         // fully random links
-        let m = 8;
-        let m0 = m * 2;
-        let links = random_links(100, 10, m, m0);
-        let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, format, m, m0);
+        let hnsw_m = HnswM::new2(8);
+        let links = random_links(100, 10, &hnsw_m);
+        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
+        compare_links(links, cmp_links, format, hnsw_m);
     }
 
     #[test]
     fn test_graph_links_mmap_ram_compatibility() {
-        let m = 8;
-        let m0 = m * 2;
-        test_save_load(1000, 10, true, GraphLinksFormat::Compressed, m, m0);
-        test_save_load(1000, 10, false, GraphLinksFormat::Compressed, m, m0);
-        test_save_load(1000, 10, true, GraphLinksFormat::Plain, m, m0);
-        test_save_load(1000, 10, false, GraphLinksFormat::Plain, m, m0);
+        let hnsw_m = HnswM::new2(8);
+        test_save_load(1000, 10, true, GraphLinksFormat::Compressed, hnsw_m);
+        test_save_load(1000, 10, false, GraphLinksFormat::Compressed, hnsw_m);
+        test_save_load(1000, 10, true, GraphLinksFormat::Plain, hnsw_m);
+        test_save_load(1000, 10, false, GraphLinksFormat::Plain, hnsw_m);
     }
 }

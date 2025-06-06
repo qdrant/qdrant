@@ -12,6 +12,7 @@ use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::Rng;
 use rand::distr::Uniform;
 
+use super::HnswM;
 use super::graph_layers::GraphLayerData;
 use super::graph_links::{GraphLinks, GraphLinksFormat};
 use super::hnsw::OldIndex;
@@ -32,8 +33,7 @@ pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 /// Convertible to `GraphLayers`
 pub struct GraphLayersBuilder {
     max_level: AtomicUsize,
-    m: usize,
-    m0: usize,
+    hnsw_m: HnswM,
     ef_construct: usize,
     // Factor of level probability
     level_factor: f64,
@@ -68,7 +68,7 @@ impl GraphLayersBase for GraphLayersBuilder {
     }
 
     fn get_m(&self, level: usize) -> usize {
-        if level == 0 { self.m0 } else { self.m }
+        self.hnsw_m.level_m(level)
     }
 }
 
@@ -192,8 +192,7 @@ impl GraphLayersBuilder {
     ) -> OperationResult<GraphLayers> {
         let links_path = GraphLayers::get_links_path(path, format);
 
-        let serializer =
-            Self::links_layers_to_serializer(self.links_layers, format, self.m, self.m0);
+        let serializer = Self::links_layers_to_serializer(self.links_layers, format, self.hnsw_m);
         serializer.save_as(&links_path)?;
 
         let links = if on_disk {
@@ -205,16 +204,15 @@ impl GraphLayersBuilder {
         let entry_points = self.entry_points.into_inner();
 
         let data = GraphLayerData {
-            m: self.m,
-            m0: self.m0,
+            m: self.hnsw_m.m,
+            m0: self.hnsw_m.m0,
             ef_construct: self.ef_construct,
             entry_points: Cow::Borrowed(&entry_points),
         };
         atomic_save_bin(&GraphLayers::get_path(path), &data)?;
 
         Ok(GraphLayers {
-            m: self.m,
-            m0: self.m0,
+            hnsw_m: self.hnsw_m,
             links,
             entry_points,
             visited_pool: self.visited_pool,
@@ -224,9 +222,8 @@ impl GraphLayersBuilder {
     #[cfg(feature = "testing")]
     pub fn into_graph_layers_ram(self, format: GraphLinksFormat) -> GraphLayers {
         GraphLayers {
-            m: self.m,
-            m0: self.m0,
-            links: Self::links_layers_to_serializer(self.links_layers, format, self.m, self.m0)
+            hnsw_m: self.hnsw_m,
+            links: Self::links_layers_to_serializer(self.links_layers, format, self.hnsw_m)
                 .to_graph_links_ram(),
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
@@ -236,24 +233,18 @@ impl GraphLayersBuilder {
     fn links_layers_to_serializer(
         link_layers: Vec<LockedLayersContainer>,
         format: GraphLinksFormat,
-        m: usize,
-        m0: usize,
+        hnsw_m: HnswM,
     ) -> GraphLinksSerializer {
         let edges = link_layers
             .into_iter()
             .map(|l| l.into_iter().map(|l| l.into_inner().into_vec()).collect())
             .collect();
-        GraphLinksSerializer::new(edges, format, m, m0)
+        GraphLinksSerializer::new(edges, format, hnsw_m)
     }
 
     #[cfg(feature = "gpu")]
-    pub fn m(&self) -> usize {
-        self.m
-    }
-
-    #[cfg(feature = "gpu")]
-    pub fn m0(&self) -> usize {
-        self.m0
+    pub fn hnsw_m(&self) -> HnswM {
+        self.hnsw_m
     }
 
     #[cfg(feature = "gpu")]
@@ -279,19 +270,15 @@ impl GraphLayersBuilder {
 
     pub fn new_with_params(
         num_vectors: usize, // Initial number of points in index
-        m: usize,           // Expected M for non-first layer
-        m0: usize,          // Expected M for first layer
+        hnsw_m: HnswM,
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
         use_heuristic: bool,
         reserve: bool,
     ) -> Self {
         let links_layers = std::iter::repeat_with(|| {
-            vec![RwLock::new(LinksContainer::with_capacity(if reserve {
-                m0
-            } else {
-                0
-            }))]
+            let capacity = if reserve { hnsw_m.m0 } else { 0 };
+            vec![RwLock::new(LinksContainer::with_capacity(capacity))]
         })
         .take(num_vectors)
         .collect();
@@ -300,10 +287,9 @@ impl GraphLayersBuilder {
 
         Self {
             max_level: AtomicUsize::new(0),
-            m,
-            m0,
+            hnsw_m,
             ef_construct,
-            level_factor: 1.0 / (max(m, 2) as f64).ln(),
+            level_factor: 1.0 / (max(hnsw_m.m, 2) as f64).ln(),
             use_heuristic,
             links_layers,
             entry_points: Mutex::new(EntryPoints::new(entry_points_num)),
@@ -314,16 +300,14 @@ impl GraphLayersBuilder {
 
     pub fn new(
         num_vectors: usize, // Initial number of points in index
-        m: usize,           // Expected M for non-first layer
-        m0: usize,          // Expected M for first layer
+        hnsw_m: HnswM,
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
         use_heuristic: bool,
     ) -> Self {
         Self::new_with_params(
             num_vectors,
-            m,
-            m0,
+            hnsw_m,
             ef_construct,
             entry_points_num,
             use_heuristic,
@@ -395,7 +379,7 @@ impl GraphLayersBuilder {
         }
         let point_layers = &mut self.links_layers[point_id as usize];
         while point_layers.len() <= level {
-            let links = LinksContainer::with_capacity(self.m);
+            let links = LinksContainer::with_capacity(self.hnsw_m.level_m(level));
             point_layers.push(RwLock::new(links));
         }
         self.max_level
@@ -531,7 +515,7 @@ impl GraphLayersBuilder {
         points_scorer: &FilteredScorer,
         mut search_context: SearchContext,
     ) {
-        let level_m = self.get_m(curr_level);
+        let level_m = self.hnsw_m.level_m(curr_level);
         let scorer = |a, b| points_scorer.score_internal(a, b);
 
         let selected_nearest = {
@@ -568,7 +552,7 @@ impl GraphLayersBuilder {
         points_scorer: &FilteredScorer,
         search_context: SearchContext,
     ) {
-        let level_m = self.get_m(curr_level);
+        let level_m = self.hnsw_m.level_m(curr_level);
         let scorer = |a, b| points_scorer.score_internal(a, b);
         for nearest_point in search_context.nearest.iter_unsorted() {
             {
@@ -790,8 +774,7 @@ mod tests {
 
         let mut graph_layers = GraphLayersBuilder::new(
             num_vectors,
-            m,
-            m * 2,
+            HnswM::new2(m),
             ef_construct,
             entry_points_num,
             use_heuristic,
@@ -831,8 +814,7 @@ mod tests {
 
         let mut graph_layers = GraphLayersBuilder::new(
             num_vectors,
-            m,
-            m * 2,
+            HnswM::new2(m),
             ef_construct,
             entry_points_num,
             use_heuristic,
@@ -1027,7 +1009,7 @@ mod tests {
 
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(DIM, NUM_VECTORS, &mut rng);
         let mut graph_layers_builder =
-            GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+            GraphLayersBuilder::new(NUM_VECTORS, HnswM::new2(M), EF_CONSTRUCT, 10, USE_HEURISTIC);
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
             let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
             let scorer = vector_holder.get_scorer(added_vector);
