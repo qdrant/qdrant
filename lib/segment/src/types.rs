@@ -1423,6 +1423,7 @@ struct GeoPointShadow {
     pub lat: f64,
 }
 
+#[derive(Debug)]
 pub struct GeoPointValidationError {
     pub lon: f64,
     pub lat: f64,
@@ -1477,7 +1478,7 @@ impl From<GeoPoint> for geo::Point {
 
 impl From<RawGeoPoint> for GeoPoint {
     fn from((lon, lat): RawGeoPoint) -> Self {
-        GeoPoint { lon, lat }
+        GeoPoint::new(lon, lat).expect("invalid GeoPoint coordinates")
     }
 }
 

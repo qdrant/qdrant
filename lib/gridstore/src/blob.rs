@@ -29,12 +29,7 @@ impl Blob for Vec<ecow::EcoString> {
 impl Blob for Vec<(f64, f64)> {
     fn to_bytes(&self) -> Vec<u8> {
         self.iter()
-            .flat_map(|(a, b)| {
-                a.as_bytes()
-                    .iter()
-                    .copied()
-                    .chain(b.as_bytes().iter().copied())
-            })
+            .flat_map(|(a, b)| a.to_le_bytes().into_iter().chain(b.to_le_bytes()))
             .collect()
     }
 
