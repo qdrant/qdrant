@@ -783,6 +783,11 @@ mod tests {
     use crate::types::test_utils::build_polygon;
     use crate::types::{GeoBoundingBox, GeoLineString, GeoPolygon, GeoRadius, OrderedGeoPoint};
 
+    #[cfg(feature = "rocksdb")]
+    type Database = Arc<RwLock<DB>>;
+    #[cfg(not(feature = "rocksdb"))]
+    type Database = ();
+
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum IndexType {
         #[cfg(feature = "rocksdb")]
@@ -886,7 +891,7 @@ mod tests {
     }
 
     #[cfg(feature = "testing")]
-    fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Arc<RwLock<DB>>) {
+    fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Database) {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         #[cfg(feature = "rocksdb")]
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
@@ -928,7 +933,7 @@ mod tests {
         num_points: usize,
         num_geo_values: usize,
         index_type: IndexType,
-    ) -> (GeoMapIndex, TempDir, Arc<RwLock<DB>>) {
+    ) -> (GeoMapIndex, TempDir, Database) {
         let mut rnd = StdRng::seed_from_u64(42);
         let (mut builder, temp_dir, db) = create_builder(index_type);
 
