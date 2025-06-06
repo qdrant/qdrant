@@ -43,6 +43,8 @@ use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
+#[cfg(feature = "rocksdb")]
+use crate::types::MultiVectorConfig;
 use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
     SparseVectorStorageType, VectorDataConfig, VectorName, VectorStorageDatatype,
@@ -58,16 +60,10 @@ use crate::vector_storage::dense::memmap_dense_vector_storage::{
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
-    open_appendable_in_ram_multi_vector_storage, open_appendable_in_ram_multi_vector_storage_byte,
-    open_appendable_in_ram_multi_vector_storage_half, open_appendable_memmap_multi_vector_storage,
-    open_appendable_memmap_multi_vector_storage_byte,
-    open_appendable_memmap_multi_vector_storage_half,
+    open_appendable_in_ram_multi_vector_storage, open_appendable_memmap_multi_vector_storage,
 };
 #[cfg(feature = "rocksdb")]
-use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
-    open_simple_multi_dense_vector_storage, open_simple_multi_dense_vector_storage_byte,
-    open_simple_multi_dense_vector_storage_half,
-};
+use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -123,32 +119,27 @@ pub(crate) fn open_vector_storage(
             let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
 
             if let Some(multi_vec_config) = &vector_config.multivector_config {
-                match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_simple_multi_dense_vector_storage(
-                        db_builder.require()?,
-                        &db_column_name,
+                let storage = open_simple_multi_dense_vector_storage(
+                    storage_element_type,
+                    db_builder.require()?,
+                    &db_column_name,
+                    vector_config.size,
+                    vector_config.distance,
+                    *multi_vec_config,
+                    stopped,
+                )?;
+
+                // Actively migrate away from RocksDB
+                if feature_flags().migrate_rocksdb_vector_storage {
+                    return migrate_rocksdb_multi_dense_vector_storage_to_mmap(
+                        storage,
                         vector_config.size,
-                        vector_config.distance,
                         *multi_vec_config,
-                        stopped,
-                    ),
-                    VectorStorageDatatype::Uint8 => open_simple_multi_dense_vector_storage_byte(
-                        db_builder.require()?,
-                        &db_column_name,
-                        vector_config.size,
-                        vector_config.distance,
-                        *multi_vec_config,
-                        stopped,
-                    ),
-                    VectorStorageDatatype::Float16 => open_simple_multi_dense_vector_storage_half(
-                        db_builder.require()?,
-                        &db_column_name,
-                        vector_config.size,
-                        vector_config.distance,
-                        *multi_vec_config,
-                        stopped,
-                    ),
+                        vector_storage_path,
+                    );
                 }
+
+                Ok(storage)
             } else {
                 let storage = open_simple_dense_vector_storage(
                     storage_element_type,
@@ -175,30 +166,13 @@ pub(crate) fn open_vector_storage(
         VectorStorageType::Mmap => {
             if let Some(multi_vec_config) = &vector_config.multivector_config {
                 // there are no mmap multi vector storages, appendable only
-                match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                        *multi_vec_config,
-                    ),
-                    VectorStorageDatatype::Uint8 => {
-                        open_appendable_memmap_multi_vector_storage_byte(
-                            vector_storage_path,
-                            vector_config.size,
-                            vector_config.distance,
-                            *multi_vec_config,
-                        )
-                    }
-                    VectorStorageDatatype::Float16 => {
-                        open_appendable_memmap_multi_vector_storage_half(
-                            vector_storage_path,
-                            vector_config.size,
-                            vector_config.distance,
-                            *multi_vec_config,
-                        )
-                    }
-                }
+                open_appendable_memmap_multi_vector_storage(
+                    storage_element_type,
+                    vector_storage_path,
+                    vector_config.size,
+                    vector_config.distance,
+                    *multi_vec_config,
+                )
             } else {
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => open_memmap_vector_storage(
@@ -222,30 +196,13 @@ pub(crate) fn open_vector_storage(
         // Chunked mmap on disk, appendable
         VectorStorageType::ChunkedMmap => {
             if let Some(multi_vec_config) = &vector_config.multivector_config {
-                match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                        *multi_vec_config,
-                    ),
-                    VectorStorageDatatype::Uint8 => {
-                        open_appendable_memmap_multi_vector_storage_byte(
-                            vector_storage_path,
-                            vector_config.size,
-                            vector_config.distance,
-                            *multi_vec_config,
-                        )
-                    }
-                    VectorStorageDatatype::Float16 => {
-                        open_appendable_memmap_multi_vector_storage_half(
-                            vector_storage_path,
-                            vector_config.size,
-                            vector_config.distance,
-                            *multi_vec_config,
-                        )
-                    }
-                }
+                open_appendable_memmap_multi_vector_storage(
+                    storage_element_type,
+                    vector_storage_path,
+                    vector_config.size,
+                    vector_config.distance,
+                    *multi_vec_config,
+                )
             } else {
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => open_appendable_memmap_vector_storage(
@@ -268,30 +225,13 @@ pub(crate) fn open_vector_storage(
         }
         VectorStorageType::InRamChunkedMmap => {
             if let Some(multi_vec_config) = &vector_config.multivector_config {
-                match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_appendable_in_ram_multi_vector_storage(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                        *multi_vec_config,
-                    ),
-                    VectorStorageDatatype::Uint8 => {
-                        open_appendable_in_ram_multi_vector_storage_byte(
-                            vector_storage_path,
-                            vector_config.size,
-                            vector_config.distance,
-                            *multi_vec_config,
-                        )
-                    }
-                    VectorStorageDatatype::Float16 => {
-                        open_appendable_in_ram_multi_vector_storage_half(
-                            vector_storage_path,
-                            vector_config.size,
-                            vector_config.distance,
-                            *multi_vec_config,
-                        )
-                    }
-                }
+                open_appendable_in_ram_multi_vector_storage(
+                    storage_element_type,
+                    vector_storage_path,
+                    vector_config.size,
+                    vector_config.distance,
+                    *multi_vec_config,
+                )
             } else {
                 open_appendable_in_ram_vector_storage(
                     storage_element_type,
@@ -1083,6 +1023,100 @@ pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
         VectorStorageEnum::DenseSimple(storage) => storage.destroy()?,
         VectorStorageEnum::DenseSimpleByte(storage) => storage.destroy()?,
         VectorStorageEnum::DenseSimpleHalf(storage) => storage.destroy()?,
+        _ => unreachable!("unexpected vector storage type"),
+    }
+
+    Ok(new_storage)
+}
+
+/// Migrate a RocksDB based multi dense vector storage into the mmap format
+///
+/// Creates a new mutable in-memory vector storage on top of memory maps, and copies all vectors
+/// from the RocksDB based storage into it. The persisted RocksDB data is deleted so that only the
+/// new vector storage will be loaded next time. The new vector storage is returned.
+#[cfg(feature = "rocksdb")]
+pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
+    old_storage: VectorStorageEnum,
+    dim: usize,
+    multi_vector_config: MultiVectorConfig,
+    vector_storage_path: &Path,
+) -> OperationResult<VectorStorageEnum> {
+    use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::find_storage_files;
+
+    log::info!(
+        "Migrating {} points in multi dense vector storage from RocksDB into new format",
+        old_storage.total_vector_count(),
+    );
+
+    fn migrate(
+        old_storage: &VectorStorageEnum,
+        dim: usize,
+        multi_vector_config: MultiVectorConfig,
+        vector_storage_path: &Path,
+    ) -> OperationResult<VectorStorageEnum> {
+        // Construct mmap based multi dense vector storage
+        let mut new_storage = open_appendable_in_ram_multi_vector_storage(
+            old_storage.datatype(),
+            vector_storage_path,
+            dim,
+            old_storage.distance(),
+            multi_vector_config,
+        )?;
+        debug_assert_eq!(
+            new_storage.total_vector_count(),
+            0,
+            "new multi dense vector storage must be empty",
+        );
+
+        // Copy all vectors and deletes into new storage
+        let hw_counter = HardwareCounterCell::disposable();
+        for internal_id in 0..old_storage.total_vector_count() as PointOffsetType {
+            let vector = old_storage.get_vector_sequential(internal_id);
+            new_storage.insert_vector(internal_id, vector.as_vec_ref(), &hw_counter)?;
+
+            let is_deleted = old_storage.is_deleted_vector(internal_id);
+            if is_deleted {
+                new_storage.delete_vector(internal_id)?;
+            }
+        }
+
+        // Flush new storage
+        new_storage.flusher()()?;
+
+        Ok(new_storage)
+    }
+
+    let new_storage = match migrate(&old_storage, dim, multi_vector_config, vector_storage_path) {
+        Ok(new_storage) => new_storage,
+        // On migration error, clean up and remove all new storage files
+        Err(err) => {
+            let files = find_storage_files(vector_storage_path);
+            match files {
+                Ok(files) => {
+                    for file in files {
+                        if let Err(err) = std::fs::remove_file(&file) {
+                            log::error!(
+                                "Multi dense vector storage migration to mmap failed, failed to remove mmap file {} for cleanup: {err}",
+                                file.display(),
+                            );
+                        }
+                    }
+                }
+                Err(err) => {
+                    log::error!(
+                        "Multi dense vector storage migration to mmap failed, failed to list its storage files, they will be left behind: {err}",
+                    );
+                }
+            }
+            return Err(err);
+        }
+    };
+
+    // Destroy persisted RocksDB multi dense vector data
+    match old_storage {
+        VectorStorageEnum::MultiDenseSimple(storage) => storage.destroy()?,
+        VectorStorageEnum::MultiDenseSimpleByte(storage) => storage.destroy()?,
+        VectorStorageEnum::MultiDenseSimpleHalf(storage) => storage.destroy()?,
         _ => unreachable!("unexpected vector storage type"),
     }
 

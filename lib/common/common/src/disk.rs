@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// How many bytes a directory takes.
 pub fn dir_size(path: impl Into<PathBuf>) -> std::io::Result<u64> {
@@ -14,4 +14,30 @@ pub fn dir_size(path: impl Into<PathBuf>) -> std::io::Result<u64> {
     }
 
     dir_size(std::fs::read_dir(path.into())?)
+}
+
+/// List all files in the given directory recursively.
+///
+/// Notes:
+/// - a directory must be given
+/// - symlinks are considered to be files
+pub fn list_files(dir: impl AsRef<Path>) -> std::io::Result<Vec<PathBuf>> {
+    let dir = dir.as_ref();
+    if !dir.is_dir() {
+        return Ok(vec![]);
+    }
+
+    let mut files = Vec::new();
+    for entry in dir.read_dir()? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_file() || file_type.is_symlink() {
+            files.push(entry.path());
+        } else {
+            debug_assert!(file_type.is_dir(), "path is expected to be a dir");
+            files.extend(list_files(entry.path())?);
+        }
+    }
+
+    Ok(files)
 }

@@ -16,7 +16,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::common::CHUNK_SIZE;
-use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage;
+use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage_full;
 use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
 use crate::vector_storage::{
     DEFAULT_STOPPED, MultiVectorStorage, VectorStorage, VectorStorageEnum,
@@ -269,10 +269,10 @@ fn create_vector_storage(
         #[cfg(feature = "rocksdb")]
         MultiDenseStorageType::RocksDbFloat => {
             use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
-            use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
+            use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage_full;
 
             let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
-            open_simple_multi_dense_vector_storage(
+            open_simple_multi_dense_vector_storage_full(
                 db,
                 DB_VECTOR_CF,
                 vec_dim,
@@ -282,13 +282,15 @@ fn create_vector_storage(
             )
             .unwrap()
         }
-        MultiDenseStorageType::AppendableMmapFloat => open_appendable_memmap_multi_vector_storage(
-            path,
-            vec_dim,
-            Distance::Dot,
-            MultiVectorConfig::default(),
-        )
-        .unwrap(),
+        MultiDenseStorageType::AppendableMmapFloat => {
+            open_appendable_memmap_multi_vector_storage_full(
+                path,
+                vec_dim,
+                Distance::Dot,
+                MultiVectorConfig::default(),
+            )
+            .unwrap()
+        }
     }
 }
 
