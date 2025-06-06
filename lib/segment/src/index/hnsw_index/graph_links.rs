@@ -132,14 +132,20 @@ impl GraphLinks {
 
     /// Convert the graph links to a vector of edges, suitable for passing into
     /// [`GraphLinksSerializer::new`] or using in tests.
-    pub fn into_edges(self) -> Vec<Vec<Vec<PointOffsetType>>> {
+    pub fn to_edges(&self) -> Vec<Vec<Vec<PointOffsetType>>> {
+        self.to_edges_impl(|point_id, level| self.links(point_id, level).collect())
+    }
+
+    /// Convert the graph links to a vector of edges, generic over the container type.
+    pub fn to_edges_impl<Container>(
+        &self,
+        mut f: impl FnMut(PointOffsetType, usize) -> Container,
+    ) -> Vec<Vec<Container>> {
         let mut edges = Vec::with_capacity(self.num_points());
         for point_id in 0..self.num_points() {
             let num_levels = self.point_level(point_id as PointOffsetType) + 1;
             let mut levels = Vec::with_capacity(num_levels);
-            for level in 0..num_levels {
-                levels.push(self.links(point_id as PointOffsetType, level).collect());
-            }
+            levels.extend((0..num_levels).map(|level| f(point_id as PointOffsetType, level)));
             edges.push(levels);
         }
         edges
@@ -239,7 +245,7 @@ mod tests {
             .unwrap();
         let cmp_links = GraphLinks::load_from_file(&links_file, on_disk, format)
             .unwrap()
-            .into_edges();
+            .to_edges();
         compare_links(links, cmp_links, format, hnsw_m);
     }
 
@@ -254,7 +260,7 @@ mod tests {
          -> Vec<Vec<Vec<PointOffsetType>>> {
             GraphLinksSerializer::new(links, format, hnsw_m)
                 .to_graph_links_ram()
-                .into_edges()
+                .to_edges()
         };
 
         // no points
