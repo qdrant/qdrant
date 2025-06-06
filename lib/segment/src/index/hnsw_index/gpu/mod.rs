@@ -19,6 +19,7 @@ use lazy_static::lazy_static;
 use parking_lot::RwLock;
 
 use super::graph_layers_builder::GraphLayersBuilder;
+use crate::index::hnsw_index::HnswM;
 
 lazy_static! {
     pub static ref GPU_DEVICES_MANAGER: RwLock<Option<GpuDevicesMaganer>> = RwLock::new(None);
@@ -59,14 +60,13 @@ pub fn get_gpu_groups_count() -> usize {
 fn create_graph_layers_builder(
     batched_points: &BatchedPoints,
     num_vectors: usize,
-    m: usize,
-    m0: usize,
+    hnsw_m: HnswM,
     ef: usize,
     entry_points_num: usize,
 ) -> GraphLayersBuilder {
     // create graph layers builder
     let mut graph_layers_builder =
-        GraphLayersBuilder::new(num_vectors, m, m0, ef, entry_points_num, true);
+        GraphLayersBuilder::new(num_vectors, hnsw_m, ef, entry_points_num, true);
 
     if let Some(first_point_id) = batched_points.first_point_id() {
         // set first entry point
@@ -102,6 +102,7 @@ mod tests {
     use crate::data_types::vectors::DenseVector;
     use crate::fixtures::index_fixtures::TestRawScorerProducer;
     use crate::fixtures::payload_fixtures::random_vector;
+    use crate::index::hnsw_index::HnswM;
     use crate::index::hnsw_index::graph_layers::GraphLayers;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::graph_links::GraphLinksFormat;
@@ -121,8 +122,7 @@ mod tests {
     pub fn create_gpu_graph_test_data(
         num_vectors: usize,
         dim: usize,
-        m: usize,
-        m0: usize,
+        hnsw_m: HnswM,
         ef: usize,
         search_counts: usize,
     ) -> GpuGraphTestData {
@@ -144,7 +144,7 @@ mod tests {
         }
 
         // Build HNSW index
-        let mut graph_layers_builder = GraphLayersBuilder::new(num_vectors, m, m0, ef, 1, true);
+        let mut graph_layers_builder = GraphLayersBuilder::new(num_vectors, hnsw_m, ef, 1, true);
         for idx in 0..(num_vectors as PointOffsetType) {
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx, level);

@@ -34,9 +34,8 @@ pub fn build_hnsw_on_gpu<'a, 'b>(
     stopped: &AtomicBool,
 ) -> OperationResult<GraphLayersBuilder> {
     let num_vectors = reference_graph.links_layers().len();
-    let m = reference_graph.m();
-    let m0 = reference_graph.m0();
-    let ef = std::cmp::max(reference_graph.ef_construct(), m0);
+    let hnsw_m = reference_graph.hnsw_m();
+    let ef = std::cmp::max(reference_graph.ef_construct(), hnsw_m.m0);
 
     // Divide points into batches.
     // One batch is one shader invocation.
@@ -47,7 +46,7 @@ pub fn build_hnsw_on_gpu<'a, 'b>(
     )?;
 
     let mut graph_layers_builder =
-        create_graph_layers_builder(&batched_points, num_vectors, m, m0, ef, entry_points_num);
+        create_graph_layers_builder(&batched_points, num_vectors, hnsw_m, ef, entry_points_num);
 
     // Link first points on CPU.
     let mut cpu_linked_points_count = 0;
@@ -106,6 +105,7 @@ mod tests {
     use std::borrow::Borrow;
 
     use super::*;
+    use crate::index::hnsw_index::HnswM;
     use crate::index::hnsw_index::gpu::gpu_vector_storage::GpuVectorStorage;
     use crate::index::hnsw_index::gpu::tests::{
         GpuGraphTestData, check_graph_layers_builders_quality, compare_graph_layers_builders,
@@ -136,8 +136,7 @@ mod tests {
         let mut gpu_search_context = GpuInsertContext::new(
             &gpu_vector_storage,
             groups_count,
-            test.graph_layers_builder.m(),
-            test.graph_layers_builder.m0(),
+            test.graph_layers_builder.hnsw_m(),
             test.graph_layers_builder.ef_construct(),
             exact,
             1..=GPU_MAX_VISITED_FLAGS_FACTOR,
@@ -179,12 +178,11 @@ mod tests {
 
         let num_vectors = 1024;
         let dim = 64;
-        let m = 8;
-        let m0 = 16;
+        let hnsw_m = HnswM::new2(8);
         let ef = 32;
         let min_cpu_linked_points_count = 64;
 
-        let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, 0);
+        let test = create_gpu_graph_test_data(num_vectors, dim, hnsw_m, ef, 0);
         let graph_layers_builders = build_gpu_graph(&test, 1, min_cpu_linked_points_count, true, 2);
 
         for graph_layers_builder in graph_layers_builders.iter() {
@@ -201,15 +199,14 @@ mod tests {
 
         let num_vectors = 1024;
         let dim = 64;
-        let m = 8;
-        let m0 = 16;
+        let hnsw_m = HnswM::new2(8);
         let ef = 32;
         let groups_count = 4;
         let searches_count = 20;
         let top = 10;
         let min_cpu_linked_points_count = 64;
 
-        let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, searches_count);
+        let test = create_gpu_graph_test_data(num_vectors, dim, hnsw_m, ef, searches_count);
         let graph_layers_builders =
             build_gpu_graph(&test, groups_count, min_cpu_linked_points_count, true, 1);
 
@@ -226,15 +223,14 @@ mod tests {
 
         let num_vectors = 1024;
         let dim = 64;
-        let m = 8;
-        let m0 = 16;
+        let hnsw_m = HnswM::new2(8);
         let ef = 32;
         let groups_count = 4;
         let searches_count = 20;
         let top = 10;
         let min_cpu_linked_points_count = 64;
 
-        let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, searches_count);
+        let test = create_gpu_graph_test_data(num_vectors, dim, hnsw_m, ef, searches_count);
         let graph_layers_builders =
             build_gpu_graph(&test, groups_count, min_cpu_linked_points_count, false, 1);
 

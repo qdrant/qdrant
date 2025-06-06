@@ -6,6 +6,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use segment::fixtures::index_fixtures::TestRawScorerProducer;
+use segment::index::hnsw_index::HnswM;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::spaces::simple::CosineMetric;
 use segment::vector_storage::chunked_vector_storage::VectorOffsetType;
@@ -24,8 +25,13 @@ fn hnsw_benchmark(c: &mut Criterion) {
     group.bench_function("hnsw_index", |b| {
         b.iter(|| {
             let mut rng = rand::rng();
-            let mut graph_layers_builder =
-                GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+            let mut graph_layers_builder = GraphLayersBuilder::new(
+                NUM_VECTORS,
+                HnswM::new2(M),
+                EF_CONSTRUCT,
+                10,
+                USE_HEURISTIC,
+            );
             for idx in 0..(NUM_VECTORS as PointOffsetType) {
                 let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
                 let scorer = vector_holder.get_scorer(added_vector);

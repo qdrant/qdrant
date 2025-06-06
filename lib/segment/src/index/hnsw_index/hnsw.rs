@@ -38,6 +38,7 @@ use crate::common::operation_time_statistics::{
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
 use crate::id_tracker::IdTrackerSS;
+use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 #[cfg(feature = "gpu")]
@@ -295,8 +296,7 @@ impl HNSWIndex {
         );
         let mut graph_layers_builder = GraphLayersBuilder::new(
             total_vector_count,
-            config.m,
-            config.m0,
+            HnswM::new(config.m, config.m0),
             config.ef_construct,
             num_entries,
             HNSW_USE_HEURISTIC,
@@ -453,12 +453,14 @@ impl HNSWIndex {
             drop(old_index);
         }
 
-        let payload_m = config.payload_m.unwrap_or(config.m);
-        let payload_m0 = config.payload_m0.unwrap_or(config.m0);
+        let payload_m = HnswM::new(
+            config.payload_m.unwrap_or(config.m),
+            config.payload_m0.unwrap_or(config.m0),
+        );
 
         let indexed_fields = payload_index_ref.indexed_fields();
 
-        if payload_m > 0 && !indexed_fields.is_empty() {
+        if payload_m.m > 0 && !indexed_fields.is_empty() {
             // Calculate true average number of links per vertex in the HNSW graph
             // to better estimate percolation threshold
             let average_links_per_0_level =
@@ -515,7 +517,6 @@ impl HNSWIndex {
                     gpu_vectors,
                     get_gpu_groups_count(),
                     payload_m,
-                    config.payload_m0.unwrap_or(config.m0),
                     config.ef_construct,
                     false,
                     1..=GPU_MAX_VISITED_FLAGS_FACTOR,
@@ -575,7 +576,6 @@ impl HNSWIndex {
                     let mut additional_graph = GraphLayersBuilder::new_with_params(
                         total_vector_count,
                         payload_m,
-                        payload_m0,
                         config.ef_construct,
                         1,
                         HNSW_USE_HEURISTIC,
@@ -796,8 +796,7 @@ impl HNSWIndex {
             Some(GpuInsertContext::new(
                 gpu_vectors,
                 get_gpu_groups_count(),
-                graph_layers_builder.m(),
-                graph_layers_builder.m0(),
+                graph_layers_builder.hnsw_m(),
                 graph_layers_builder.ef_construct(),
                 false,
                 1..=GPU_MAX_VISITED_FLAGS_FACTOR,
@@ -1471,8 +1470,7 @@ pub(super) struct OldIndex<'a> {
     /// Mapping from new index to old index.
     /// `new_to_old[new_idx] == Some(old_idx)`.
     pub new_to_old: Vec<Option<PointOffsetType>>,
-    m: usize,
-    m0: usize,
+    hnsw_m: HnswM,
 }
 
 impl<'a> OldIndexCandidate<'a> {
@@ -1634,8 +1632,7 @@ impl<'a> OldIndexCandidate<'a> {
             index: self.index,
             old_to_new: self.old_to_new,
             new_to_old,
-            m: config.m,
-            m0: config.m0,
+            hnsw_m: HnswM::new(config.m, config.m0),
         }
     }
 }
@@ -1694,7 +1691,7 @@ impl OldIndex<'_> {
     ) -> Vec<PointOffsetType> {
         let links = &self.index.graph.links;
 
-        let level_m = if level == 0 { self.m0 } else { self.m };
+        let level_m = self.hnsw_m.level_m(level);
         let mut new_links = Vec::with_capacity(level_m);
         let mut need_fixing = 0;
 

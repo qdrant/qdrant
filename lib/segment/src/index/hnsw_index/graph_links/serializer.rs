@@ -16,10 +16,10 @@ use zerocopy::little_endian::U64 as LittleU64;
 use super::header::{HEADER_VERSION_COMPRESSED, HeaderCompressed, HeaderPlain};
 use super::{GraphLinks, GraphLinksEnum, GraphLinksFormat};
 use crate::common::operation_error::OperationResult;
+use crate::index::hnsw_index::HnswM;
 
 pub struct GraphLinksSerializer {
-    m: usize,
-    m0: usize,
+    hnsw_m: HnswM,
     links: Vec<u8>,
     kind: Kind,
     reindex: Vec<PointOffsetType>,
@@ -41,8 +41,7 @@ impl GraphLinksSerializer {
     pub fn new(
         mut edges: Vec<Vec<Vec<PointOffsetType>>>,
         format: GraphLinksFormat,
-        m: usize,
-        m0: usize,
+        hnsw_m: HnswM,
     ) -> Self {
         // create map from index in `offsets` to point_id
         let mut back_index: Vec<usize> = (0..edges.len()).collect();
@@ -82,8 +81,8 @@ impl GraphLinksSerializer {
         for level in 0..levels_count {
             let count = point_count_by_level.iter().skip(level).sum::<u64>() as usize;
             let (sorted_count, iter) = match level {
-                0 => (m0, Either::Left(0..count)),
-                _ => (m, Either::Right(back_index[..count].iter().copied())),
+                0 => (hnsw_m.m0, Either::Left(0..count)),
+                _ => (hnsw_m.m, Either::Right(back_index[..count].iter().copied())),
             };
             iter.for_each(|id| {
                 let raw_links = take(&mut edges[id][level]);
@@ -119,8 +118,7 @@ impl GraphLinksSerializer {
         };
 
         Self {
-            m,
-            m0,
+            hnsw_m,
             links,
             kind,
             reindex,
@@ -183,8 +181,8 @@ impl GraphLinksSerializer {
                     total_links_bytes: LittleU64::new(self.links.len() as u64),
                     offsets_parameters: *offsets_parameters,
                     levels_count: LittleU64::new(self.level_offsets.len() as u64),
-                    m: LittleU64::new(self.m as u64),
-                    m0: LittleU64::new(self.m0 as u64),
+                    m: LittleU64::new(self.hnsw_m.m as u64),
+                    m0: LittleU64::new(self.hnsw_m.m0 as u64),
                     zero_padding: [0; 5],
                 };
                 writer.write_all(header.as_bytes())?;

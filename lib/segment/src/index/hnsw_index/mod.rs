@@ -15,6 +15,31 @@ mod search_context;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 
+/// Maximum number of links per level.
+#[derive(Debug, Clone, Copy)]
+pub struct HnswM {
+    /// M for all levels except level 0.
+    pub m: usize,
+    /// M for level 0.
+    pub m0: usize,
+}
+
+impl HnswM {
+    /// Explicitly set both `m` and `m0`.
+    pub fn new(m: usize, m0: usize) -> Self {
+        Self { m, m0 }
+    }
+
+    /// Initialize with `m0 = 2 * m`.
+    pub fn new2(m: usize) -> Self {
+        Self { m, m0: 2 * m }
+    }
+
+    pub fn level_m(&self, level: usize) -> usize {
+        if level == 0 { self.m0 } else { self.m }
+    }
+}
+
 /// Placeholders for GPU logic when the `gpu` feature is not enabled.
 #[cfg(not(feature = "gpu"))]
 pub mod gpu {
