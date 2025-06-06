@@ -39,7 +39,7 @@ chaos-testing = []
 data-consistency-check = ["collection/data-consistency-check"]
 gpu = ["gpu/gpu", "segment/gpu"]
 deb = []
-rocksdb = ["segment/rocksdb"]
+rocksdb = ["collection/rocksdb", "segment/rocksdb"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"

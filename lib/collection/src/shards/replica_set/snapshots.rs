@@ -4,9 +4,6 @@ use std::{fs, io};
 
 use common::tar_ext;
 use segment::data_types::segment_manifest::{SegmentManifest, SegmentManifests};
-use segment::segment::destroy_rocksdb;
-use segment::segment::snapshot::{PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE, ROCKS_DB_VIRT_FILE};
-use segment::segment_constructor::PAYLOAD_INDEX_PATH;
 use segment::types::SnapshotFormat;
 
 use super::{REPLICA_STATE_FILE, ReplicaSetState, ReplicaState, ShardReplicaSet};
@@ -314,15 +311,24 @@ impl ShardReplicaSet {
                             is_outdated || is_zero
                         });
 
-                        let is_rocksdb = file == Path::new(ROCKS_DB_VIRT_FILE);
-                        let is_payload_index_rocksdb =
-                            file == Path::new(PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE);
+                        #[cfg(feature = "rocksdb")]
+                        let (is_rocksdb, is_payload_index_rocksdb) = (
+                            file == Path::new(segment::segment::snapshot::ROCKS_DB_VIRT_FILE),
+                            file == Path::new(
+                                segment::segment::snapshot::PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE,
+                            ),
+                        );
 
                         if is_removed {
                             // If `file` is a regular file, delete it from disk, if it was
                             // *removed* from the snapshot
 
-                            if !is_rocksdb && !is_payload_index_rocksdb {
+                            #[cfg(feature = "rocksdb")]
+                            let delete_regular_file = !is_rocksdb && !is_payload_index_rocksdb;
+                            #[cfg(not(feature = "rocksdb"))]
+                            let delete_regular_file = true;
+
+                            if delete_regular_file {
                                 let path = segment_path.join(file);
 
                                 log::debug!("Removing outdated segment file {}", path.display());
@@ -337,22 +343,28 @@ impl ShardReplicaSet {
                         } else if is_outdated {
                             // If `file` is a RocksDB "virtual" file, remove RocksDB from disk,
                             // if it was *updated* in or *removed* from the snapshot
+                            #[cfg(feature = "rocksdb")]
+                            {
+                                // TODO: test compilation fails if we have something invalid here!
+                                use segment::segment::destroy_rocksdb;
+                                use segment::segment_constructor::PAYLOAD_INDEX_PATH;
 
-                            if is_rocksdb {
-                                log::debug!(
-                                    "Destroying outdated RocksDB at {}",
-                                    segment_path.display(),
-                                );
+                                if is_rocksdb {
+                                    log::debug!(
+                                        "Destroying outdated RocksDB at {}",
+                                        segment_path.display(),
+                                    );
 
-                                destroy_rocksdb(&segment_path)?;
-                            } else if is_payload_index_rocksdb {
-                                log::debug!(
-                                    "Destroying outdated payload index RocksDB at {}/{}",
-                                    segment_path.display(),
-                                    PAYLOAD_INDEX_PATH,
-                                );
+                                    destroy_rocksdb(&segment_path)?;
+                                } else if is_payload_index_rocksdb {
+                                    log::debug!(
+                                        "Destroying outdated payload index RocksDB at {}/{}",
+                                        segment_path.display(),
+                                        PAYLOAD_INDEX_PATH,
+                                    );
 
-                                destroy_rocksdb(&segment_path.join(PAYLOAD_INDEX_PATH))?;
+                                    destroy_rocksdb(&segment_path.join(PAYLOAD_INDEX_PATH))?;
+                                }
                             }
                         }
                     }
