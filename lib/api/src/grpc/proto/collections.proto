@@ -464,35 +464,36 @@ message GeoIndexParams {
 }
 
 enum Language {
-  Arabic = 0;
-  Azerbaijani = 1;
-  Basque = 2;
-  Bengali = 3;
-  Catalan = 4;
-  Chinese = 5;
-  Danish = 6;
-  Dutch = 7;
-  English = 8;
-  Finnish = 9;
-  French = 10;
-  German = 11;
-  Greek = 12;
-  Hebrew = 13;
-  Hinglish = 14;
-  Hungarian = 15;
-  Indonesian = 16;
-  Italian = 17;
-  Kazakh = 18;
-  Nepali = 19;
-  Norwegian = 20;
-  Portuguese = 21;
-  Romanian = 22;
-  Russian = 23;
-  Slovene = 24;
-  Spanish = 25;
-  Swedish = 26;
-  Tajik = 27;
-  Turkish = 28;
+  UnspecifiedLanguage = 0;
+  Arabic = 1;
+  Azerbaijani = 2;
+  Basque = 3;
+  Bengali = 4;
+  Catalan = 5;
+  Chinese = 6;
+  Danish = 7;
+  Dutch = 8;
+  English = 9;
+  Finnish = 10;
+  French = 11;
+  German = 12;
+  Greek = 13;
+  Hebrew = 14;
+  Hinglish = 15;
+  Hungarian = 16;
+  Indonesian = 17;
+  Italian = 18;
+  Kazakh = 19;
+  Nepali = 20;
+  Norwegian = 21;
+  Portuguese = 22;
+  Romanian = 23;
+  Russian = 24;
+  Slovene = 25;
+  Spanish = 26;
+  Swedish = 27;
+  Tajik = 28;
+  Turkish = 29;
 }
 
 message StopwordsSet {

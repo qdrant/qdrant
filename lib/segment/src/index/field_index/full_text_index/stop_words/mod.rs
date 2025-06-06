@@ -100,6 +100,7 @@ impl StopwordsFilter {
     /// Add stopwords for a specific language
     fn add_language_stopwords(stopwords: &mut HashSet<String>, language: &Language) {
         let stopwords_array = match language {
+            Language::UnspecifiedLanguage => return,
             Language::Arabic => ARABIC_STOPWORDS,
             Language::Azerbaijani => AZERBAIJANI_STOPWORDS,
             Language::Basque => BASQUE_STOPWORDS,

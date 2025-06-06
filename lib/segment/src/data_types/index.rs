@@ -210,9 +210,11 @@ pub enum StopwordsInterface {
     Set(StopwordsSet),
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
+    #[serde(alias = "unspecified")]
+    UnspecifiedLanguage,
     #[serde(alias = "ar")]
     Arabic,
     #[serde(alias = "az")]
@@ -271,6 +273,53 @@ pub enum Language {
     Tajik,
     #[serde(alias = "tr")]
     Turkish,
+}
+
+impl<'de> serde::Deserialize<'de> for Language {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let lowercase_s = s.to_lowercase();
+
+        match lowercase_s.as_str() {
+            "unspecified" | "unspecifiedlanguage" => Ok(Language::UnspecifiedLanguage),
+            "ar" | "arabic" => Ok(Language::Arabic),
+            "az" | "azerbaijani" => Ok(Language::Azerbaijani),
+            "eu" | "basque" => Ok(Language::Basque),
+            "bn" | "bengali" => Ok(Language::Bengali),
+            "ca" | "catalan" => Ok(Language::Catalan),
+            "zh" | "chinese" => Ok(Language::Chinese),
+            "da" | "danish" => Ok(Language::Danish),
+            "nl" | "dutch" => Ok(Language::Dutch),
+            "en" | "english" => Ok(Language::English),
+            "fi" | "finnish" => Ok(Language::Finnish),
+            "fr" | "french" => Ok(Language::French),
+            "de" | "german" => Ok(Language::German),
+            "el" | "greek" => Ok(Language::Greek),
+            "he" | "hebrew" => Ok(Language::Hebrew),
+            "hi-en" | "hinglish" => Ok(Language::Hinglish),
+            "hu" | "hungarian" => Ok(Language::Hungarian),
+            "id" | "indonesian" => Ok(Language::Indonesian),
+            "it" | "italian" => Ok(Language::Italian),
+            "kk" | "kazakh" => Ok(Language::Kazakh),
+            "ne" | "nepali" => Ok(Language::Nepali),
+            "no" | "norwegian" => Ok(Language::Norwegian),
+            "pt" | "portuguese" => Ok(Language::Portuguese),
+            "ro" | "romanian" => Ok(Language::Romanian),
+            "ru" | "russian" => Ok(Language::Russian),
+            "sl" | "slovene" => Ok(Language::Slovene),
+            "es" | "spanish" => Ok(Language::Spanish),
+            "sv" | "swedish" => Ok(Language::Swedish),
+            "tg" | "tajik" => Ok(Language::Tajik),
+            "tr" | "turkish" => Ok(Language::Turkish),
+            _ => Err(serde::de::Error::custom(format!(
+                "Unsupported language: {}. Please use one of the supported languages.",
+                s
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
@@ -416,5 +465,23 @@ mod tests {
         } else {
             panic!("Expected StopwordsSet");
         }
+    }
+
+    #[test]
+    fn test_unsupported_language_error() {
+        // Test that unsupported languages are rejected with a clear error message
+        let json_unsupported = r#""klingon""#;
+        let result = serde_json::from_str::<Language>(json_unsupported);
+        assert!(result.is_err());
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("Unsupported language: klingon"), "Error message should contain 'Unsupported language: klingon', got: {}", error);
+
+        let json_interface = r#""klingon""#;
+        let result = serde_json::from_str::<StopwordsInterface>(json_interface);
+        assert!(result.is_err());
+
+        let json_set = r#"{"languages": ["english", "klingon"], "custom": ["AAA"]}"#;
+        let result = serde_json::from_str::<StopwordsInterface>(json_set);
+        assert!(result.is_err());
     }
 }

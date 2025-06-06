@@ -148,6 +148,9 @@ impl From<segment::data_types::index::TokenizerType> for TokenizerType {
 impl From<segment::data_types::index::Language> for Language {
     fn from(language: segment::data_types::index::Language) -> Self {
         match language {
+            segment::data_types::index::Language::UnspecifiedLanguage => {
+                Language::UnspecifiedLanguage
+            }
             segment::data_types::index::Language::Arabic => Language::Arabic,
             segment::data_types::index::Language::Azerbaijani => Language::Azerbaijani,
             segment::data_types::index::Language::Basque => Language::Basque,
@@ -186,6 +189,9 @@ impl TryFrom<Language> for segment::data_types::index::Language {
 
     fn try_from(language: Language) -> Result<Self, Self::Error> {
         match language {
+            Language::UnspecifiedLanguage => Err(Status::invalid_argument(
+                "UnspecifiedLanguage is not a valid language option",
+            )),
             Language::Arabic => Ok(segment::data_types::index::Language::Arabic),
             Language::Azerbaijani => Ok(segment::data_types::index::Language::Azerbaijani),
             Language::Basque => Ok(segment::data_types::index::Language::Basque),
