@@ -1401,6 +1401,8 @@ pub struct SegmentState {
     pub config: SegmentConfig,
 }
 
+pub type RawGeoPoint = (f64, f64);
+
 /// Geo point payload schema
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Default)]
 #[serde(try_from = "GeoPointShadow")]
@@ -1421,6 +1423,7 @@ struct GeoPointShadow {
     pub lat: f64,
 }
 
+#[derive(Debug)]
 pub struct GeoPointValidationError {
     pub lon: f64,
     pub lat: f64,
@@ -1470,6 +1473,18 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
 impl From<GeoPoint> for geo::Point {
     fn from(GeoPoint { lon, lat }: GeoPoint) -> Self {
         Self::new(lon, lat)
+    }
+}
+
+impl From<RawGeoPoint> for GeoPoint {
+    fn from((lon, lat): RawGeoPoint) -> Self {
+        GeoPoint::new(lon, lat).expect("invalid GeoPoint coordinates")
+    }
+}
+
+impl From<GeoPoint> for RawGeoPoint {
+    fn from(geo_point: GeoPoint) -> Self {
+        (geo_point.lon, geo_point.lat)
     }
 }
 
