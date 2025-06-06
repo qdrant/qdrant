@@ -27,6 +27,7 @@ enum IndexBuilder {
     #[cfg(feature = "rocksdb")]
     Mutable(NumericIndexBuilder<FloatPayloadType, FloatPayloadType>),
     MutableGridstore(NumericIndexGridstoreBuilder<FloatPayloadType, FloatPayloadType>),
+    #[cfg(feature = "rocksdb")]
     Immutable(NumericIndexImmutableBuilder<FloatPayloadType, FloatPayloadType>),
     Mmap(NumericIndexMmapBuilder<FloatPayloadType, FloatPayloadType>),
 }
@@ -37,6 +38,7 @@ impl IndexBuilder {
             #[cfg(feature = "rocksdb")]
             IndexBuilder::Mutable(builder) => builder.finalize(),
             IndexBuilder::MutableGridstore(builder) => builder.finalize(),
+            #[cfg(feature = "rocksdb")]
             IndexBuilder::Immutable(builder) => builder.finalize(),
             IndexBuilder::Mmap(builder) => builder.finalize(),
         }
@@ -52,6 +54,7 @@ impl IndexBuilder {
             #[cfg(feature = "rocksdb")]
             IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
             IndexBuilder::MutableGridstore(builder) => builder.add_point(id, payload, hw_counter),
+            #[cfg(feature = "rocksdb")]
             IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
             IndexBuilder::Mmap(builder) => builder.add_point(id, payload, hw_counter),
         }
@@ -93,6 +96,7 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
         #[cfg(feature = "rocksdb")]
         IndexBuilder::Mutable(builder) => builder.init().unwrap(),
         IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
+        #[cfg(feature = "rocksdb")]
         IndexBuilder::Immutable(builder) => builder.init().unwrap(),
         IndexBuilder::Mmap(builder) => builder.init().unwrap(),
     }
