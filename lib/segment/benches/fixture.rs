@@ -6,6 +6,7 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
 use segment::fixtures::index_fixtures::TestRawScorerProducer;
+use segment::index::hnsw_index::HnswM;
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::GraphLinksFormat;
@@ -50,7 +51,7 @@ where
         GraphLayers::load(&path, false, false).unwrap()
     } else {
         let mut graph_layers_builder =
-            GraphLayersBuilder::new(num_vectors, m, m * 2, ef_construct, 10, use_heuristic);
+            GraphLayersBuilder::new(num_vectors, HnswM::new2(m), ef_construct, 10, use_heuristic);
 
         let mut rng = StdRng::seed_from_u64(42);
         for idx in 0..num_vectors {

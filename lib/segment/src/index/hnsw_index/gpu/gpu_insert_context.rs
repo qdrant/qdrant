@@ -11,6 +11,7 @@ use super::gpu_vector_storage::GpuVectorStorage;
 use super::gpu_visited_flags::GpuVisitedFlags;
 use super::shader_builder::ShaderBuilderParameters;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilder;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 
@@ -184,8 +185,7 @@ impl<'a> GpuInsertContext<'a> {
         gpu_vector_storage: &'a GpuVectorStorage,
         // Parallel inserts count.
         groups_count: usize,
-        m: usize,
-        m0: usize,
+        hnsw_m: HnswM,
         ef: usize,
         // If true, guarantee equality of result with CPU version for both single-threaded case.
         // Required for tests.
@@ -200,7 +200,7 @@ impl<'a> GpuInsertContext<'a> {
         let insert_resources =
             GpuInsertResources::new(gpu_vector_storage, groups_count, points_count, ef, exact)?;
 
-        let gpu_links = GpuLinks::new(device.clone(), m, m0, points_count)?;
+        let gpu_links = GpuLinks::new(device.clone(), hnsw_m.m, hnsw_m.m0, points_count)?;
 
         let gpu_visited_flags = GpuVisitedFlags::new(
             device.clone(),
@@ -538,7 +538,8 @@ mod tests {
         }
 
         // Build HNSW index
-        let mut graph_layers_builder = GraphLayersBuilder::new(num_vectors, m, m, ef, 1, true);
+        let mut graph_layers_builder =
+            GraphLayersBuilder::new(num_vectors, HnswM::new(m, m), ef, 1, true);
         for idx in 0..(num_vectors as PointOffsetType) {
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx, level);
@@ -573,8 +574,7 @@ mod tests {
         let mut gpu_insert_context = GpuInsertContext::new(
             &test_data.gpu_vector_storage,
             test_data.groups_count,
-            test_data.m,
-            test_data.m,
+            HnswM::new(test_data.m, test_data.m),
             test_data.ef,
             true,
             1..=32,

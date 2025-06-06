@@ -9,14 +9,13 @@ use io::file_operations::read_bin;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use super::entry_points::EntryPoint;
-use super::graph_links::{GraphLinks, GraphLinksFormat};
+use super::HnswM;
+use super::entry_points::{EntryPoint, EntryPoints};
+use super::graph_links::{GraphLinks, GraphLinksFormat, GraphLinksSerializer};
 use crate::common::operation_error::{
     CancellableResult, OperationError, OperationResult, check_process_stopped,
 };
 use crate::common::utils::rev_range;
-use crate::index::hnsw_index::entry_points::EntryPoints;
-use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
@@ -39,8 +38,7 @@ pub(super) struct GraphLayerData<'a> {
 
 #[derive(Debug)]
 pub struct GraphLayers {
-    pub(super) m: usize,
-    pub(super) m0: usize,
+    pub(super) hnsw_m: HnswM,
     pub(super) links: GraphLinks,
     pub(super) entry_points: EntryPoints,
     pub(super) visited_pool: VisitedPool,
@@ -209,7 +207,7 @@ impl GraphLayersBase for GraphLayers {
     }
 
     fn get_m(&self, level: usize) -> usize {
-        if level == 0 { self.m0 } else { self.m }
+        self.hnsw_m.level_m(level)
     }
 }
 
@@ -303,12 +301,11 @@ impl GraphLayers {
         let graph_data: GraphLayerData = read_bin(&GraphLayers::get_path(dir))?;
 
         if compress {
-            Self::convert_to_compressed(dir, graph_data.m, graph_data.m0)?;
+            Self::convert_to_compressed(dir, HnswM::new(graph_data.m, graph_data.m0))?;
         }
 
         Ok(Self {
-            m: graph_data.m,
-            m0: graph_data.m0,
+            hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
             links: Self::load_links(dir, on_disk)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
@@ -325,7 +322,7 @@ impl GraphLayers {
         Err(OperationError::service_error("No links file found"))
     }
 
-    fn convert_to_compressed(dir: &Path, m: usize, m0: usize) -> OperationResult<()> {
+    fn convert_to_compressed(dir: &Path, hnsw_m: HnswM) -> OperationResult<()> {
         let plain_path = Self::get_links_path(dir, GraphLinksFormat::Plain);
         let compressed_path = Self::get_links_path(dir, GraphLinksFormat::Compressed);
 
@@ -337,7 +334,7 @@ impl GraphLayers {
 
         let links = GraphLinks::load_from_file(&plain_path, true, GraphLinksFormat::Plain)?;
         let original_size = plain_path.metadata()?.len();
-        GraphLinksSerializer::new(links.into_edges(), GraphLinksFormat::Compressed, m, m0)
+        GraphLinksSerializer::new(links.into_edges(), GraphLinksFormat::Compressed, hnsw_m)
             .save_as(&compressed_path)?;
         let new_size = compressed_path.metadata()?.len();
 
@@ -359,14 +356,14 @@ impl GraphLayers {
     pub fn compress_ram(&mut self) {
         use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
         assert_eq!(self.links.format(), GraphLinksFormat::Plain);
-        let dummy = GraphLinksSerializer::new(Vec::new(), GraphLinksFormat::Plain, 0, 0)
-            .to_graph_links_ram();
+        let dummy =
+            GraphLinksSerializer::new(Vec::new(), GraphLinksFormat::Plain, HnswM::new(0, 0))
+                .to_graph_links_ram();
         let links = std::mem::replace(&mut self.links, dummy);
         self.links = GraphLinksSerializer::new(
             links.into_edges(),
             GraphLinksFormat::Compressed,
-            self.m,
-            self.m0,
+            self.hnsw_m,
         )
         .to_graph_links_ram();
     }
@@ -417,7 +414,7 @@ mod tests {
     #[case::compressed(GraphLinksFormat::Compressed)]
     fn test_search_on_level(#[case] format: GraphLinksFormat) {
         let dim = 8;
-        let m = 8;
+        let hnsw_m = HnswM::new2(8);
         let entry_points_num = 10;
         let num_vectors = 10;
 
@@ -430,9 +427,8 @@ mod tests {
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
 
         let graph_layers = GraphLayers {
-            m,
-            m0: 2 * m,
-            links: GraphLinksSerializer::new(graph_links.clone(), format, m, 2 * m)
+            hnsw_m,
+            links: GraphLinksSerializer::new(graph_links.clone(), format, hnsw_m)
                 .to_graph_links_ram(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
