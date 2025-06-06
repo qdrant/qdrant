@@ -9,7 +9,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::{GraphLayersBuilder, LockedLayersContainer};
-use crate::index::hnsw_index::links_container::LinksContainer;
+use crate::index::hnsw_index::links_container::{ItemsBuffer, LinksContainer};
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer};
@@ -185,10 +185,26 @@ impl<'a> GraphLayersHealer<'a> {
         for &link in &valid_links {
             container.push(link);
         }
+        let container = container.into_vec();
 
         self.links_layers[offset as usize][level]
             .write()
-            .fill_from(container.into_vec().into_iter());
+            .fill_from(container.iter().copied());
+
+        // Insert backlinks.
+        let mut items = ItemsBuffer::default();
+        for other_point in container {
+            let mut other_container = self.links_layers[other_point as usize][level].write();
+            if !other_container.iter().any(|link| link == offset) {
+                other_container.connect_with_heuristic(
+                    offset,
+                    other_point,
+                    level_m,
+                    scorer_fn,
+                    &mut items,
+                );
+            }
+        }
     }
 
     pub fn heal(

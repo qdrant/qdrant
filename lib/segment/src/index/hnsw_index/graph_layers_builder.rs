@@ -534,6 +534,7 @@ impl GraphLayersBuilder {
             existing_links.links().to_vec()
         };
 
+        // Insert backlinks.
         let mut items = ItemsBuffer::default();
         for &other_point in &selected_nearest {
             self.links_layers[other_point as usize][curr_level]
