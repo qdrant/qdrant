@@ -532,6 +532,7 @@ impl GraphLayersBuilder {
                 }
             }
 
+            let level_m = self.hnsw_m.m;
             let iter = search_context.nearest.into_iter_sorted();
             existing_links.fill_from_sorted_with_heuristic(iter, level_m, scorer);
             existing_links.links().to_vec()
