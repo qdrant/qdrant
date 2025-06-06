@@ -23,7 +23,7 @@ rstest = { workspace = true }
 approx = "0.5.1"
 collection = { path = ".", features = ["testing"] }
 common = { path = "../common/common", features = ["testing"] }
-segment = { path = "../segment", features = ["testing"] }
+segment = { path = "../segment", default-features = false, features = ["testing"] }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }
@@ -67,7 +67,7 @@ common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
 io = { path = "../common/io" }
 issues = { path = "../common/issues" }
-segment = { path = "../segment" }
+segment = { path = "../segment", default-features = false }
 sparse = { path = "../sparse" }
 api = { path = "../api" }
 

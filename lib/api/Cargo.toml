@@ -32,7 +32,7 @@ validator = { workspace = true }
 itertools = { workspace = true }
 
 common = { path = "../common/common" }
-segment = { path = "../segment" }
+segment = { path = "../segment", default-features = false }
 sparse = { path = "../sparse" }
 
 tracing = { workspace = true, optional = true }
