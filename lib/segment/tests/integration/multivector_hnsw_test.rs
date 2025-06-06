@@ -7,7 +7,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
-use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef,
     VectorElementType, VectorRef, only_default_vector,
@@ -28,7 +27,8 @@ use segment::types::{
     SeqNumberType,
 };
 use segment::vector_storage::VectorStorage;
-use segment::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage_full;
+use segment::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage;
+use segment::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_in_ram_multi_vector_storage_full;
 use tempfile::Builder;
 
 #[test]
@@ -58,14 +58,11 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         .unwrap();
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let mut multi_storage = open_simple_multi_dense_vector_storage_full(
-        db,
-        DB_VECTOR_CF,
+    let mut multi_storage = open_appendable_in_ram_multi_vector_storage_full(
+        dir.path(),
         dim,
         distance,
         MultiVectorConfig::default(),
-        &AtomicBool::new(false),
     )
     .unwrap();
 
