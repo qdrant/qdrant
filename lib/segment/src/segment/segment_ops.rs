@@ -43,6 +43,7 @@ impl Segment {
     pub(super) fn replace_all_vectors(
         &mut self,
         internal_id: PointOffsetType,
+        op_num: SeqNumberType,
         vectors: &NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
@@ -52,6 +53,7 @@ impl Segment {
             let vector = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(internal_id, vector, hw_counter)?;
+            self.version_tracker.set_vector(vector_name, Some(op_num));
         }
         Ok(())
     }
@@ -73,6 +75,7 @@ impl Segment {
     pub(super) fn update_vectors(
         &mut self,
         internal_id: PointOffsetType,
+        op_num: SeqNumberType,
         vectors: NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
@@ -82,6 +85,7 @@ impl Segment {
             let vector_data = &self.vector_data[vector_name.as_ref()];
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()), hw_counter)?;
+            self.version_tracker.set_vector(&vector_name, Some(op_num));
         }
         Ok(())
     }
@@ -94,6 +98,7 @@ impl Segment {
     pub(super) fn insert_new_vectors(
         &mut self,
         point_id: PointIdType,
+        op_num: SeqNumberType,
         vectors: &NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PointOffsetType> {
@@ -104,6 +109,7 @@ impl Segment {
             let vector_opt = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(new_index, vector_opt, hw_counter)?;
+            self.version_tracker.set_vector(vector_name, Some(op_num));
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)
@@ -484,9 +490,10 @@ impl Segment {
                     .clear_payload(*internal_id, &HardwareCounterCell::disposable())?; // Internal operation. No hw measurement needed
 
                 // Drop removed points from vector storage
-                for vector_data in self.vector_data.values() {
+                for (vector_name, vector_data) in &self.vector_data {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
                     vector_storage.delete_vector(*internal_id)?;
+                    self.version_tracker.set_vector(vector_name, None); // 🤔
                 }
             }
 

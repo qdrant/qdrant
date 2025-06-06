@@ -113,10 +113,11 @@ impl SegmentEntry for Segment {
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
-                segment.replace_all_vectors(existing_internal_id, &vectors, hw_counter)?;
+                segment.replace_all_vectors(existing_internal_id, op_num, &vectors, hw_counter)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
-                let new_index = segment.insert_new_vectors(point_id, &vectors, hw_counter)?;
+                let new_index =
+                    segment.insert_new_vectors(point_id, op_num, &vectors, hw_counter)?;
                 Ok((false, Some(new_index)))
             }
         })
@@ -175,7 +176,7 @@ impl SegmentEntry for Segment {
             }),
             Some(internal_id) => {
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
-                    segment.update_vectors(internal_id, vectors, hw_counter)?;
+                    segment.update_vectors(internal_id, op_num, vectors, hw_counter)?;
                     Ok((true, Some(internal_id)))
                 })
             }
@@ -203,6 +204,13 @@ impl SegmentEntry for Segment {
                     })?;
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
                     let is_deleted = vector_storage.delete_vector(internal_id)?;
+
+                    if is_deleted {
+                        segment
+                            .version_tracker
+                            .set_vector(vector_name, Some(op_num));
+                    }
+
                     Ok((is_deleted, Some(internal_id)))
                 })
             }
