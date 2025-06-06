@@ -764,9 +764,11 @@ impl PayloadFieldIndex for GeoMapIndex {
 mod tests {
     use std::collections::{BTreeSet, HashSet};
     use std::ops::Range;
+    use std::sync::Arc;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use itertools::Itertools;
+    use parking_lot::RwLock;
     use rand::SeedableRng;
     use rand::prelude::StdRng;
     use rstest::rstest;

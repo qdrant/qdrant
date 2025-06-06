@@ -595,8 +595,12 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use parking_lot::RwLock;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
+    use rocksdb::DB;
     use rstest::rstest;
     use tempfile::{Builder, TempDir};
 

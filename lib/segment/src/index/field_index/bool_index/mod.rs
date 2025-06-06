@@ -282,6 +282,7 @@ mod tests {
     use super::mmap_bool_index::MmapBoolIndex;
     #[cfg(feature = "rocksdb")]
     use super::simple_bool_index::SimpleBoolIndex;
+    #[cfg(feature = "rocksdb")]
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::index::field_index::{FieldIndexBuilderTrait as _, PayloadFieldIndex, ValueIndexer};
     use crate::json_path::JsonPath;

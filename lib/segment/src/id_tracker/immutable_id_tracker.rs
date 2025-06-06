@@ -513,7 +513,6 @@ pub(super) mod test {
     use uuid::Uuid;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
     const RAND_SEED: u64 = 42;
@@ -882,7 +881,10 @@ pub(super) mod test {
     }
 
     #[test]
+    #[cfg(feature = "rocksdb")]
     fn simple_id_tracker_vs_immutable_tracker_congruence() {
+        use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
+
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
