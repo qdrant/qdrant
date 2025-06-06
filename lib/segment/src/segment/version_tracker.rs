@@ -9,6 +9,10 @@ pub struct VersionTracker {
 }
 
 impl VersionTracker {
+    pub fn get_vector(&self, vector: &str) -> Option<SeqNumberType> {
+        self.vector_storage.get(vector).copied()
+    }
+
     pub fn set_vector(&mut self, vector: &str, version: Option<SeqNumberType>) {
         let Some(new) = version else {
             self.vector_storage.remove(vector);
@@ -25,6 +29,10 @@ impl VersionTracker {
         } else {
             self.vector_storage.remove(vector);
         }
+    }
+
+    pub fn get_payload(&self) -> Option<SeqNumberType> {
+        self.payload_storage
     }
 
     pub fn set_payload(&mut self, version: Option<SeqNumberType>) {
