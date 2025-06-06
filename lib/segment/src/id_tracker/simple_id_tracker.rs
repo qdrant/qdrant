@@ -469,7 +469,7 @@ mod tests {
     }
 
     /// Create RocksDB based ID tracker with mappings and various mutations.
-    /// Migrate it to the mutable ID tracker and ensure that the mappings are correct.
+    /// Migrate it to the mutable ID tracker and assert that the mappings are correct.
     ///
     /// Test based upton [`super::mutable_id_tracker::tests::test_store_load_mutated`]
     #[test]

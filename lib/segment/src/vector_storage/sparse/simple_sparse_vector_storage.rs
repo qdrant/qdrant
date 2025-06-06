@@ -136,6 +136,12 @@ impl SimpleSparseVectorStorage {
         let available_size = (self.total_sparse_size as f32 * available_fraction) as usize;
         available_size * (std::mem::size_of::<DimWeight>() + std::mem::size_of::<DimId>())
     }
+
+    /// Destroy this vector storage, remove persisted data from RocksDB
+    pub fn destroy(self) -> OperationResult<()> {
+        self.db_wrapper.remove_column_family()?;
+        Ok(())
+    }
 }
 
 impl SparseVectorStorage for SimpleSparseVectorStorage {
@@ -274,5 +280,79 @@ impl VectorStorage for SimpleSparseVectorStorage {
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.as_bitslice()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+    use sparse::common::sparse_vector_fixture::random_sparse_vector;
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
+    use crate::segment_constructor::migrate_rocksdb_sparse_vector_storage_to_mmap;
+
+    const RAND_SEED: u64 = 42;
+
+    /// Create RocksDB based sparse vector storage.
+    ///
+    /// Migrate it to the mmap based sparse vector storage and assert vector data is correct.
+    #[test]
+    fn test_migrate_simple_to_mmap() {
+        const POINT_COUNT: PointOffsetType = 128;
+        const DIM: usize = 1024;
+        const DELETE_PROBABILITY: f64 = 0.1;
+
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+
+        let db_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let db = open_db(db_dir.path(), &[DB_VECTOR_CF]).unwrap();
+
+        // Create simple sparse vector storage, insert test points and delete some of them again
+        let mut storage =
+            open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
+        for internal_id in 0..POINT_COUNT {
+            let vector = random_sparse_vector(&mut rng, DIM);
+            storage
+                .insert_vector(
+                    internal_id,
+                    VectorRef::from(&vector),
+                    &HardwareCounterCell::disposable(),
+                )
+                .unwrap();
+            if rng.random_bool(DELETE_PROBABILITY) {
+                storage.delete_vector(internal_id).unwrap();
+            }
+        }
+
+        let deleted_vector_count = storage.deleted_vector_count();
+        let total_vector_count = storage.total_vector_count();
+
+        // Migrate from RocksDB to mmap storage
+        let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let new_storage =
+            migrate_rocksdb_sparse_vector_storage_to_mmap(storage, storage_dir.path())
+                .expect("failed to migrate from RocksDB to mmap");
+
+        // We can drop RocksDB storage now
+        db_dir.close().expect("failed to drop RocksDB storage");
+
+        // Assert vector counts and data
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+        assert_eq!(new_storage.deleted_vector_count(), deleted_vector_count);
+        assert_eq!(new_storage.total_vector_count(), total_vector_count);
+        for internal_id in 0..POINT_COUNT {
+            let vector = random_sparse_vector(&mut rng, DIM);
+            let deleted = new_storage.is_deleted_vector(internal_id);
+            assert_eq!(deleted, rng.random_bool(DELETE_PROBABILITY));
+            if !deleted {
+                assert_eq!(
+                    new_storage.get_vector_sequential(internal_id),
+                    CowVector::from(vector),
+                );
+            }
+        }
     }
 }

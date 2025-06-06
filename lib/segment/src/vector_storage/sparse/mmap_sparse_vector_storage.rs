@@ -1,5 +1,5 @@
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -334,18 +334,36 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 }
 
+/// Find files related to this sparse vector storage
+pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<Vec<PathBuf>> {
+    let storage_path = vector_storage_path.join(STORAGE_DIRNAME);
+    let deleted_path = vector_storage_path.join(DELETED_DIRNAME);
+
+    let mut files = vec![];
+    files.extend(common::disk::list_files(&storage_path)?);
+    files.extend(common::disk::list_files(&deleted_path)?);
+    Ok(files)
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
 
     use common::counter::hardware_counter::HardwareCounterCell;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
     use sparse::common::sparse_vector;
+    use sparse::common::sparse_vector_fixture::random_sparse_vector;
+    use tempfile::Builder;
 
+    use super::*;
     use crate::vector_storage::VectorStorage;
     use crate::vector_storage::sparse::mmap_sparse_vector_storage::{
         MmapSparseVectorStorage, VectorRef,
     };
+
+    const RAND_SEED: u64 = 42;
 
     fn visit_files_recursively(dir: &Path, cb: &mut impl FnMut(PathBuf)) -> std::io::Result<()> {
         if dir.is_dir() {
@@ -419,5 +437,44 @@ mod test {
             }
             _ => panic!("Expected sparse vector"),
         };
+    }
+
+    /// Test that `find_storage_files` finds all files that are reported by the storage.
+    #[test]
+    fn test_find_storage_files() {
+        const POINT_COUNT: PointOffsetType = 1000;
+        const DIM: usize = 1024;
+
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+        let hw_counter = HardwareCounterCell::disposable();
+
+        // Insert points, delete 10% of it, and flush
+        for internal_id in 0..POINT_COUNT {
+            let vector = random_sparse_vector(&mut rng, DIM);
+            storage
+                .insert_vector(internal_id, VectorRef::from(&vector), &hw_counter)
+                .unwrap();
+        }
+        for internal_id in 0..POINT_COUNT {
+            if !rng.random_bool(0.1) {
+                continue;
+            }
+            storage.delete_vector(internal_id).unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
+        let found_files = find_storage_files(dir.path())
+            .unwrap()
+            .into_iter()
+            .collect::<HashSet<_>>();
+
+        assert_eq!(
+            storage_files, found_files,
+            "find_storage_files must find same files that storage reports",
+        );
     }
 }
