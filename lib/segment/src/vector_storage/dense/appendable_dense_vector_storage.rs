@@ -355,29 +355,8 @@ pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<
     let deleted_path = vector_storage_path.join(DELETED_DIR_PATH);
 
     let mut files = vec![];
-    files.extend(list_files(&vectors_path)?);
-    files.extend(list_files(&deleted_path)?);
-    Ok(files)
-}
-
-/// List all files in the given directory recursively.
-fn list_files(dir: &Path) -> OperationResult<Vec<PathBuf>> {
-    if !dir.is_dir() {
-        return Ok(vec![]);
-    }
-
-    let mut files = Vec::new();
-    for entry in dir.read_dir()? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-        if file_type.is_file() || file_type.is_symlink() {
-            files.push(entry.path());
-        } else {
-            debug_assert!(file_type.is_dir(), "path is expected to be a dir");
-            files.extend(list_files(&entry.path())?);
-        }
-    }
-
+    files.extend(common::disk::list_files(&vectors_path)?);
+    files.extend(common::disk::list_files(&deleted_path)?);
     Ok(files)
 }
 

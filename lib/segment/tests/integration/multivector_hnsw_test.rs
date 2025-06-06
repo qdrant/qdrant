@@ -28,7 +28,7 @@ use segment::types::{
     SeqNumberType,
 };
 use segment::vector_storage::VectorStorage;
-use segment::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
+use segment::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage_full;
 use tempfile::Builder;
 
 #[test]
@@ -59,7 +59,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let mut multi_storage = open_simple_multi_dense_vector_storage(
+    let mut multi_storage = open_simple_multi_dense_vector_storage_full(
         db,
         DB_VECTOR_CF,
         dim,

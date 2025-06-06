@@ -383,7 +383,7 @@ mod tests {
             storage
                 .insert_vector(
                     internal_id,
-                    VectorRef::from(point.as_slice()),
+                    VectorRef::from(&point),
                     &HardwareCounterCell::disposable(),
                 )
                 .unwrap();
@@ -395,7 +395,7 @@ mod tests {
         let deleted_vector_count = storage.deleted_vector_count();
         let total_vector_count = storage.total_vector_count();
 
-        // Migrate from RocksDB to mutable ID tracker
+        // Migrate from RocksDB to mmap storage
         let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let new_storage =
             migrate_rocksdb_dense_vector_storage_to_mmap(storage, DIM, storage_dir.path())
