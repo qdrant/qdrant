@@ -119,6 +119,8 @@ impl ConfigMismatchOptimizer {
                     return None; // Never optimize already optimized segment
                 }
 
+                // TODO(remove-rocksdb): implement in-memory payload storage on Gridstore, then re-enable this check
+                #[cfg(feature = "rocksdb")]
                 if self.collection_params.on_disk_payload
                     != segment_config.payload_storage_type.is_on_disk()
                 {
