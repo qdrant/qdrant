@@ -1,24 +1,44 @@
 use std::cmp::max;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use delegate::delegate;
+use gridstore::Gridstore;
+use gridstore::config::StorageOptions;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::GeoMapIndex;
+use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
-use crate::types::GeoPoint;
+use crate::types::{GeoPoint, RawGeoPoint};
+
+/// Default options for Gridstore storage
+const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
+    // Size of geo point values in index
+    block_size_bytes: Some(size_of::<RawGeoPoint>()),
+    // Compressing geo point values is unreasonable
+    compression: Some(gridstore::config::Compression::None),
+    // Scale page size down with block size, prevents overhead of first page when there's (almost) no values
+    page_size_bytes: Some(size_of::<RawGeoPoint>() * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
+    region_size_blocks: None,
+};
 
 pub struct MutableGeoMapIndex {
     in_memory_index: InMemoryGeoMapIndex,
-    db_wrapper: DatabaseColumnScheduledDeleteWrapper,
+    storage: Storage,
+}
+
+enum Storage {
+    RocksDb(DatabaseColumnScheduledDeleteWrapper),
+    Gridstore(Arc<RwLock<Gridstore<Vec<RawGeoPoint>>>>),
 }
 
 pub struct InMemoryGeoMapIndex {
@@ -50,29 +70,62 @@ pub struct InMemoryGeoMapIndex {
 }
 
 impl MutableGeoMapIndex {
-    pub fn new(db: Arc<RwLock<DB>>, store_cf_name: &str) -> Self {
+    /// Open mutable geo index from RocksDB storage
+    ///
+    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    pub fn open_rocksdb(db: Arc<RwLock<DB>>, store_cf_name: &str) -> Self {
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             store_cf_name,
         ));
         Self {
             in_memory_index: InMemoryGeoMapIndex::new(),
-            db_wrapper,
+            storage: Storage::RocksDb(db_wrapper),
         }
     }
 
-    pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
-        &self.db_wrapper
+    /// Open mutable geo index from Gridstore storage
+    ///
+    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    pub fn open_gridstore(path: PathBuf) -> OperationResult<Self> {
+        let store = Gridstore::open_or_create(path, GRIDSTORE_OPTIONS).map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to open mutable geo index on gridstore: {err}"
+            ))
+        })?;
+        Ok(Self {
+            in_memory_index: InMemoryGeoMapIndex::new(),
+            storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
+        })
     }
 
-    pub fn load(&mut self) -> OperationResult<bool> {
-        if !self.db_wrapper.has_column_family()? {
+    /// Load storage
+    ///
+    /// Loads in-memory index from backing RocksDB or Gridstore storage.
+    pub(super) fn load(&mut self) -> OperationResult<bool> {
+        match self.storage {
+            Storage::RocksDb(_) => self.load_rocksdb(),
+            Storage::Gridstore(_) => self.load_gridstore(),
+        }
+    }
+
+    /// Load from RocksDB storage
+    ///
+    /// Loads in-memory index from RocksDB storage.
+    pub fn load_rocksdb(&mut self) -> OperationResult<bool> {
+        let Storage::RocksDb(db_wrapper) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
+        };
+
+        if !db_wrapper.has_column_family()? {
             return Ok(false);
         };
 
         let mut points_to_hashes: BTreeMap<PointOffsetType, Vec<GeoHash>> = Default::default();
 
-        for (key, value) in self.db_wrapper.lock_db().iter()? {
+        for (key, value) in db_wrapper.lock_db().iter()? {
             let (geo_hash, idx) = GeoMapIndex::decode_db_key(key)?;
             let geo_point = GeoMapIndex::decode_db_value(value)?;
 
@@ -110,19 +163,124 @@ impl MutableGeoMapIndex {
         Ok(true)
     }
 
-    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        if let Some(geo_points_to_remove) = self.in_memory_index.point_to_values.get(idx as usize) {
-            for removed_geo_point in geo_points_to_remove {
-                let geo_hash_to_remove: GeoHash =
-                    encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).map_err(
-                        |e| OperationError::service_error(format!("Malformed geo points: {e}")),
-                    )?;
-                let key = GeoMapIndex::encode_db_key(geo_hash_to_remove, idx);
-                self.db_wrapper.remove(&key)?;
+    /// Load from Gridstore storage
+    ///
+    /// Loads in-memory index from Gridstore storage.
+    fn load_gridstore(&mut self) -> OperationResult<bool> {
+        let Storage::Gridstore(store) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from Gridstore, using different storage backend",
+            ));
+        };
+
+        let hw_counter = HardwareCounterCell::disposable();
+        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
+        store
+            .read()
+            .iter::<_, OperationError>(
+                |idx, values| {
+                    let geo_points = values
+                        .iter()
+                        .cloned()
+                        .map(GeoPoint::from)
+                        .collect::<Vec<_>>();
+                    let geo_hashes = geo_points
+                        .iter()
+                        .map(|geo_point| {
+                            encode_max_precision(geo_point.lon, geo_point.lat).map_err(|e| {
+                                OperationError::service_error(format!("Malformed geo points: {e}"))
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    for geo_point in geo_points {
+                        if self.in_memory_index.point_to_values.len() <= idx as usize {
+                            self.in_memory_index
+                                .point_to_values
+                                .resize_with(idx as usize + 1, Vec::new);
+                        }
+
+                        if self.in_memory_index.point_to_values[idx as usize].is_empty() {
+                            self.in_memory_index.points_count += 1;
+                        }
+
+                        self.in_memory_index.point_to_values[idx as usize].push(geo_point);
+                        self.in_memory_index.points_values_count += 1;
+                    }
+
+                    self.in_memory_index.max_values_per_point =
+                        max(self.in_memory_index.max_values_per_point, geo_hashes.len());
+                    self.in_memory_index
+                        .increment_hash_point_counts(&geo_hashes);
+                    for geo_hash in geo_hashes {
+                        self.in_memory_index.increment_hash_value_counts(&geo_hash);
+                        self.in_memory_index
+                            .points_map
+                            .entry(geo_hash)
+                            .or_default()
+                            .insert(idx);
+                    }
+
+                    Ok(true)
+                },
+                hw_counter_ref,
+            )
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to load mutable geo index from gridstore: {err}"
+                ))
+            })?;
+
+        Ok(true)
+    }
+
+    #[inline]
+    pub(super) fn clear(&self) -> OperationResult<()> {
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
+            Storage::Gridstore(store) => store.write().clear().map_err(|err| {
+                OperationError::service_error(format!("Failed to clear mutable geo index: {err}",))
+            }),
+        }
+    }
+
+    /// Clear cache
+    ///
+    /// Only clears cache of Gridstore storage if used. Does not clear in-memory representation of
+    /// index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match &self.storage {
+            Storage::RocksDb(_) => Ok(()),
+            Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to clear mutable geo index gridstore cache: {err}"
+                ))
+            }),
+        }
+    }
+
+    #[inline]
+    pub(super) fn files(&self) -> Vec<PathBuf> {
+        match &self.storage {
+            Storage::RocksDb(_) => vec![],
+            Storage::Gridstore(store) => store.read().files(),
+        }
+    }
+
+    #[inline]
+    pub(super) fn flusher(&self) -> Flusher {
+        match &self.storage {
+            Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
+            Storage::Gridstore(store) => {
+                let store = store.clone();
+                Box::new(move || {
+                    store.read().flush().map_err(|err| {
+                        OperationError::service_error(format!(
+                            "Failed to flush mutable geo index gridstore: {err}"
+                        ))
+                    })
+                })
             }
-            self.in_memory_index.remove_point(idx)
-        } else {
-            Ok(())
         }
     }
 
@@ -132,17 +290,72 @@ impl MutableGeoMapIndex {
         values: &[GeoPoint],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        for added_point in values {
-            let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
-                .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
+        // Update persisted storage
+        match &mut self.storage {
+            Storage::RocksDb(db_wrapper) => {
+                for added_point in values {
+                    let added_geo_hash: GeoHash =
+                        encode_max_precision(added_point.lon, added_point.lat).map_err(|e| {
+                            OperationError::service_error(format!("Malformed geo points: {e}"))
+                        })?;
 
-            let key = GeoMapIndex::encode_db_key(added_geo_hash, idx);
-            let value = GeoMapIndex::encode_db_value(added_point);
+                    let key = GeoMapIndex::encode_db_key(added_geo_hash, idx);
+                    let value = GeoMapIndex::encode_db_value(added_point);
 
-            self.db_wrapper.put(&key, value)?;
+                    db_wrapper.put(&key, value)?;
+                }
+            }
+            // We cannot store empty value, then delete instead
+            Storage::Gridstore(store) if values.is_empty() => {
+                store.write().delete_value(idx);
+            }
+            Storage::Gridstore(store) => {
+                let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
+                let values = values
+                    .iter()
+                    .cloned()
+                    .map(RawGeoPoint::from)
+                    .collect::<Vec<_>>();
+                store
+                    .write()
+                    .put_value(idx, &values, hw_counter_ref)
+                    .map_err(|err| {
+                        OperationError::service_error(format!(
+                            "failed to put value in mutable geo index gridstore: {err}"
+                        ))
+                    })?;
+            }
         }
+
         self.in_memory_index
             .add_many_geo_points(idx, values, hw_counter)
+    }
+
+    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+        let Some(geo_points_to_remove) = self.in_memory_index.point_to_values.get(idx as usize)
+        else {
+            return Ok(());
+        };
+
+        // Update persisted storage
+        match &mut self.storage {
+            Storage::RocksDb(db_wrapper) => {
+                for removed_geo_point in geo_points_to_remove {
+                    let geo_hash_to_remove: GeoHash =
+                        encode_max_precision(removed_geo_point.lon, removed_geo_point.lat)
+                            .map_err(|e| {
+                                OperationError::service_error(format!("Malformed geo points: {e}"))
+                            })?;
+                    let key = GeoMapIndex::encode_db_key(geo_hash_to_remove, idx);
+                    db_wrapper.remove(&key)?;
+                }
+            }
+            Storage::Gridstore(store) => {
+                store.write().delete_value(idx);
+            }
+        }
+
+        self.in_memory_index.remove_point(idx)
     }
 
     pub fn points_count(&self) -> usize {

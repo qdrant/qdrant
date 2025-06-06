@@ -48,7 +48,7 @@ impl GeoMapIndex {
     pub fn new_memory(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         let store_cf_name = GeoMapIndex::storage_cf_name(field);
         if is_appendable {
-            GeoMapIndex::Mutable(MutableGeoMapIndex::new(db, &store_cf_name))
+            GeoMapIndex::Mutable(MutableGeoMapIndex::open_rocksdb(db, &store_cf_name))
         } else {
             GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_rocksdb(db, &store_cf_name))
         }
@@ -65,6 +65,12 @@ impl GeoMapIndex {
         }
     }
 
+    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
+        Ok(GeoMapIndex::Mutable(MutableGeoMapIndex::open_gridstore(
+            dir,
+        )?))
+    }
+
     pub fn builder(db: Arc<RwLock<DB>>, field: &str) -> GeoMapIndexBuilder {
         GeoMapIndexBuilder(Self::new_memory(db, field, true))
     }
@@ -78,12 +84,16 @@ impl GeoMapIndex {
         }
     }
 
-    pub fn mmap_builder(path: &Path, is_on_disk: bool) -> GeoMapIndexMmapBuilder {
+    pub fn builder_mmap(path: &Path, is_on_disk: bool) -> GeoMapIndexMmapBuilder {
         GeoMapIndexMmapBuilder {
             path: path.to_owned(),
             in_memory_index: InMemoryGeoMapIndex::new(),
             is_on_disk,
         }
+    }
+
+    pub fn builder_gridstore(dir: PathBuf) -> GeoMapIndexGridstoreBuilder {
+        GeoMapIndexGridstoreBuilder::new(dir)
     }
 
     fn points_count(&self) -> usize {
@@ -187,14 +197,6 @@ impl GeoMapIndex {
         result[0..8].clone_from_slice(&value.lat.to_be_bytes());
         result[8..16].clone_from_slice(&value.lon.to_be_bytes());
         result
-    }
-
-    pub fn flusher(&self) -> Flusher {
-        match self {
-            GeoMapIndex::Mutable(index) => index.db_wrapper().flusher(),
-            GeoMapIndex::Immutable(index) => index.flusher(),
-            GeoMapIndex::Mmap(index) => index.flusher(),
-        }
     }
 
     pub fn check_values_any(
@@ -385,11 +387,12 @@ impl GeoMapIndex {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            GeoMapIndex::Mutable(_) => {}   // Not a mmap
-            GeoMapIndex::Immutable(_) => {} // Not a mmap
-            GeoMapIndex::Mmap(index) => index.clear_cache()?,
+            // Only clears backing mmap storage if used, not in-memory representation
+            GeoMapIndex::Mutable(index) => index.clear_cache(),
+            // Only clears backing mmap storage if used, not in-memory representation
+            GeoMapIndex::Immutable(index) => index.clear_cache(),
+            GeoMapIndex::Mmap(index) => index.clear_cache(),
         }
-        Ok(())
     }
 }
 
@@ -400,7 +403,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexBuilder {
 
     fn init(&mut self) -> OperationResult<()> {
         match &self.0 {
-            GeoMapIndex::Mutable(index) => index.db_wrapper().recreate_column_family(),
+            GeoMapIndex::Mutable(index) => index.clear(),
             GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Cannot use immutable index as a builder type",
             )),
@@ -437,7 +440,7 @@ impl FieldIndexBuilderTrait for GeoMapImmutableIndexBuilder {
 
     fn init(&mut self) -> OperationResult<()> {
         match &self.index {
-            GeoMapIndex::Mutable(index) => index.db_wrapper().recreate_column_family(),
+            GeoMapIndex::Mutable(index) => index.clear(),
             GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Cannot use immutable index as a builder type",
             )),
@@ -547,6 +550,55 @@ impl ValueIndexer for GeoMapIndex {
     }
 }
 
+pub struct GeoMapIndexGridstoreBuilder {
+    dir: PathBuf,
+    index: Option<GeoMapIndex>,
+}
+
+impl GeoMapIndexGridstoreBuilder {
+    fn new(dir: PathBuf) -> Self {
+        Self { dir, index: None }
+    }
+}
+
+impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
+    type FieldIndexType = GeoMapIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        assert!(
+            self.index.is_none(),
+            "index must be initialized exactly once",
+        );
+        self.index
+            .replace(GeoMapIndex::new_gridstore(self.dir.clone())?);
+        Ok(())
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let Some(index) = &mut self.index else {
+            return Err(OperationError::service_error(
+                "GeoMapIndexGridstoreBuilder: index must be initialized before adding points",
+            ));
+        };
+        index.add_point(id, payload, hw_counter)
+    }
+
+    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+        let Some(index) = self.index.take() else {
+            return Err(OperationError::service_error(
+                "GeoMapIndexGridstoreBuilder: index must be initialized to finalize",
+            ));
+        };
+        index.flusher()()?;
+        Ok(index)
+    }
+}
+
 impl PayloadFieldIndex for GeoMapIndex {
     fn count_indexed_points(&self) -> usize {
         self.points_count()
@@ -563,19 +615,23 @@ impl PayloadFieldIndex for GeoMapIndex {
 
     fn cleanup(self) -> OperationResult<()> {
         match self {
-            GeoMapIndex::Mutable(index) => index.db_wrapper().remove_column_family(),
+            GeoMapIndex::Mutable(index) => index.clear(),
             GeoMapIndex::Immutable(index) => index.clear(),
             GeoMapIndex::Mmap(index) => index.clear(),
         }
     }
 
     fn flusher(&self) -> Flusher {
-        GeoMapIndex::flusher(self)
+        match self {
+            GeoMapIndex::Mutable(index) => index.flusher(),
+            GeoMapIndex::Immutable(index) => index.flusher(),
+            GeoMapIndex::Mmap(index) => index.flusher(),
+        }
     }
 
     fn files(&self) -> Vec<PathBuf> {
         match &self {
-            GeoMapIndex::Mutable(_) => vec![],
+            GeoMapIndex::Mutable(index) => index.files(),
             GeoMapIndex::Immutable(index) => index.files(),
             GeoMapIndex::Mmap(index) => index.files(),
         }
@@ -712,6 +768,7 @@ mod tests {
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum IndexType {
         Mutable,
+        MutableGridstore,
         Immutable,
         Mmap,
         RamMmap,
@@ -719,6 +776,7 @@ mod tests {
 
     enum IndexBuilder {
         Mutable(GeoMapIndexBuilder),
+        MutableGridstore(GeoMapIndexGridstoreBuilder),
         Immutable(GeoMapImmutableIndexBuilder),
         Mmap(GeoMapIndexMmapBuilder),
         RamMmap(GeoMapIndexMmapBuilder),
@@ -733,6 +791,9 @@ mod tests {
         ) -> OperationResult<()> {
             match self {
                 IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
+                IndexBuilder::MutableGridstore(builder) => {
+                    builder.add_point(id, payload, hw_counter)
+                }
                 IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::Mmap(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::RamMmap(builder) => builder.add_point(id, payload, hw_counter),
@@ -742,6 +803,7 @@ mod tests {
         fn finalize(self) -> OperationResult<GeoMapIndex> {
             match self {
                 IndexBuilder::Mutable(builder) => builder.finalize(),
+                IndexBuilder::MutableGridstore(builder) => builder.finalize(),
                 IndexBuilder::Immutable(builder) => builder.finalize(),
                 IndexBuilder::Mmap(builder) => builder.finalize(),
                 IndexBuilder::RamMmap(builder) => {
@@ -805,16 +867,20 @@ mod tests {
             IndexType::Mutable => {
                 IndexBuilder::Mutable(GeoMapIndex::builder(db.clone(), FIELD_NAME))
             }
+            IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
+                GeoMapIndex::builder_gridstore(temp_dir.path().to_path_buf()),
+            ),
             IndexType::Immutable => {
                 IndexBuilder::Immutable(GeoMapIndex::builder_immutable(db.clone(), FIELD_NAME))
             }
-            IndexType::Mmap => IndexBuilder::Mmap(GeoMapIndex::mmap_builder(temp_dir.path(), true)),
+            IndexType::Mmap => IndexBuilder::Mmap(GeoMapIndex::builder_mmap(temp_dir.path(), true)),
             IndexType::RamMmap => {
-                IndexBuilder::RamMmap(GeoMapIndex::mmap_builder(temp_dir.path(), false))
+                IndexBuilder::RamMmap(GeoMapIndex::builder_mmap(temp_dir.path(), false))
             }
         };
         match &mut builder {
             IndexBuilder::Mutable(builder) => builder.init().unwrap(),
+            IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
             IndexBuilder::Immutable(builder) => builder.init().unwrap(),
             IndexBuilder::Mmap(builder) => builder.init().unwrap(),
             IndexBuilder::RamMmap(builder) => builder.init().unwrap(),
@@ -891,6 +957,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1033,6 +1100,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1086,6 +1154,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1152,6 +1221,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1184,6 +1254,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1271,6 +1342,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1317,6 +1389,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1343,6 +1416,9 @@ mod tests {
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = match index_type {
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
+            IndexType::MutableGridstore => {
+                GeoMapIndex::new_gridstore(temp_dir.path().to_path_buf()).unwrap()
+            }
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
@@ -1380,6 +1456,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1417,6 +1494,9 @@ mod tests {
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = match index_type {
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
+            IndexType::MutableGridstore => {
+                GeoMapIndex::new_gridstore(temp_dir.path().to_path_buf()).unwrap()
+            }
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
@@ -1432,6 +1512,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1527,6 +1608,7 @@ mod tests {
 
     #[rstest]
     #[case(IndexType::Mutable)]
+    #[case(IndexType::MutableGridstore)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
@@ -1590,8 +1672,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(&[IndexType::Mutable, IndexType::Immutable, IndexType::Mmap, IndexType::RamMmap], false)]
-    #[case(&[IndexType::Mutable, IndexType::Immutable, IndexType::RamMmap], true)]
+    #[case(&[IndexType::Mutable, IndexType::MutableGridstore, IndexType::Immutable, IndexType::Mmap, IndexType::RamMmap], false)]
+    #[case(&[IndexType::Mutable, IndexType::MutableGridstore, IndexType::Immutable, IndexType::RamMmap], true)]
     fn test_congruence(#[case] types: &[IndexType], #[case] deleted: bool) {
         const POINT_COUNT: usize = 500;
 
