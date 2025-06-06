@@ -235,6 +235,7 @@ bitvec = "1.0.1"
 smallvec = { version = "1.15.0", features = ["write"] }
 merge = "0.1.0"
 dashmap = "6.1"
+walkdir = "2.5.0"
 
 [[bin]]
 name = "schema_generator"

@@ -1260,6 +1260,7 @@ dependencies = [
  "thread-priority",
  "tokio",
  "validator",
+ "walkdir",
  "zerocopy 0.8.25",
 ]
 

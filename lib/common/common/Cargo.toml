@@ -35,6 +35,7 @@ semver = { workspace = true }
 thiserror = { workspace = true }
 zerocopy = { workspace = true }
 log = { workspace = true }
+walkdir = { workspace = true }
 
 memory = { path = "../memory" }
 
