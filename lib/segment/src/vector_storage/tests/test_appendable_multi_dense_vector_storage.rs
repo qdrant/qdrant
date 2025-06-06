@@ -89,7 +89,9 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             VectorStorageEnum::DenseAppendableMemmap(_)
             | VectorStorageEnum::DenseAppendableMemmapByte(_)
             | VectorStorageEnum::DenseAppendableMemmapHalf(_) => unreachable!(),
-            VectorStorageEnum::SparseSimple(_) | VectorStorageEnum::SparseMmap(_) => unreachable!(),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::SparseSimple(_) => unreachable!(),
+            VectorStorageEnum::SparseMmap(_) => unreachable!(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => unreachable!(),
             #[cfg(feature = "rocksdb")]

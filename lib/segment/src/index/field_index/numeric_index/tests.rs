@@ -79,6 +79,7 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
         >::builder_gridstore(
             temp_dir.path().to_path_buf(),
         )),
+        #[cfg(feature = "rocksdb")]
         IndexType::Immutable => IndexBuilder::Immutable(NumericIndex::<
             FloatPayloadType,
             FloatPayloadType,
@@ -374,8 +375,14 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
     let index = index_builder.finalize().unwrap();
 
     let db = match index.inner() {
+        #[cfg(feature = "rocksdb")]
         NumericIndexInner::Mutable(index) => index.db_wrapper().map(|db| db.get_database()),
+        #[cfg(not(feature = "rocksdb"))]
+        NumericIndexInner::Mutable(_) => None,
+        #[cfg(feature = "rocksdb")]
         NumericIndexInner::Immutable(index) => index.db_wrapper().map(|db| db.get_database()),
+        #[cfg(not(feature = "rocksdb"))]
+        NumericIndexInner::Immutable(_) => None,
         NumericIndexInner::Mmap(_) => None,
     };
     drop(index);
