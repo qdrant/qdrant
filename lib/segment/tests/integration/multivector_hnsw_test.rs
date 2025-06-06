@@ -27,7 +27,6 @@ use segment::types::{
     SeqNumberType,
 };
 use segment::vector_storage::VectorStorage;
-use segment::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage;
 use segment::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_in_ram_multi_vector_storage_full;
 use tempfile::Builder;
 

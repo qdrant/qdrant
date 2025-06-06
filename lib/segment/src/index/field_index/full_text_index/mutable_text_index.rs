@@ -312,7 +312,6 @@ impl MutableFullTextIndex {
 
 #[cfg(test)]
 mod tests {
-    use rstest::rstest;
     use tempfile::Builder;
 
     use super::*;
@@ -330,7 +329,7 @@ mod tests {
         use common::counter::hardware_counter::HardwareCounterCell;
         use common::types::PointOffsetType;
 
-        use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
+        use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
 
         let payloads: Vec<_> = vec![
             serde_json::json!(

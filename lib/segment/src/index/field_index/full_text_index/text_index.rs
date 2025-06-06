@@ -595,9 +595,6 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use parking_lot::RwLock;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     #[cfg(feature = "rocksdb")]
@@ -610,6 +607,7 @@ mod tests {
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::fixtures::payload_fixtures::random_full_text_payload;
     use crate::index::field_index::field_index_base::FieldIndexBuilderTrait;
+    #[cfg(feature = "rocksdb")]
     use crate::index::field_index::full_text_index::mutable_text_index;
     use crate::types::ValuesCount;
 
@@ -625,7 +623,7 @@ mod tests {
     ];
 
     #[cfg(feature = "rocksdb")]
-    type Database = Arc<RwLock<DB>>;
+    type Database = std::sync::Arc<parking_lot::RwLock<DB>>;
     #[cfg(not(feature = "rocksdb"))]
     type Database = ();
 
@@ -645,7 +643,7 @@ mod tests {
         Mutable(FullTextIndexBuilder),
         MutableGridstore(FullTextGridstoreIndexBuilder),
         #[cfg(feature = "rocksdb")]
-        Immutable(FullTextGridstoreIndexBuilder),
+        Immutable(FullTextIndexBuilder),
         Mmap(FullTextMmapIndexBuilder),
         RamMmap(FullTextMmapIndexBuilder),
     }

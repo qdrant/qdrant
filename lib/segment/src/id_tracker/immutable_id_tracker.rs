@@ -507,6 +507,7 @@ pub(super) mod test {
     use std::collections::{HashMap, HashSet};
 
     use itertools::Itertools;
+    #[cfg(feature = "rocksdb")]
     use rand::Rng;
     use rand::prelude::*;
     use tempfile::Builder;

@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+#[cfg(feature = "rocksdb")]
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;

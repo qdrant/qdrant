@@ -764,11 +764,9 @@ impl PayloadFieldIndex for GeoMapIndex {
 mod tests {
     use std::collections::{BTreeSet, HashSet};
     use std::ops::Range;
-    use std::sync::Arc;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use itertools::Itertools;
-    use parking_lot::RwLock;
     use rand::SeedableRng;
     use rand::prelude::StdRng;
     use rstest::rstest;
@@ -784,7 +782,7 @@ mod tests {
     use crate::types::{GeoBoundingBox, GeoLineString, GeoPolygon, GeoRadius, OrderedGeoPoint};
 
     #[cfg(feature = "rocksdb")]
-    type Database = Arc<RwLock<DB>>;
+    type Database = std::sync::Arc<parking_lot::RwLock<DB>>;
     #[cfg(not(feature = "rocksdb"))]
     type Database = ();
 
@@ -999,7 +997,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immuutable))]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_polygon_with_exclusion(#[case] index_type: IndexType) {
@@ -1142,7 +1140,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immuutable))]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn match_cardinality(#[case] index_type: IndexType) {
@@ -1196,7 +1194,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immuutable))]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn geo_indexed_filtering(#[case] index_type: IndexType) {
@@ -1263,7 +1261,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immuutable))]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_payload_blocks(#[case] index_type: IndexType) {
@@ -1296,7 +1294,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immuutable))]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn match_cardinality_point_with_multi_far_geo_payload(#[case] index_type: IndexType) {
@@ -1384,7 +1382,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immuutable))]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn match_cardinality_point_with_multi_close_geo_payload(#[case] index_type: IndexType) {
@@ -1431,7 +1429,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[cfg_attr(feature = "rocksdb", case(IndexType::Immuutable))]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn load_from_disk(#[case] index_type: IndexType) {

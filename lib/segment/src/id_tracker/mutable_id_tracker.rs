@@ -786,6 +786,7 @@ pub(super) mod tests {
     use std::io::Cursor;
 
     use itertools::Itertools;
+    #[cfg(feature = "rocksdb")]
     use rand::Rng;
     use rand::prelude::*;
     use tempfile::Builder;
