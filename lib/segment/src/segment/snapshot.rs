@@ -174,15 +174,14 @@ impl Segment {
             // and then once again with correct file version.
             //
             // These assertions check that each file in the manifest is unique:
-            // - unversioned file can only be added once, it should *never* override existing entry
+            // - unversioned file might be added twice, but it should *never* override existing *versioned* entry
             // - versioned file can only be added once, after same file was added as unversioned,
             //   it should *always* override existing *unversioned* entry
             // - no file can *ever* override existing *versioned* entry
             if version.is_unversioned() {
-                // Unversioned file should never override existing entry
-                debug_assert_eq!(
-                    prev_version,
-                    None,
+                // Unversioned file should never override versioned entry
+                debug_assert!(
+                    matches!(prev_version, None | Some(FileVersion::Unversioned)),
                     "unversioned segment file {} overrode versioned entry {:?}",
                     path.display(),
                     prev_version.unwrap(),
