@@ -315,8 +315,7 @@ impl<'de> serde::Deserialize<'de> for Language {
             "tg" | "tajik" => Ok(Language::Tajik),
             "tr" | "turkish" => Ok(Language::Turkish),
             _ => Err(serde::de::Error::custom(format!(
-                "Unsupported language: {}. Please use one of the supported languages.",
-                s
+                "Unsupported language: {s}. Please use one of the supported languages.",
             ))),
         }
     }
@@ -474,7 +473,10 @@ mod tests {
         let result = serde_json::from_str::<Language>(json_unsupported);
         assert!(result.is_err());
         let error = result.unwrap_err().to_string();
-        assert!(error.contains("Unsupported language: klingon"), "Error message should contain 'Unsupported language: klingon', got: {}", error);
+        assert!(
+            error.contains("Unsupported language: klingon"),
+            "Error message should contain 'Unsupported language: klingon', got: {error}",
+        );
 
         let json_interface = r#""klingon""#;
         let result = serde_json::from_str::<StopwordsInterface>(json_interface);
