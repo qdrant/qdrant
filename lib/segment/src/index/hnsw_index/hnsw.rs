@@ -8,7 +8,6 @@ use std::thread;
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
@@ -29,7 +28,6 @@ use super::gpu::gpu_insert_context::GpuInsertContext;
 #[cfg(feature = "gpu")]
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
 use super::graph_links::GraphLinksFormat;
-use super::links_container::LinksContainer;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::operation_time_statistics::{
@@ -47,6 +45,7 @@ use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACT
 use crate::index::hnsw_index::gpu::{get_gpu_groups_count, gpu_graph_builder::build_hnsw_on_gpu};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::point_scorer::{BoxCow, FilteredScorer};
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
@@ -63,7 +62,7 @@ use crate::types::{
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::DiscoveryQuery;
-use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 const HNSW_USE_HEURISTIC: bool = true;
 const FINISH_MAIN_GRAPH_LOG_MESSAGE: &str = "Finish main graph in time";
@@ -328,7 +327,7 @@ impl HNSWIndex {
             })
             .build()?;
 
-        let old_index = old_index.map(|old_index| old_index.reuse(&config, total_vector_count));
+        let old_index = old_index.map(|old_index| old_index.reuse(total_vector_count));
 
         let mut indexed_vectors = 0;
         for vector_id in id_tracker_ref.iter_ids_excluding(deleted_bitslice) {
@@ -386,30 +385,24 @@ impl HNSWIndex {
             if let Some(old_index) = old_index {
                 let timer = std::time::Instant::now();
 
-                let mut to_migrate = Vec::with_capacity(total_vector_count);
+                let mut healer = GraphLayersHealer::new(
+                    old_index.graph(),
+                    &old_index.old_to_new,
+                    config.ef_construct,
+                );
+                let old_vector_storage = old_index.index.vector_storage.borrow();
+                healer.heal(&pool, &old_vector_storage)?;
+                healer.save_into_builder(&graph_layers_builder);
 
                 for vector_id in ids_iter {
-                    if let Some(old_offset) = old_index.new_to_old[vector_id as usize] {
-                        to_migrate.push(old_offset);
-                    } else if first_few_ids.len() < SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
-                        first_few_ids.push(vector_id);
-                    } else {
-                        ids.push(vector_id);
+                    if old_index.new_to_old[vector_id as usize].is_none() {
+                        if first_few_ids.len() < SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
+                            first_few_ids.push(vector_id);
+                        } else {
+                            ids.push(vector_id);
+                        }
                     }
                 }
-
-                // Internal operation. No measurements needed
-                let hw_accumulator = HwMeasurementAcc::disposable();
-
-                pool.install(|| {
-                    to_migrate.into_par_iter().try_for_each(|old_offset| {
-                        old_index.migrate_point(
-                            old_offset,
-                            &graph_layers_builder,
-                            hw_accumulator.get_counter_cell(),
-                        )
-                    })
-                })?;
 
                 debug!("Migrated in {:?}", timer.elapsed());
             } else {
@@ -1470,7 +1463,6 @@ pub(super) struct OldIndex<'a> {
     /// Mapping from new index to old index.
     /// `new_to_old[new_idx] == Some(old_idx)`.
     pub new_to_old: Vec<Option<PointOffsetType>>,
-    hnsw_m: HnswM,
 }
 
 impl<'a> OldIndexCandidate<'a> {
@@ -1614,7 +1606,7 @@ impl<'a> OldIndexCandidate<'a> {
         })
     }
 
-    fn reuse(self, config: &HnswGraphConfig, total_vector_count: usize) -> OldIndex<'a> {
+    fn reuse(self, total_vector_count: usize) -> OldIndex<'a> {
         let mut new_to_old = vec![None; total_vector_count];
         for (old_offset, new_offset) in self.old_to_new.iter().copied().enumerate() {
             if let Some(new_offset) = new_offset {
@@ -1632,7 +1624,6 @@ impl<'a> OldIndexCandidate<'a> {
             index: self.index,
             old_to_new: self.old_to_new,
             new_to_old,
-            hnsw_m: HnswM::new(config.m, config.m0),
         }
     }
 }
@@ -1645,83 +1636,5 @@ impl OldIndex<'_> {
 
     pub fn graph(&self) -> &GraphLayers {
         &self.index.graph
-    }
-
-    /// Migrate point from old index to new index.
-    ///
-    /// This function considers two cases:
-    ///
-    /// - If all neighbors of the point planned to be migrated into new graph, we copy it as-is.
-    /// - If not, we need to "heal" it.
-    ///
-    fn migrate_point(
-        &self,
-        src_old: PointOffsetType,
-        builder: &GraphLayersBuilder,
-        hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<()> {
-        let links = &self.index.graph.links;
-        let point_level = links.point_level(src_old);
-
-        let vector_storage = self.index.vector_storage.borrow();
-
-        // For the case of healing: we always heal before inserting new points.
-        // So old graph should contain all required information to heal the point.
-        let old_scorer = new_raw_scorer(
-            vector_storage.get_vector(src_old).as_vec_ref().into(),
-            &vector_storage,
-            hardware_counter,
-        )?;
-
-        let links_by_level: Vec<Vec<PointOffsetType>> = (0..=point_level)
-            .map(|level| self.migrate_point_on_level(src_old, level, builder, old_scorer.as_ref()))
-            .collect();
-
-        builder.add_new_point(self.old_to_new[src_old as usize].unwrap(), links_by_level);
-
-        Ok(())
-    }
-
-    fn migrate_point_on_level(
-        &self,
-        src_old: PointOffsetType,
-        level: usize,
-        builder: &GraphLayersBuilder,
-        old_scorer: &dyn RawScorer,
-    ) -> Vec<PointOffsetType> {
-        let links = &self.index.graph.links;
-
-        let level_m = self.hnsw_m.level_m(level);
-        let mut new_links = Vec::with_capacity(level_m);
-        let mut need_fixing = false;
-
-        for link in links.links(src_old, level).take(level_m) {
-            if let Some(new_link) = self.old_to_new[link as usize] {
-                new_links.push(new_link);
-            } else {
-                need_fixing = true;
-            }
-        }
-
-        // The "healing" case
-        if need_fixing {
-            // First: generate list of candidates
-            let shortcuts = builder
-                .search_shortcuts_on_level(src_old, level, old_scorer, self)
-                .into_iter_sorted();
-
-            // Second: process list of candidates with heuristic
-            let mut container = LinksContainer::with_capacity(level_m);
-            let new_scorer = |a, b| {
-                let a_old = self.new_to_old[a as usize].unwrap();
-                let b_old = self.new_to_old[b as usize].unwrap();
-                old_scorer.score_internal(a_old, b_old)
-            };
-            let links_needed = level_m - new_links.len();
-            container.fill_from_sorted_with_heuristic(shortcuts, links_needed, new_scorer);
-            new_links.extend_from_slice(container.links());
-        }
-
-        new_links
     }
 }
