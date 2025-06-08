@@ -144,6 +144,8 @@ impl Tokenizer {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use crate::data_types::index::{StopwordsInterface, StopwordsSet, TextIndexType};
 
@@ -328,13 +330,14 @@ mod tests {
                 on_disk: None,
                 phrase_matching: None,
                 stopwords: Some(StopwordsInterface::Set(StopwordsSet {
-                    languages: vec![],
-                    custom: vec![
+                    language: None,
+                    languages: BTreeSet::new(),
+                    custom: BTreeSet::from([
                         "quick".to_string(),
                         "fox".to_string(),
                         "dog".to_string(),
                         "i'd".to_string(),
-                    ],
+                    ]),
                 })),
             },
             |token| tokens.push(token.to_owned()),
@@ -371,8 +374,9 @@ mod tests {
                 on_disk: None,
                 phrase_matching: None,
                 stopwords: Some(StopwordsInterface::Set(StopwordsSet {
-                    languages: vec![Language::English],
-                    custom: vec!["quick".to_string(), "fox".to_string()],
+                    language: Some(Language::English),
+                    languages: BTreeSet::new(),
+                    custom: BTreeSet::from(["quick".to_string(), "fox".to_string()]),
                 })),
             },
             |token| tokens.push(token.to_owned()),
@@ -389,6 +393,125 @@ mod tests {
 
         // Check that non-stopwords are present
         assert!(tokens.contains(&"brown".to_owned()));
+        assert!(tokens.contains(&"jumps".to_owned()));
+        assert!(tokens.contains(&"lazy".to_owned()));
+        assert!(tokens.contains(&"dog".to_owned()));
+    }
+
+    #[test]
+    fn test_tokenizer_with_custom_stopwords_as_the_a() {
+        let text = "The quick brown fox jumps over the lazy dog as a test";
+        let mut tokens = Vec::new();
+        Tokenizer::tokenize_doc(
+            text,
+            &TextIndexParams {
+                r#type: TextIndexType::Text,
+                tokenizer: TokenizerType::Word,
+                min_token_len: None,
+                max_token_len: None,
+                lowercase: Some(true),
+                on_disk: None,
+                phrase_matching: None,
+                stopwords: Some(StopwordsInterface::Set(StopwordsSet {
+                    language: None,
+                    languages: BTreeSet::new(),
+                    custom: BTreeSet::from(["as".to_string(), "the".to_string(), "a".to_string()]),
+                })),
+            },
+            |token| tokens.push(token.to_owned()),
+        );
+        eprintln!("tokens = {tokens:#?}");
+
+        // stopwords are filtered out
+        assert!(!tokens.contains(&"as".to_owned()));
+        assert!(!tokens.contains(&"the".to_owned()));
+        assert!(!tokens.contains(&"a".to_owned()));
+
+        // non-stopwords are present
+        assert!(tokens.contains(&"quick".to_owned()));
+        assert!(tokens.contains(&"brown".to_owned()));
+        assert!(tokens.contains(&"fox".to_owned()));
+        assert!(tokens.contains(&"jumps".to_owned()));
+        assert!(tokens.contains(&"over".to_owned()));
+        assert!(tokens.contains(&"lazy".to_owned()));
+        assert!(tokens.contains(&"dog".to_owned()));
+        assert!(tokens.contains(&"test".to_owned()));
+    }
+
+    #[test]
+    fn test_tokenizer_with_english_stopwords_string() {
+        let text = "The quick brown fox jumps over the lazy dog";
+        let mut tokens = Vec::new();
+        use crate::data_types::index::Language;
+        Tokenizer::tokenize_doc(
+            text,
+            &TextIndexParams {
+                r#type: TextIndexType::Text,
+                tokenizer: TokenizerType::Word,
+                min_token_len: None,
+                max_token_len: None,
+                lowercase: Some(true),
+                on_disk: None,
+                phrase_matching: None,
+                stopwords: Some(StopwordsInterface::Language(Language::English)),
+            },
+            |token| tokens.push(token.to_owned()),
+        );
+        eprintln!("tokens = {tokens:#?}");
+
+        // Check that English stopwords are filtered out
+        assert!(!tokens.contains(&"the".to_owned()));
+        assert!(!tokens.contains(&"over".to_owned()));
+
+        // Check that non-stopwords are present
+        assert!(tokens.contains(&"quick".to_owned()));
+        assert!(tokens.contains(&"brown".to_owned()));
+        assert!(tokens.contains(&"fox".to_owned()));
+        assert!(tokens.contains(&"jumps".to_owned()));
+        assert!(tokens.contains(&"lazy".to_owned()));
+        assert!(tokens.contains(&"dog".to_owned()));
+    }
+
+    #[test]
+    fn test_tokenizer_with_languages_english_spanish_custom_aaa() {
+        let text = "The quick brown fox jumps over the lazy dog I'd y de";
+        let mut tokens = Vec::new();
+        use crate::data_types::index::Language;
+        Tokenizer::tokenize_doc(
+            text,
+            &TextIndexParams {
+                r#type: TextIndexType::Text,
+                tokenizer: TokenizerType::Word,
+                min_token_len: None,
+                max_token_len: None,
+                lowercase: Some(true),
+                on_disk: None,
+                phrase_matching: None,
+                stopwords: Some(StopwordsInterface::Set(StopwordsSet {
+                    language: None,
+                    languages: BTreeSet::from([Language::English, Language::Spanish]),
+                    custom: BTreeSet::from(["I'd".to_string()]),
+                })),
+            },
+            |token| tokens.push(token.to_owned()),
+        );
+        eprintln!("tokens = {tokens:#?}");
+
+        // Check that English stopwords are filtered out
+        assert!(!tokens.contains(&"the".to_owned()));
+        assert!(!tokens.contains(&"over".to_owned()));
+
+        // Check that Spanish stopwords are filtered out
+        assert!(!tokens.contains(&"y".to_owned()));
+        assert!(!tokens.contains(&"de".to_owned()));
+
+        // Check that custom stopwords are filtered out
+        assert!(!tokens.contains(&"i'd".to_owned()));
+
+        // Check that non-stopwords are present
+        assert!(tokens.contains(&"quick".to_owned()));
+        assert!(tokens.contains(&"brown".to_owned()));
+        assert!(tokens.contains(&"fox".to_owned()));
         assert!(tokens.contains(&"jumps".to_owned()));
         assert!(tokens.contains(&"lazy".to_owned()));
         assert!(tokens.contains(&"dog".to_owned()));

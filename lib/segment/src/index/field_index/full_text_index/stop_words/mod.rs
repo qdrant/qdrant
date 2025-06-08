@@ -76,7 +76,12 @@ impl StopwordsFilter {
                     Self::add_language_stopwords(&mut stopwords, lang);
                 }
                 StopwordsInterface::Set(set) => {
-                    // A language stopwords
+                    // A language stopwords from the single language field
+                    if let Some(lang) = &set.language {
+                        Self::add_language_stopwords(&mut stopwords, lang);
+                    }
+
+                    // Add stopwords from all languages in the languages array
                     for lang in &set.languages {
                         Self::add_language_stopwords(&mut stopwords, lang);
                     }
@@ -140,6 +145,8 @@ impl StopwordsFilter {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use crate::data_types::index::StopwordsSet;
 
@@ -164,8 +171,9 @@ mod tests {
     #[test]
     fn test_custom_stopwords() {
         let option = Some(StopwordsInterface::Set(StopwordsSet {
-            languages: vec![],
-            custom: vec!["hello".to_string(), "world".to_string()],
+            language: None,
+            languages: BTreeSet::new(),
+            custom: BTreeSet::from(["hello".to_string(), "world".to_string()]),
         }));
         let filter = StopwordsFilter::new(&option);
 
@@ -177,8 +185,9 @@ mod tests {
     #[test]
     fn test_mixed_stopwords() {
         let option = Some(StopwordsInterface::Set(StopwordsSet {
-            languages: vec![Language::English],
-            custom: vec!["hello".to_string(), "world".to_string()],
+            language: Some(Language::English),
+            languages: BTreeSet::new(),
+            custom: BTreeSet::from(["hello".to_string(), "world".to_string()]),
         }));
         let filter = StopwordsFilter::new(&option);
 
@@ -193,8 +202,9 @@ mod tests {
     #[test]
     fn test_case_insensitivity() {
         let option = Some(StopwordsInterface::Set(StopwordsSet {
-            languages: vec![Language::English],
-            custom: vec!["Hello".to_string()],
+            language: Some(Language::English),
+            languages: BTreeSet::new(),
+            custom: BTreeSet::from(["Hello".to_string()]),
         }));
         let filter = StopwordsFilter::new(&option);
 

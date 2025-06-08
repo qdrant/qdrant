@@ -7715,19 +7715,30 @@
       "StopwordsSet": {
         "type": "object",
         "properties": {
+          "language": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Language"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "languages": {
-            "default": [],
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Language"
-            }
+            },
+            "uniqueItems": true
           },
           "custom": {
             "default": [],
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "uniqueItems": true
           }
         }
       },
