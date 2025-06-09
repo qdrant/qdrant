@@ -128,6 +128,7 @@ impl From<SegmentStateV5> for SegmentState {
     fn from(old: SegmentStateV5) -> Self {
         let SegmentStateV5 { version, config } = old;
         Self {
+            initial_version: None,
             version,
             config: config.into(),
         }

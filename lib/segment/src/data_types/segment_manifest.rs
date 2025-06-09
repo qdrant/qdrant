@@ -122,6 +122,15 @@ impl FileVersion {
     }
 }
 
+impl From<Option<SeqNumberType>> for FileVersion {
+    fn from(version: Option<SeqNumberType>) -> Self {
+        match version {
+            Some(version) => Self::Version(version),
+            None => Self::Unversioned,
+        }
+    }
+}
+
 impl From<SeqNumberType> for FileVersion {
     fn from(version: SeqNumberType) -> Self {
         Self::Version(version)

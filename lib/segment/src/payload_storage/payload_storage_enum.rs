@@ -211,6 +211,16 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.immutable_files(),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.immutable_files(),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.immutable_files(),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.immutable_files(),
+        }
+    }
+
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         match self {
             #[cfg(feature = "testing")]

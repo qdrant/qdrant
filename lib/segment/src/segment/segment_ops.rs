@@ -325,6 +325,7 @@ impl Segment {
 
     pub(super) fn get_state(&self) -> SegmentState {
         SegmentState {
+            initial_version: self.initial_version,
             version: self.version,
             config: self.segment_config.clone(),
         }

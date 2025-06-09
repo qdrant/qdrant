@@ -163,6 +163,10 @@ pub trait IdTracker: fmt::Debug {
 
     fn files(&self) -> Vec<PathBuf>;
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
     fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
         Vec::new()
     }
@@ -415,6 +419,16 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.files(),
             #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.files(),
+        }
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.immutable_files(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.immutable_files(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.immutable_files(),
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.immutable_files(),
         }
     }
 }

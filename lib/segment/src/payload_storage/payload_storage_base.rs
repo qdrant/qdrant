@@ -82,6 +82,11 @@ pub trait PayloadStorage {
     /// RocksDB storages are captured outside of this trait.
     fn files(&self) -> Vec<PathBuf>;
 
+    /// Returns a list of files, that are immutable, to exclude from partial snapshots.
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
     /// Returns a list of files, which have additional versioning information. Versioned files
     /// should be a subset of `PayloadStoreage::files` result (maybe with exception of RocksDB).
     fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
