@@ -722,11 +722,17 @@ mod tests {
         phrase_matching: bool,
     ) -> (IndexBuilder, TempDir, Database) {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+
+        #[cfg(feature = "rocksdb")]
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
+        #[cfg(not(feature = "rocksdb"))]
+        let db = ();
+
         let config = TextIndexParams {
             phrase_matching: Some(phrase_matching),
             ..TextIndexParams::default()
         };
+
         let mut builder = match index_type {
             #[cfg(feature = "rocksdb")]
             IndexType::Mutable => IndexBuilder::Mutable(FullTextIndex::builder_rocksdb(

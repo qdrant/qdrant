@@ -874,6 +874,7 @@ mod tests {
         lon: -118.243683,
     };
 
+    #[cfg(feature = "rocksdb")]
     const FIELD_NAME: &str = "test";
 
     fn condition_for_geo_radius(key: &str, geo_radius: GeoRadius) -> FieldCondition {
@@ -891,8 +892,12 @@ mod tests {
     #[cfg(feature = "testing")]
     fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Database) {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+
         #[cfg(feature = "rocksdb")]
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
+        #[cfg(not(feature = "rocksdb"))]
+        let db = ();
+
         let mut builder = match index_type {
             #[cfg(feature = "rocksdb")]
             IndexType::Mutable => {
@@ -919,12 +924,7 @@ mod tests {
             IndexBuilder::Mmap(builder) => builder.init().unwrap(),
             IndexBuilder::RamMmap(builder) => builder.init().unwrap(),
         }
-        (
-            builder,
-            temp_dir,
-            #[cfg(feature = "rocksdb")]
-            db,
-        )
+        (builder, temp_dir, db)
     }
 
     fn build_random_index(
@@ -1452,6 +1452,7 @@ mod tests {
             temp_dir
         };
 
+        #[cfg(feature = "rocksdb")]
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = match index_type {
             #[cfg(feature = "rocksdb")]
@@ -1532,6 +1533,7 @@ mod tests {
             temp_dir
         };
 
+        #[cfg(feature = "rocksdb")]
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = match index_type {
             #[cfg(feature = "rocksdb")]

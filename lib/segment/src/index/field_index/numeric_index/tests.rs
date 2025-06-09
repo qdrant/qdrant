@@ -10,6 +10,7 @@ use super::*;
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::json_path::JsonPath;
 
+#[cfg(feature = "rocksdb")]
 const COLUMN_NAME: &str = "test";
 
 #[derive(Clone, Copy)]
@@ -66,6 +67,7 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
         .prefix("test_numeric_index")
         .tempdir()
         .unwrap();
+    #[cfg(feature = "rocksdb")]
     let db = open_db_with_existing_cf(temp_dir.path()).unwrap();
     let mut builder = match index_type {
         #[cfg(feature = "rocksdb")]
@@ -374,15 +376,10 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
     });
     let index = index_builder.finalize().unwrap();
 
+    #[cfg(feature = "rocksdb")]
     let db = match index.inner() {
-        #[cfg(feature = "rocksdb")]
         NumericIndexInner::Mutable(index) => index.db_wrapper().map(|db| db.get_database()),
-        #[cfg(not(feature = "rocksdb"))]
-        NumericIndexInner::Mutable(_) => None,
-        #[cfg(feature = "rocksdb")]
         NumericIndexInner::Immutable(index) => index.db_wrapper().map(|db| db.get_database()),
-        #[cfg(not(feature = "rocksdb"))]
-        NumericIndexInner::Immutable(_) => None,
         NumericIndexInner::Mmap(_) => None,
     };
     drop(index);
