@@ -56,13 +56,13 @@ impl MutableInvertedIndexBuilder {
         Ok(())
     }
 
-    /// Consumes the builder and returns an InvertedIndexRam
+    /// Consumes the builder and returns a MutableInvertedIndex
     pub fn build(mut self) -> MutableInvertedIndex {
-        // build postings from point_to_docs
-        // build in order to increase document id
-        for (idx, doc) in self.index.point_to_tokens.iter().enumerate() {
-            if let Some(doc) = doc {
-                for token_idx in doc.tokens() {
+        // build postings from point_to_tokens
+        // build in order to increase point id
+        for (idx, tokenset) in self.index.point_to_tokens.iter().enumerate() {
+            if let Some(tokenset) = tokenset {
+                for token_idx in tokenset.tokens() {
                     if self.index.postings.len() <= *token_idx as usize {
                         self.index
                             .postings

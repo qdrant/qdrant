@@ -17,7 +17,7 @@ pub fn get_match_checkers(
 ) -> Option<ConditionCheckerFn> {
     match cond_match {
         Match::Value(MatchValue { value }) => get_match_value_checker(value, index, hw_acc),
-        Match::Text(MatchText { text }) => get_match_text_checker(text, index, hw_acc),
+        Match::Text(match_text) => get_match_text_checker(match_text, index, hw_acc),
         Match::Any(MatchAny { any }) => get_match_any_checker(any, index, hw_acc),
         Match::Except(MatchExcept { except }) => get_match_except_checker(except, index, hw_acc),
     }
@@ -247,14 +247,14 @@ fn get_match_except_checker(
 }
 
 fn get_match_text_checker(
-    text: String,
+    match_text: MatchText,
     index: &FieldIndex,
     hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn> {
     let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::FullTextIndex(full_text_index) => {
-            let Some(parsed_query) = full_text_index.parse_query(&text, &hw_counter) else {
+            let Some(parsed_query) = full_text_index.parse_query(&match_text, &hw_counter) else {
                 return Some(Box::new(|_| false));
             };
             Some(Box::new(move |point_id: PointOffsetType| {

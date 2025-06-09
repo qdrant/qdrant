@@ -278,7 +278,12 @@ impl FullTextIndex {
     }
 
     /// Tries to parse a query. If there are any unseen tokens, returns `None`
-    pub fn parse_query(&self, text: &str, hw_counter: &HardwareCounterCell) -> Option<ParsedQuery> {
+    pub fn parse_query(
+        &self,
+        match_text: &MatchText,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ParsedQuery> {
+        let MatchText { text } = match_text;
         let mut tokens = AHashSet::new();
         Tokenizer::tokenize_query(text, self.config(), |token| {
             tokens.insert(self.get_token(token, hw_counter));
@@ -313,7 +318,8 @@ impl FullTextIndex {
         query: &'a str,
         hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let Some(parsed_query) = self.parse_query(query, hw_counter) else {
+        let match_text = MatchText::from(query);
+        let Some(parsed_query) = self.parse_query(&match_text, hw_counter) else {
             return Box::new(std::iter::empty());
         };
         self.filter_query(parsed_query, hw_counter)
@@ -326,25 +332,22 @@ impl FullTextIndex {
         match_text: &MatchText,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
-        let MatchText { text } = match_text;
-
-        let Some(query) = self.parse_query(text, hw_counter) else {
+        let Some(query) = self.parse_query(match_text, hw_counter) else {
             return false;
         };
 
-        for value in FullTextIndex::get_values(payload_value) {
-            match &query {
+        FullTextIndex::get_values(payload_value)
+            .iter()
+            .any(|value| match &query {
                 ParsedQuery::Tokens(query) => {
-                    let tokenset = self.parse_tokenset(&value, hw_counter);
+                    let tokenset = self.parse_tokenset(value, hw_counter);
                     tokenset.has_subset(query)
                 }
                 ParsedQuery::Phrase(query) => {
-                    let document = self.parse_document(&value, hw_counter);
+                    let document = self.parse_document(value, hw_counter);
                     document.has_phrase(query)
                 }
-            };
-        }
-        false
+            })
     }
 
     pub fn is_on_disk(&self) -> bool {
@@ -482,8 +485,8 @@ impl PayloadFieldIndex for FullTextIndex {
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        if let Some(Match::Text(text_match)) = &condition.r#match {
-            let Some(parsed_query) = self.parse_query(&text_match.text, hw_counter) else {
+        if let Some(Match::Text(match_text)) = &condition.r#match {
+            let Some(parsed_query) = self.parse_query(match_text, hw_counter) else {
                 return Some(Box::new(std::iter::empty()));
             };
             return Some(self.filter_query(parsed_query, hw_counter));
@@ -496,8 +499,8 @@ impl PayloadFieldIndex for FullTextIndex {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
-        if let Some(Match::Text(text_match)) = &condition.r#match {
-            let Some(parsed_query) = self.parse_query(&text_match.text, hw_counter) else {
+        if let Some(Match::Text(match_text)) = &condition.r#match {
+            let Some(parsed_query) = self.parse_query(match_text, hw_counter) else {
                 return Some(CardinalityEstimation::exact(0));
             };
             return Some(self.estimate_query_cardinality(&parsed_query, condition, hw_counter));

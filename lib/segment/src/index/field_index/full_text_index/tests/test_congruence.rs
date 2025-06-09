@@ -2,8 +2,10 @@ use std::collections::HashSet;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use rand::SeedableRng;
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+#[cfg(feature = "rocksdb")]
+use rocksdb::DB;
 use rstest::rstest;
 use serde_json::Value;
 use tempfile::{Builder, TempDir};
@@ -16,7 +18,7 @@ use crate::fixtures::payload_fixtures::random_full_text_payload;
 use crate::index::field_index::field_index_base::PayloadFieldIndex;
 use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 use crate::index::field_index::full_text_index::inverted_index::{
-    InvertedIndex, ParsedQuery, TokenId, TokenSet,
+    Document, InvertedIndex, ParsedQuery, TokenId, TokenSet,
 };
 use crate::index::field_index::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use crate::index::field_index::full_text_index::mutable_text_index::{self, MutableFullTextIndex};
@@ -25,6 +27,7 @@ use crate::index::field_index::full_text_index::text_index::{
 };
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 use crate::json_path::JsonPath;
+use crate::types::{FieldCondition, ValuesCount};
 
 #[cfg(feature = "rocksdb")]
 type Database = std::sync::Arc<parking_lot::RwLock<rocksdb::DB>>;
@@ -229,29 +232,33 @@ fn build_random_index(
 /// Tries to parse a query. If there is an unknown id to a token, returns `None`
 pub fn to_parsed_query(
     query: &[String],
+    is_phrase: bool,
     token_to_id: impl Fn(&str) -> Option<TokenId>,
 ) -> Option<ParsedQuery> {
-    let tokens = query
-        .iter()
-        .map(|token| token_to_id(token.as_str()))
-        .collect::<Option<TokenSet>>()?;
-    Some(ParsedQuery::Tokens(tokens))
+    let tokens = query.iter().map(|token| token_to_id(token.as_str()));
+
+    let parsed = match is_phrase {
+        false => ParsedQuery::Tokens(tokens.collect::<Option<TokenSet>>()?),
+        true => ParsedQuery::Phrase(tokens.collect::<Option<Document>>()?),
+    };
+
+    Some(parsed)
 }
 
-pub fn parse_query(query: &[String], index: &FullTextIndex) -> ParsedQuery {
+pub fn parse_query(query: &[String], is_phrase: bool, index: &FullTextIndex) -> ParsedQuery {
     let hw_counter = HardwareCounterCell::disposable();
     match index {
         FullTextIndex::Mutable(index) => {
             let token_to_id = |token: &str| index.inverted_index.get_token_id(token, &hw_counter);
-            to_parsed_query(query, token_to_id).unwrap()
+            to_parsed_query(query, is_phrase, token_to_id).unwrap()
         }
         FullTextIndex::Immutable(index) => {
             let token_to_id = |token: &str| index.inverted_index.get_token_id(token, &hw_counter);
-            to_parsed_query(query, token_to_id).unwrap()
+            to_parsed_query(query, is_phrase, token_to_id).unwrap()
         }
         FullTextIndex::Mmap(index) => {
             let token_to_id = |token: &str| index.inverted_index.get_token_id(token, &hw_counter);
-            to_parsed_query(query, token_to_id).unwrap()
+            to_parsed_query(query, is_phrase, token_to_id).unwrap()
         }
     }
 }
@@ -307,9 +314,11 @@ fn test_congruence(
     keywords.sort_unstable();
     keywords.truncate(10);
 
-    for i in 1..indices.len() {
-        use common::types::PointOffsetType;
+    const EXISTING_IDS: &[PointOffsetType] = &[5, 19, 57, 223, 229, 499];
+    let existing_phrases =
+        check_phrase::<KEYWORD_COUNT>(EXISTING_IDS, index, &indices, phrase_matching);
 
+    for i in 1..indices.len() {
         let ((index_a, type_a), (index_b, type_b)) = (&indices[0], &indices[i]);
         eprintln!("Testing index type {type_a:?} vs {type_b:?}");
 
@@ -336,15 +345,13 @@ fn test_congruence(
 
         for query_range in [0..1, 2..4, 5..9, 0..10] {
             let keywords = &keywords[query_range];
-            let parsed_query_a = parse_query(keywords, index_a);
-            let parsed_query_b = parse_query(keywords, index_b);
+            let parsed_query_a = parse_query(keywords, false, index_a);
+            let parsed_query_b = parse_query(keywords, false, index_b);
 
             // Mutable index behaves different versus the others on point deletion
             // Mutable index updates postings, the others do not. Cardinality estimations are
             // not expected to match because of it.
             if !deleted {
-                use crate::types::{FieldCondition, ValuesCount};
-
                 let field_condition = FieldCondition::new_values_count(
                     JsonPath::new(FIELD_NAME),
                     ValuesCount::from(0..10),
@@ -379,6 +386,49 @@ fn test_congruence(
             );
         }
 
+        if phrase_matching {
+            for phrase in &existing_phrases {
+                eprintln!("Phrase: {phrase:?}");
+
+                let parsed_query_a = parse_query(phrase, true, index_a);
+                let parsed_query_b = parse_query(phrase, true, index_b);
+
+                let field_condition = FieldCondition::new_values_count(
+                    JsonPath::new(FIELD_NAME),
+                    ValuesCount::from(0..10),
+                );
+                assert_eq!(
+                    index_a.estimate_query_cardinality(
+                        &parsed_query_a,
+                        &field_condition,
+                        &hw_counter
+                    ),
+                    index_b.estimate_query_cardinality(
+                        &parsed_query_b,
+                        &field_condition,
+                        &hw_counter
+                    ),
+                );
+
+                for point_id in 0..POINT_COUNT as PointOffsetType {
+                    assert_eq!(
+                        index_a.check_match(&parsed_query_a, point_id, &hw_counter),
+                        index_b.check_match(&parsed_query_b, point_id, &hw_counter),
+                    );
+                }
+
+                // Assert that both indices return the same results
+                assert_eq!(
+                    index_a
+                        .filter_query(parsed_query_a, &hw_counter)
+                        .collect::<HashSet<_>>(),
+                    index_b
+                        .filter_query(parsed_query_b, &hw_counter)
+                        .collect::<HashSet<_>>(),
+                );
+            }
+        }
+
         if !deleted {
             for threshold in 1..=10 {
                 assert_eq!(
@@ -392,4 +442,50 @@ fn test_congruence(
             }
         }
     }
+}
+
+/// Checks that the ids can be found when filtering and matching a phrase.
+///
+/// Returns the phrases that were used
+fn check_phrase<const KEYWORD_COUNT: usize>(
+    existing_ids: &[PointOffsetType],
+    mutable_index: &MutableFullTextIndex,
+    check_indexes: &[(FullTextIndex, IndexType)],
+    phrase_matching: bool,
+) -> Vec<Vec<String>> {
+    // From the ids, choose a random phrase of 2 words.
+    let mut phrases = Vec::new();
+    let rng = &mut rand::rng();
+    for id in existing_ids {
+        let doc = mutable_index.storage.get_value(*id).unwrap();
+        let rand_idx = rng.random_range(0..KEYWORD_COUNT - 1);
+        let phrase = doc[rand_idx..rand_idx + 2].to_vec();
+
+        phrases.push(phrase);
+    }
+
+    let hw_counter = HardwareCounterCell::disposable();
+
+    for (index, index_type) in check_indexes {
+        eprintln!("Checking index type: {index_type:?}");
+        for (phrase, exp_id) in phrases.iter().zip(existing_ids) {
+            eprintln!("Phrase: {phrase:?}");
+
+            let parsed_query = parse_query(phrase, phrase_matching, index);
+
+            assert!(index.check_match(&parsed_query, *exp_id, &hw_counter));
+
+            let result = index
+                .filter_query(parsed_query, &hw_counter)
+                .collect::<HashSet<_>>();
+
+            assert!(!result.is_empty());
+            assert!(
+                result.contains(exp_id),
+                "Expected ID {exp_id} not found in other index result: {result:?}"
+            );
+        }
+    }
+
+    phrases
 }

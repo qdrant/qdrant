@@ -450,23 +450,24 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
             "postings and vocab must be the same size",
         );
 
-        let point_to_tokens_count = index
-            .point_to_tokens_count
-            .iter()
-            .enumerate()
-            .map(|(i, &n)| {
-                debug_assert!(
-                    index.is_active(i as u32) || n == 0,
-                    "deleted point index {i} has {n} tokens, expected zero",
-                );
-                n
-            })
-            .collect();
+        #[cfg(debug_assertions)]
+        {
+            index
+                .point_to_tokens_count
+                .iter()
+                .enumerate()
+                .for_each(|(i, &n)| {
+                    debug_assert!(
+                        index.is_active(i as u32) || n == 0,
+                        "deleted point index {i} has {n} tokens, expected zero",
+                    );
+                });
+        }
 
         ImmutableInvertedIndex {
             postings,
             vocab,
-            point_to_tokens_count,
+            point_to_tokens_count: index.point_to_tokens_count.to_vec(),
             points_count: index.points_count(),
         }
     }

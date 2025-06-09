@@ -47,7 +47,7 @@ impl TokenSet {
         self.0.binary_search(token).is_ok()
     }
 
-    /// Checks if the current set is a subset of the given set.
+    /// Checks if the current set contains all given tokens.
     ///
     /// Returns false if the subset is empty
     pub fn has_subset(&self, subset: &TokenSet) -> bool {
@@ -130,6 +130,14 @@ impl IntoIterator for Document {
     }
 }
 
+impl FromIterator<TokenId> for Document {
+    fn from_iter<T: IntoIterator<Item = TokenId>>(iter: T) -> Self {
+        let tokens = iter.into_iter().collect::<Vec<_>>();
+
+        Self(tokens)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ParsedQuery {
     /// All these tokens must be present in the document, regardless of order.
@@ -158,7 +166,7 @@ pub trait InvertedIndex {
             .collect()
     }
 
-    /// Translate the string tokens into token ids.
+    /// Translate the string token into token id.
     /// If it is an unseen token, it is added to the vocabulary and a new token id is generated.
     fn register_token<S: AsRef<str>>(&mut self, token_str: S) -> TokenId {
         let vocab = self.get_vocab_mut();
@@ -242,7 +250,7 @@ pub trait InvertedIndex {
 
         if postings.len() == 1 {
             return CardinalityEstimation::exact(smallest_posting)
-                .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())))
+                .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));
         }
 
         let expected_frac: f64 = postings

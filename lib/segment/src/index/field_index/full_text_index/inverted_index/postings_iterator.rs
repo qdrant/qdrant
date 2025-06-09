@@ -27,7 +27,7 @@ pub fn intersect_postings_iterator<'a>(
 
 pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
     mut postings: Vec<PostingListView<'a, V>>,
-    filter: impl Fn(PointOffsetType) -> bool + 'a,
+    is_active: impl Fn(PointOffsetType) -> bool + 'a,
 ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
     let smallest_posting_idx = postings
         .iter()
@@ -46,7 +46,7 @@ pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
     let and_iter = smallest_posting_iterator
         .map(|elem| elem.id)
         .filter(move |id| {
-            filter(*id)
+            is_active(*id)
                 && posting_iterators.iter_mut().all(|posting_iterator| {
                     // Custom "contains" check, which leverages the fact that smallest posting is sorted,
                     // so the next id that must be in all postings is strictly greater than the previous one.
@@ -100,7 +100,7 @@ pub fn intersect_compressed_postings_phrase_iterator<'a>(
 
     let has_phrase_iter = smallest_posting_iterator
         .filter(move |elem| {
-            if is_active(elem.id) {
+            if !is_active(elem.id) {
                 return false;
             }
 
@@ -124,7 +124,7 @@ pub fn intersect_compressed_postings_phrase_iterator<'a>(
 ///
 /// # Arguments
 ///
-/// - `initial_tokens_positions` - must be prepopulated if there is a missing token in the posting iterators.
+/// - `initial_tokens_positions` - must be prepopulated if iterating over a posting not included in the `posting_iterators`.
 fn phrase_in_all_postings<'a>(
     id: PointOffsetType,
     phrase: &Document,
@@ -137,13 +137,16 @@ fn phrase_in_all_postings<'a>(
         // so the next id that must be in all postings is strictly greater than the previous one.
         //
         // This means that the other iterators can remember the last id they returned to avoid extra work
-        if let Some(other) = posting_iterator.advance_until_greater_or_equal(id) {
-            if id != other.id {
-                return false;
-            }
+        let Some(other) = posting_iterator.advance_until_greater_or_equal(id) else {
+            return false;
+        };
 
-            tokens_positions.extend(other.value.to_token_positions(*token_id))
+        if id != other.id {
+            return false;
         }
+
+        debug_assert!(!other.value.is_empty());
+        tokens_positions.extend(other.value.to_token_positions(*token_id))
     }
     PartialDocument::new(tokens_positions).has_phrase(phrase)
 }

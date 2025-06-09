@@ -8,6 +8,11 @@ use crate::index::field_index::full_text_index::inverted_index::{Document, Token
 pub struct Positions(Vec<u32>);
 
 impl Positions {
+    #[cfg(debug_assertions)]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn push(&mut self, position: u32) {
         self.0.push(position);
     }
@@ -46,12 +51,14 @@ impl UnsizedValue for Positions {
     }
 }
 
+#[derive(Debug)]
 pub struct TokenPosition {
     token_id: TokenId,
     position: u32,
 }
 
 /// A reconstructed partial document which stores [`TokenPosition`]s, ordered by positions
+#[derive(Debug)]
 pub struct PartialDocument(Vec<TokenPosition>);
 
 impl PartialDocument {
