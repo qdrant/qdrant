@@ -64,41 +64,50 @@ pub use turkish::TURKISH_STOPWORDS;
 
 pub struct StopwordsFilter {
     stopwords: HashSet<String>,
+    lowercase: bool,
 }
 
 impl StopwordsFilter {
-    pub fn new(option: &Option<StopwordsInterface>) -> Self {
+    pub fn new(option: &Option<StopwordsInterface>, lowercase: bool) -> Self {
         let mut stopwords = HashSet::new();
 
         if let Some(option) = option {
             match option {
                 StopwordsInterface::Language(lang) => {
-                    Self::add_language_stopwords(&mut stopwords, lang);
+                    Self::add_language_stopwords(&mut stopwords, lang, lowercase);
                 }
                 StopwordsInterface::Set(set) => {
                     // Add stopwords from all languages in the language field
                     for lang in &set.language {
-                        Self::add_language_stopwords(&mut stopwords, lang);
+                        Self::add_language_stopwords(&mut stopwords, lang, lowercase);
                     }
 
                     // A custom stopwords
                     for word in &set.custom {
-                        stopwords.insert(word.to_lowercase());
+                        if lowercase {
+                            stopwords.insert(word.to_lowercase());
+                        } else {
+                            stopwords.insert(word.clone());
+                        }
                     }
                 }
             }
         }
 
-        Self { stopwords }
+        Self { stopwords, lowercase }
     }
 
     /// Check if a token is a stopword
     pub fn is_stopword(&self, token: &str) -> bool {
-        self.stopwords.contains(&token.to_lowercase())
+        if self.lowercase {
+            self.stopwords.contains(&token.to_lowercase())
+        } else {
+            self.stopwords.contains(token)
+        }
     }
 
     /// Add stopwords for a specific language
-    fn add_language_stopwords(stopwords: &mut HashSet<String>, language: &Language) {
+    fn add_language_stopwords(stopwords: &mut HashSet<String>, language: &Language, lowercase: bool) {
         let stopwords_array = match language {
             Language::UnspecifiedLanguage => return,
             Language::Arabic => ARABIC_STOPWORDS,
@@ -133,7 +142,11 @@ impl StopwordsFilter {
         };
 
         for &word in stopwords_array {
-            stopwords.insert(word.to_lowercase());
+            if lowercase {
+                stopwords.insert(word.to_lowercase());
+            } else {
+                stopwords.insert(word.to_string());
+            }
         }
     }
 }
@@ -147,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_empty_stopwords() {
-        let filter = StopwordsFilter::new(&None);
+        let filter = StopwordsFilter::new(&None, true);
         assert!(!filter.is_stopword("the"));
         assert!(!filter.is_stopword("hello"));
     }
@@ -155,7 +168,7 @@ mod tests {
     #[test]
     fn test_language_stopwords() {
         let option = Some(StopwordsInterface::Language(Language::English));
-        let filter = StopwordsFilter::new(&option);
+        let filter = StopwordsFilter::new(&option, true);
 
         assert!(filter.is_stopword("the"));
         assert!(filter.is_stopword("and"));
@@ -169,7 +182,7 @@ mod tests {
             language: BTreeSet::new(),
             custom: BTreeSet::from(["hello".to_string(), "world".to_string()]),
         }));
-        let filter = StopwordsFilter::new(&option);
+        let filter = StopwordsFilter::new(&option, true);
 
         assert!(filter.is_stopword("hello"));
         assert!(filter.is_stopword("world"));
@@ -182,7 +195,7 @@ mod tests {
             language: BTreeSet::from([Language::English]),
             custom: BTreeSet::from(["hello".to_string(), "world".to_string()]),
         }));
-        let filter = StopwordsFilter::new(&option);
+        let filter = StopwordsFilter::new(&option, true);
 
         assert!(filter.is_stopword("hello"));
         assert!(filter.is_stopword("world"));
@@ -198,13 +211,46 @@ mod tests {
             language: BTreeSet::from([Language::English]),
             custom: BTreeSet::from(["Hello".to_string()]),
         }));
-        let filter = StopwordsFilter::new(&option);
+        let filter = StopwordsFilter::new(&option, true);
 
         assert!(filter.is_stopword("hello"));
         assert!(filter.is_stopword("Hello"));
         assert!(filter.is_stopword("HELLO"));
         assert!(filter.is_stopword("The"));
         assert!(filter.is_stopword("THE"));
+    }
+
+    #[test]
+    fn test_case_sensitivity() {
+        let option = Some(StopwordsInterface::Set(StopwordsSet {
+            language: BTreeSet::new(),
+            custom: BTreeSet::from(["Hello".to_string(), "World".to_string()]),
+        }));
+        let filter = StopwordsFilter::new(&option, false);
+
+        // Should match exact case
+        assert!(filter.is_stopword("Hello"));
+        assert!(filter.is_stopword("World"));
+
+        // Should not match different case
+        assert!(!filter.is_stopword("hello"));
+        assert!(!filter.is_stopword("HELLO"));
+        assert!(!filter.is_stopword("world"));
+        assert!(!filter.is_stopword("WORLD"));
+    }
+
+    #[test]
+    fn test_language_stopwords_case_sensitivity() {
+        let option = Some(StopwordsInterface::Language(Language::English));
+        let filter = StopwordsFilter::new(&option, false);
+
+        // English stopwords are typically lowercase in the source arrays
+        assert!(filter.is_stopword("the"));
+        assert!(filter.is_stopword("and"));
+
+        // Should not match uppercase versions
+        assert!(!filter.is_stopword("The"));
+        assert!(!filter.is_stopword("AND"));
     }
 
     #[test]
@@ -244,7 +290,7 @@ mod tests {
 
         for (language, stopword) in languages {
             let option = Some(StopwordsInterface::Language(language.clone()));
-            let filter = StopwordsFilter::new(&option);
+            let filter = StopwordsFilter::new(&option, true);
             assert!(
                 filter.is_stopword(stopword),
                 "Expected '{stopword}' to be a stopword in {language:?}"

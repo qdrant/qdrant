@@ -82,7 +82,8 @@ impl Tokenizer {
         config: &'a TextIndexParams,
         mut callback: C,
     ) -> impl FnMut(&str) + 'a {
-        let stopwords_filter = StopwordsFilter::new(&config.stopwords);
+        let lowercase = config.lowercase.unwrap_or(true);
+        let stopwords_filter = StopwordsFilter::new(&config.stopwords, lowercase);
 
         move |token: &str| {
             if config
@@ -510,6 +511,45 @@ mod tests {
         assert!(tokens.contains(&"fox".to_owned()));
         assert!(tokens.contains(&"jumps".to_owned()));
         assert!(tokens.contains(&"lazy".to_owned()));
+        assert!(tokens.contains(&"dog".to_owned()));
+    }
+
+    #[test]
+    fn test_tokenizer_with_case_sensitive_stopwords() {
+        let text = "The quick brown fox jumps over the lazy dog";
+        let mut tokens = Vec::new();
+        Tokenizer::tokenize_doc(
+            text,
+            &TextIndexParams {
+                r#type: TextIndexType::Text,
+                tokenizer: TokenizerType::Word,
+                min_token_len: None,
+                max_token_len: None,
+                lowercase: Some(false),
+                on_disk: None,
+                phrase_matching: None,
+                stopwords: Some(StopwordsInterface::Set(StopwordsSet {
+                    language: BTreeSet::new(),
+                    custom: BTreeSet::from(["The".to_string(), "the".to_string(), "LAZY".to_string()]),
+                })),
+            },
+            |token| tokens.push(token.to_owned()),
+        );
+        eprintln!("tokens = {tokens:#?}");
+
+        // Check that exact case stopwords are filtered out
+        assert!(!tokens.contains(&"The".to_owned()));
+        assert!(!tokens.contains(&"the".to_owned()));
+
+        // Check that different case stopwords are not filtered out
+        assert!(tokens.contains(&"lazy".to_owned())); // "LAZY" is in stopwords, but "lazy" is not
+
+        // Check that non-stopwords are present
+        assert!(tokens.contains(&"quick".to_owned()));
+        assert!(tokens.contains(&"brown".to_owned()));
+        assert!(tokens.contains(&"fox".to_owned()));
+        assert!(tokens.contains(&"jumps".to_owned()));
+        assert!(tokens.contains(&"over".to_owned()));
         assert!(tokens.contains(&"dog".to_owned()));
     }
 }
