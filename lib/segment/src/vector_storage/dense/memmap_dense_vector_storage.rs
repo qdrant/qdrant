@@ -263,6 +263,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             check_process_stopped(stopped)?;
             store.delete(id);
         }
+        store.flusher()()?;
 
         Ok(start_index..end_index)
     }
