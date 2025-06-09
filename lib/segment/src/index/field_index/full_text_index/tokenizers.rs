@@ -317,7 +317,7 @@ mod tests {
 
     #[test]
     fn test_tokenizer_with_custom_stopwords() {
-        let text = "The quick brown fox jumps over the lazy dog";
+        let text = "The quick brown fox jumps over the lazy dog as i'd t'ha";
         let mut tokens = Vec::new();
         Tokenizer::tokenize_doc(
             text,
@@ -335,7 +335,7 @@ mod tests {
                     custom: BTreeSet::from([
                         "quick".to_string(),
                         "fox".to_string(),
-                        "dog".to_string(),
+                        "t'ha".to_string(),
                         "i'd".to_string(),
                     ]),
                 })),
@@ -347,7 +347,7 @@ mod tests {
         // Check that stopwords are filtered out
         assert!(!tokens.contains(&"quick".to_owned()));
         assert!(!tokens.contains(&"fox".to_owned()));
-        assert!(!tokens.contains(&"dog".to_owned()));
+        assert!(!tokens.contains(&"t'ha".to_owned()));
         assert!(!tokens.contains(&"i'd".to_owned()));
 
         // Check that non-stopwords are present
