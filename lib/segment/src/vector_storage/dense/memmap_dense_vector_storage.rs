@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::fs::{File, OpenOptions, create_dir_all};
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -225,7 +225,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             .unwrap_or(get_async_scorer());
 
         // Extend vectors file, write other vectors into it
-        let mut vectors_file = open_append(&self.vectors_path)?;
+        let mut vectors_file = BufWriter::new(open_append(&self.vectors_path)?);
         let mut deleted_ids = vec![];
         for (offset, (other_vector, other_deleted)) in other_vectors.enumerate() {
             check_process_stopped(stopped)?;
@@ -239,8 +239,12 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
                 deleted_ids.push(start_index as PointOffsetType + offset as PointOffsetType);
             }
         }
-        vectors_file.sync_all()?;
-        drop(vectors_file);
+        vectors_file.flush()?;
+        vectors_file
+            .into_inner()
+            // unwrap safety: never fails, we flushed above
+            .unwrap()
+            .sync_all()?;
 
         // Load store with updated files
         self.mmap_store.replace(MmapDenseVectors::open(
