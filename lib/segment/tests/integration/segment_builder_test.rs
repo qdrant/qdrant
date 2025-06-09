@@ -321,7 +321,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
             VectorDataConfig {
                 size: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].size,
                 distance: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
-                storage_type: VectorStorageType::Memory,
+                storage_type: VectorStorageType::default(),
                 index: Indexes::Hnsw(Default::default()),
                 quantization_config: None,
                 multivector_config: None,

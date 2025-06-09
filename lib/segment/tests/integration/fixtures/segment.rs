@@ -137,7 +137,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 4,
                         distance: Distance::Dot,
-                        storage_type: VectorStorageType::Memory,
+                        storage_type: VectorStorageType::default(),
                         index: Indexes::Plain {},
                         quantization_config: None,
                         multivector_config: None,
@@ -149,7 +149,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 1,
                         distance: Distance::Dot,
-                        storage_type: VectorStorageType::Memory,
+                        storage_type: VectorStorageType::default(),
                         index: Indexes::Plain {},
                         quantization_config: None,
                         multivector_config: None,
@@ -161,7 +161,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     VectorDataConfig {
                         size: 4,
                         distance: Distance::Euclid,
-                        storage_type: VectorStorageType::Memory,
+                        storage_type: VectorStorageType::default(),
                         index: Indexes::Plain {},
                         quantization_config: None,
                         multivector_config: None,

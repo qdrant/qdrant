@@ -1253,7 +1253,7 @@ pub enum VectorStorageType {
     /// Storage in memory (RAM)
     ///
     /// Will be very fast at the cost of consuming a lot of memory.
-    #[default]
+    #[cfg_attr(feature = "rocksdb", default)]
     Memory,
     /// Storage in mmap file, not appendable
     ///
@@ -1267,6 +1267,7 @@ pub enum VectorStorageType {
     /// In this way we avoid cold requests to disk, but risk to run out of memory
     ///
     /// Designed as a replacement for `Memory`, which doesn't depend on RocksDB
+    #[cfg_attr(not(feature = "rocksdb"), default)]
     InRamChunkedMmap,
 }
 

@@ -220,7 +220,7 @@ fn test_byte_storage_binary_quantization_hnsw(
             VectorDataConfig {
                 size: dim,
                 distance,
-                storage_type: VectorStorageType::Memory,
+                storage_type: VectorStorageType::default(),
                 index: Indexes::Plain {},
                 quantization_config: None,
                 multivector_config: None,
