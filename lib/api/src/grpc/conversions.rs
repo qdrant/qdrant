@@ -50,10 +50,9 @@ use crate::grpc::qdrant::{
     PayloadSchemaType, PointId, PointStruct, PointsOperationResponse,
     PointsOperationResponseInternal, ProductQuantization, QuantizationConfig,
     QuantizationSearchParams, QuantizationType, RepeatedIntegers, RepeatedStrings,
-    ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StopwordsInterface, StopwordsSet,
-    StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
-    ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key,
-    with_vectors_selector,
+    ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StopwordsSet, StrictModeConfig,
+    TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount,
+    VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key, with_vectors_selector,
 };
 use crate::grpc::{
     DecayParamsExpression, DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
@@ -301,11 +300,10 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
         let tokenizer = TokenizerType::from(tokenizer);
 
         // Convert stopwords if present
-        let stopwords_interface = stopwords.map(|sw| match sw {
-            segment::data_types::index::StopwordsInterface::Language(lang) => StopwordsInterface {
-                stopwords: Some(grpc::qdrant::stopwords_interface::Stopwords::Language(
-                    Language::from(lang) as i32,
-                )),
+        let stopwords_set = stopwords.map(|sw| match sw {
+            segment::data_types::index::StopwordsInterface::Language(lang) => StopwordsSet {
+                languages: vec![Language::from(lang) as i32],
+                custom: vec![],
             },
             segment::data_types::index::StopwordsInterface::Set(set) => {
                 let languages = if let Some(lang) = set.language {
@@ -314,13 +312,9 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                     vec![]
                 };
 
-                StopwordsInterface {
-                    stopwords: Some(grpc::qdrant::stopwords_interface::Stopwords::Set(
-                        StopwordsSet {
-                            languages,
-                            custom: set.custom.into_iter().collect(),
-                        },
-                    )),
+                StopwordsSet {
+                    languages,
+                    custom: set.custom.into_iter().collect(),
                 }
             }
         });
@@ -332,7 +326,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                 min_token_len: min_token_len.map(|x| x as u64),
                 max_token_len: max_token_len.map(|x| x as u64),
                 on_disk,
-                stopwords: stopwords_interface,
+                stopwords: stopwords_set,
             })),
         }
     }
@@ -524,51 +518,49 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
         } = params;
 
         // Convert stopwords if present
-        let stopwords_converted = if let Some(sw) = stopwords {
-            match sw.stopwords {
-                Some(grpc::qdrant::stopwords_interface::Stopwords::Language(lang)) => {
-                    let lang = Language::try_from(lang)
+        let stopwords_converted = if let Some(set) = stopwords {
+            if set.languages.is_empty() && set.custom.is_empty() {
+                None
+            } else if set.languages.len() == 1 && set.custom.is_empty() {
+                let lang = Language::try_from(set.languages[0])
+                    .map_err(|_| Status::invalid_argument("unknown language"))?;
+
+                Some(segment::data_types::index::StopwordsInterface::Language(
+                    lang.try_into()?,
+                ))
+            } else {
+                let language = if !set.languages.is_empty() {
+                    // Take the first language as the primary language
+                    // The "primary language" is unused as a "primary",
+                    // but later could be used for lemmatizer
+                    let lang = Language::try_from(set.languages[0])
                         .map_err(|_| Status::invalid_argument("unknown language"))?;
+                    Some(lang.try_into()?)
+                } else {
+                    None
+                };
 
-                    Some(segment::data_types::index::StopwordsInterface::Language(
-                        lang.try_into()?,
-                    ))
-                }
-                Some(grpc::qdrant::stopwords_interface::Stopwords::Set(set)) => {
-                    let language = if !set.languages.is_empty() {
-                        // Take the first language as the primary language
-                        // The "primary language" is unused as a "primary",
-                        // but later could be used for lemmatizer
-                        let lang = Language::try_from(set.languages[0])
-                            .map_err(|_| Status::invalid_argument("unknown language"))?;
-                        Some(lang.try_into()?)
-                    } else {
-                        None
-                    };
+                // Convert the rest of the languages from the list as secondary
+                let languages = if set.languages.len() > 1 {
+                    set.languages[1..]
+                        .iter()
+                        .map(|lang| {
+                            Language::try_from(*lang)
+                                .map_err(|_| Status::invalid_argument("unknown language"))
+                                .and_then(|l| l.try_into())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                } else {
+                    vec![]
+                };
 
-                    // Convert the rest of the languages from the list as secondary
-                    let languages = if set.languages.len() > 1 {
-                        set.languages[1..]
-                            .iter()
-                            .map(|lang| {
-                                Language::try_from(*lang)
-                                    .map_err(|_| Status::invalid_argument("unknown language"))
-                                    .and_then(|l| l.try_into())
-                            })
-                            .collect::<Result<Vec<_>, _>>()?
-                    } else {
-                        vec![]
-                    };
-
-                    Some(segment::data_types::index::StopwordsInterface::Set(
-                        segment::data_types::index::StopwordsSet {
-                            language,
-                            languages: languages.into_iter().collect(),
-                            custom: set.custom.into_iter().collect(),
-                        },
-                    ))
-                }
-                None => None,
+                Some(segment::data_types::index::StopwordsInterface::Set(
+                    segment::data_types::index::StopwordsSet {
+                        language,
+                        languages: languages.into_iter().collect(),
+                        custom: set.custom.into_iter().collect(),
+                    },
+                ))
             }
         } else {
             None

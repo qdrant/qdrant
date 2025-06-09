@@ -70,7 +70,6 @@
     - [SparseVectorConfig](#qdrant-SparseVectorConfig)
     - [SparseVectorConfig.MapEntry](#qdrant-SparseVectorConfig-MapEntry)
     - [SparseVectorParams](#qdrant-SparseVectorParams)
-    - [StopwordsInterface](#qdrant-StopwordsInterface)
     - [StopwordsSet](#qdrant-StopwordsSet)
     - [StrictModeConfig](#qdrant-StrictModeConfig)
     - [StrictModeMultivector](#qdrant-StrictModeMultivector)
@@ -1463,22 +1462,6 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
-<a name="qdrant-StopwordsInterface"></a>
-
-### StopwordsInterface
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| language | [Language](#qdrant-Language) |  | Single language stopwords |
-| set | [StopwordsSet](#qdrant-StopwordsSet) |  | Multiple languages and custom stopwords |
-
-
-
-
-
-
 <a name="qdrant-StopwordsSet"></a>
 
 ### StopwordsSet
@@ -1632,7 +1615,7 @@ Note: 1kB = 1 vector of size 256. |
 | min_token_len | [uint64](#uint64) | optional | Minimal token length |
 | max_token_len | [uint64](#uint64) | optional | Maximal token length |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
-| stopwords | [StopwordsInterface](#qdrant-StopwordsInterface) | optional | Stopwords for the text index |
+| stopwords | [StopwordsSet](#qdrant-StopwordsSet) | optional | Stopwords for the text index |
 
 
 

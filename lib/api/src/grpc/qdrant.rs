@@ -829,27 +829,6 @@ pub struct StopwordsSet {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StopwordsInterface {
-    #[prost(oneof = "stopwords_interface::Stopwords", tags = "1, 2")]
-    pub stopwords: ::core::option::Option<stopwords_interface::Stopwords>,
-}
-/// Nested message and enum types in `StopwordsInterface`.
-pub mod stopwords_interface {
-    #[derive(serde::Serialize)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Stopwords {
-        /// Single language stopwords
-        #[prost(enumeration = "super::Language", tag = "1")]
-        Language(i32),
-        /// Multiple languages and custom stopwords
-        #[prost(message, tag = "2")]
-        Set(super::StopwordsSet),
-    }
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TextIndexParams {
     /// Tokenizer type
     #[prost(enumeration = "TokenizerType", tag = "1")]
@@ -868,7 +847,7 @@ pub struct TextIndexParams {
     pub on_disk: ::core::option::Option<bool>,
     /// Stopwords for the text index
     #[prost(message, optional, tag = "6")]
-    pub stopwords: ::core::option::Option<StopwordsInterface>,
+    pub stopwords: ::core::option::Option<StopwordsSet>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
