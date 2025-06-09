@@ -159,6 +159,10 @@ pub trait PayloadIndex {
 
     fn files(&self) -> Vec<PathBuf>;
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
     fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
         Vec::new()
     }

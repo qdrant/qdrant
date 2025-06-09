@@ -138,9 +138,9 @@ impl Segment {
         let segment_version = self.version();
 
         let all_files = self.files();
-        let versioned_files = self.versioned_files();
+        let immutable_files = self.immutable_files();
 
-        // Note, that `all_files` should already contain all `versioned_files`, so each versioned file
+        // Note, that `all_files` should already contain all `immutable_files`, so each versioned file
         // would be iterated over *twice*:
         // - first as `FileVersion::Unversioned`
         // - and then with correct `FileVersion::Version`
@@ -149,11 +149,12 @@ impl Segment {
         let all_files = all_files
             .into_iter()
             .map(|path| (path, FileVersion::Unversioned))
-            .chain(
-                versioned_files
-                    .into_iter()
-                    .map(|(path, version)| (path, FileVersion::from(version))),
-            );
+            .chain(immutable_files.into_iter().map(|path| {
+                (
+                    path,
+                    FileVersion::from(self.initial_version.or(self.version)),
+                )
+            }));
 
         let mut file_versions = HashMap::new();
 
@@ -173,15 +174,14 @@ impl Segment {
             // and then once again with correct file version.
             //
             // These assertions check that each file in the manifest is unique:
-            // - unversioned file can only be added once, it should *never* override existing entry
+            // - unversioned file might be added twice, but it should *never* override existing *versioned* entry
             // - versioned file can only be added once, after same file was added as unversioned,
             //   it should *always* override existing *unversioned* entry
             // - no file can *ever* override existing *versioned* entry
             if version.is_unversioned() {
-                // Unversioned file should never override existing entry
-                debug_assert_eq!(
-                    prev_version,
-                    None,
+                // Unversioned file should never override versioned entry
+                debug_assert!(
+                    matches!(prev_version, None | Some(FileVersion::Unversioned)),
                     "unversioned segment file {} overrode versioned entry {:?}",
                     path.display(),
                     prev_version.unwrap(),
@@ -244,6 +244,27 @@ impl Segment {
         files
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+
+        for vector_data in self.vector_data.values() {
+            files.extend(vector_data.vector_index.borrow().immutable_files());
+            files.extend(vector_data.vector_storage.borrow().immutable_files());
+
+            if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().deref() {
+                files.extend(quantized_vectors.immutable_files());
+            }
+        }
+
+        files.extend(self.payload_index.borrow().immutable_files());
+        files.extend(self.payload_storage.borrow().immutable_files());
+
+        files.extend(self.id_tracker.borrow().immutable_files());
+
+        files
+    }
+
+    #[allow(dead_code)]
     fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
         let mut files = Vec::new();
 

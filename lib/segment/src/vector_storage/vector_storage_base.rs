@@ -99,6 +99,10 @@ pub trait VectorStorage {
 
     fn files(&self) -> Vec<PathBuf>;
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
     fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
         Vec::new()
     }
@@ -1228,6 +1232,55 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::MultiDenseAppendableInRam(v) => v.files(),
             VectorStorageEnum::MultiDenseAppendableInRamByte(v) => v.files(),
             VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => v.files(),
+        }
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::DenseSimple(v) => v.immutable_files(),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::DenseSimpleByte(v) => v.immutable_files(),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::DenseSimpleHalf(v) => v.immutable_files(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatile(v) => v.immutable_files(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(v) => v.immutable_files(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(v) => v.immutable_files(),
+            VectorStorageEnum::DenseMemmap(v) => v.immutable_files(),
+            VectorStorageEnum::DenseMemmapByte(v) => v.immutable_files(),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.immutable_files(),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.immutable_files(),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.immutable_files(),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.immutable_files(),
+            VectorStorageEnum::DenseAppendableInRam(v) => v.immutable_files(),
+            VectorStorageEnum::DenseAppendableInRamByte(v) => v.immutable_files(),
+            VectorStorageEnum::DenseAppendableInRamHalf(v) => v.immutable_files(),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::SparseSimple(v) => v.immutable_files(),
+            #[cfg(test)]
+            VectorStorageEnum::SparseVolatile(v) => v.immutable_files(),
+            VectorStorageEnum::SparseMmap(v) => v.immutable_files(),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::MultiDenseSimple(v) => v.immutable_files(),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::MultiDenseSimpleByte(v) => v.immutable_files(),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.immutable_files(),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatile(v) => v.immutable_files(),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(v) => v.immutable_files(),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.immutable_files(),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.immutable_files(),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.immutable_files(),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.immutable_files(),
+            VectorStorageEnum::MultiDenseAppendableInRam(v) => v.immutable_files(),
+            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => v.immutable_files(),
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => v.immutable_files(),
         }
     }
 

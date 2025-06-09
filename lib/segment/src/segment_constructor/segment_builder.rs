@@ -651,6 +651,7 @@ impl SegmentBuilder {
             // Finalize the newly created segment by saving config and version
             Segment::save_state(
                 &SegmentState {
+                    initial_version: Some(version), // TODO!?
                     version: Some(version),
                     config: segment_config,
                 },

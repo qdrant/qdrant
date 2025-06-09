@@ -37,6 +37,10 @@ pub trait VectorIndex {
 
     fn files(&self) -> Vec<PathBuf>;
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
     fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
         Vec::new()
     }
@@ -257,6 +261,22 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::SparseCompressedMmapF32(index) => index.files(),
             VectorIndexEnum::SparseCompressedMmapF16(index) => index.files(),
             VectorIndexEnum::SparseCompressedMmapU8(index) => index.files(),
+        }
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            VectorIndexEnum::Plain(index) => index.immutable_files(),
+            VectorIndexEnum::Hnsw(index) => index.immutable_files(),
+            VectorIndexEnum::SparseRam(index) => index.immutable_files(),
+            VectorIndexEnum::SparseImmutableRam(index) => index.immutable_files(),
+            VectorIndexEnum::SparseMmap(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedImmutableRamU8(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedMmapF32(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedMmapF16(index) => index.immutable_files(),
+            VectorIndexEnum::SparseCompressedMmapU8(index) => index.immutable_files(),
         }
     }
 
