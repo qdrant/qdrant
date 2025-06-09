@@ -1268,6 +1268,7 @@ pub enum VectorStorageType {
 }
 
 #[cfg(any(test, feature = "testing"))]
+#[allow(clippy::derivable_impls)]
 impl Default for VectorStorageType {
     fn default() -> Self {
         #[cfg(feature = "rocksdb")]
