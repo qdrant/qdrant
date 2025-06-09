@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr as _;
 use std::time::Instant;
 
@@ -306,11 +306,9 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                 custom: vec![],
             },
             segment::data_types::index::StopwordsInterface::Set(set) => {
-                let languages = if let Some(lang) = set.language {
-                    vec![Language::from(lang) as i32]
-                } else {
-                    vec![]
-                };
+                let languages = set.language.iter()
+                    .map(|lang| Language::from(lang.clone()) as i32)
+                    .collect();
 
                 StopwordsSet {
                     languages,
@@ -529,35 +527,18 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
                     lang.try_into()?,
                 ))
             } else {
-                let language = if !set.languages.is_empty() {
-                    // Take the first language as the primary language
-                    // The "primary language" is unused as a "primary",
-                    // but later could be used for lemmatizer
-                    let lang = Language::try_from(set.languages[0])
-                        .map_err(|_| Status::invalid_argument("unknown language"))?;
-                    Some(lang.try_into()?)
-                } else {
-                    None
-                };
-
-                // Convert the rest of the languages from the list as secondary
-                let languages = if set.languages.len() > 1 {
-                    set.languages[1..]
-                        .iter()
-                        .map(|lang| {
-                            Language::try_from(*lang)
-                                .map_err(|_| Status::invalid_argument("unknown language"))
-                                .and_then(|l| l.try_into())
-                        })
-                        .collect::<Result<Vec<_>, _>>()?
-                } else {
-                    vec![]
-                };
+                let language = set.languages
+                    .iter()
+                    .map(|lang| {
+                        Language::try_from(*lang)
+                            .map_err(|_| Status::invalid_argument("unknown language"))
+                            .and_then(|l| l.try_into())
+                    })
+                    .collect::<Result<BTreeSet<_>, _>>()?;
 
                 Some(segment::data_types::index::StopwordsInterface::Set(
                     segment::data_types::index::StopwordsSet {
                         language,
-                        languages: languages.into_iter().collect(),
                         custom: set.custom.into_iter().collect(),
                     },
                 ))

@@ -330,8 +330,7 @@ mod tests {
                 on_disk: None,
                 phrase_matching: None,
                 stopwords: Some(StopwordsInterface::Set(StopwordsSet {
-                    language: None,
-                    languages: BTreeSet::new(),
+                    language: BTreeSet::new(),
                     custom: BTreeSet::from([
                         "quick".to_string(),
                         "fox".to_string(),
@@ -374,8 +373,7 @@ mod tests {
                 on_disk: None,
                 phrase_matching: None,
                 stopwords: Some(StopwordsInterface::Set(StopwordsSet {
-                    language: Some(Language::English),
-                    languages: BTreeSet::new(),
+                    language: BTreeSet::from([Language::English]),
                     custom: BTreeSet::from(["quick".to_string(), "fox".to_string()]),
                 })),
             },
@@ -413,8 +411,7 @@ mod tests {
                 on_disk: None,
                 phrase_matching: None,
                 stopwords: Some(StopwordsInterface::Set(StopwordsSet {
-                    language: None,
-                    languages: BTreeSet::new(),
+                    language: BTreeSet::new(),
                     custom: BTreeSet::from(["as".to_string(), "the".to_string(), "a".to_string()]),
                 })),
             },
@@ -488,8 +485,7 @@ mod tests {
                 on_disk: None,
                 phrase_matching: None,
                 stopwords: Some(StopwordsInterface::Set(StopwordsSet {
-                    language: None,
-                    languages: BTreeSet::from([Language::English, Language::Spanish]),
+                    language: BTreeSet::from([Language::English, Language::Spanish]),
                     custom: BTreeSet::from(["I'd".to_string()]),
                 })),
             },

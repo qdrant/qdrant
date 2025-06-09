@@ -76,13 +76,8 @@ impl StopwordsFilter {
                     Self::add_language_stopwords(&mut stopwords, lang);
                 }
                 StopwordsInterface::Set(set) => {
-                    // A language stopwords from the single language field
-                    if let Some(lang) = &set.language {
-                        Self::add_language_stopwords(&mut stopwords, lang);
-                    }
-
-                    // Add stopwords from all languages in the languages array
-                    for lang in &set.languages {
+                    // Add stopwords from all languages in the language field
+                    for lang in &set.language {
                         Self::add_language_stopwords(&mut stopwords, lang);
                     }
 
@@ -171,8 +166,7 @@ mod tests {
     #[test]
     fn test_custom_stopwords() {
         let option = Some(StopwordsInterface::Set(StopwordsSet {
-            language: None,
-            languages: BTreeSet::new(),
+            language: BTreeSet::new(),
             custom: BTreeSet::from(["hello".to_string(), "world".to_string()]),
         }));
         let filter = StopwordsFilter::new(&option);
@@ -185,8 +179,7 @@ mod tests {
     #[test]
     fn test_mixed_stopwords() {
         let option = Some(StopwordsInterface::Set(StopwordsSet {
-            language: Some(Language::English),
-            languages: BTreeSet::new(),
+            language: BTreeSet::from([Language::English]),
             custom: BTreeSet::from(["hello".to_string(), "world".to_string()]),
         }));
         let filter = StopwordsFilter::new(&option);
@@ -202,8 +195,7 @@ mod tests {
     #[test]
     fn test_case_insensitivity() {
         let option = Some(StopwordsInterface::Set(StopwordsSet {
-            language: Some(Language::English),
-            languages: BTreeSet::new(),
+            language: BTreeSet::from([Language::English]),
             custom: BTreeSet::from(["Hello".to_string()]),
         }));
         let filter = StopwordsFilter::new(&option);
