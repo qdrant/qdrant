@@ -2045,6 +2045,21 @@ impl<S: Into<String>> From<S> for MatchText {
     }
 }
 
+/// Full-text phrase match of the string.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchPhrase {
+    pub phrase: String,
+}
+
+impl<S: Into<String>> From<S> for MatchPhrase {
+    fn from(text: S) -> Self {
+        MatchPhrase {
+            phrase: text.into(),
+        }
+    }
+}
+
 /// Exact match on any of the given values
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -2065,6 +2080,7 @@ pub struct MatchExcept {
 pub enum MatchInterface {
     Value(MatchValue),
     Text(MatchText),
+    Phrase(MatchPhrase),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -2075,6 +2091,7 @@ pub enum MatchInterface {
 pub enum Match {
     Value(MatchValue),
     Text(MatchText),
+    Phrase(MatchPhrase),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -2086,6 +2103,12 @@ impl Match {
 
     pub fn new_text(text: &str) -> Self {
         Self::Text(MatchText { text: text.into() })
+    }
+
+    pub fn new_phrase(phrase: &str) -> Self {
+        Self::Phrase(MatchPhrase {
+            phrase: phrase.into(),
+        })
     }
 
     pub fn new_any(any: AnyVariants) -> Self {
@@ -2112,6 +2135,7 @@ impl From<MatchInterface> for Match {
             MatchInterface::Except(except) => Self::Except(MatchExcept {
                 except: except.except,
             }),
+            MatchInterface::Phrase(MatchPhrase { phrase }) => Self::Phrase(MatchPhrase { phrase }),
         }
     }
 }
@@ -2623,6 +2647,7 @@ impl FieldCondition {
             Match::Except(match_except) => match_except.except.len(),
             Match::Value(_) => 0,
             Match::Text(_) => 0,
+            Match::Phrase(_) => 0,
         }
     }
 }

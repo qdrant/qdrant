@@ -1,12 +1,12 @@
 mod test_congruence;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use tempfile::Builder;
 
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
-use crate::index::field_index::ValueIndexer;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
-use crate::types::MatchText;
+use crate::index::field_index::{FieldIndexBuilderTrait as _, ValueIndexer};
 
 fn movie_titles() -> Vec<String> {
     vec![
@@ -153,8 +153,6 @@ fn movie_titles() -> Vec<String> {
 
 #[test]
 fn test_prefix_search() {
-    use common::counter::hardware_counter::HardwareCounterCell;
-
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
         r#type: TextIndexType::Text,
@@ -182,9 +180,7 @@ fn test_prefix_search() {
 
     let res: Vec<_> = index.query("ROBO", &hw_counter).collect();
 
-    let query = index
-        .parse_query(&MatchText::from("ROBO"), &hw_counter)
-        .unwrap();
+    let query = index.parse_text_query("ROBO", &hw_counter).unwrap();
 
     for idx in res.iter().copied() {
         assert!(index.check_match(&query, idx, &hw_counter));
@@ -195,9 +191,99 @@ fn test_prefix_search() {
     let res: Vec<_> = index.query("q231", &hw_counter).collect();
     assert!(res.is_empty());
 
-    assert!(
-        index
-            .parse_query(&MatchText::from("q231"), &hw_counter)
-            .is_none()
-    );
+    assert!(index.parse_text_query("q231", &hw_counter).is_none());
+}
+
+#[test]
+fn test_phrase_matching() {
+    let hw_counter = HardwareCounterCell::default();
+
+    // Create a text index with phrase matching enabled
+    let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+    let config = TextIndexParams {
+        r#type: TextIndexType::Text,
+        tokenizer: TokenizerType::default(),
+        min_token_len: None,
+        max_token_len: None,
+        lowercase: Some(true),
+        on_disk: None,
+        phrase_matching: Some(true), // Enable phrase matching
+    };
+
+    let mut mutable_index =
+        FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config.clone())
+            .make_empty()
+            .unwrap();
+
+    let mut mmap_builder =
+        FullTextIndex::builder_mmap(temp_dir.path().to_path_buf(), config.clone(), true);
+    mmap_builder.init().unwrap();
+
+    // Add some test documents with phrases
+    let documents = vec![
+        (0, "the quick brown fox jumps over the lazy dog".to_string()),
+        (1, "brown fox quick the jumps over lazy dog".to_string()),
+        (2, "quick brown fox runs fast".to_string()),
+        (3, "the lazy dog sleeps peacefully".to_string()),
+        (4, "brown brown fox".to_string()),
+    ];
+
+    for (point_id, text) in documents {
+        mutable_index
+            .add_many(point_id, vec![text.clone()], &hw_counter)
+            .unwrap();
+        mmap_builder
+            .add_many(point_id, vec![text], &hw_counter)
+            .unwrap();
+    }
+
+    let mmap_index = mmap_builder.finalize().unwrap();
+
+    let check_matching = |index: FullTextIndex| {
+        // Test regular text matching (should match documents containing all tokens regardless of order)
+        let text_query = index
+            .parse_text_query("quick brown fox", &hw_counter)
+            .unwrap();
+        let regular_results: Vec<_> = index.filter_query(text_query, &hw_counter).collect();
+
+        // Should match documents 0, 1, and 2 (all contain "quick", "brown", "fox")
+        assert_eq!(regular_results.len(), 3);
+        assert!(regular_results.contains(&0));
+        assert!(regular_results.contains(&1));
+        assert!(regular_results.contains(&2));
+
+        // Test phrase matching (should only match documents with exact phrase in order)
+        let phrase_query = index
+            .parse_phrase_query("quick brown fox", &hw_counter)
+            .unwrap();
+        let phrase_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
+
+        // Should only match documents 0 and 2 (contain "quick brown fox" in that exact order)
+        assert_eq!(phrase_results.len(), 2);
+        assert!(phrase_results.contains(&0));
+        assert!(phrase_results.contains(&2));
+        assert!(!phrase_results.contains(&1)); // Document 1 has the words but not in the right order
+
+        // Test phrase that doesn't exist
+        let missing_query = index
+            .parse_phrase_query("fox brown quick", &hw_counter)
+            .unwrap();
+        let missing_results: Vec<_> = index.filter_query(missing_query, &hw_counter).collect();
+
+        // Should match no documents (no document contains this exact phrase)
+        assert_eq!(missing_results.len(), 0);
+
+        // Test repeated words
+        let phrase_query = index
+            .parse_phrase_query("brown brown fox", &hw_counter)
+            .unwrap();
+        let phrase_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
+
+        // Should only match document 4
+        assert_eq!(phrase_results.len(), 1);
+        assert!(phrase_results.contains(&4));
+    };
+
+    check_matching(mutable_index);
+    check_matching(mmap_index);
 }

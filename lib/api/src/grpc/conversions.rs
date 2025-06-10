@@ -1765,6 +1765,7 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::Integer(int) => int.into(),
                 MatchValue::Boolean(flag) => flag.into(),
                 MatchValue::Text(text) => segment::types::Match::Text(text.into()),
+                MatchValue::Phrase(phrase) => segment::types::Match::Phrase(phrase.into()),
                 MatchValue::Keywords(kwds) => kwds.strings.into(),
                 MatchValue::Integers(ints) => ints.integers.into(),
                 MatchValue::ExceptIntegers(kwds) => {
@@ -1789,6 +1790,9 @@ impl From<segment::types::Match> for Match {
             },
             segment::types::Match::Text(segment::types::MatchText { text }) => {
                 MatchValue::Text(text)
+            }
+            segment::types::Match::Phrase(segment::types::MatchPhrase { phrase }) => {
+                MatchValue::Phrase(phrase)
             }
             segment::types::Match::Any(any) => match any.any {
                 segment::types::AnyVariants::Strings(strings) => {

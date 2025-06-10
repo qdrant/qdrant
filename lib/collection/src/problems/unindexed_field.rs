@@ -228,6 +228,7 @@ fn infer_index_from_field_condition(field_condition: &FieldCondition) -> Vec<Fie
         required_indexes.extend(match r#match {
             Match::Value(match_value) => infer_index_from_match_value(match_value),
             Match::Text(_match_text) => vec![FieldIndexType::Text],
+            Match::Phrase(_match_text) => vec![FieldIndexType::TextPhrase],
             Match::Any(match_any) => infer_index_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_index_from_any_variants(&match_except.except),
         })
@@ -534,6 +535,7 @@ enum FieldIndexType {
     KeywordMatch,
     FloatRange,
     Text,
+    TextPhrase,
     BoolMatch,
     UuidMatch,
     UuidRange,
@@ -598,6 +600,7 @@ impl From<FieldIndexType> for PayloadSchemaType {
             FieldIndexType::KeywordMatch => PayloadSchemaType::Keyword,
             FieldIndexType::FloatRange => PayloadSchemaType::Float,
             FieldIndexType::Text => PayloadSchemaType::Text,
+            FieldIndexType::TextPhrase => PayloadSchemaType::Text,
             FieldIndexType::BoolMatch => PayloadSchemaType::Bool,
             FieldIndexType::UuidMatch => PayloadSchemaType::Uuid,
             FieldIndexType::UuidRange => PayloadSchemaType::Uuid,

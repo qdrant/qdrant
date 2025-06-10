@@ -32,7 +32,7 @@ use crate::index::field_index::{
     ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType};
+use crate::types::{FieldCondition, Match, MatchPhrase, MatchText, PayloadKeyType};
 
 pub enum FullTextIndex {
     Mutable(MutableFullTextIndex),
@@ -312,13 +312,26 @@ impl FullTextIndex {
         }
     }
 
-    /// Tries to parse a query. If there are any unseen tokens, returns `None`
-    pub fn parse_query(
+    /// Tries to parse a phrase query. If there are any unseen tokens, returns `None`
+    ///
+    /// Preserves token order
+    pub fn parse_phrase_query(
         &self,
-        match_text: &MatchText,
+        phrase: &str,
         hw_counter: &HardwareCounterCell,
     ) -> Option<ParsedQuery> {
-        let MatchText { text } = match_text;
+        let document = self.parse_document(phrase, hw_counter);
+        Some(ParsedQuery::Phrase(document))
+    }
+
+    /// Tries to parse a query. If there are any unseen tokens, returns `None`
+    ///
+    /// Tokens are made unique
+    pub fn parse_text_query(
+        &self,
+        text: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ParsedQuery> {
         let mut tokens = AHashSet::new();
         self.get_tokenizer().tokenize_query(text, |token| {
             tokens.insert(self.get_token(token, hw_counter));
@@ -353,21 +366,26 @@ impl FullTextIndex {
         query: &'a str,
         hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let match_text = MatchText::from(query);
-        let Some(parsed_query) = self.parse_query(&match_text, hw_counter) else {
+        let Some(parsed_query) = self.parse_text_query(query, hw_counter) else {
             return Box::new(std::iter::empty());
         };
         self.filter_query(parsed_query, hw_counter)
     }
 
-    /// Checks the [`MatchText`] directly against the payload value
-    pub fn check_payload_match(
+    /// Checks the text directly against the payload value
+    pub fn check_payload_match<const IS_PHRASE: bool>(
         &self,
         payload_value: &serde_json::Value,
-        match_text: &MatchText,
+        text: &str,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
-        let Some(query) = self.parse_query(match_text, hw_counter) else {
+        let query_opt = if IS_PHRASE {
+            self.parse_phrase_query(text, hw_counter)
+        } else {
+            self.parse_text_query(text, hw_counter)
+        };
+
+        let Some(query) = query_opt else {
             return false;
         };
 
@@ -528,13 +546,19 @@ impl PayloadFieldIndex for FullTextIndex {
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        if let Some(Match::Text(match_text)) = &condition.r#match {
-            let Some(parsed_query) = self.parse_query(match_text, hw_counter) else {
-                return Some(Box::new(std::iter::empty()));
-            };
-            return Some(self.filter_query(parsed_query, hw_counter));
-        }
-        None
+        let parsed_query_opt = match &condition.r#match {
+            Some(Match::Text(MatchText { text })) => self.parse_text_query(text, hw_counter),
+            Some(Match::Phrase(MatchPhrase { phrase })) => {
+                self.parse_phrase_query(phrase, hw_counter)
+            }
+            _ => return None,
+        };
+
+        let Some(parsed_query) = parsed_query_opt else {
+            return Some(Box::new(std::iter::empty()));
+        };
+
+        Some(self.filter_query(parsed_query, hw_counter))
     }
 
     fn estimate_cardinality(
@@ -542,13 +566,19 @@ impl PayloadFieldIndex for FullTextIndex {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
-        if let Some(Match::Text(match_text)) = &condition.r#match {
-            let Some(parsed_query) = self.parse_query(match_text, hw_counter) else {
-                return Some(CardinalityEstimation::exact(0));
-            };
-            return Some(self.estimate_query_cardinality(&parsed_query, condition, hw_counter));
-        }
-        None
+        let parsed_query_opt = match &condition.r#match {
+            Some(Match::Text(MatchText { text })) => self.parse_text_query(text, hw_counter),
+            Some(Match::Phrase(MatchPhrase { phrase })) => {
+                self.parse_phrase_query(phrase, hw_counter)
+            }
+            _ => return None,
+        };
+
+        let Some(parsed_query) = parsed_query_opt else {
+            return Some(CardinalityEstimation::exact(0));
+        };
+
+        Some(self.estimate_query_cardinality(&parsed_query, condition, hw_counter))
     }
 
     fn payload_blocks(
