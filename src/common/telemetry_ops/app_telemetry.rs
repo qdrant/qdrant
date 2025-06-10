@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use chrono::{DateTime, SubsecRound, Utc};
+use common::flags::FeatureFlags;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -56,6 +57,9 @@ pub struct AppBuildTelemetry {
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub features: Option<AppFeaturesTelemetry>,
+    #[anonymize(value = None)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_features: Option<FeatureFlags>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system: Option<RunningEnvironmentTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -81,6 +85,8 @@ impl AppBuildTelemetry {
                 recovery_mode: settings.storage.recovery_mode.is_some(),
                 gpu: cfg!(feature = "gpu"),
             }),
+            runtime_features: (detail.level >= DetailsLevel::Level1)
+                .then(common::flags::feature_flags),
             system: (detail.level >= DetailsLevel::Level1).then(get_system_data),
             jwt_rbac: settings.service.jwt_rbac,
             hide_jwt_dashboard: settings.service.hide_jwt_dashboard,
