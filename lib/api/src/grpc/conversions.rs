@@ -1142,8 +1142,7 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
         Ok(segment::types::BinaryQuantization {
             binary: segment::types::BinaryQuantizationConfig {
                 always_ram,
-                encoding: encoding
-                    .map(segment::types::BinaryQuantizationEncoding::from),
+                encoding: encoding.map(segment::types::BinaryQuantizationEncoding::from),
             },
         })
     }
