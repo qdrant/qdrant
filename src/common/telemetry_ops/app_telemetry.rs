@@ -23,7 +23,6 @@ impl AppBuildTelemetryCollector {
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct AppFeaturesTelemetry {
     pub debug: bool,
-    pub web_feature: bool,
     pub service_debug_feature: bool,
     pub recovery_mode: bool,
     pub gpu: bool,
@@ -76,7 +75,6 @@ impl AppBuildTelemetry {
             version: env!("CARGO_PKG_VERSION").to_string(),
             features: (detail.level >= DetailsLevel::Level1).then(|| AppFeaturesTelemetry {
                 debug: cfg!(debug_assertions),
-                web_feature: cfg!(feature = "web"),
                 service_debug_feature: cfg!(feature = "service_debug"),
                 recovery_mode: settings.storage.recovery_mode.is_some(),
                 gpu: cfg!(feature = "gpu"),

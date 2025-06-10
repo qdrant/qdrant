@@ -1,4 +1,3 @@
-#[cfg(feature = "web")]
 mod actix;
 mod common;
 mod consensus;
@@ -511,7 +510,6 @@ fn main() -> anyhow::Result<()> {
     // REST API server
     //
 
-    #[cfg(feature = "web")]
     {
         let dispatcher_arc = dispatcher_arc.clone();
         let settings = settings.clone();
