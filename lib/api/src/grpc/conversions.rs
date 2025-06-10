@@ -1054,14 +1054,14 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
             encoding,
         } = value;
         let encoding = encoding
-            .map(|encoding| BinaryQuantizationEncoding::try_from(encoding))
+            .map(BinaryQuantizationEncoding::try_from)
             .transpose()
             .map_err(|_| Status::invalid_argument("Unknown binary quantization encoding"))?;
         Ok(segment::types::BinaryQuantization {
             binary: segment::types::BinaryQuantizationConfig {
                 always_ram,
                 encoding: encoding
-                    .map(|encoding| segment::types::BinaryQuantizationEncoding::from(encoding)),
+                    .map(segment::types::BinaryQuantizationEncoding::from),
             },
         })
     }
