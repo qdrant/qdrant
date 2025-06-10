@@ -7,7 +7,7 @@ use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::types::{
-    AnyVariants, Match, MatchAny, MatchExcept, MatchText, MatchValue, ValueVariants,
+    AnyVariants, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchValue, ValueVariants,
 };
 
 pub fn get_match_checkers(
@@ -17,7 +17,10 @@ pub fn get_match_checkers(
 ) -> Option<ConditionCheckerFn> {
     match cond_match {
         Match::Value(MatchValue { value }) => get_match_value_checker(value, index, hw_acc),
-        Match::Text(match_text) => get_match_text_checker(match_text, index, hw_acc),
+        Match::Text(MatchText { text }) => get_match_text_checker::<false>(text, index, hw_acc),
+        Match::Phrase(MatchPhrase { phrase }) => {
+            get_match_text_checker::<true>(phrase, index, hw_acc)
+        }
         Match::Any(MatchAny { any }) => get_match_any_checker(any, index, hw_acc),
         Match::Except(MatchExcept { except }) => get_match_except_checker(except, index, hw_acc),
     }
@@ -246,17 +249,24 @@ fn get_match_except_checker(
     checker
 }
 
-fn get_match_text_checker(
-    match_text: MatchText,
+fn get_match_text_checker<const IS_PHRASE: bool>(
+    text: String,
     index: &FieldIndex,
     hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn> {
     let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::FullTextIndex(full_text_index) => {
-            let Some(parsed_query) = full_text_index.parse_query(&match_text, &hw_counter) else {
+            let query_opt = if IS_PHRASE {
+                full_text_index.parse_phrase_query(&text, &hw_counter)
+            } else {
+                full_text_index.parse_text_query(&text, &hw_counter)
+            };
+
+            let Some(parsed_query) = query_opt else {
                 return Some(Box::new(|_| false));
             };
+
             Some(Box::new(move |point_id: PointOffsetType| {
                 full_text_index.check_match(&parsed_query, point_id, &hw_counter)
             }))
