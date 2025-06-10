@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -6,6 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
+use itertools::Itertools;
 use parking_lot::RwLock;
 
 use super::inverted_index::{Document, InvertedIndex, TokenSet};
@@ -246,8 +246,8 @@ impl MutableFullTextIndex {
             // store ordered tokens
             str_tokens
         } else {
-            // store unique tokens
-            BTreeSet::from_iter(str_tokens).into_iter().collect()
+            // store sorted, unique tokens
+            str_tokens.into_iter().sorted().dedup().collect()
         };
 
         let db_document = FullTextIndex::serialize_document(tokens_to_store)?;

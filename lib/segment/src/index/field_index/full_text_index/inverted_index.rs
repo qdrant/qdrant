@@ -124,19 +124,19 @@ pub trait InvertedIndex {
     ) -> Vec<TokenId> {
         str_tokens
             .into_iter()
-            .map(|token| self.register_token(token.as_ref()))
+            .map(|token| self.register_token(token))
             .collect()
     }
 
     /// Translate the string tokens into token ids.
     /// If it is an unseen token, it is added to the vocabulary and a new token id is generated.
-    fn register_token(&mut self, token_str: &str) -> TokenId {
+    fn register_token<S: AsRef<str>>(&mut self, token_str: S) -> TokenId {
         let vocab = self.get_vocab_mut();
-        match vocab.get(token_str) {
+        match vocab.get(token_str.as_ref()) {
             Some(&idx) => idx,
             None => {
                 let next_token_id = vocab.len() as TokenId;
-                vocab.insert(token_str.to_string(), next_token_id);
+                vocab.insert(token_str.as_ref().to_string(), next_token_id);
                 next_token_id
             }
         }
