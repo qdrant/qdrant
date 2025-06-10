@@ -5,6 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
+use itertools::Itertools;
 use parking_lot::RwLock;
 
 use super::inverted_index::{Document, InvertedIndex, TokenSet};
@@ -43,8 +44,9 @@ impl MutableFullTextIndex {
         db_wrapper: DatabaseColumnScheduledDeleteWrapper,
         config: TextIndexParams,
     ) -> Self {
+        let with_positions = config.phrase_matching == Some(true);
         Self {
-            inverted_index: Default::default(),
+            inverted_index: MutableInvertedIndex::new(with_positions),
             config,
             storage: Storage::RocksDb(db_wrapper),
         }
@@ -59,8 +61,11 @@ impl MutableFullTextIndex {
                 "failed to open mutable full text index on gridstore: {err}"
             ))
         })?;
+
+        let phrase_matching = config.phrase_matching.unwrap_or_default();
+
         Ok(Self {
-            inverted_index: Default::default(),
+            inverted_index: MutableInvertedIndex::new(phrase_matching),
             config,
             storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
         })
@@ -91,13 +96,14 @@ impl MutableFullTextIndex {
         };
 
         let db = db_wrapper.lock_db();
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
         let iter = db.iter()?.map(|(key, value)| {
             let idx = FullTextIndex::restore_key(&key);
             let str_tokens = FullTextIndex::deserialize_document(&value)?;
             Ok((idx, str_tokens))
         });
 
-        self.inverted_index = MutableInvertedIndex::build_index(iter)?;
+        self.inverted_index = MutableInvertedIndex::build_index(iter, phrase_matching)?;
 
         Ok(true)
     }
@@ -115,13 +121,15 @@ impl MutableFullTextIndex {
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
-        let mut builder = MutableInvertedIndexBuilder::default();
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
+        let mut builder = MutableInvertedIndexBuilder::new(phrase_matching);
+
         store
             .read()
             .iter::<_, OperationError>(
                 |idx, value| {
-                    let tokens = FullTextIndex::deserialize_document(value)?;
-                    builder.add(idx, tokens);
+                    let str_tokens = FullTextIndex::deserialize_document(value)?;
+                    builder.add(idx, str_tokens);
                     Ok(true)
                 },
                 hw_counter_ref,
@@ -218,11 +226,11 @@ impl MutableFullTextIndex {
             });
         }
 
-        let tokens = self
-            .inverted_index
-            .register_tokens(str_tokens.iter().map(String::as_str));
+        let tokens = self.inverted_index.register_tokens(&str_tokens);
 
-        if self.inverted_index.point_to_doc.is_some() {
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
+
+        if phrase_matching {
             let document = Document::new(tokens.clone());
             self.inverted_index
                 .index_document(idx, document, hw_counter)?;
@@ -234,8 +242,15 @@ impl MutableFullTextIndex {
 
         let db_idx = FullTextIndex::store_key(idx);
 
-        let db_document =
-            FullTextIndex::serialize_document_tokens(str_tokens.into_iter().collect())?;
+        let tokens_to_store = if phrase_matching {
+            // store ordered tokens
+            str_tokens
+        } else {
+            // store sorted, unique tokens
+            str_tokens.into_iter().sorted().dedup().collect()
+        };
+
+        let db_document = FullTextIndex::serialize_document(tokens_to_store)?;
 
         // Update persisted storage
         match &self.storage {
@@ -331,8 +346,8 @@ mod tests {
             min_token_len: None,
             max_token_len: None,
             lowercase: None,
-            on_disk: None,
             phrase_matching: None,
+            on_disk: None,
         };
 
         {

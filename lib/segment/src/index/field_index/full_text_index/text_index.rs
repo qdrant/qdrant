@@ -1,3 +1,4 @@
+#[cfg(test)]
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -226,10 +227,43 @@ impl FullTextIndex {
         bincode::deserialize(data).unwrap()
     }
 
-    pub(super) fn serialize_document_tokens(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
+    /// CBOR representation is the same for BTreeSet<String> and Vec<String> if the elements are sorted, thus, we can resort to
+    /// the vec implementation always. Let's just keep this to prove this works fine during https://github.com/qdrant/qdrant/pull/6493
+    ///
+    /// We can remove this afterwards
+    #[cfg(test)]
+    pub(super) fn serialize_token_set(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
+        #[derive(Serialize)]
+        struct StoredTokens {
+            tokens: BTreeSet<String>,
+        }
+        let doc = StoredTokens { tokens };
+        serde_cbor::to_vec(&doc).map_err(|e| {
+            OperationError::service_error(format!("Failed to serialize document: {e}"))
+        })
+    }
+
+    /// CBOR representation is the same for BTreeSet<String> and Vec<String> if the elements are sorted, thus, we can resort to
+    /// the vec implementation always. Let's just keep this to prove this works fine during https://github.com/qdrant/qdrant/pull/6493
+    ///
+    /// We can delete this afterwards
+    #[cfg(test)]
+    pub(super) fn deserialize_token_set(data: &[u8]) -> OperationResult<BTreeSet<String>> {
+        #[derive(Deserialize)]
+        struct StoredTokens {
+            tokens: BTreeSet<String>,
+        }
+        serde_cbor::from_slice::<StoredTokens>(data)
+            .map_err(|e| {
+                OperationError::service_error(format!("Failed to deserialize document: {e}"))
+            })
+            .map(|doc| doc.tokens)
+    }
+
+    pub(super) fn serialize_document(tokens: Vec<String>) -> OperationResult<Vec<u8>> {
         #[derive(Serialize)]
         struct StoredDocument {
-            tokens: BTreeSet<String>,
+            tokens: Vec<String>,
         }
         let doc = StoredDocument { tokens };
         serde_cbor::to_vec(&doc).map_err(|e| {
@@ -237,10 +271,10 @@ impl FullTextIndex {
         })
     }
 
-    pub(super) fn deserialize_document(data: &[u8]) -> OperationResult<BTreeSet<String>> {
+    pub(super) fn deserialize_document(data: &[u8]) -> OperationResult<Vec<String>> {
         #[derive(Deserialize)]
         struct StoredDocument {
-            tokens: BTreeSet<String>,
+            tokens: Vec<String>,
         }
         serde_cbor::from_slice::<StoredDocument>(data)
             .map_err(|e| {
@@ -654,10 +688,16 @@ mod tests {
     }
 
     #[cfg(feature = "testing")]
-    fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Arc<RwLock<DB>>) {
+    fn create_builder(
+        index_type: IndexType,
+        phrase_matching: bool,
+    ) -> (IndexBuilder, TempDir, Arc<RwLock<DB>>) {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-        let config = TextIndexParams::default();
+        let config = TextIndexParams {
+            phrase_matching: Some(phrase_matching),
+            ..TextIndexParams::default()
+        };
         let mut builder = match index_type {
             IndexType::Mutable => IndexBuilder::Mutable(FullTextIndex::builder_rocksdb(
                 db.clone(),
@@ -698,10 +738,11 @@ mod tests {
         num_keywords: usize,
         keyword_len: usize,
         index_type: IndexType,
+        phrase_matching: bool,
         deleted: bool,
     ) -> (FullTextIndex, TempDir, Arc<RwLock<DB>>) {
         let mut rnd = StdRng::seed_from_u64(42);
-        let (mut builder, temp_dir, db) = create_builder(index_type);
+        let (mut builder, temp_dir, db) = create_builder(index_type, phrase_matching);
 
         for idx in 0..num_points {
             let keywords = random_full_text_payload(
@@ -768,9 +809,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(false)]
-    #[case(true)]
-    fn test_congruence(#[case] deleted: bool) {
+    fn test_congruence(
+        #[values(false, true)] deleted: bool,
+        #[values(false, true)] phrase_matching: bool,
+    ) {
         use std::collections::HashSet;
 
         use crate::json_path::JsonPath;
@@ -790,6 +832,7 @@ mod tests {
                     KEYWORD_COUNT,
                     KEYWORD_LEN,
                     index_type,
+                    phrase_matching,
                     deleted,
                 );
                 ((index, index_type), (temp_dir, db))
@@ -901,5 +944,48 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Test that Vec and BTreeSet are serialized the same way in CBOR
+    #[test]
+    fn test_tokenset_and_document_serde() {
+        let str_tokens = [
+            "the", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog",
+        ]
+        .map(String::from);
+
+        let str_tokens_set = BTreeSet::from_iter(str_tokens.clone());
+        let str_tokens_set_as_vec = str_tokens_set.iter().cloned().collect::<Vec<_>>();
+
+        let serialized_set = FullTextIndex::serialize_token_set(str_tokens_set.clone()).unwrap();
+        let serialized_vec =
+            FullTextIndex::serialize_document(str_tokens_set_as_vec.clone()).unwrap();
+
+        assert_eq!(serialized_set, serialized_vec);
+
+        eprintln!(
+            "Serialized set: {:?}",
+            serialized_set
+                .iter()
+                .map(|&b| b as char)
+                .collect::<String>()
+        );
+        eprintln!(
+            "Serialized vec: {:?}",
+            serialized_vec
+                .iter()
+                .map(|&b| b as char)
+                .collect::<String>()
+        );
+
+        // cross serialization/deserialization also gives the same result
+        assert_eq!(
+            FullTextIndex::deserialize_document(&serialized_set).unwrap(),
+            str_tokens_set_as_vec
+        );
+        assert_eq!(
+            FullTextIndex::deserialize_token_set(&serialized_vec).unwrap(),
+            str_tokens_set
+        );
     }
 }

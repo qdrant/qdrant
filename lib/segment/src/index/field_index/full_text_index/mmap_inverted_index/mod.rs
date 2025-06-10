@@ -100,13 +100,12 @@ impl MmapInvertedIndex {
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
         let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
-        let postings = if !has_positions {
-            MmapPostingsEnum::Ids(MmapPostings::<()>::open(&postings_path, populate)?)
-        } else {
-            MmapPostingsEnum::WithPositions(MmapPostings::<Positions>::open(
+        let postings = match has_positions {
+            false => MmapPostingsEnum::Ids(MmapPostings::<()>::open(&postings_path, populate)?),
+            true => MmapPostingsEnum::WithPositions(MmapPostings::<Positions>::open(
                 &postings_path,
                 populate,
-            )?)
+            )?),
         };
         let vocab = MmapHashMap::<str, TokenId>::open(&vocab_path, false)?;
 

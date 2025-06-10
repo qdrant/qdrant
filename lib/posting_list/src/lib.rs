@@ -22,10 +22,13 @@ impl SizedValue for u32 {}
 impl SizedValue for u64 {}
 
 pub trait UnsizedValue {
+    /// Returns the length of the serialized value in bytes.
     fn write_len(&self) -> usize;
 
+    /// Writes the value to the given buffer.
     fn write_to(&self, dst: &mut [u8]);
 
+    /// Creates a value from the given bytes.
     fn from_bytes(data: &[u8]) -> Self;
 }
 
