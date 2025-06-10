@@ -1,4 +1,6 @@
 use std::collections::BTreeSet;
+use std::fmt;
+use std::str::FromStr;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -323,9 +325,29 @@ impl<'de> serde::Deserialize<'de> for Language {
     }
 }
 
+impl fmt::Display for Language {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let json_string = serde_json::to_string(self).map_err(|_| fmt::Error)?;
+        f.write_str(json_string.trim_matches('"'))
+    }
+}
+
+impl FromStr for Language {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_str(&format!("\"{s}\""))
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 pub struct StopwordsSet {
-    #[serde(default, alias = "languages", skip_serializing_if = "BTreeSet::is_empty", deserialize_with = "deserialize_language_field")]
+    #[serde(
+        default,
+        alias = "languages",
+        skip_serializing_if = "BTreeSet::is_empty",
+        deserialize_with = "deserialize_language_field"
+    )]
     pub language: BTreeSet<Language>,
 
     #[serde(default)]
@@ -563,7 +585,8 @@ mod tests {
 
         // Single language as array
         let json_single_array = r#"{"language": ["english"], "custom": ["AAA"]}"#;
-        let stopwords_single_array: StopwordsInterface = serde_json::from_str(json_single_array).unwrap();
+        let stopwords_single_array: StopwordsInterface =
+            serde_json::from_str(json_single_array).unwrap();
         if let StopwordsInterface::Set(set) = stopwords_single_array {
             assert_eq!(set.language, BTreeSet::from([Language::English]));
             assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));

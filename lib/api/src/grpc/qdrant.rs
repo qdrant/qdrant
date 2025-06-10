@@ -820,8 +820,8 @@ pub struct GeoIndexParams {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StopwordsSet {
     /// List of languages to use stopwords from
-    #[prost(enumeration = "Language", repeated, tag = "1")]
-    pub languages: ::prost::alloc::vec::Vec<i32>,
+    #[prost(string, repeated, tag = "1")]
+    pub languages: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// List of custom stopwords
     #[prost(string, repeated, tag = "2")]
     pub custom: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
@@ -1708,117 +1708,6 @@ impl TokenizerType {
             "Whitespace" => Some(Self::Whitespace),
             "Word" => Some(Self::Word),
             "Multilingual" => Some(Self::Multilingual),
-            _ => None,
-        }
-    }
-}
-#[derive(serde::Serialize)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Language {
-    UnspecifiedLanguage = 0,
-    Arabic = 1,
-    Azerbaijani = 2,
-    Basque = 3,
-    Bengali = 4,
-    Catalan = 5,
-    Chinese = 6,
-    Danish = 7,
-    Dutch = 8,
-    English = 9,
-    Finnish = 10,
-    French = 11,
-    German = 12,
-    Greek = 13,
-    Hebrew = 14,
-    Hinglish = 15,
-    Hungarian = 16,
-    Indonesian = 17,
-    Italian = 18,
-    Kazakh = 19,
-    Nepali = 20,
-    Norwegian = 21,
-    Portuguese = 22,
-    Romanian = 23,
-    Russian = 24,
-    Slovene = 25,
-    Spanish = 26,
-    Swedish = 27,
-    Tajik = 28,
-    Turkish = 29,
-}
-impl Language {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Language::UnspecifiedLanguage => "UnspecifiedLanguage",
-            Language::Arabic => "Arabic",
-            Language::Azerbaijani => "Azerbaijani",
-            Language::Basque => "Basque",
-            Language::Bengali => "Bengali",
-            Language::Catalan => "Catalan",
-            Language::Chinese => "Chinese",
-            Language::Danish => "Danish",
-            Language::Dutch => "Dutch",
-            Language::English => "English",
-            Language::Finnish => "Finnish",
-            Language::French => "French",
-            Language::German => "German",
-            Language::Greek => "Greek",
-            Language::Hebrew => "Hebrew",
-            Language::Hinglish => "Hinglish",
-            Language::Hungarian => "Hungarian",
-            Language::Indonesian => "Indonesian",
-            Language::Italian => "Italian",
-            Language::Kazakh => "Kazakh",
-            Language::Nepali => "Nepali",
-            Language::Norwegian => "Norwegian",
-            Language::Portuguese => "Portuguese",
-            Language::Romanian => "Romanian",
-            Language::Russian => "Russian",
-            Language::Slovene => "Slovene",
-            Language::Spanish => "Spanish",
-            Language::Swedish => "Swedish",
-            Language::Tajik => "Tajik",
-            Language::Turkish => "Turkish",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "UnspecifiedLanguage" => Some(Self::UnspecifiedLanguage),
-            "Arabic" => Some(Self::Arabic),
-            "Azerbaijani" => Some(Self::Azerbaijani),
-            "Basque" => Some(Self::Basque),
-            "Bengali" => Some(Self::Bengali),
-            "Catalan" => Some(Self::Catalan),
-            "Chinese" => Some(Self::Chinese),
-            "Danish" => Some(Self::Danish),
-            "Dutch" => Some(Self::Dutch),
-            "English" => Some(Self::English),
-            "Finnish" => Some(Self::Finnish),
-            "French" => Some(Self::French),
-            "German" => Some(Self::German),
-            "Greek" => Some(Self::Greek),
-            "Hebrew" => Some(Self::Hebrew),
-            "Hinglish" => Some(Self::Hinglish),
-            "Hungarian" => Some(Self::Hungarian),
-            "Indonesian" => Some(Self::Indonesian),
-            "Italian" => Some(Self::Italian),
-            "Kazakh" => Some(Self::Kazakh),
-            "Nepali" => Some(Self::Nepali),
-            "Norwegian" => Some(Self::Norwegian),
-            "Portuguese" => Some(Self::Portuguese),
-            "Romanian" => Some(Self::Romanian),
-            "Russian" => Some(Self::Russian),
-            "Slovene" => Some(Self::Slovene),
-            "Spanish" => Some(Self::Spanish),
-            "Swedish" => Some(Self::Swedish),
-            "Tajik" => Some(Self::Tajik),
-            "Turkish" => Some(Self::Turkish),
             _ => None,
         }
     }

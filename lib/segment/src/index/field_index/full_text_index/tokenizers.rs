@@ -530,7 +530,11 @@ mod tests {
                 phrase_matching: None,
                 stopwords: Some(StopwordsInterface::Set(StopwordsSet {
                     language: BTreeSet::new(),
-                    custom: BTreeSet::from(["The".to_string(), "the".to_string(), "LAZY".to_string()]),
+                    custom: BTreeSet::from([
+                        "The".to_string(),
+                        "the".to_string(),
+                        "LAZY".to_string(),
+                    ]),
                 })),
             },
             |token| tokens.push(token.to_owned()),

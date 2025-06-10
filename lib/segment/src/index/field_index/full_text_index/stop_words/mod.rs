@@ -94,7 +94,10 @@ impl StopwordsFilter {
             }
         }
 
-        Self { stopwords, lowercase }
+        Self {
+            stopwords,
+            lowercase,
+        }
     }
 
     /// Check if a token is a stopword
@@ -107,7 +110,11 @@ impl StopwordsFilter {
     }
 
     /// Add stopwords for a specific language
-    fn add_language_stopwords(stopwords: &mut HashSet<String>, language: &Language, lowercase: bool) {
+    fn add_language_stopwords(
+        stopwords: &mut HashSet<String>,
+        language: &Language,
+        lowercase: bool,
+    ) {
         let stopwords_array = match language {
             Language::UnspecifiedLanguage => return,
             Language::Arabic => ARABIC_STOPWORDS,
