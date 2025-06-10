@@ -11268,14 +11268,10 @@
           "debug",
           "gpu",
           "recovery_mode",
-          "service_debug_feature",
-          "web_feature"
+          "service_debug_feature"
         ],
         "properties": {
           "debug": {
-            "type": "boolean"
-          },
-          "web_feature": {
             "type": "boolean"
           },
           "service_debug_feature": {

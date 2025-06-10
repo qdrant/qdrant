@@ -18,8 +18,7 @@ default-run = "qdrant"
 workspace = true
 
 [features]
-default = ["web", "rocksdb"]
-web = ["actix-web"]
+default = ["rocksdb"]
 multiling-chinese = ["segment/multiling-chinese"]
 multiling-japanese = ["segment/multiling-japanese"]
 multiling-korean = ["segment/multiling-korean"]
@@ -80,7 +79,7 @@ tokio = { workspace = true }
 
 actix-cors = "0.7.1"
 actix-files = "0.6.6"
-actix-web = { version = "4.11.0", optional = true, features = ["rustls-0_23", "actix-tls"] }
+actix-web = { version = "4.11.0", features = ["rustls-0_23", "actix-tls"] }
 actix-web-validator = "6.0.0"
 tonic = { workspace = true }
 tonic-reflection = { workspace = true }
