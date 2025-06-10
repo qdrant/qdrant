@@ -105,6 +105,110 @@ EXPORT uint32_t impl_xor_popcnt_sse_uint32(
     return (uint32_t)result;
 }
 
+EXPORT uint32_t impl_xor_popcnt_scalar8_sse_uint128(
+    const uint8_t* query_ptr,
+    const uint8_t* vector_ptr,
+    uint32_t count
+) {
+    const uint64_t* v_ptr = (const uint64_t*)vector_ptr;
+    const uint64_t* q_ptr = (const uint64_t*)query_ptr;
+
+    __m128i sum1 = _mm_set1_epi32(0);
+    __m128i sum2 = _mm_set1_epi32(0);
+    for (uint32_t _i = 0; _i < count; _i++) {
+        uint64_t v_1 = *v_ptr;
+        uint64_t v_2 = *(v_ptr + 1);
+
+        __m128i popcnt1 = _mm_set_epi32(
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 0)),
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 2)),
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 4)),
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 6))
+        );
+        sum1 = _mm_add_epi32(sum1, popcnt1);
+
+        __m128i popcnt2 = _mm_set_epi32(
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 8)),
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 10)),
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 12)),
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 14))
+        );
+        sum2 = _mm_add_epi32(sum2, popcnt2);
+
+        __m128i popcnt3 = _mm_set_epi32(
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 1)),
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 3)),
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 5)),
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 7))
+        );
+        sum1 = _mm_add_epi32(sum1, popcnt3);
+
+        __m128i popcnt4 = _mm_set_epi32(
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 9)),
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 11)),
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 13)),
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 15))
+        );
+        sum2 = _mm_add_epi32(sum2, popcnt4);
+
+        v_ptr += 2;
+        q_ptr += 16;
+    }
+    __m128i factor1 = _mm_set_epi32(1, 2, 4, 8);
+    __m128i factor2 = _mm_set_epi32(16, 32, 64, 128);
+    __m128 result1_mm128 = _mm_cvtepi32_ps(_mm_mullo_epi32(sum1, factor1));
+    __m128 result2_mm128 = _mm_cvtepi32_ps(_mm_mullo_epi32(sum2, factor2));
+    HSUM128_PS(_mm_add_ps(result1_mm128, result2_mm128), mul_scalar);
+    return (uint32_t)mul_scalar;
+}
+
+EXPORT uint32_t impl_xor_popcnt_scalar4_sse_uint128(
+    const uint8_t* query_ptr,
+    const uint8_t* vector_ptr,
+    uint32_t count
+) {
+    const uint64_t* v_ptr = (const uint64_t*)vector_ptr;
+    const uint64_t* q_ptr = (const uint64_t*)query_ptr;
+
+    __m128i sum = _mm_set1_epi32(0);
+    for (uint32_t _i = 0; _i < count; _i++) {
+        uint64_t v_1 = *v_ptr;
+        uint64_t v_2 = *(v_ptr + 1);
+
+        uint64_t q_1_1 = *q_ptr;
+        uint64_t q_2_1 = *(q_ptr + 1);
+        uint64_t q_1_2 = *(q_ptr + 2);
+        uint64_t q_2_2 = *(q_ptr + 3);
+        uint64_t q_1_3 = *(q_ptr + 4);
+        uint64_t q_2_3 = *(q_ptr + 5);
+        uint64_t q_1_4 = *(q_ptr + 6);
+        uint64_t q_2_4 = *(q_ptr + 7);
+
+        __m128i popcnt1 = _mm_set_epi32(
+            _mm_popcnt_u64(v_1 ^ q_1_1),
+            _mm_popcnt_u64(v_1 ^ q_1_2),
+            _mm_popcnt_u64(v_1 ^ q_1_3),
+            _mm_popcnt_u64(v_1 ^ q_1_4)
+        );
+        sum = _mm_add_epi32(sum, popcnt1);
+
+        __m128i popcnt2 = _mm_set_epi32(
+            _mm_popcnt_u64(v_2 ^ q_2_1),
+            _mm_popcnt_u64(v_2 ^ q_2_2),
+            _mm_popcnt_u64(v_2 ^ q_2_3),
+            _mm_popcnt_u64(v_2 ^ q_2_4)
+        );
+        sum = _mm_add_epi32(sum, popcnt2);
+
+        v_ptr += 2;
+        q_ptr += 8;
+    }
+    __m128i factor = _mm_set_epi32(1, 2, 4, 8);
+    __m128 result_mm128 = _mm_cvtepi32_ps(_mm_mullo_epi32(sum, factor));
+    HSUM128_PS(result_mm128, mul_scalar);
+    return (uint32_t)mul_scalar;
+}
+
 EXPORT float impl_score_l1_sse(
     const uint8_t* query_ptr,
     const uint8_t* vector_ptr,

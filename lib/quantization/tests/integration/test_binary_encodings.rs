@@ -4,7 +4,9 @@ mod tests {
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin, Encoding};
+    use quantization::encoded_vectors_binary::{
+        BitsStoreType, EncodedVectorsBin, Encoding, QueryEncoding,
+    };
     use rand::{Rng, SeedableRng};
 
     use crate::metrics::dot_similarity;
@@ -74,6 +76,110 @@ mod tests {
                         invert,
                     },
                     encoding,
+                    QueryEncoding::SameAsStorage,
+                    &AtomicBool::new(false),
+                )
+                .unwrap()
+            })
+            .collect();
+
+        let top = 10;
+        let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
+
+        let orig_scores: Vec<f32> = vector_data
+            .iter()
+            .map(|vector| dot_similarity(&query, vector))
+            .collect();
+        let original_top = get_top(&orig_scores, top, invert);
+
+        let tops = encoded
+            .iter()
+            .map(|encoded| {
+                let query_encoded = encoded.encode_query(&query);
+                let scores: Vec<f32> = (0..vector_data.len())
+                    .map(|index| {
+                        encoded.score_point(
+                            &query_encoded,
+                            index as u32,
+                            &HardwareCounterCell::new(),
+                        )
+                    })
+                    .collect();
+                let tops = get_top(&scores, top, false);
+                match_count(&original_top, &tops)
+            })
+            .collect::<Vec<_>>();
+
+        // Check if encoding has more accuracy than previous one
+        for i in 1..tops.len() {
+            assert!(
+                tops[i] >= tops[i - 1],
+                "Encoding {} has less accuracy than encoding {}",
+                i,
+                i - 1
+            );
+        }
+    }
+
+    #[test]
+    fn test_binary_dot_asymetric() {
+        test_binary_dot_asymentric_impl::<u128>(0, Encoding::OneBit, false);
+        test_binary_dot_asymentric_impl::<u8>(0, Encoding::OneBit, false);
+        test_binary_dot_asymentric_impl::<u128>(1024, Encoding::OneBit, false);
+        test_binary_dot_asymentric_impl::<u128>(601, Encoding::OneBit, false);
+        test_binary_dot_asymentric_impl::<u8>(600, Encoding::OneBit, false);
+
+        test_binary_dot_asymentric_impl::<u128>(1024, Encoding::OneAndHalfBits, false);
+        test_binary_dot_asymentric_impl::<u128>(601, Encoding::OneAndHalfBits, false);
+        test_binary_dot_asymentric_impl::<u8>(600, Encoding::OneAndHalfBits, false);
+
+        test_binary_dot_asymentric_impl::<u128>(1024, Encoding::TwoBits, false);
+        test_binary_dot_asymentric_impl::<u128>(701, Encoding::TwoBits, false);
+        test_binary_dot_asymentric_impl::<u8>(700, Encoding::TwoBits, false);
+    }
+
+    #[test]
+    fn test_binary_dot_inverted_asymetric() {
+        test_binary_dot_asymentric_impl::<u128>(0, Encoding::OneBit, true);
+        test_binary_dot_asymentric_impl::<u8>(0, Encoding::OneBit, true);
+        test_binary_dot_asymentric_impl::<u128>(1024, Encoding::OneBit, true);
+        test_binary_dot_asymentric_impl::<u128>(601, Encoding::OneBit, true);
+        test_binary_dot_asymentric_impl::<u8>(600, Encoding::OneBit, true);
+    }
+
+    fn test_binary_dot_asymentric_impl<TBitsStoreType: BitsStoreType>(
+        vector_dim: usize,
+        encoding: Encoding,
+        invert: bool,
+    ) {
+        let vectors_count = 1000;
+
+        let mut rng = rand::rngs::StdRng::seed_from_u64(43);
+        let mut vector_data: Vec<Vec<f32>> = Vec::new();
+        for _ in 0..vectors_count {
+            vector_data.push(generate_vector(vector_dim, &mut rng));
+        }
+
+        let query_encodings = [
+            QueryEncoding::SameAsStorage,
+            QueryEncoding::Scalar4bits,
+            QueryEncoding::Scalar8bits,
+        ];
+
+        let encoded: Vec<_> = query_encodings
+            .iter()
+            .map(|&query_encoding| {
+                EncodedVectorsBin::<TBitsStoreType, _>::encode(
+                    vector_data.iter(),
+                    Vec::<u8>::new(),
+                    &VectorParameters {
+                        dim: vector_dim,
+                        count: vectors_count,
+                        distance_type: DistanceType::Dot,
+                        invert,
+                    },
+                    encoding,
+                    query_encoding,
                     &AtomicBool::new(false),
                 )
                 .unwrap()
