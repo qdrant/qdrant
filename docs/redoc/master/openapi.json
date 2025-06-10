@@ -7715,16 +7715,6 @@
       "StopwordsSet": {
         "type": "object",
         "properties": {
-          "language": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Language"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
           "languages": {
             "type": "array",
             "items": {

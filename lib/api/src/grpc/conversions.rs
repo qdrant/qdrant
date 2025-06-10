@@ -230,7 +230,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                 }
             }
             segment::data_types::index::StopwordsInterface::Set(set) => {
-                let languages = set.language.iter().map(|lang| lang.to_string()).collect();
+                let languages = set.languages.iter().map(|lang| lang.to_string()).collect();
 
                 StopwordsSet {
                     languages,
@@ -464,7 +464,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
 
                 Some(segment::data_types::index::StopwordsInterface::Set(
                     segment::data_types::index::StopwordsSet {
-                        language,
+                        languages: language,
                         custom: set.custom.into_iter().collect(),
                     },
                 ))

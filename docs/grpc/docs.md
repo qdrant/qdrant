@@ -97,7 +97,6 @@
     - [CompressionRatio](#qdrant-CompressionRatio)
     - [Datatype](#qdrant-Datatype)
     - [Distance](#qdrant-Distance)
-    - [Language](#qdrant-Language)
     - [MaxOptimizationThreads.Setting](#qdrant-MaxOptimizationThreads-Setting)
     - [Modifier](#qdrant-Modifier)
     - [MultiVectorComparator](#qdrant-MultiVectorComparator)
@@ -1470,7 +1469,7 @@ Note: 1kB = 1 vector of size 256. |
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| languages | [Language](#qdrant-Language) | repeated | List of languages to use stopwords from |
+| languages | [string](#string) | repeated | List of languages to use stopwords from |
 | custom | [string](#string) | repeated | List of custom stopwords |
 
 
@@ -1905,46 +1904,6 @@ Note: 1kB = 1 vector of size 256. |
 | Euclid | 2 |  |
 | Dot | 3 |  |
 | Manhattan | 4 |  |
-
-
-
-<a name="qdrant-Language"></a>
-
-### Language
-
-
-| Name | Number | Description |
-| ---- | ------ | ----------- |
-| UnspecifiedLanguage | 0 |  |
-| Arabic | 1 |  |
-| Azerbaijani | 2 |  |
-| Basque | 3 |  |
-| Bengali | 4 |  |
-| Catalan | 5 |  |
-| Chinese | 6 |  |
-| Danish | 7 |  |
-| Dutch | 8 |  |
-| English | 9 |  |
-| Finnish | 10 |  |
-| French | 11 |  |
-| German | 12 |  |
-| Greek | 13 |  |
-| Hebrew | 14 |  |
-| Hinglish | 15 |  |
-| Hungarian | 16 |  |
-| Indonesian | 17 |  |
-| Italian | 18 |  |
-| Kazakh | 19 |  |
-| Nepali | 20 |  |
-| Norwegian | 21 |  |
-| Portuguese | 22 |  |
-| Romanian | 23 |  |
-| Russian | 24 |  |
-| Slovene | 25 |  |
-| Spanish | 26 |  |
-| Swedish | 27 |  |
-| Tajik | 28 |  |
-| Turkish | 29 |  |
 
 
 

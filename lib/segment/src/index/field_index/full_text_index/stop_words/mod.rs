@@ -77,8 +77,8 @@ impl StopwordsFilter {
                     Self::add_language_stopwords(&mut stopwords, lang, lowercase);
                 }
                 StopwordsInterface::Set(set) => {
-                    // Add stopwords from all languages in the language field
-                    for lang in &set.language {
+                    // Add stopwords from all languages in the languages field
+                    for lang in &set.languages {
                         Self::add_language_stopwords(&mut stopwords, lang, lowercase);
                     }
 
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_custom_stopwords() {
         let option = Some(StopwordsInterface::Set(StopwordsSet {
-            language: BTreeSet::new(),
+            languages: BTreeSet::new(),
             custom: BTreeSet::from(["hello".to_string(), "world".to_string()]),
         }));
         let filter = StopwordsFilter::new(&option, true);
@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn test_mixed_stopwords() {
         let option = Some(StopwordsInterface::Set(StopwordsSet {
-            language: BTreeSet::from([Language::English]),
+            languages: BTreeSet::from([Language::English]),
             custom: BTreeSet::from(["hello".to_string(), "world".to_string()]),
         }));
         let filter = StopwordsFilter::new(&option, true);
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn test_case_insensitivity() {
         let option = Some(StopwordsInterface::Set(StopwordsSet {
-            language: BTreeSet::from([Language::English]),
+            languages: BTreeSet::from([Language::English]),
             custom: BTreeSet::from(["Hello".to_string()]),
         }));
         let filter = StopwordsFilter::new(&option, true);
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn test_case_sensitivity() {
         let option = Some(StopwordsInterface::Set(StopwordsSet {
-            language: BTreeSet::new(),
+            languages: BTreeSet::new(),
             custom: BTreeSet::from(["Hello".to_string(), "World".to_string()]),
         }));
         let filter = StopwordsFilter::new(&option, false);

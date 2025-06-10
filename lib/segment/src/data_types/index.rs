@@ -344,11 +344,10 @@ impl FromStr for Language {
 pub struct StopwordsSet {
     #[serde(
         default,
-        alias = "languages",
         skip_serializing_if = "BTreeSet::is_empty",
         deserialize_with = "deserialize_language_field"
     )]
-    pub language: BTreeSet<Language>,
+    pub languages: BTreeSet<Language>,
 
     #[serde(default)]
     pub custom: BTreeSet<String>,
@@ -437,11 +436,11 @@ mod tests {
     #[test]
     fn test_stopwords_option_set_serialization() {
         let stopwords = StopwordsInterface::Set(StopwordsSet {
-            language: BTreeSet::from([Language::English]),
+            languages: BTreeSet::from([Language::English]),
             custom: BTreeSet::from(["AAA".to_string()]),
         });
         let json = serde_json::to_string(&stopwords).unwrap();
-        let expected = r#"{"language":["english"],"custom":["AAA"]}"#;
+        let expected = r#"{"languages":["english"],"custom":["AAA"]}"#;
         assert_eq!(json, expected);
 
         let deserialized: StopwordsInterface = serde_json::from_str(&json).unwrap();
@@ -457,7 +456,7 @@ mod tests {
                 set.custom,
                 BTreeSet::from(["as".to_string(), "the".to_string(), "a".to_string()])
             );
-            assert!(set.language.is_empty());
+            assert!(set.languages.is_empty());
         } else {
             panic!("Expected StopwordsSet");
         }
@@ -471,10 +470,10 @@ mod tests {
         }
 
         // single language
-        let json3 = r#"{"language": "english", "custom": ["AAA"]}"#;
+        let json3 = r#"{"languages": "english", "custom": ["AAA"]}"#;
         let stopwords3: StopwordsInterface = serde_json::from_str(json3).unwrap();
         if let StopwordsInterface::Set(set) = stopwords3 {
-            assert_eq!(set.language, BTreeSet::from([Language::English]));
+            assert_eq!(set.languages, BTreeSet::from([Language::English]));
             assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
         } else {
             panic!("Expected StopwordsSet");
@@ -485,9 +484,19 @@ mod tests {
         let stopwords4: StopwordsInterface = serde_json::from_str(json4).unwrap();
         if let StopwordsInterface::Set(set) = stopwords4 {
             assert_eq!(
-                set.language,
+                set.languages,
                 BTreeSet::from([Language::English, Language::Spanish])
             );
+            assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
+        } else {
+            panic!("Expected StopwordsSet");
+        }
+
+        // null languages field
+        let json5 = r#"{"languages": null, "custom": ["AAA"]}"#;
+        let stopwords5: StopwordsInterface = serde_json::from_str(json5).unwrap();
+        if let StopwordsInterface::Set(set) = stopwords5 {
+            assert!(set.languages.is_empty());
             assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
         } else {
             panic!("Expected StopwordsSet");
@@ -519,10 +528,10 @@ mod tests {
         }
 
         // Test aliases in StopwordsSet
-        let json_set = r#"{"language": "en", "custom": ["AAA"]}"#;
+        let json_set = r#"{"languages": "en", "custom": ["AAA"]}"#;
         let stopwords_set: StopwordsInterface = serde_json::from_str(json_set).unwrap();
         if let StopwordsInterface::Set(set) = stopwords_set {
-            assert_eq!(set.language, BTreeSet::from([Language::English]));
+            assert_eq!(set.languages, BTreeSet::from([Language::English]));
             assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
         } else {
             panic!("Expected StopwordsSet");
@@ -534,7 +543,7 @@ mod tests {
             serde_json::from_str(json_set_compat).unwrap();
         if let StopwordsInterface::Set(set) = stopwords_set_compat {
             assert_eq!(
-                set.language,
+                set.languages,
                 BTreeSet::from([Language::English, Language::Spanish])
             );
             assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
@@ -559,7 +568,7 @@ mod tests {
         let result = serde_json::from_str::<StopwordsInterface>(json_interface);
         assert!(result.is_err());
 
-        let json_set = r#"{"language": "klingon", "custom": ["AAA"]}"#;
+        let json_set = r#"{"languages": "klingon", "custom": ["AAA"]}"#;
         let result = serde_json::from_str::<StopwordsInterface>(json_set);
         assert!(result.is_err());
 
@@ -571,35 +580,14 @@ mod tests {
 
     #[test]
     fn test_language_field_aliasing() {
-        // Test that both "language" and "languages" keys work for deserialization
+        // Test that "languages" key works for deserialization
 
-        // Single language as String
-        let json_single = r#"{"language": "english", "custom": ["AAA"]}"#;
-        let stopwords_single: StopwordsInterface = serde_json::from_str(json_single).unwrap();
-        if let StopwordsInterface::Set(set) = stopwords_single {
-            assert_eq!(set.language, BTreeSet::from([Language::English]));
-            assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
-        } else {
-            panic!("Expected StopwordsSet");
-        }
-
-        // Single language as array
-        let json_single_array = r#"{"language": ["english"], "custom": ["AAA"]}"#;
-        let stopwords_single_array: StopwordsInterface =
-            serde_json::from_str(json_single_array).unwrap();
-        if let StopwordsInterface::Set(set) = stopwords_single_array {
-            assert_eq!(set.language, BTreeSet::from([Language::English]));
-            assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
-        } else {
-            panic!("Expected StopwordsSet");
-        }
-
-        // Multiple languages using "languages" key
+        // Multiple languages using "languages" key should work
         let json_multiple = r#"{"languages": ["english", "french"], "custom": ["AAA"]}"#;
         let stopwords_multiple: StopwordsInterface = serde_json::from_str(json_multiple).unwrap();
         if let StopwordsInterface::Set(set) = stopwords_multiple {
             assert_eq!(
-                set.language,
+                set.languages,
                 BTreeSet::from([Language::English, Language::French])
             );
             assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
