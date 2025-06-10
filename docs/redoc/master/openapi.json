@@ -8420,6 +8420,9 @@
             "$ref": "#/components/schemas/MatchText"
           },
           {
+            "$ref": "#/components/schemas/MatchPhrase"
+          },
+          {
             "$ref": "#/components/schemas/MatchAny"
           },
           {
@@ -8461,6 +8464,18 @@
         ],
         "properties": {
           "text": {
+            "type": "string"
+          }
+        }
+      },
+      "MatchPhrase": {
+        "description": "Full-text phrase match of the string.",
+        "type": "object",
+        "required": [
+          "phrase"
+        ],
+        "properties": {
+          "phrase": {
             "type": "string"
           }
         }

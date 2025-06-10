@@ -3262,6 +3262,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | integers | [RepeatedIntegers](#qdrant-RepeatedIntegers) |  | Match multiple integers |
 | except_integers | [RepeatedIntegers](#qdrant-RepeatedIntegers) |  | Match any other value except those integers |
 | except_keywords | [RepeatedStrings](#qdrant-RepeatedStrings) |  | Match any other value except those keywords |
+| phrase | [string](#string) |  | Match phrase text |
 
 
 
