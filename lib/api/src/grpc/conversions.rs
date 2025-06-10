@@ -35,7 +35,6 @@ use super::qdrant::{
 };
 use super::{Expression, Formula, RecoQuery, Usage};
 use crate::conversions::json::{self, json_to_proto};
-use crate::grpc;
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -55,7 +54,8 @@ use crate::grpc::qdrant::{
     with_vectors_selector,
 };
 use crate::grpc::{
-    DecayParamsExpression, DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
+    self, BinaryQuantizationEncoding, DecayParamsExpression, DivExpression, GeoDistance,
+    MultExpression, PowExpression, SumExpression,
 };
 use crate::rest::models::{CollectionsResponse, VersionInfo};
 use crate::rest::schema as rest;
@@ -1080,11 +1080,50 @@ impl TryFrom<ProductQuantization> for segment::types::ProductQuantization {
     }
 }
 
+impl From<segment::types::BinaryQuantizationEncoding> for BinaryQuantizationEncoding {
+    fn from(value: segment::types::BinaryQuantizationEncoding) -> Self {
+        match value {
+            segment::types::BinaryQuantizationEncoding::OneBit => {
+                BinaryQuantizationEncoding::OneBit
+            }
+            segment::types::BinaryQuantizationEncoding::TwoBits => {
+                BinaryQuantizationEncoding::TwoBits
+            }
+            segment::types::BinaryQuantizationEncoding::OneAndHalfBits => {
+                BinaryQuantizationEncoding::OneAndHalfBits
+            }
+        }
+    }
+}
+
+impl From<BinaryQuantizationEncoding> for segment::types::BinaryQuantizationEncoding {
+    fn from(value: BinaryQuantizationEncoding) -> Self {
+        match value {
+            BinaryQuantizationEncoding::OneBit => {
+                segment::types::BinaryQuantizationEncoding::OneBit
+            }
+            BinaryQuantizationEncoding::TwoBits => {
+                segment::types::BinaryQuantizationEncoding::TwoBits
+            }
+            BinaryQuantizationEncoding::OneAndHalfBits => {
+                segment::types::BinaryQuantizationEncoding::OneAndHalfBits
+            }
+        }
+    }
+}
+
 impl From<segment::types::BinaryQuantization> for BinaryQuantization {
     fn from(value: segment::types::BinaryQuantization) -> Self {
         let segment::types::BinaryQuantization { binary } = value;
-        let segment::types::BinaryQuantizationConfig { always_ram } = binary;
-        BinaryQuantization { always_ram }
+        let segment::types::BinaryQuantizationConfig {
+            always_ram,
+            encoding,
+        } = binary;
+        BinaryQuantization {
+            always_ram,
+            encoding: encoding
+                .map(|encoding| i32::from(BinaryQuantizationEncoding::from(encoding))),
+        }
     }
 }
 
@@ -1092,9 +1131,20 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
     type Error = Status;
 
     fn try_from(value: BinaryQuantization) -> Result<Self, Self::Error> {
-        let BinaryQuantization { always_ram } = value;
+        let BinaryQuantization {
+            always_ram,
+            encoding,
+        } = value;
+        let encoding = encoding
+            .map(|encoding| BinaryQuantizationEncoding::try_from(encoding))
+            .transpose()
+            .map_err(|_| Status::invalid_argument("Unknown binary quantization encoding"))?;
         Ok(segment::types::BinaryQuantization {
-            binary: segment::types::BinaryQuantizationConfig { always_ram },
+            binary: segment::types::BinaryQuantizationConfig {
+                always_ram,
+                encoding: encoding
+                    .map(|encoding| segment::types::BinaryQuantizationEncoding::from(encoding)),
+            },
         })
     }
 }

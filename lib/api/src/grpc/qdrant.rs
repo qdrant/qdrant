@@ -430,6 +430,9 @@ pub struct BinaryQuantization {
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[prost(bool, optional, tag = "1")]
     pub always_ram: ::core::option::Option<bool>,
+    /// Binary quantization encoding method
+    #[prost(enumeration = "BinaryQuantizationEncoding", optional, tag = "2")]
+    pub encoding: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1643,6 +1646,36 @@ impl CompressionRatio {
             "x16" => Some(Self::X16),
             "x32" => Some(Self::X32),
             "x64" => Some(Self::X64),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum BinaryQuantizationEncoding {
+    OneBit = 0,
+    TwoBits = 1,
+    OneAndHalfBits = 2,
+}
+impl BinaryQuantizationEncoding {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            BinaryQuantizationEncoding::OneBit => "OneBit",
+            BinaryQuantizationEncoding::TwoBits => "TwoBits",
+            BinaryQuantizationEncoding::OneAndHalfBits => "OneAndHalfBits",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "OneBit" => Some(Self::OneBit),
+            "TwoBits" => Some(Self::TwoBits),
+            "OneAndHalfBits" => Some(Self::OneAndHalfBits),
             _ => None,
         }
     }
