@@ -55,7 +55,7 @@ mod tests {
             vector_data.push(generate_vector(vector_dim, &mut rng));
         }
 
-        let encodings = vec![
+        let encodings = [
             Encoding::OneBit,
             Encoding::OneAndHalfBits,
             Encoding::TwoBits,
