@@ -112,7 +112,7 @@ impl MutableGeoMapIndex {
     /// Load from RocksDB storage
     ///
     /// Loads in-memory index from RocksDB storage.
-    pub fn load_rocksdb(&mut self) -> OperationResult<bool> {
+    fn load_rocksdb(&mut self) -> OperationResult<bool> {
         let Storage::RocksDb(db_wrapper) = &self.storage else {
             return Err(OperationError::service_error(
                 "Failed to load index from RocksDB, using different storage backend",

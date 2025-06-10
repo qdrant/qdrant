@@ -111,7 +111,7 @@ where
         // and convert to immutable state
 
         let mut mutable = MutableMapIndex::<N>::open_rocksdb_db_wrapper(db_wrapper.clone());
-        let result = mutable.load_rocksdb()?;
+        let result = mutable.load()?;
         let MutableMapIndex::<N> {
             map,
             point_to_values,
