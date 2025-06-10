@@ -374,7 +374,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         let extended_dim = match encoding {
             Encoding::OneBit => dim,
             Encoding::TwoBits => dim * 2,
-            Encoding::OneAndHalfBits => (dim * 3 + 1) / 2, // ceil(dim * 1.5)
+            Encoding::OneAndHalfBits => (dim * 3).div_ceil(2), // ceil(dim * 1.5)
         };
         TBitsStoreType::get_storage_size(extended_dim) * std::mem::size_of::<TBitsStoreType>()
     }
