@@ -439,6 +439,10 @@ pub struct BinaryQuantization {
     /// Binary quantization encoding method
     #[prost(enumeration = "BinaryQuantizationEncoding", optional, tag = "2")]
     pub encoding: ::core::option::Option<i32>,
+    /// Asymmetric quantization configuration allows a query to have different quantization than stored vectors.
+    /// It can increase the accuracy of search at the cost of performance.
+    #[prost(message, optional, tag = "3")]
+    pub query_encoding: ::core::option::Option<BinaryQuantizationQueryEncoding>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -461,6 +465,66 @@ pub mod quantization_config {
         Product(super::ProductQuantization),
         #[prost(message, tag = "3")]
         Binary(super::BinaryQuantization),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BinaryQuantizationQueryEncoding {
+    #[prost(oneof = "binary_quantization_query_encoding::Variant", tags = "4")]
+    pub variant: ::core::option::Option<binary_quantization_query_encoding::Variant>,
+}
+/// Nested message and enum types in `BinaryQuantizationQueryEncoding`.
+pub mod binary_quantization_query_encoding {
+    #[derive(serde::Serialize)]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum Setting {
+        Default = 0,
+        Binary = 1,
+        Scalar4Bits = 2,
+        Scalar8Bits = 3,
+    }
+    impl Setting {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Setting::Default => "Default",
+                Setting::Binary => "Binary",
+                Setting::Scalar4Bits => "Scalar4Bits",
+                Setting::Scalar8Bits => "Scalar8Bits",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "Default" => Some(Self::Default),
+                "Binary" => Some(Self::Binary),
+                "Scalar4Bits" => Some(Self::Scalar4Bits),
+                "Scalar8Bits" => Some(Self::Scalar8Bits),
+                _ => None,
+            }
+        }
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(enumeration = "Setting", tag = "4")]
+        Setting(i32),
     }
 }
 #[derive(validator::Validate)]

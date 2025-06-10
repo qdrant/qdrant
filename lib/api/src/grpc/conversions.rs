@@ -55,8 +55,8 @@ use crate::grpc::qdrant::{
     with_vectors_selector,
 };
 use crate::grpc::{
-    self, BinaryQuantizationEncoding, DecayParamsExpression, DivExpression, GeoDistance,
-    MultExpression, PowExpression, SumExpression,
+    self, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, DecayParamsExpression,
+    DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
 };
 use crate::rest::models::{CollectionsResponse, VersionInfo};
 use crate::rest::schema as rest;
@@ -1171,11 +1171,13 @@ impl From<segment::types::BinaryQuantization> for BinaryQuantization {
         let segment::types::BinaryQuantizationConfig {
             always_ram,
             encoding,
+            query_encoding: query_quantization,
         } = binary;
         BinaryQuantization {
             always_ram,
             encoding: encoding
                 .map(|encoding| i32::from(BinaryQuantizationEncoding::from(encoding))),
+            query_encoding: query_quantization.map(BinaryQuantizationQueryEncoding::from),
         }
     }
 }
@@ -1187,6 +1189,7 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
         let BinaryQuantization {
             always_ram,
             encoding,
+            query_encoding,
         } = value;
         let encoding = encoding
             .map(BinaryQuantizationEncoding::try_from)
@@ -1196,6 +1199,12 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
             binary: segment::types::BinaryQuantizationConfig {
                 always_ram,
                 encoding: encoding.map(segment::types::BinaryQuantizationEncoding::from),
+                query_encoding: query_encoding
+                    .map(segment::types::BinaryQuantizationQueryEncoding::try_from)
+                    .transpose()
+                    .map_err(|_| {
+                        Status::invalid_argument("Unknown binary quantization query encoding")
+                    })?,
             },
         })
     }
@@ -1240,6 +1249,65 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             super::qdrant::quantization_config::Quantization::Binary(config) => Ok(
                 segment::types::QuantizationConfig::Binary(config.try_into()?),
             ),
+        }
+    }
+}
+
+impl TryFrom<BinaryQuantizationQueryEncoding> for segment::types::BinaryQuantizationQueryEncoding {
+    type Error = Status;
+
+    fn try_from(value: BinaryQuantizationQueryEncoding) -> Result<Self, Self::Error> {
+        use crate::grpc::qdrant::binary_quantization_query_encoding::{Setting, Variant};
+
+        let BinaryQuantizationQueryEncoding { variant } = value;
+        let variant = variant.ok_or_else(|| {
+            Status::invalid_argument("Malformed `BinaryQuantizationQueryEncoding`")
+        })?;
+
+        let converted = match variant {
+            Variant::Setting(setting_int) => {
+                let setting = Setting::try_from(setting_int).map_err(|err| {
+                    Status::invalid_argument(format!(
+                        "Invalid `BinaryQuantizationQueryEncoding` setting: {err}"
+                    ))
+                })?;
+                match setting {
+                    Setting::Default => segment::types::BinaryQuantizationQueryEncoding::Default,
+                    Setting::Binary => segment::types::BinaryQuantizationQueryEncoding::Binary,
+                    Setting::Scalar4Bits => {
+                        segment::types::BinaryQuantizationQueryEncoding::Scalar4Bits
+                    }
+                    Setting::Scalar8Bits => {
+                        segment::types::BinaryQuantizationQueryEncoding::Scalar8Bits
+                    }
+                }
+            }
+        };
+        Ok(converted)
+    }
+}
+
+impl From<segment::types::BinaryQuantizationQueryEncoding> for BinaryQuantizationQueryEncoding {
+    fn from(value: segment::types::BinaryQuantizationQueryEncoding) -> Self {
+        use crate::grpc::qdrant::binary_quantization_query_encoding::{Setting, Variant};
+
+        let variant = match value {
+            segment::types::BinaryQuantizationQueryEncoding::Default => {
+                Variant::Setting(Setting::Default.into())
+            }
+            segment::types::BinaryQuantizationQueryEncoding::Binary => {
+                Variant::Setting(Setting::Binary.into())
+            }
+            segment::types::BinaryQuantizationQueryEncoding::Scalar4Bits => {
+                Variant::Setting(Setting::Scalar4Bits.into())
+            }
+            segment::types::BinaryQuantizationQueryEncoding::Scalar8Bits => {
+                Variant::Setting(Setting::Scalar8Bits.into())
+            }
+        };
+
+        Self {
+            variant: Some(variant),
         }
     }
 }

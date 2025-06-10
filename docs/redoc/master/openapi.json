@@ -7037,14 +7037,6 @@
           "one_and_half_bits"
         ]
       },
-      "Datatype": {
-        "type": "string",
-        "enum": [
-          "float32",
-          "uint8",
-          "float16"
-        ]
-      },
       "MultiVectorConfig": {
         "type": "object",
         "required": [

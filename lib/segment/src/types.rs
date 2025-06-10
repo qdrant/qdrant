@@ -702,6 +702,12 @@ pub struct BinaryQuantizationConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encoding: Option<BinaryQuantizationEncoding>,
+
+    /// Asymmetric quantization configuration allows a query to have different quantization than stored vectors.
+    /// It can increase the accuracy of search at the cost of performance.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query_encoding: Option<BinaryQuantizationQueryEncoding>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
@@ -738,6 +744,19 @@ impl Validate for QuantizationConfig {
             QuantizationConfig::Binary(binary) => binary.validate(),
         }
     }
+}
+
+#[derive(
+    Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq, Hash,
+)]
+#[serde(rename_all = "lowercase")]
+#[anonymize(false)]
+pub enum BinaryQuantizationQueryEncoding {
+    #[default]
+    Default,
+    Binary,
+    Scalar4Bits,
+    Scalar8Bits,
 }
 
 impl From<ScalarQuantizationConfig> for QuantizationConfig {

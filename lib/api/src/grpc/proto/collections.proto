@@ -303,6 +303,11 @@ enum BinaryQuantizationEncoding {
 message BinaryQuantization {
   optional bool always_ram = 1; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
   optional BinaryQuantizationEncoding encoding = 2; // Binary quantization encoding method
+  /*
+  Asymmetric quantization configuration allows a query to have different quantization than stored vectors.
+  It can increase the accuracy of search at the cost of performance.
+  */
+  optional BinaryQuantizationQueryEncoding query_encoding = 3;
 }
 
 message QuantizationConfig {
