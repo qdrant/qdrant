@@ -11268,6 +11268,7 @@
           "debug",
           "gpu",
           "recovery_mode",
+          "rocksdb",
           "service_debug_feature"
         ],
         "properties": {
@@ -11281,6 +11282,9 @@
             "type": "boolean"
           },
           "gpu": {
+            "type": "boolean"
+          },
+          "rocksdb": {
             "type": "boolean"
           }
         }
