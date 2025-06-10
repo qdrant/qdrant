@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -10,7 +10,6 @@ use super::postings_iterator::intersect_postings_iterator;
 use crate::common::operation_error::OperationResult;
 
 #[cfg_attr(test, derive(Clone))]
-#[derive(Default)]
 pub struct MutableInvertedIndex {
     pub(super) postings: Vec<PostingList>,
     pub(super) vocab: HashMap<String, TokenId>,
@@ -24,11 +23,22 @@ pub struct MutableInvertedIndex {
 }
 
 impl MutableInvertedIndex {
+    /// Create a new inverted index with or without positional information.
+    pub fn new(with_positions: bool) -> Self {
+        Self {
+            postings: Vec::new(),
+            vocab: HashMap::new(),
+            point_to_tokens: Vec::new(),
+            point_to_doc: with_positions.then_some(Vec::new()),
+            points_count: 0,
+        }
+    }
+
     pub fn build_index(
-        iter: impl Iterator<Item = OperationResult<(PointOffsetType, BTreeSet<String>)>>,
-        // TODO(phrase-index): add param for including phrase field
+        iter: impl Iterator<Item = OperationResult<(PointOffsetType, Vec<String>)>>,
+        phrase_matching: bool,
     ) -> OperationResult<Self> {
-        let mut builder = MutableInvertedIndexBuilder::default();
+        let mut builder = MutableInvertedIndexBuilder::new(phrase_matching);
         builder.add_iter(iter)?;
         Ok(builder.build())
     }
@@ -128,7 +138,7 @@ impl InvertedIndex for MutableInvertedIndex {
             .write_back_counter();
 
         // Ensure container has enough capacity
-        if point_to_doc.len() <= point_id as usize {
+        if point_id as usize >= point_to_doc.len() {
             let new_len = point_id as usize + 1;
 
             hw_cell_wb.incr_delta((new_len - point_to_doc.len()) * size_of::<Option<Document>>());
@@ -143,7 +153,7 @@ impl InvertedIndex for MutableInvertedIndex {
     }
 
     fn remove(&mut self, idx: PointOffsetType) -> bool {
-        if self.point_to_tokens.len() <= idx as usize {
+        if idx as usize >= self.point_to_tokens.len() {
             return false; // Already removed or never actually existed
         }
 
@@ -151,16 +161,16 @@ impl InvertedIndex for MutableInvertedIndex {
             return false;
         };
 
+        if let Some(point_to_doc) = &mut self.point_to_doc {
+            point_to_doc[idx as usize] = None;
+        }
+
         self.points_count -= 1;
 
         for removed_token in removed_token_set.tokens() {
             // unwrap safety: posting list exists and contains the point idx
             let posting = self.postings.get_mut(*removed_token as usize).unwrap();
             posting.remove(idx);
-        }
-
-        if let Some(point_to_doc) = &mut self.point_to_doc {
-            point_to_doc[idx as usize] = None;
         }
 
         true

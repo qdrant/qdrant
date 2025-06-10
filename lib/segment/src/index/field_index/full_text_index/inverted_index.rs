@@ -30,6 +30,10 @@ impl TokenSet {
         &self.0
     }
 
+    pub fn inner(self) -> Vec<TokenId> {
+        self.0
+    }
+
     pub fn contains(&self, token: &TokenId) -> bool {
         self.0.binary_search(token).is_ok()
     }
@@ -116,24 +120,26 @@ pub trait InvertedIndex {
     /// The order of the tokens is preserved.
     fn register_tokens<'a>(
         &mut self,
-        str_tokens: impl IntoIterator<Item = &'a str> + 'a,
+        str_tokens: impl IntoIterator<Item = impl AsRef<str>> + 'a,
     ) -> Vec<TokenId> {
-        let vocab = self.get_vocab_mut();
-        let mut token_ids = vec![];
-        for token in str_tokens {
-            // check if in vocab
-            let vocab_idx = match vocab.get(token) {
-                Some(&idx) => idx,
-                None => {
-                    let next_token_id = vocab.len() as TokenId;
-                    vocab.insert(token.to_string(), next_token_id);
-                    next_token_id
-                }
-            };
-            token_ids.push(vocab_idx);
-        }
+        str_tokens
+            .into_iter()
+            .map(|token| self.register_token(token))
+            .collect()
+    }
 
-        token_ids
+    /// Translate the string tokens into token ids.
+    /// If it is an unseen token, it is added to the vocabulary and a new token id is generated.
+    fn register_token<S: AsRef<str>>(&mut self, token_str: S) -> TokenId {
+        let vocab = self.get_vocab_mut();
+        match vocab.get(token_str.as_ref()) {
+            Some(&idx) => idx,
+            None => {
+                let next_token_id = vocab.len() as TokenId;
+                vocab.insert(token_str.as_ref().to_string(), next_token_id);
+                next_token_id
+            }
+        }
     }
 
     fn index_tokens(
@@ -273,14 +279,13 @@ pub trait InvertedIndex {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use rand::Rng;
     use rand::seq::SliceRandom;
     use rstest::rstest;
 
-    use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
+    use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
     use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
     use crate::index::field_index::full_text_index::mmap_inverted_index::MmapInvertedIndex;
     use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
@@ -314,16 +319,25 @@ mod tests {
         Some(ParsedQuery::Tokens(tokens))
     }
 
-    fn mutable_inverted_index(indexed_count: u32, deleted_count: u32) -> MutableInvertedIndex {
-        let mut index = MutableInvertedIndex::default();
+    fn mutable_inverted_index(
+        indexed_count: u32,
+        deleted_count: u32,
+        with_positions: bool,
+    ) -> MutableInvertedIndex {
+        let mut index = MutableInvertedIndex::new(with_positions);
 
         let hw_counter = HardwareCounterCell::new();
 
         for idx in 0..indexed_count {
             // Generate 10 to 30-word documents
             let doc_len = rand::rng().random_range(10..=30);
-            let str_tokens: BTreeSet<String> = (0..doc_len).map(|_| generate_word()).collect();
-            let token_ids = index.register_tokens(str_tokens.iter().map(String::as_str));
+            let tokens: Vec<String> = (0..doc_len).map(|_| generate_word()).collect();
+            let token_ids = index.register_tokens(&tokens);
+            if with_positions {
+                index
+                    .index_document(idx, Document(token_ids.clone()), &hw_counter)
+                    .unwrap();
+            }
             let token_set = TokenSet::from_iter(token_ids);
             index.index_tokens(idx, token_set, &hw_counter).unwrap();
         }
@@ -338,9 +352,9 @@ mod tests {
         index
     }
 
-    #[test]
-    fn test_mutable_to_immutable() {
-        let mutable = mutable_inverted_index(2000, 400);
+    #[rstest]
+    fn test_mutable_to_immutable(#[values(false, true)] phrase_matching: bool) {
+        let mutable = mutable_inverted_index(2000, 400, phrase_matching);
 
         // todo: test with phrase-enabled
         let immutable = ImmutableInvertedIndex::from(mutable.clone());
@@ -378,11 +392,14 @@ mod tests {
     #[case(10, 2)]
     #[case(0, 0)]
     #[test]
-    fn test_immutable_to_mmap_to_immutable(#[case] indexed_count: u32, #[case] deleted_count: u32) {
+    fn test_immutable_to_mmap_to_immutable(
+        #[case] indexed_count: u32,
+        #[case] deleted_count: u32,
+        #[values(false, true)] phrase_matching: bool,
+    ) {
         use std::collections::HashSet;
 
-        let mutable = mutable_inverted_index(indexed_count, deleted_count);
-        // todo: test with phrase-enabled
+        let mutable = mutable_inverted_index(indexed_count, deleted_count, phrase_matching);
         let immutable = ImmutableInvertedIndex::from(mutable);
 
         let mmap_dir = tempfile::tempdir().unwrap();
@@ -390,7 +407,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         MmapInvertedIndex::create(mmap_dir.path().into(), immutable.clone()).unwrap();
-        let mmap = MmapInvertedIndex::open(mmap_dir.path().into(), false, false).unwrap();
+        let mmap = MmapInvertedIndex::open(mmap_dir.path().into(), false, phrase_matching).unwrap();
 
         let imm_mmap = ImmutableInvertedIndex::from(&mmap);
 
@@ -443,20 +460,20 @@ mod tests {
         assert_eq!(immutable.points_count, imm_mmap.points_count);
     }
 
-    #[test]
-    fn test_mmap_index_congruence() {
+    #[rstest]
+    fn test_mmap_index_congruence(#[values(false, true)] phrase_matching: bool) {
         let indexed_count = 10000;
         let deleted_count = 500;
 
         let hw_counter = HardwareCounterCell::new();
         let mmap_dir = tempfile::tempdir().unwrap();
 
-        let mut mut_index = mutable_inverted_index(indexed_count, deleted_count);
+        let mut mut_index = mutable_inverted_index(indexed_count, deleted_count, phrase_matching);
 
-        // todo: test with phrase-enabled
         let immutable = ImmutableInvertedIndex::from(mut_index.clone());
         MmapInvertedIndex::create(mmap_dir.path().into(), immutable).unwrap();
-        let mut mmap_index = MmapInvertedIndex::open(mmap_dir.path().into(), false, false).unwrap();
+        let mut mmap_index =
+            MmapInvertedIndex::open(mmap_dir.path().into(), false, phrase_matching).unwrap();
 
         let mut imm_mmap_index = ImmutableInvertedIndex::from(&mmap_index);
 

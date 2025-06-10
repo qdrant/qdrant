@@ -88,9 +88,10 @@ pub struct FullTextMmapIndexBuilder {
 
 impl FullTextMmapIndexBuilder {
     pub fn new(path: PathBuf, config: TextIndexParams, is_on_disk: bool) -> Self {
+        let with_positions = config.phrase_matching == Some(true);
         Self {
             path,
-            mutable_index: MutableInvertedIndex::default(),
+            mutable_index: MutableInvertedIndex::new(with_positions),
             config,
             is_on_disk,
         }
@@ -125,9 +126,7 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
             });
         }
 
-        let tokens = self
-            .mutable_index
-            .register_tokens(str_tokens.iter().map(String::as_str));
+        let tokens = self.mutable_index.register_tokens(&str_tokens);
 
         if self.mutable_index.point_to_doc.is_some() {
             let document = Document::new(tokens.clone());
