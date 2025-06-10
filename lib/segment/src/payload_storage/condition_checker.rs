@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::types::{
     AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPoint,
-    GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchText, MatchValue, Range,
+    GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchValue, Range,
     RangeInterface, ValueVariants, ValuesCount,
 };
 
@@ -159,10 +159,12 @@ impl ValueChecker for Match {
                 }
                 _ => false,
             },
-            Match::Text(MatchText { text }) => match payload {
-                Value::String(stored) => stored.contains(text),
-                _ => false,
-            },
+            Match::Text(MatchText { text }) | Match::Phrase(MatchPhrase { phrase: text }) => {
+                match payload {
+                    Value::String(stored) => stored.contains(text),
+                    _ => false,
+                }
+            }
             Match::Any(MatchAny { any }) => match (payload, any) {
                 (Value::String(stored), AnyVariants::Strings(list)) => {
                     if list.len() < INDEXSET_ITER_THRESHOLD {
