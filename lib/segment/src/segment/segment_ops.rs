@@ -488,6 +488,7 @@ impl Segment {
                 self.payload_index
                     .borrow_mut()
                     .clear_payload(*internal_id, &HardwareCounterCell::disposable())?; // Internal operation. No hw measurement needed
+                self.version_tracker.set_payload(None); // 🤔
 
                 // Drop removed points from vector storage
                 for (vector_name, vector_data) in &self.vector_data {

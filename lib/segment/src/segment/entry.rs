@@ -140,6 +140,8 @@ impl SegmentEntry for Segment {
                         .payload_index
                         .borrow_mut()
                         .clear_payload(internal_id, hw_counter)?;
+                    segment.version_tracker.set_payload(Some(op_num));
+
                     segment.id_tracker.borrow_mut().drop(point_id)?;
 
                     // Before, we propagated point deletions to also delete its vectors. This turns
@@ -232,6 +234,8 @@ impl SegmentEntry for Segment {
                     full_payload,
                     hw_counter,
                 )?;
+                segment.version_tracker.set_payload(Some(op_num));
+
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
@@ -257,6 +261,8 @@ impl SegmentEntry for Segment {
                     key,
                     hw_counter,
                 )?;
+                segment.version_tracker.set_payload(Some(op_num));
+
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
@@ -279,6 +285,8 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .delete_payload(internal_id, key, hw_counter)?;
+                segment.version_tracker.set_payload(Some(op_num));
+
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
@@ -300,6 +308,8 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .clear_payload(internal_id, hw_counter)?;
+                segment.version_tracker.set_payload(Some(op_num));
+
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
