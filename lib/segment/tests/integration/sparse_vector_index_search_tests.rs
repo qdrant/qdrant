@@ -763,7 +763,7 @@ fn sparse_vector_test_large_index() {
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
                 },
-                storage_type: SparseVectorStorageType::OnDisk,
+                storage_type: SparseVectorStorageType::Mmap,
             },
         )]),
         payload_storage_type: Default::default(),

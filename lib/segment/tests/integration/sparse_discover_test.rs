@@ -137,7 +137,7 @@ fn sparse_index_discover_test() {
             VectorDataConfig {
                 size: dim,
                 distance,
-                storage_type: VectorStorageType::Memory,
+                storage_type: VectorStorageType::default(),
                 index: Indexes::Plain {},
                 quantization_config: None,
                 multivector_config: None,

@@ -1246,14 +1246,11 @@ impl SegmentConfig {
 }
 
 /// Storage types for vectors
-#[derive(
-    Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone,
-)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone)]
 pub enum VectorStorageType {
     /// Storage in memory (RAM)
     ///
     /// Will be very fast at the cost of consuming a lot of memory.
-    #[default]
     Memory,
     /// Storage in mmap file, not appendable
     ///
@@ -1268,6 +1265,21 @@ pub enum VectorStorageType {
     ///
     /// Designed as a replacement for `Memory`, which doesn't depend on RocksDB
     InRamChunkedMmap,
+}
+
+#[cfg(any(test, feature = "testing"))]
+#[allow(clippy::derivable_impls)]
+impl Default for VectorStorageType {
+    fn default() -> Self {
+        #[cfg(feature = "rocksdb")]
+        {
+            VectorStorageType::Memory
+        }
+        #[cfg(not(feature = "rocksdb"))]
+        {
+            VectorStorageType::InRamChunkedMmap
+        }
+    }
 }
 
 /// Storage types for vectors

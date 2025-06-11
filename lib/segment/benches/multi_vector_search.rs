@@ -77,7 +77,7 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
             VectorDataConfig {
                 size: VECTOR_DIM,
                 distance,
-                storage_type: VectorStorageType::Memory,
+                storage_type: VectorStorageType::default(),
                 index: Indexes::Plain {},
                 quantization_config: None,
                 multivector_config: Some(MultiVectorConfig::default()), // uses multivec config

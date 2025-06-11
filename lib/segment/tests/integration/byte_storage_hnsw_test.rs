@@ -83,7 +83,7 @@ fn test_byte_storage_hnsw(
             VectorDataConfig {
                 size: dim,
                 distance,
-                storage_type: VectorStorageType::Memory,
+                storage_type: VectorStorageType::default(),
                 index: Indexes::Plain {},
                 quantization_config: None,
                 multivector_config: None,
@@ -104,10 +104,17 @@ fn test_byte_storage_hnsw(
             .vector_storage
             .borrow();
         let raw_storage: &VectorStorageEnum = &borrowed_storage;
-        assert!(
-            matches!(raw_storage, &VectorStorageEnum::DenseSimpleByte(_))
-                | matches!(raw_storage, &VectorStorageEnum::DenseSimpleHalf(_))
-        );
+        #[cfg(feature = "rocksdb")]
+        assert!(matches!(
+            raw_storage,
+            &VectorStorageEnum::DenseSimpleByte(_) | &VectorStorageEnum::DenseSimpleHalf(_),
+        ));
+        #[cfg(not(feature = "rocksdb"))]
+        assert!(matches!(
+            raw_storage,
+            &VectorStorageEnum::DenseAppendableInRamByte(_)
+                | &VectorStorageEnum::DenseAppendableInRamHalf(_),
+        ));
     }
 
     for n in 0..num_vectors {

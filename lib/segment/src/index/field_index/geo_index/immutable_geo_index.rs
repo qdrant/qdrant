@@ -267,7 +267,7 @@ impl ImmutableGeoMapIndex {
         Ok(true)
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "rocksdb"))]
     pub fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
         match self.storage {
             #[cfg(feature = "rocksdb")]

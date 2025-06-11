@@ -357,7 +357,7 @@ where
         self.in_memory_index
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "rocksdb"))]
     pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
         match &self.storage {
             #[cfg(feature = "rocksdb")]

@@ -4,8 +4,11 @@ use common::counter::hardware_counter::HardwareCounterCell;
 
 use super::PayloadStorage;
 use super::mmap_payload_storage::MmapPayloadStorage;
+#[cfg(feature = "rocksdb")]
 use super::on_disk_payload_storage::OnDiskPayloadStorage;
+#[cfg(feature = "rocksdb")]
 use super::simple_payload_storage::SimplePayloadStorage;
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::open_db;
 use crate::payload_json;
 
@@ -127,6 +130,7 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
 }
 
 #[test]
+#[cfg(feature = "rocksdb")]
 fn test_in_memory_storage() {
     test_trait_impl(|path| {
         let db = open_db(path, &[""]).unwrap();
@@ -140,6 +144,7 @@ fn test_mmap_storage() {
 }
 
 #[test]
+#[cfg(feature = "rocksdb")]
 fn test_on_disk_storage() {
     test_trait_impl(|path| {
         let db = open_db(path, &[""]).unwrap();

@@ -32,7 +32,7 @@ pub fn build_simple_segment(
                 VectorDataConfig {
                     size: dim,
                     distance,
-                    storage_type: VectorStorageType::Memory,
+                    storage_type: VectorStorageType::default(),
                     index: Indexes::Plain {},
                     quantization_config: None,
                     multivector_config: None,
@@ -60,7 +60,7 @@ pub fn build_simple_segment_with_payload_storage(
                 VectorDataConfig {
                     size: dim,
                     distance,
-                    storage_type: VectorStorageType::Memory,
+                    storage_type: VectorStorageType::default(),
                     index: Indexes::Plain {},
                     quantization_config: None,
                     multivector_config: None,
@@ -86,7 +86,7 @@ pub fn build_multivec_segment(
         VectorDataConfig {
             size: dim1,
             distance,
-            storage_type: VectorStorageType::Memory,
+            storage_type: VectorStorageType::default(),
             index: Indexes::Plain {},
             quantization_config: None,
             multivector_config: None,
@@ -98,7 +98,7 @@ pub fn build_multivec_segment(
         VectorDataConfig {
             size: dim2,
             distance,
-            storage_type: VectorStorageType::Memory,
+            storage_type: VectorStorageType::default(),
             index: Indexes::Plain {},
             quantization_config: None,
             multivector_config: None,

@@ -1306,6 +1306,7 @@ mod tests {
     #[cfg(feature = "rocksdb")]
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 
+    #[cfg(feature = "rocksdb")]
     const FIELD_NAME: &str = "test";
 
     #[derive(Clone, Copy)]

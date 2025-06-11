@@ -328,25 +328,20 @@ mod tests {
     use std::str::FromStr;
 
     use ahash::AHashSet;
-    use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::id_tracker::IdTracker;
-    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
+    use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
     use crate::json_path::JsonPath;
     use crate::payload_json;
     use crate::payload_storage::PayloadStorage;
-    use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
+    use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
     use crate::types::{
         DateTimeWrapper, FieldCondition, GeoBoundingBox, GeoPoint, PayloadField, Range, ValuesCount,
     };
 
     #[test]
     fn test_condition_checker() {
-        let dir = Builder::new().prefix("db_dir").tempdir().unwrap();
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-
         let payload = payload_json! {
             "location": {
                 "lon": 13.404954,
@@ -366,8 +361,8 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         let mut payload_storage: PayloadStorageEnum =
-            SimplePayloadStorage::open(db.clone()).unwrap().into();
-        let mut id_tracker = SimpleIdTracker::open(db).unwrap();
+            PayloadStorageEnum::InMemoryPayloadStorage(InMemoryPayloadStorage::default());
+        let mut id_tracker = InMemoryIdTracker::new();
 
         id_tracker.set_link(0.into(), 0).unwrap();
         id_tracker.set_link(1.into(), 1).unwrap();

@@ -442,14 +442,14 @@ impl FieldIndexBuilderTrait for GeoMapIndexBuilder {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rocksdb"))]
 pub struct GeoMapImmutableIndexBuilder {
     index: GeoMapIndex,
     field: String,
     db: Arc<RwLock<DB>>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rocksdb"))]
 impl FieldIndexBuilderTrait for GeoMapImmutableIndexBuilder {
     type FieldIndexType = GeoMapIndex;
 
@@ -774,17 +774,24 @@ mod tests {
     use tempfile::{Builder, TempDir};
 
     use super::*;
+    #[cfg(feature = "rocksdb")]
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::fixtures::payload_fixtures::random_geo_payload;
     use crate::json_path::JsonPath;
     use crate::types::test_utils::build_polygon;
     use crate::types::{GeoBoundingBox, GeoLineString, GeoPolygon, GeoRadius, OrderedGeoPoint};
 
+    #[cfg(feature = "rocksdb")]
+    type Database = std::sync::Arc<parking_lot::RwLock<DB>>;
+    #[cfg(not(feature = "rocksdb"))]
+    type Database = ();
+
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum IndexType {
         #[cfg(feature = "rocksdb")]
         Mutable,
         MutableGridstore,
+        #[cfg(feature = "rocksdb")]
         Immutable,
         Mmap,
         RamMmap,
@@ -813,6 +820,7 @@ mod tests {
                 IndexBuilder::MutableGridstore(builder) => {
                     builder.add_point(id, payload, hw_counter)
                 }
+                #[cfg(feature = "rocksdb")]
                 IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::Mmap(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::RamMmap(builder) => builder.add_point(id, payload, hw_counter),
@@ -824,6 +832,7 @@ mod tests {
                 #[cfg(feature = "rocksdb")]
                 IndexBuilder::Mutable(builder) => builder.finalize(),
                 IndexBuilder::MutableGridstore(builder) => builder.finalize(),
+                #[cfg(feature = "rocksdb")]
                 IndexBuilder::Immutable(builder) => builder.finalize(),
                 IndexBuilder::Mmap(builder) => builder.finalize(),
                 IndexBuilder::RamMmap(builder) => {
@@ -865,6 +874,7 @@ mod tests {
         lon: -118.243683,
     };
 
+    #[cfg(feature = "rocksdb")]
     const FIELD_NAME: &str = "test";
 
     fn condition_for_geo_radius(key: &str, geo_radius: GeoRadius) -> FieldCondition {
@@ -880,9 +890,14 @@ mod tests {
     }
 
     #[cfg(feature = "testing")]
-    fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Arc<RwLock<DB>>) {
+    fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Database) {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+
+        #[cfg(feature = "rocksdb")]
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
+        #[cfg(not(feature = "rocksdb"))]
+        let db = ();
+
         let mut builder = match index_type {
             #[cfg(feature = "rocksdb")]
             IndexType::Mutable => {
@@ -891,6 +906,7 @@ mod tests {
             IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
                 GeoMapIndex::builder_gridstore(temp_dir.path().to_path_buf()),
             ),
+            #[cfg(feature = "rocksdb")]
             IndexType::Immutable => {
                 IndexBuilder::Immutable(GeoMapIndex::builder_immutable(db.clone(), FIELD_NAME))
             }
@@ -903,6 +919,7 @@ mod tests {
             #[cfg(feature = "rocksdb")]
             IndexBuilder::Mutable(builder) => builder.init().unwrap(),
             IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
+            #[cfg(feature = "rocksdb")]
             IndexBuilder::Immutable(builder) => builder.init().unwrap(),
             IndexBuilder::Mmap(builder) => builder.init().unwrap(),
             IndexBuilder::RamMmap(builder) => builder.init().unwrap(),
@@ -914,7 +931,7 @@ mod tests {
         num_points: usize,
         num_geo_values: usize,
         index_type: IndexType,
-    ) -> (GeoMapIndex, TempDir, Arc<RwLock<DB>>) {
+    ) -> (GeoMapIndex, TempDir, Database) {
         let mut rnd = StdRng::seed_from_u64(42);
         let (mut builder, temp_dir, db) = create_builder(index_type);
 
@@ -980,7 +997,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[case(IndexType::Immutable)]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_polygon_with_exclusion(#[case] index_type: IndexType) {
@@ -1123,7 +1140,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[case(IndexType::Immutable)]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn match_cardinality(#[case] index_type: IndexType) {
@@ -1177,7 +1194,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[case(IndexType::Immutable)]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn geo_indexed_filtering(#[case] index_type: IndexType) {
@@ -1244,7 +1261,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[case(IndexType::Immutable)]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_payload_blocks(#[case] index_type: IndexType) {
@@ -1277,7 +1294,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[case(IndexType::Immutable)]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn match_cardinality_point_with_multi_far_geo_payload(#[case] index_type: IndexType) {
@@ -1365,7 +1382,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[case(IndexType::Immutable)]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn match_cardinality_point_with_multi_close_geo_payload(#[case] index_type: IndexType) {
@@ -1412,7 +1429,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[case(IndexType::Immutable)]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn load_from_disk(#[case] index_type: IndexType) {
@@ -1435,6 +1452,7 @@ mod tests {
             temp_dir
         };
 
+        #[cfg(feature = "rocksdb")]
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = match index_type {
             #[cfg(feature = "rocksdb")]
@@ -1442,6 +1460,7 @@ mod tests {
             IndexType::MutableGridstore => {
                 GeoMapIndex::new_gridstore(temp_dir.path().to_path_buf()).unwrap()
             }
+            #[cfg(feature = "rocksdb")]
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
@@ -1480,7 +1499,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[case(IndexType::Immutable)]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
@@ -1514,6 +1533,7 @@ mod tests {
             temp_dir
         };
 
+        #[cfg(feature = "rocksdb")]
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = match index_type {
             #[cfg(feature = "rocksdb")]
@@ -1521,6 +1541,7 @@ mod tests {
             IndexType::MutableGridstore => {
                 GeoMapIndex::new_gridstore(temp_dir.path().to_path_buf()).unwrap()
             }
+            #[cfg(feature = "rocksdb")]
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
@@ -1537,7 +1558,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[case(IndexType::Immutable)]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_empty_index_cardinality(#[case] index_type: IndexType) {
@@ -1633,7 +1654,7 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(IndexType::Mutable))]
     #[case(IndexType::MutableGridstore)]
-    #[case(IndexType::Immutable)]
+    #[cfg_attr(feature = "rocksdb", case(IndexType::Immutable))]
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn query_across_antimeridian(#[case] index_type: IndexType) {
@@ -1698,8 +1719,8 @@ mod tests {
     #[rstest]
     #[cfg_attr(feature = "rocksdb", case(&[IndexType::Mutable, IndexType::MutableGridstore, IndexType::Immutable, IndexType::Mmap, IndexType::RamMmap], false))]
     #[cfg_attr(feature = "rocksdb", case(&[IndexType::Mutable, IndexType::MutableGridstore, IndexType::Immutable, IndexType::RamMmap], true))]
-    #[cfg_attr(not(feature = "rocksdb"), case(&[IndexType::Mutable, IndexType::MutableGridstore, IndexType::Immutable, IndexType::Mmap, IndexType::RamMmap], false))]
-    #[cfg_attr(not(feature = "rocksdb"), case(&[IndexType::Mutable, IndexType::MutableGridstore, IndexType::Immutable, IndexType::RamMmap], true))]
+    #[cfg_attr(not(feature = "rocksdb"), case(&[IndexType::MutableGridstore, IndexType::Mmap, IndexType::RamMmap], false))]
+    #[cfg_attr(not(feature = "rocksdb"), case(&[IndexType::MutableGridstore, IndexType::RamMmap], true))]
     fn test_congruence(#[case] types: &[IndexType], #[case] deleted: bool) {
         const POINT_COUNT: usize = 500;
 
