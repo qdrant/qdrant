@@ -345,7 +345,6 @@ impl ShardReplicaSet {
                             // if it was *updated* in or *removed* from the snapshot
                             #[cfg(feature = "rocksdb")]
                             {
-                                // TODO: test compilation fails if we have something invalid here!
                                 use segment::segment::destroy_rocksdb;
                                 use segment::segment_constructor::PAYLOAD_INDEX_PATH;
 
