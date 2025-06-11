@@ -312,11 +312,9 @@ impl MutableFullTextIndex {
 
 #[cfg(test)]
 mod tests {
-    use rstest::rstest;
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::data_types::index::{TextIndexType, TokenizerType};
     use crate::json_path::JsonPath;
     use crate::types::{FieldCondition, Match};
@@ -325,15 +323,13 @@ mod tests {
         FieldCondition::new_match(JsonPath::new("text"), Match::new_text(text))
     }
 
-    #[rstest]
-    #[case(true)]
-    #[case(false)]
-    fn test_full_text_indexing(#[case] immutable: bool) {
+    #[test]
+    fn test_full_text_indexing() {
         use common::counter::hardware_accumulator::HwMeasurementAcc;
         use common::counter::hardware_counter::HardwareCounterCell;
         use common::types::PointOffsetType;
 
-        use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
+        use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
 
         let payloads: Vec<_> = vec![
             serde_json::json!(
@@ -364,11 +360,11 @@ mod tests {
         };
 
         {
-            let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-
-            let mut index = FullTextIndex::builder_rocksdb(db, config.clone(), "text")
-                .make_empty()
-                .unwrap();
+            let mut index =
+                FullTextIndex::new_gridstore(temp_dir.path().join("test_db"), config.clone())
+                    .unwrap();
+            let loaded = index.load().unwrap();
+            assert!(loaded);
 
             let hw_cell = HardwareCounterCell::new();
 
@@ -435,8 +431,8 @@ mod tests {
         }
 
         {
-            let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-            let mut index = FullTextIndex::new_rocksdb(db, config, "text", immutable);
+            let mut index =
+                FullTextIndex::new_gridstore(temp_dir.path().join("test_db"), config).unwrap();
             let loaded = index.load().unwrap();
             assert!(loaded);
 

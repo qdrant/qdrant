@@ -786,15 +786,16 @@ pub(super) mod tests {
     use std::io::Cursor;
 
     use itertools::Itertools;
+    #[cfg(feature = "rocksdb")]
     use rand::Rng;
     use rand::prelude::*;
     use tempfile::Builder;
     use uuid::Uuid;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
     use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
+    #[cfg(feature = "rocksdb")]
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
     const RAND_SEED: u64 = 42;
@@ -1280,7 +1281,10 @@ pub(super) mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rocksdb")]
     fn simple_id_tracker_vs_mutable_tracker_congruence() {
+        use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
+
         let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let db = open_db(segment_dir.path(), &[DB_VECTOR_CF]).unwrap();
 

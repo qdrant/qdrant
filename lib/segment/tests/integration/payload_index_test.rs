@@ -258,7 +258,7 @@ impl TestSegments {
                 VectorDataConfig {
                     size: DIM,
                     distance: Distance::Dot,
-                    storage_type: VectorStorageType::Memory,
+                    storage_type: VectorStorageType::default(),
                     index: if appendable {
                         Indexes::Plain {}
                     } else {
