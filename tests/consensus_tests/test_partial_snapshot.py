@@ -142,9 +142,9 @@ def test_incompatible_snapshot_recovery_with_last_active_replica(tmp_path: pathl
     r1 = "http://127.0.0.1:" + str(read_peer_port + 100)
     r2 = "http://127.0.0.1:" + str(read_peer_port + 200)
 
-    res = try_recover_partial_snapshot_from(r0, write_peer, wait=False) # marked as dummy and dead
-    res = try_recover_partial_snapshot_from(r1, write_peer, wait=False) # marked as dummy and dead
-    res = try_recover_partial_snapshot_from(r2, write_peer, wait=False) # marked as dummy but not dead (last active replica)
+    try_recover_partial_snapshot_from(r0, write_peer, wait=False) # marked as dummy and dead
+    try_recover_partial_snapshot_from(r1, write_peer, wait=False) # marked as dummy and dead
+    try_recover_partial_snapshot_from(r2, write_peer, wait=False) # marked as dummy but not dead (last active replica)
 
     time.sleep(5) # wait for transfers to be retried and aborted (tries to un-proxify dummy shard which fails)
 
