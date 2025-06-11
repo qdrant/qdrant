@@ -26,6 +26,7 @@ pub struct AppFeaturesTelemetry {
     pub service_debug_feature: bool,
     pub recovery_mode: bool,
     pub gpu: bool,
+    pub rocksdb: bool,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
@@ -78,6 +79,7 @@ impl AppBuildTelemetry {
                 service_debug_feature: cfg!(feature = "service_debug"),
                 recovery_mode: settings.storage.recovery_mode.is_some(),
                 gpu: cfg!(feature = "gpu"),
+                rocksdb: cfg!(feature = "rocksdb"),
             }),
             system: (detail.level >= DetailsLevel::Level1).then(get_system_data),
             jwt_rbac: settings.service.jwt_rbac,
