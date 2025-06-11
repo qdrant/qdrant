@@ -143,9 +143,10 @@ def create_collection(
     sparse_vectors=True,
     default_segment_number=None,
     on_disk_payload=None,
+    vector_size=None,
 ):
     payload = {
-        "vectors": {"size": DENSE_VECTOR_SIZE, "distance": "Dot"},
+        "vectors": {"size": vector_size or DENSE_VECTOR_SIZE, "distance": "Dot"},
         "shard_number": shard_number,
         "replication_factor": replication_factor,
         "write_consistency_factor": write_consistency_factor,
