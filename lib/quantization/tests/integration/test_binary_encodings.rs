@@ -42,8 +42,8 @@ mod tests {
 
     #[test]
     fn test_binary_dot_inverted() {
-        test_binary_dot_impl::<u128>(700, true);
-        test_binary_dot_impl::<u8>(700, true);
+        test_binary_dot_impl::<u128>(1000, true);
+        test_binary_dot_impl::<u8>(1000, true);
     }
 
     fn test_binary_dot_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize, invert: bool) {
