@@ -80,15 +80,17 @@ def test_partial_snapshot(
     recover_partial_snapshot_from(read_peer, write_peer)
     assert_consistency(read_peer, write_peer)
 
-def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path):
+@pytest.mark.parametrize("wait", [True, False])
+def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
     assert_project_root()
 
     write_peer, read_peer = bootstrap_peers(tmp_path, 100_000)
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 3)
-    futures = [executor.submit(try_recover_partial_snapshot_from, read_peer, write_peer, wait = False) for _ in range(3)]
+    futures = [executor.submit(try_recover_partial_snapshot_from, read_peer, write_peer, wait) for _ in range(3)]
     responses = [future.result() for future in concurrent.futures.as_completed(futures)]
 
+    # Single partial snapshot recovery request allowed at the same time
     assert any(response.status_code == 503 for response in responses), "Subsequent partial snapshot recovery requests have to be rejected during partial snapshot recovery"
 
 def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
@@ -102,7 +104,9 @@ def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
     is_search_rejected = False
     while not recover_future.done():
         response = try_search_random(read_peer)
-        if response.status_code == 500 or response.status_code == 503:
+
+        # Shard is unavailable during partial snapshot recovery
+        if response.status_code == 500:
             is_search_rejected = True
             break
 
