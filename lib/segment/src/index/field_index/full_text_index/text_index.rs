@@ -1,5 +1,3 @@
-#[cfg(test)]
-use std::collections::BTreeSet;
 use std::path::PathBuf;
 #[cfg(feature = "rocksdb")]
 use std::sync::Arc;
@@ -239,39 +237,6 @@ impl FullTextIndex {
     #[cfg(feature = "rocksdb")]
     pub(super) fn restore_key(data: &[u8]) -> PointOffsetType {
         bincode::deserialize(data).unwrap()
-    }
-
-    /// CBOR representation is the same for BTreeSet<String> and Vec<String> if the elements are sorted, thus, we can resort to
-    /// the vec implementation always. Let's just keep this to prove this works fine during https://github.com/qdrant/qdrant/pull/6493
-    ///
-    /// We can remove this afterwards
-    #[cfg(test)]
-    pub(super) fn serialize_token_set(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
-        #[derive(Serialize)]
-        struct StoredTokens {
-            tokens: BTreeSet<String>,
-        }
-        let doc = StoredTokens { tokens };
-        serde_cbor::to_vec(&doc).map_err(|e| {
-            OperationError::service_error(format!("Failed to serialize document: {e}"))
-        })
-    }
-
-    /// CBOR representation is the same for BTreeSet<String> and Vec<String> if the elements are sorted, thus, we can resort to
-    /// the vec implementation always. Let's just keep this to prove this works fine during https://github.com/qdrant/qdrant/pull/6493
-    ///
-    /// We can delete this afterwards
-    #[cfg(test)]
-    pub(super) fn deserialize_token_set(data: &[u8]) -> OperationResult<BTreeSet<String>> {
-        #[derive(Deserialize)]
-        struct StoredTokens {
-            tokens: BTreeSet<String>,
-        }
-        serde_cbor::from_slice::<StoredTokens>(data)
-            .map_err(|e| {
-                OperationError::service_error(format!("Failed to deserialize document: {e}"))
-            })
-            .map(|doc| doc.tokens)
     }
 
     pub(super) fn serialize_document(tokens: Vec<String>) -> OperationResult<Vec<u8>> {

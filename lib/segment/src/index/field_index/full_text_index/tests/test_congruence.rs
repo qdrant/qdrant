@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -38,11 +38,6 @@ const TYPES: &[IndexType] = &[
     IndexType::Mmap,
     IndexType::RamMmap,
 ];
-
-// #[cfg(feature = "rocksdb")]
-// type Database = std::sync::Arc<parking_lot::RwLock<DB>>;
-// #[cfg(not(feature = "rocksdb"))]
-// type Database = ();
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum IndexType {
@@ -394,46 +389,4 @@ fn test_congruence(
             }
         }
     }
-}
-
-/// Test that Vec and BTreeSet are serialized the same way in CBOR
-#[test]
-fn test_tokenset_and_document_serde() {
-    let str_tokens = [
-        "the", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog",
-    ]
-    .map(String::from);
-
-    let str_tokens_set = BTreeSet::from_iter(str_tokens.clone());
-    let str_tokens_set_as_vec = str_tokens_set.iter().cloned().collect::<Vec<_>>();
-
-    let serialized_set = FullTextIndex::serialize_token_set(str_tokens_set.clone()).unwrap();
-    let serialized_vec = FullTextIndex::serialize_document(str_tokens_set_as_vec.clone()).unwrap();
-
-    assert_eq!(serialized_set, serialized_vec);
-
-    eprintln!(
-        "Serialized set: {:?}",
-        serialized_set
-            .iter()
-            .map(|&b| b as char)
-            .collect::<String>()
-    );
-    eprintln!(
-        "Serialized vec: {:?}",
-        serialized_vec
-            .iter()
-            .map(|&b| b as char)
-            .collect::<String>()
-    );
-
-    // cross serialization/deserialization also gives the same result
-    assert_eq!(
-        FullTextIndex::deserialize_document(&serialized_set).unwrap(),
-        str_tokens_set_as_vec
-    );
-    assert_eq!(
-        FullTextIndex::deserialize_token_set(&serialized_vec).unwrap(),
-        str_tokens_set
-    );
 }
