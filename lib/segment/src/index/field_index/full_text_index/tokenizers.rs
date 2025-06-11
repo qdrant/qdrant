@@ -145,10 +145,8 @@ impl Tokenizer {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use super::*;
-    use crate::data_types::index::{StopwordsInterface, StopwordsSet, TextIndexType};
+    use crate::data_types::index::{StopwordsInterface, TextIndexType};
 
     #[test]
     fn test_whitespace_tokenizer() {
@@ -330,15 +328,9 @@ mod tests {
                 lowercase: Some(true),
                 on_disk: None,
                 phrase_matching: None,
-                stopwords: Some(StopwordsInterface::Set(StopwordsSet {
-                    languages: BTreeSet::new(),
-                    custom: BTreeSet::from([
-                        "quick".to_string(),
-                        "fox".to_string(),
-                        "t'ha".to_string(),
-                        "i'd".to_string(),
-                    ]),
-                })),
+                stopwords: Some(StopwordsInterface::new_custom(&[
+                    "quick", "fox", "t'ha", "i'd",
+                ])),
             },
             |token| tokens.push(token.to_owned()),
         );
@@ -373,10 +365,10 @@ mod tests {
                 lowercase: Some(true),
                 on_disk: None,
                 phrase_matching: None,
-                stopwords: Some(StopwordsInterface::Set(StopwordsSet {
-                    languages: BTreeSet::from([Language::English]),
-                    custom: BTreeSet::from(["quick".to_string(), "fox".to_string()]),
-                })),
+                stopwords: Some(StopwordsInterface::new_set(
+                    &[Language::English],
+                    &["quick", "fox"],
+                )),
             },
             |token| tokens.push(token.to_owned()),
         );
@@ -411,10 +403,7 @@ mod tests {
                 lowercase: Some(true),
                 on_disk: None,
                 phrase_matching: None,
-                stopwords: Some(StopwordsInterface::Set(StopwordsSet {
-                    languages: BTreeSet::new(),
-                    custom: BTreeSet::from(["as".to_string(), "the".to_string(), "a".to_string()]),
-                })),
+                stopwords: Some(StopwordsInterface::new_custom(&["as", "the", "a"])),
             },
             |token| tokens.push(token.to_owned()),
         );
@@ -485,10 +474,10 @@ mod tests {
                 lowercase: Some(true),
                 on_disk: None,
                 phrase_matching: None,
-                stopwords: Some(StopwordsInterface::Set(StopwordsSet {
-                    languages: BTreeSet::from([Language::English, Language::Spanish]),
-                    custom: BTreeSet::from(["I'd".to_string()]),
-                })),
+                stopwords: Some(StopwordsInterface::new_set(
+                    &[Language::English, Language::Spanish],
+                    &["I'd"],
+                )),
             },
             |token| tokens.push(token.to_owned()),
         );
@@ -528,14 +517,7 @@ mod tests {
                 lowercase: Some(false),
                 on_disk: None,
                 phrase_matching: None,
-                stopwords: Some(StopwordsInterface::Set(StopwordsSet {
-                    languages: BTreeSet::new(),
-                    custom: BTreeSet::from([
-                        "The".to_string(),
-                        "the".to_string(),
-                        "LAZY".to_string(),
-                    ]),
-                })),
+                stopwords: Some(StopwordsInterface::new_custom(&["the", "The", "LAZY"])),
             },
             |token| tokens.push(token.to_owned()),
         );

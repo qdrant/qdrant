@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr as _;
 use std::time::Instant;
 
@@ -17,42 +17,42 @@ use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
-use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
+use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
 use segment::vector_storage::query as segment_query;
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
 use tonic::Status;
 use uuid::Uuid;
 
 use super::qdrant::{
-    BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
-    Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
-    FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
-    KeywordIndexParams, LookupLocation, MaxOptimizationThreads, MultiVectorComparator,
-    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
-    SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
-    StrictModeMultivector, StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig,
-    UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
+    raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
+    DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetHitInternal, FacetValue,
+    FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString, GroupId,
+    HardwareUsage, HasVectorCondition, KeywordIndexParams, LookupLocation,
+    MaxOptimizationThreads, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector,
+    SparseIndices, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
+    StrictModeSparse, StrictModeSparseConfig, UuidIndexParams, VectorsOutput, WithLookup,
 };
 use super::{Expression, Formula, RecoQuery, Usage};
 use crate::conversions::json::{self, json_to_proto};
 use crate::grpc;
 use crate::grpc::qdrant::condition::ConditionOneOf;
-use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
 use crate::grpc::qdrant::point_id::PointIdOptions;
+use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
-    CollectionDescription, CollectionOperationResponse, Condition, Distance, FieldCondition,
-    Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition, HealthCheckReply,
-    HnswConfigDiff, IntegerIndexParams, IsEmptyCondition, IsNullCondition, ListCollectionsResponse,
-    Match, MinShould, NamedVectors, NestedCondition, PayloadExcludeSelector,
-    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
-    PointStruct, PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
-    QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
-    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StopwordsSet,
-    StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
-    ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key,
-    with_vectors_selector,
+    shard_key, with_vectors_selector, CollectionDescription, CollectionOperationResponse, Condition,
+    Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius,
+    HasIdCondition, HealthCheckReply, HnswConfigDiff, IntegerIndexParams, IsEmptyCondition,
+    IsNullCondition, ListCollectionsResponse, Match, MinShould, NamedVectors,
+    NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
+    PayloadSchemaType, PointId, PointStruct, PointsOperationResponse,
+    PointsOperationResponseInternal, ProductQuantization, QuantizationConfig, QuantizationSearchParams,
+    QuantizationType, RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams,
+    ShardKey, StopwordsSet, StrictModeConfig, TextIndexParams, TokenizerType,
+    UpdateResult, UpdateResultInternal, ValuesCount, VectorsSelector, WithPayloadSelector,
+    WithVectorsSelector,
 };
 use crate::grpc::{
     DecayParamsExpression, DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
@@ -333,12 +333,19 @@ impl From<segment::data_types::index::StopwordsInterface> for StopwordsSet {
                 }
             }
             segment::data_types::index::StopwordsInterface::Set(set) => {
-                let languages = set.languages.iter().map(|lang| lang.to_string()).collect();
+                let languages = if let Some(languages) = set.languages {
+                    languages.iter().map(|lang| lang.to_string()).collect()
+                } else {
+                    vec![]
+                };
 
-                StopwordsSet {
-                    languages,
-                    custom: set.custom.into_iter().collect(),
-                }
+                let custom = if let Some(custom) = set.custom {
+                    custom.into_iter().collect()
+                } else {
+                    vec![]
+                };
+
+                StopwordsSet { languages, custom }
             }
         }
     }
@@ -431,6 +438,39 @@ impl TryFrom<GeoIndexParams> for segment::data_types::index::GeoIndexParams {
     }
 }
 
+impl TryFrom<StopwordsSet> for segment::data_types::index::StopwordsInterface {
+    type Error = Status;
+
+    fn try_from(value: StopwordsSet) -> Result<Self, Self::Error> {
+        let StopwordsSet { languages, custom } = value;
+
+        let result_languages = if languages.is_empty() {
+            None
+        } else {
+            Some(
+                languages
+                    .into_iter()
+                    .map(|lang| segment::data_types::index::Language::from_str(&lang))
+                    .collect::<Result<_, _>>()
+                    .map_err(|e| Status::invalid_argument(format!("unknown language: {e}")))?,
+            )
+        };
+
+        let result_custom = if custom.is_empty() {
+            None
+        } else {
+            Some(custom.into_iter().map(|word| word.to_lowercase()).collect())
+        };
+
+        Ok(segment::data_types::index::StopwordsInterface::Set(
+            segment::data_types::index::StopwordsSet {
+                languages: result_languages,
+                custom: result_custom,
+            },
+        ))
+    }
+}
+
 impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
     type Error = Status;
     fn try_from(params: TextIndexParams) -> Result<Self, Self::Error> {
@@ -445,36 +485,9 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
 
         // Convert stopwords if present
         let stopwords_converted = if let Some(set) = stopwords {
-            if set.languages.is_empty() && set.custom.is_empty() {
-                None
-            } else if set.languages.len() == 1 && set.custom.is_empty() {
-                let lang_str = &set.languages[0];
-                let lang = lang_str
-                    .parse::<segment::data_types::index::Language>()
-                    .map_err(|e| Status::invalid_argument(format!("unknown language: {e}")))?;
-
-                Some(segment::data_types::index::StopwordsInterface::Language(
-                    lang,
-                ))
-            } else {
-                // multiple languages
-                let language = set
-                    .languages
-                    .iter()
-                    .map(|lang_str| {
-                        lang_str
-                            .parse::<segment::data_types::index::Language>()
-                            .map_err(|e| Status::invalid_argument(format!("unknown language: {e}")))
-                    })
-                    .collect::<Result<BTreeSet<_>, _>>()?;
-
-                Some(segment::data_types::index::StopwordsInterface::Set(
-                    segment::data_types::index::StopwordsSet {
-                        languages: language,
-                        custom: set.custom.into_iter().collect(),
-                    },
-                ))
-            }
+            Some(segment::data_types::index::StopwordsInterface::try_from(
+                set,
+            )?)
         } else {
             None
         };

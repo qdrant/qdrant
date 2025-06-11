@@ -214,7 +214,32 @@ pub enum StopwordsInterface {
     Set(StopwordsSet),
 }
 
-#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, PartialOrd, Ord, Hash, Eq)]
+impl StopwordsInterface {
+    #[cfg(feature = "testing")]
+    pub fn new_custom(custom: &[&str]) -> Self {
+        StopwordsInterface::Set(StopwordsSet {
+            languages: None,
+            custom: Some(custom.iter().map(|s| (*s).to_string()).collect()),
+        })
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn new_language(language: Language) -> Self {
+        StopwordsInterface::Language(language)
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn new_set(languages: &[Language], custom: &[&str]) -> Self {
+        StopwordsInterface::Set(StopwordsSet {
+            languages: Some(languages.iter().cloned().collect()),
+            custom: Some(custom.iter().map(|s| (*s).to_string()).collect()),
+        })
+    }
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, JsonSchema, Clone, PartialEq, PartialOrd, Ord, Hash, Eq,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Language {
     #[serde(alias = "ar")]
@@ -276,52 +301,6 @@ pub enum Language {
     #[serde(alias = "tr")]
     Turkish,
 }
-
-impl<'de> serde::Deserialize<'de> for Language {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        let lowercase_s = s.to_lowercase();
-
-        match lowercase_s.as_str() {
-            "ar" | "arabic" => Ok(Language::Arabic),
-            "az" | "azerbaijani" => Ok(Language::Azerbaijani),
-            "eu" | "basque" => Ok(Language::Basque),
-            "bn" | "bengali" => Ok(Language::Bengali),
-            "ca" | "catalan" => Ok(Language::Catalan),
-            "zh" | "chinese" => Ok(Language::Chinese),
-            "da" | "danish" => Ok(Language::Danish),
-            "nl" | "dutch" => Ok(Language::Dutch),
-            "en" | "english" => Ok(Language::English),
-            "fi" | "finnish" => Ok(Language::Finnish),
-            "fr" | "french" => Ok(Language::French),
-            "de" | "german" => Ok(Language::German),
-            "el" | "greek" => Ok(Language::Greek),
-            "he" | "hebrew" => Ok(Language::Hebrew),
-            "hi-en" | "hinglish" => Ok(Language::Hinglish),
-            "hu" | "hungarian" => Ok(Language::Hungarian),
-            "id" | "indonesian" => Ok(Language::Indonesian),
-            "it" | "italian" => Ok(Language::Italian),
-            "kk" | "kazakh" => Ok(Language::Kazakh),
-            "ne" | "nepali" => Ok(Language::Nepali),
-            "no" | "norwegian" => Ok(Language::Norwegian),
-            "pt" | "portuguese" => Ok(Language::Portuguese),
-            "ro" | "romanian" => Ok(Language::Romanian),
-            "ru" | "russian" => Ok(Language::Russian),
-            "sl" | "slovene" => Ok(Language::Slovene),
-            "es" | "spanish" => Ok(Language::Spanish),
-            "sv" | "swedish" => Ok(Language::Swedish),
-            "tg" | "tajik" => Ok(Language::Tajik),
-            "tr" | "turkish" => Ok(Language::Turkish),
-            _ => Err(serde::de::Error::custom(format!(
-                "Unsupported language: {s}. Please use one of the supported languages.",
-            ))),
-        }
-    }
-}
-
 impl fmt::Display for Language {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let json_string = serde_json::to_string(self).map_err(|_| fmt::Error)?;
@@ -339,37 +318,13 @@ impl FromStr for Language {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 pub struct StopwordsSet {
-    #[serde(
-        default,
-        skip_serializing_if = "BTreeSet::is_empty",
-        deserialize_with = "deserialize_language_field"
-    )]
-    pub languages: BTreeSet<Language>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub languages: Option<BTreeSet<Language>>,
 
     #[serde(default)]
-    pub custom: BTreeSet<String>,
-}
-
-fn deserialize_language_field<'de, D>(deserializer: D) -> Result<BTreeSet<Language>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    #[derive(Deserialize, Default)]
-    #[serde(untagged)]
-    enum LanguageOrLanguages {
-        Single(Language),
-        Multiple(BTreeSet<Language>),
-        #[default]
-        None,
-    }
-
-    let value = LanguageOrLanguages::deserialize(deserializer)?;
-
-    match value {
-        LanguageOrLanguages::Single(lang) => Ok(BTreeSet::from([lang])),
-        LanguageOrLanguages::Multiple(langs) => Ok(langs),
-        LanguageOrLanguages::None => Ok(BTreeSet::new()),
-    }
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom: Option<BTreeSet<String>>,
 }
 
 // Bool
@@ -432,10 +387,7 @@ mod tests {
 
     #[test]
     fn test_stopwords_option_set_serialization() {
-        let stopwords = StopwordsInterface::Set(StopwordsSet {
-            languages: BTreeSet::from([Language::English]),
-            custom: BTreeSet::from(["AAA".to_string()]),
-        });
+        let stopwords = StopwordsInterface::new_set(&[Language::English], &["AAA"]);
         let json = serde_json::to_string(&stopwords).unwrap();
         let expected = r#"{"languages":["english"],"custom":["AAA"]}"#;
         assert_eq!(json, expected);
@@ -448,16 +400,9 @@ mod tests {
     fn test_deserialize_stopwords_from_json_examples() {
         let json1 = r#"{"custom": ["as", "the", "a"]}"#;
         let stopwords1: StopwordsInterface = serde_json::from_str(json1).unwrap();
-        if let StopwordsInterface::Set(set) = stopwords1 {
-            assert_eq!(
-                set.custom,
-                BTreeSet::from(["as".to_string(), "the".to_string(), "a".to_string()])
-            );
-            assert!(set.languages.is_empty());
-        } else {
-            panic!("Expected StopwordsSet");
-        }
 
+        let expected = StopwordsInterface::new_custom(&["as", "the", "a"]);
+        assert_eq!(stopwords1, expected);
         let json2 = r#""english""#;
         let stopwords2: StopwordsInterface = serde_json::from_str(json2).unwrap();
         if let StopwordsInterface::Language(lang) = stopwords2 {
@@ -467,37 +412,25 @@ mod tests {
         }
 
         // single language
-        let json3 = r#"{"languages": "english", "custom": ["AAA"]}"#;
+        let json3 = r#"{"languages": ["english"], "custom": ["AAA"]}"#;
         let stopwords3: StopwordsInterface = serde_json::from_str(json3).unwrap();
-        if let StopwordsInterface::Set(set) = stopwords3 {
-            assert_eq!(set.languages, BTreeSet::from([Language::English]));
-            assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
-        } else {
-            panic!("Expected StopwordsSet");
-        }
+        let expected = StopwordsInterface::new_set(&[Language::English], &["AAA"]);
+        assert_eq!(stopwords3, expected);
 
         // languages array
         let json4 = r#"{"languages": ["english", "spanish"], "custom": ["AAA"]}"#;
         let stopwords4: StopwordsInterface = serde_json::from_str(json4).unwrap();
-        if let StopwordsInterface::Set(set) = stopwords4 {
-            assert_eq!(
-                set.languages,
-                BTreeSet::from([Language::English, Language::Spanish])
-            );
-            assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
-        } else {
-            panic!("Expected StopwordsSet");
-        }
+
+        let expected =
+            StopwordsInterface::new_set(&[Language::English, Language::Spanish], &["AAA"]);
+        assert_eq!(stopwords4, expected);
 
         // null languages field
         let json5 = r#"{"languages": null, "custom": ["AAA"]}"#;
         let stopwords5: StopwordsInterface = serde_json::from_str(json5).unwrap();
-        if let StopwordsInterface::Set(set) = stopwords5 {
-            assert!(set.languages.is_empty());
-            assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
-        } else {
-            panic!("Expected StopwordsSet");
-        }
+
+        let expected = StopwordsInterface::new_custom(&["AAA"]);
+        assert_eq!(stopwords5, expected);
     }
 
     #[test]
@@ -525,28 +458,22 @@ mod tests {
         }
 
         // Test aliases in StopwordsSet
-        let json_set = r#"{"languages": "en", "custom": ["AAA"]}"#;
+        let json_set = r#"{"languages": ["en"], "custom": ["AAA"]}"#;
         let stopwords_set: StopwordsInterface = serde_json::from_str(json_set).unwrap();
-        if let StopwordsInterface::Set(set) = stopwords_set {
-            assert_eq!(set.languages, BTreeSet::from([Language::English]));
-            assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
-        } else {
-            panic!("Expected StopwordsSet");
-        }
+
+        let expected = StopwordsInterface::new_set(&[Language::English], &["AAA"]);
+
+        assert_eq!(stopwords_set, expected);
 
         // languages array
         let json_set_compat = r#"{"languages": ["en", "es"], "custom": ["AAA"]}"#;
         let stopwords_set_compat: StopwordsInterface =
             serde_json::from_str(json_set_compat).unwrap();
-        if let StopwordsInterface::Set(set) = stopwords_set_compat {
-            assert_eq!(
-                set.languages,
-                BTreeSet::from([Language::English, Language::Spanish])
-            );
-            assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
-        } else {
-            panic!("Expected StopwordsSet");
-        }
+
+        let expected_set =
+            StopwordsInterface::new_set(&[Language::English, Language::Spanish], &["AAA"]);
+
+        assert_eq!(stopwords_set_compat, expected_set);
     }
 
     #[test]
@@ -557,8 +484,8 @@ mod tests {
         assert!(result.is_err());
         let error = result.unwrap_err().to_string();
         assert!(
-            error.contains("Unsupported language: klingon"),
-            "Error message should contain 'Unsupported language: klingon', got: {error}",
+            error.contains("klingon"),
+            "Error message should contain 'klingon', got: {error}",
         );
 
         let json_interface = r#""klingon""#;
@@ -582,14 +509,9 @@ mod tests {
         // Multiple languages using "languages" key should work
         let json_multiple = r#"{"languages": ["english", "french"], "custom": ["AAA"]}"#;
         let stopwords_multiple: StopwordsInterface = serde_json::from_str(json_multiple).unwrap();
-        if let StopwordsInterface::Set(set) = stopwords_multiple {
-            assert_eq!(
-                set.languages,
-                BTreeSet::from([Language::English, Language::French])
-            );
-            assert_eq!(set.custom, BTreeSet::from(["AAA".to_string()]));
-        } else {
-            panic!("Expected StopwordsSet");
-        }
+        let expected_set =
+            StopwordsInterface::new_set(&[Language::English, Language::French], &["AAA"]);
+
+        assert_eq!(stopwords_multiple, expected_set);
     }
 }

@@ -78,16 +78,21 @@ impl StopwordsFilter {
                 }
                 StopwordsInterface::Set(set) => {
                     // Add stopwords from all languages in the languages field
-                    for lang in &set.languages {
-                        Self::add_language_stopwords(&mut stopwords, lang, lowercase);
+                    if let Some(languages) = set.languages.as_ref() {
+                        // If languages are provided, add their stopwords
+                        for lang in languages {
+                            Self::add_language_stopwords(&mut stopwords, lang, lowercase);
+                        }
                     }
 
-                    // A custom stopwords
-                    for word in &set.custom {
-                        if lowercase {
-                            stopwords.insert(word.to_lowercase());
-                        } else {
-                            stopwords.insert(word.clone());
+                    if let Some(custom) = set.custom.as_ref() {
+                        // If custom stopwords are provided, add them
+                        for word in custom {
+                            if lowercase {
+                                stopwords.insert(word.to_lowercase());
+                            } else {
+                                stopwords.insert(word.clone());
+                            }
                         }
                     }
                 }
@@ -159,10 +164,7 @@ impl StopwordsFilter {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use super::*;
-    use crate::data_types::index::StopwordsSet;
 
     #[test]
     fn test_empty_stopwords() {
@@ -184,10 +186,7 @@ mod tests {
 
     #[test]
     fn test_custom_stopwords() {
-        let option = Some(StopwordsInterface::Set(StopwordsSet {
-            languages: BTreeSet::new(),
-            custom: BTreeSet::from(["hello".to_string(), "world".to_string()]),
-        }));
+        let option = Some(StopwordsInterface::new_custom(&["hello", "world"]));
         let filter = StopwordsFilter::new(&option, true);
 
         assert!(filter.is_stopword("hello"));
@@ -197,10 +196,10 @@ mod tests {
 
     #[test]
     fn test_mixed_stopwords() {
-        let option = Some(StopwordsInterface::Set(StopwordsSet {
-            languages: BTreeSet::from([Language::English]),
-            custom: BTreeSet::from(["hello".to_string(), "world".to_string()]),
-        }));
+        let option = Some(StopwordsInterface::new_set(
+            &[Language::English],
+            &["hello", "world"],
+        ));
         let filter = StopwordsFilter::new(&option, true);
 
         assert!(filter.is_stopword("hello"));
@@ -213,10 +212,10 @@ mod tests {
 
     #[test]
     fn test_case_insensitivity() {
-        let option = Some(StopwordsInterface::Set(StopwordsSet {
-            languages: BTreeSet::from([Language::English]),
-            custom: BTreeSet::from(["Hello".to_string()]),
-        }));
+        let option = Some(StopwordsInterface::new_set(
+            &[Language::English],
+            &["Hello"],
+        ));
         let filter = StopwordsFilter::new(&option, true);
 
         assert!(filter.is_stopword("hello"));
@@ -228,10 +227,7 @@ mod tests {
 
     #[test]
     fn test_case_sensitivity() {
-        let option = Some(StopwordsInterface::Set(StopwordsSet {
-            languages: BTreeSet::new(),
-            custom: BTreeSet::from(["Hello".to_string(), "World".to_string()]),
-        }));
+        let option = Some(StopwordsInterface::new_custom(&["Hello", "World"]));
         let filter = StopwordsFilter::new(&option, false);
 
         // Should match exact case
