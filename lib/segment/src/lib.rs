@@ -5,6 +5,7 @@ pub mod fixtures;
 pub mod id_tracker;
 pub mod index;
 pub mod payload_storage;
+#[cfg(feature = "rocksdb")]
 pub mod rocksdb_backup;
 pub mod segment;
 pub mod segment_constructor;

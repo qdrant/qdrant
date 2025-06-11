@@ -9,15 +9,16 @@ use common::types::PointOffsetType;
 use gridstore::config::StorageOptions;
 use gridstore::{Blob, Gridstore};
 use parking_lot::RwLock;
+#[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 
 use super::mmap_numeric_index::MmapNumericIndex;
-use super::{
-    Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION, numeric_index_storage_cf_name,
-};
+use super::{Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::mmap_point_to_values::MmapValue;
@@ -49,6 +50,7 @@ enum Storage<T: Encodable + Numericable>
 where
     Vec<T>: Blob,
 {
+    #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Gridstore(Arc<RwLock<Gridstore<Vec<T>>>>),
 }
@@ -242,8 +244,9 @@ where
     /// Open mutable numeric index from RocksDB storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    #[cfg(feature = "rocksdb")]
     pub fn open_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> Self {
-        let store_cf_name = numeric_index_storage_cf_name(field);
+        let store_cf_name = super::numeric_index_storage_cf_name(field);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             &store_cf_name,
@@ -251,6 +254,7 @@ where
         Self::open_rocksdb_db_wrapper(db_wrapper)
     }
 
+    #[cfg(feature = "rocksdb")]
     pub fn open_rocksdb_db_wrapper(db_wrapper: DatabaseColumnScheduledDeleteWrapper) -> Self {
         Self {
             storage: Storage::RocksDb(db_wrapper),
@@ -279,6 +283,7 @@ where
     /// Loads in-memory index from backing RocksDB or Gridstore storage.
     pub(super) fn load(&mut self) -> OperationResult<bool> {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => self.load_rocksdb(),
             Storage::Gridstore(_) => self.load_gridstore(),
         }
@@ -287,6 +292,7 @@ where
     /// Load from RocksDB storage
     ///
     /// Loads in-memory index from RocksDB storage.
+    #[cfg(feature = "rocksdb")]
     fn load_rocksdb(&mut self) -> OperationResult<bool> {
         let Storage::RocksDb(db_wrapper) = &self.storage else {
             return Err(OperationError::service_error(
@@ -323,6 +329,7 @@ where
     ///
     /// Loads in-memory index from Gridstore storage.
     fn load_gridstore(&mut self) -> OperationResult<bool> {
+        #[allow(irrefutable_let_patterns)]
         let Storage::Gridstore(store) = &self.storage else {
             return Err(OperationError::service_error(
                 "Failed to load index from Gridstore, using different storage backend",
@@ -353,6 +360,7 @@ where
     #[cfg(test)]
     pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => Some(db_wrapper),
             Storage::Gridstore(_) => None,
         }
@@ -361,6 +369,7 @@ where
     #[inline]
     pub(super) fn clear(&self) -> OperationResult<()> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
             Storage::Gridstore(store) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!(
@@ -376,6 +385,7 @@ where
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
             Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
@@ -388,6 +398,7 @@ where
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
             Storage::Gridstore(store) => store.read().files(),
         }
@@ -396,6 +407,7 @@ where
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(store) => {
                 let store = store.clone();
@@ -418,6 +430,7 @@ where
     ) -> OperationResult<()> {
         // Update persisted storage
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
                 let mut hw_cell_wb = hw_counter
                     .payload_index_io_write_counter()
@@ -452,6 +465,7 @@ where
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
                 self.in_memory_index
                     .get_values(idx)

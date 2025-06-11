@@ -14,16 +14,17 @@ mod tests;
 
 use std::collections::HashMap;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use atomic_refcell::AtomicRefCell;
 use io::storage_version::StorageVersion;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
+#[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 
-use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
+use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::VectorIndexEnum;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -37,7 +38,9 @@ pub const SEGMENT_STATE_FILE: &str = "segment.json";
 const SNAPSHOT_PATH: &str = "snapshot";
 
 // Sub-directories of `SNAPSHOT_PATH`:
+#[cfg(feature = "rocksdb")]
 const DB_BACKUP_PATH: &str = "db_backup";
+#[cfg(feature = "rocksdb")]
 const PAYLOAD_DB_BACKUP_PATH: &str = "payload_index_db_backup";
 const SNAPSHOT_FILES_PATH: &str = "files";
 
@@ -79,7 +82,8 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
-    pub database: Option<Arc<RwLock<DB>>>,
+    #[cfg(feature = "rocksdb")]
+    pub database: Option<Arc<parking_lot::RwLock<DB>>>,
     pub flush_thread: Mutex<Option<JoinHandle<OperationResult<SeqNumberType>>>>,
 }
 
@@ -134,9 +138,10 @@ impl Drop for Segment {
     }
 }
 
-pub fn destroy_rocksdb(path: &Path) -> OperationResult<()> {
+#[cfg(feature = "rocksdb")]
+pub fn destroy_rocksdb(path: &std::path::Path) -> OperationResult<()> {
     rocksdb::DB::destroy(&Default::default(), path).map_err(|err| {
-        OperationError::service_error(format!(
+        crate::common::operation_error::OperationError::service_error(format!(
             "failed to destroy RocksDB at {}: {err}",
             path.display()
         ))

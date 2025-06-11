@@ -11,7 +11,9 @@ use crate::payload_storage::PayloadStorage;
 #[cfg(feature = "testing")]
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
+#[cfg(feature = "rocksdb")]
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
+#[cfg(feature = "rocksdb")]
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::types::Payload;
 
@@ -19,7 +21,9 @@ use crate::types::Payload;
 pub enum PayloadStorageEnum {
     #[cfg(feature = "testing")]
     InMemoryPayloadStorage(InMemoryPayloadStorage),
+    #[cfg(feature = "rocksdb")]
     SimplePayloadStorage(SimplePayloadStorage),
+    #[cfg(feature = "rocksdb")]
     OnDiskPayloadStorage(OnDiskPayloadStorage),
     MmapPayloadStorage(MmapPayloadStorage),
 }
@@ -31,12 +35,14 @@ impl From<InMemoryPayloadStorage> for PayloadStorageEnum {
     }
 }
 
+#[cfg(feature = "rocksdb")]
 impl From<SimplePayloadStorage> for PayloadStorageEnum {
     fn from(a: SimplePayloadStorage) -> Self {
         PayloadStorageEnum::SimplePayloadStorage(a)
     }
 }
 
+#[cfg(feature = "rocksdb")]
 impl From<OnDiskPayloadStorage> for PayloadStorageEnum {
     fn from(a: OnDiskPayloadStorage) -> Self {
         PayloadStorageEnum::OnDiskPayloadStorage(a)
@@ -61,9 +67,11 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => {
                 s.overwrite(point_id, payload, hw_counter)
             }
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => {
                 s.overwrite(point_id, payload, hw_counter)
             }
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => {
                 s.overwrite(point_id, payload, hw_counter)
             }
@@ -80,7 +88,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.set(point_id, payload, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.set(point_id, payload, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.set(point_id, payload, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.set(point_id, payload, hw_counter),
         }
@@ -98,9 +108,11 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => {
                 s.set_by_key(point_id, payload, key, hw_counter)
             }
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => {
                 s.set_by_key(point_id, payload, key, hw_counter)
             }
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => {
                 s.set_by_key(point_id, payload, key, hw_counter)
             }
@@ -118,7 +130,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_id, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.get(point_id, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get(point_id, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_id, hw_counter),
         }
@@ -132,7 +146,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
         }
@@ -147,7 +163,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.delete(point_id, key, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.delete(point_id, key, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.delete(point_id, key, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.delete(point_id, key, hw_counter),
         }
@@ -161,7 +179,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear(point_id, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.clear(point_id, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.clear(point_id, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.clear(point_id, hw_counter),
         }
@@ -172,7 +192,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear_all(hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.clear_all(hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.clear_all(hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_all(hw_counter),
         }
@@ -182,7 +204,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.flusher(),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.flusher(),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.flusher(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.flusher(),
         }
@@ -195,7 +219,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.iter(callback, hw_counter),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.iter(callback, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.iter(callback, hw_counter),
         }
@@ -205,7 +231,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.files(),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.files(),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.files(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.files(),
         }
@@ -215,7 +243,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.immutable_files(),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.immutable_files(),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.immutable_files(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.immutable_files(),
         }
@@ -225,7 +255,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_storage_size_bytes(),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.get_storage_size_bytes(),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get_storage_size_bytes(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get_storage_size_bytes(),
         }
@@ -239,7 +271,9 @@ impl PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(_) => {}
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(_) => {}
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(_) => {}
             PayloadStorageEnum::MmapPayloadStorage(s) => s.populate()?,
         }
@@ -251,7 +285,9 @@ impl PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(_) => {}
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(_) => {}
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(_) => {}
             PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_cache()?,
         }
@@ -268,6 +304,7 @@ mod tests {
     use crate::types::Payload;
 
     #[test]
+    #[cfg(feature = "rocksdb")]
     fn test_storage() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
@@ -308,6 +345,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rocksdb")]
     fn test_on_disk_storage() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();

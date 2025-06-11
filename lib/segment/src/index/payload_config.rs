@@ -17,6 +17,7 @@ pub struct PayloadConfig {
     /// If true, don't create/initialize RocksDB for payload index
     /// This is required for migrating away from RocksDB in favor of the
     /// custom storage engine
+    #[cfg(feature = "rocksdb")]
     pub skip_rocksdb: Option<bool>,
 }
 

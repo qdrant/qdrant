@@ -393,6 +393,7 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseAppendableInRamHalf(vector_storage) => {
                 Self::new_dense_f16(device, vector_storage.as_ref(), stopped)
             }
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::from(
                 gpu::GpuError::NotSupported("Sparse vectors are not supported on GPU".to_string()),
             )),
