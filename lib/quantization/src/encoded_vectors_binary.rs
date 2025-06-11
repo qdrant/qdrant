@@ -376,7 +376,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             Encoding::TwoBits => dim * 2,
             Encoding::OneAndHalfBits => (dim * 3).div_ceil(2), // ceil(dim * 1.5)
         };
-        TBitsStoreType::get_storage_size(extended_dim.max(1)) * std::mem::size_of::<TBitsStoreType>()
+        TBitsStoreType::get_storage_size(extended_dim.max(1))
+            * std::mem::size_of::<TBitsStoreType>()
     }
 
     fn get_quantized_vector_size(&self) -> usize {
