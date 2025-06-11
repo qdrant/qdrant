@@ -7016,8 +7016,26 @@
           "always_ram": {
             "type": "boolean",
             "nullable": true
+          },
+          "encoding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BinaryQuantizationEncoding"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "BinaryQuantizationEncoding": {
+        "type": "string",
+        "enum": [
+          "one_bit",
+          "two_bits",
+          "one_and_half_bits"
+        ]
       },
       "Datatype": {
         "type": "string",
