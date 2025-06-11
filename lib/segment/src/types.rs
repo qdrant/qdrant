@@ -1133,9 +1133,7 @@ impl Default for Indexes {
 }
 
 /// Type of payload storage
-#[derive(
-    Anonymize, Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq,
-)]
+#[derive(Anonymize, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(tag = "type", content = "options", rename_all = "snake_case")]
 pub enum PayloadStorageType {
     // Store payload in memory and use persistence storage only if vectors are changed
@@ -1143,11 +1141,23 @@ pub enum PayloadStorageType {
     InMemory,
     // Store payload on disk only, read each time it is requested
     #[cfg(feature = "rocksdb")]
-    #[cfg_attr(feature = "rocksdb", default)]
     OnDisk,
     // Store payload on disk and in memory, read from memory if possible
-    #[cfg_attr(not(feature = "rocksdb"), default)]
     Mmap,
+}
+
+#[allow(clippy::derivable_impls)]
+impl Default for PayloadStorageType {
+    fn default() -> Self {
+        #[cfg(feature = "rocksdb")]
+        {
+            PayloadStorageType::OnDisk
+        }
+        #[cfg(not(feature = "rocksdb"))]
+        {
+            PayloadStorageType::Mmap
+        }
+    }
 }
 
 impl PayloadStorageType {
