@@ -243,7 +243,9 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.immutable_files(),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::SimplePayloadStorage(s) => s.immutable_files(),
+            #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.immutable_files(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.immutable_files(),
         }
