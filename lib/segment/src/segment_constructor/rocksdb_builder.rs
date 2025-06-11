@@ -31,7 +31,6 @@ impl RocksDbBuilder {
                 .sparse_vector_data
                 .iter()
                 .filter_map(|(vector_name, config)| {
-                    #[cfg(feature = "rocksdb")]
                     if matches!(
                         config.storage_type,
                         crate::types::SparseVectorStorageType::OnDisk
@@ -61,7 +60,6 @@ impl RocksDbBuilder {
         })
     }
 
-    #[cfg(feature = "rocksdb")]
     pub fn read(&self) -> Option<parking_lot::RwLockReadGuard<'_, rocksdb::DB>> {
         self.rocksdb.as_ref().map(|db| db.read())
     }

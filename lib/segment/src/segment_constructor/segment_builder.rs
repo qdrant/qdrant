@@ -20,6 +20,7 @@ use rand::Rng;
 use tempfile::TempDir;
 use uuid::Uuid;
 
+#[cfg(feature = "rocksdb")]
 use super::rocksdb_builder::RocksDbBuilder;
 use super::{
     create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
@@ -88,10 +89,15 @@ impl SegmentBuilder {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
 
+        #[cfg(feature = "rocksdb")]
         let mut db_builder = RocksDbBuilder::new(temp_dir.path(), segment_config)?;
 
-        let payload_storage =
-            create_payload_storage(&mut db_builder, temp_dir.path(), segment_config)?;
+        let payload_storage = create_payload_storage(
+            #[cfg(feature = "rocksdb")]
+            &mut db_builder,
+            temp_dir.path(),
+            segment_config,
+        )?;
 
         let mut vector_data = HashMap::new();
 

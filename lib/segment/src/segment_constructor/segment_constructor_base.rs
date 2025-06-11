@@ -7,9 +7,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::{FeatureFlags, feature_flags};
-use common::types::PointOffsetType;
+use common::flags::FeatureFlags;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
@@ -21,6 +19,7 @@ use rocksdb::DB;
 use serde::Deserialize;
 use uuid::Uuid;
 
+#[cfg(feature = "rocksdb")]
 use super::rocksdb_builder::RocksDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
@@ -39,8 +38,10 @@ use crate::index::sparse_index::sparse_vector_index::{
 };
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
+#[cfg(feature = "rocksdb")]
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+#[cfg(feature = "rocksdb")]
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
 #[cfg(feature = "rocksdb")]
@@ -130,7 +131,7 @@ pub(crate) fn open_vector_storage(
                 )?;
 
                 // Actively migrate away from RocksDB
-                if feature_flags().migrate_rocksdb_vector_storage {
+                if common::flags::feature_flags().migrate_rocksdb_vector_storage {
                     return migrate_rocksdb_multi_dense_vector_storage_to_mmap(
                         storage,
                         vector_config.size,
@@ -151,7 +152,7 @@ pub(crate) fn open_vector_storage(
                 )?;
 
                 // Actively migrate away from RocksDB
-                if feature_flags().migrate_rocksdb_vector_storage {
+                if common::flags::feature_flags().migrate_rocksdb_vector_storage {
                     return migrate_rocksdb_dense_vector_storage_to_mmap(
                         storage,
                         vector_config.size,
@@ -245,14 +246,16 @@ pub(crate) fn open_vector_storage(
 }
 
 pub(crate) fn create_payload_storage(
-    db_builder: &mut RocksDbBuilder,
+    #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<PayloadStorageEnum> {
     let payload_storage = match config.payload_storage_type {
+        #[cfg(feature = "rocksdb")]
         PayloadStorageType::InMemory => {
             PayloadStorageEnum::from(SimplePayloadStorage::open(db_builder.require()?)?)
         }
+        #[cfg(feature = "rocksdb")]
         PayloadStorageType::OnDisk => {
             PayloadStorageEnum::from(OnDiskPayloadStorage::open(db_builder.require()?)?)
         }
@@ -438,7 +441,7 @@ pub(crate) fn create_sparse_vector_storage(
                 open_simple_sparse_vector_storage(db_builder.require()?, &db_column_name, stopped)?;
 
             // Actively migrate away from RocksDB
-            if feature_flags().migrate_rocksdb_vector_storage {
+            if common::flags::feature_flags().migrate_rocksdb_vector_storage {
                 return migrate_rocksdb_sparse_vector_storage_to_mmap(storage, path);
             }
 
@@ -458,9 +461,11 @@ fn create_segment(
     config: &SegmentConfig,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
+    #[cfg(feature = "rocksdb")]
     let mut db_builder = RocksDbBuilder::new(segment_path, config)?;
 
     let payload_storage = sp(create_payload_storage(
+        #[cfg(feature = "rocksdb")]
         &mut db_builder,
         segment_path,
         config,
@@ -632,6 +637,7 @@ fn create_segment(
         payload_storage,
         segment_config: config.clone(),
         error_status: None,
+        #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
         flush_thread: Mutex::new(None),
     })
@@ -966,6 +972,9 @@ pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
     dim: usize,
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::PointOffsetType;
+
     use crate::vector_storage::dense::appendable_dense_vector_storage::find_storage_files;
 
     log::info!(
@@ -1058,6 +1067,9 @@ pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
     multi_vector_config: MultiVectorConfig,
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::PointOffsetType;
+
     use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::find_storage_files;
 
     log::info!(
@@ -1150,6 +1162,9 @@ pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
     old_storage: VectorStorageEnum,
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::PointOffsetType;
+
     use crate::vector_storage::sparse::mmap_sparse_vector_storage::find_storage_files;
 
     log::info!(

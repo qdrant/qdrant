@@ -277,9 +277,11 @@ impl ConditionChecker for SimpleConditionChecker {
                         PayloadStorageEnum::InMemoryPayloadStorage(s) => {
                             s.payload_ptr(point_id).map(|x| x.into())
                         }
+                        #[cfg(feature = "rocksdb")]
                         PayloadStorageEnum::SimplePayloadStorage(s) => {
                             s.payload_ptr(point_id).map(|x| x.into())
                         }
+                        #[cfg(feature = "rocksdb")]
                         PayloadStorageEnum::OnDiskPayloadStorage(s) => {
                             // Warn: Possible panic here
                             // Currently, it is possible that `read_payload` fails with Err,

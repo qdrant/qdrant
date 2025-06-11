@@ -1,12 +1,15 @@
 #[cfg(test)]
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+#[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
+#[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -18,7 +21,9 @@ use super::mutable_text_index::MutableFullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::{
@@ -35,6 +40,7 @@ pub enum FullTextIndex {
 }
 
 impl FullTextIndex {
+    #[cfg(feature = "rocksdb")]
     pub fn new_rocksdb(
         db: Arc<RwLock<DB>>,
         config: TextIndexParams,
@@ -90,6 +96,7 @@ impl FullTextIndex {
         }
     }
 
+    #[cfg(feature = "rocksdb")]
     pub fn builder_rocksdb(
         db: Arc<RwLock<DB>>,
         config: TextIndexParams,
@@ -113,6 +120,7 @@ impl FullTextIndex {
         FullTextGridstoreIndexBuilder::new(dir, config)
     }
 
+    #[cfg(feature = "rocksdb")]
     fn storage_cf_name(field: &str) -> String {
         format!("{field}_fts")
     }
@@ -219,10 +227,12 @@ impl FullTextIndex {
         }
     }
 
+    #[cfg(feature = "rocksdb")]
     pub(super) fn store_key(id: PointOffsetType) -> Vec<u8> {
         bincode::serialize(&id).unwrap()
     }
 
+    #[cfg(feature = "rocksdb")]
     pub(super) fn restore_key(data: &[u8]) -> PointOffsetType {
         bincode::deserialize(data).unwrap()
     }

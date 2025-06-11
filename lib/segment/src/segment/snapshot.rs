@@ -14,10 +14,7 @@ use crate::entry::SegmentEntry as _;
 use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::PayloadStorage;
-use crate::segment::{
-    DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH,
-    Segment,
-};
+use crate::segment::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};
 use crate::types::SnapshotFormat;
 use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
@@ -297,9 +294,10 @@ pub fn snapshot_files(
 
     // TODO: Version RocksDB!? 🤯
 
+    #[cfg(feature = "rocksdb")]
     if include_if(ROCKS_DB_VIRT_FILE.as_ref()) {
         if let Some(db) = &segment.database {
-            let db_backup_path = temp_path.join(DB_BACKUP_PATH);
+            let db_backup_path = temp_path.join(super::DB_BACKUP_PATH);
 
             let db = db.read();
             crate::rocksdb_backup::create(&db, &db_backup_path).map_err(|err| {
@@ -311,8 +309,9 @@ pub fn snapshot_files(
         }
     }
 
+    #[cfg(feature = "rocksdb")]
     if include_if(PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE.as_ref()) {
-        let payload_index_db_backup_path = temp_path.join(PAYLOAD_DB_BACKUP_PATH);
+        let payload_index_db_backup_path = temp_path.join(crate::segment::PAYLOAD_DB_BACKUP_PATH);
 
         segment
             .payload_index

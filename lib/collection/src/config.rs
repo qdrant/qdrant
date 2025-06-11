@@ -123,11 +123,15 @@ pub struct CollectionParams {
 
 impl CollectionParams {
     pub fn payload_storage_type(&self) -> PayloadStorageType {
+        #[cfg(feature = "rocksdb")]
         if self.on_disk_payload {
             PayloadStorageType::Mmap
         } else {
             PayloadStorageType::InMemory
         }
+
+        #[cfg(not(feature = "rocksdb"))]
+        PayloadStorageType::Mmap
     }
 
     pub fn check_compatible(&self, other: &CollectionParams) -> CollectionResult<()> {

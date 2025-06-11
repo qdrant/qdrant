@@ -39,10 +39,7 @@ chaos-testing = []
 data-consistency-check = ["collection/data-consistency-check"]
 gpu = ["gpu/gpu", "segment/gpu"]
 deb = []
-
-# Disabling RocksDB feature only partially disables RocksDB usage
-# More work is still required to eventually completely disable and remove it
-rocksdb = ["segment/rocksdb"]
+rocksdb = ["collection/rocksdb", "segment/rocksdb"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"

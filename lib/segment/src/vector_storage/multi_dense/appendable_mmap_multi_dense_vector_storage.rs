@@ -564,6 +564,7 @@ pub fn open_appendable_in_ram_multi_vector_storage_impl<T: PrimitiveVectorElemen
 }
 
 /// Find files related to this dense vector storage
+#[cfg(any(test, feature = "rocksdb"))]
 pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<Vec<PathBuf>> {
     let vectors_path = vector_storage_path.join(VECTORS_DIR_PATH);
     let offsets_path = vector_storage_path.join(OFFSETS_DIR_PATH);

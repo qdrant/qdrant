@@ -1,23 +1,26 @@
 use std::collections::BTreeSet;
 use std::ops::Bound;
 use std::path::PathBuf;
+#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
 use bitvec::vec::BitVec;
 use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use gridstore::Blob;
+#[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
+#[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 
 use super::mmap_numeric_index::MmapNumericIndex;
-use super::mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
-use super::{
-    Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION, numeric_index_storage_cf_name,
-};
+use super::mutable_numeric_index::InMemoryNumericIndex;
+use super::{Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
@@ -34,6 +37,7 @@ pub struct ImmutableNumericIndex<T: Encodable + Numericable + MmapValue + Defaul
 }
 
 enum Storage<T: Encodable + Numericable + MmapValue + Default> {
+    #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Mmap(Box<MmapNumericIndex<T>>),
 }
@@ -159,8 +163,9 @@ where
     /// Open immutable numeric index from RocksDB storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    #[cfg(feature = "rocksdb")]
     pub(super) fn open_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> Self {
-        let store_cf_name = numeric_index_storage_cf_name(field);
+        let store_cf_name = super::numeric_index_storage_cf_name(field);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             &store_cf_name,
@@ -202,6 +207,7 @@ where
     /// Loads in-memory index from backing RocksDB or mmap storage.
     pub(super) fn load(&mut self) -> OperationResult<bool> {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => self.load_rocksdb(),
             Storage::Mmap(_) => self.load_mmap(),
         }
@@ -210,7 +216,10 @@ where
     /// Load from RocksDB storage
     ///
     /// Loads in-memory index from RocksDB storage.
+    #[cfg(feature = "rocksdb")]
     fn load_rocksdb(&mut self) -> OperationResult<bool> {
+        use super::mutable_numeric_index::MutableNumericIndex;
+
         let Storage::RocksDb(db_wrapper) = &self.storage else {
             return Err(OperationError::service_error(
                 "Failed to load index from RocksDB, using different storage backend",
@@ -240,6 +249,7 @@ where
     ///
     /// Loads in-memory index from mmap storage.
     fn load_mmap(&mut self) -> OperationResult<bool> {
+        #[allow(irrefutable_let_patterns)]
         let Storage::Mmap(index) = &self.storage else {
             return Err(OperationError::service_error(
                 "Failed to load index from mmap, using different storage backend",
@@ -271,6 +281,7 @@ where
     #[cfg(test)]
     pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => Some(db_wrapper),
             Storage::Mmap(_) => None,
         }
@@ -279,6 +290,7 @@ where
     #[inline]
     pub(super) fn clear(self) -> OperationResult<()> {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
             Storage::Mmap(index) => index.clear(),
         }
@@ -290,6 +302,7 @@ where
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
             Storage::Mmap(index) => index.clear_cache(),
         }
@@ -298,6 +311,7 @@ where
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
             Storage::Mmap(index) => index.files(),
         }
@@ -306,6 +320,7 @@ where
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Mmap(index) => index.flusher(),
         }
@@ -364,6 +379,7 @@ where
             .map(|Point { val, idx, .. }| (val, idx))
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
     pub(super) fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         if let Some(removed_values) = self.point_to_values.get_values(idx) {
             let mut removed_count = 0;
@@ -373,6 +389,7 @@ where
 
                 // Update persisted storage
                 match &mut self.storage {
+                    #[cfg(feature = "rocksdb")]
                     Storage::RocksDb(db_wrapper) => {
                         let encoded = value.encode_key(idx);
                         db_wrapper.remove(encoded)?;

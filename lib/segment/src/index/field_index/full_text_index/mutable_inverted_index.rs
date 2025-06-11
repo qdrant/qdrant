@@ -4,7 +4,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::inverted_index::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
-use super::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator;
 use crate::common::operation_error::OperationResult;
@@ -34,11 +33,14 @@ impl MutableInvertedIndex {
         }
     }
 
+    #[cfg(feature = "rocksdb")]
     pub fn build_index(
         iter: impl Iterator<Item = OperationResult<(PointOffsetType, Vec<String>)>>,
         phrase_matching: bool,
     ) -> OperationResult<Self> {
-        let mut builder = MutableInvertedIndexBuilder::new(phrase_matching);
+        let mut builder = super::mutable_inverted_index_builder::MutableInvertedIndexBuilder::new(
+            phrase_matching,
+        );
         builder.add_iter(iter)?;
         Ok(builder.build())
     }

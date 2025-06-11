@@ -15,6 +15,7 @@ use super::text_index::FullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::data_types::index::TextIndexParams;
 
@@ -32,6 +33,7 @@ pub struct MutableFullTextIndex {
 }
 
 pub(super) enum Storage {
+    #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Gridstore(Arc<RwLock<Gridstore<Vec<u8>>>>),
 }
@@ -40,6 +42,7 @@ impl MutableFullTextIndex {
     /// Open mutable full text index from RocksDB storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    #[cfg(feature = "rocksdb")]
     pub fn open_rocksdb(
         db_wrapper: DatabaseColumnScheduledDeleteWrapper,
         config: TextIndexParams,
@@ -76,6 +79,7 @@ impl MutableFullTextIndex {
     /// Loads in-memory index from backing RocksDB or Gridstore storage.
     pub(super) fn load(&mut self) -> OperationResult<bool> {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => self.load_rocksdb(),
             Storage::Gridstore(_) => self.load_gridstore(),
         }
@@ -84,6 +88,7 @@ impl MutableFullTextIndex {
     /// Load from RocksDB storage
     ///
     /// Loads in-memory index from RocksDB storage.
+    #[cfg(feature = "rocksdb")]
     fn load_rocksdb(&mut self) -> OperationResult<bool> {
         let Storage::RocksDb(db_wrapper) = &self.storage else {
             return Err(OperationError::service_error(
@@ -112,6 +117,7 @@ impl MutableFullTextIndex {
     ///
     /// Loads in-memory index from Gridstore storage.
     fn load_gridstore(&mut self) -> OperationResult<bool> {
+        #[allow(irrefutable_let_patterns)]
         let Storage::Gridstore(store) = &self.storage else {
             return Err(OperationError::service_error(
                 "Failed to load index from Gridstore, using different storage backend",
@@ -147,6 +153,7 @@ impl MutableFullTextIndex {
     #[inline]
     pub(super) fn init(&self) -> OperationResult<()> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
             Storage::Gridstore(store) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!(
@@ -159,6 +166,7 @@ impl MutableFullTextIndex {
     #[inline]
     pub(super) fn clear(self) -> OperationResult<()> {
         match self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
             Storage::Gridstore(store) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!(
@@ -174,6 +182,7 @@ impl MutableFullTextIndex {
     /// index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
             Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
@@ -186,6 +195,7 @@ impl MutableFullTextIndex {
     #[inline]
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
             Storage::Gridstore(store) => store.read().files(),
         }
@@ -194,6 +204,7 @@ impl MutableFullTextIndex {
     #[inline]
     pub(super) fn flusher(&self) -> Flusher {
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(store) => {
                 let store = store.clone();
@@ -240,8 +251,6 @@ impl MutableFullTextIndex {
         self.inverted_index
             .index_tokens(idx, token_set, hw_counter)?;
 
-        let db_idx = FullTextIndex::store_key(idx);
-
         let tokens_to_store = if phrase_matching {
             // store ordered tokens
             str_tokens
@@ -254,7 +263,9 @@ impl MutableFullTextIndex {
 
         // Update persisted storage
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
+                let db_idx = FullTextIndex::store_key(idx);
                 db_wrapper.put(db_idx, db_document)?;
             }
             Storage::Gridstore(store) => {
@@ -277,9 +288,11 @@ impl MutableFullTextIndex {
         Ok(())
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
         match &self.storage {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
                 if self.inverted_index.remove(id) {
                     let db_doc_id = FullTextIndex::store_key(id);
