@@ -116,7 +116,6 @@ impl StopwordsFilter {
         lowercase: bool,
     ) {
         let stopwords_array = match language {
-            Language::UnspecifiedLanguage => return,
             Language::Arabic => ARABIC_STOPWORDS,
             Language::Azerbaijani => AZERBAIJANI_STOPWORDS,
             Language::Basque => BASQUE_STOPWORDS,

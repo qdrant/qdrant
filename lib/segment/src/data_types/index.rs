@@ -215,10 +215,8 @@ pub enum StopwordsInterface {
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, PartialOrd, Ord, Hash, Eq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum Language {
-    #[serde(alias = "unspecified")]
-    UnspecifiedLanguage,
     #[serde(alias = "ar")]
     Arabic,
     #[serde(alias = "az")]
@@ -288,7 +286,6 @@ impl<'de> serde::Deserialize<'de> for Language {
         let lowercase_s = s.to_lowercase();
 
         match lowercase_s.as_str() {
-            "unspecified" | "unspecifiedlanguage" => Ok(Language::UnspecifiedLanguage),
             "ar" | "arabic" => Ok(Language::Arabic),
             "az" | "azerbaijani" => Ok(Language::Azerbaijani),
             "eu" | "basque" => Ok(Language::Basque),

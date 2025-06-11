@@ -220,24 +220,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
         let tokenizer = TokenizerType::from(tokenizer);
 
         // Convert stopwords if present
-        let stopwords_set = stopwords.map(|sw| match sw {
-            segment::data_types::index::StopwordsInterface::Language(lang) => {
-                let lang_str = lang.to_string();
-
-                StopwordsSet {
-                    languages: vec![lang_str],
-                    custom: vec![],
-                }
-            }
-            segment::data_types::index::StopwordsInterface::Set(set) => {
-                let languages = set.languages.iter().map(|lang| lang.to_string()).collect();
-
-                StopwordsSet {
-                    languages,
-                    custom: set.custom.into_iter().collect(),
-                }
-            }
-        });
+        let stopwords_set = stopwords.map(StopwordsSet::from);
 
         PayloadIndexParams {
             index_params: Some(IndexParams::TextIndexParams(TextIndexParams {
@@ -334,6 +317,29 @@ impl From<segment::types::PayloadSchemaType> for FieldType {
             segment::types::PayloadSchemaType::Bool => FieldType::Bool,
             segment::types::PayloadSchemaType::Datetime => FieldType::Datetime,
             segment::types::PayloadSchemaType::Uuid => FieldType::Uuid,
+        }
+    }
+}
+
+impl From<segment::data_types::index::StopwordsInterface> for StopwordsSet {
+    fn from(stopwords: segment::data_types::index::StopwordsInterface) -> Self {
+        match stopwords {
+            segment::data_types::index::StopwordsInterface::Language(lang) => {
+                let lang_str = lang.to_string();
+
+                StopwordsSet {
+                    languages: vec![lang_str],
+                    custom: vec![],
+                }
+            }
+            segment::data_types::index::StopwordsInterface::Set(set) => {
+                let languages = set.languages.iter().map(|lang| lang.to_string()).collect();
+
+                StopwordsSet {
+                    languages,
+                    custom: set.custom.into_iter().collect(),
+                }
+            }
         }
     }
 }
