@@ -92,6 +92,7 @@
     - [VectorsConfigDiff](#qdrant-VectorsConfigDiff)
     - [WalConfigDiff](#qdrant-WalConfigDiff)
   
+    - [BinaryQuantizationEncoding](#qdrant-BinaryQuantizationEncoding)
     - [CollectionStatus](#qdrant-CollectionStatus)
     - [CompressionRatio](#qdrant-CompressionRatio)
     - [Datatype](#qdrant-Datatype)
@@ -394,6 +395,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | always_ram | [bool](#bool) | optional | If true - quantized vectors always will be stored in RAM, ignoring the config of main storage |
+| encoding | [BinaryQuantizationEncoding](#qdrant-BinaryQuantizationEncoding) | optional | Binary quantization encoding method |
 
 
 
@@ -1828,6 +1830,19 @@ Note: 1kB = 1 vector of size 256. |
 
 
  
+
+
+<a name="qdrant-BinaryQuantizationEncoding"></a>
+
+### BinaryQuantizationEncoding
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| OneBit | 0 |  |
+| TwoBits | 1 |  |
+| OneAndHalfBits | 2 |  |
+
 
 
 <a name="qdrant-CollectionStatus"></a>
