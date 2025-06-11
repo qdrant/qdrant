@@ -11238,6 +11238,16 @@
               }
             ]
           },
+          "runtime_features": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeatureFlags"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "system": {
             "anyOf": [
               {
@@ -11285,6 +11295,46 @@
             "type": "boolean"
           },
           "rocksdb": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FeatureFlags": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "description": "Magic feature flag that enables all features.\n\nNote that this will only be applied to all flags when passed into [`init_feature_flags`].",
+            "default": false,
+            "type": "boolean"
+          },
+          "payload_index_skip_rocksdb": {
+            "description": "Whether to skip usage of RocksDB in immutable payload indices.\n\nFirst implemented in Qdrant 1.13.5. Enabled by default in Qdrant 1.14.1",
+            "default": true,
+            "type": "boolean"
+          },
+          "payload_index_skip_mutable_rocksdb": {
+            "description": "Whether to skip usage of RocksDB in mutable payload indices.",
+            "default": false,
+            "type": "boolean"
+          },
+          "incremental_hnsw_building": {
+            "description": "Whether to use incremental HNSW building.\n\nEnabled by default in Qdrant 1.14.1.",
+            "default": true,
+            "type": "boolean"
+          },
+          "hnsw_healing": {
+            "description": "Whether to enable HNSW healing.",
+            "default": false,
+            "type": "boolean"
+          },
+          "migrate_rocksdb_id_tracker": {
+            "description": "Whether to actively migrate RocksDB based ID trackers into a new format.",
+            "default": false,
+            "type": "boolean"
+          },
+          "migrate_rocksdb_vector_storage": {
+            "description": "Whether to actively migrate RocksDB based vector storages into a new format.",
+            "default": false,
             "type": "boolean"
           }
         }

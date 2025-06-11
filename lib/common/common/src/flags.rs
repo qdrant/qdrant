@@ -1,11 +1,12 @@
 use std::sync::OnceLock;
 
-use serde::Deserialize;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Global feature flags, normally initialized when starting Qdrant.
 static FEATURE_FLAGS: OnceLock<FeatureFlags> = OnceLock::new();
 
-#[derive(Debug, Deserialize, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq, JsonSchema)]
 #[serde(default)]
 pub struct FeatureFlags {
     /// Magic feature flag that enables all features.

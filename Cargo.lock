@@ -1248,6 +1248,7 @@ dependencies = [
  "ph",
  "rand 0.9.1",
  "rstest",
+ "schemars",
  "self_cell",
  "semver",
  "serde",
