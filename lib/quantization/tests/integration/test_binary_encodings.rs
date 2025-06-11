@@ -34,7 +34,7 @@ mod tests {
 
     #[test]
     fn test_binary_dot() {
-        //test_binary_dot_impl::<u128>(0, false);
+        test_binary_dot_impl::<u128>(0, false);
         test_binary_dot_impl::<u128>(600, false);
         test_binary_dot_impl::<u128>(601, false);
         test_binary_dot_impl::<u8>(600, false);
