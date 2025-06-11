@@ -331,12 +331,14 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             let v_z = (v - mean) / sd;
             let index = (v_z + 2.0) / (4.0 / ranges as f32);
 
-            let bit_position = i * 2;
             if index >= 1.0 {
                 let count_ones = (index.floor() as usize).min(2);
-                for j in 0..count_ones {
-                    encoded_vector[(bit_position + j) / bits_count] |=
-                        one << ((bit_position + j) % bits_count);
+                if count_ones > 1 {
+                    encoded_vector[i / bits_count] |= one << (i % bits_count);
+                }
+                if count_ones > 0 {
+                    let j = vector.len() + i;
+                    encoded_vector[j / bits_count] |= one << (j % bits_count);
                 }
             }
         }
@@ -359,10 +361,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
             if index >= 1.0 {
                 let count_ones = (index.floor() as usize).min(2);
-                if count_ones > 0 {
+                if count_ones > 1 {
                     encoded_vector[i / bits_count] |= one << (i % bits_count);
                 }
-                if count_ones > 1 {
+                if count_ones > 0 {
                     let j = vector.len() + i / 2;
                     encoded_vector[j / bits_count] |= one << (j % bits_count);
                 }
