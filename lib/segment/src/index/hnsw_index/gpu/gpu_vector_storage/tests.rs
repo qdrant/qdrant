@@ -18,9 +18,9 @@ use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilder;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{
-    BinaryQuantization, BinaryQuantizationConfig, Distance, ProductQuantization,
-    ProductQuantizationConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
-    BinaryQuantizationEncoding,
+    BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance,
+    ProductQuantization, ProductQuantizationConfig, QuantizationConfig, ScalarQuantization,
+    ScalarQuantizationConfig,
 };
 use crate::vector_storage::dense::simple_dense_vector_storage::{
     open_simple_dense_byte_vector_storage, open_simple_dense_full_vector_storage,
@@ -150,63 +150,63 @@ fn test_gpu_vector_storage_sq(
     TestStorageType::Dense(TestElementType::Float32),
     273,
     2057,
-    BinaryQuantizationEncoding::OneBit,
+    BinaryQuantizationEncoding::OneBit
 )]
 #[case::dot_f32_one_and_half_bits(
     Distance::Dot,
     TestStorageType::Dense(TestElementType::Float32),
     256,
     512,
-    BinaryQuantizationEncoding::OneAndHalfBits,
+    BinaryQuantizationEncoding::OneAndHalfBits
 )]
 #[case::euclid_f32(
     Distance::Euclid,
     TestStorageType::Dense(TestElementType::Float32),
     273,
     2057,
-    BinaryQuantizationEncoding::OneBit,
+    BinaryQuantizationEncoding::OneBit
 )]
 #[case::manhattan_f32_two_bits(
     Distance::Manhattan,
     TestStorageType::Dense(TestElementType::Float32),
     273,
     2057,
-    BinaryQuantizationEncoding::TwoBits,
+    BinaryQuantizationEncoding::TwoBits
 )]
 #[case::small_dimension(
     Distance::Cosine,
     TestStorageType::Dense(TestElementType::Float32),
     17,
     2057,
-    BinaryQuantizationEncoding::OneBit,
+    BinaryQuantizationEncoding::OneBit
 )]
 #[case::cosine_f16(
     Distance::Cosine,
     TestStorageType::Dense(TestElementType::Float16),
     273,
     2057,
-    BinaryQuantizationEncoding::OneBit,
+    BinaryQuantizationEncoding::OneBit
 )]
 #[case::cosine_u8(
     Distance::Cosine,
     TestStorageType::Dense(TestElementType::Uint8),
     273,
     2057,
-    BinaryQuantizationEncoding::OneBit,
+    BinaryQuantizationEncoding::OneBit
 )]
 #[case::cosine_multi_f32(
     Distance::Cosine,
     TestStorageType::Multi(TestElementType::Float32),
     67,
     2057,
-    BinaryQuantizationEncoding::OneBit,
+    BinaryQuantizationEncoding::OneBit
 )]
 #[case::cosine_multi_u8(
     Distance::Cosine,
     TestStorageType::Multi(TestElementType::Uint8),
     273,
     2057,
-    BinaryQuantizationEncoding::OneBit,
+    BinaryQuantizationEncoding::OneBit
 )]
 fn test_gpu_vector_storage_bq(
     #[case] distance: Distance,
