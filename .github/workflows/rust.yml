@@ -110,3 +110,42 @@ jobs:
         with:
           filename: .github/ISSUE_TEMPLATE/flaky_test.md
           update_existing: true
+
+  # Temporary job that runs tests without the RocksDB feature flag
+  # We will remove this once RocksDB will be disabled by default
+  rust-tests-no-rocksdb:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ ubuntu-latest ]
+
+    steps:
+    - name: Install minimal stable
+      uses: dtolnay/rust-toolchain@stable
+    - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Install mold
+      uses: rui314/setup-mold@v1
+    - name: Enable mold on Linux
+      run: |
+        mkdir .cargo
+        echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
+        echo "linker = \"clang\"" >> .cargo/config.toml
+        echo "rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/local/bin/mold\"]" >> .cargo/config.toml
+      shell: bash
+    - name: Install nextest
+      uses: taiki-e/install-action@nextest
+    - name: Build
+      run: cargo build --tests --workspace --locked --no-default-features
+    - name: Run tests
+      # Profile "ci" is configured in .config/nextest.toml
+      run: cargo nextest run --workspace --profile ci --locked --no-default-features
+    - name: Upload test report
+      uses: actions/upload-artifact@v4
+      with:
+        name: junit-${{ matrix.os }}.xml
+        path: target/nextest/ci/junit.xml
