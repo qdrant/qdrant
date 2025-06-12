@@ -615,6 +615,11 @@ async fn recover_partial_snapshot(
 
     let recovery_lock = match try_take_recovery_lock_future.await {
         Ok(recovery_lock) => recovery_lock,
+
+        Err(StorageError::ShardUnavailable { .. }) => {
+            return helpers::already_in_progress_response();
+        }
+
         Err(err) => {
             return helpers::process_response_error(err, tokio::time::Instant::now(), None);
         }
@@ -698,6 +703,11 @@ async fn recover_partial_snapshot_from(
 
     let recovery_lock = match try_take_recovery_lock_future.await {
         Ok(recovery_lock) => recovery_lock,
+
+        Err(StorageError::ShardUnavailable { .. }) => {
+            return helpers::already_in_progress_response();
+        }
+
         Err(err) => {
             return helpers::process_response_error(err, tokio::time::Instant::now(), None);
         }

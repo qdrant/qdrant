@@ -124,6 +124,15 @@ pub fn process_response_error(
     process_response_error_with_inference_usage(err, timing, hardware_usage, None)
 }
 
+pub fn already_in_progress_response() -> HttpResponse {
+    HttpResponse::build(http::StatusCode::SERVICE_UNAVAILABLE).json(ApiResponse::<()> {
+        result: None,
+        status: ApiStatus::AlreadyInProgress,
+        time: 0.0,
+        usage: None,
+    })
+}
+
 /// Response wrapper for a `Future` returning `Result`.
 ///
 /// # Cancel safety
