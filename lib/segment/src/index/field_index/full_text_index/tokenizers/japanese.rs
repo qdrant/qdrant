@@ -76,6 +76,10 @@ mod test {
             sum.as_ref() == MODEL_CHECKSUM,
             "Japanese Tokenizer Model integrity check failed! The file might be modified or corrupted."
         );
+
+        // The init() function is completely deterministic, since the model that gets loaded is included in
+        // qdrant binary file. We test initialization here once to ensure it won't panic on runtime (eg. when a model has changed).
+        let _ = JapaneseTokenizer::init();
     }
 
     #[test]

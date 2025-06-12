@@ -15,12 +15,17 @@ impl MultilingualV2 {
     pub fn tokenize<C: FnMut(Cow<str>)>(input: &str, _config: &TextIndexParams, cb: C) {
         let script = detect_script_of_language(input);
 
-        // If the script of the input is latin, use rust_stemmers.
-        if script_is_latin(script) {
-            Self::tokenize_charabia(input, None, cb);
+        // TODO(multilingual): Replace this with a value from `config`!
+        let stem = false;
+
+        // If the script of the input is latin and we don't need to stem early tokenize to skip language detection
+        // to reduce overhead and improve performance.
+        if script_is_latin(script) && !stem {
+            Self::tokenize_charabia(input, cb);
             return;
         }
 
+        // Detect language to know if we're dealing with Japanese text, or what stemming algorithm to apply.
         let language = detect_language(input);
 
         // If the script of the input is Japanese, use vaporetto to segment.
@@ -29,27 +34,43 @@ impl MultilingualV2 {
             return;
         }
 
-        Self::tokenize_charabia(input, language, cb);
+        // If language detected and stemming is enabled.
+        if let Some(lang) = language {
+            if stem {
+                Self::tokenize_charabia_and_stem(input, lang, cb);
+                return;
+            }
+        }
+
+        // Fallback for other (asian) languages, such as Chinese or Thai.
+        Self::tokenize_charabia(input, cb);
     }
 
-    // Tokenize input using charabia.
-    fn tokenize_charabia<C: FnMut(Cow<str>)>(input: &str, language: Option<Language>, mut cb: C) {
-        // TODO(multilingual): let user decide whether to lemmatize/normalize or not!
+    // Tokenize input using charabia and stem using rust-stemmers.
+    fn tokenize_charabia_and_stem<C: FnMut(Cow<str>)>(input: &str, language: Language, mut cb: C) {
+        let Some(stemming_algorithm) = lang_to_algorithm(language) else {
+            // If no stemming algorithm for the provided language exists, just apply normalization.
+            Self::tokenize_charabia(input, cb);
+            return;
+        };
 
-        let stemmer = language.and_then(lang_to_algorithm).map(Stemmer::create);
+        let _stemmer = Stemmer::create(stemming_algorithm);
 
         for token in input.tokenize().map(|i| {
-            if let Some(_stemmer) = &stemmer {
-                // TODO(multilingual): Find a possible way to pass a Cow here without getting lifetime issues.
-                //
-                // stemmer.stem(i.lemma.as_ref())
+            // TODO(multilingual): Find a possible way to pass a Cow here without getting lifetime issues.
+            //
+            // stemmer.stem(i.lemma.as_ref())
 
-                i.lemma
-            } else {
-                i.lemma
-            }
+            i.lemma
         }) {
             cb(token)
+        }
+    }
+
+    // Tokenize input using charabia without applying stemming.
+    fn tokenize_charabia<C: FnMut(Cow<str>)>(input: &str, mut cb: C) {
+        for token in input.tokenize() {
+            cb(token.lemma)
         }
     }
 }
