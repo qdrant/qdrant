@@ -34,10 +34,10 @@ impl MultilingualV2 {
             return;
         }
 
-        // If language detected and stemming is enabled.
-        if let Some(lang) = language {
+        // If language detected, stemming is enabled and available.
+        if let Some(algo) = language.and_then(lang_to_algorithm) {
             if stem {
-                Self::tokenize_charabia_and_stem(input, lang, cb);
+                Self::tokenize_charabia_and_stem(input, algo, cb);
                 return;
             }
         }
@@ -47,23 +47,13 @@ impl MultilingualV2 {
     }
 
     // Tokenize input using charabia and stem using rust-stemmers.
-    fn tokenize_charabia_and_stem<C: FnMut(Cow<str>)>(input: &str, language: Language, mut cb: C) {
-        let Some(stemming_algorithm) = lang_to_algorithm(language) else {
-            // If no stemming algorithm for the provided language exists, just apply normalization.
-            Self::tokenize_charabia(input, cb);
-            return;
-        };
-
-        let _stemmer = Stemmer::create(stemming_algorithm);
-
-        for token in input.tokenize().map(|i| {
-            // TODO(multilingual): Find a possible way to pass a Cow here without getting lifetime issues.
-            //
-            // stemmer.stem(i.lemma.as_ref())
-
-            i.lemma
-        }) {
-            cb(token)
+    fn tokenize_charabia_and_stem<C>(input: &str, stemming_algo: Algorithm, mut cb: C)
+    where
+        C: FnMut(Cow<str>),
+    {
+        let stemmer = Stemmer::create(stemming_algo);
+        for token in input.tokenize() {
+            cb(stemmer.stem_cow(token.lemma))
         }
     }
 
