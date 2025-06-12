@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::LazyLock;
 
 use vaporetto::{Model, Predictor, Sentence};
 
@@ -15,7 +16,8 @@ const MODEL_CHECKSUM: [u8; 64] = [
 ];
 
 // Global initialization of the Japanese tokenizer.
-static GLOBAL_JAPANESE_TOKENIZER: LazyLock<JapaneseTokenizer> = LazyLock::new(JapaneseTokenizer::init);
+static GLOBAL_JAPANESE_TOKENIZER: LazyLock<JapaneseTokenizer> =
+    LazyLock::new(JapaneseTokenizer::init);
 
 /// Tokenizer for Japanese text using vaporetto tokenizer.
 struct JapaneseTokenizer {
@@ -24,7 +26,7 @@ struct JapaneseTokenizer {
 
 impl JapaneseTokenizer {
     /// Initializes a new `JapaneseTokenizer`. Should only called once and then kept allocated somewhere for efficient reuse.
-    pub fn init() -> Self {
+    fn init() -> Self {
         let model = Model::read_slice(MODEL).unwrap().0;
         let predictor = Predictor::new(model, false).unwrap();
         Self { predictor }
