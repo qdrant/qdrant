@@ -14,10 +14,8 @@ const MODEL_CHECKSUM: [u8; 64] = [
     43, 203,
 ];
 
-lazy_static::lazy_static! {
-    // Global initialization of the Japanese tokenizer.
-    static ref GLOBAL_JAPANESE_TOKENIZER: JapaneseTokenizer = JapaneseTokenizer::init();
-}
+// Global initialization of the Japanese tokenizer.
+static GLOBAL_JAPANESE_TOKENIZER: LazyLock<JapaneseTokenizer> = LazyLock::new(JapaneseTokenizer::init);
 
 /// Tokenizer for Japanese text using vaporetto tokenizer.
 struct JapaneseTokenizer {
