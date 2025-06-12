@@ -1,9 +1,7 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use parking_lot::RwLock;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rstest::rstest;
