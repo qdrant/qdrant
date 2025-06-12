@@ -4,8 +4,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-#[cfg(feature = "rocksdb")]
-use rocksdb::DB;
 use rstest::rstest;
 use serde_json::Value;
 use tempfile::{Builder, TempDir};
@@ -21,9 +19,13 @@ use crate::index::field_index::full_text_index::inverted_index::{
     Document, InvertedIndex, ParsedQuery, TokenId, TokenSet,
 };
 use crate::index::field_index::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
-use crate::index::field_index::full_text_index::mutable_text_index::{self, MutableFullTextIndex};
+#[cfg(feature = "rocksdb")]
+use crate::index::field_index::full_text_index::mutable_text_index;
+use crate::index::field_index::full_text_index::mutable_text_index::MutableFullTextIndex;
+#[cfg(feature = "rocksdb")]
+use crate::index::field_index::full_text_index::text_index::FullTextIndexBuilder;
 use crate::index::field_index::full_text_index::text_index::{
-    FullTextGridstoreIndexBuilder, FullTextIndex, FullTextIndexBuilder,
+    FullTextGridstoreIndexBuilder, FullTextIndex,
 };
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 use crate::json_path::JsonPath;

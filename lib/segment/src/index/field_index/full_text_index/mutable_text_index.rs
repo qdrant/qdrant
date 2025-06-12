@@ -42,6 +42,7 @@ impl Storage {
     #[cfg(test)]
     pub fn get_value(&self, idx: PointOffsetType) -> Option<Vec<String>> {
         match self {
+            #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db) => {
                 let db_idx = FullTextIndex::store_key(idx);
                 db.get_pinned(&db_idx, |bytes| {
