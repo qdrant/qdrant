@@ -1,6 +1,6 @@
 use common::types::PointOffsetType;
 
-use super::inverted_index::InvertedIndex;
+use super::InvertedIndex;
 use super::mutable_inverted_index::MutableInvertedIndex;
 #[cfg(feature = "rocksdb")]
 use crate::common::operation_error::OperationResult;

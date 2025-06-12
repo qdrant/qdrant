@@ -5,10 +5,10 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use super::immutable_inverted_index::ImmutableInvertedIndex;
+use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
+use super::inverted_index::mmap_inverted_index::MmapInvertedIndex;
+use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::inverted_index::{Document, InvertedIndex, TokenSet};
-use super::mmap_inverted_index::MmapInvertedIndex;
-use super::mutable_inverted_index::MutableInvertedIndex;
 use super::text_index::FullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::Flusher;

@@ -8,9 +8,9 @@ use gridstore::config::StorageOptions;
 use itertools::Itertools;
 use parking_lot::RwLock;
 
+use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
+use super::inverted_index::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::inverted_index::{Document, InvertedIndex, TokenSet};
-use super::mutable_inverted_index::MutableInvertedIndex;
-use super::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::text_index::FullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::Flusher;

@@ -3,21 +3,21 @@ use std::collections::HashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
-use super::inverted_index::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator;
+use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::operation_error::OperationResult;
 
 #[cfg_attr(test, derive(Clone))]
 pub struct MutableInvertedIndex {
     pub(super) postings: Vec<PostingList>,
-    pub(super) vocab: HashMap<String, TokenId>,
+    pub vocab: HashMap<String, TokenId>,
     pub(super) point_to_tokens: Vec<Option<TokenSet>>,
 
     /// Optional additional structure to store positional information of tokens in the documents.
     ///
     /// Must be enabled explicitly.
-    pub(super) point_to_doc: Option<Vec<Option<Document>>>,
+    pub point_to_doc: Option<Vec<Option<Document>>>,
     pub(super) points_count: usize,
 }
 
