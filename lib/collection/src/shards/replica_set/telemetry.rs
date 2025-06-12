@@ -31,6 +31,7 @@ impl ShardReplicaSet {
                 ongoing_create_snapshot_requests: self
                     .partial_snapshot_meta
                     .ongoing_create_snapshot_requests(),
+                is_recovering: self.partial_snapshot_meta.is_recovery_lock_taken(),
                 recovery_timestamp: self.partial_snapshot_meta.recovery_timestamp(),
             }),
         }

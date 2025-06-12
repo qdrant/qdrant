@@ -80,5 +80,7 @@ pub struct PartialSnapshotTelemetry {
     #[anonymize(false)]
     pub ongoing_create_snapshot_requests: usize,
     #[anonymize(false)]
+    pub is_recovering: bool,
+    #[anonymize(false)]
     pub recovery_timestamp: u64,
 }
