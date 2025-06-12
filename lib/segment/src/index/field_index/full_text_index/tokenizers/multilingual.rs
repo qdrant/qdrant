@@ -125,11 +125,11 @@ mod test {
         let input = "日本語のテキストです。Qdrantのコードで単体テストで使用されています。";
         assert_eq!(detect_language(input), Some(Language::Jpn));
 
-        let input = "This is english text. It's being used wihtin Qdrant's code in a unit test.";
+        let input = "This is english text. It's being used within Qdrant's code in a unit test.";
         assert_eq!(detect_language(input), Some(Language::Eng));
 
         let input =
-            "Das ist ein deutscher Text. Er wird in Qdrants code in einem unit Test benutzt.";
+            "Das ist ein deutscher Text. Er wird in Qdrants code in einem unit Test benutzt."; // codespell:ignore ist
         assert_eq!(detect_language(input), Some(Language::Deu));
 
         // Chinese traditional
@@ -146,11 +146,11 @@ mod test {
         let input = "日本語のテキストです。Qdrantのコードで単体テストで使用されています。";
         assert!(!script_is_latin(detect_script_of_language(input)));
 
-        let input = "This is english text. It's being used wihtin Qdrant's code in a unit test.";
+        let input = "This is english text. It's being used within Qdrant's code in a unit test.";
         assert!(script_is_latin(detect_script_of_language(input)));
 
         let input =
-            "Das ist ein deutscher Text. Er wird in Qdrants code in einem unit Test benutzt.";
+            "Das ist ein deutscher Text. Er wird in Qdrants code in einem unit Test benutzt."; // codespell:ignore ist
         assert!(script_is_latin(detect_script_of_language(input)));
     }
 }
