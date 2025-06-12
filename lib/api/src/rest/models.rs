@@ -36,6 +36,7 @@ pub enum ApiStatus {
     Ok,
     Error(String),
     Accepted,
+    AlreadyInProgress,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
