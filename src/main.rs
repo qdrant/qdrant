@@ -19,12 +19,12 @@ use std::time::Duration;
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
 use ::common::flags::{feature_flags, init_feature_flags};
-use memory::checkfs::{check_fs_info, check_mmap_functionality};
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
+use memory::checkfs::{check_fs_info, check_mmap_functionality};
 use slog::Drain;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
@@ -216,21 +216,35 @@ fn main() -> anyhow::Result<()> {
 
     // Check if the filesystem is compatible with Qdrant
     match check_fs_info(&settings.storage.storage_path) {
-        memory::checkfs::FsCheckResult::Good => {}, // Do nothing
-        memory::checkfs::FsCheckResult::Unknown(details) => match check_mmap_functionality(&settings.storage.storage_path) {
-            Ok(true) => {
-                log::warn!("Unable to detect filesystem type for storage path {}. Filesystem might not be compatible with Qdrant. Details: {details}", settings.storage.storage_path);
-            },
-            Ok(false) => {
-                log::error!("Filesystem check failed for storage path {}. Details: {details}", settings.storage.storage_path);
-            },
-            Err(e) => {
-                log::error!("Unable to check mmap functionality for storage path {}. Details: {details}, error: {e}", settings.storage.storage_path);
-            },
-        },
+        memory::checkfs::FsCheckResult::Good => {} // Do nothing
+        memory::checkfs::FsCheckResult::Unknown(details) => {
+            match check_mmap_functionality(&settings.storage.storage_path) {
+                Ok(true) => {
+                    log::warn!(
+                        "Unable to detect filesystem type for storage path {}. Filesystem might not be compatible with Qdrant. Details: {details}",
+                        settings.storage.storage_path
+                    );
+                }
+                Ok(false) => {
+                    log::error!(
+                        "Filesystem check failed for storage path {}. Details: {details}",
+                        settings.storage.storage_path
+                    );
+                }
+                Err(e) => {
+                    log::error!(
+                        "Unable to check mmap functionality for storage path {}. Details: {details}, error: {e}",
+                        settings.storage.storage_path
+                    );
+                }
+            }
+        }
         memory::checkfs::FsCheckResult::Bad(details) => {
-            log::error!("Filesystem check failed for storage path {}. Details: {details}", settings.storage.storage_path);
-        },
+            log::error!(
+                "Filesystem check failed for storage path {}. Details: {details}",
+                settings.storage.storage_path
+            );
+        }
     }
 
     // Report feature flags that are enabled for easier debugging

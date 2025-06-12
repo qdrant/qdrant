@@ -70,11 +70,11 @@ fn get_filesystem_type(path: impl AsRef<Path>) -> Result<FsType, String> {
 /// Check filesystem information to identify known non-POSIX filesystems
 pub fn check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
     let path = path.as_ref();
-    
+
     let Ok(fs_type) = get_filesystem_type(path) else {
-        return FsCheckResult::Unknown(format!(
-            "Failed to get filesystem type for path: {path:?}",
-        ));
+        return FsCheckResult::Unknown(
+            format!("Failed to get filesystem type for path: {path:?}",),
+        );
     };
     match fs_type {
         FsType::Ext234 => FsCheckResult::Good,
