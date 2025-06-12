@@ -53,14 +53,28 @@ impl MultilingualV2 {
     {
         let stemmer = Stemmer::create(stemming_algo);
         for token in input.tokenize() {
-            cb(stemmer.stem_cow(token.lemma))
+            let base = stemmer.stem_cow(token.lemma);
+
+            // Prevent whitespaces treated as separate tokens in the output.
+            if base.split_ascii_whitespace().next().is_none() {
+                continue;
+            }
+
+            cb(base)
         }
     }
 
     // Tokenize input using charabia without applying stemming.
     fn tokenize_charabia<C: FnMut(Cow<str>)>(input: &str, mut cb: C) {
         for token in input.tokenize() {
-            cb(token.lemma)
+            let lemma = token.lemma;
+
+            // Prevent whitespaces treated as separate tokens in the output.
+            if lemma.split_ascii_whitespace().next().is_none() {
+                continue;
+            }
+
+            cb(lemma)
         }
     }
 }
@@ -82,6 +96,7 @@ fn script_is_latin(script: Script) -> bool {
 }
 
 /// Languages that are supported by rust-stemmers and thus should be used in language detection white-list.
+/// Also includes Languages that we manually need to check against, such as Japanese and Chinese.
 const SUPPORTED_LANGUAGES: &[charabia::Language] = &[
     charabia::Language::Eng,
     charabia::Language::Rus,
@@ -99,6 +114,7 @@ const SUPPORTED_LANGUAGES: &[charabia::Language] = &[
     charabia::Language::Tam,
     charabia::Language::Ron,
     charabia::Language::Cmn,
+    charabia::Language::Jpn,
 ];
 
 fn lang_to_algorithm(lang: charabia::Language) -> Option<Algorithm> {
@@ -163,5 +179,32 @@ mod test {
         let input =
             "Das ist ein deutscher Text. Er wird in Qdrants code in einem unit Test benutzt."; // codespell:ignore ist
         assert!(script_is_latin(detect_script_of_language(input)));
+    }
+
+    fn assert_tokenization(inp: &str, expected: &str) {
+        let default_params = TextIndexParams::default();
+        let mut out = vec![];
+        MultilingualV2::tokenize(inp, &default_params, |i| out.push(i.to_string()));
+        let expected: Vec<_> = expected.split('|').collect();
+        for i in out.iter().zip(expected.iter()) {
+            assert_eq!(i.0, i.1);
+        }
+        assert_eq!(out, expected)
+    }
+
+    #[test]
+    fn test_multilingual_tokenization() {
+        assert_tokenization("This is a test", "this|is|a|test");
+        assert_tokenization(
+            "This is english text. It's being used within Qdrant's code in a unit test.",
+            "this|is|english|text|. |it|'|s|being|used|within|qdrant|'|s|code|in|a|unit|test|.",
+        );
+
+        assert_tokenization("Dies ist ein Test", "dies|ist|ein|test"); // codespell:ignore ist
+        assert_tokenization("これはテストです", "これ|は|テスト|です");
+        assert_tokenization(
+            "日本語のテキストです。Qdrantのコードで単体テストで使用されています。",
+            "日本|語|の|テキスト|です|。|Qdrant|の|コード|で|単体|テスト|で|使用|さ|れ|て|い|ます|。",
+        );
     }
 }
