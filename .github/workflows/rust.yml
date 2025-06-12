@@ -146,8 +146,3 @@ jobs:
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --profile ci --locked --no-default-features
-    - name: Upload test report
-      uses: actions/upload-artifact@v4
-      with:
-        name: junit-${{ matrix.os }}-no-rocksdb.xml
-        path: target/nextest/ci/junit.xml
