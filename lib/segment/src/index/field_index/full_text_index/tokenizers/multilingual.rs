@@ -18,8 +18,8 @@ impl MultilingualV2 {
         // TODO(multilingual): Replace this with a value from `config`!
         let stem = false;
 
-        // If the script of the input is latin and we don't need to stem early tokenize to skip language detection
-        // to reduce overhead and improve performance.
+        // If the script of the input is latin and we don't need to stem early, tokenize as-is. 
+        // This skips language detection, reduces overhead, and improves performance.
         if script_is_latin(script) && !stem {
             Self::tokenize_charabia(input, cb);
             return;
