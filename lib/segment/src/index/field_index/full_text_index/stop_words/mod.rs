@@ -62,9 +62,9 @@ pub use swedish::SWEDISH_STOPWORDS;
 pub use tajik::TAJIK_STOPWORDS;
 pub use turkish::TURKISH_STOPWORDS;
 
+#[derive(Debug, Clone, Default)]
 pub struct StopwordsFilter {
     stopwords: HashSet<String>,
-    lowercase: bool,
 }
 
 impl StopwordsFilter {
@@ -99,19 +99,12 @@ impl StopwordsFilter {
             }
         }
 
-        Self {
-            stopwords,
-            lowercase,
-        }
+        Self { stopwords }
     }
 
     /// Check if a token is a stopword
     pub fn is_stopword(&self, token: &str) -> bool {
-        if self.lowercase {
-            self.stopwords.contains(&token.to_lowercase())
-        } else {
-            self.stopwords.contains(token)
-        }
+        self.stopwords.contains(token)
     }
 
     /// Add stopwords for a specific language

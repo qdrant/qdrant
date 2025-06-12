@@ -19,6 +19,7 @@ use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 pub struct MmapFullTextIndex {
     pub(super) inverted_index: MmapInvertedIndex,
     pub(super) config: TextIndexParams,
+    pub(super) tokenizer: Tokenizer,
 }
 
 impl MmapFullTextIndex {
@@ -26,12 +27,13 @@ impl MmapFullTextIndex {
         let populate = !is_on_disk;
 
         let has_positions = config.phrase_matching == Some(true);
+        let tokenizer = Tokenizer::new(&config);
 
         let inverted_index = MmapInvertedIndex::open(path, populate, has_positions)?;
-
         Ok(Self {
             inverted_index,
             config,
+            tokenizer,
         })
     }
 
@@ -84,16 +86,19 @@ pub struct FullTextMmapIndexBuilder {
     mutable_index: MutableInvertedIndex,
     config: TextIndexParams,
     is_on_disk: bool,
+    tokenizer: Tokenizer,
 }
 
 impl FullTextMmapIndexBuilder {
     pub fn new(path: PathBuf, config: TextIndexParams, is_on_disk: bool) -> Self {
         let with_positions = config.phrase_matching == Some(true);
+        let tokenizer = Tokenizer::new(&config);
         Self {
             path,
             mutable_index: MutableInvertedIndex::new(with_positions),
             config,
             is_on_disk,
+            tokenizer,
         }
     }
 }
@@ -121,7 +126,7 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
         let mut str_tokens = Vec::new();
 
         for value in values {
-            Tokenizer::tokenize_doc(&value, &self.config, |token| {
+            self.tokenizer.tokenize_doc(&value, |token| {
                 str_tokens.push(token.to_owned());
             });
         }
@@ -169,6 +174,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
             mutable_index,
             config,
             is_on_disk,
+            tokenizer,
         } = self;
 
         let immutable = ImmutableInvertedIndex::from(mutable_index);
@@ -184,6 +190,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         let mmap_index = MmapFullTextIndex {
             inverted_index,
             config,
+            tokenizer,
         };
 
         Ok(FullTextIndex::Mmap(Box::new(mmap_index)))

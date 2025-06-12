@@ -15,10 +15,12 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
+use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 
 pub struct ImmutableFullTextIndex {
     pub(super) inverted_index: ImmutableInvertedIndex,
     pub(super) config: TextIndexParams,
+    pub(super) tokenizer: Tokenizer,
     // Backing storage, source of state, persists deletions
     storage: Storage,
 }
@@ -38,9 +40,11 @@ impl ImmutableFullTextIndex {
         db_wrapper: DatabaseColumnScheduledDeleteWrapper,
         config: TextIndexParams,
     ) -> Self {
+        let tokenizer = Tokenizer::new(&config);
         Self {
             inverted_index: ImmutableInvertedIndex::ids_empty(),
             config,
+            tokenizer,
             storage: Storage::RocksDb(db_wrapper),
         }
     }
@@ -53,10 +57,14 @@ impl ImmutableFullTextIndex {
             MmapPostingsEnum::Ids(_) => ImmutableInvertedIndex::ids_empty(),
             MmapPostingsEnum::WithPositions(_) => ImmutableInvertedIndex::positions_empty(),
         };
+        // ToDo(rocksdb): this is a duplication of tokenizer,
+        // ToDo(rocksdb): But once the RocksDB is removed, we can always use the tokenizer from the index.
+        let tokenizer = index.tokenizer.clone();
         Self {
             inverted_index,
             config: index.config.clone(),
             storage: Storage::Mmap(Box::new(index)),
+            tokenizer,
         }
     }
 

@@ -7719,15 +7719,16 @@
             "items": {
               "$ref": "#/components/schemas/Language"
             },
-            "uniqueItems": true
+            "uniqueItems": true,
+            "nullable": true
           },
           "custom": {
-            "default": [],
             "type": "array",
             "items": {
               "type": "string"
             },
-            "uniqueItems": true
+            "uniqueItems": true,
+            "nullable": true
           }
         }
       },
