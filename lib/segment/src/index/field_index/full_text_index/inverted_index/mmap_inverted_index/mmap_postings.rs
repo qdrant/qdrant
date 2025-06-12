@@ -18,7 +18,7 @@ use posting_list::{
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
-use crate::index::field_index::full_text_index::positions::Positions;
+use crate::index::field_index::full_text_index::inverted_index::positions::Positions;
 
 const ALIGNMENT: usize = 4;
 

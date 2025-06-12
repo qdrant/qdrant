@@ -1,3 +1,5 @@
+mod test_congruence;
+
 use common::types::PointOffsetType;
 use tempfile::Builder;
 
@@ -5,7 +7,7 @@ use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::index::field_index::ValueIndexer;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 
-fn get_texts() -> Vec<String> {
+fn movie_titles() -> Vec<String> {
     vec![
         "2430 A.D.".to_string(),
         "The Acquisitive Chuckle".to_string(),
@@ -168,7 +170,7 @@ fn test_prefix_search() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    let texts = get_texts();
+    let texts = movie_titles();
 
     for (i, text) in texts.iter().enumerate() {
         index
