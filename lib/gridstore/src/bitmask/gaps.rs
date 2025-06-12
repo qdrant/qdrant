@@ -6,6 +6,7 @@ use memory::fadvise::clear_disk_cache;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{self, MmapSlice};
+use priority_queue::PriorityQueue;
 
 use super::{RegionId, StorageConfig};
 
@@ -79,6 +80,7 @@ pub(super) struct BitmaskGaps {
     pub path: PathBuf,
     config: StorageConfig,
     mmap_slice: MmapSlice<RegionGaps>,
+    pq: PriorityQueue<RegionId, u16>,
 }
 
 impl BitmaskGaps {
@@ -97,7 +99,8 @@ impl BitmaskGaps {
     ) -> Self {
         let path = Self::file_path(dir);
 
-        let length_in_bytes = iter.len() * size_of::<RegionGaps>();
+        let iter_len = iter.len();
+        let length_in_bytes = iter_len * size_of::<RegionGaps>();
         create_and_ensure_length(&path, length_in_bytes).unwrap();
 
         let mmap = open_write_mmap(&path, AdviceSetting::from(Advice::Normal), true).unwrap();
@@ -107,10 +110,15 @@ impl BitmaskGaps {
 
         mmap_slice.fill_with(|| iter.next().unwrap());
 
+        let pq = (0u32..)
+            .zip(mmap_slice.iter().map(|gaps: &RegionGaps| gaps.max))
+            .collect();
+
         Self {
             path,
             config,
             mmap_slice,
+            pq,
         }
     }
 
@@ -120,10 +128,15 @@ impl BitmaskGaps {
             .map_err(|err| err.to_string())?;
         let mmap_slice = unsafe { MmapSlice::try_from(mmap) }.map_err(|err| err.to_string())?;
 
+        let pq = (0u32..)
+            .zip(mmap_slice.iter().map(|gaps: &RegionGaps| gaps.max))
+            .collect();
+
         Ok(Self {
             path,
             config,
             mmap_slice,
+            pq,
         })
     }
 
@@ -156,6 +169,9 @@ impl BitmaskGaps {
 
         self.mmap_slice[prev_len..].fill_with(|| iter.next().unwrap());
 
+        let max_gaps = self.mmap_slice[prev_len..].iter().map(|gap| gap.max);
+        self.pq.extend((prev_len as RegionId..).zip(max_gaps));
+
         Ok(())
     }
 
@@ -172,12 +188,18 @@ impl BitmaskGaps {
         self.mmap_slice.len()
     }
 
+    #[cfg(test)]
     pub fn get(&self, idx: usize) -> Option<&RegionGaps> {
+        debug_assert!(
+            self.mmap_slice.get(idx).map(|gaps| gaps.max)
+                == self.pq.get_priority(&(idx as RegionId)).copied()
+        );
         self.mmap_slice.get(idx)
     }
 
-    pub fn get_mut(&mut self, idx: usize) -> &mut RegionGaps {
-        &mut self.mmap_slice[idx]
+    pub fn update(&mut self, region_id: RegionId, new_gaps: RegionGaps) {
+        self.pq.change_priority(&region_id, new_gaps.max);
+        self.mmap_slice[region_id as usize] = new_gaps;
     }
 
     pub fn as_slice(&self) -> &[RegionGaps] {
@@ -187,31 +209,19 @@ impl BitmaskGaps {
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks.
     /// Returns the range of regions where the gap is.
     pub fn find_fitting_gap(&self, num_blocks: u32) -> Option<Range<RegionId>> {
-        if self.mmap_slice.len() == 1 {
-            return if self.get(0).unwrap().max as usize >= num_blocks as usize {
-                Some(0..1)
-            } else {
-                None
-            };
-        }
-
         // try to find gap in the minimum regions needed
         let regions_needed = num_blocks.div_ceil(self.config.region_size_blocks as u32) as usize;
 
         let fits_in_min_regions = match regions_needed {
             0 => unreachable!("num_blocks should be at least 1"),
             // we might not need to merge any regions, just check the `max` field
-            1 => self
-                .as_slice()
-                .iter()
-                .enumerate()
-                .find_map(|(region_id, gap)| {
-                    if gap.max as usize >= num_blocks as usize {
-                        Some(region_id as RegionId..(region_id + 1) as RegionId)
-                    } else {
-                        None
-                    }
-                }),
+            1 => self.pq.peek().and_then(|(&region_id, &max_gap)| {
+                if max_gap as usize >= num_blocks as usize {
+                    Some(region_id..region_id + 1)
+                } else {
+                    None
+                }
+            }),
             // we need to merge at least 2 regions
             window_size => self.find_merged_gap(window_size, num_blocks),
         };
@@ -405,10 +415,8 @@ mod tests {
 
         let temp_dir = tempdir().unwrap();
         let config = StorageOptions::default().try_into().unwrap();
-        let mut bitmask_gaps =
-            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
+        let bitmask_gaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
         assert!(bitmask_gaps.mmap_slice.len() >= 3);
-        bitmask_gaps.mmap_slice[0..3].clone_from_slice(&gaps[..]);
 
         assert!(
             bitmask_gaps

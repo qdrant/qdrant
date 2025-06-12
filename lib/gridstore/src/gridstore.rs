@@ -821,7 +821,9 @@ mod tests {
 
     #[test]
     fn test_update_single_payload() {
-        let (_dir, mut storage) = empty_storage();
+        // One page spans one region to restrict the priority queue to choose the same region
+        let (_dir, mut storage) =
+            empty_storage_sized(DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS);
 
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -834,12 +836,13 @@ mod tests {
                 );
 
                 storage.put_value(0, &payload, hw_counter_ref).unwrap();
+
                 assert_eq!(storage.pages.len(), 1);
                 assert_eq!(storage.tracker.read().mapping_len(), 1);
 
-                let page_mapping = storage.get_pointer(0).unwrap();
-                assert_eq!(page_mapping.page_id, 0); // first page
-                assert_eq!(page_mapping.block_offset, expected_block_offset);
+                let pointer = storage.get_pointer(0).unwrap();
+                assert_eq!(pointer.page_id, 0); // first page
+                assert_eq!(pointer.block_offset, expected_block_offset);
 
                 let hw_counter = HardwareCounterCell::new();
                 let stored_payload = storage.get_value(0, &hw_counter);

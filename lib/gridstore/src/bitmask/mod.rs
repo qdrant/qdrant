@@ -403,11 +403,11 @@ impl Bitmask {
             let region_start = region_id * self.config.region_size_blocks;
             let region_end = region_start + self.config.region_size_blocks;
 
-            let bitslice = &self.bitslice[region_start..region_end];
+            let region_bitslice = &self.bitslice[region_start..region_end];
 
-            let gaps = Self::calculate_gaps(bitslice, self.config.region_size_blocks);
+            let gaps = Self::calculate_gaps(region_bitslice, self.config.region_size_blocks);
 
-            *self.regions_gaps.get_mut(region_id) = gaps;
+            self.regions_gaps.update(region_id as RegionId, gaps);
         }
     }
 
@@ -578,9 +578,9 @@ mod tests {
         };
 
         let mut bitmask = super::Bitmask::create(dir.path(), options.try_into().unwrap()).unwrap();
-        bitmask.cover_new_page().unwrap();
 
-        assert_eq!(bitmask.bitslice.len() as u32, blocks_per_page * 2);
+        // --- Check with a single page ---
+        assert_eq!(bitmask.bitslice.len() as u32, blocks_per_page);
 
         // 1..10
         bitmask.mark_blocks(0, 1, 9, true);
@@ -590,9 +590,6 @@ mod tests {
 
         // 30..blocks_per_page
         bitmask.mark_blocks(0, 30, blocks_per_page - 30, true);
-
-        // blocks_per_page..blocks_per_page + 1
-        bitmask.mark_blocks(1, 0, 1, true);
 
         let (page_id, block_offset) = bitmask.find_available_blocks(1).unwrap();
         assert_eq!(block_offset, 0);
@@ -610,12 +607,20 @@ mod tests {
         assert_eq!(block_offset, 20);
         assert_eq!(page_id, 0);
 
-        // first free block of the next page
+        // --- Check with an extra page ---
+        bitmask.cover_new_page().unwrap();
+
+        assert_eq!(bitmask.bitslice.len() as u32, blocks_per_page * 2);
+
+        // blocks_per_page..blocks_per_page + 1
+        bitmask.mark_blocks(1, 0, 1, true);
+
+        // first free block of the second page
         let (page_id, block_offset) = bitmask.find_available_blocks(30).unwrap();
         assert_eq!(block_offset, 1);
         assert_eq!(page_id, 1);
 
-        // not fitting cell
+        // no fitting cell
         let found_large = bitmask.find_available_blocks(blocks_per_page);
         assert_eq!(found_large, None);
     }

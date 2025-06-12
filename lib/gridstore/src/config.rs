@@ -31,7 +31,7 @@ pub struct StorageOptions {
     /// Default is 128 bytes
     pub block_size_bytes: Option<usize>,
 
-    /// Size of a region in blocks
+    /// Size of a region in blocks, can't be bigger than [`u16::MAX`]
     ///
     /// Default is 8192 blocks
     pub region_size_blocks: Option<u16>,
