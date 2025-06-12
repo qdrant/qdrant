@@ -6,12 +6,12 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
-use rocksdb::DB;
 use rstest::rstest;
 use serde_json::Value;
 use tempfile::{Builder, TempDir};
 
 use crate::common::operation_error::OperationResult;
+#[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::data_types::index::TextIndexParams;
 use crate::fixtures::payload_fixtures::random_full_text_payload;
@@ -27,6 +27,11 @@ use crate::index::field_index::full_text_index::text_index::{
 };
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 use crate::json_path::JsonPath;
+
+#[cfg(feature = "rocksdb")]
+type Database = std::sync::Arc<parking_lot::RwLock<rocksdb::DB>>;
+#[cfg(not(feature = "rocksdb"))]
+type Database = ();
 
 const FIELD_NAME: &str = "test";
 const TYPES: &[IndexType] = &[
@@ -130,7 +135,7 @@ impl IndexBuilder {
 fn create_builder(
     index_type: IndexType,
     phrase_matching: bool,
-) -> (IndexBuilder, TempDir, Arc<RwLock<DB>>) {
+) -> (IndexBuilder, TempDir, Database) {
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     #[cfg(feature = "rocksdb")]
     let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
@@ -188,7 +193,7 @@ fn build_random_index(
     index_type: IndexType,
     phrase_matching: bool,
     deleted: bool,
-) -> (FullTextIndex, TempDir, Arc<RwLock<DB>>) {
+) -> (FullTextIndex, TempDir, Database) {
     let mut rnd = StdRng::seed_from_u64(42);
     let (mut builder, temp_dir, db) = create_builder(index_type, phrase_matching);
 
