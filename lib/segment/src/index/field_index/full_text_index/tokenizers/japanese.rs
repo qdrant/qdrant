@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use vaporetto::{Model, Predictor, Sentence};
 
-/// Vaporetto prediction model. Source: https://github.com/daac-tools/vaporetto-models/release
+/// Vaporetto prediction model. Source: https://github.com/daac-tools/vaporetto-models/releases/tag/v0.5.0
 const MODEL: &[u8] = include_bytes!("../../../../../../../tokenizer/bccwj-suw_c1.0.model");
 
 /// Sha512 checksum of the model to ensure integrity and make modifications or corrupt model file easier to detect.
