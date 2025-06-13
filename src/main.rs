@@ -221,7 +221,7 @@ fn main() -> anyhow::Result<()> {
             match check_mmap_functionality(&settings.storage.storage_path) {
                 Ok(true) => {
                     log::warn!(
-                        "Unable to detect filesystem type for storage path {}. Filesystem might not be compatible with Qdrant. Details: {details}",
+                        "There is a potential issue with the filesystem for storage path {}. Details: {details}",
                         settings.storage.storage_path
                     );
                 }

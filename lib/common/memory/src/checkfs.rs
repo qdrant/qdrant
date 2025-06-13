@@ -39,6 +39,7 @@ pub enum FsType {
 }
 
 impl FsType {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     fn from_magic(magic: i64) -> Self {
         match magic {
             0xEF53 => Self::Ext234,
@@ -55,16 +56,48 @@ impl FsType {
             _ => Self::Other,
         }
     }
+
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    fn from_name(name: &str) -> Self {
+        // Names reference is taken from
+        // https://github.com/happyfish100/libfastcommon/blob/7f1a85b025675671905447da13b7727323eb0c28/src/system_info.c#L203
+
+        match name {
+            "ext2" | "ext3" | "ext4" => Self::Ext234,
+            "btrfs" => Self::Btrfs,
+            "xfs" => Self::Xfs,
+            "ntfs" => Self::Ntfs,
+            "nfs" => Self::Nfs,
+            "hfs" => Self::Hfs,
+            "fuse" => Self::Fuse,
+            "overlayfs" => Self::Overlayfs,
+            "squashfs" => Self::Squashfs,
+            "cifs" => Self::Cifs,
+            "tmpfs" => Self::Tmpfs,
+            _ => Self::Other,
+        }
+    }
 }
 
 /// Return a string representing the file system type of a given path.
 /// It uses nix::sys::statfs to retrieve the magic number.
 fn get_filesystem_type(path: impl AsRef<Path>) -> Result<FsType, String> {
     let stat = statfs(path.as_ref()).map_err(|e| format!("statfs failed: {e}"))?;
-    let f_type = stat.filesystem_type().0;
 
-    let fs_type = FsType::from_magic(f_type);
-    Ok(fs_type)
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    {
+        let fs_name = stat.filesystem_type_name();
+        let fs_type = FsType::from_name(fs_name);
+        Ok(fs_type)
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        let f_type = stat.filesystem_type().0;
+
+        let fs_type = FsType::from_magic(f_type);
+        Ok(fs_type)
+    }
 }
 
 /// Check filesystem information to identify known non-POSIX filesystems
@@ -80,19 +113,32 @@ pub fn check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
         FsType::Ext234 => FsCheckResult::Good,
         FsType::Btrfs => FsCheckResult::Good,
         FsType::Xfs => FsCheckResult::Good,
-        FsType::Nfs => FsCheckResult::Bad("NFS is known to be not POSIX compliant".to_string()),
-        FsType::Fuse => FsCheckResult::Bad("fuse is known to be not POSIX compliant".to_string()),
-        FsType::Tmpfs => FsCheckResult::Unknown("tmpfs is not persistent".to_string()),
+        FsType::Nfs => FsCheckResult::Bad(
+            "NFS may cause data corruption due to inconsistent file locking".to_string(),
+        ),
+        FsType::Fuse => FsCheckResult::Bad(
+            "FUSE filesystems may cause data corruption due to caching issues".to_string(),
+        ),
+        FsType::Tmpfs => FsCheckResult::Unknown(
+            "Data will be lost on system restart - tmpfs is memory-based".to_string(),
+        ),
         FsType::Ntfs => FsCheckResult::Good,
-        FsType::Hfs => FsCheckResult::Unknown("hfs compatibility is unknown".to_string()),
-        FsType::Overlayfs => {
-            FsCheckResult::Unknown("Overlayfs is used, likely attached to a container".to_string())
+        FsType::Hfs => {
+            FsCheckResult::Unknown("HFS/HFS+ filesystem support is untested".to_string())
         }
-        FsType::Squashfs => FsCheckResult::Unknown("squashfs is likely read-only".to_string()),
-        FsType::Cifs => FsCheckResult::Bad("cifs is known to be not POSIX compliant".to_string()),
-        FsType::Other => {
-            FsCheckResult::Unknown("unknown filesystem type, compatibility is unknown".to_string())
+        FsType::Overlayfs => FsCheckResult::Unknown(
+            "Container filesystem detected - storage might be lost with container re-creation"
+                .to_string(),
+        ),
+        FsType::Squashfs => {
+            FsCheckResult::Unknown("Read-only filesystem detected - writes will fail".to_string())
         }
+        FsType::Cifs => FsCheckResult::Bad(
+            "CIFS/SMB may cause data corruption due to inconsistent file locking".to_string(),
+        ),
+        FsType::Other => FsCheckResult::Unknown(
+            "Unrecognized filesystem - cannot guarantee data safety".to_string(),
+        ),
     }
 }
 
