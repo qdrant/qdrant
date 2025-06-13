@@ -61,11 +61,6 @@ impl PointerUpdates {
         self.latest_is_set = false;
     }
 
-    #[cfg(test)]
-    fn is_set(&self) -> bool {
-        self.latest_is_set
-    }
-
     /// Set is Some, Unset is None
     fn latest(&self) -> Option<ValuePointer> {
         if self.latest_is_set {
@@ -208,7 +203,7 @@ impl Tracker {
     }
 
     pub fn pointer_count(&self) -> u32 {
-        self.header.next_pointer_offset
+        self.next_pointer_offset
     }
 
     /// Write the current page header to the memory map
@@ -251,24 +246,9 @@ impl Tracker {
     /// Excludes None values
     #[cfg(test)]
     pub fn mapping_len(&self) -> usize {
-        let mut pending: ahash::AHashSet<_> = self
-            .pending_updates
-            .iter()
-            .filter_map(|(k, v)| v.is_set().then_some(*k))
-            .collect();
-
-        let persisted = (0..self.header.next_pointer_offset).filter_map(|i| {
-            let start_offset =
-                size_of::<TrackerHeader>() + i as usize * size_of::<Option<ValuePointer>>();
-            let end_offset = start_offset + size_of::<Option<ValuePointer>>();
-            let page_pointer: &Option<ValuePointer> =
-                transmute_from_u8(&self.mmap[start_offset..end_offset]);
-            page_pointer.is_some().then_some(i as PointOffset)
-        });
-
-        pending.extend(persisted);
-
-        pending.len()
+        (0..self.next_pointer_offset)
+            .filter(|i| self.get(*i).is_some())
+            .count()
     }
 
     /// Iterate over the pointers in the tracker
