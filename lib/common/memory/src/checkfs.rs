@@ -108,6 +108,7 @@ fn get_filesystem_type(path: impl AsRef<Path>) -> Result<FsType, String> {
 }
 
 /// Check filesystem information to identify known non-POSIX filesystems
+#[cfg(fs_type_check_supported)]
 pub fn _check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
     let path = path.as_ref();
 
