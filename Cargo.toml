@@ -276,6 +276,7 @@ codegen-units = 1
 # and we don't want the huge binary sizes from debug builds.
 [profile.ci]
 inherits = "release"
+debug-assertions = true
 lto = false
 opt-level = 0
 

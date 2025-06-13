@@ -28,8 +28,8 @@ use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText,
-    PayloadKeyType, RangeInterface, UuidIntType, UuidPayloadType,
+    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, PayloadKeyType,
+    RangeInterface, UuidIntType, UuidPayloadType,
 };
 
 pub trait PayloadFieldIndex {
@@ -180,17 +180,8 @@ impl FieldIndex {
             FieldIndex::GeoIndex(_) => None,
             FieldIndex::BoolIndex(_) => None,
             FieldIndex::FullTextIndex(full_text_index) => match &condition.r#match {
-                Some(Match::Text(MatchText { text })) => {
-                    let Some(query) = full_text_index.parse_query(text, hw_counter) else {
-                        return Some(false);
-                    };
-                    for value in FullTextIndex::get_values(payload_value) {
-                        let document = full_text_index.parse_document(&value, hw_counter);
-                        if query.check_match(&document) {
-                            return Some(true);
-                        }
-                    }
-                    Some(false)
+                Some(Match::Text(match_text)) => {
+                    Some(full_text_index.check_payload_match(payload_value, match_text, hw_counter))
                 }
                 _ => None,
             },

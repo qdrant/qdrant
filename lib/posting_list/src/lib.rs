@@ -44,6 +44,7 @@ pub type IdsPostingList = PostingList<()>;
 pub type IdsPostingListView<'a> = PostingListView<'a, ()>;
 
 pub use builder::PostingBuilder;
+pub use iterator::PostingIterator;
 pub use posting_list::{PostingChunk, PostingElement, PostingList, RemainderPosting};
 pub use value_handler::{PostingValue, SizedHandler, UnsizedHandler, ValueHandler};
 pub use view::{PostingListComponents, PostingListView};

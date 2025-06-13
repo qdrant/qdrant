@@ -6,6 +6,7 @@ use tempfile::Builder;
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::index::field_index::ValueIndexer;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
+use crate::types::MatchText;
 
 fn movie_titles() -> Vec<String> {
     vec![
@@ -180,7 +181,9 @@ fn test_prefix_search() {
 
     let res: Vec<_> = index.query("ROBO", &hw_counter).collect();
 
-    let query = index.parse_query("ROBO", &hw_counter).unwrap();
+    let query = index
+        .parse_query(&MatchText::from("ROBO"), &hw_counter)
+        .unwrap();
 
     for idx in res.iter().copied() {
         assert!(index.check_match(&query, idx, &hw_counter));
@@ -191,5 +194,9 @@ fn test_prefix_search() {
     let res: Vec<_> = index.query("q231", &hw_counter).collect();
     assert!(res.is_empty());
 
-    assert!(index.parse_query("q231", &hw_counter).is_none());
+    assert!(
+        index
+            .parse_query(&MatchText::from("q231"), &hw_counter)
+            .is_none()
+    );
 }

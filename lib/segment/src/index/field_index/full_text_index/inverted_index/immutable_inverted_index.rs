@@ -14,6 +14,9 @@ use super::positions::Positions;
 use super::postings_iterator::intersect_compressed_postings_iterator;
 use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::full_text_index::inverted_index::postings_iterator::{
+    check_compressed_postings_phrase, intersect_compressed_postings_phrase_iterator,
+};
 
 #[cfg_attr(test, derive(Clone))]
 #[derive(Debug)]
@@ -114,6 +117,53 @@ impl ImmutableInvertedIndex {
             }
         }
     }
+
+    /// Iterate over point ids whose documents contain all given tokens in the same order they are provided
+    pub fn filter_has_phrase<'a>(
+        &'a self,
+        phrase: Document,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        // in case of mmap immutable index, deleted points are still in the postings
+        let is_active = move |idx| {
+            self.point_to_tokens_count
+                .get(idx as usize)
+                .is_some_and(|x| *x > 0)
+        };
+
+        match &self.postings {
+            ImmutablePostings::WithPositions(postings) => {
+                intersect_compressed_postings_phrase_iterator(
+                    phrase,
+                    |token_id| postings.get(*token_id as usize).map(PostingList::view),
+                    is_active,
+                )
+            }
+            // cannot do phrase matching if there's no positional information
+            ImmutablePostings::Ids(_postings) => Box::new(std::iter::empty()),
+        }
+    }
+
+    /// Checks if the point document contains all given tokens in the same order they are provided
+    pub fn check_has_phrase(&self, phrase: &Document, point_id: PointOffsetType) -> bool {
+        // in case of mmap immutable index, deleted points are still in the postings
+        if self
+            .point_to_tokens_count
+            .get(point_id as usize)
+            .is_none_or(|x| *x == 0)
+        {
+            return false;
+        }
+
+        match &self.postings {
+            ImmutablePostings::WithPositions(postings) => {
+                check_compressed_postings_phrase(phrase, point_id, |token_id| {
+                    postings.get(*token_id as usize).map(PostingList::view)
+                })
+            }
+            // cannot do phrase matching if there's no positional information
+            ImmutablePostings::Ids(_postings) => false,
+        }
+    }
 }
 
 impl InvertedIndex for ImmutableInvertedIndex {
@@ -159,6 +209,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match query {
             ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens),
+            ParsedQuery::Phrase(tokens) => self.filter_has_phrase(tokens),
         }
     }
 
@@ -182,6 +233,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
     ) -> bool {
         match parsed_query {
             ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id),
+            ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id),
         }
     }
 
@@ -398,23 +450,24 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
             "postings and vocab must be the same size",
         );
 
-        let point_to_tokens_count = index
-            .point_to_tokens_count
-            .iter()
-            .enumerate()
-            .map(|(i, &n)| {
-                debug_assert!(
-                    index.is_active(i as u32) || n == 0,
-                    "deleted point index {i} has {n} tokens, expected zero",
-                );
-                n
-            })
-            .collect();
+        #[cfg(debug_assertions)]
+        {
+            index
+                .point_to_tokens_count
+                .iter()
+                .enumerate()
+                .for_each(|(i, &n)| {
+                    debug_assert!(
+                        index.is_active(i as u32) || n == 0,
+                        "deleted point index {i} has {n} tokens, expected zero",
+                    );
+                });
+        }
 
         ImmutableInvertedIndex {
             postings,
             vocab,
-            point_to_tokens_count,
+            point_to_tokens_count: index.point_to_tokens_count.to_vec(),
             points_count: index.points_count(),
         }
     }
