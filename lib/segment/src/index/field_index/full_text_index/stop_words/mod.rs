@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use ahash::AHashSet;
 
 use crate::data_types::index::{Language, StopwordsInterface};
 
@@ -64,12 +64,12 @@ pub use turkish::TURKISH_STOPWORDS;
 
 #[derive(Debug, Clone, Default)]
 pub struct StopwordsFilter {
-    stopwords: HashSet<String>,
+    stopwords: AHashSet<String>,
 }
 
 impl StopwordsFilter {
     pub fn new(option: &Option<StopwordsInterface>, lowercase: bool) -> Self {
-        let mut stopwords = HashSet::new();
+        let mut stopwords = AHashSet::new();
 
         if let Some(option) = option {
             match option {
@@ -109,7 +109,7 @@ impl StopwordsFilter {
 
     /// Add stopwords for a specific language
     fn add_language_stopwords(
-        stopwords: &mut HashSet<String>,
+        stopwords: &mut AHashSet<String>,
         language: &Language,
         lowercase: bool,
     ) {
