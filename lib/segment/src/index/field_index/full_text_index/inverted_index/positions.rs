@@ -8,7 +8,6 @@ use crate::index::field_index::full_text_index::inverted_index::{Document, Token
 pub struct Positions(Vec<u32>);
 
 impl Positions {
-    #[cfg(debug_assertions)]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
