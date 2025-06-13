@@ -11,7 +11,7 @@ use std::path::Path;
 #[cfg(fs_type_check_supported)]
 use nix::sys::statfs::statfs;
 
-use crate::madvise::AdviceSetting;
+use crate::madvise::{Advice, AdviceSetting};
 use crate::mmap_ops::{create_and_ensure_length, open_read_mmap, open_write_mmap};
 
 #[derive(Debug)]
@@ -21,13 +21,10 @@ pub enum FsCheckResult {
     Bad(String),
 }
 
-const MAGIC_QDRANT_BYTES: &[u8] = b"qdrant00";
-const MAGIC_FILE_SIZE: usize = 32 * 1024 * 1024; // This is the size, used by vector storage
+const MAGIC_QDRANT_BYTES: &[u8] = b"qdrant";
+const MAGIC_FILE_SIZE: usize = 32 * 1024; // 32 Kb
 
-const MAGIC_BYTES_POSITION_0: usize = 0;
-const MAGIC_BYTES_POSITION_1: usize = 8 * 1024 * 1024; // 8MB
-const MAGIC_BYTES_POSITION_2: usize = 16 * 1024 * 1024; // 16MB
-const MAGIC_BYTES_POSITION_3: usize = 24 * 1024 * 1024; // 24MB
+const MAGIC_BYTES_POSITION: usize = MAGIC_FILE_SIZE / 2; // write in the middle
 
 const MAGIC_FILE_NAME: &str = ".qdrant_fs_check";
 
@@ -170,6 +167,9 @@ pub fn check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
     }
 }
 
+/// This function simulates an access pattern we use in vector storage and gridstore
+/// This check fails, it means that fundamental assumptions about file system are violated
+/// therefore, there are no guarantees that data will be safe
 pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {
     let path = path.as_ref();
     let magic_file_path = path.join(MAGIC_FILE_NAME);
@@ -185,38 +185,43 @@ pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {
 
     let mut mmap = open_write_mmap(&magic_file_path, AdviceSetting::Global, false)?;
 
-    mmap[MAGIC_BYTES_POSITION_0..MAGIC_BYTES_POSITION_0 + MAGIC_QDRANT_BYTES.len()]
-        .copy_from_slice(MAGIC_QDRANT_BYTES);
-    mmap[MAGIC_BYTES_POSITION_1..MAGIC_BYTES_POSITION_1 + MAGIC_QDRANT_BYTES.len()]
-        .copy_from_slice(MAGIC_QDRANT_BYTES);
-    mmap[MAGIC_BYTES_POSITION_2..MAGIC_BYTES_POSITION_2 + MAGIC_QDRANT_BYTES.len()]
-        .copy_from_slice(MAGIC_QDRANT_BYTES);
-    mmap[MAGIC_BYTES_POSITION_3..MAGIC_BYTES_POSITION_3 + MAGIC_QDRANT_BYTES.len()]
+    let mmap_seq = open_read_mmap(
+        &magic_file_path,
+        AdviceSetting::Advice(Advice::Sequential),
+        false,
+    )?;
+
+    mmap[MAGIC_BYTES_POSITION..MAGIC_BYTES_POSITION + MAGIC_QDRANT_BYTES.len()]
         .copy_from_slice(MAGIC_QDRANT_BYTES);
 
     mmap.flush()?;
     drop(mmap);
+    drop(mmap_seq);
 
     if !magic_file_path.exists() {
+        return Ok(false);
+    }
+
+    // Check the size of the file
+    let file_size = magic_file_path.metadata()?.len() as usize;
+    if file_size != MAGIC_FILE_SIZE {
+        log::debug!("File size is not equal to MAGIC_FILE_SIZE: {file_size} != {MAGIC_FILE_SIZE}");
         return Ok(false);
     }
 
     let mmap = open_read_mmap(&magic_file_path, AdviceSetting::Global, false)?;
     let mut result = true;
 
-    result &= mmap[MAGIC_BYTES_POSITION_0..MAGIC_BYTES_POSITION_0 + MAGIC_QDRANT_BYTES.len()]
-        == *MAGIC_QDRANT_BYTES;
-    result &= mmap[MAGIC_BYTES_POSITION_1..MAGIC_BYTES_POSITION_1 + MAGIC_QDRANT_BYTES.len()]
-        == *MAGIC_QDRANT_BYTES;
-    result &= mmap[MAGIC_BYTES_POSITION_2..MAGIC_BYTES_POSITION_2 + MAGIC_QDRANT_BYTES.len()]
-        == *MAGIC_QDRANT_BYTES;
-    result &= mmap[MAGIC_BYTES_POSITION_3..MAGIC_BYTES_POSITION_3 + MAGIC_QDRANT_BYTES.len()]
+    result &= mmap[MAGIC_BYTES_POSITION..MAGIC_BYTES_POSITION + MAGIC_QDRANT_BYTES.len()]
         == *MAGIC_QDRANT_BYTES;
 
     drop(mmap);
 
-    // Remove file
-    std::fs::remove_file(&magic_file_path)?;
+    if result {
+        // If ok, we can remove the file
+        // But if not, we might need to for further investigation
+        std::fs::remove_file(&magic_file_path)?;
+    }
 
     Ok(result)
 }
