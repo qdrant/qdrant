@@ -20,6 +20,7 @@ pub mod hinglish;
 pub mod hungarian;
 pub mod indonesian;
 pub mod italian;
+pub mod japanese;
 pub mod kazakh;
 pub mod nepali;
 pub mod norwegian;
@@ -50,6 +51,7 @@ pub use hinglish::HINGLISH_STOPWORDS;
 pub use hungarian::HUNGARIAN_STOPWORDS;
 pub use indonesian::INDONESIAN_STOPWORDS;
 pub use italian::ITALIAN_STOPWORDS;
+pub use japanese::JAPANESE_STOPWORDS;
 pub use kazakh::KAZAKH_STOPWORDS;
 pub use nepali::NEPALI_STOPWORDS;
 pub use norwegian::NORWEGIAN_STOPWORDS;
@@ -132,6 +134,7 @@ impl StopwordsFilter {
             Language::Hungarian => HUNGARIAN_STOPWORDS,
             Language::Indonesian => INDONESIAN_STOPWORDS,
             Language::Italian => ITALIAN_STOPWORDS,
+            Language::Japanese => JAPANESE_STOPWORDS,
             Language::Kazakh => KAZAKH_STOPWORDS,
             Language::Nepali => NEPALI_STOPWORDS,
             Language::Norwegian => NORWEGIAN_STOPWORDS,
@@ -251,6 +254,7 @@ mod tests {
             (Language::Hungarian, "és"),
             (Language::Indonesian, "dan"),
             (Language::Italian, "e"),
+            (Language::Japanese, "ます"),
             (Language::Kazakh, "жоқ"),
             (Language::Nepali, "र"),
             (Language::Norwegian, "og"),
