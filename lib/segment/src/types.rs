@@ -2021,9 +2021,9 @@ pub struct MatchText {
     pub text: String,
 }
 
-impl From<String> for MatchText {
-    fn from(text: String) -> Self {
-        MatchText { text }
+impl<S: Into<String>> From<S> for MatchText {
+    fn from(text: S) -> Self {
+        MatchText { text: text.into() }
     }
 }
 

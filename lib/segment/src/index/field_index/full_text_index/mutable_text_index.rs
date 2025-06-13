@@ -240,7 +240,6 @@ impl MutableFullTextIndex {
         let tokens = self.inverted_index.register_tokens(&str_tokens);
 
         let phrase_matching = self.config.phrase_matching.unwrap_or_default();
-
         if phrase_matching {
             let document = Document::new(tokens.clone());
             self.inverted_index
@@ -269,7 +268,6 @@ impl MutableFullTextIndex {
                 db_wrapper.put(db_idx, db_document)?;
             }
             Storage::Gridstore(store) => {
-                let hw_counter = HardwareCounterCell::disposable();
                 store
                     .write()
                     .put_value(
@@ -307,6 +305,25 @@ impl MutableFullTextIndex {
         }
 
         Ok(())
+    }
+
+    /// Get the tokenized document stored for a given point ID. Only for testing purposes.
+    #[cfg(test)]
+    pub fn get_doc(&self, idx: PointOffsetType) -> Option<Vec<String>> {
+        match &self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(db) => {
+                let db_idx = FullTextIndex::store_key(idx);
+                db.get_pinned(&db_idx, |bytes| {
+                    FullTextIndex::deserialize_document(bytes).unwrap()
+                })
+                .unwrap()
+            }
+            Storage::Gridstore(gridstore) => gridstore
+                .read()
+                .get_value(idx, &HardwareCounterCell::disposable())
+                .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),
+        }
     }
 }
 

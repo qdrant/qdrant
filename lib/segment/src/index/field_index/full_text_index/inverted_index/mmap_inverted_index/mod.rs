@@ -20,6 +20,9 @@ use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::inverted_index::Document;
+use crate::index::field_index::full_text_index::inverted_index::postings_iterator::{
+    check_compressed_postings_phrase, intersect_compressed_postings_phrase_iterator,
+};
 
 pub(super) mod mmap_postings;
 pub mod mmap_postings_enum;
@@ -227,6 +230,50 @@ impl MmapInvertedIndex {
         }
     }
 
+    /// Iterate over point ids whose documents contain all given tokens in the same order they are provided
+    pub fn filter_has_phrase<'a>(
+        &'a self,
+        phrase: Document,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        // in case of mmap immutable index, deleted points are still in the postings
+        let is_active = move |idx| self.is_active(idx);
+
+        match &self.postings {
+            MmapPostingsEnum::WithPositions(postings) => {
+                intersect_compressed_postings_phrase_iterator(
+                    phrase,
+                    |token_id| postings.get(*token_id, hw_counter),
+                    is_active,
+                )
+            }
+            // cannot do phrase matching if there's no positional information
+            MmapPostingsEnum::Ids(_postings) => Box::new(std::iter::empty()),
+        }
+    }
+
+    pub fn check_has_phrase(
+        &self,
+        phrase: &Document,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        // in case of mmap immutable index, deleted points are still in the postings
+        if !self.is_active(point_id) {
+            return false;
+        }
+
+        match &self.postings {
+            MmapPostingsEnum::WithPositions(postings) => {
+                check_compressed_postings_phrase(phrase, point_id, |token_id| {
+                    postings.get(*token_id, hw_counter)
+                })
+            }
+            // cannot do phrase matching if there's no positional information
+            MmapPostingsEnum::Ids(_postings) => false,
+        }
+    }
+
     pub fn files(&self) -> Vec<PathBuf> {
         vec![
             self.path.join(POSTINGS_FILE),
@@ -315,6 +362,7 @@ impl InvertedIndex for MmapInvertedIndex {
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match query {
             ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens, hw_counter),
+            ParsedQuery::Phrase(phrase) => self.filter_has_phrase(phrase, hw_counter),
         }
     }
 
@@ -344,6 +392,7 @@ impl InvertedIndex for MmapInvertedIndex {
     ) -> bool {
         match parsed_query {
             ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id, hw_counter),
+            ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id, hw_counter),
         }
     }
 

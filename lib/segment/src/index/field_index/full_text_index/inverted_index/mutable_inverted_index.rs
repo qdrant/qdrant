@@ -49,6 +49,10 @@ impl MutableInvertedIndex {
         self.point_to_tokens.get(idx as usize)?.as_ref()
     }
 
+    fn get_document(&self, idx: PointOffsetType) -> Option<&Document> {
+        self.point_to_doc.as_ref()?.get(idx as usize)?.as_ref()
+    }
+
     /// Iterate over point ids whose documents contain all given tokens
     fn filter_has_subset(
         &self,
@@ -57,11 +61,11 @@ impl MutableInvertedIndex {
         let postings_opt: Option<Vec<_>> = tokens
             .tokens()
             .iter()
-            .map(|&vocab_idx| {
+            .map(|&token_id| {
                 // if a ParsedQuery token was given an index, then it must exist in the vocabulary
                 // dictionary. Posting list entry can be None but it exists.
 
-                self.postings.get(vocab_idx as usize)
+                self.postings.get(token_id as usize)
             })
             .collect();
         let Some(postings) = postings_opt else {
@@ -73,6 +77,28 @@ impl MutableInvertedIndex {
             return Box::new(std::iter::empty());
         }
         intersect_postings_iterator(postings)
+    }
+
+    pub fn filter_has_phrase(
+        &self,
+        phrase: Document,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        let Some(point_to_doc) = self.point_to_doc.as_ref() else {
+            // Return empty iterator when not enabled
+            return Box::new(std::iter::empty());
+        };
+
+        let iter = self
+            .filter_has_subset(phrase.to_token_set())
+            .filter(move |id| {
+                let doc = point_to_doc[*id as usize]
+                    .as_ref()
+                    .expect("if it passed the intersection filter, it must exist");
+
+                doc.has_phrase(&phrase)
+            });
+
+        Box::new(iter)
     }
 }
 
@@ -108,16 +134,15 @@ impl InvertedIndex for MutableInvertedIndex {
 
             if self.postings.len() <= token_idx_usize {
                 let new_len = token_idx_usize + 1;
-                hw_cell_wb.incr_delta(new_len - self.postings.len());
+                hw_cell_wb.incr_delta((new_len - self.postings.len()) * size_of::<PostingList>());
                 self.postings.resize_with(new_len, Default::default);
             }
 
+            hw_cell_wb.incr_delta(size_of_val(&point_id));
             self.postings
                 .get_mut(token_idx_usize)
                 .expect("posting must exist")
                 .insert(point_id);
-
-            hw_cell_wb.incr_delta(size_of_val(&point_id));
         }
         self.point_to_tokens[point_id as usize] = Some(tokens);
 
@@ -154,17 +179,17 @@ impl InvertedIndex for MutableInvertedIndex {
         Ok(())
     }
 
-    fn remove(&mut self, idx: PointOffsetType) -> bool {
-        if idx as usize >= self.point_to_tokens.len() {
+    fn remove(&mut self, point_id: PointOffsetType) -> bool {
+        if point_id as usize >= self.point_to_tokens.len() {
             return false; // Already removed or never actually existed
         }
 
-        let Some(removed_token_set) = self.point_to_tokens[idx as usize].take() else {
+        let Some(removed_token_set) = self.point_to_tokens[point_id as usize].take() else {
             return false;
         };
 
         if let Some(point_to_doc) = &mut self.point_to_doc {
-            point_to_doc[idx as usize] = None;
+            point_to_doc[point_id as usize] = None;
         }
 
         self.points_count -= 1;
@@ -172,7 +197,7 @@ impl InvertedIndex for MutableInvertedIndex {
         for removed_token in removed_token_set.tokens() {
             // unwrap safety: posting list exists and contains the point idx
             let posting = self.postings.get_mut(*removed_token as usize).unwrap();
-            posting.remove(idx);
+            posting.remove(point_id);
         }
 
         true
@@ -185,6 +210,7 @@ impl InvertedIndex for MutableInvertedIndex {
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         match query {
             ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens),
+            ParsedQuery::Phrase(phrase) => self.filter_has_phrase(phrase),
         }
     }
 
@@ -206,10 +232,23 @@ impl InvertedIndex for MutableInvertedIndex {
         point_id: PointOffsetType,
         _: &HardwareCounterCell,
     ) -> bool {
-        if let Some(doc) = self.get_tokens(point_id) {
-            parsed_query.check_match(doc)
-        } else {
-            false
+        match parsed_query {
+            ParsedQuery::Tokens(query) => {
+                let Some(doc) = self.get_tokens(point_id) else {
+                    return false;
+                };
+
+                // Check that all tokens are in document
+                doc.has_subset(query)
+            }
+            ParsedQuery::Phrase(document) => {
+                let Some(doc) = self.get_document(point_id) else {
+                    return false;
+                };
+
+                // Check that all tokens are in document, in order
+                doc.has_phrase(document)
+            }
         }
     }
 

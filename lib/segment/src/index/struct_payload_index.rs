@@ -403,6 +403,7 @@ impl StructPayloadIndex {
         }
         Ok(())
     }
+
     pub fn config(&self) -> &PayloadConfig {
         &self.config
     }
