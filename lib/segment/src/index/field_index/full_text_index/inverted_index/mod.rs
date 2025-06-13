@@ -112,7 +112,7 @@ impl Document {
         let doc = self.0.as_slice();
         let phrase = phrase.0.as_slice();
 
-        if doc.is_empty() {
+        if doc.is_empty() || phrase.is_empty() {
             return false;
         }
 

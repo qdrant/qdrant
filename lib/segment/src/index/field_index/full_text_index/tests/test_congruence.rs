@@ -459,7 +459,7 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
     let mut phrases = Vec::new();
     let rng = &mut rand::rng();
     for id in existing_ids {
-        let doc = mutable_index.storage.get_value(*id).unwrap();
+        let doc = mutable_index.get_doc(*id).unwrap();
         let rand_idx = rng.random_range(0..KEYWORD_COUNT - 1);
         let phrase = doc[rand_idx..rand_idx + 2].to_vec();
 

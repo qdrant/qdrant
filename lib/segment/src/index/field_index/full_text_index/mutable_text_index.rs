@@ -38,26 +38,6 @@ pub(super) enum Storage {
     Gridstore(Arc<RwLock<Gridstore<Vec<u8>>>>),
 }
 
-impl Storage {
-    #[cfg(test)]
-    pub fn get_value(&self, idx: PointOffsetType) -> Option<Vec<String>> {
-        match self {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db) => {
-                let db_idx = FullTextIndex::store_key(idx);
-                db.get_pinned(&db_idx, |bytes| {
-                    FullTextIndex::deserialize_document(bytes).unwrap()
-                })
-                .unwrap()
-            }
-            Storage::Gridstore(gridstore) => gridstore
-                .read()
-                .get_value(idx, &HardwareCounterCell::disposable())
-                .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),
-        }
-    }
-}
-
 impl MutableFullTextIndex {
     /// Open mutable full text index from RocksDB storage
     ///
@@ -325,6 +305,25 @@ impl MutableFullTextIndex {
         }
 
         Ok(())
+    }
+
+    /// Get the tokenized document stored for a given point ID. Only for testing purposes.
+    #[cfg(test)]
+    pub fn get_doc(&self, idx: PointOffsetType) -> Option<Vec<String>> {
+        match &self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(db) => {
+                let db_idx = FullTextIndex::store_key(idx);
+                db.get_pinned(&db_idx, |bytes| {
+                    FullTextIndex::deserialize_document(bytes).unwrap()
+                })
+                .unwrap()
+            }
+            Storage::Gridstore(gridstore) => gridstore
+                .read()
+                .get_value(idx, &HardwareCounterCell::disposable())
+                .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),
+        }
     }
 }
 

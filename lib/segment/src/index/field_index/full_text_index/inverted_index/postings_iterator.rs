@@ -67,6 +67,11 @@ pub fn intersect_compressed_postings_phrase_iterator<'a>(
     token_to_posting: impl Fn(&TokenId) -> Option<PostingListView<'a, Positions>>,
     is_active: impl Fn(PointOffsetType) -> bool + 'a,
 ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    if phrase.is_empty() {
+        // Empty request -> no matches
+        return Box::new(std::iter::empty());
+    }
+
     let postings_opt: Option<Vec<_>> = phrase
         .to_token_set()
         .tokens()
@@ -78,11 +83,6 @@ pub fn intersect_compressed_postings_phrase_iterator<'a>(
         // There are unseen tokens -> no matches
         return Box::new(std::iter::empty());
     };
-
-    if postings.is_empty() {
-        // Empty request -> no matches
-        return Box::new(std::iter::empty());
-    }
 
     let smallest_posting_idx = postings
         .iter()
