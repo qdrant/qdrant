@@ -22,9 +22,14 @@ pub enum FsCheckResult {
 }
 
 const MAGIC_QDRANT_BYTES: &[u8] = b"qdrant00";
+const MAGIC_FILE_SIZE: usize = 32 * 1024 * 1024; // This is the size, used by vector storage
 
-const MAGIC_FOLDER_NAME: &str = ".qdrant_dir";
-const MAGIC_FILE_NAME: &str = ".qdrant_file";
+const MAGIC_BYTES_POSITION_0: usize = 0;
+const MAGIC_BYTES_POSITION_1: usize = 8 * 1024 * 1024; // 8MB
+const MAGIC_BYTES_POSITION_2: usize = 16 * 1024 * 1024; // 16MB
+const MAGIC_BYTES_POSITION_3: usize = 24 * 1024 * 1024; // 24MB
+
+const MAGIC_FILE_NAME: &str = ".qdrant_fs_check";
 
 #[derive(Debug, PartialEq)]
 pub enum FsType {
@@ -167,20 +172,28 @@ pub fn check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
 
 pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {
     let path = path.as_ref();
-    let magic_folder_path = path.join(MAGIC_FOLDER_NAME);
-    let magic_file_path = magic_folder_path.join(MAGIC_FILE_NAME);
+    let magic_file_path = path.join(MAGIC_FILE_NAME);
 
     // Remove file and folder if they exist
-    if magic_folder_path.exists() {
-        std::fs::remove_dir_all(&magic_folder_path)?;
+    if magic_file_path.exists() {
+        std::fs::remove_file(&magic_file_path)?;
     }
 
-    create_dir_all(&magic_folder_path)?;
+    create_dir_all(path)?;
 
-    create_and_ensure_length(&magic_file_path, MAGIC_QDRANT_BYTES.len())?;
+    create_and_ensure_length(&magic_file_path, MAGIC_FILE_SIZE)?;
 
     let mut mmap = open_write_mmap(&magic_file_path, AdviceSetting::Global, false)?;
-    mmap[..MAGIC_QDRANT_BYTES.len()].copy_from_slice(MAGIC_QDRANT_BYTES);
+
+    mmap[MAGIC_BYTES_POSITION_0..MAGIC_BYTES_POSITION_0 + MAGIC_QDRANT_BYTES.len()]
+        .copy_from_slice(MAGIC_QDRANT_BYTES);
+    mmap[MAGIC_BYTES_POSITION_1..MAGIC_BYTES_POSITION_1 + MAGIC_QDRANT_BYTES.len()]
+        .copy_from_slice(MAGIC_QDRANT_BYTES);
+    mmap[MAGIC_BYTES_POSITION_2..MAGIC_BYTES_POSITION_2 + MAGIC_QDRANT_BYTES.len()]
+        .copy_from_slice(MAGIC_QDRANT_BYTES);
+    mmap[MAGIC_BYTES_POSITION_3..MAGIC_BYTES_POSITION_3 + MAGIC_QDRANT_BYTES.len()]
+        .copy_from_slice(MAGIC_QDRANT_BYTES);
+
     mmap.flush()?;
     drop(mmap);
 
@@ -189,8 +202,21 @@ pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {
     }
 
     let mmap = open_read_mmap(&magic_file_path, AdviceSetting::Global, false)?;
-    let result = mmap[..MAGIC_QDRANT_BYTES.len()] == *MAGIC_QDRANT_BYTES;
+    let mut result = true;
+
+    result &= mmap[MAGIC_BYTES_POSITION_0..MAGIC_BYTES_POSITION_0 + MAGIC_QDRANT_BYTES.len()]
+        == *MAGIC_QDRANT_BYTES;
+    result &= mmap[MAGIC_BYTES_POSITION_1..MAGIC_BYTES_POSITION_1 + MAGIC_QDRANT_BYTES.len()]
+        == *MAGIC_QDRANT_BYTES;
+    result &= mmap[MAGIC_BYTES_POSITION_2..MAGIC_BYTES_POSITION_2 + MAGIC_QDRANT_BYTES.len()]
+        == *MAGIC_QDRANT_BYTES;
+    result &= mmap[MAGIC_BYTES_POSITION_3..MAGIC_BYTES_POSITION_3 + MAGIC_QDRANT_BYTES.len()]
+        == *MAGIC_QDRANT_BYTES;
+
     drop(mmap);
+
+    // Remove file
+    std::fs::remove_file(&magic_file_path)?;
 
     Ok(result)
 }
