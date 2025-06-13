@@ -80,7 +80,11 @@ pub(super) struct BitmaskGaps {
     pub path: PathBuf,
     config: StorageConfig,
     mmap_slice: MmapSlice<RegionGaps>,
+
+    /// A priority queue which tracks the region with the largest gap.
     pq: PriorityQueue<RegionId, u16>,
+    /// The region that was latest written to, tries to reuse it if possible
+    latest_written_region: Option<RegionId>,
 }
 
 impl BitmaskGaps {
@@ -119,6 +123,7 @@ impl BitmaskGaps {
             config,
             mmap_slice,
             pq,
+            latest_written_region: None,
         }
     }
 
@@ -137,6 +142,7 @@ impl BitmaskGaps {
             config,
             mmap_slice,
             pq,
+            latest_written_region: None,
         })
     }
 
@@ -200,6 +206,22 @@ impl BitmaskGaps {
     pub fn update(&mut self, region_id: RegionId, new_gaps: RegionGaps) {
         self.pq.change_priority(&region_id, new_gaps.max);
         self.mmap_slice[region_id as usize] = new_gaps;
+        self.latest_written_region.replace(region_id);
+    }
+
+    /// Returns the latest written region, if it still fits the given number of blocks.
+    fn latest_written_region_fits(&self, num_blocks: u32) -> Option<RegionId> {
+        self.latest_written_region.and_then(|region_id| {
+            let max_gap = self.mmap_slice[region_id as usize].max;
+            (u32::from(max_gap) >= num_blocks).then_some(region_id)
+        })
+    }
+
+    /// Returns the region with the biggest max gap, if it fits the given number of blocks.
+    fn biggest_max_gap_fits(&self, num_blocks: u32) -> Option<RegionId> {
+        self.pq.peek().and_then(|(&region_id, &max_gap)| {
+            (u32::from(max_gap) >= num_blocks).then_some(region_id)
+        })
     }
 
     pub fn as_slice(&self) -> &[RegionGaps] {
@@ -215,13 +237,10 @@ impl BitmaskGaps {
         let fits_in_min_regions = match regions_needed {
             0 => unreachable!("num_blocks should be at least 1"),
             // we might not need to merge any regions, just check the `max` field
-            1 => self.pq.peek().and_then(|(&region_id, &max_gap)| {
-                if max_gap as usize >= num_blocks as usize {
-                    Some(region_id..region_id + 1)
-                } else {
-                    None
-                }
-            }),
+            1 => self
+                .latest_written_region_fits(num_blocks)
+                .or_else(|| self.biggest_max_gap_fits(num_blocks))
+                .map(|region_id| region_id..region_id + 1),
             // we need to merge at least 2 regions
             window_size => self.find_merged_gap(window_size, num_blocks),
         };

@@ -821,9 +821,7 @@ mod tests {
 
     #[test]
     fn test_update_single_payload() {
-        // One page spans one region to restrict the priority queue to choose the same region
-        let (_dir, mut storage) =
-            empty_storage_sized(DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS);
+        let (_dir, mut storage) = empty_storage();
 
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
