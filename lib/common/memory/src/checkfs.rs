@@ -4,9 +4,11 @@
 // 2. Try to create, fill and save mmap file with some dummy data. If file is possible to read after it is closed, return true.
 // Some file systems are known to fail this test, so we need to check for that and notify user before it is too late.
 
+use std::fs::create_dir_all;
 use std::io;
 use std::path::Path;
 
+#[cfg(fs_type_check_supported)]
 use nix::sys::statfs::statfs;
 
 use crate::madvise::AdviceSetting;
@@ -20,7 +22,9 @@ pub enum FsCheckResult {
 }
 
 const MAGIC_QDRANT_BYTES: &[u8] = b"qdrant00";
-const MAGIC_FILE_NAME: &str = ".qdrant_magic";
+
+const MAGIC_FOLDER_NAME: &str = ".qdrant_dir";
+const MAGIC_FILE_NAME: &str = ".qdrant_file";
 
 #[derive(Debug, PartialEq)]
 pub enum FsType {
@@ -81,6 +85,7 @@ impl FsType {
 
 /// Return a string representing the file system type of a given path.
 /// It uses nix::sys::statfs to retrieve the magic number.
+#[cfg(fs_type_check_supported)]
 fn get_filesystem_type(path: impl AsRef<Path>) -> Result<FsType, String> {
     let stat = statfs(path.as_ref()).map_err(|e| format!("statfs failed: {e}"))?;
 
@@ -101,7 +106,7 @@ fn get_filesystem_type(path: impl AsRef<Path>) -> Result<FsType, String> {
 }
 
 /// Check filesystem information to identify known non-POSIX filesystems
-pub fn check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
+pub fn _check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
     let path = path.as_ref();
 
     let Ok(fs_type) = get_filesystem_type(path) else {
@@ -142,14 +147,36 @@ pub fn check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
     }
 }
 
-pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {
-    let magic_file_path = path.as_ref().join(MAGIC_FILE_NAME);
-
-    if magic_file_path.exists() {
-        // Delete magic file
-        std::fs::remove_file(&magic_file_path)?;
+pub fn check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
+    if !path.as_ref().exists() {
+        return FsCheckResult::Unknown("Path does not exist".to_string());
     }
 
+    #[cfg(fs_type_check_supported)]
+    {
+        _check_fs_info(path)
+    }
+
+    #[cfg(not(fs_type_check_supported))]
+    {
+        FsCheckResult::Unknown(
+            "Filesystem type check is not supported on this platform".to_string(),
+        )
+    }
+}
+
+pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {
+    let path = path.as_ref();
+    let magic_folder_path = path.join(MAGIC_FOLDER_NAME);
+    let magic_file_path = magic_folder_path.join(MAGIC_FILE_NAME);
+
+    // Remove file and folder if they exist
+    if magic_folder_path.exists() {
+        std::fs::remove_dir_all(&magic_folder_path)?;
+    }
+
+    create_dir_all(&magic_folder_path)?;
+    
     create_and_ensure_length(&magic_file_path, MAGIC_QDRANT_BYTES.len())?;
 
     let mut mmap = open_write_mmap(&magic_file_path, AdviceSetting::Global, false)?;

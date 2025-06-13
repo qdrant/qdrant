@@ -10,6 +10,7 @@ mod startup;
 mod tonic;
 mod tracing;
 
+use std::fs::create_dir_all;
 use std::io::Error;
 use std::sync::Arc;
 use std::thread;
@@ -213,6 +214,8 @@ fn main() -> anyhow::Result<()> {
 
     // Validate as soon as possible, but we must initialize logging first
     settings.validate_and_warn();
+
+    create_dir_all(&settings.storage.storage_path)?;
 
     // Check if the filesystem is compatible with Qdrant
     match check_fs_info(&settings.storage.storage_path) {
