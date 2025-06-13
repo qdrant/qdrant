@@ -176,7 +176,7 @@ pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {
     }
 
     create_dir_all(&magic_folder_path)?;
-    
+
     create_and_ensure_length(&magic_file_path, MAGIC_QDRANT_BYTES.len())?;
 
     let mut mmap = open_write_mmap(&magic_file_path, AdviceSetting::Global, false)?;
