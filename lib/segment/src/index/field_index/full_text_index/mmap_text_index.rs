@@ -18,6 +18,7 @@ use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
 pub struct MmapFullTextIndex {
     pub(super) inverted_index: MmapInvertedIndex,
+    #[cfg(feature = "rocksdb")]
     pub(super) config: TextIndexParams,
     pub(super) tokenizer: Tokenizer,
 }
@@ -32,6 +33,7 @@ impl MmapFullTextIndex {
         let inverted_index = MmapInvertedIndex::open(path, populate, has_positions)?;
         Ok(Self {
             inverted_index,
+            #[cfg(feature = "rocksdb")]
             config,
             tokenizer,
         })
@@ -189,6 +191,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
 
         let mmap_index = MmapFullTextIndex {
             inverted_index,
+            #[cfg(feature = "rocksdb")]
             config,
             tokenizer,
         };

@@ -647,16 +647,25 @@ mod tests {
     use tempfile::{Builder, TempDir};
 
     use super::*;
-    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::fixtures::payload_fixtures::random_full_text_payload;
     use crate::index::field_index::field_index_base::FieldIndexBuilderTrait;
+    #[cfg(feature = "rocksdb")]
     use crate::index::field_index::full_text_index::mutable_text_index;
     use crate::types::ValuesCount;
 
     const FIELD_NAME: &str = "test";
-    const TYPES: [IndexType; 5] = [
+
+    #[cfg(feature = "rocksdb")]
+    const INDEXES_COUNT: usize = 5;
+
+    #[cfg(not(feature = "rocksdb"))]
+    const INDEXES_COUNT: usize = 3;
+
+    const TYPES: [IndexType; INDEXES_COUNT] = [
+        #[cfg(feature = "rocksdb")]
         IndexType::Mutable,
         IndexType::MutableGridstore,
+        #[cfg(feature = "rocksdb")]
         IndexType::Immutable,
         IndexType::Mmap,
         IndexType::RamMmap,
@@ -664,19 +673,43 @@ mod tests {
 
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum IndexType {
+        #[cfg(feature = "rocksdb")]
         Mutable,
         MutableGridstore,
+        #[cfg(feature = "rocksdb")]
         Immutable,
         Mmap,
         RamMmap,
     }
 
     enum IndexBuilder {
+        #[cfg(feature = "rocksdb")]
         Mutable(FullTextIndexBuilder),
         MutableGridstore(FullTextGridstoreIndexBuilder),
+        #[cfg(feature = "rocksdb")]
         Immutable(FullTextIndexBuilder),
         Mmap(FullTextMmapIndexBuilder),
         RamMmap(FullTextMmapIndexBuilder),
+    }
+
+    struct CreatedBuilder {
+        index_builder: IndexBuilder,
+        temp_dir: TempDir,
+        #[cfg(feature = "rocksdb")]
+        db: Arc<RwLock<DB>>,
+    }
+
+    struct ConstructedIndex {
+        index: FullTextIndex,
+        temp_dir: TempDir,
+        #[cfg(feature = "rocksdb")]
+        db: Arc<RwLock<DB>>,
+    }
+
+    struct IndexContext {
+        _temp_dir: TempDir,
+        #[cfg(feature = "rocksdb")]
+        _db: Arc<RwLock<DB>>,
     }
 
     impl IndexBuilder {
@@ -687,10 +720,12 @@ mod tests {
             hw_counter: &HardwareCounterCell,
         ) -> OperationResult<()> {
             match self {
+                #[cfg(feature = "rocksdb")]
                 IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::MutableGridstore(builder) => {
                     FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
                 }
+                #[cfg(feature = "rocksdb")]
                 IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::Mmap(builder) => {
                     FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
@@ -703,8 +738,10 @@ mod tests {
 
         fn finalize(self) -> OperationResult<FullTextIndex> {
             match self {
+                #[cfg(feature = "rocksdb")]
                 IndexBuilder::Mutable(builder) => builder.finalize(),
                 IndexBuilder::MutableGridstore(builder) => builder.finalize(),
+                #[cfg(feature = "rocksdb")]
                 IndexBuilder::Immutable(builder) => {
                     let FullTextIndex::Mutable(index) = builder.finalize()? else {
                         panic!("expected mutable index");
@@ -745,17 +782,19 @@ mod tests {
     }
 
     #[cfg(feature = "testing")]
-    fn create_builder(
-        index_type: IndexType,
-        phrase_matching: bool,
-    ) -> (IndexBuilder, TempDir, Arc<RwLock<DB>>) {
+    fn create_builder(index_type: IndexType, phrase_matching: bool) -> CreatedBuilder {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
-        let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
+        #[cfg(feature = "rocksdb")]
+        let db = crate::common::rocksdb_wrapper::open_db_with_existing_cf(
+            &temp_dir.path().join("test_db"),
+        )
+        .unwrap();
         let config = TextIndexParams {
             phrase_matching: Some(phrase_matching),
             ..TextIndexParams::default()
         };
         let mut builder = match index_type {
+            #[cfg(feature = "rocksdb")]
             IndexType::Mutable => IndexBuilder::Mutable(FullTextIndex::builder_rocksdb(
                 db.clone(),
                 config,
@@ -764,6 +803,7 @@ mod tests {
             IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
                 FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config),
             ),
+            #[cfg(feature = "rocksdb")]
             IndexType::Immutable => IndexBuilder::Immutable(FullTextIndex::builder_rocksdb(
                 db.clone(),
                 config,
@@ -781,13 +821,20 @@ mod tests {
             )),
         };
         match &mut builder {
+            #[cfg(feature = "rocksdb")]
             IndexBuilder::Mutable(builder) => builder.init().unwrap(),
             IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
+            #[cfg(feature = "rocksdb")]
             IndexBuilder::Immutable(builder) => builder.init().unwrap(),
             IndexBuilder::Mmap(builder) => builder.init().unwrap(),
             IndexBuilder::RamMmap(builder) => builder.init().unwrap(),
         }
-        (builder, temp_dir, db)
+        CreatedBuilder {
+            index_builder: builder,
+            temp_dir,
+            #[cfg(feature = "rocksdb")]
+            db,
+        }
     }
 
     fn build_random_index(
@@ -797,9 +844,9 @@ mod tests {
         index_type: IndexType,
         phrase_matching: bool,
         deleted: bool,
-    ) -> (FullTextIndex, TempDir, Arc<RwLock<DB>>) {
+    ) -> ConstructedIndex {
         let mut rnd = StdRng::seed_from_u64(42);
-        let (mut builder, temp_dir, db) = create_builder(index_type, phrase_matching);
+        let mut created_builder = create_builder(index_type, phrase_matching);
 
         for idx in 0..num_points {
             let keywords = random_full_text_payload(
@@ -808,7 +855,8 @@ mod tests {
                 keyword_len..=keyword_len,
             );
             let array_payload = Value::Array(keywords);
-            builder
+            created_builder
+                .index_builder
                 .add_point(
                     idx as PointOffsetType,
                     &[&array_payload],
@@ -817,7 +865,7 @@ mod tests {
                 .unwrap();
         }
 
-        let mut index = builder.finalize().unwrap();
+        let mut index = created_builder.index_builder.finalize().unwrap();
         assert_eq!(index.points_count(), num_points);
 
         // Delete some points before loading into a different format
@@ -829,7 +877,12 @@ mod tests {
             index.remove_point(250).unwrap();
         }
 
-        (index, temp_dir, db)
+        ConstructedIndex {
+            index,
+            temp_dir: created_builder.temp_dir,
+            #[cfg(feature = "rocksdb")]
+            db: created_builder.db,
+        }
     }
 
     /// Tries to parse a query. If there is an unknown id to a token, returns `None`
@@ -884,7 +937,7 @@ mod tests {
             .iter()
             .copied()
             .map(|index_type| {
-                let (index, temp_dir, db) = build_random_index(
+                let constructed_index = build_random_index(
                     POINT_COUNT,
                     KEYWORD_COUNT,
                     KEYWORD_LEN,
@@ -892,7 +945,13 @@ mod tests {
                     phrase_matching,
                     deleted,
                 );
-                ((index, index_type), (temp_dir, db))
+                let index_context = IndexContext {
+                    _temp_dir: constructed_index.temp_dir,
+                    #[cfg(feature = "rocksdb")]
+                    _db: constructed_index.db,
+                };
+
+                ((constructed_index.index, index_type), index_context)
             })
             .unzip();
 

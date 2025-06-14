@@ -13,12 +13,14 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 #[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
+#[cfg(feature = "rocksdb")]
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 
 pub struct ImmutableFullTextIndex {
     pub(super) inverted_index: ImmutableInvertedIndex,
+    #[cfg(feature = "rocksdb")]
     pub(super) config: TextIndexParams,
     pub(super) tokenizer: Tokenizer,
     // Backing storage, source of state, persists deletions
@@ -62,6 +64,7 @@ impl ImmutableFullTextIndex {
         let tokenizer = index.tokenizer.clone();
         Self {
             inverted_index,
+            #[cfg(feature = "rocksdb")]
             config: index.config.clone(),
             storage: Storage::Mmap(Box::new(index)),
             tokenizer,
