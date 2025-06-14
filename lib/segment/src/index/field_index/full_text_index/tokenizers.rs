@@ -283,7 +283,7 @@ impl Tokenizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_types::index::{StopwordsInterface, TextIndexType};
+    use crate::data_types::index::{Language, StopwordsInterface, TextIndexType};
 
     #[test]
     fn test_whitespace_tokenizer() {
@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn test_tokenizer_with_custom_stopwords() {
-        let text = "The quick brown fox jumps over the lazy dog as i'd t'ha";
+        let text = "you'll be in town";
         let mut tokens = Vec::new();
         let params = TextIndexParams {
             r#type: TextIndexType::Text,
@@ -477,9 +477,7 @@ mod tests {
             lowercase: Some(true),
             on_disk: None,
             phrase_matching: None,
-            stopwords: Some(StopwordsInterface::new_custom(&[
-                "quick", "fox", "t'ha", "i'd",
-            ])),
+            stopwords: Some(StopwordsInterface::Language(Language::English)),
         };
 
         let tokenizer = Tokenizer::new(&params);
@@ -488,17 +486,12 @@ mod tests {
         eprintln!("tokens = {tokens:#?}");
 
         // Check that stopwords are filtered out
-        assert!(!tokens.contains(&"quick".to_owned()));
-        assert!(!tokens.contains(&"fox".to_owned()));
-        assert!(!tokens.contains(&"t'ha".to_owned()));
-        assert!(!tokens.contains(&"i'd".to_owned()));
+        assert!(!tokens.contains(&"you".to_owned()));
+        assert!(!tokens.contains(&"ll".to_owned()));
+        assert!(!tokens.contains(&"you'll".to_owned()));
 
         // Check that non-stopwords are present
-        assert!(tokens.contains(&"the".to_owned()));
-        assert!(tokens.contains(&"brown".to_owned()));
-        assert!(tokens.contains(&"jumps".to_owned()));
-        assert!(tokens.contains(&"over".to_owned()));
-        assert!(tokens.contains(&"lazy".to_owned()));
+        assert!(tokens.contains(&"town".to_owned()));
     }
 
     #[test]

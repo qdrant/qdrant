@@ -66,6 +66,7 @@ pub const CATALAN_STOPWORDS: &[&str] = &[
     "donat",
     "doncs",
     "durant",
+    "d",
     "e",
     "eh",
     "el",

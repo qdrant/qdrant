@@ -69,37 +69,33 @@ pub struct StopwordsFilter {
 
 impl StopwordsFilter {
     pub fn new(option: &Option<StopwordsInterface>, lowercase: bool) -> Self {
-        let mut stopwords = AHashSet::new();
+        let mut this = Self::default();
 
         if let Some(option) = option {
             match option {
                 StopwordsInterface::Language(lang) => {
-                    Self::add_language_stopwords(&mut stopwords, lang, lowercase);
+                    this.add_language_stopwords(lang, lowercase);
                 }
                 StopwordsInterface::Set(set) => {
                     // Add stopwords from all languages in the languages field
                     if let Some(languages) = set.languages.as_ref() {
                         // If languages are provided, add their stopwords
                         for lang in languages {
-                            Self::add_language_stopwords(&mut stopwords, lang, lowercase);
+                            this.add_language_stopwords(lang, lowercase);
                         }
                     }
 
                     if let Some(custom) = set.custom.as_ref() {
                         // If custom stopwords are provided, add them
                         for word in custom {
-                            if lowercase {
-                                stopwords.insert(word.to_lowercase());
-                            } else {
-                                stopwords.insert(word.clone());
-                            }
+                            this.add_stopword(word, lowercase);
                         }
                     }
                 }
             }
         }
 
-        Self { stopwords }
+        this
     }
 
     /// Check if a token is a stopword
@@ -107,12 +103,16 @@ impl StopwordsFilter {
         self.stopwords.contains(token)
     }
 
+    fn add_stopword(&mut self, word: &str, lowercase: bool) {
+        if lowercase {
+            self.stopwords.insert(word.to_lowercase());
+        } else {
+            self.stopwords.insert(word.to_string());
+        }
+    }
+
     /// Add stopwords for a specific language
-    fn add_language_stopwords(
-        stopwords: &mut AHashSet<String>,
-        language: &Language,
-        lowercase: bool,
-    ) {
+    fn add_language_stopwords(&mut self, language: &Language, lowercase: bool) {
         let stopwords_array = match language {
             Language::Arabic => ARABIC_STOPWORDS,
             Language::Azerbaijani => AZERBAIJANI_STOPWORDS,
@@ -146,11 +146,7 @@ impl StopwordsFilter {
         };
 
         for &word in stopwords_array {
-            if lowercase {
-                stopwords.insert(word.to_lowercase());
-            } else {
-                stopwords.insert(word.to_string());
-            }
+            self.add_stopword(word, lowercase);
         }
     }
 }
