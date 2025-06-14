@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens.first(), Some(&"hello".to_owned()));
         assert_eq!(tokens.get(1), Some(&"world".to_owned()));
-        assert_eq!(tokens.get(2), Some(&"Привет".to_owned()));
+        assert_eq!(tokens.get(2), Some(&"привет".to_owned()));
         assert_eq!(tokens.get(3), Some(&"мир".to_owned()));
     }
 

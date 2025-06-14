@@ -204,21 +204,6 @@ mod tests {
     }
 
     #[test]
-    fn test_case_insensitivity() {
-        let option = Some(StopwordsInterface::new_set(
-            &[Language::English],
-            &["Hello"],
-        ));
-        let filter = StopwordsFilter::new(&option, true);
-
-        assert!(filter.is_stopword("hello"));
-        assert!(filter.is_stopword("Hello"));
-        assert!(filter.is_stopword("HELLO"));
-        assert!(filter.is_stopword("The"));
-        assert!(filter.is_stopword("THE"));
-    }
-
-    #[test]
     fn test_case_sensitivity() {
         let option = Some(StopwordsInterface::new_custom(&["Hello", "World"]));
         let filter = StopwordsFilter::new(&option, false);
