@@ -491,11 +491,7 @@ mod tests {
             let tokenizer = Tokenizer::new(&params);
 
             tokenizer.tokenize_doc(text, |token| tokens.push(token.to_owned()));
-            eprintln!(
-                "tokenizer_type = {:?}, tokens = {tokens:#?}",
-                tokenizer_type
-            );
-
+            
             // Check that stopwords are filtered out
             assert!(!tokens.contains(&"you".to_owned()));
             assert!(!tokens.contains(&"ll".to_owned()));
