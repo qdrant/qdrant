@@ -466,32 +466,44 @@ mod tests {
     }
 
     #[test]
-    fn test_tokenizer_with_custom_stopwords() {
+    fn test_tokenizer_can_handle_apostrophes_parametrized() {
+        use crate::data_types::index::TokenizerType;
         let text = "you'll be in town";
-        let mut tokens = Vec::new();
-        let params = TextIndexParams {
-            r#type: TextIndexType::Text,
-            tokenizer: TokenizerType::Word,
-            min_token_len: None,
-            max_token_len: None,
-            lowercase: Some(true),
-            on_disk: None,
-            phrase_matching: None,
-            stopwords: Some(StopwordsInterface::Language(Language::English)),
-        };
+        let tokenizer_types = [
+            TokenizerType::Word,
+            TokenizerType::Whitespace,
+            TokenizerType::Prefix,
+        ];
 
-        let tokenizer = Tokenizer::new(&params);
+        for &tokenizer_type in &tokenizer_types {
+            let mut tokens = Vec::new();
+            let params = TextIndexParams {
+                r#type: TextIndexType::Text,
+                tokenizer: tokenizer_type,
+                min_token_len: None,
+                max_token_len: None,
+                lowercase: Some(true),
+                on_disk: None,
+                phrase_matching: None,
+                stopwords: Some(StopwordsInterface::Language(Language::English)),
+            };
 
-        tokenizer.tokenize_doc(text, |token| tokens.push(token.to_owned()));
-        eprintln!("tokens = {tokens:#?}");
+            let tokenizer = Tokenizer::new(&params);
 
-        // Check that stopwords are filtered out
-        assert!(!tokens.contains(&"you".to_owned()));
-        assert!(!tokens.contains(&"ll".to_owned()));
-        assert!(!tokens.contains(&"you'll".to_owned()));
+            tokenizer.tokenize_doc(text, |token| tokens.push(token.to_owned()));
+            eprintln!(
+                "tokenizer_type = {:?}, tokens = {tokens:#?}",
+                tokenizer_type
+            );
 
-        // Check that non-stopwords are present
-        assert!(tokens.contains(&"town".to_owned()));
+            // Check that stopwords are filtered out
+            assert!(!tokens.contains(&"you".to_owned()));
+            assert!(!tokens.contains(&"ll".to_owned()));
+            assert!(!tokens.contains(&"you'll".to_owned()));
+
+            // Check that non-stopwords are present
+            assert!(tokens.contains(&"town".to_owned()));
+        }
     }
 
     #[test]
