@@ -254,9 +254,7 @@ impl PayloadFieldIndex for MmapNullIndex {
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        // `status.dat` managed by `DynamicMmapFlags` should be immutable in practice,
-        // but let's assume they are mutable for now
-        vec![]
+        Vec::new() // everything is mutable
     }
 
     fn filter<'a>(
