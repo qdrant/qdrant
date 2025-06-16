@@ -227,9 +227,7 @@ pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {
     }
 
     let mmap = open_read_mmap(&magic_file_path, AdviceSetting::Global, false)?;
-    let mut result = true;
-
-    result &= mmap[MAGIC_BYTES_POSITION..MAGIC_BYTES_POSITION + MAGIC_QDRANT_BYTES.len()]
+    let result = mmap[MAGIC_BYTES_POSITION..MAGIC_BYTES_POSITION + MAGIC_QDRANT_BYTES.len()]
         == *MAGIC_QDRANT_BYTES;
 
     drop(mmap);
