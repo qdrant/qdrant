@@ -10,7 +10,7 @@ jobs:
         - uses: actions/checkout@v4
           with:
             ref: ${{ github.ref.name }}
-        - uses: ./.github/workflows/actions/branch-build-and-push
+        - uses: ./.github/actions/branch-build-and-push
           env:
             DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
             ARCH: gpu
