@@ -37,7 +37,12 @@ pub enum FsType {
     Fuse,
     Tmpfs,
     Ntfs,
+    /// FAT12, FAT16, FAT32
+    Fat,
+    ExFat,
+    /// HFS and HFS+
     Hfs,
+    Apfs,
     Overlayfs,
     Squashfs,
     Cifs,
@@ -47,6 +52,7 @@ pub enum FsType {
 impl FsType {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     fn from_magic(magic: i64) -> Self {
+        // Sourced from: <https://github.com/torvalds/linux/blob/e04c78d86a9699d136910cfc0bdcf01087e3267e/include/uapi/linux/magic.h#L5-L40>
         match magic {
             0xEF53 => Self::Ext234,
             0x9123683E => Self::Btrfs,
@@ -55,7 +61,10 @@ impl FsType {
             0x65735546 => Self::Fuse,
             0x01021994 => Self::Tmpfs,
             0x5346544e => Self::Ntfs,
-            0x4244 => Self::Hfs,
+            0x55AA => Self::Fat,
+            0x2011BAB0 | 0xAA55 => Self::ExFat,
+            0x4244 | 0x482B => Self::Hfs,
+            0x42535041 => Self::Apfs,
             0x794c7630 => Self::Overlayfs,
             0x73717368 => Self::Squashfs,
             0xFF534D42 => Self::Cifs,
@@ -73,8 +82,10 @@ impl FsType {
             "btrfs" => Self::Btrfs,
             "xfs" => Self::Xfs,
             "ntfs" => Self::Ntfs,
+            "fat" | "fat12" | "fat16" | "fat32" => Self::Fat,
             "nfs" => Self::Nfs,
-            "hfs" => Self::Hfs,
+            "hfs" | "htf+" => Self::Hfs,
+            "apfs" => Self::Apfs,
             "fuse" => Self::Fuse,
             "overlayfs" => Self::Overlayfs,
             "squashfs" => Self::Squashfs,
@@ -131,9 +142,14 @@ pub fn _check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
             "Data will be lost on system restart - tmpfs is memory-based".to_string(),
         ),
         FsType::Ntfs => FsCheckResult::Good,
+        FsType::Fat => {
+            FsCheckResult::Unknown("FAT12/FAT16/FAT32 filesystem support is untested".to_string())
+        }
+        FsType::ExFat => FsCheckResult::Unknown("exFAT filesystem support is untested".to_string()),
         FsType::Hfs => {
             FsCheckResult::Unknown("HFS/HFS+ filesystem support is untested".to_string())
         }
+        FsType::Apfs => FsCheckResult::Good,
         FsType::Overlayfs => FsCheckResult::Unknown(
             "Container filesystem detected - storage might be lost with container re-creation"
                 .to_string(),
