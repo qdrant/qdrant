@@ -82,7 +82,7 @@ pub(super) struct BitmaskGaps {
     mmap_slice: MmapSlice<RegionGaps>,
 
     /// A priority queue which tracks the region with the largest gap.
-    pq: PriorityQueue<RegionId, u16>,
+    pq: PriorityQueue<RegionId, u16, ahash::RandomState>,
     /// The region that was latest written to, tries to reuse it if possible
     latest_written_region: Option<RegionId>,
 }
