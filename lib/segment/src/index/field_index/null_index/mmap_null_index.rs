@@ -253,6 +253,10 @@ impl PayloadFieldIndex for MmapNullIndex {
         files
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        Vec::new() // everything is mutable
+    }
+
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,

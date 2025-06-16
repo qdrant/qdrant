@@ -274,6 +274,7 @@ impl DynamicMmapFlags {
         &self.flags
     }
 
+    // no immutable files, everything is mutable
     pub fn files(&self) -> Vec<PathBuf> {
         vec![
             status_file(&self.directory),

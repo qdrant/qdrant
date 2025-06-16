@@ -283,6 +283,14 @@ impl MmapInvertedIndex {
         ]
     }
 
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![
+            self.path.join(POSTINGS_FILE),
+            self.path.join(VOCAB_FILE),
+            self.path.join(POINT_TO_TOKENS_COUNT_FILE),
+        ]
+    }
+
     pub fn is_on_disk(&self) -> bool {
         self.is_on_disk
     }

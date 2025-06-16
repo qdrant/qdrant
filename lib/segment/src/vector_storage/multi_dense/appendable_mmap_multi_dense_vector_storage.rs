@@ -310,6 +310,12 @@ impl<
         files
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = self.vectors.immutable_files();
+        files.extend(self.offsets.immutable_files());
+        files
+    }
+
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         self.set_deleted(key, true)
     }

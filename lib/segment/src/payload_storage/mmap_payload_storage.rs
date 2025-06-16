@@ -248,6 +248,10 @@ impl PayloadStorage for MmapPayloadStorage {
         self.storage.read().files()
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.storage.read().immutable_files()
+    }
+
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         Ok(self.storage.read().get_storage_size_bytes())
     }

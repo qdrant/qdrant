@@ -335,6 +335,17 @@ impl MmapGeoMapIndex {
         files
     }
 
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = vec![
+            self.path.join(COUNTS_PER_HASH),
+            self.path.join(POINTS_MAP),
+            self.path.join(POINTS_MAP_IDS),
+            self.path.join(STATS_PATH),
+        ];
+        files.extend(self.point_to_values.immutable_files());
+        files
+    }
+
     pub fn flusher(&self) -> Flusher {
         self.deleted.flusher()
     }

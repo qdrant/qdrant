@@ -333,6 +333,10 @@ impl PayloadFieldIndex for SimpleBoolIndex {
         vec![]
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
     fn filter<'a>(
         &'a self,
         condition: &'a crate::types::FieldCondition,

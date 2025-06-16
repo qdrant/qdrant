@@ -153,6 +153,12 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         files
     }
 
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = vec![self.path.join(HASHMAP_PATH), self.path.join(CONFIG_PATH)];
+        files.extend(self.point_to_values.immutable_files());
+        files
+    }
+
     pub fn remove_point(&mut self, idx: PointOffsetType) {
         let idx = idx as usize;
         if let Some(deleted) = self.deleted.get(idx) {

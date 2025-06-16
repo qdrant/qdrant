@@ -186,6 +186,10 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
         files
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.vectors.immutable_files()
+    }
+
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         self.set_deleted(key, true)
     }

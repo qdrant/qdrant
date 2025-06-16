@@ -22,6 +22,8 @@ pub trait ChunkedVectorStorage<T> {
 
     fn files(&self) -> Vec<PathBuf>;
 
+    fn immutable_files(&self) -> Vec<PathBuf>;
+
     fn flusher(&self) -> Flusher;
 
     fn push(
