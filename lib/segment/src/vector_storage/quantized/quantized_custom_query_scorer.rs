@@ -91,10 +91,11 @@ where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
+        // account for read outside of `score_by` because the closure is called once per example
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(self.quantized_storage.quantized_vector_size());
         self.query.score_by(|this| {
-            self.hardware_counter
-                .vector_io_read()
-                .incr_delta(self.quantized_storage.quantized_vector_size());
             self.quantized_storage
                 .score_point(this, idx, &self.hardware_counter)
         })
