@@ -1,0 +1,19 @@
+# You can run the following command in the repository root:
+# uv tool run codespell --toml tools/codespell.toml
+
+[tool.codespell]
+
+skip = [
+    "**/stop_words/*.rs",
+    "./static",
+    "./tests/tls/cert/key.pem",
+    "openapi.json", # openapi.json is typically a released version and could carry old typos
+    "target",
+]
+
+ignore-words-list = [
+    "ABD",                 # Geohash example
+    "generall",            # The boss
+    "hel",                 # Query token
+    "mmapped",             # Memory mapped
+]
