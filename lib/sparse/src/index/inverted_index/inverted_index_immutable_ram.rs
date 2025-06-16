@@ -81,6 +81,11 @@ impl InvertedIndex for InvertedIndexImmutableRam {
         InvertedIndexMmap::files(path)
     }
 
+    fn immutable_files(path: &Path) -> Vec<std::path::PathBuf> {
+        // `InvertedIndexImmutableRam` is always immutable
+        InvertedIndexMmap::immutable_files(path)
+    }
+
     fn remove(&mut self, _id: PointOffsetType, _old_vector: RemappedSparseVector) {
         panic!("Cannot remove from a read-only RAM inverted index")
     }

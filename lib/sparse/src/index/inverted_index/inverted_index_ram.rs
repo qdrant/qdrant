@@ -69,6 +69,11 @@ impl InvertedIndex for InvertedIndexRam {
         Vec::new()
     }
 
+    fn immutable_files(_path: &Path) -> Vec<PathBuf> {
+        // `InvertedIndexRam` has no files
+        Vec::new()
+    }
+
     fn remove(&mut self, id: PointOffsetType, old_vector: RemappedSparseVector) {
         let old_vector_size = old_vector.len() * size_of::<PostingElementEx>();
         for dim_id in old_vector.indices {

@@ -88,6 +88,11 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         InvertedIndexCompressedMmap::<W>::files(path)
     }
 
+    fn immutable_files(path: &Path) -> Vec<std::path::PathBuf> {
+        // `InvertedIndexCompressedImmutableRam` is always immutable
+        InvertedIndexCompressedMmap::<W>::immutable_files(path)
+    }
+
     fn remove(&mut self, _id: PointOffsetType, _old_vector: RemappedSparseVector) {
         panic!("Cannot remove from a read-only RAM inverted index")
     }
