@@ -30,6 +30,7 @@ pub struct MutableFullTextIndex {
     pub(super) inverted_index: MutableInvertedIndex,
     pub(super) config: TextIndexParams,
     pub(super) storage: Storage,
+    pub(super) tokenizer: Tokenizer,
 }
 
 pub(super) enum Storage {
@@ -48,10 +49,12 @@ impl MutableFullTextIndex {
         config: TextIndexParams,
     ) -> Self {
         let with_positions = config.phrase_matching == Some(true);
+        let tokenizer = Tokenizer::new(&config);
         Self {
             inverted_index: MutableInvertedIndex::new(with_positions),
             config,
             storage: Storage::RocksDb(db_wrapper),
+            tokenizer,
         }
     }
 
@@ -66,11 +69,13 @@ impl MutableFullTextIndex {
         })?;
 
         let phrase_matching = config.phrase_matching.unwrap_or_default();
+        let tokenizer = Tokenizer::new(&config);
 
         Ok(Self {
             inverted_index: MutableInvertedIndex::new(phrase_matching),
             config,
             storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
+            tokenizer,
         })
     }
 
@@ -232,7 +237,7 @@ impl MutableFullTextIndex {
         let mut str_tokens = Vec::new();
 
         for value in values {
-            Tokenizer::tokenize_doc(&value, &self.config, |token| {
+            self.tokenizer.tokenize_doc(&value, |token| {
                 str_tokens.push(token.to_owned());
             });
         }
@@ -374,6 +379,7 @@ mod tests {
             lowercase: None,
             phrase_matching: None,
             on_disk: None,
+            stopwords: None,
         };
 
         {

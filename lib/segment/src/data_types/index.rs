@@ -1,3 +1,7 @@
+use std::collections::BTreeSet;
+use std::fmt;
+use std::str::FromStr;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors};
@@ -198,6 +202,129 @@ pub struct TextIndexParams {
     // todo(phrase_match): remove skip
     #[serde(skip)]
     pub phrase_matching: Option<bool>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopwords: Option<StopwordsInterface>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[serde(untagged)]
+pub enum StopwordsInterface {
+    Language(Language),
+    Set(StopwordsSet),
+}
+
+impl StopwordsInterface {
+    #[cfg(feature = "testing")]
+    pub fn new_custom(custom: &[&str]) -> Self {
+        StopwordsInterface::Set(StopwordsSet {
+            languages: None,
+            custom: Some(custom.iter().map(|s| (*s).to_string()).collect()),
+        })
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn new_language(language: Language) -> Self {
+        StopwordsInterface::Language(language)
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn new_set(languages: &[Language], custom: &[&str]) -> Self {
+        StopwordsInterface::Set(StopwordsSet {
+            languages: Some(languages.iter().cloned().collect()),
+            custom: Some(custom.iter().map(|s| (*s).to_string()).collect()),
+        })
+    }
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, JsonSchema, Clone, PartialEq, PartialOrd, Ord, Hash, Eq,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Language {
+    #[serde(alias = "ar")]
+    Arabic,
+    #[serde(alias = "az")]
+    Azerbaijani,
+    #[serde(alias = "eu")]
+    Basque,
+    #[serde(alias = "bn")]
+    Bengali,
+    #[serde(alias = "ca")]
+    Catalan,
+    #[serde(alias = "zh")]
+    Chinese,
+    #[serde(alias = "da")]
+    Danish,
+    #[serde(alias = "nl")]
+    Dutch,
+    #[serde(alias = "en")]
+    English,
+    #[serde(alias = "fi")]
+    Finnish,
+    #[serde(alias = "fr")]
+    French,
+    #[serde(alias = "de")]
+    German,
+    #[serde(alias = "el")]
+    Greek,
+    #[serde(alias = "he")]
+    Hebrew,
+    #[serde(alias = "hi-en")]
+    Hinglish,
+    #[serde(alias = "hu")]
+    Hungarian,
+    #[serde(alias = "id")]
+    Indonesian,
+    #[serde(alias = "it")]
+    Italian,
+    #[serde(alias = "kk")]
+    Kazakh,
+    #[serde(alias = "ne")]
+    Nepali,
+    #[serde(alias = "no")]
+    Norwegian,
+    #[serde(alias = "pt")]
+    Portuguese,
+    #[serde(alias = "ro")]
+    Romanian,
+    #[serde(alias = "ru")]
+    Russian,
+    #[serde(alias = "sl")]
+    Slovene,
+    #[serde(alias = "es")]
+    Spanish,
+    #[serde(alias = "sv")]
+    Swedish,
+    #[serde(alias = "tg")]
+    Tajik,
+    #[serde(alias = "tr")]
+    Turkish,
+}
+impl fmt::Display for Language {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let json_string = serde_json::to_string(self).map_err(|_| fmt::Error)?;
+        f.write_str(json_string.trim_matches('"'))
+    }
+}
+
+impl FromStr for Language {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_str(&format!("\"{s}\""))
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+pub struct StopwordsSet {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub languages: Option<BTreeSet<Language>>,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom: Option<BTreeSet<String>>,
 }
 
 // Bool
@@ -242,4 +369,149 @@ pub struct DatetimeIndexParams {
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_stopwords_option_language_serialization() {
+        let stopwords = StopwordsInterface::Language(Language::English);
+        let json = serde_json::to_string(&stopwords).unwrap();
+        assert_eq!(json, r#""english""#);
+
+        let deserialized: StopwordsInterface = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, stopwords);
+    }
+
+    #[test]
+    fn test_stopwords_option_set_serialization() {
+        let stopwords = StopwordsInterface::new_set(&[Language::English], &["AAA"]);
+        let json = serde_json::to_string(&stopwords).unwrap();
+        let expected = r#"{"languages":["english"],"custom":["AAA"]}"#;
+        assert_eq!(json, expected);
+
+        let deserialized: StopwordsInterface = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, stopwords);
+    }
+
+    #[test]
+    fn test_deserialize_stopwords_from_json_examples() {
+        let json1 = r#"{"custom": ["as", "the", "a"]}"#;
+        let stopwords1: StopwordsInterface = serde_json::from_str(json1).unwrap();
+
+        let expected = StopwordsInterface::new_custom(&["as", "the", "a"]);
+        assert_eq!(stopwords1, expected);
+        let json2 = r#""english""#;
+        let stopwords2: StopwordsInterface = serde_json::from_str(json2).unwrap();
+        if let StopwordsInterface::Language(lang) = stopwords2 {
+            assert_eq!(lang, Language::English);
+        } else {
+            panic!("Expected Language");
+        }
+
+        // single language
+        let json3 = r#"{"languages": ["english"], "custom": ["AAA"]}"#;
+        let stopwords3: StopwordsInterface = serde_json::from_str(json3).unwrap();
+        let expected = StopwordsInterface::new_set(&[Language::English], &["AAA"]);
+        assert_eq!(stopwords3, expected);
+
+        // languages array
+        let json4 = r#"{"languages": ["english", "spanish"], "custom": ["AAA"]}"#;
+        let stopwords4: StopwordsInterface = serde_json::from_str(json4).unwrap();
+
+        let expected =
+            StopwordsInterface::new_set(&[Language::English, Language::Spanish], &["AAA"]);
+        assert_eq!(stopwords4, expected);
+
+        // null languages field
+        let json5 = r#"{"languages": null, "custom": ["AAA"]}"#;
+        let stopwords5: StopwordsInterface = serde_json::from_str(json5).unwrap();
+
+        let expected = StopwordsInterface::new_custom(&["AAA"]);
+        assert_eq!(stopwords5, expected);
+    }
+
+    #[test]
+    fn test_language_aliases() {
+        // Test that language aliases work for deserialization
+        let json_en = r#""en""#;
+        let lang_en: Language = serde_json::from_str(json_en).unwrap();
+        assert_eq!(lang_en, Language::English);
+
+        let json_fr = r#""fr""#;
+        let lang_fr: Language = serde_json::from_str(json_fr).unwrap();
+        assert_eq!(lang_fr, Language::French);
+
+        let json_es = r#""es""#;
+        let lang_es: Language = serde_json::from_str(json_es).unwrap();
+        assert_eq!(lang_es, Language::Spanish);
+
+        // Test aliases in StopwordsInterface
+        let json_interface = r#""en""#;
+        let stopwords: StopwordsInterface = serde_json::from_str(json_interface).unwrap();
+        if let StopwordsInterface::Language(lang) = stopwords {
+            assert_eq!(lang, Language::English);
+        } else {
+            panic!("Expected Language");
+        }
+
+        // Test aliases in StopwordsSet
+        let json_set = r#"{"languages": ["en"], "custom": ["AAA"]}"#;
+        let stopwords_set: StopwordsInterface = serde_json::from_str(json_set).unwrap();
+
+        let expected = StopwordsInterface::new_set(&[Language::English], &["AAA"]);
+
+        assert_eq!(stopwords_set, expected);
+
+        // languages array
+        let json_set_compat = r#"{"languages": ["en", "es"], "custom": ["AAA"]}"#;
+        let stopwords_set_compat: StopwordsInterface =
+            serde_json::from_str(json_set_compat).unwrap();
+
+        let expected_set =
+            StopwordsInterface::new_set(&[Language::English, Language::Spanish], &["AAA"]);
+
+        assert_eq!(stopwords_set_compat, expected_set);
+    }
+
+    #[test]
+    fn test_unsupported_language_error() {
+        // Test that unsupported languages are rejected with a clear error message
+        let json_unsupported = r#""klingon""#;
+        let result = serde_json::from_str::<Language>(json_unsupported);
+        assert!(result.is_err());
+        let error = result.unwrap_err().to_string();
+        assert!(
+            error.contains("klingon"),
+            "Error message should contain 'klingon', got: {error}",
+        );
+
+        let json_interface = r#""klingon""#;
+        let result = serde_json::from_str::<StopwordsInterface>(json_interface);
+        assert!(result.is_err());
+
+        let json_set = r#"{"languages": "klingon", "custom": ["AAA"]}"#;
+        let result = serde_json::from_str::<StopwordsInterface>(json_set);
+        assert!(result.is_err());
+
+        // languages array
+        let json_set_compat = r#"{"languages": ["english", "klingon"], "custom": ["AAA"]}"#;
+        let result = serde_json::from_str::<StopwordsInterface>(json_set_compat);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_language_field_aliasing() {
+        // Test that "languages" key works for deserialization
+
+        // Multiple languages using "languages" key should work
+        let json_multiple = r#"{"languages": ["english", "french"], "custom": ["AAA"]}"#;
+        let stopwords_multiple: StopwordsInterface = serde_json::from_str(json_multiple).unwrap();
+        let expected_set =
+            StopwordsInterface::new_set(&[Language::English, Language::French], &["AAA"]);
+
+        assert_eq!(stopwords_multiple, expected_set);
+    }
 }
