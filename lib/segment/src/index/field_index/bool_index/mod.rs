@@ -167,6 +167,7 @@ impl PayloadFieldIndex for BoolIndex {
 
     fn immutable_files(&self) -> Vec<std::path::PathBuf> {
         match self {
+            #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(_) => vec![],
             BoolIndex::Mmap(index) => index.immutable_files(),
         }
