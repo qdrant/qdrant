@@ -19,7 +19,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Codespell
-        uses: codespell-project/actions-codespell@v2
-        with:
-          skip: '**/stop_words/*.rs'
+      - name: Install Codespell
+        run: python -m pip install --upgrade 'codespell[toml]'
+
+      - name: Run Codespell
+        run: codespell --toml tools/codespell.toml
