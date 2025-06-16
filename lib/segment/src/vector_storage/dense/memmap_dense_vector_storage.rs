@@ -280,6 +280,12 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         vec![self.vectors_path.clone(), self.deleted_path.clone()]
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        // Vector storage is initialized by `SegmentBuilder` during segment construction
+        // and can't be changed after
+        vec![self.vectors_path.clone()]
+    }
+
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         Ok(self.mmap_store.as_mut().unwrap().delete(key))
     }

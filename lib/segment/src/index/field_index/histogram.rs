@@ -199,6 +199,10 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
         vec![path.join(CONFIG_PATH), path.join(BORDERS_PATH)]
     }
 
+    pub fn immutable_files(path: &Path) -> Vec<PathBuf> {
+        vec![path.join(CONFIG_PATH)]
+    }
+
     #[cfg(test)]
     pub fn total_count(&self) -> usize {
         self.total_count

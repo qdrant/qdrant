@@ -599,6 +599,22 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         all_files
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let config_file = SparseIndexConfig::get_config_path(&self.path);
+        if !config_file.exists() {
+            return vec![];
+        }
+
+        let mut immutable_files = vec![
+            self.path.join(VERSION_FILE), // TODO: Is version file immutable?
+        ];
+        immutable_files.retain(|f| f.exists());
+
+        immutable_files.push(config_file);
+        immutable_files.extend_from_slice(&TInvertedIndex::immutable_files(&self.path));
+        immutable_files
+    }
+
     fn indexed_vector_count(&self) -> usize {
         self.inverted_index.vector_count()
     }

@@ -281,6 +281,11 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         vec![self.file_name.clone()]
     }
 
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        // `MmapPointToValues` is immutable
+        vec![self.file_name.clone()]
+    }
+
     pub fn check_values_any(
         &self,
         point_id: PointOffsetType,

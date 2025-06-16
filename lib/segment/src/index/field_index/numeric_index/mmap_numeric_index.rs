@@ -204,6 +204,13 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         files
     }
 
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = vec![self.path.join(PAIRS_PATH), self.path.join(CONFIG_PATH)];
+        files.extend(self.point_to_values.immutable_files());
+        files.extend(Histogram::<T>::immutable_files(&self.path));
+        files
+    }
+
     pub fn flusher(&self) -> Flusher {
         self.deleted.flusher()
     }

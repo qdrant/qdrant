@@ -55,6 +55,11 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     }
 
     #[inline]
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.mmap_storage.immutable_files()
+    }
+
+    #[inline]
     fn flusher(&self) -> Flusher {
         self.mmap_storage.flusher()
     }

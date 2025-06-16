@@ -228,7 +228,7 @@ impl QuantizedVectors {
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
-        Vec::new() // TODO!
+        self.files() // quantized vectors are always immutable
     }
 
     pub fn versioned_files(&self) -> Vec<(PathBuf, u64)> {

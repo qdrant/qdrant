@@ -43,6 +43,10 @@ impl MmapFullTextIndex {
         self.inverted_index.files()
     }
 
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        self.inverted_index.immutable_files()
+    }
+
     fn path(&self) -> &PathBuf {
         &self.inverted_index.path
     }

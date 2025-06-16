@@ -89,6 +89,10 @@ impl<V: Blob> Gridstore<V> {
         paths
     }
 
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.base_path.join(CONFIG_FILENAME)]
+    }
+
     fn next_page_id(&self) -> PageId {
         self.pages.len() as PageId
     }

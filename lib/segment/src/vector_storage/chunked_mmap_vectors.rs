@@ -340,6 +340,10 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         }
         files
     }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![Self::config_file(&self.directory)] // TODO: Is config immutable?
+    }
 }
 
 impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T> {
@@ -365,6 +369,11 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     #[inline]
     fn files(&self) -> Vec<PathBuf> {
         ChunkedMmapVectors::files(self)
+    }
+
+    #[inline]
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        ChunkedMmapVectors::immutable_files(self)
     }
 
     #[inline]

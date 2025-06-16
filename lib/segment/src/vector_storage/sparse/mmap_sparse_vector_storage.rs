@@ -309,6 +309,10 @@ impl VectorStorage for MmapSparseVectorStorage {
         files
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.storage.read().immutable_files()
+    }
+
     fn delete_vector(
         &mut self,
         key: common::types::PointOffsetType,

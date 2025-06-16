@@ -1426,6 +1426,10 @@ impl VectorIndex for HNSWIndex {
         files
     }
 
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.files() // All HNSW index files are immutable 😎
+    }
+
     fn indexed_vector_count(&self) -> usize {
         self.config
             .indexed_vector_count

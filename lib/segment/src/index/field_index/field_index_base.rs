@@ -47,6 +47,8 @@ pub trait PayloadFieldIndex {
 
     fn files(&self) -> Vec<PathBuf>;
 
+    fn immutable_files(&self) -> Vec<PathBuf>;
+
     /// Get iterator over points fitting given `condition`
     /// Return `None` if condition does not match the index type
     fn filter<'a>(
@@ -249,6 +251,10 @@ impl FieldIndex {
 
     pub fn files(&self) -> Vec<PathBuf> {
         self.get_payload_field_index().files()
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        self.get_payload_field_index().immutable_files()
     }
 
     pub fn filter<'a>(
