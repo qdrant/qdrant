@@ -1,33 +1,23 @@
 use common::types::PointOffsetType;
+use roaring::RoaringBitmap;
 
 #[derive(Clone, Debug, Default)]
 pub struct PostingList {
-    list: Vec<PointOffsetType>,
+    list: RoaringBitmap,
 }
 
 impl PostingList {
     pub fn insert(&mut self, idx: PointOffsetType) {
-        if self.list.is_empty() || idx > *self.list.last().unwrap() {
-            self.list.push(idx);
-        } else if let Err(insertion_idx) = self.list.binary_search(&idx) {
-            // Yes, this is O(n) but:
-            // 1. That would give us maximal search performance with minimal memory usage
-            // 2. Documents are inserted mostly sequentially, especially in large segments
-            // 3. Vector indexing is more expensive anyway
-            // 4. For loading, insertion is strictly in increasing order
-            self.list.insert(insertion_idx, idx);
-        }
+        self.list.insert(idx);
     }
 
     pub fn remove(&mut self, idx: PointOffsetType) {
-        if let Ok(removal_idx) = self.list.binary_search(&idx) {
-            self.list.remove(removal_idx);
-        }
+        self.list.remove(idx);
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.list.len()
+        self.list.len() as usize
     }
 
     #[inline]
@@ -37,11 +27,11 @@ impl PostingList {
 
     #[inline]
     pub fn contains(&self, val: PointOffsetType) -> bool {
-        self.list.binary_search(&val).is_ok()
+        self.list.contains(val)
     }
 
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
-        self.list.iter().copied()
+        self.list.iter()
     }
 }
