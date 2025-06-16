@@ -108,6 +108,7 @@ impl IndexBuilder {
                     storage,
                     inverted_index: _,
                     config,
+                    tokenizer: _,
                 } = index;
                 let mutable_text_index::Storage::RocksDb(db_wrapper) = storage else {
                     panic!("expected RocksDB storage for immutable index");

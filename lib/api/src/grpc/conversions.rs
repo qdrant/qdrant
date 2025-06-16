@@ -49,9 +49,10 @@ use crate::grpc::qdrant::{
     PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
     PointStruct, PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
     QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
-    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StrictModeConfig,
-    TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount,
-    VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key, with_vectors_selector,
+    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StopwordsSet,
+    StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
+    ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key,
+    with_vectors_selector,
 };
 use crate::grpc::{
     DecayParamsExpression, DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
@@ -214,8 +215,13 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
             lowercase,
             on_disk,
             phrase_matching: _, // todo(phrase_matching): populate this
+            stopwords,
         } = params;
         let tokenizer = TokenizerType::from(tokenizer);
+
+        // Convert stopwords if present
+        let stopwords_set = stopwords.map(StopwordsSet::from);
+
         PayloadIndexParams {
             index_params: Some(IndexParams::TextIndexParams(TextIndexParams {
                 tokenizer: tokenizer as i32,
@@ -223,6 +229,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                 min_token_len: min_token_len.map(|x| x as u64),
                 max_token_len: max_token_len.map(|x| x as u64),
                 on_disk,
+                stopwords: stopwords_set,
             })),
         }
     }
@@ -314,6 +321,36 @@ impl From<segment::types::PayloadSchemaType> for FieldType {
     }
 }
 
+impl From<segment::data_types::index::StopwordsInterface> for StopwordsSet {
+    fn from(stopwords: segment::data_types::index::StopwordsInterface) -> Self {
+        match stopwords {
+            segment::data_types::index::StopwordsInterface::Language(lang) => {
+                let lang_str = lang.to_string();
+
+                StopwordsSet {
+                    languages: vec![lang_str],
+                    custom: vec![],
+                }
+            }
+            segment::data_types::index::StopwordsInterface::Set(set) => {
+                let languages = if let Some(languages) = set.languages {
+                    languages.iter().map(|lang| lang.to_string()).collect()
+                } else {
+                    vec![]
+                };
+
+                let custom = if let Some(custom) = set.custom {
+                    custom.into_iter().collect()
+                } else {
+                    vec![]
+                };
+
+                StopwordsSet { languages, custom }
+            }
+        }
+    }
+}
+
 impl TryFrom<TokenizerType> for segment::data_types::index::TokenizerType {
     type Error = Status;
     fn try_from(tokenizer_type: TokenizerType) -> Result<Self, Self::Error> {
@@ -401,6 +438,39 @@ impl TryFrom<GeoIndexParams> for segment::data_types::index::GeoIndexParams {
     }
 }
 
+impl TryFrom<StopwordsSet> for segment::data_types::index::StopwordsInterface {
+    type Error = Status;
+
+    fn try_from(value: StopwordsSet) -> Result<Self, Self::Error> {
+        let StopwordsSet { languages, custom } = value;
+
+        let result_languages = if languages.is_empty() {
+            None
+        } else {
+            Some(
+                languages
+                    .into_iter()
+                    .map(|lang| segment::data_types::index::Language::from_str(&lang))
+                    .collect::<Result<_, _>>()
+                    .map_err(|e| Status::invalid_argument(format!("unknown language: {e}")))?,
+            )
+        };
+
+        let result_custom = if custom.is_empty() {
+            None
+        } else {
+            Some(custom.into_iter().map(|word| word.to_lowercase()).collect())
+        };
+
+        Ok(segment::data_types::index::StopwordsInterface::Set(
+            segment::data_types::index::StopwordsSet {
+                languages: result_languages,
+                custom: result_custom,
+            },
+        ))
+    }
+}
+
 impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
     type Error = Status;
     fn try_from(params: TextIndexParams) -> Result<Self, Self::Error> {
@@ -410,7 +480,18 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             min_token_len,
             max_token_len,
             on_disk,
+            stopwords,
         } = params;
+
+        // Convert stopwords if present
+        let stopwords_converted = if let Some(set) = stopwords {
+            Some(segment::data_types::index::StopwordsInterface::try_from(
+                set,
+            )?)
+        } else {
+            None
+        };
+
         Ok(segment::data_types::index::TextIndexParams {
             r#type: TextIndexType::Text,
             tokenizer: TokenizerType::try_from(tokenizer)
@@ -421,6 +502,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             max_token_len: max_token_len.map(|x| x as usize),
             on_disk,
             phrase_matching: None, // todo(phrase_matching): populate this
+            stopwords: stopwords_converted,
         })
     }
 }

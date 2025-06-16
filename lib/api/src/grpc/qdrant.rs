@@ -818,6 +818,17 @@ pub struct GeoIndexParams {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StopwordsSet {
+    /// List of languages to use stopwords from
+    #[prost(string, repeated, tag = "1")]
+    pub languages: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// List of custom stopwords
+    #[prost(string, repeated, tag = "2")]
+    pub custom: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TextIndexParams {
     /// Tokenizer type
     #[prost(enumeration = "TokenizerType", tag = "1")]
@@ -834,6 +845,9 @@ pub struct TextIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Stopwords for the text index
+    #[prost(message, optional, tag = "6")]
+    pub stopwords: ::core::option::Option<StopwordsSet>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
