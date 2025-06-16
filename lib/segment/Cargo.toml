@@ -101,7 +101,7 @@ tap = { workspace = true }
 zerocopy = { workspace = true }
 lazy_static = "1.5.0"
 
-sysinfo = "0.33"
+sysinfo = "0.35"
 charabia = { version = "0.9.3", default-features = false, features = [
     "greek",
     "hebrew",
