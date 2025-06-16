@@ -1108,6 +1108,7 @@ mod tests {
                     .unwrap();
                 point_offset += 1;
             }
+            storage.flush().unwrap();
             point_offset
         }
 
@@ -1162,6 +1163,7 @@ mod tests {
         storage_double_pass_is_consistent(&storage, 0);
 
         // drop storage
+        storage.flush().unwrap();
         drop(storage);
 
         // reopen storage
