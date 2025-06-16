@@ -10,6 +10,7 @@ mod startup;
 mod tonic;
 mod tracing;
 
+use std::fs::create_dir_all;
 use std::io::Error;
 use std::sync::Arc;
 use std::thread;
@@ -24,6 +25,7 @@ use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
+use memory::checkfs::{check_fs_info, check_mmap_functionality};
 use slog::Drain;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
@@ -212,6 +214,41 @@ fn main() -> anyhow::Result<()> {
 
     // Validate as soon as possible, but we must initialize logging first
     settings.validate_and_warn();
+
+    create_dir_all(&settings.storage.storage_path)?;
+
+    // Check if the filesystem is compatible with Qdrant
+    match check_fs_info(&settings.storage.storage_path) {
+        memory::checkfs::FsCheckResult::Good => {} // Do nothing
+        memory::checkfs::FsCheckResult::Unknown(details) => {
+            match check_mmap_functionality(&settings.storage.storage_path) {
+                Ok(true) => {
+                    log::warn!(
+                        "There is a potential issue with the filesystem for storage path {}. Details: {details}",
+                        settings.storage.storage_path
+                    );
+                }
+                Ok(false) => {
+                    log::error!(
+                        "Filesystem check failed for storage path {}. Details: {details}",
+                        settings.storage.storage_path
+                    );
+                }
+                Err(e) => {
+                    log::error!(
+                        "Unable to check mmap functionality for storage path {}. Details: {details}, error: {e}",
+                        settings.storage.storage_path
+                    );
+                }
+            }
+        }
+        memory::checkfs::FsCheckResult::Bad(details) => {
+            log::error!(
+                "Filesystem check failed for storage path {}. Details: {details}",
+                settings.storage.storage_path
+            );
+        }
+    }
 
     // Report feature flags that are enabled for easier debugging
     let flags = feature_flags();
