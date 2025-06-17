@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use vaporetto::{Model, Predictor, Sentence};
 
 /// Vaporetto prediction model. Source: https://github.com/daac-tools/vaporetto-models/releases/tag/v0.5.0
-const MODEL: &[u8] = include_bytes!("../../../../../../../tokenizer/bccwj-suw_c1.0.model");
+const MODEL: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tokenizer/bccwj-suw_c1.0.model"));
 
 /// Sha512 checksum of the model to ensure integrity and make modifications or corrupt model file easier to detect.
 #[cfg(test)]
@@ -41,9 +41,9 @@ impl JapaneseTokenizer {
 
         for i in s.iter_tokens() {
             let surface = i.surface();
-
-            // Skip whitespaces of non-japanese text that could be part of input.
-            if surface.split_ascii_whitespace().next().is_none() {
+            
+            // Skip if all characters are not alphanumeric or if the surface is empty.
+            if surface.chars().all(|char| !char.is_alphabetic()) {
                 continue;
             }
 
@@ -97,7 +97,6 @@ mod test {
                 "の",
                 "テキスト",
                 "です",
-                "。",
                 "Qdrant",
                 "の",
                 "コード",
@@ -111,7 +110,6 @@ mod test {
                 "て",
                 "い",
                 "ます",
-                "。"
             ]
         );
     }
@@ -131,14 +129,11 @@ mod test {
                 "の",
                 "テキスト",
                 "です",
-                "。",
                 "It",
-                "'",
                 "s",
                 "used",
                 "in",
                 "Qdrant",
-                "'",
                 "s",
                 "code",
                 "in",
