@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use crate::types::SeqNumberType;
+use crate::types::{SeqNumberType, VectorNameBuf};
 
 #[derive(Clone, Debug, Default)]
 pub struct VersionTracker {
-    vector_storage: HashMap<String, SeqNumberType>,
+    vector_storage: HashMap<VectorNameBuf, SeqNumberType>,
     payload_storage: Option<SeqNumberType>,
 }
 
