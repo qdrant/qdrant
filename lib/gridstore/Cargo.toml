@@ -22,7 +22,7 @@ serde = { workspace = true }
 smallvec = { workspace = true }
 parking_lot = { workspace = true }
 tempfile = { workspace = true }
-lz4_flex = { version = "0.11.3", default-features = false }
+lz4_flex = { version = "0.11.4", default-features = false }
 rand = { workspace = true }
 bitvec = { workspace = true }
 itertools = { workspace = true }
