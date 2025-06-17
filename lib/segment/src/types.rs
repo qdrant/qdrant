@@ -663,8 +663,8 @@ impl Eq for ScalarQuantizationConfig {}
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum BinaryQuantizationEncoding {
-    #[default]
     OneBit,
+    #[default]
     TwoBits,
     OneAndHalfBits,
 }
