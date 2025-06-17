@@ -217,7 +217,7 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
     return get_uri(http_port), bootstrap_uri
 
 
-def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={}, uris_in_env=False):
+def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={}, uris_in_env=False, log_file_prefix=""):
     assert_project_root()
     peer_dirs = make_peer_folders(tmp_path, num_peers)
 
@@ -225,7 +225,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
     peer_api_uris = []
 
     # Start bootstrap
-    (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], "peer_0_0.log", port=port_seed,
+    (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], f"{log_file_prefix}peer_0_0.log", port=port_seed,
                                                           extra_env=extra_env, uris_in_env=uris_in_env)
     peer_api_uris.append(bootstrap_api_uri)
 
@@ -237,7 +237,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
     for i in range(1, len(peer_dirs)):
         if port_seed is not None:
             port = port_seed + i * 100
-        peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env, uris_in_env=uris_in_env))
+        peer_api_uris.append(start_peer(peer_dirs[i], f"{log_file_prefix}peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env, uris_in_env=uris_in_env))
 
     # Wait for cluster
     wait_for_uniform_cluster_status(peer_api_uris, leader, headers=headers)

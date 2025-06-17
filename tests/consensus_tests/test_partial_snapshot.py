@@ -15,44 +15,58 @@ SHARD = 0
     #                    (useful when used with `recove_read = True`)
     #
     # recover_read     - bootstrap read peer by recovering collection snapshot from write peer
-    #                    (ensures segments on both peers are *exactly* the same)
+    #                    (ensures segment IDs and points on both peers are *exactly* the same)
     #
     # append_points    - append *new* points to write peer
-    #                    (this should not modify indexed segment on write peer)
+    #                    (this should modify appendable segments on write peer)
     #
     # update_points    - update (if > 0) or delete (if < 0) *existing* points on write peer
-    #                    (this should modify indexed segment on write peer)
+    #                    (this should modify indexed segments on write peer)
 
     "bootstrap_points, recover_read, append_points, update_points",
     [
-        # Test *overwriting* partial snapshots:
+        # Test "full" recovery:
         #
         # - new collection is created on read peer (`recover_read = False`)
-        #   - so read and write peers have *different* segments
+        #   - collection exists on both peers, but it's empty on read peer and segment IDs are different
         # - partial snapshot recovered on read peer
-        #   - partial snapshot should act as regular shard snapshot
-        # - (`append_points`/`update_points` is meaningless in this case)
+        #   - because segments are different between peers, partial snapshot should act as regular shard snapshot
+        #   - e.g., include every segment and every file from write peer, and replace all segments on read peer
+        # - `append_points`/`update_points` are meaningless in this test case
         (0,   False, 0,  0),
         (100, False, 0,  0),
 
-        # Test *empty* (or *partially-empty*) partial snapshots:
+        # Test "empty" recovery:
         #
-        # - read peer bootstrapped from write peer
-        # - no changes or only changes to appendable segments on write peer
+        # - read peer bootstrapped from write peer (`recover_read = True`)
+        #   - collection is *exactly* the same on both peers: same points and segment IDs
+        # - no changes on write peer (`append_points = 0` and `update_points = 0`)
         # - partial snapshot recovered on read peer
-        #   - appendable segment is either empty (first two tests) or full (second two)
-        #   - indexed segment is empty in all tests
+        #   - because there were no changes on write peer, the snapshot should be "empty"
+        #   - e.g., all segments should only include `segment_manifest.json`, but no data files,
+        #     no segments should be removed or changed on read peer
         (0,   True,  0,  0),
         (100, True,  0,  0),
+
+        # Test appendable segments recovery:
+        #
+        # - read peer bootstrapped from write peer (`recover_read = True`)
+        #   - collection is *exactly* the same on both peers: same points and segment IDs
+        # - new points appended on write peer (`append_points = 5`)
+        # - partial snapshot recovered on read peer
+        #   - only appendable segments should be included in partial snapshot, immutable segments
+        #     should be empty (e.g., only contain `segment_manifest.json`, but no data files)
         (0,   True,  5,  0),
         (100, True,  5,  0),
 
-        # Test *true* partial snapshots:
+        # Test immutable segments recovery:
         #
-        # - read peer is bootstrapped from write peer
-        # - indexed points updated/deleted on write peer
+        # - read peer bootstrapped from write peer (`recover_read = True`)
+        #   - collection is *exactly* the same on both peers: same points and segment IDs
+        # - indexed points updated/deleted on write peer (`update_points != 0`)
         # - partial snapshot recovered on read peer
-        #   - indexed segment should should exclude immutable files (e.g., ID mappings file)
+        #   - only immutable segments should be included in partial snapshot, appendable segments
+        #     should be empty (e.g., only contain `segment_manifest.json`, but no data files)
         (100, True,  0,  5),
         (100, True,  0, -5),
     ]
@@ -119,12 +133,12 @@ def bootstrap_peers(tmp: pathlib.Path, bootstrap_points = 0, recover_read = Fals
     return write_peer, read_peer
 
 def bootstrap_write_peer(tmp: pathlib.Path, bootstrap_points = 0):
-    write_peer = bootstrap_peer(tmp / "write", 6331)
+    write_peer = bootstrap_peer(tmp / "write", 6331, "write_")
     bootstrap_collection(write_peer, bootstrap_points)
     return write_peer
 
 def bootstrap_read_peer(tmp: pathlib.Path, recover_from_url: str | None = None):
-    read_peer = bootstrap_peer(tmp / "read", 63331)
+    read_peer = bootstrap_peer(tmp / "read", 63331, "read_")
 
     if recover_from_url is None:
         bootstrap_collection(read_peer)
@@ -133,7 +147,7 @@ def bootstrap_read_peer(tmp: pathlib.Path, recover_from_url: str | None = None):
 
     return read_peer
 
-def bootstrap_peer(path: pathlib.Path, port: int):
+def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = ""):
     path.mkdir()
 
     config = {
@@ -141,7 +155,7 @@ def bootstrap_peer(path: pathlib.Path, port: int):
         "QDRANT__FEATURE_FLAGS__USE_MUTABLE_ID_TRACKER_WITHOUT_ROCKSDB": "true",
     }
 
-    uris, _, _ = start_cluster(path, 1, port_seed = port, extra_env = config)
+    uris, _, _ = start_cluster(path, 1, port_seed = port, extra_env = config, log_file_prefix = log_file_prefix)
 
     return uris[0]
 
