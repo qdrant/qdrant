@@ -1,5 +1,4 @@
 use std::fs::canonicalize;
-use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 
@@ -97,25 +96,21 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
     }
 }
 
-#[derive(Debug)]
-pub struct QuantizedMultivectorStorage<TEncodedQuery, QuantizedStorage, TMultivectorOffsetsStorage>
+pub struct QuantizedMultivectorStorage<QuantizedStorage, TMultivectorOffsetsStorage>
 where
-    TEncodedQuery: Sized,
-    QuantizedStorage: EncodedVectors<TEncodedQuery>,
+    QuantizedStorage: EncodedVectors,
     TMultivectorOffsetsStorage: MultivectorOffsetsStorage,
 {
     quantized_storage: QuantizedStorage,
     offsets: TMultivectorOffsetsStorage,
     dim: usize,
     multi_vector_config: MultiVectorConfig,
-    encoded_query: PhantomData<TEncodedQuery>,
 }
 
-impl<TEncodedQuery, QuantizedStorage, TMultivectorOffsetsStorage>
-    QuantizedMultivectorStorage<TEncodedQuery, QuantizedStorage, TMultivectorOffsetsStorage>
+impl<QuantizedStorage, TMultivectorOffsetsStorage>
+    QuantizedMultivectorStorage<QuantizedStorage, TMultivectorOffsetsStorage>
 where
-    TEncodedQuery: Sized,
-    QuantizedStorage: EncodedVectors<TEncodedQuery>,
+    QuantizedStorage: EncodedVectors,
     TMultivectorOffsetsStorage: MultivectorOffsetsStorage,
 {
     pub fn storage(&self) -> &QuantizedStorage {
@@ -129,11 +124,10 @@ where
         multi_vector_config: MultiVectorConfig,
     ) -> Self {
         Self {
-            dim,
             quantized_storage,
             offsets,
+            dim,
             multi_vector_config,
-            encoded_query: PhantomData,
         }
     }
 
@@ -159,14 +153,13 @@ where
             quantized_storage: QuantizedStorage::load(data_path, meta_path, vector_parameters)?,
             offsets: TMultivectorOffsetsStorage::load(offsets_path)?,
             multi_vector_config: *multi_vector_config,
-            encoded_query: PhantomData,
         })
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors
     fn score_point_max_similarity(
         &self,
-        query: &Vec<TEncodedQuery>,
+        query: &Vec<QuantizedStorage::EncodedQuery>,
         vector_index: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
@@ -237,14 +230,15 @@ where
     }
 }
 
-impl<TEncodedQuery, QuantizedStorage, TMultivectorOffsetsStorage> EncodedVectors<Vec<TEncodedQuery>>
-    for QuantizedMultivectorStorage<TEncodedQuery, QuantizedStorage, TMultivectorOffsetsStorage>
+impl<QuantizedStorage, TMultivectorOffsetsStorage> EncodedVectors
+    for QuantizedMultivectorStorage<QuantizedStorage, TMultivectorOffsetsStorage>
 where
-    TEncodedQuery: Sized,
-    QuantizedStorage: EncodedVectors<TEncodedQuery>,
+    QuantizedStorage: EncodedVectors,
     TMultivectorOffsetsStorage: MultivectorOffsetsStorage,
 {
     // TODO(colbert): refactor `EncodedVectors` to support multi vector storage after quantization migration
+    type EncodedQuery = Vec<QuantizedStorage::EncodedQuery>;
+
     fn save(&self, _data_path: &Path, _meta_path: &Path) -> std::io::Result<()> {
         unreachable!("multivector quantized storage should be saved using `self.save_multi` method")
     }
@@ -264,7 +258,7 @@ where
         self.quantized_storage.is_on_disk()
     }
 
-    fn encode_query(&self, query: &[VectorElementType]) -> Vec<TEncodedQuery> {
+    fn encode_query(&self, query: &[VectorElementType]) -> Vec<QuantizedStorage::EncodedQuery> {
         let multi_vector = TypedMultiDenseVectorRef {
             dim: self.dim,
             flattened_vectors: query,
@@ -277,7 +271,7 @@ where
 
     fn score_point(
         &self,
-        query: &Vec<TEncodedQuery>,
+        query: &Vec<QuantizedStorage::EncodedQuery>,
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {

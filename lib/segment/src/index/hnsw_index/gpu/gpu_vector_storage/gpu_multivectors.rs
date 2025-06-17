@@ -58,13 +58,11 @@ impl ShaderBuilderParameters for GpuMultivectors {
 impl GpuMultivectors {
     /// Construct multivectors data from quantized storage.
     pub fn new_quantized<
-        TEncodedQuery: Sized,
-        QuantizedStorage: EncodedVectors<TEncodedQuery>,
+        QuantizedStorage: EncodedVectors,
         TMultivectorOffsetsStorage: MultivectorOffsetsStorage,
     >(
         device: Arc<gpu::Device>,
         quantized_storage: &QuantizedMultivectorStorage<
-            TEncodedQuery,
             QuantizedStorage,
             TMultivectorOffsetsStorage,
         >,

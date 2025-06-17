@@ -110,9 +110,10 @@ impl<
     TMetric: Metric<TElement>,
     TVectorStorage: MultiVectorStorage<TElement>,
     TQuery: Query<TypedMultiDenseVector<TElement>>,
-> QueryScorer<TypedMultiDenseVector<TElement>>
-    for MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery>
+> QueryScorer for MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery>
 {
+    type TVector = TypedMultiDenseVector<TElement>;
+
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_multi(idx);

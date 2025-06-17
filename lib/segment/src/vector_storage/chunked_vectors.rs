@@ -248,7 +248,9 @@ impl<T: Clone> TrySetCapacityExact for ChunkedVectors<T> {
     }
 }
 
-impl quantization::EncodedStorageBuilder<ChunkedVectors<u8>> for ChunkedVectors<u8> {
+impl quantization::EncodedStorageBuilder for ChunkedVectors<u8> {
+    type Storage = ChunkedVectors<u8>;
+
     fn build(self) -> ChunkedVectors<u8> {
         self
     }

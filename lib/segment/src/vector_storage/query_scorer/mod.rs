@@ -13,7 +13,9 @@ pub mod multi_custom_query_scorer;
 pub mod multi_metric_query_scorer;
 pub mod sparse_custom_query_scorer;
 
-pub trait QueryScorer<TVector: ?Sized> {
+pub trait QueryScorer {
+    type TVector: ?Sized;
+
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType;
 
     /// Score a batch of points
@@ -29,7 +31,7 @@ pub trait QueryScorer<TVector: ?Sized> {
         }
     }
 
-    fn score(&self, v2: &TVector) -> ScoreType;
+    fn score(&self, v2: &Self::TVector) -> ScoreType;
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 }

@@ -57,7 +57,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send,
-        mut storage_builder: impl EncodedStorageBuilder<TStorage> + Send,
+        mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage> + Send,
         vector_parameters: &VectorParameters,
         chunk_size: usize,
         max_kmeans_threads: usize,
@@ -133,7 +133,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     /// 'b is lifetime of parent scope
     fn encode_storage<'a: 'b, 'b>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send + 'b,
-        storage_builder: &'b mut (impl EncodedStorageBuilder<TStorage> + Send),
+        storage_builder: &'b mut (impl EncodedStorageBuilder<Storage = TStorage> + Send),
         vector_division: &'b [Range<usize>],
         centroids: &'b [Vec<f32>],
         max_threads: usize,
@@ -167,7 +167,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     fn encode_storage_rayon<'a: 'b, 'b>(
         scope: &rayon::Scope<'b>,
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send + 'b,
-        storage_builder: &'b mut (impl EncodedStorageBuilder<TStorage> + Send),
+        storage_builder: &'b mut (impl EncodedStorageBuilder<Storage = TStorage> + Send),
         vector_division: &'b [Range<usize>],
         centroids: &'b [Vec<f32>],
         max_threads: usize,
@@ -448,7 +448,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     }
 }
 
-impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectorsPQ<TStorage> {
+impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
+    type EncodedQuery = EncodedQueryPQ;
+
     fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
         meta_path.parent().map(std::fs::create_dir_all);
         atomic_save_json(meta_path, &self.metadata)?;

@@ -87,9 +87,10 @@ impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: MultiVectorStorage<TElement>,
-> QueryScorer<TypedMultiDenseVector<TElement>>
-    for MultiMetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
+> QueryScorer for MultiMetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {
+    type TVector = TypedMultiDenseVector<TElement>;
+
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_multi(idx);

@@ -6,10 +6,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memory::fadvise::clear_disk_cache;
-use quantization::encoded_vectors_binary::{EncodedBinVector, EncodedVectorsBin};
-use quantization::{
-    EncodedQueryPQ, EncodedQueryU8, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8,
-};
+use quantization::encoded_vectors_binary::EncodedVectorsBin;
+use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
 use super::quantized_multivector_storage::{
@@ -53,38 +51,26 @@ impl fmt::Debug for QuantizedVectorsConfig {
     }
 }
 
-type ScalarRamMulti = QuantizedMultivectorStorage<
-    EncodedQueryU8,
-    EncodedVectorsU8<ChunkedVectors<u8>>,
-    Vec<MultivectorOffset>,
->;
+type ScalarRamMulti =
+    QuantizedMultivectorStorage<EncodedVectorsU8<ChunkedVectors<u8>>, Vec<MultivectorOffset>>;
 
 type ScalarMmapMulti = QuantizedMultivectorStorage<
-    EncodedQueryU8,
     EncodedVectorsU8<QuantizedMmapStorage>,
     MultivectorOffsetsStorageMmap,
 >;
 
-type PQRamMulti = QuantizedMultivectorStorage<
-    EncodedQueryPQ,
-    EncodedVectorsPQ<ChunkedVectors<u8>>,
-    Vec<MultivectorOffset>,
->;
+type PQRamMulti =
+    QuantizedMultivectorStorage<EncodedVectorsPQ<ChunkedVectors<u8>>, Vec<MultivectorOffset>>;
 
 type PQMmapMulti = QuantizedMultivectorStorage<
-    EncodedQueryPQ,
     EncodedVectorsPQ<QuantizedMmapStorage>,
     MultivectorOffsetsStorageMmap,
 >;
 
-type BinaryRamMulti = QuantizedMultivectorStorage<
-    EncodedBinVector<u8>,
-    EncodedVectorsBin<u8, ChunkedVectors<u8>>,
-    Vec<MultivectorOffset>,
->;
+type BinaryRamMulti =
+    QuantizedMultivectorStorage<EncodedVectorsBin<u8, ChunkedVectors<u8>>, Vec<MultivectorOffset>>;
 
 type BinaryMmapMulti = QuantizedMultivectorStorage<
-    EncodedBinVector<u8>,
     EncodedVectorsBin<u8, QuantizedMmapStorage>,
     MultivectorOffsetsStorageMmap,
 >;

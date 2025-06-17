@@ -20,8 +20,10 @@ pub trait EncodedStorage {
     fn is_on_disk(&self) -> bool;
 }
 
-pub trait EncodedStorageBuilder<TStorage: EncodedStorage> {
-    fn build(self) -> TStorage;
+pub trait EncodedStorageBuilder {
+    type Storage: EncodedStorage;
+
+    fn build(self) -> Self::Storage;
 
     fn push_vector_data(&mut self, other: &[u8]);
 }
@@ -63,7 +65,9 @@ impl EncodedStorage for Vec<u8> {
     }
 }
 
-impl EncodedStorageBuilder<Vec<u8>> for Vec<u8> {
+impl EncodedStorageBuilder for Vec<u8> {
+    type Storage = Vec<u8>;
+
     fn build(self) -> Vec<u8> {
         self
     }
