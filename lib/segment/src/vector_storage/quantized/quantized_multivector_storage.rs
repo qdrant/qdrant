@@ -294,11 +294,10 @@ where
     }
 }
 
-impl<TEncodedQuery, QuantizedStorage, TMultivectorOffsetsStorage> MultivectorOffsets
-    for QuantizedMultivectorStorage<TEncodedQuery, QuantizedStorage, TMultivectorOffsetsStorage>
+impl<QuantizedStorage, TMultivectorOffsetsStorage> MultivectorOffsets
+    for QuantizedMultivectorStorage<QuantizedStorage, TMultivectorOffsetsStorage>
 where
-    TEncodedQuery: Sized,
-    QuantizedStorage: EncodedVectors<TEncodedQuery>,
+    QuantizedStorage: EncodedVectors,
     TMultivectorOffsetsStorage: MultivectorOffsetsStorage,
 {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {

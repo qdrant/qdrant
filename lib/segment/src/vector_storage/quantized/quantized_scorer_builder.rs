@@ -203,7 +203,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
 
     fn new_multi_quantized_scorer<TElement, TMetric>(
         self,
-        quantized_multivector_storage: &'a impl EncodedVectors + MultivectorOffsets,
+        quantized_multivector_storage: &'a (impl EncodedVectors + MultivectorOffsets),
     ) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
         TElement: PrimitiveVectorElement,
