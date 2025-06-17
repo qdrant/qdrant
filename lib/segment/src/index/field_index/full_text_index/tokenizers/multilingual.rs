@@ -54,7 +54,7 @@ impl MultilingualV2 {
         let stemmer = Stemmer::create(stemming_algo);
         for token in input.tokenize() {
             let base = stemmer.stem_cow(token.lemma);
-            
+
             // Prevent whitespaces and punctuation treated as separate tokens in the output.
             if base.chars().all(|char| !char.is_alphabetic()) {
                 continue;
