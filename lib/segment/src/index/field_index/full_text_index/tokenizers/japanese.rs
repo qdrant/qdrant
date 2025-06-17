@@ -4,7 +4,10 @@ use std::sync::LazyLock;
 use vaporetto::{Model, Predictor, Sentence};
 
 /// Vaporetto prediction model. Source: https://github.com/daac-tools/vaporetto-models/releases/tag/v0.5.0
-const MODEL: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tokenizer/bccwj-suw_c1.0.model"));
+const MODEL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tokenizer/bccwj-suw_c1.0.model"
+));
 
 /// Sha512 checksum of the model to ensure integrity and make modifications or corrupt model file easier to detect.
 #[cfg(test)]
@@ -41,7 +44,7 @@ impl JapaneseTokenizer {
 
         for i in s.iter_tokens() {
             let surface = i.surface();
-            
+
             // Skip if all characters are not alphanumeric or if the surface is empty.
             if surface.chars().all(|char| !char.is_alphabetic()) {
                 continue;
