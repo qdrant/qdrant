@@ -134,28 +134,45 @@ impl Segment {
         let segment_id = self.segment_id()?;
         let segment_version = self.version();
 
-        let all_files = self.files();
-        let immutable_files = self.immutable_files();
-
-        // Note, that `all_files` should already contain all `immutable_files`, so each versioned file
-        // would be iterated over *twice*:
-        // - first as `FileVersion::Unversioned`
-        // - and then with correct `FileVersion::Version`
-        //
-        // The loop below is structured to do safety-checks and work around this correctly.
-        let all_files = all_files
+        let files = self
+            .files()
             .into_iter()
-            .map(|path| (path, FileVersion::Unversioned))
-            .chain(immutable_files.into_iter().map(|path| {
-                (
-                    path,
-                    FileVersion::from(self.initial_version.or(self.version)),
-                )
-            }));
+            .map(|path| (path, FileVersion::Unversioned));
 
-        let mut file_versions = HashMap::new();
+        let vector_storage_files =
+            self.vector_data
+                .iter()
+                .flat_map(|(vector_name, vector_data)| {
+                    let version = self.version_tracker.get_vector(vector_name);
 
-        for (path, version) in all_files {
+                    vector_data
+                        .vector_storage
+                        .borrow()
+                        .files()
+                        .into_iter()
+                        .map(move |file| (file, FileVersion::from(version)))
+                });
+
+        let payload_storage_files = self
+            .payload_storage
+            .borrow()
+            .files()
+            .into_iter()
+            .map(|file| (file, FileVersion::from(self.version_tracker.get_payload())));
+
+        let immutable_files = self.immutable_files().into_iter().map(|path| {
+            let version = FileVersion::from(self.initial_version.or(self.version).unwrap_or(0));
+            (path, version)
+        });
+
+        let mut file_versions = HashMap::with_capacity(files.len());
+
+        let files = files
+            .chain(vector_storage_files)
+            .chain(payload_storage_files)
+            .chain(immutable_files);
+
+        for (path, version) in files {
             // All segment files should be contained within segment directory
             debug_assert!(
                 path.starts_with(&self.current_path),
@@ -165,46 +182,7 @@ impl Segment {
             );
 
             let path = strip_prefix(&path, &self.current_path)?;
-            let prev_version = file_versions.insert(path.to_path_buf(), version);
-
-            // `all_files` should iterate over versioned files twice: first as unversioned,
-            // and then once again with correct file version.
-            //
-            // These assertions check that each file in the manifest is unique:
-            // - unversioned file might be added twice, but it should *never* override existing *versioned* entry
-            // - versioned file can only be added once, after same file was added as unversioned,
-            //   it should *always* override existing *unversioned* entry
-            // - no file can *ever* override existing *versioned* entry
-            if version.is_unversioned() {
-                // Unversioned file should never override versioned entry
-                debug_assert!(
-                    matches!(prev_version, None | Some(FileVersion::Unversioned)),
-                    "unversioned segment file {} overrode versioned entry {:?}",
-                    path.display(),
-                    prev_version.unwrap(),
-                );
-            } else {
-                // Versioned file should always override unversioned entry
-                //
-                // Split into two separate assertions to provide better error messages
-
-                debug_assert_ne!(
-                    prev_version,
-                    None,
-                    "segment file {} with version {:?} did not override existing entry",
-                    path.display(),
-                    version,
-                );
-
-                debug_assert_eq!(
-                    prev_version,
-                    Some(FileVersion::Unversioned),
-                    "segment file {} with version {:?} overrode versioned entry {:?}",
-                    path.display(),
-                    version,
-                    prev_version.unwrap(),
-                );
-            }
+            let _ = file_versions.insert(path.to_path_buf(), version);
         }
 
         // TODO: Version RocksDB!? 🤯
@@ -450,7 +428,7 @@ fn updated_files(old: &SegmentManifest, current: &SegmentManifest) -> HashSet<Pa
         }
 
         // 3. if `old` manifest contains this file and file/segment versions in both `old` and `current` manifests are 0
-        //    - we can't distinguish between new/empty segment (version 0)
+        //    - we can't distinguish between new empty (no operations applied yet) segment (version 0)
         //    - and segment with operation 0 applied (also version 0)
         //    - so if both files/segments are at version 0, we always include the file into snapshot
         if old_version == 0 && current_version == 0 {
