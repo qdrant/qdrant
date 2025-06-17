@@ -10,25 +10,25 @@ use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::query_scorer::QueryScorer;
 
-pub struct QuantizedQueryScorer<'a, TElement, TMetric, TEncodedQuery, TEncodedVectors>
+pub struct QuantizedQueryScorer<'a, TElement, TMetric, TEncodedVectors>
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
+    TEncodedVectors: quantization::EncodedVectors,
 {
-    query: TEncodedQuery,
+    query: TEncodedVectors::EncodedQuery,
     quantized_data: &'a TEncodedVectors,
     metric: PhantomData<TMetric>,
     element: PhantomData<TElement>,
     hardware_counter: HardwareCounterCell,
 }
 
-impl<'a, TElement, TMetric, TEncodedQuery, TEncodedVectors>
-    QuantizedQueryScorer<'a, TElement, TMetric, TEncodedQuery, TEncodedVectors>
+impl<'a, TElement, TMetric, TEncodedVectors>
+    QuantizedQueryScorer<'a, TElement, TMetric, TEncodedVectors>
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
+    TEncodedVectors: quantization::EncodedVectors,
 {
     pub fn new(
         raw_query: DenseVector,
@@ -56,12 +56,12 @@ where
         }
     }
 }
-impl<TElement, TMetric, TEncodedQuery, TEncodedVectors> QueryScorer<[TElement]>
-    for QuantizedQueryScorer<'_, TElement, TMetric, TEncodedQuery, TEncodedVectors>
+impl<TElement, TMetric, TEncodedVectors> QueryScorer<[TElement]>
+    for QuantizedQueryScorer<'_, TElement, TMetric, TEncodedVectors>
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
+    TEncodedVectors: quantization::EncodedVectors,
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter

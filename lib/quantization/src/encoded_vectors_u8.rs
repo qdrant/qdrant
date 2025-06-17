@@ -291,7 +291,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 }
 
-impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectorsU8<TStorage> {
+impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
+    type EncodedQuery = EncodedQueryU8;
+
     fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
         meta_path.parent().map(std::fs::create_dir_all);
         atomic_save_json(meta_path, &self.metadata)?;

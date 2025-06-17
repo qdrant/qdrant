@@ -275,10 +275,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     }
 }
 
-impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
-    EncodedVectors<EncodedBinVector<TBitsStoreType>>
+impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     for EncodedVectorsBin<TBitsStoreType, TStorage>
 {
+    type EncodedQuery = EncodedBinVector<TBitsStoreType>;
+
     fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
         meta_path.parent().map(std::fs::create_dir_all);
         atomic_save_json(meta_path, &self.metadata)?;

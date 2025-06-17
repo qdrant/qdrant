@@ -10,25 +10,25 @@ use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::query_scorer::QueryScorer;
 
-pub struct QuantizedMultiQueryScorer<'a, TElement, TMetric, TEncodedQuery, TEncodedVectors>
+pub struct QuantizedMultiQueryScorer<'a, TElement, TMetric, TEncodedVectors>
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
+    TEncodedVectors: quantization::EncodedVectors,
 {
-    query: TEncodedQuery,
+    query: TEncodedVectors::EncodedQuery,
     quantized_multivector_storage: &'a TEncodedVectors,
     metric: PhantomData<TMetric>,
     element: PhantomData<TElement>,
     hardware_counter: HardwareCounterCell,
 }
 
-impl<'a, TElement, TMetric, TEncodedQuery, TEncodedVectors>
-    QuantizedMultiQueryScorer<'a, TElement, TMetric, TEncodedQuery, TEncodedVectors>
+impl<'a, TElement, TMetric, TEncodedVectors>
+    QuantizedMultiQueryScorer<'a, TElement, TMetric, TEncodedVectors>
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
+    TEncodedVectors: quantization::EncodedVectors,
 {
     pub fn new_multi(
         raw_query: &MultiDenseVectorInternal,
@@ -63,12 +63,12 @@ where
     }
 }
 
-impl<TElement, TMetric, TEncodedQuery, TEncodedVectors> QueryScorer<[TElement]>
-    for QuantizedMultiQueryScorer<'_, TElement, TMetric, TEncodedQuery, TEncodedVectors>
+impl<TElement, TMetric, TEncodedVectors> QueryScorer<[TElement]>
+    for QuantizedMultiQueryScorer<'_, TElement, TMetric, TEncodedVectors>
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
+    TEncodedVectors: quantization::EncodedVectors,
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         // quantized multivector storage handles hardware counter to batch vector IO
