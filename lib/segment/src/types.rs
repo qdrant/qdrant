@@ -664,8 +664,8 @@ impl Eq for ScalarQuantizationConfig {}
 #[serde(rename_all = "snake_case")]
 pub enum BinaryQuantizationEncoding {
     OneBit,
-    #[default]
     TwoBits,
+    #[default]
     OneAndHalfBits,
 }
 
