@@ -40,12 +40,8 @@ pub trait RawScorer {
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 }
 
-pub struct RawScorerImpl<TVector: ?Sized, TQueryScorer>
-where
-    TQueryScorer: QueryScorer<TVector = TVector>,
-{
+pub struct RawScorerImpl<TQueryScorer: QueryScorer> {
     pub query_scorer: TQueryScorer,
-    vector: std::marker::PhantomData<*const TVector>,
 }
 
 pub fn new_raw_scorer<'a>(
@@ -441,17 +437,10 @@ fn new_scorer_half_with_metric<
     }
 }
 
-pub fn raw_scorer_from_query_scorer<'a, TVector, TQueryScorer>(
-    query_scorer: TQueryScorer,
-) -> OperationResult<Box<dyn RawScorer + 'a>>
-where
-    TVector: ?Sized + 'a,
-    TQueryScorer: QueryScorer<TVector = TVector> + 'a,
-{
-    Ok(Box::new(RawScorerImpl::<TVector, TQueryScorer> {
-        query_scorer,
-        vector: std::marker::PhantomData,
-    }))
+pub fn raw_scorer_from_query_scorer<'a>(
+    query_scorer: impl QueryScorer + 'a,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    Ok(Box::new(RawScorerImpl { query_scorer }))
 }
 
 pub fn raw_multi_scorer_impl<'a, TVectorStorage: MultiVectorStorage<VectorElementType>>(
@@ -714,11 +703,7 @@ fn new_multi_scorer_half_with_metric<
     }
 }
 
-impl<TVector, TQueryScorer> RawScorer for RawScorerImpl<TVector, TQueryScorer>
-where
-    TVector: ?Sized,
-    TQueryScorer: QueryScorer<TVector = TVector>,
-{
+impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]) {
         assert_eq!(points.len(), scores.len());
 
