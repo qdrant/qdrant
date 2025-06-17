@@ -54,9 +54,9 @@ pub fn open_read_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io:
     // Because we want to read data with normal advice
     if populate {
         mmap.populate();
+    } else {
+        madvise::madvise(&mmap, advice.resolve())?;
     }
-
-    madvise::madvise(&mmap, advice.resolve())?;
 
     Ok(mmap)
 }
@@ -70,9 +70,9 @@ pub fn open_write_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io
     // Because we want to read data with normal advice
     if populate {
         mmap.populate();
+    } else {
+        madvise::madvise(&mmap, advice.resolve())?;
     }
-
-    madvise::madvise(&mmap, advice.resolve())?;
 
     Ok(mmap)
 }
