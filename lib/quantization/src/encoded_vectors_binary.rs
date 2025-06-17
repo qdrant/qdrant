@@ -173,7 +173,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-        mut storage_builder: impl EncodedStorageBuilder<TStorage>,
+        mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {

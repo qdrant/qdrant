@@ -40,7 +40,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-        mut storage_builder: impl EncodedStorageBuilder<TStorage>,
+        mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
         quantile: Option<f32>,
         stopped: &AtomicBool,
