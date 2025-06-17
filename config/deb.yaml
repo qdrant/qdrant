@@ -1,2 +1,9 @@
+storage:
+  # Where to store all the data
+  storage_path: /var/lib/qdrant/storage
+
+  # Where to store snapshots
+  snapshots_path: /var/lib/qdrant/snapshots
+
 service:
   static_content_dir: /etc/qdrant/static

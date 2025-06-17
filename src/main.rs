@@ -110,7 +110,7 @@ struct Args {
     /// Format: <config_file_path>
     ///
     /// Default path: config/config.yaml
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, value_name = "PATH", env = "QDRANT_CONFIG_PATH")]
     config_path: Option<String>,
 
     /// Disable telemetry sending to developers
