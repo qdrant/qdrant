@@ -886,7 +886,7 @@ impl QuantizedVectors {
             Some(BinaryQuantizationEncoding::OneAndHalfBits) => {
                 quantization::encoded_vectors_binary::Encoding::OneAndHalfBits
             }
-            None => quantization::encoded_vectors_binary::Encoding::OneBit,
+            None => quantization::encoded_vectors_binary::Encoding::TwoBits,
         };
         let quantized_vector_size =
             EncodedVectorsBin::<u128, QuantizedMmapStorage>::get_quantized_vector_size_from_params(
@@ -946,7 +946,7 @@ impl QuantizedVectors {
             Some(BinaryQuantizationEncoding::OneAndHalfBits) => {
                 quantization::encoded_vectors_binary::Encoding::OneAndHalfBits
             }
-            None => quantization::encoded_vectors_binary::Encoding::OneBit,
+            None => quantization::encoded_vectors_binary::Encoding::TwoBits,
         };
         let quantized_vector_size =
             EncodedVectorsBin::<u8, QuantizedMmapStorage>::get_quantized_vector_size_from_params(
