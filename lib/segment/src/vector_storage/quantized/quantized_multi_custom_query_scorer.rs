@@ -8,6 +8,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{MultiDenseVectorInternal, TypedMultiDenseVector};
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
+use crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffsets;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -15,7 +16,7 @@ pub struct QuantizedMultiCustomQueryScorer<'a, TElement, TMetric, TEncodedVector
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors,
+    TEncodedVectors: quantization::EncodedVectors + MultivectorOffsets,
     TQuery: Query<TEncodedVectors::EncodedQuery>,
 {
     query: TQuery,
@@ -30,7 +31,7 @@ impl<'a, TElement, TMetric, TEncodedVectors, TQuery>
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors,
+    TEncodedVectors: quantization::EncodedVectors + MultivectorOffsets,
     TQuery: Query<TEncodedVectors::EncodedQuery>,
 {
     pub fn new_multi<TOriginalQuery, TInputQuery>(
@@ -91,12 +92,17 @@ impl<TElement, TMetric, TEncodedVectors, TQuery> QueryScorer
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
-    TEncodedVectors: quantization::EncodedVectors,
+    TEncodedVectors: quantization::EncodedVectors + MultivectorOffsets,
     TQuery: Query<TEncodedVectors::EncodedQuery>,
 {
     type TVector = [TElement];
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
+        let sub_vectors_count = self.quantized_multivector_storage.get_offset(idx).count as usize;
+        // compute vector IO read once for all examples
+        self.hardware_counter.vector_io_read().incr_delta(
+            self.quantized_multivector_storage.quantized_vector_size() * sub_vectors_count,
+        );
         self.query.score_by(|this| {
             // quantized multivector storage handles hardware counter to batch vector IO
             self.quantized_multivector_storage

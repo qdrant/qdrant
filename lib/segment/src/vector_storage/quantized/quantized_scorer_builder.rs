@@ -15,6 +15,7 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, Manhat
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 use crate::vector_storage::quantized::quantized_multi_custom_query_scorer::QuantizedMultiCustomQueryScorer;
 use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
+use crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffsets;
 use crate::vector_storage::query::{
     ContextQuery, DiscoveryQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
 };
@@ -202,7 +203,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
 
     fn new_multi_quantized_scorer<TElement, TMetric>(
         self,
-        quantized_multivector_storage: &'a impl EncodedVectors,
+        quantized_multivector_storage: &'a (impl EncodedVectors + MultivectorOffsets),
     ) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
         TElement: PrimitiveVectorElement,
