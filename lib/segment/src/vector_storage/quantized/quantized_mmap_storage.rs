@@ -55,7 +55,9 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
     }
 }
 
-impl quantization::EncodedStorageBuilder<QuantizedMmapStorage> for QuantizedMmapStorageBuilder {
+impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
+    type Storage = QuantizedMmapStorage;
+
     fn build(self) -> QuantizedMmapStorage {
         self.mmap.flush().unwrap();
         let mmap = self.mmap.make_read_only().unwrap(); // TODO: remove unwrap

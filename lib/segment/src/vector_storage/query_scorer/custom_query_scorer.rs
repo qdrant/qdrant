@@ -77,9 +77,10 @@ impl<
     TMetric: Metric<TElement>,
     TVectorStorage: DenseVectorStorage<TElement>,
     TStoredQuery: Query<TypedDenseVector<TElement>>,
-> QueryScorer<[TElement]>
-    for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TStoredQuery>
+> QueryScorer for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TStoredQuery>
 {
+    type TVector = [TElement];
+
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_dense(idx);

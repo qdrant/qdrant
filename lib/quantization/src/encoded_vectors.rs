@@ -20,7 +20,9 @@ pub struct VectorParameters {
     pub invert: bool,
 }
 
-pub trait EncodedVectors<TEncodedQuery: Sized>: Sized {
+pub trait EncodedVectors: Sized {
+    type EncodedQuery;
+
     fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()>;
 
     fn load(
@@ -31,9 +33,14 @@ pub trait EncodedVectors<TEncodedQuery: Sized>: Sized {
 
     fn is_on_disk(&self) -> bool;
 
-    fn encode_query(&self, query: &[f32]) -> TEncodedQuery;
+    fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
 
-    fn score_point(&self, query: &TEncodedQuery, i: u32, hw_counter: &HardwareCounterCell) -> f32;
+    fn score_point(
+        &self,
+        query: &Self::EncodedQuery,
+        i: u32,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32;
 
     fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32;
 
