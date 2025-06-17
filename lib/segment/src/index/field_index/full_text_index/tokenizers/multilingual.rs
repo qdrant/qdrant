@@ -54,9 +54,9 @@ impl MultilingualV2 {
         let stemmer = Stemmer::create(stemming_algo);
         for token in input.tokenize() {
             let base = stemmer.stem_cow(token.lemma);
-
-            // Prevent whitespaces treated as separate tokens in the output.
-            if base.split_ascii_whitespace().next().is_none() {
+            
+            // Prevent whitespaces and punctuation treated as separate tokens in the output.
+            if base.chars().all(|char| !char.is_alphabetic()) {
                 continue;
             }
 
@@ -69,8 +69,8 @@ impl MultilingualV2 {
         for token in input.tokenize() {
             let lemma = token.lemma;
 
-            // Prevent whitespaces treated as separate tokens in the output.
-            if lemma.split_ascii_whitespace().next().is_none() {
+            // Prevent whitespaces and punctuation treated as separate tokens in the output.
+            if lemma.chars().all(|char| !char.is_alphabetic()) {
                 continue;
             }
 
@@ -197,14 +197,14 @@ mod test {
         assert_tokenization("This is a test", "this|is|a|test");
         assert_tokenization(
             "This is english text. It's being used within Qdrant's code in a unit test.",
-            "this|is|english|text|. |it|'|s|being|used|within|qdrant|'|s|code|in|a|unit|test|.",
+            "this|is|english|text|it|s|being|used|within|qdrant|s|code|in|a|unit|test",
         );
 
         assert_tokenization("Dies ist ein Test", "dies|ist|ein|test"); // codespell:ignore ist
         assert_tokenization("これはテストです", "これ|は|テスト|です");
         assert_tokenization(
             "日本語のテキストです。Qdrantのコードで単体テストで使用されています。",
-            "日本|語|の|テキスト|です|。|Qdrant|の|コード|で|単体|テスト|で|使用|さ|れ|て|い|ます|。",
+            "日本|語|の|テキスト|です|Qdrant|の|コード|で|単体|テスト|で|使用|さ|れ|て|い|ます",
         );
     }
 }
