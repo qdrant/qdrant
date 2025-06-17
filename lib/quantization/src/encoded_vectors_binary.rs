@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -8,6 +8,7 @@ use memory::mmap_ops::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_vectors::validate_vector_parameters;
+use crate::vector_stats::VectorStats;
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedVectors, EncodingError,
     VectorParameters,
@@ -16,6 +17,7 @@ use crate::{
 pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
+    vector_stats: Option<VectorStats>,
     bits_store_type: PhantomData<TBitsStoreType>,
 }
 
@@ -43,12 +45,6 @@ struct Metadata {
     #[serde(default)]
     #[serde(skip_serializing_if = "Encoding::is_one")]
     encoding: Encoding,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    standard_deviations: Vec<f32>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    means: Vec<f32>,
 }
 
 pub trait BitsStoreType:
@@ -203,17 +199,19 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
 
-        let count = orig_data.clone().count();
-        let means = Self::means(orig_data.clone(), count);
-        let standard_deviations = Self::standard_deviations(orig_data.clone(), &means, count);
+        let vector_stats = match encoding {
+            Encoding::OneBit => None,
+            Encoding::TwoBits | Encoding::OneAndHalfBits => {
+                Some(VectorStats::build(orig_data.clone(), vector_parameters))
+            }
+        };
 
         for vector in orig_data {
             if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
             }
 
-            let encoded_vector =
-                Self::encode_vector(vector.as_ref(), &standard_deviations, &means, encoding);
+            let encoded_vector = Self::encode_vector(vector.as_ref(), &vector_stats, encoding);
             let encoded_vector_slice = encoded_vector.encoded_vector.as_slice();
             let bytes = transmute_to_u8_slice(encoded_vector_slice);
             storage_builder.push_vector_data(bytes);
@@ -224,62 +222,17 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             metadata: Metadata {
                 vector_parameters: vector_parameters.clone(),
                 encoding,
-                standard_deviations,
-                means,
             },
+            vector_stats,
             bits_store_type: PhantomData,
         })
     }
 
-    fn means<'a>(
-        orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-        count: usize,
-    ) -> Vec<f32> {
-        let dimension = orig_data.clone().next().map_or(0, |v| v.as_ref().len());
-        if count == 0 || dimension == 0 {
-            return vec![];
-        }
-
-        let mut means = vec![0.0; dimension];
-        for vector in orig_data.clone() {
-            for (i, &value) in vector.as_ref().iter().enumerate() {
-                means[i] += value / (count as f32);
-            }
-        }
-        means
-    }
-
-    fn standard_deviations<'a>(
-        orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-        means: &[f32],
-        count: usize,
-    ) -> Vec<f32> {
-        let dimension = means.len();
-        if count == 0 || dimension == 0 {
-            return vec![];
-        }
-
-        let mut sds = vec![0.0; dimension];
-        for vector in orig_data {
-            for (i, &value) in vector.as_ref().iter().enumerate() {
-                let diff = value - means[i];
-                sds[i] += diff * diff / (count as f32);
-            }
-        }
-        sds.iter_mut()
-            .for_each(|sd| *sd = if *sd < f32::EPSILON { 1.0 } else { sd.sqrt() });
-        sds
-    }
-
     fn encode_vector(
         vector: &[f32],
-        standard_deviations: &[f32],
-        means: &[f32],
+        vector_stats: &Option<VectorStats>,
         encoding: Encoding,
     ) -> EncodedBinVector<TBitsStoreType> {
-        debug_assert!(vector.len() == standard_deviations.len());
-        debug_assert!(vector.len() == means.len());
-
         let encoded_vector_size =
             Self::get_quantized_vector_size_from_params(vector.len(), encoding)
                 / std::mem::size_of::<TBitsStoreType>();
@@ -287,18 +240,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
         match encoding {
             Encoding::OneBit => Self::encode_one_bit_vector(vector, &mut encoded_vector),
-            Encoding::TwoBits => Self::encode_two_bits_vector(
-                vector,
-                &mut encoded_vector,
-                standard_deviations,
-                means,
-            ),
-            Encoding::OneAndHalfBits => Self::encode_one_and_half_bits_vector(
-                vector,
-                &mut encoded_vector,
-                standard_deviations,
-                means,
-            ),
+            Encoding::TwoBits => {
+                Self::encode_two_bits_vector(vector, &mut encoded_vector, vector_stats)
+            }
+            Encoding::OneAndHalfBits => {
+                Self::encode_one_and_half_bits_vector(vector, &mut encoded_vector, vector_stats)
+            }
         }
 
         EncodedBinVector { encoded_vector }
@@ -319,14 +266,21 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     fn encode_two_bits_vector(
         vector: &[f32],
         encoded_vector: &mut [TBitsStoreType],
-        standard_deviations: &[f32],
-        means: &[f32],
+        vector_stats: &Option<VectorStats>,
     ) {
+        let vector_stats = if let Some(stats) = vector_stats {
+            stats
+        } else {
+            // If vector stats are not provided, we cannot encode two bits
+            // So we fall back to one bit encoding
+            return Self::encode_one_bit_vector(vector, encoded_vector);
+        };
         let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
         for (i, &v) in vector.iter().enumerate() {
-            let mean = means[i];
-            let sd = standard_deviations[i];
+            let mean = vector_stats.elements_stats[i].mean;
+            let sd = vector_stats.elements_stats[i].stddev;
+
             let ranges = 3;
             let v_z = (v - mean) / sd;
             let index = (v_z + 2.0) / (4.0 / ranges as f32);
@@ -347,24 +301,31 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     fn encode_one_and_half_bits_vector(
         vector: &[f32],
         encoded_vector: &mut [TBitsStoreType],
-        standard_deviations: &[f32],
-        means: &[f32],
+        vector_stats: &Option<VectorStats>,
     ) {
+        let vector_stats = if let Some(stats) = vector_stats {
+            stats
+        } else {
+            // If vector stats are not provided, we cannot encode one and half bits
+            // So we fall back to one bit encoding
+            return Self::encode_one_bit_vector(vector, encoded_vector);
+        };
         let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
         for (i, &v) in vector.iter().enumerate() {
-            let mean = means[i];
-            let sd = standard_deviations[i];
+            let mean = vector_stats.elements_stats[i].mean;
+            let sd = vector_stats.elements_stats[i].stddev;
+
             let ranges = 3;
             let v_z = (v - mean) / sd;
             let index = (v_z + 2.0) / (4.0 / ranges as f32);
 
             if index >= 1.0 {
                 let count_ones = (index.floor() as usize).min(2);
-                if count_ones > 1 {
+                if count_ones > 0 {
                     encoded_vector[i / bits_count] |= one << (i % bits_count);
                 }
-                if count_ones > 0 {
+                if count_ones > 1 {
                     let j = vector.len() + i / 2;
                     encoded_vector[j / bits_count] |= one << (j % bits_count);
                 }
@@ -437,6 +398,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     pub fn vectors_count(&self) -> usize {
         self.metadata.vector_parameters.count
     }
+
+    fn get_vector_stats_path_from_meta_path(meta_path: &Path) -> Option<PathBuf> {
+        let mut vector_stats_path = meta_path.parent()?.to_owned();
+        vector_stats_path.push("vector_stats.json");
+        Some(vector_stats_path)
+    }
 }
 
 impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
@@ -450,6 +417,23 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
         data_path.parent().map(std::fs::create_dir_all);
         self.encoded_vectors.save_to_file(data_path)?;
+
+        let vector_stats_path =
+            Self::get_vector_stats_path_from_meta_path(meta_path).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Failed to get vector stats path",
+                )
+            })?;
+        if let Some(vector_stats) = &self.vector_stats {
+            vector_stats_path.parent().map(std::fs::create_dir_all);
+            atomic_save_json(&vector_stats_path, &vector_stats)?;
+        } else {
+            if let Ok(true) = std::fs::exists(&vector_stats_path) {
+                std::fs::remove_file(&vector_stats_path)?;
+            }
+        }
+
         Ok(())
     }
 
@@ -464,9 +448,27 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
             Self::get_quantized_vector_size_from_params(vector_parameters.dim, metadata.encoding);
         let encoded_vectors =
             TStorage::from_file(data_path, quantized_vector_size, vector_parameters.count)?;
+
+        let vector_stats_path =
+            Self::get_vector_stats_path_from_meta_path(meta_path).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Failed to get vector stats path",
+                )
+            })?;
+        let vector_stats = match metadata.encoding {
+            Encoding::OneBit => None,
+            Encoding::TwoBits | Encoding::OneAndHalfBits => {
+                let vector_stats_contents = std::fs::read_to_string(&vector_stats_path)?;
+                let vector_stats: VectorStats = serde_json::from_str(&vector_stats_contents)?;
+                Some(vector_stats)
+            }
+        };
+
         let result = Self {
             metadata,
             encoded_vectors,
+            vector_stats,
             bits_store_type: PhantomData,
         };
         Ok(result)
@@ -478,12 +480,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
     fn encode_query(&self, query: &[f32]) -> EncodedBinVector<TBitsStoreType> {
         debug_assert!(query.len() == self.metadata.vector_parameters.dim);
-        Self::encode_vector(
-            query,
-            &self.metadata.standard_deviations,
-            &self.metadata.means,
-            self.metadata.encoding,
-        )
+        Self::encode_vector(query, &self.vector_stats, self.metadata.encoding)
     }
 
     fn score_point(
