@@ -107,8 +107,6 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        println!("Encoding: {:?}, Top matches: {:?}", encodings, tops);
-
         // Check if encoding has more accuracy than previous one
         for i in 1..tops.len() {
             assert!(
