@@ -37,9 +37,17 @@ impl VectorStats {
         };
         let mut m2 = vec![0.0; vector_params.dim];
 
-        for (i, vector) in data.enumerate() {
+        let mut count = 0;
+        for vector in data {
             let vector = vector.as_ref();
-            let count = i + 1;
+            count += 1;
+
+            debug_assert_eq!(
+                vector.len(),
+                vector_params.dim,
+                "Vector length does not match the expected dimension"
+            );
+
             for ((&value, element_stats), m2) in vector
                 .iter()
                 .zip(stats.elements_stats.iter_mut())
@@ -62,9 +70,13 @@ impl VectorStats {
             }
         }
 
+        debug_assert_eq!(
+            count, vector_params.count,
+            "Count of vectors processed does not match the expected count in vector parameters"
+        );
         for (element_stats, m2) in stats.elements_stats.iter_mut().zip(m2.iter()) {
-            element_stats.stddev = if vector_params.count > 1 {
-                (*m2 / (vector_params.count - 1) as f32).sqrt()
+            element_stats.stddev = if count > 1 {
+                (*m2 / (count - 1) as f32).sqrt()
             } else {
                 0.0
             };
