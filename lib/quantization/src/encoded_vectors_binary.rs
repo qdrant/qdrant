@@ -268,9 +268,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         encoded_vector: &mut [TBitsStoreType],
         vector_stats: &Option<VectorStats>,
     ) {
-        let vector_stats = if let Some(stats) = vector_stats {
-            stats
-        } else {
+        let Some(vector_stats) = vector_stats else {
             // If vector stats are not provided, we cannot encode two bits
             // So we fall back to one bit encoding
             return Self::encode_one_bit_vector(vector, encoded_vector);
@@ -299,9 +297,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         encoded_vector: &mut [TBitsStoreType],
         vector_stats: &Option<VectorStats>,
     ) {
-        let vector_stats = if let Some(stats) = vector_stats {
-            stats
-        } else {
+        let Some(vector_stats) = vector_stats else {
             // If vector stats are not provided, we cannot encode one and half bits
             // So we fall back to one bit encoding
             return Self::encode_one_bit_vector(vector, encoded_vector);
@@ -473,10 +469,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         if let Some(vector_stats) = &self.vector_stats {
             vector_stats_path.parent().map(std::fs::create_dir_all);
             atomic_save_json(&vector_stats_path, &vector_stats)?;
-        } else {
-            if let Ok(true) = std::fs::exists(&vector_stats_path) {
-                std::fs::remove_file(&vector_stats_path)?;
-            }
+        } else if let Ok(true) = std::fs::exists(&vector_stats_path) {
+            std::fs::remove_file(&vector_stats_path)?;
         }
 
         Ok(())
