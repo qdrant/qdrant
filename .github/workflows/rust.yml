@@ -37,7 +37,7 @@ jobs:
         fi
       shell: bash
     - name: Install nextest
-      uses: taiki-e/install-action@cargo-nextest
+      uses: taiki-e/install-action@nextest
     - name: Build
       run: cargo build --tests --workspace --locked
     - name: Run tests
