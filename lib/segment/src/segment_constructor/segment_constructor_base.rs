@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -130,15 +131,15 @@ pub(crate) fn open_vector_storage(
                     stopped,
                 )?;
 
-                // Actively migrate away from RocksDB
-                if common::flags::feature_flags().migrate_rocksdb_vector_storage {
-                    return migrate_rocksdb_multi_dense_vector_storage_to_mmap(
-                        storage,
-                        vector_config.size,
-                        *multi_vec_config,
-                        vector_storage_path,
-                    );
-                }
+                // // Actively migrate away from RocksDB
+                // if common::flags::feature_flags().migrate_rocksdb_vector_storage {
+                //     return migrate_rocksdb_multi_dense_vector_storage_to_mmap(
+                //         storage,
+                //         vector_config.size,
+                //         *multi_vec_config,
+                //         vector_storage_path,
+                //     );
+                // }
 
                 Ok(storage)
             } else {
@@ -151,14 +152,14 @@ pub(crate) fn open_vector_storage(
                     stopped,
                 )?;
 
-                // Actively migrate away from RocksDB
-                if common::flags::feature_flags().migrate_rocksdb_vector_storage {
-                    return migrate_rocksdb_dense_vector_storage_to_mmap(
-                        storage,
-                        vector_config.size,
-                        vector_storage_path,
-                    );
-                }
+                // // Actively migrate away from RocksDB
+                // if common::flags::feature_flags().migrate_rocksdb_vector_storage {
+                //     return migrate_rocksdb_dense_vector_storage_to_mmap(
+                //         storage,
+                //         vector_config.size,
+                //         vector_storage_path,
+                //     );
+                // }
 
                 Ok(storage)
             }
@@ -442,7 +443,7 @@ pub(crate) fn create_sparse_vector_storage(
 
             // Actively migrate away from RocksDB
             if common::flags::feature_flags().migrate_rocksdb_vector_storage {
-                return migrate_rocksdb_sparse_vector_storage_to_mmap(storage, path);
+                return migrate_rocksdb_sparse_vector_storage_to_mmap(&storage, path);
             }
 
             Ok(storage)
@@ -752,9 +753,9 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         SegmentVersion::save(path)?
     }
 
-    let segment_state = Segment::load_state(path)?;
+    let mut segment_state = Segment::load_state(path)?;
 
-    let segment = create_segment(
+    let mut segment = create_segment(
         segment_state.initial_version,
         segment_state.version,
         path,
@@ -762,7 +763,114 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         stopped,
     )?;
 
+    #[cfg(feature = "rocksdb")]
+    if common::flags::feature_flags().migrate_rocksdb_vector_storage {
+        migrate_all_rocksdb_dense_vector_storages(path, &mut segment, &mut segment_state)?;
+        migrate_all_rocksdb_sparse_vector_storages(path, &mut segment, &mut segment_state)?;
+    }
+
     Ok(Some(segment))
+}
+
+#[cfg(feature = "rocksdb")]
+fn migrate_all_rocksdb_dense_vector_storages(
+    path: &Path,
+    segment: &mut Segment,
+    segment_state: &mut SegmentState,
+) -> OperationResult<()> {
+    for (vector_name, data) in &mut segment.vector_data {
+        // Only convert simple dense and multi dense vector storages
+        if !matches!(
+            data.vector_storage.borrow().deref(),
+            VectorStorageEnum::DenseSimple(_)
+                | VectorStorageEnum::DenseSimpleByte(_)
+                | VectorStorageEnum::DenseSimpleHalf(_)
+                | VectorStorageEnum::MultiDenseSimple(_)
+                | VectorStorageEnum::MultiDenseSimpleByte(_)
+                | VectorStorageEnum::MultiDenseSimpleHalf(_)
+        ) {
+            continue;
+        }
+
+        let vector_storage_path = get_vector_storage_path(path, vector_name);
+        let vector_config = segment_state.config.vector_data.get(vector_name).unwrap();
+        let multivector_config = vector_config.multivector_config;
+
+        // Actively migrate away from RocksDB
+        let new_storage = if let Some(multi_vector_config) = multivector_config {
+            migrate_rocksdb_multi_dense_vector_storage_to_mmap(
+                data.vector_storage.borrow().deref(),
+                vector_config.size,
+                multi_vector_config,
+                &vector_storage_path,
+            )?
+        } else {
+            migrate_rocksdb_dense_vector_storage_to_mmap(
+                data.vector_storage.borrow().deref(),
+                vector_config.size,
+                &vector_storage_path,
+            )?
+        };
+
+        let old_storage = std::mem::replace(&mut *data.vector_storage.borrow_mut(), new_storage);
+
+        // Update storage type
+        log::warn!("Updated segment config after data migration");
+        segment_state
+            .config
+            .vector_data
+            .get_mut(vector_name)
+            .unwrap()
+            .storage_type = VectorStorageType::InRamChunkedMmap;
+        Segment::save_state(segment_state, path)?;
+
+        // Also update config in already loaded segment
+        segment.segment_config = segment_state.config.clone();
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "rocksdb")]
+fn migrate_all_rocksdb_sparse_vector_storages(
+    path: &Path,
+    segment: &mut Segment,
+    segment_state: &mut SegmentState,
+) -> OperationResult<()> {
+    for (vector_name, data) in &mut segment.vector_data {
+        // Only convert simple dense and multi dense vector storages
+        if !matches!(
+            data.vector_storage.borrow().deref(),
+            VectorStorageEnum::SparseSimple(_),
+        ) {
+            continue;
+        }
+
+        let vector_storage_path = get_vector_storage_path(path, vector_name);
+
+        // Actively migrate away from RocksDB
+        let new_storage = migrate_rocksdb_sparse_vector_storage_to_mmap(
+            data.vector_storage.borrow().deref(),
+            &vector_storage_path,
+        )?;
+
+        let old_storage = std::mem::replace(&mut *data.vector_storage.borrow_mut(), new_storage);
+
+        // Update storage type
+        log::warn!("Updated segment config after data migration");
+        segment_state
+            .config
+            .vector_data
+            .get_mut(vector_name)
+            .unwrap()
+            .storage_type = VectorStorageType::InRamChunkedMmap;
+        Segment::save_state(segment_state, path)?;
+
+        // Also update config in already loaded segment
+        segment.segment_config = segment_state.config.clone();
+    }
+
+    Ok(())
 }
 
 pub fn new_segment_path(segments_path: &Path) -> PathBuf {
@@ -968,7 +1076,7 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
 /// new vector storage will be loaded next time. The new vector storage is returned.
 #[cfg(feature = "rocksdb")]
 pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
-    old_storage: VectorStorageEnum,
+    old_storage: &VectorStorageEnum,
     dim: usize,
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
@@ -1018,7 +1126,7 @@ pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
         Ok(new_storage)
     }
 
-    let new_storage = match migrate(&old_storage, dim, vector_storage_path) {
+    let new_storage = match migrate(old_storage, dim, vector_storage_path) {
         Ok(new_storage) => new_storage,
         // On migration error, clean up and remove all new storage files
         Err(err) => {
@@ -1062,7 +1170,7 @@ pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
 /// new vector storage will be loaded next time. The new vector storage is returned.
 #[cfg(feature = "rocksdb")]
 pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
-    old_storage: VectorStorageEnum,
+    old_storage: &VectorStorageEnum,
     dim: usize,
     multi_vector_config: MultiVectorConfig,
     vector_storage_path: &Path,
@@ -1115,7 +1223,7 @@ pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
         Ok(new_storage)
     }
 
-    let new_storage = match migrate(&old_storage, dim, multi_vector_config, vector_storage_path) {
+    let new_storage = match migrate(old_storage, dim, multi_vector_config, vector_storage_path) {
         Ok(new_storage) => new_storage,
         // On migration error, clean up and remove all new storage files
         Err(err) => {
@@ -1159,7 +1267,7 @@ pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
 /// new vector storage will be loaded next time. The new vector storage is returned.
 #[cfg(feature = "rocksdb")]
 pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
-    old_storage: VectorStorageEnum,
+    old_storage: &VectorStorageEnum,
     vector_storage_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
     use common::counter::hardware_counter::HardwareCounterCell;
@@ -1204,7 +1312,7 @@ pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
         Ok(new_storage)
     }
 
-    let new_storage = match migrate(&old_storage, vector_storage_path) {
+    let new_storage = match migrate(old_storage, vector_storage_path) {
         Ok(new_storage) => new_storage,
         // On migration error, clean up and remove all new storage files
         Err(err) => {

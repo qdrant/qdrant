@@ -134,7 +134,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
         self.db.get_opt(key)
     }
 
-    pub fn remove_column_family(self) -> OperationResult<()> {
+    pub fn remove_column_family(&self) -> OperationResult<()> {
         self.db.remove_column_family()
     }
 }
