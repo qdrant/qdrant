@@ -7,7 +7,7 @@ pub struct VectorStats {
     pub elements_stats: Vec<VectorElementStats>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorElementStats {
     pub min: f32,
     pub max: f32,
@@ -28,7 +28,7 @@ impl Default for VectorElementStats {
 
 impl VectorStats {
     pub fn build<'a>(
-        data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+        data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
         vector_params: &VectorParameters,
     ) -> Self {
         // The Welford's Algorithm
