@@ -10,7 +10,6 @@ use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::{GraphLayersBuilder, LockedLayersContainer};
 use crate::index::hnsw_index::links_container::{ItemsBuffer, LinksContainer};
-use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer};
 
@@ -87,7 +86,7 @@ impl<'a> GraphLayersHealer<'a> {
         let mut visited_list = self.visited_pool.get(self.links_layers.len());
 
         // Result of the search is stored here.
-        let mut search_context = SearchContext::new(self.ef_construct);
+        let mut nearest = FixedLengthPriorityQueue::<ScoredPointOffset>::new(self.ef_construct);
 
         let limit = self.hnsw_m.level_m(level);
 
@@ -119,9 +118,7 @@ impl<'a> GraphLayersHealer<'a> {
         // At this moment `pending` is initialized with at least one deleted point,
         // now we need to find borders of all "deleted" points sub-graphs
         while let Some(candidate) = pending.pop() {
-            if search_context.nearest.is_full()
-                && candidate.score < search_context.nearest.top().unwrap().score
-            {
+            if nearest.is_full() && candidate.score < nearest.top().unwrap().score {
                 // Stop the search branch early, if it is not promising
                 continue;
             }
@@ -147,7 +144,7 @@ impl<'a> GraphLayersHealer<'a> {
                 if !self.point_deleted(idx) {
                     // This point is on the "border", as it is reachable from the deleted
                     // And is not deleted itself
-                    search_context.process_candidate(ScoredPointOffset { idx, score });
+                    nearest.push(ScoredPointOffset { idx, score });
                 } else {
                     // This is just another deleted point
                     pending.push(ScoredPointOffset { idx, score });
@@ -155,7 +152,7 @@ impl<'a> GraphLayersHealer<'a> {
             }
         }
 
-        search_context.nearest
+        nearest
     }
 
     fn heal_point_on_level(&self, offset: PointOffsetType, level: usize, scorer: &dyn RawScorer) {
