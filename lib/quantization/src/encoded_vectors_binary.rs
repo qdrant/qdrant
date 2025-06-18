@@ -275,25 +275,21 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             // So we fall back to one bit encoding
             return Self::encode_one_bit_vector(vector, encoded_vector);
         };
+
         let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
         for (i, &v) in vector.iter().enumerate() {
             let mean = vector_stats.elements_stats[i].mean;
             let sd = vector_stats.elements_stats[i].stddev;
 
-            let ranges = 3;
-            let v_z = (v - mean) / sd;
-            let index = (v_z + 2.0) / (4.0 / ranges as f32);
+            let (b1, b2) = Self::encode_two_bits_value(v, mean, sd);
 
-            if index >= 1.0 {
-                let count_ones = (index.floor() as usize).min(2);
-                if count_ones > 1 {
-                    encoded_vector[i / bits_count] |= one << (i % bits_count);
-                }
-                if count_ones > 0 {
-                    let j = vector.len() + i;
-                    encoded_vector[j / bits_count] |= one << (j % bits_count);
-                }
+            if b1 {
+                encoded_vector[i / bits_count] |= one << (i % bits_count);
+            }
+            if b2 {
+                let j = vector.len() + i;
+                encoded_vector[j / bits_count] |= one << (j % bits_count);
             }
         }
     }
@@ -310,26 +306,76 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             // So we fall back to one bit encoding
             return Self::encode_one_bit_vector(vector, encoded_vector);
         };
+
+        // One and half bit encoding is a 2bit quantization but first bit,
+        // which describes that value is less that sigma,
+        // is united with the bit from the next value using OR operand.
+        // Scoring for 1.5bit quantization is the same as for 2bit and 1bit quantization.
+        //
+        // Example 1:
+        // `Value1` has `[1,0]` 2bits encoding, value `Value2` has `[1,1]` 2bits encoding.
+        // The resulting 1.5bit encoding will be `[value1[0], value2[0], value1[1] | value2[1]] = [1, 1, 1]`.
+        //
+        // Example 2:
+        // `Value1` has `[0,0]` 2bits encoding, value `Value2` has `[1,0]` 2bits encoding.
+        // The resulting 1.5bit encoding will be `[value1[0], value2[0], value1[1] | value2[1]] = [0, 1, 0]`.
         let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
         for (i, &v) in vector.iter().enumerate() {
             let mean = vector_stats.elements_stats[i].mean;
             let sd = vector_stats.elements_stats[i].stddev;
+            let (b1, b2) = Self::encode_two_bits_value(v, mean, sd);
 
-            let ranges = 3;
-            let v_z = (v - mean) / sd;
-            let index = (v_z + 2.0) / (4.0 / ranges as f32);
-
-            if index >= 1.0 {
-                let count_ones = (index.floor() as usize).min(2);
-                if count_ones > 0 {
-                    encoded_vector[i / bits_count] |= one << (i % bits_count);
-                }
-                if count_ones > 1 {
-                    let j = vector.len() + i / 2;
-                    encoded_vector[j / bits_count] |= one << (j % bits_count);
-                }
+            if b1 {
+                encoded_vector[i / bits_count] |= one << (i % bits_count);
             }
+            if b2 {
+                let j = vector.len() + i / 2;
+                encoded_vector[j / bits_count] |= one << (j % bits_count);
+            }
+        }
+    }
+
+    fn encode_two_bits_value(value: f32, mean: f32, sd: f32) -> (bool, bool) {
+        // Two bit encoding is a regular BQ with "zero".
+        // It uses 2 bits per value and encodes values in the following way:
+        // 00 - if the value is in the range [-2*sigma; -sigma);
+        // 10 - if the value is in the range [-sigma; sigma);
+        // 11 - if the value is in the range [sigma; 2*sigma];
+        // where sigma is the standard deviation of the value.
+        //
+        // Scoring for 2bit quantization is the same as for 1bit quantization.
+
+        if sd < f32::EPSILON {
+            // If standard deviation is zero,
+            // we cannot calculate z-score count so use regular BQ with zero-comparison.
+            return (value > 0.0, false);
+        }
+
+        // How many ranges we want to divide the values into, it's 3:
+        // [-2*sigma; -sigma), [-sigma; sigma), [sigma; 2*sigma)
+        let ranges = 3;
+
+        // Calculate z-score for the value
+        let v_z = (value - mean) / sd;
+
+        let min_border = -2.0; // -2*sigma
+        let max_border = 2.0; // 2*sigma
+
+        // Normalize z-score to the range [-2*sigma; 2*sigma]
+        let normalized_z = (v_z - min_border) / (max_border - min_border);
+
+        // Calculate index in the ranges list: [-2*sigma; -sigma), [-sigma; sigma), [sigma; 2*sigma)
+        let index = normalized_z * (ranges as f32);
+
+        // Index 0 and less is [0, 0] encoding
+        // Index 1 is [1, 0] encoding
+        // Index 2 and more is [1, 1] encoding
+        if index >= 1.0 {
+            let count_ones = (index.floor() as usize).min(2);
+            (count_ones > 0, count_ones > 1)
+        } else {
+            (false, false)
         }
     }
 
