@@ -42,8 +42,8 @@ mod tests {
 
     #[test]
     fn test_binary_dot_inverted() {
-        test_binary_dot_impl::<u128>(1000, true);
-        test_binary_dot_impl::<u8>(1000, true);
+        test_binary_dot_impl::<u128>(700, true);
+        test_binary_dot_impl::<u8>(700, true);
     }
 
     fn test_binary_dot_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize, invert: bool) {
@@ -106,6 +106,8 @@ mod tests {
                 match_count(&original_top, &tops)
             })
             .collect::<Vec<_>>();
+
+        println!("Encoding: {:?}, Top matches: {:?}", encodings, tops);
 
         // Check if encoding has more accuracy than previous one
         for i in 1..tops.len() {
