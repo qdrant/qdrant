@@ -3826,12 +3826,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7655c9839580ee829dfacba1d1278c2b7883e50a277ff7541299489d6bdfdc45"
 
 [[package]]
-name = "is_sorted"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "357376465c37db3372ef6a00585d336ed3d0f11d4345eef77ebcb05865392b21"
-
-[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6975,7 +6969,6 @@ dependencies = [
  "indicatif",
  "integer-encoding",
  "io-uring",
- "is_sorted",
  "itertools 0.14.0",
  "log",
  "macro_rules_attribute",
