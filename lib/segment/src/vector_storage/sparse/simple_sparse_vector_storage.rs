@@ -333,8 +333,14 @@ mod tests {
         // Migrate from RocksDB to mmap storage
         let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let new_storage =
-            migrate_rocksdb_sparse_vector_storage_to_mmap(storage, storage_dir.path())
+            migrate_rocksdb_sparse_vector_storage_to_mmap(&storage, storage_dir.path())
                 .expect("failed to migrate from RocksDB to mmap");
+
+        // Destroy persisted RocksDB sparse vector data
+        match storage {
+            VectorStorageEnum::SparseSimple(storage) => storage.destroy().unwrap(),
+            _ => unreachable!("unexpected vector storage type"),
+        }
 
         // We can drop RocksDB storage now
         db_dir.close().expect("failed to drop RocksDB storage");

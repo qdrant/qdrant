@@ -121,7 +121,7 @@ pub(crate) fn open_vector_storage(
             let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
 
             if let Some(multi_vec_config) = &vector_config.multivector_config {
-                let storage = open_simple_multi_dense_vector_storage(
+                open_simple_multi_dense_vector_storage(
                     storage_element_type,
                     db_builder.require()?,
                     &db_column_name,
@@ -129,39 +129,16 @@ pub(crate) fn open_vector_storage(
                     vector_config.distance,
                     *multi_vec_config,
                     stopped,
-                )?;
-
-                // // Actively migrate away from RocksDB
-                // if common::flags::feature_flags().migrate_rocksdb_vector_storage {
-                //     return migrate_rocksdb_multi_dense_vector_storage_to_mmap(
-                //         storage,
-                //         vector_config.size,
-                //         *multi_vec_config,
-                //         vector_storage_path,
-                //     );
-                // }
-
-                Ok(storage)
+                )
             } else {
-                let storage = open_simple_dense_vector_storage(
+                open_simple_dense_vector_storage(
                     storage_element_type,
                     db_builder.require()?,
                     &db_column_name,
                     vector_config.size,
                     vector_config.distance,
                     stopped,
-                )?;
-
-                // // Actively migrate away from RocksDB
-                // if common::flags::feature_flags().migrate_rocksdb_vector_storage {
-                //     return migrate_rocksdb_dense_vector_storage_to_mmap(
-                //         storage,
-                //         vector_config.size,
-                //         vector_storage_path,
-                //     );
-                // }
-
-                Ok(storage)
+                )
             }
         }
         // Mmap on disk, not appendable
@@ -440,11 +417,6 @@ pub(crate) fn create_sparse_vector_storage(
             let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
             let storage =
                 open_simple_sparse_vector_storage(db_builder.require()?, &db_column_name, stopped)?;
-
-            // Actively migrate away from RocksDB
-            if common::flags::feature_flags().migrate_rocksdb_vector_storage {
-                return migrate_rocksdb_sparse_vector_storage_to_mmap(&storage, path);
-            }
 
             Ok(storage)
         }
@@ -1041,8 +1013,9 @@ fn migrate_all_rocksdb_dense_vector_storages(
 /// Migrate a RocksDB based dense vector storage into the mmap format
 ///
 /// Creates a new mutable in-memory vector storage on top of memory maps, and copies all vectors
-/// from the RocksDB based storage into it. The persisted RocksDB data is deleted so that only the
-/// new vector storage will be loaded next time. The new vector storage is returned.
+/// from the RocksDB based storage into it. The new vector storage is returned.
+///
+/// Warning: the old vector storage is not destroyed, so it must be done manually
 #[cfg(feature = "rocksdb")]
 pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
     old_storage: &VectorStorageEnum,
@@ -1121,22 +1094,15 @@ pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
         }
     };
 
-    // Destroy persisted RocksDB dense vector data
-    match old_storage {
-        VectorStorageEnum::DenseSimple(storage) => storage.destroy()?,
-        VectorStorageEnum::DenseSimpleByte(storage) => storage.destroy()?,
-        VectorStorageEnum::DenseSimpleHalf(storage) => storage.destroy()?,
-        _ => unreachable!("unexpected vector storage type"),
-    }
-
     Ok(new_storage)
 }
 
 /// Migrate a RocksDB based multi dense vector storage into the mmap format
 ///
 /// Creates a new mutable in-memory vector storage on top of memory maps, and copies all vectors
-/// from the RocksDB based storage into it. The persisted RocksDB data is deleted so that only the
-/// new vector storage will be loaded next time. The new vector storage is returned.
+/// from the RocksDB based storage into it. The new vector storage is returned.
+///
+/// Warning: the old vector storage is not destroyed, so it must be done manually
 #[cfg(feature = "rocksdb")]
 pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
     old_storage: &VectorStorageEnum,
@@ -1218,14 +1184,6 @@ pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
         }
     };
 
-    // Destroy persisted RocksDB multi dense vector data
-    match old_storage {
-        VectorStorageEnum::MultiDenseSimple(storage) => storage.destroy()?,
-        VectorStorageEnum::MultiDenseSimpleByte(storage) => storage.destroy()?,
-        VectorStorageEnum::MultiDenseSimpleHalf(storage) => storage.destroy()?,
-        _ => unreachable!("unexpected vector storage type"),
-    }
-
     Ok(new_storage)
 }
 
@@ -1280,8 +1238,9 @@ fn migrate_all_rocksdb_sparse_vector_storages(
 /// Migrate a RocksDB based sparse vector storage into the mmap format
 ///
 /// Creates a new mutable in-memory vector storage on top of memory maps, and copies all vectors
-/// from the RocksDB based storage into it. The persisted RocksDB data is deleted so that only the
-/// new vector storage will be loaded next time. The new vector storage is returned.
+/// from the RocksDB based storage into it. The new vector storage is returned.
+///
+/// Warning: the old vector storage is not destroyed, so it must be done manually
 #[cfg(feature = "rocksdb")]
 pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
     old_storage: &VectorStorageEnum,
@@ -1354,12 +1313,6 @@ pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
             return Err(err);
         }
     };
-
-    // Destroy persisted RocksDB sparse vector data
-    match old_storage {
-        VectorStorageEnum::SparseSimple(storage) => storage.destroy()?,
-        _ => unreachable!("unexpected vector storage type"),
-    }
 
     Ok(new_storage)
 }
