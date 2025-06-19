@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -725,8 +724,10 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         SegmentVersion::save(path)?
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), expect(unused_mut))]
     let mut segment_state = Segment::load_state(path)?;
 
+    #[cfg_attr(not(feature = "rocksdb"), expect(unused_mut))]
     let mut segment = create_segment(
         segment_state.initial_version,
         segment_state.version,
@@ -946,6 +947,8 @@ fn migrate_all_rocksdb_dense_vector_storages(
     segment: &mut Segment,
     segment_state: &mut SegmentState,
 ) -> OperationResult<()> {
+    use std::ops::Deref;
+
     for (vector_name, data) in &mut segment.vector_data {
         // Only convert simple dense and multi dense vector storages
         if !matches!(
@@ -1192,8 +1195,10 @@ fn migrate_all_rocksdb_sparse_vector_storages(
     segment: &mut Segment,
     segment_state: &mut SegmentState,
 ) -> OperationResult<()> {
+    use std::ops::Deref;
+
     for (vector_name, data) in &mut segment.vector_data {
-        // Only convert simple dense and multi dense vector storages
+        // Only convert simple sparse vector storages
         if !matches!(
             data.vector_storage.borrow().deref(),
             VectorStorageEnum::SparseSimple(_),
