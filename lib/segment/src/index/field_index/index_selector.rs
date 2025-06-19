@@ -363,15 +363,14 @@ impl IndexSelector<'_> {
     fn text_builder(&self, field: &JsonPath, config: TextIndexParams) -> FieldIndexBuilder {
         match self {
             #[cfg(feature = "rocksdb")]
-            IndexSelector::RocksDb(IndexSelectorRocksDb {
-                db,
-                is_appendable,
-            }) => FieldIndexBuilder::FullTextIndex(FullTextIndex::builder_rocksdb(
-                Arc::clone(db),
-                config,
-                &field.to_string(),
-                *is_appendable,
-            )),
+            IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
+                FieldIndexBuilder::FullTextIndex(FullTextIndex::builder_rocksdb(
+                    Arc::clone(db),
+                    config,
+                    &field.to_string(),
+                    *is_appendable,
+                ))
+            }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 FieldIndexBuilder::FullTextMmapIndex(FullTextIndex::builder_mmap(
                     text_dir(dir, field),

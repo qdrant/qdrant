@@ -287,7 +287,6 @@ fn test_phrase_matching() {
             .unwrap();
         assert!(index.check_match(&phrase_query, 4, &hw_counter));
 
-
         // Should only match document 4
         let filter_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
         assert_eq!(filter_results.len(), 1);
