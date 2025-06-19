@@ -341,7 +341,7 @@ impl Collection {
         &self,
         shard_id: ShardId,
         recovery_type: RecoveryType,
-    ) -> CollectionResult<Option<tokio::sync::OwnedMutexGuard<()>>> {
+    ) -> CollectionResult<Option<tokio::sync::OwnedRwLockWriteGuard<()>>> {
         self.shards_holder
             .read()
             .await
