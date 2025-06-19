@@ -983,7 +983,6 @@ fn migrate_all_rocksdb_dense_vector_storages(
         let old_storage = std::mem::replace(&mut *data.vector_storage.borrow_mut(), new_storage);
 
         // Update storage type
-        log::warn!("Updated segment config after data migration");
         segment_state
             .config
             .vector_data
@@ -1213,7 +1212,6 @@ fn migrate_all_rocksdb_sparse_vector_storages(
         let old_storage = std::mem::replace(&mut *data.vector_storage.borrow_mut(), new_storage);
 
         // Update storage type
-        log::warn!("Updated segment config after data migration");
         segment_state
             .config
             .vector_data
