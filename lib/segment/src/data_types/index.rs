@@ -195,16 +195,17 @@ pub struct TextIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lowercase: Option<bool>,
 
+    /// If true, support phrase matching. Default: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phrase_matching: Option<bool>,
+
+    /// Ignore this set of tokens. Can select from predefined languages and/or provide a custom set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopwords: Option<StopwordsInterface>,
+
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
-
-    // todo(phrase_match): remove skip
-    #[serde(skip)]
-    pub phrase_matching: Option<bool>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stopwords: Option<StopwordsInterface>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
