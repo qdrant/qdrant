@@ -1144,6 +1144,8 @@ pub enum PayloadStorageType {
     OnDisk,
     // Store payload on disk and in memory, read from memory if possible
     Mmap,
+    // Store payload on disk and in memory, populate on load
+    InRamMmap,
 }
 
 #[allow(clippy::derivable_impls)]
