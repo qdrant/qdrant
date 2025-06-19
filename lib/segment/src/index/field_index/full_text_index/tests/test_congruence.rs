@@ -240,7 +240,7 @@ fn test_congruence(
     #[values(false, true)] phrase_matching: bool,
 ) {
     const POINT_COUNT: usize = 500;
-    const KEYWORD_COUNT: usize = 5;
+    const KEYWORD_COUNT: usize = 20;
     const KEYWORD_LEN: usize = 2;
 
     let hw_counter = HardwareCounterCell::disposable();
@@ -424,13 +424,14 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
     check_indexes: &[(FullTextIndex, IndexType)],
     phrase_matching: bool,
 ) -> Vec<Vec<String>> {
-    // From the ids, choose a random phrase of 2 words.
+    // From the ids, choose a random phrase of 4 words.
+    const PHRASE_LENGTH: usize = 4;
     let mut phrases = Vec::new();
-    let rng = &mut rand::rng();
+    let rng = &mut StdRng::seed_from_u64(43);
     for id in existing_ids {
         let doc = mutable_index.get_doc(*id).unwrap();
-        let rand_idx = rng.random_range(0..KEYWORD_COUNT - 1);
-        let phrase = doc[rand_idx..rand_idx + 2].to_vec();
+        let rand_idx = rng.random_range(0..=KEYWORD_COUNT - PHRASE_LENGTH);
+        let phrase = doc[rand_idx..rand_idx + PHRASE_LENGTH].to_vec();
 
         phrases.push(phrase);
     }

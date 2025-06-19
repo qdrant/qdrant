@@ -157,6 +157,7 @@ pub fn check_compressed_postings_phrase<'a>(
     token_to_posting: impl Fn(&TokenId) -> Option<PostingListView<'a, Positions>>,
 ) -> bool {
     let Some(mut posting_iterators): Option<Vec<_>> = phrase
+        .to_token_set()
         .tokens()
         .iter()
         .map(|token_id| token_to_posting(token_id).map(|posting| (*token_id, posting.into_iter())))

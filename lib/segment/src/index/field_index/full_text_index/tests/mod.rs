@@ -226,7 +226,7 @@ fn test_phrase_matching() {
         (1, "brown fox quick the jumps over lazy dog".to_string()),
         (2, "quick brown fox runs fast".to_string()),
         (3, "the lazy dog sleeps peacefully".to_string()),
-        (4, "brown brown fox".to_string()),
+        (4, "the brown brown fox".to_string()),
     ];
 
     for (point_id, text) in documents {
@@ -245,18 +245,25 @@ fn test_phrase_matching() {
         let text_query = index
             .parse_text_query("quick brown fox", &hw_counter)
             .unwrap();
-        let regular_results: Vec<_> = index.filter_query(text_query, &hw_counter).collect();
+        assert!(index.check_match(&text_query, 0, &hw_counter));
+        assert!(index.check_match(&text_query, 1, &hw_counter));
+        assert!(index.check_match(&text_query, 2, &hw_counter));
+
+        let text_results: Vec<_> = index.filter_query(text_query, &hw_counter).collect();
 
         // Should match documents 0, 1, and 2 (all contain "quick", "brown", "fox")
-        assert_eq!(regular_results.len(), 3);
-        assert!(regular_results.contains(&0));
-        assert!(regular_results.contains(&1));
-        assert!(regular_results.contains(&2));
+        assert_eq!(text_results.len(), 3);
+        assert!(text_results.contains(&0));
+        assert!(text_results.contains(&1));
+        assert!(text_results.contains(&2));
 
         // Test phrase matching (should only match documents with exact phrase in order)
         let phrase_query = index
             .parse_phrase_query("quick brown fox", &hw_counter)
             .unwrap();
+        assert!(index.check_match(&phrase_query, 0, &hw_counter));
+        assert!(index.check_match(&phrase_query, 2, &hw_counter));
+
         let phrase_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
 
         // Should only match documents 0 and 2 (contain "quick brown fox" in that exact order)
@@ -278,11 +285,13 @@ fn test_phrase_matching() {
         let phrase_query = index
             .parse_phrase_query("brown brown fox", &hw_counter)
             .unwrap();
-        let phrase_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
+        assert!(index.check_match(&phrase_query, 4, &hw_counter));
+
 
         // Should only match document 4
-        assert_eq!(phrase_results.len(), 1);
-        assert!(phrase_results.contains(&4));
+        let filter_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
+        assert_eq!(filter_results.len(), 1);
+        assert!(filter_results.contains(&4));
     };
 
     check_matching(mutable_index);

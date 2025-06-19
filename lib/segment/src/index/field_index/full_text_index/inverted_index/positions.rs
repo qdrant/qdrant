@@ -50,7 +50,7 @@ impl UnsizedValue for Positions {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct TokenPosition {
     token_id: TokenId,
     position: u32,
@@ -63,6 +63,10 @@ pub struct PartialDocument(Vec<TokenPosition>);
 impl PartialDocument {
     pub fn new(mut tokens_positions: Vec<TokenPosition>) -> Self {
         tokens_positions.sort_by_key(|tok_pos| tok_pos.position);
+
+        // There should be no duplicate token with same position
+        debug_assert!(tokens_positions.windows(2).all(|window| window[0] != window[1]));
+
         Self(tokens_positions)
     }
 
