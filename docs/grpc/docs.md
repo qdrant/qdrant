@@ -1617,6 +1617,7 @@ Note: 1kB = 1 vector of size 256. |
 | max_token_len | [uint64](#uint64) | optional | Maximal token length |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
 | stopwords | [StopwordsSet](#qdrant-StopwordsSet) | optional | Stopwords for the text index |
+| phrase_matching | [bool](#bool) | optional | If true - support phrase matching. |
 
 
 

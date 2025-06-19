@@ -483,6 +483,7 @@ message TextIndexParams {
   optional uint64 max_token_len = 4; // Maximal token length
   optional bool on_disk = 5; // If true - store index on disk.
   optional StopwordsSet stopwords = 6; // Stopwords for the text index
+  optional bool phrase_matching = 7; // If true - support phrase matching.
 }
 
 message BoolIndexParams {
