@@ -6,6 +6,7 @@ mod config;
 mod entry_points;
 pub mod graph_layers;
 pub mod graph_layers_builder;
+mod graph_layers_healer;
 pub mod graph_links;
 pub mod hnsw;
 mod links_container;
