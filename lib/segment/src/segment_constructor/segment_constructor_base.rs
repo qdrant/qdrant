@@ -1214,10 +1214,10 @@ fn migrate_all_rocksdb_sparse_vector_storages(
         // Update storage type
         segment_state
             .config
-            .vector_data
+            .sparse_vector_data
             .get_mut(vector_name)
             .unwrap()
-            .storage_type = VectorStorageType::InRamChunkedMmap;
+            .storage_type = SparseVectorStorageType::Mmap;
         Segment::save_state(segment_state, path)?;
 
         // Destroy persisted RocksDB sparse vector data
