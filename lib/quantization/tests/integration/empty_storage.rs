@@ -101,6 +101,7 @@ mod tests {
             vector_data.iter(),
             Vec::<u8>::new(),
             &vector_parameters,
+            quantization::encoded_vectors_binary::Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();

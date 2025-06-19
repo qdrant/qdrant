@@ -4,7 +4,7 @@ mod tests {
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
+    use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin, Encoding};
     use rand::{Rng, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
@@ -49,6 +49,7 @@ mod tests {
                 distance_type: DistanceType::Dot,
                 invert: false,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -95,6 +96,7 @@ mod tests {
                 distance_type: DistanceType::Dot,
                 invert: true,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -141,6 +143,7 @@ mod tests {
                 distance_type: DistanceType::Dot,
                 invert: false,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -184,6 +187,7 @@ mod tests {
                 distance_type: DistanceType::Dot,
                 invert: true,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -226,6 +230,7 @@ mod tests {
                 distance_type: DistanceType::L1,
                 invert: false,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -287,6 +292,7 @@ mod tests {
                 distance_type: DistanceType::L1,
                 invert: true,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -348,6 +354,7 @@ mod tests {
                 distance_type: DistanceType::L1,
                 invert: false,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -406,6 +413,7 @@ mod tests {
                 distance_type: DistanceType::L1,
                 invert: true,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -464,6 +472,7 @@ mod tests {
                 distance_type: DistanceType::L2,
                 invert: false,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -525,6 +534,7 @@ mod tests {
                 distance_type: DistanceType::L2,
                 invert: true,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -586,6 +596,7 @@ mod tests {
                 distance_type: DistanceType::L2,
                 invert: false,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -644,6 +655,7 @@ mod tests {
                 distance_type: DistanceType::L2,
                 invert: true,
             },
+            Encoding::OneBit,
             &AtomicBool::new(false),
         )
         .unwrap();
