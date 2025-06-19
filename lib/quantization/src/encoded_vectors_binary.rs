@@ -269,6 +269,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         vector_stats: &Option<VectorStats>,
     ) {
         let Some(vector_stats) = vector_stats else {
+            debug_assert!(false, "Vector stats must be provided for two bits encoding");
             // If vector stats are not provided, we cannot encode two bits
             // So we fall back to one bit encoding
             return Self::encode_one_bit_vector(vector, encoded_vector);
@@ -298,6 +299,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         vector_stats: &Option<VectorStats>,
     ) {
         let Some(vector_stats) = vector_stats else {
+            debug_assert!(false, "Vector stats must be provided for two bits encoding");
             // If vector stats are not provided, we cannot encode one and half bits
             // So we fall back to one bit encoding
             return Self::encode_one_bit_vector(vector, encoded_vector);
