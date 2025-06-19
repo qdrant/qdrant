@@ -295,8 +295,15 @@ message ProductQuantization {
   optional bool always_ram = 2; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
 }
 
+enum BinaryQuantizationEncoding {
+  OneBit = 0;
+  TwoBits = 1;
+  OneAndHalfBits = 2;
+}
+
 message BinaryQuantization {
   optional bool always_ram = 1; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+  optional BinaryQuantizationEncoding encoding = 2; // Binary quantization encoding method
 }
 
 message QuantizationConfig {

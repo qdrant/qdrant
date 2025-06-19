@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -8,6 +8,7 @@ use memory::mmap_ops::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_vectors::validate_vector_parameters;
+use crate::vector_stats::VectorStats;
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedVectors, EncodingError,
     VectorParameters,
@@ -16,7 +17,22 @@ use crate::{
 pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
+    vector_stats: Option<VectorStats>,
     bits_store_type: PhantomData<TBitsStoreType>,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize, Default)]
+pub enum Encoding {
+    #[default]
+    OneBit,
+    TwoBits,
+    OneAndHalfBits,
+}
+
+impl Encoding {
+    pub fn is_one(&self) -> bool {
+        matches!(self, Encoding::OneBit)
+    }
 }
 
 pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
@@ -26,6 +42,9 @@ pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
 #[derive(Serialize, Deserialize)]
 struct Metadata {
     vector_parameters: VectorParameters,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Encoding::is_one")]
+    encoding: Encoding,
 }
 
 pub trait BitsStoreType:
@@ -155,7 +174,7 @@ impl BitsStoreType for u128 {
     }
 
     fn get_storage_size(size: usize) -> usize {
-        let bits_count = 8 * std::mem::size_of::<Self>();
+        let bits_count = u8::BITS as usize * std::mem::size_of::<Self>();
         let mut result = size / bits_count;
         if size % bits_count != 0 {
             result += 1;
@@ -175,16 +194,24 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
+        encoding: Encoding,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
+
+        let vector_stats = match encoding {
+            Encoding::OneBit => None,
+            Encoding::TwoBits | Encoding::OneAndHalfBits => {
+                Some(VectorStats::build(orig_data.clone(), vector_parameters))
+            }
+        };
 
         for vector in orig_data {
             if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
             }
 
-            let encoded_vector = Self::encode_vector(vector.as_ref());
+            let encoded_vector = Self::encode_vector(vector.as_ref(), &vector_stats, encoding);
             let encoded_vector_slice = encoded_vector.encoded_vector.as_slice();
             let bytes = transmute_to_u8_slice(encoded_vector_slice);
             storage_builder.push_vector_data(bytes);
@@ -194,15 +221,37 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             encoded_vectors: storage_builder.build(),
             metadata: Metadata {
                 vector_parameters: vector_parameters.clone(),
+                encoding,
             },
+            vector_stats,
             bits_store_type: PhantomData,
         })
     }
 
-    fn encode_vector(vector: &[f32]) -> EncodedBinVector<TBitsStoreType> {
-        let mut encoded_vector =
-            vec![Default::default(); TBitsStoreType::get_storage_size(vector.len())];
+    fn encode_vector(
+        vector: &[f32],
+        vector_stats: &Option<VectorStats>,
+        encoding: Encoding,
+    ) -> EncodedBinVector<TBitsStoreType> {
+        let encoded_vector_size =
+            Self::get_quantized_vector_size_from_params(vector.len(), encoding)
+                / std::mem::size_of::<TBitsStoreType>();
+        let mut encoded_vector = vec![Default::default(); encoded_vector_size];
 
+        match encoding {
+            Encoding::OneBit => Self::encode_one_bit_vector(vector, &mut encoded_vector),
+            Encoding::TwoBits => {
+                Self::encode_two_bits_vector(vector, &mut encoded_vector, vector_stats)
+            }
+            Encoding::OneAndHalfBits => {
+                Self::encode_one_and_half_bits_vector(vector, &mut encoded_vector, vector_stats)
+            }
+        }
+
+        EncodedBinVector { encoded_vector }
+    }
+
+    fn encode_one_bit_vector(vector: &[f32], encoded_vector: &mut [TBitsStoreType]) {
         let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
         for (i, &v) in vector.iter().enumerate() {
@@ -212,17 +261,137 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                 encoded_vector[i / bits_count] |= one << (i % bits_count);
             }
         }
-
-        EncodedBinVector { encoded_vector }
     }
 
-    pub fn get_quantized_vector_size_from_params(vector_parameters: &VectorParameters) -> usize {
-        TBitsStoreType::get_storage_size(vector_parameters.dim)
+    fn encode_two_bits_vector(
+        vector: &[f32],
+        encoded_vector: &mut [TBitsStoreType],
+        vector_stats: &Option<VectorStats>,
+    ) {
+        let Some(vector_stats) = vector_stats else {
+            debug_assert!(false, "Vector stats must be provided for two bits encoding");
+            // If vector stats are not provided, we cannot encode two bits
+            // So we fall back to one bit encoding
+            return Self::encode_one_bit_vector(vector, encoded_vector);
+        };
+
+        let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
+        let one = TBitsStoreType::one();
+        for (i, &v) in vector.iter().enumerate() {
+            let mean = vector_stats.elements_stats[i].mean;
+            let sd = vector_stats.elements_stats[i].stddev;
+
+            let (b1, b2) = Self::encode_two_bits_value(v, mean, sd);
+
+            if b1 {
+                encoded_vector[i / bits_count] |= one << (i % bits_count);
+            }
+            if b2 {
+                let j = vector.len() + i;
+                encoded_vector[j / bits_count] |= one << (j % bits_count);
+            }
+        }
+    }
+
+    fn encode_one_and_half_bits_vector(
+        vector: &[f32],
+        encoded_vector: &mut [TBitsStoreType],
+        vector_stats: &Option<VectorStats>,
+    ) {
+        let Some(vector_stats) = vector_stats else {
+            debug_assert!(false, "Vector stats must be provided for two bits encoding");
+            // If vector stats are not provided, we cannot encode one and half bits
+            // So we fall back to one bit encoding
+            return Self::encode_one_bit_vector(vector, encoded_vector);
+        };
+
+        // One and half bit encoding is a 2bit quantization but first bit,
+        // which describes that value is less that sigma,
+        // is united with the bit from the next value using OR operand.
+        // Scoring for 1.5bit quantization is the same as for 2bit and 1bit quantization.
+        //
+        // Example 1:
+        // `Value1` has `[1,0]` 2bits encoding, value `Value2` has `[1,1]` 2bits encoding.
+        // The resulting 1.5bit encoding will be `[value1[0], value2[0], value1[1] | value2[1]] = [1, 1, 1]`.
+        //
+        // Example 2:
+        // `Value1` has `[0,0]` 2bits encoding, value `Value2` has `[1,0]` 2bits encoding.
+        // The resulting 1.5bit encoding will be `[value1[0], value2[0], value1[1] | value2[1]] = [0, 1, 0]`.
+        let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
+        let one = TBitsStoreType::one();
+        for (i, &v) in vector.iter().enumerate() {
+            let mean = vector_stats.elements_stats[i].mean;
+            let sd = vector_stats.elements_stats[i].stddev;
+            let (b1, b2) = Self::encode_two_bits_value(v, mean, sd);
+
+            if b1 {
+                encoded_vector[i / bits_count] |= one << (i % bits_count);
+            }
+            if b2 {
+                let j = vector.len() + i / 2;
+                encoded_vector[j / bits_count] |= one << (j % bits_count);
+            }
+        }
+    }
+
+    fn encode_two_bits_value(value: f32, mean: f32, sd: f32) -> (bool, bool) {
+        // Two bit encoding is a regular BQ with "zero".
+        // It uses 2 bits per value and encodes values in the following way:
+        // 00 - if the value is in the range [-2*sigma; -sigma);
+        // 10 - if the value is in the range [-sigma; sigma);
+        // 11 - if the value is in the range [sigma; 2*sigma];
+        // where sigma is the standard deviation of the value.
+        //
+        // Scoring for 2bit quantization is the same as for 1bit quantization.
+
+        if sd < f32::EPSILON {
+            // If standard deviation is zero,
+            // we cannot calculate z-score count so use regular BQ with zero-comparison.
+            return (value > 0.0, false);
+        }
+
+        // How many ranges we want to divide the values into, it's 3:
+        // [-2*sigma; -sigma), [-sigma; sigma), [sigma; 2*sigma)
+        let ranges = 3;
+
+        // Calculate z-score for the value
+        let v_z = (value - mean) / sd;
+
+        let min_border = -2.0; // -2*sigma
+        let max_border = 2.0; // 2*sigma
+
+        // Normalize z-score to the range [-2*sigma; 2*sigma]
+        let normalized_z = (v_z - min_border) / (max_border - min_border);
+
+        // Calculate index in the ranges list: [-2*sigma; -sigma), [-sigma; sigma), [sigma; 2*sigma)
+        let index = normalized_z * (ranges as f32);
+
+        // Index 0 and less is [0, 0] encoding
+        // Index 1 is [1, 0] encoding
+        // Index 2 and more is [1, 1] encoding
+        if index >= 1.0 {
+            let count_ones = (index.floor() as usize).min(2);
+            (count_ones > 0, count_ones > 1)
+        } else {
+            (false, false)
+        }
+    }
+
+    pub fn get_quantized_vector_size_from_params(dim: usize, encoding: Encoding) -> usize {
+        let extended_dim = match encoding {
+            Encoding::OneBit => dim,
+            Encoding::TwoBits => dim * 2,
+            Encoding::OneAndHalfBits => (dim * 3).div_ceil(2), // ceil(dim * 1.5)
+        };
+        TBitsStoreType::get_storage_size(extended_dim.max(1))
             * std::mem::size_of::<TBitsStoreType>()
     }
 
     fn get_quantized_vector_size(&self) -> usize {
-        Self::get_quantized_vector_size_from_params(&self.metadata.vector_parameters)
+        Self::get_quantized_vector_size_from_params(
+            self.metadata.vector_parameters.dim,
+            self.metadata.encoding,
+        )
     }
 
     fn calculate_metric(&self, v1: &[TBitsStoreType], v2: &[TBitsStoreType]) -> f32 {
@@ -273,6 +442,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     pub fn vectors_count(&self) -> usize {
         self.metadata.vector_parameters.count
     }
+
+    fn get_vector_stats_path_from_meta_path(meta_path: &Path) -> Option<PathBuf> {
+        let mut vector_stats_path = meta_path.parent()?.to_owned();
+        vector_stats_path.push("vector_stats.json");
+        Some(vector_stats_path)
+    }
 }
 
 impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
@@ -286,6 +461,21 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
         data_path.parent().map(std::fs::create_dir_all);
         self.encoded_vectors.save_to_file(data_path)?;
+
+        let vector_stats_path =
+            Self::get_vector_stats_path_from_meta_path(meta_path).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Failed to get vector stats path",
+                )
+            })?;
+        if let Some(vector_stats) = &self.vector_stats {
+            vector_stats_path.parent().map(std::fs::create_dir_all);
+            atomic_save_json(&vector_stats_path, &vector_stats)?;
+        } else if let Ok(true) = std::fs::exists(&vector_stats_path) {
+            std::fs::remove_file(&vector_stats_path)?;
+        }
+
         Ok(())
     }
 
@@ -296,12 +486,31 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     ) -> std::io::Result<Self> {
         let contents = std::fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
-        let quantized_vector_size = Self::get_quantized_vector_size_from_params(vector_parameters);
+        let quantized_vector_size =
+            Self::get_quantized_vector_size_from_params(vector_parameters.dim, metadata.encoding);
         let encoded_vectors =
             TStorage::from_file(data_path, quantized_vector_size, vector_parameters.count)?;
+
+        let vector_stats_path =
+            Self::get_vector_stats_path_from_meta_path(meta_path).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Failed to get vector stats path",
+                )
+            })?;
+        let vector_stats = match metadata.encoding {
+            Encoding::OneBit => None,
+            Encoding::TwoBits | Encoding::OneAndHalfBits => {
+                let vector_stats_contents = std::fs::read_to_string(&vector_stats_path)?;
+                let vector_stats: VectorStats = serde_json::from_str(&vector_stats_contents)?;
+                Some(vector_stats)
+            }
+        };
+
         let result = Self {
             metadata,
             encoded_vectors,
+            vector_stats,
             bits_store_type: PhantomData,
         };
         Ok(result)
@@ -313,7 +522,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
     fn encode_query(&self, query: &[f32]) -> EncodedBinVector<TBitsStoreType> {
         debug_assert!(query.len() == self.metadata.vector_parameters.dim);
-        Self::encode_vector(query)
+        Self::encode_vector(query, &self.vector_stats, self.metadata.encoding)
     }
 
     fn score_point(
