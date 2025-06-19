@@ -334,7 +334,7 @@ impl GraphLayers {
 
         let links = GraphLinks::load_from_file(&plain_path, true, GraphLinksFormat::Plain)?;
         let original_size = plain_path.metadata()?.len();
-        GraphLinksSerializer::new(links.into_edges(), GraphLinksFormat::Compressed, hnsw_m)
+        GraphLinksSerializer::new(links.to_edges(), GraphLinksFormat::Compressed, hnsw_m)
             .save_as(&compressed_path)?;
         let new_size = compressed_path.metadata()?.len();
 
@@ -360,12 +360,9 @@ impl GraphLayers {
             GraphLinksSerializer::new(Vec::new(), GraphLinksFormat::Plain, HnswM::new(0, 0))
                 .to_graph_links_ram();
         let links = std::mem::replace(&mut self.links, dummy);
-        self.links = GraphLinksSerializer::new(
-            links.into_edges(),
-            GraphLinksFormat::Compressed,
-            self.hnsw_m,
-        )
-        .to_graph_links_ram();
+        self.links =
+            GraphLinksSerializer::new(links.to_edges(), GraphLinksFormat::Compressed, self.hnsw_m)
+                .to_graph_links_ram();
     }
 
     pub fn populate(&self) -> OperationResult<()> {
