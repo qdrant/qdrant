@@ -24,6 +24,15 @@ pub struct FeatureFlags {
     // TODO(1.15): enable by default
     pub payload_index_skip_mutable_rocksdb: bool,
 
+    /// Whether to skip usage of RocksDB for new payload storages.
+    ///
+    /// New on-disk payload storages were already using Gridstore. In-memory payload storages still
+    /// choose RocksDB when this flag is not set.
+    ///
+    /// First implemented in Qdrant 1.14.2.
+    // TODO(1.15): enable by default
+    pub payload_storage_skip_rocksdb: bool,
+
     /// Whether to use incremental HNSW building.
     ///
     /// Enabled by default in Qdrant 1.14.1.
@@ -47,6 +56,7 @@ impl Default for FeatureFlags {
             all: false,
             payload_index_skip_rocksdb: true,
             payload_index_skip_mutable_rocksdb: false,
+            payload_storage_skip_rocksdb: false,
             incremental_hnsw_building: true,
             hnsw_healing: false,
             migrate_rocksdb_id_tracker: false,
@@ -69,6 +79,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         all,
         payload_index_skip_rocksdb,
         payload_index_skip_mutable_rocksdb,
+        payload_storage_skip_rocksdb,
         incremental_hnsw_building,
         hnsw_healing,
         migrate_rocksdb_id_tracker,
@@ -79,6 +90,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
     if *all {
         *payload_index_skip_rocksdb = true;
         *payload_index_skip_mutable_rocksdb = true;
+        *payload_storage_skip_rocksdb = true;
         *incremental_hnsw_building = true;
         *hnsw_healing = true;
         *migrate_rocksdb_id_tracker = true;
