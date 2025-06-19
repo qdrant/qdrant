@@ -574,4 +574,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     fn quantized_vector_size(&self) -> usize {
         self.metadata.vector_division.len()
     }
+
+    fn encode_internal_vector(&self, _id: u32) -> Option<EncodedQueryPQ> {
+        None
+    }
 }

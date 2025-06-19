@@ -1,41 +1,45 @@
 use std::borrow::Cow;
-use std::marker::PhantomData;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::DenseVector;
+use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::query_scorer::QueryScorer;
 
-pub struct QuantizedQueryScorer<'a, TElement, TMetric, TEncodedVectors>
+pub struct QuantizedQueryScorer<'a, TEncodedVectors>
 where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
     TEncodedVectors: quantization::EncodedVectors,
 {
     query: TEncodedVectors::EncodedQuery,
     quantized_data: &'a TEncodedVectors,
-    metric: PhantomData<TMetric>,
-    element: PhantomData<TElement>,
     hardware_counter: HardwareCounterCell,
 }
 
-impl<'a, TElement, TMetric, TEncodedVectors>
-    QuantizedQueryScorer<'a, TElement, TMetric, TEncodedVectors>
+pub enum QuantizedInternalScorerResult<'a, TEncodedVectors>
 where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
     TEncodedVectors: quantization::EncodedVectors,
 {
-    pub fn new(
+    Scorer(QuantizedQueryScorer<'a, TEncodedVectors>),
+    NotSupported(HardwareCounterCell),
+}
+
+impl<'a, TEncodedVectors> QuantizedQueryScorer<'a, TEncodedVectors>
+where
+    TEncodedVectors: quantization::EncodedVectors,
+{
+    pub fn new<TElement, TMetric>(
         raw_query: DenseVector,
         quantized_data: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
         mut hardware_counter: HardwareCounterCell,
-    ) -> Self {
+    ) -> Self
+    where
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement>,
+    {
         let raw_preprocessed_query = TMetric::preprocess(raw_query);
         let original_query = TElement::slice_from_float_cow(Cow::Owned(raw_preprocessed_query));
         let original_query_prequantized = TElement::quantization_preprocess(
@@ -50,20 +54,33 @@ where
         Self {
             query,
             quantized_data,
-            metric: PhantomData,
-            element: PhantomData,
             hardware_counter,
         }
     }
+
+    pub fn new_internal(
+        point_id: PointOffsetType,
+        quantized_data: &'a TEncodedVectors,
+        mut hardware_counter: HardwareCounterCell,
+    ) -> QuantizedInternalScorerResult<'a, TEncodedVectors> {
+        let Some(query) = quantized_data.encode_internal_vector(point_id) else {
+            return QuantizedInternalScorerResult::NotSupported(hardware_counter);
+        };
+
+        hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_data.is_on_disk()));
+        QuantizedInternalScorerResult::Scorer(Self {
+            query,
+            quantized_data,
+            hardware_counter,
+        })
+    }
 }
-impl<TElement, TMetric, TEncodedVectors> QueryScorer
-    for QuantizedQueryScorer<'_, TElement, TMetric, TEncodedVectors>
+
+impl<TEncodedVectors> QueryScorer for QuantizedQueryScorer<'_, TEncodedVectors>
 where
-    TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
     TEncodedVectors: quantization::EncodedVectors,
 {
-    type TVector = [TElement];
+    type TVector = [VectorElementType];
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter
@@ -73,7 +90,7 @@ where
             .score_point(&self.query, idx, &self.hardware_counter)
     }
 
-    fn score(&self, _v2: &[TElement]) -> ScoreType {
+    fn score(&self, _v2: &[VectorElementType]) -> ScoreType {
         unimplemented!("This method is not expected to be called for quantized scorer");
     }
 

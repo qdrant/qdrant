@@ -569,6 +569,16 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     fn quantized_vector_size(&self) -> usize {
         self.get_quantized_vector_size()
     }
+
+    fn encode_internal_vector(&self, id: u32) -> Option<EncodedBinVector<TBitsStoreType>> {
+        Some(EncodedBinVector {
+            encoded_vector: transmute_from_u8_to_slice(
+                self.encoded_vectors
+                    .get_vector_data(id as _, self.get_quantized_vector_size()),
+            )
+            .to_vec(),
+        })
+    }
 }
 
 #[cfg(target_arch = "x86_64")]

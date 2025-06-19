@@ -45,6 +45,8 @@ pub trait EncodedVectors: Sized {
     fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32;
 
     fn quantized_vector_size(&self) -> usize;
+
+    fn encode_internal_vector(&self, id: u32) -> Option<Self::EncodedQuery>;
 }
 
 impl DistanceType {
