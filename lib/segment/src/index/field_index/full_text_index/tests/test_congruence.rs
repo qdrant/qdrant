@@ -14,16 +14,13 @@ use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::data_types::index::TextIndexParams;
 use crate::fixtures::payload_fixtures::random_full_text_payload;
 use crate::index::field_index::field_index_base::PayloadFieldIndex;
-use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 use crate::index::field_index::full_text_index::inverted_index::{
     Document, InvertedIndex, ParsedQuery, TokenId, TokenSet,
 };
 use crate::index::field_index::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
-#[cfg(feature = "rocksdb")]
-use crate::index::field_index::full_text_index::mutable_text_index;
 use crate::index::field_index::full_text_index::mutable_text_index::MutableFullTextIndex;
 #[cfg(feature = "rocksdb")]
-use crate::index::field_index::full_text_index::text_index::FullTextIndexBuilder;
+use crate::index::field_index::full_text_index::text_index::FullTextIndexRocksDbBuilder;
 use crate::index::field_index::full_text_index::text_index::{
     FullTextGridstoreIndexBuilder, FullTextIndex,
 };
@@ -39,33 +36,33 @@ type Database = ();
 const FIELD_NAME: &str = "test";
 const TYPES: &[IndexType] = &[
     #[cfg(feature = "rocksdb")]
-    IndexType::Mutable,
+    IndexType::MutableRocksdb,
     IndexType::MutableGridstore,
     #[cfg(feature = "rocksdb")]
-    IndexType::Immutable,
-    IndexType::Mmap,
-    IndexType::RamMmap,
+    IndexType::ImmRamRocksDb,
+    IndexType::ImmMmap,
+    IndexType::ImmRamMmap,
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum IndexType {
     #[cfg(feature = "rocksdb")]
-    Mutable,
+    MutableRocksdb,
     MutableGridstore,
     #[cfg(feature = "rocksdb")]
-    Immutable,
-    Mmap,
-    RamMmap,
+    ImmRamRocksDb,
+    ImmMmap,
+    ImmRamMmap,
 }
 
 enum IndexBuilder {
     #[cfg(feature = "rocksdb")]
-    Mutable(FullTextIndexBuilder),
+    MutableRocksdb(FullTextIndexRocksDbBuilder),
     MutableGridstore(FullTextGridstoreIndexBuilder),
     #[cfg(feature = "rocksdb")]
-    Immutable(FullTextIndexBuilder),
-    Mmap(FullTextMmapIndexBuilder),
-    RamMmap(FullTextMmapIndexBuilder),
+    ImmRamRocksdb(FullTextIndexRocksDbBuilder),
+    ImmMmap(FullTextMmapIndexBuilder),
+    ImmRamMmap(FullTextMmapIndexBuilder),
 }
 
 impl IndexBuilder {
@@ -77,16 +74,16 @@ impl IndexBuilder {
     ) -> OperationResult<()> {
         match self {
             #[cfg(feature = "rocksdb")]
-            IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
+            IndexBuilder::MutableRocksdb(builder) => builder.add_point(id, payload, hw_counter),
             IndexBuilder::MutableGridstore(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
             #[cfg(feature = "rocksdb")]
-            IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
-            IndexBuilder::Mmap(builder) => {
+            IndexBuilder::ImmRamRocksdb(builder) => builder.add_point(id, payload, hw_counter),
+            IndexBuilder::ImmMmap(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
-            IndexBuilder::RamMmap(builder) => {
+            IndexBuilder::ImmRamMmap(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
         }
@@ -95,43 +92,12 @@ impl IndexBuilder {
     fn finalize(self) -> OperationResult<FullTextIndex> {
         match self {
             #[cfg(feature = "rocksdb")]
-            IndexBuilder::Mutable(builder) => builder.finalize(),
+            IndexBuilder::MutableRocksdb(builder) => builder.finalize(),
             IndexBuilder::MutableGridstore(builder) => builder.finalize(),
             #[cfg(feature = "rocksdb")]
-            IndexBuilder::Immutable(builder) => {
-                let FullTextIndex::Mutable(index) = builder.finalize()? else {
-                    panic!("expected mutable index");
-                };
-
-                // Deconstruct mutable index, flush pending changes
-                let MutableFullTextIndex {
-                    storage,
-                    inverted_index: _,
-                    config,
-                    tokenizer: _,
-                } = index;
-                let mutable_text_index::Storage::RocksDb(db_wrapper) = storage else {
-                    panic!("expected RocksDB storage for immutable index");
-                };
-                db_wrapper.flusher()().expect("failed to flush");
-
-                // Open and load immutable index
-                let mut index = ImmutableFullTextIndex::open_rocksdb(db_wrapper, config);
-                index.load()?;
-                let index = FullTextIndex::Immutable(index);
-                Ok(index)
-            }
-            IndexBuilder::Mmap(builder) => builder.finalize(),
-            IndexBuilder::RamMmap(builder) => {
-                let FullTextIndex::Mmap(index) = builder.finalize()? else {
-                    panic!("expected mmap index");
-                };
-
-                // Load index from mmap
-                let mut index = FullTextIndex::Immutable(ImmutableFullTextIndex::open_mmap(*index));
-                index.load()?;
-                Ok(index)
-            }
+            IndexBuilder::ImmRamRocksdb(builder) => builder.finalize(),
+            IndexBuilder::ImmMmap(builder) => builder.finalize(),
+            IndexBuilder::ImmRamMmap(builder) => builder.finalize(),
         }
     }
 }
@@ -153,26 +119,28 @@ fn create_builder(
 
     let mut builder = match index_type {
         #[cfg(feature = "rocksdb")]
-        IndexType::Mutable => IndexBuilder::Mutable(FullTextIndex::builder_rocksdb(
+        IndexType::MutableRocksdb => IndexBuilder::MutableRocksdb(FullTextIndex::builder_rocksdb(
             db.clone(),
             config,
             FIELD_NAME,
+            true
         )),
         IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
             FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config),
         ),
         #[cfg(feature = "rocksdb")]
-        IndexType::Immutable => IndexBuilder::Immutable(FullTextIndex::builder_rocksdb(
+        IndexType::ImmRamRocksDb => IndexBuilder::ImmRamRocksdb(FullTextIndex::builder_rocksdb(
             db.clone(),
             config,
             FIELD_NAME,
+            false,
         )),
-        IndexType::Mmap => IndexBuilder::Mmap(FullTextIndex::builder_mmap(
+        IndexType::ImmMmap => IndexBuilder::ImmMmap(FullTextIndex::builder_mmap(
             temp_dir.path().to_path_buf(),
             config,
             true,
         )),
-        IndexType::RamMmap => IndexBuilder::RamMmap(FullTextIndex::builder_mmap(
+        IndexType::ImmRamMmap => IndexBuilder::ImmRamMmap(FullTextIndex::builder_mmap(
             temp_dir.path().to_path_buf(),
             config,
             false,
@@ -180,12 +148,12 @@ fn create_builder(
     };
     match &mut builder {
         #[cfg(feature = "rocksdb")]
-        IndexBuilder::Mutable(builder) => builder.init().unwrap(),
+        IndexBuilder::MutableRocksdb(builder) => builder.init().unwrap(),
         IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
         #[cfg(feature = "rocksdb")]
-        IndexBuilder::Immutable(builder) => builder.init().unwrap(),
-        IndexBuilder::Mmap(builder) => builder.init().unwrap(),
-        IndexBuilder::RamMmap(builder) => builder.init().unwrap(),
+        IndexBuilder::ImmRamRocksdb(builder) => builder.init().unwrap(),
+        IndexBuilder::ImmMmap(builder) => builder.init().unwrap(),
+        IndexBuilder::ImmRamMmap(builder) => builder.init().unwrap(),
     }
     (builder, temp_dir, db)
 }
