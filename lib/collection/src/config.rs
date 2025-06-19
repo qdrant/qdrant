@@ -131,7 +131,11 @@ impl CollectionParams {
         }
 
         #[cfg(not(feature = "rocksdb"))]
-        PayloadStorageType::Mmap
+        if self.on_disk_payload {
+            PayloadStorageType::Mmap
+        } else {
+            PayloadStorageType::InRamMmap
+        }
     }
 
     pub fn check_compatible(&self, other: &CollectionParams) -> CollectionResult<()> {
