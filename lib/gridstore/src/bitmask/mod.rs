@@ -377,8 +377,9 @@ impl Bitmask {
     ) {
         let page_start = self.range_of_page(page_id).start;
 
-        let mut dirty_regions =
-            AHashSet::with_capacity(local_block_ranges.size_hint().1.unwrap_or(1));
+        let est_num_ranges = local_block_ranges.size_hint().1.unwrap_or(1);
+        let mut dirty_regions = AHashSet::with_capacity(est_num_ranges);
+
         for range in local_block_ranges {
             let bitmask_range = (range.start + page_start)..(range.end + page_start);
             self.bitslice[bitmask_range.clone()].fill(used);
@@ -388,9 +389,7 @@ impl Bitmask {
             let end_region_id =
                 ((bitmask_range.end - 1) / self.config.region_size_blocks) as RegionId;
 
-            for region_id in start_region_id..=end_region_id {
-                dirty_regions.insert(region_id);
-            }
+            dirty_regions.extend(start_region_id..=end_region_id);
         }
 
         self.update_region_gaps(dirty_regions);
