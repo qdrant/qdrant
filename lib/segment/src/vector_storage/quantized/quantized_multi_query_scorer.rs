@@ -8,7 +8,9 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
-use crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffsets;
+use crate::vector_storage::quantized::quantized_multivector_storage::{
+    MultivectorOffset, MultivectorOffsets,
+};
 use crate::vector_storage::query_scorer::QueryScorer;
 
 pub struct QuantizedMultiQueryScorer<'a, TElement, TMetric, TEncodedVectors>
@@ -74,9 +76,11 @@ where
     type TVector = [TElement];
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let sub_vectors_count = self.quantized_multivector_storage.get_offset(idx).count as usize;
+        let multi_vector_offset = self.quantized_multivector_storage.get_offset(idx);
+        let sub_vectors_count = multi_vector_offset.count as usize;
         self.hardware_counter.vector_io_read().incr_delta(
-            self.quantized_multivector_storage.quantized_vector_size() * sub_vectors_count,
+            size_of::<MultivectorOffset>()
+                + self.quantized_multivector_storage.quantized_vector_size() * sub_vectors_count,
         );
         // quantized multivector storage handles hardware counter to batch vector IO
         self.quantized_multivector_storage
