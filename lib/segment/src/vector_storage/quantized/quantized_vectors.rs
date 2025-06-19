@@ -125,7 +125,7 @@ pub struct QuantizedVectors {
 }
 
 impl QuantizedVectors {
-    pub fn get_config(&self) -> &QuantizedVectorsConfig {
+    pub fn config(&self) -> &QuantizedVectorsConfig {
         &self.config
     }
 
