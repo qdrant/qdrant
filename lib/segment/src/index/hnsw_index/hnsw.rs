@@ -58,7 +58,7 @@ use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{
-    FieldCondition, Filter, HnswConfig, QuantizationSearchParams, SearchParams,
+    FieldCondition, Filter, HnswConfig, QuantizationConfig, QuantizationSearchParams, SearchParams,
     default_quantization_ignore_value, default_quantization_oversampling_value,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -229,6 +229,10 @@ impl HNSWIndex {
 
         create_dir_all(path)?;
 
+        let new_quantization_config = quantized_vectors
+            .borrow()
+            .as_ref()
+            .map(|qv| qv.get_config().quantization_config.clone());
         let id_tracker_ref = id_tracker.borrow();
         let vector_storage_ref = vector_storage.borrow();
         let quantized_vectors_ref = quantized_vectors.borrow();
@@ -262,6 +266,7 @@ impl HNSWIndex {
                 OldIndexCandidate::evaluate(
                     &feature_flags,
                     old_index,
+                    &new_quantization_config,
                     &config,
                     &vector_storage_ref,
                     id_tracker_ref.deref(),
@@ -1482,6 +1487,7 @@ impl<'a> OldIndexCandidate<'a> {
     fn evaluate(
         feature_flags: &FeatureFlags,
         old_index: &'a Arc<AtomicRefCell<VectorIndexEnum>>,
+        new_quantization_config: &Option<QuantizationConfig>,
         config: &HnswGraphConfig,
         vector_storage: &VectorStorageEnum,
         id_tracker: &IdTrackerSS,
@@ -1494,6 +1500,18 @@ impl<'a> OldIndexCandidate<'a> {
             VectorIndexEnum::Hnsw(old_index) => Some(old_index),
             _ => None,
         })?;
+
+        let old_quantization_config = old_index
+            .quantized_vectors
+            .borrow()
+            .as_ref()
+            .map(|qv| qv.get_config().quantization_config.clone());
+
+        if old_quantization_config != *new_quantization_config {
+            // Old index has different quantization config.
+            // We cannot reuse it.
+            return None;
+        }
 
         let no_main_graph = config.m == 0;
         let configuration_mismatch = config.m != old_index.config.m
