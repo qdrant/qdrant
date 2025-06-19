@@ -772,107 +772,6 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
     Ok(Some(segment))
 }
 
-#[cfg(feature = "rocksdb")]
-fn migrate_all_rocksdb_dense_vector_storages(
-    path: &Path,
-    segment: &mut Segment,
-    segment_state: &mut SegmentState,
-) -> OperationResult<()> {
-    for (vector_name, data) in &mut segment.vector_data {
-        // Only convert simple dense and multi dense vector storages
-        if !matches!(
-            data.vector_storage.borrow().deref(),
-            VectorStorageEnum::DenseSimple(_)
-                | VectorStorageEnum::DenseSimpleByte(_)
-                | VectorStorageEnum::DenseSimpleHalf(_)
-                | VectorStorageEnum::MultiDenseSimple(_)
-                | VectorStorageEnum::MultiDenseSimpleByte(_)
-                | VectorStorageEnum::MultiDenseSimpleHalf(_)
-        ) {
-            continue;
-        }
-
-        let vector_storage_path = get_vector_storage_path(path, vector_name);
-        let vector_config = segment_state.config.vector_data.get(vector_name).unwrap();
-        let multivector_config = vector_config.multivector_config;
-
-        // Actively migrate away from RocksDB
-        let new_storage = if let Some(multi_vector_config) = multivector_config {
-            migrate_rocksdb_multi_dense_vector_storage_to_mmap(
-                data.vector_storage.borrow().deref(),
-                vector_config.size,
-                multi_vector_config,
-                &vector_storage_path,
-            )?
-        } else {
-            migrate_rocksdb_dense_vector_storage_to_mmap(
-                data.vector_storage.borrow().deref(),
-                vector_config.size,
-                &vector_storage_path,
-            )?
-        };
-
-        let old_storage = std::mem::replace(&mut *data.vector_storage.borrow_mut(), new_storage);
-
-        // Update storage type
-        log::warn!("Updated segment config after data migration");
-        segment_state
-            .config
-            .vector_data
-            .get_mut(vector_name)
-            .unwrap()
-            .storage_type = VectorStorageType::InRamChunkedMmap;
-        Segment::save_state(segment_state, path)?;
-
-        // Also update config in already loaded segment
-        segment.segment_config = segment_state.config.clone();
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "rocksdb")]
-fn migrate_all_rocksdb_sparse_vector_storages(
-    path: &Path,
-    segment: &mut Segment,
-    segment_state: &mut SegmentState,
-) -> OperationResult<()> {
-    for (vector_name, data) in &mut segment.vector_data {
-        // Only convert simple dense and multi dense vector storages
-        if !matches!(
-            data.vector_storage.borrow().deref(),
-            VectorStorageEnum::SparseSimple(_),
-        ) {
-            continue;
-        }
-
-        let vector_storage_path = get_vector_storage_path(path, vector_name);
-
-        // Actively migrate away from RocksDB
-        let new_storage = migrate_rocksdb_sparse_vector_storage_to_mmap(
-            data.vector_storage.borrow().deref(),
-            &vector_storage_path,
-        )?;
-
-        let old_storage = std::mem::replace(&mut *data.vector_storage.borrow_mut(), new_storage);
-
-        // Update storage type
-        log::warn!("Updated segment config after data migration");
-        segment_state
-            .config
-            .vector_data
-            .get_mut(vector_name)
-            .unwrap()
-            .storage_type = VectorStorageType::InRamChunkedMmap;
-        Segment::save_state(segment_state, path)?;
-
-        // Also update config in already loaded segment
-        segment.segment_config = segment_state.config.clone();
-    }
-
-    Ok(())
-}
-
 pub fn new_segment_path(segments_path: &Path) -> PathBuf {
     segments_path.join(Uuid::new_v4().to_string())
 }
@@ -1069,6 +968,76 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
     Ok(new_id_tracker)
 }
 
+#[cfg(feature = "rocksdb")]
+fn migrate_all_rocksdb_dense_vector_storages(
+    path: &Path,
+    segment: &mut Segment,
+    segment_state: &mut SegmentState,
+) -> OperationResult<()> {
+    for (vector_name, data) in &mut segment.vector_data {
+        // Only convert simple dense and multi dense vector storages
+        if !matches!(
+            data.vector_storage.borrow().deref(),
+            VectorStorageEnum::DenseSimple(_)
+                | VectorStorageEnum::DenseSimpleByte(_)
+                | VectorStorageEnum::DenseSimpleHalf(_)
+                | VectorStorageEnum::MultiDenseSimple(_)
+                | VectorStorageEnum::MultiDenseSimpleByte(_)
+                | VectorStorageEnum::MultiDenseSimpleHalf(_)
+        ) {
+            continue;
+        }
+
+        let vector_storage_path = get_vector_storage_path(path, vector_name);
+        let vector_config = segment_state.config.vector_data.get(vector_name).unwrap();
+        let multivector_config = vector_config.multivector_config;
+
+        // Actively migrate away from RocksDB
+        let new_storage = if let Some(multi_vector_config) = multivector_config {
+            migrate_rocksdb_multi_dense_vector_storage_to_mmap(
+                data.vector_storage.borrow().deref(),
+                vector_config.size,
+                multi_vector_config,
+                &vector_storage_path,
+            )?
+        } else {
+            migrate_rocksdb_dense_vector_storage_to_mmap(
+                data.vector_storage.borrow().deref(),
+                vector_config.size,
+                &vector_storage_path,
+            )?
+        };
+
+        let old_storage = std::mem::replace(&mut *data.vector_storage.borrow_mut(), new_storage);
+
+        // Update storage type
+        log::warn!("Updated segment config after data migration");
+        segment_state
+            .config
+            .vector_data
+            .get_mut(vector_name)
+            .unwrap()
+            .storage_type = VectorStorageType::InRamChunkedMmap;
+        Segment::save_state(segment_state, path)?;
+
+        // Destroy persisted RocksDB dense vector data
+        match old_storage {
+            VectorStorageEnum::DenseSimple(storage) => storage.destroy()?,
+            VectorStorageEnum::DenseSimpleByte(storage) => storage.destroy()?,
+            VectorStorageEnum::DenseSimpleHalf(storage) => storage.destroy()?,
+            VectorStorageEnum::MultiDenseSimple(storage) => storage.destroy()?,
+            VectorStorageEnum::MultiDenseSimpleByte(storage) => storage.destroy()?,
+            VectorStorageEnum::MultiDenseSimpleHalf(storage) => storage.destroy()?,
+            _ => unreachable!("unexpected vector storage type"),
+        }
+
+        // Also update config in already loaded segment
+        segment.segment_config = segment_state.config.clone();
+    }
+
+    Ok(())
+}
+
 /// Migrate a RocksDB based dense vector storage into the mmap format
 ///
 /// Creates a new mutable in-memory vector storage on top of memory maps, and copies all vectors
@@ -1258,6 +1227,54 @@ pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
     }
 
     Ok(new_storage)
+}
+
+#[cfg(feature = "rocksdb")]
+fn migrate_all_rocksdb_sparse_vector_storages(
+    path: &Path,
+    segment: &mut Segment,
+    segment_state: &mut SegmentState,
+) -> OperationResult<()> {
+    for (vector_name, data) in &mut segment.vector_data {
+        // Only convert simple dense and multi dense vector storages
+        if !matches!(
+            data.vector_storage.borrow().deref(),
+            VectorStorageEnum::SparseSimple(_),
+        ) {
+            continue;
+        }
+
+        let vector_storage_path = get_vector_storage_path(path, vector_name);
+
+        // Actively migrate away from RocksDB
+        let new_storage = migrate_rocksdb_sparse_vector_storage_to_mmap(
+            data.vector_storage.borrow().deref(),
+            &vector_storage_path,
+        )?;
+
+        let old_storage = std::mem::replace(&mut *data.vector_storage.borrow_mut(), new_storage);
+
+        // Update storage type
+        log::warn!("Updated segment config after data migration");
+        segment_state
+            .config
+            .vector_data
+            .get_mut(vector_name)
+            .unwrap()
+            .storage_type = VectorStorageType::InRamChunkedMmap;
+        Segment::save_state(segment_state, path)?;
+
+        // Destroy persisted RocksDB sparse vector data
+        match old_storage {
+            VectorStorageEnum::SparseSimple(storage) => storage.destroy()?,
+            _ => unreachable!("unexpected vector storage type"),
+        }
+
+        // Also update config in already loaded segment
+        segment.segment_config = segment_state.config.clone();
+    }
+
+    Ok(())
 }
 
 /// Migrate a RocksDB based sparse vector storage into the mmap format
