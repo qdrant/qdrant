@@ -222,7 +222,7 @@ impl<T: PrimitiveVectorElement> SimpleDenseVectorStorage<T> {
     }
 
     /// Destroy this vector storage, remove persisted data from RocksDB
-    pub fn destroy(self) -> OperationResult<()> {
+    pub fn destroy(&self) -> OperationResult<()> {
         self.db_wrapper.remove_column_family()?;
         Ok(())
     }
@@ -397,8 +397,16 @@ mod tests {
         // Migrate from RocksDB to mmap storage
         let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let new_storage =
-            migrate_rocksdb_dense_vector_storage_to_mmap(storage, DIM, storage_dir.path())
+            migrate_rocksdb_dense_vector_storage_to_mmap(&storage, DIM, storage_dir.path())
                 .expect("failed to migrate from RocksDB to mmap");
+
+        // Destroy persisted RocksDB dense vector data
+        match storage {
+            VectorStorageEnum::DenseSimple(storage) => storage.destroy().unwrap(),
+            VectorStorageEnum::DenseSimpleByte(storage) => storage.destroy().unwrap(),
+            VectorStorageEnum::DenseSimpleHalf(storage) => storage.destroy().unwrap(),
+            _ => unreachable!("unexpected vector storage type"),
+        }
 
         // We can drop RocksDB storage now
         db_dir.close().expect("failed to drop RocksDB storage");
