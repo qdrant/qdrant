@@ -32,6 +32,7 @@ use crate::vector_storage::quantized::quantized_mmap_storage::{
 use crate::vector_storage::quantized::quantized_query_scorer::{
     InternalScorerUnsupported, QuantizedQueryScorer,
 };
+use crate::vector_storage::query_scorer::QueryScorerBytes;
 use crate::vector_storage::{
     DenseVectorStorage, MultiVectorStorage, RawScorer, RawScorerImpl, VectorStorage,
     VectorStorageEnum,
@@ -171,7 +172,7 @@ impl QuantizedVectors {
             self.datatype,
             hardware_counter,
         )
-        .build()
+        .build_raw_scorer()
     }
 
     /// Build a raw scorer for the specified `point_id`.
@@ -225,6 +226,22 @@ impl QuantizedVectors {
                 build(point_id, storage, hardware_counter)
             }
         }
+    }
+
+    pub fn query_scorer_bytes<'a>(
+        &'a self,
+        query: QueryVector,
+        hardware_counter: HardwareCounterCell,
+    ) -> OperationResult<Box<dyn QueryScorerBytes + 'a>> {
+        QuantizedScorerBuilder::new(
+            &self.storage_impl,
+            &self.config.quantization_config,
+            query,
+            &self.distance,
+            self.datatype,
+            hardware_counter,
+        )
+        .build_query_scorer_bytes()
     }
 
     pub fn save_to(&self, path: &Path) -> OperationResult<()> {

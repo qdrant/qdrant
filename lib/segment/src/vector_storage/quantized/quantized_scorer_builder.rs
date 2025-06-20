@@ -1,10 +1,10 @@
 use common::counter::hardware_counter::HardwareCounterCell;
-use quantization::EncodedVectors;
+use quantization::{EncodedVectors, EncodedVectorsBytes};
 
 use super::quantized_custom_query_scorer::QuantizedCustomQueryScorer;
 use super::quantized_query_scorer::QuantizedQueryScorer;
 use super::quantized_vectors::QuantizedVectorStorage;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, QueryVector, VectorElementType, VectorElementTypeByte,
@@ -19,6 +19,7 @@ use crate::vector_storage::quantized::quantized_multivector_storage::Multivector
 use crate::vector_storage::query::{
     ContextQuery, DiscoveryQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
 };
+use crate::vector_storage::query_scorer::QueryScorerBytes;
 use crate::vector_storage::{RawScorer, raw_scorer_from_query_scorer};
 
 pub(super) struct QuantizedScorerBuilder<'a> {
@@ -52,7 +53,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
         }
     }
 
-    pub fn build(self) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    pub fn build_raw_scorer(self) -> OperationResult<Box<dyn RawScorer + 'a>> {
         match self.datatype {
             VectorStorageDatatype::Float32 => match self.distance {
                 Distance::Cosine => self.build_with_metric::<VectorElementType, CosineMetric>(),
@@ -85,7 +86,54 @@ impl<'a> QuantizedScorerBuilder<'a> {
         }
     }
 
-    pub fn build_with_metric<TElement, TMetric>(self) -> OperationResult<Box<dyn RawScorer + 'a>>
+    pub fn build_query_scorer_bytes(self) -> OperationResult<Box<dyn QueryScorerBytes + 'a>> {
+        match self.datatype {
+            VectorStorageDatatype::Float32 => match self.distance {
+                Distance::Cosine => {
+                    self.build_with_metric_bytes::<VectorElementType, CosineMetric>()
+                }
+                Distance::Euclid => {
+                    self.build_with_metric_bytes::<VectorElementType, EuclidMetric>()
+                }
+                Distance::Dot => {
+                    self.build_with_metric_bytes::<VectorElementType, DotProductMetric>()
+                }
+                Distance::Manhattan => {
+                    self.build_with_metric_bytes::<VectorElementType, ManhattanMetric>()
+                }
+            },
+            VectorStorageDatatype::Uint8 => match self.distance {
+                Distance::Cosine => {
+                    self.build_with_metric_bytes::<VectorElementTypeByte, CosineMetric>()
+                }
+                Distance::Euclid => {
+                    self.build_with_metric_bytes::<VectorElementTypeByte, EuclidMetric>()
+                }
+                Distance::Dot => {
+                    self.build_with_metric_bytes::<VectorElementTypeByte, DotProductMetric>()
+                }
+                Distance::Manhattan => {
+                    self.build_with_metric_bytes::<VectorElementTypeByte, ManhattanMetric>()
+                }
+            },
+            VectorStorageDatatype::Float16 => match self.distance {
+                Distance::Cosine => {
+                    self.build_with_metric_bytes::<VectorElementTypeHalf, CosineMetric>()
+                }
+                Distance::Euclid => {
+                    self.build_with_metric_bytes::<VectorElementTypeHalf, EuclidMetric>()
+                }
+                Distance::Dot => {
+                    self.build_with_metric_bytes::<VectorElementTypeHalf, DotProductMetric>()
+                }
+                Distance::Manhattan => {
+                    self.build_with_metric_bytes::<VectorElementTypeHalf, ManhattanMetric>()
+                }
+            },
+        }
+    }
+
+    fn build_with_metric<TElement, TMetric>(self) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
         TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement> + 'a,
@@ -127,6 +175,41 @@ impl<'a> QuantizedScorerBuilder<'a> {
             QuantizedVectorStorage::BinaryMmapMulti(storage) => {
                 self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
             }
+        }
+    }
+
+    fn build_with_metric_bytes<TElement, TMetric>(
+        self,
+    ) -> OperationResult<Box<dyn QueryScorerBytes + 'a>>
+    where
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement> + 'a,
+    {
+        match self.quantized_storage {
+            QuantizedVectorStorage::ScalarRam(storage) => {
+                self.new_quantized_scorer_bytes::<TElement, TMetric>(storage)
+            }
+            QuantizedVectorStorage::ScalarMmap(storage) => {
+                self.new_quantized_scorer_bytes::<TElement, TMetric>(storage)
+            }
+            QuantizedVectorStorage::PQRam(storage) => {
+                self.new_quantized_scorer_bytes::<TElement, TMetric>(storage)
+            }
+            QuantizedVectorStorage::PQMmap(storage) => {
+                self.new_quantized_scorer_bytes::<TElement, TMetric>(storage)
+            }
+            QuantizedVectorStorage::BinaryRam(storage) => {
+                self.new_quantized_scorer_bytes::<TElement, TMetric>(storage)
+            }
+            QuantizedVectorStorage::BinaryMmap(storage) => {
+                self.new_quantized_scorer_bytes::<TElement, TMetric>(storage)
+            }
+            QuantizedVectorStorage::ScalarRamMulti(_)
+            | QuantizedVectorStorage::ScalarMmapMulti(_)
+            | QuantizedVectorStorage::PQRamMulti(_)
+            | QuantizedVectorStorage::PQMmapMulti(_)
+            | QuantizedVectorStorage::BinaryRamMulti(_)
+            | QuantizedVectorStorage::BinaryMmapMulti(_) => Err(OperationError::WrongMulti),
         }
     }
 
@@ -197,6 +280,77 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer)
+            }
+        }
+    }
+
+    fn new_quantized_scorer_bytes<TElement, TMetric>(
+        self,
+        quantized_storage: &'a impl EncodedVectorsBytes,
+    ) -> OperationResult<Box<dyn QueryScorerBytes + 'a>>
+    where
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement> + 'a,
+    {
+        let Self {
+            quantized_storage: _same_as_quantized_storage_in_args,
+            quantization_config,
+            query,
+            distance: _,
+            datatype: _,
+            hardware_counter,
+        } = self;
+
+        match query {
+            QueryVector::Nearest(vector) => {
+                let query_scorer = QuantizedQueryScorer::<_>::new::<TElement, TMetric>(
+                    DenseVector::try_from(vector)?,
+                    quantized_storage,
+                    quantization_config,
+                    hardware_counter,
+                );
+                Ok(Box::new(query_scorer))
+            }
+            QueryVector::RecommendBestScore(reco_query) => {
+                let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
+                    RecoBestScoreQuery::from(reco_query),
+                    quantized_storage,
+                    quantization_config,
+                    hardware_counter,
+                );
+                Ok(Box::new(query_scorer))
+            }
+            QueryVector::RecommendSumScores(reco_query) => {
+                let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
+                    RecoSumScoresQuery::from(reco_query),
+                    quantized_storage,
+                    quantization_config,
+                    hardware_counter,
+                );
+                Ok(Box::new(query_scorer))
+            }
+            QueryVector::Discovery(discovery_query) => {
+                let discovery_query: DiscoveryQuery<DenseVector> =
+                    discovery_query.transform_into()?;
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
+                    discovery_query,
+                    quantized_storage,
+                    quantization_config,
+                    hardware_counter,
+                );
+                Ok(Box::new(query_scorer))
+            }
+            QueryVector::Context(context_query) => {
+                let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
+                    context_query,
+                    quantized_storage,
+                    quantization_config,
+                    hardware_counter,
+                );
+                Ok(Box::new(query_scorer))
             }
         }
     }
