@@ -263,6 +263,7 @@ impl HNSWIndex {
                     old_index,
                     &config,
                     &vector_storage_ref,
+                    &quantized_vectors_ref,
                     id_tracker_ref.deref(),
                 )
             })
@@ -1476,6 +1477,7 @@ impl<'a> OldIndexCandidate<'a> {
         old_index: &'a Arc<AtomicRefCell<VectorIndexEnum>>,
         config: &HnswGraphConfig,
         vector_storage: &VectorStorageEnum,
+        quantized_vectors: &Option<QuantizedVectors>,
         id_tracker: &IdTrackerSS,
     ) -> Option<Self> {
         if !feature_flags.incremental_hnsw_building {
@@ -1487,13 +1489,23 @@ impl<'a> OldIndexCandidate<'a> {
             _ => None,
         })?;
 
+        let old_quantized_vectors_ref = old_index.quantized_vectors.borrow();
+        let old_quantization_config = old_quantized_vectors_ref
+            .as_ref()
+            .map(|qv| &qv.config().quantization_config);
+        let new_quantization_config = quantized_vectors
+            .as_ref()
+            .map(|qv| &qv.config().quantization_config);
+
         let no_main_graph = config.m == 0;
         let configuration_mismatch = config.m != old_index.config.m
             || config.m0 != old_index.config.m0
-            || config.ef_construct != old_index.config.ef_construct;
+            || config.ef_construct != old_index.config.ef_construct
+            || new_quantization_config != old_quantization_config;
         if no_main_graph || configuration_mismatch {
             return None;
         }
+        drop(old_quantized_vectors_ref);
 
         let old_storage_ref = old_index.vector_storage.borrow();
 
