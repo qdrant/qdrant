@@ -43,7 +43,7 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::{get_gpu_groups_count, gpu_graph_builder::build_hnsw_on_gpu};
-use crate::index::hnsw_index::graph_layers::GraphLayers;
+use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersWithVectors};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::graph_links::StorageGraphLinksVectors;
@@ -65,7 +65,7 @@ use crate::types::{
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::DiscoveryQuery;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer};
 
 const HNSW_USE_HEURISTIC: bool = true;
 const FINISH_MAIN_GRAPH_LOG_MESSAGE: &str = "Finish main graph in time";
@@ -959,37 +959,88 @@ impl HNSWIndex {
 
         let hw_counter = vector_query_context.hardware_counter();
         let filter_context = filter.map(|f| payload_index.filter_context(f, &hw_counter));
-        let points_scorer = Self::construct_search_scorer(
-            vector,
-            &vector_storage,
-            quantized_vectors.as_ref(),
-            deleted_points,
-            params,
-            vector_query_context.hardware_counter(),
-            filter_context,
-        )?;
-        let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
-        let search_result = self.graph.search(
-            oversampled_top,
-            ef,
-            points_scorer,
-            custom_entry_points,
-            &is_stopped,
-        )?;
+        // Try to use graph with vectors first.
+        let search_result = 'search_result: {
+            if !self.graph.has_vectors() || !is_quantized_search(quantized_vectors.as_ref(), params)
+            {
+                break 'search_result None;
+            }
+            let Some(quantized_vectors) = quantized_vectors.as_ref() else {
+                break 'search_result None;
+            };
 
-        let res = postprocess_search_result(
-            search_result,
-            id_tracker.deleted_point_bitslice(),
-            &vector_storage,
-            quantized_vectors.as_ref(),
-            vector,
-            params,
-            top,
-            vector_query_context.hardware_counter(),
-        )?;
+            let quantized_scorer_filtered = FilteredScorer::new(
+                vector.to_owned(),
+                &vector_storage,
+                Some(quantized_vectors),
+                filter_context
+                    .as_ref()
+                    .map(|x| BoxCow::Borrowed(x.as_ref())),
+                deleted_points,
+                vector_query_context.hardware_counter(),
+            )?;
+            let Some(quantized_scorer_filtered_bytes) = quantized_scorer_filtered.scorer_bytes()
+            else {
+                break 'search_result None;
+            };
 
-        Ok(res)
+            let full_scorer = new_raw_scorer(
+                vector.to_owned(),
+                &vector_storage,
+                vector_query_context.hardware_counter(),
+            )?;
+            let Some(full_scorer_bytes) = full_scorer.scorer_bytes() else {
+                break 'search_result None;
+            };
+
+            Some(self.graph.search_with_vectors(
+                top,
+                ef,
+                &quantized_scorer_filtered,
+                &quantized_scorer_filtered_bytes,
+                full_scorer_bytes,
+                custom_entry_points,
+                &vector_query_context.is_stopped(),
+            )?)
+        };
+
+        // If graph with vectors is not available, fallback to normal graph search.
+        let search_result = if let Some(search_result) = search_result {
+            search_result
+        } else {
+            let points_scorer = Self::construct_search_scorer(
+                vector,
+                &vector_storage,
+                quantized_vectors.as_ref(),
+                deleted_points,
+                params,
+                vector_query_context.hardware_counter(),
+                filter_context,
+            )?;
+            let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
+
+            let search_result = self.graph.search(
+                oversampled_top,
+                ef,
+                points_scorer,
+                custom_entry_points,
+                &is_stopped,
+            )?;
+
+            postprocess_search_result(
+                search_result,
+                id_tracker.deleted_point_bitslice(),
+                &vector_storage,
+                quantized_vectors.as_ref(),
+                vector,
+                params,
+                top,
+                vector_query_context.hardware_counter(),
+            )?
+        };
+
+        Ok(search_result)
     }
 
     fn search_vectors_with_graph(
