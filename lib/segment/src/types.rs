@@ -19,7 +19,7 @@ use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
-use strum::EnumIter;
+use strum::{EnumIter, EnumString};
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 use zerocopy::native_endian::U64;
@@ -260,6 +260,7 @@ impl From<CompactExtendedPointId> for ExtendedPointId {
     PartialEq,
     Eq,
     Hash,
+    EnumString,
 )]
 /// Distance function types used to compare vectors
 pub enum Distance {
