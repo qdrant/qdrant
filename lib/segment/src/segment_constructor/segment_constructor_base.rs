@@ -1100,7 +1100,7 @@ pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
                 }
                 Err(err) => {
                     log::error!(
-                        "Dense vector storage migration to mmap failed, failed to list its storage files, they will be left behind: {err}",
+                        "Dense vector storage migration to mmap failed, failed to list its storage files, they are left behind: {err}",
                     );
                 }
             }
@@ -1190,7 +1190,7 @@ pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
                 }
                 Err(err) => {
                     log::error!(
-                        "Multi dense vector storage migration to mmap failed, failed to list its storage files, they will be left behind: {err}",
+                        "Multi dense vector storage migration to mmap failed, failed to list its storage files, they are left behind: {err}",
                     );
                 }
             }
@@ -1321,7 +1321,7 @@ pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
                 }
                 Err(err) => {
                     log::error!(
-                        "Sparse vector storage migration to mmap failed, failed to list its storage files, they will be left behind: {err}",
+                        "Sparse vector storage migration to mmap failed, failed to list its storage files, they are left behind: {err}",
                     );
                 }
             }
