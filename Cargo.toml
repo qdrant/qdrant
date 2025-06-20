@@ -64,7 +64,7 @@ itertools = { workspace = true }
 anyhow = "1.0.98"
 futures = { workspace = true }
 futures-util = { workspace = true }
-clap = { version = "4.5.40", features = ["derive", "env"] }
+clap = { workspace = true }
 serde_cbor = { workspace = true }
 uuid = { workspace = true }
 sys-info = "0.9.1"
@@ -171,6 +171,7 @@ bitpacking = "0.9.2"
 bytemuck = { version = "1.23.1", features = ["extern_crate_alloc", "must_cast", "transparentwrapper_extra"] }
 bytes = "1.10.1"
 chrono = { version = "0.4.41", features = ["serde"] }
+clap = { version = "4.5.40", features = ["derive", "env"] }
 criterion = "0.6.0"
 data-encoding = "2.9.0"
 delegate = "0.13.3"
