@@ -67,4 +67,10 @@ impl SimplePayloadStorage {
     pub fn payload_ptr(&self, point_id: PointOffsetType) -> Option<&Payload> {
         self.payload.get(&point_id)
     }
+
+    /// Destroy this payload storage, remove persisted data from RocksDB
+    pub fn destroy(&self) -> OperationResult<()> {
+        self.db_wrapper.remove_column_family()?;
+        Ok(())
+    }
 }

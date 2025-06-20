@@ -746,6 +746,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
     if common::flags::feature_flags().migrate_rocksdb_vector_storage {
         migrate_all_rocksdb_dense_vector_storages(path, &mut segment, &mut segment_state)?;
         migrate_all_rocksdb_sparse_vector_storages(path, &mut segment, &mut segment_state)?;
+        migrate_rocksdb_payload_storage(path, &mut segment, &mut segment_state)?;
     }
 
     Ok(Some(segment))
@@ -1316,6 +1317,123 @@ pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
                 Err(err) => {
                     log::error!(
                         "Sparse vector storage migration to mmap failed, failed to list its storage files, they will be left behind: {err}",
+                    );
+                }
+            }
+            return Err(err);
+        }
+    };
+
+    Ok(new_storage)
+}
+
+#[cfg(feature = "rocksdb")]
+fn migrate_rocksdb_payload_storage(
+    path: &Path,
+    segment: &mut Segment,
+    segment_state: &mut SegmentState,
+) -> OperationResult<()> {
+    use std::ops::Deref;
+
+    if !matches!(
+        segment.payload_storage.borrow().deref(),
+        PayloadStorageEnum::SimplePayloadStorage(_) | PayloadStorageEnum::OnDiskPayloadStorage(_),
+    ) {
+        return Ok(());
+    }
+
+    // Actively migrate away from RocksDB
+    let new_storage = migrate_rocksdb_payload_storage_to_mmap(
+        segment.payload_storage.borrow().deref(),
+        path,
+        segment.total_point_count(),
+    )?;
+
+    let old_storage = std::mem::replace(&mut *segment.payload_storage.borrow_mut(), new_storage);
+
+    // Update storage type
+    // TODO(in-memory-mmap-payload-storage): once in-memory mmap payload storage is merged, select correct type here
+    segment_state.config.payload_storage_type = PayloadStorageType::Mmap;
+    Segment::save_state(segment_state, path)?;
+
+    // Destroy persisted RocksDB payload data
+    match old_storage {
+        PayloadStorageEnum::SimplePayloadStorage(storage) => storage.destroy()?,
+        PayloadStorageEnum::OnDiskPayloadStorage(storage) => storage.destroy()?,
+        _ => unreachable!("unexpected payload storage type"),
+    }
+
+    // Also update config in already loaded segment
+    segment.segment_config = segment_state.config.clone();
+
+    Ok(())
+}
+
+/// Migrate a RocksDB based payload storage storage into the mmap format
+///
+/// Creates a new payload storage on top of memory maps, and copies all payloads
+/// from the RocksDB based storage into it. The new payload storage is returned.
+///
+/// Warning: the old payload storage is not destroyed, so it must be done manually
+#[cfg(feature = "rocksdb")]
+pub fn migrate_rocksdb_payload_storage_to_mmap(
+    old_storage: &PayloadStorageEnum,
+    segment_path: &Path,
+    total_point_count: usize,
+) -> OperationResult<PayloadStorageEnum> {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::PointOffsetType;
+
+    use crate::payload_storage::PayloadStorage;
+    use crate::payload_storage::mmap_payload_storage::find_storage_files;
+
+    log::info!(
+        "Migrating payload storage for {total_point_count} points from RocksDB into new format",
+    );
+
+    fn migrate(
+        old_storage: &PayloadStorageEnum,
+        segment_path: &Path,
+        total_vector_count: usize,
+    ) -> OperationResult<PayloadStorageEnum> {
+        // Construct mmap based payload storage
+        // TODO(in-memory-mmap-payload-storage): once in-memory mmap payload storage is merged, create correct storage here
+        let mut new_storage = PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(
+            segment_path.to_path_buf(),
+        )?);
+
+        // Copy all payloads and deletes into new storage
+        let hw_counter = HardwareCounterCell::disposable();
+        for internal_id in 0..total_vector_count as PointOffsetType {
+            let payload = old_storage.get_sequential(internal_id, &hw_counter)?;
+            new_storage.set(internal_id, &payload, &hw_counter)?;
+        }
+
+        // Flush new storage
+        new_storage.flusher()()?;
+
+        Ok(new_storage)
+    }
+
+    let new_storage = match migrate(old_storage, segment_path, total_point_count) {
+        Ok(new_storage) => new_storage,
+        // On migration error, clean up and remove all new storage files
+        Err(err) => {
+            let files = find_storage_files(segment_path);
+            match files {
+                Ok(files) => {
+                    for file in files {
+                        if let Err(err) = std::fs::remove_file(&file) {
+                            log::error!(
+                                "Payload storage migration to mmap failed, failed to remove mmap file {} for cleanup: {err}",
+                                file.display(),
+                            );
+                        }
+                    }
+                }
+                Err(err) => {
+                    log::error!(
+                        "Payload storage migration to mmap failed, failed to list its storage files, they are left behind: {err}",
                     );
                 }
             }

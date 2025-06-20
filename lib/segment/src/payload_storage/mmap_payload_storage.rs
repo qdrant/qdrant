@@ -1,3 +1,5 @@
+#[cfg(any(test, feature = "rocksdb"))]
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -265,4 +267,11 @@ impl PayloadStorage for MmapPayloadStorage {
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         Ok(self.storage.read().get_storage_size_bytes())
     }
+}
+
+/// Find files related to this payload storage
+#[cfg(any(test, feature = "rocksdb"))]
+pub(crate) fn find_storage_files(segment_path: &Path) -> OperationResult<Vec<PathBuf>> {
+    let storage_path = segment_path.join(STORAGE_PATH);
+    Ok(common::disk::list_files(&storage_path)?)
 }
