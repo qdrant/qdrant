@@ -125,6 +125,10 @@ pub struct QuantizedVectors {
 }
 
 impl QuantizedVectors {
+    pub fn config(&self) -> &QuantizedVectorsConfig {
+        &self.config
+    }
+
     pub fn default_rescoring(&self) -> bool {
         matches!(
             self.storage_impl,
