@@ -743,10 +743,15 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
     )?;
 
     #[cfg(feature = "rocksdb")]
-    if common::flags::feature_flags().migrate_rocksdb_vector_storage {
-        migrate_all_rocksdb_dense_vector_storages(path, &mut segment, &mut segment_state)?;
-        migrate_all_rocksdb_sparse_vector_storages(path, &mut segment, &mut segment_state)?;
-        migrate_rocksdb_payload_storage(path, &mut segment, &mut segment_state)?;
+    {
+        if common::flags::feature_flags().migrate_rocksdb_vector_storage {
+            migrate_all_rocksdb_dense_vector_storages(path, &mut segment, &mut segment_state)?;
+            migrate_all_rocksdb_sparse_vector_storages(path, &mut segment, &mut segment_state)?;
+        }
+
+        if common::flags::feature_flags().migrate_rocksdb_payload_storage {
+            migrate_rocksdb_payload_storage(path, &mut segment, &mut segment_state)?;
+        }
     }
 
     Ok(Some(segment))
