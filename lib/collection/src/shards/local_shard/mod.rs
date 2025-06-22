@@ -70,6 +70,14 @@ use crate::wal_delta::{LockedWal, RecoverableWal};
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
 
+/// The number of WAL operations to process between progress bar updates.
+/// Updating the progress bar for every single operation adds noticeable
+/// overhead during shard recovery, especially for large collections with
+/// millions of operations.  Batching updates dramatically reduces the
+/// cost of rendering while still providing an accurate sense of progress
+/// to the user.
+const WAL_PROGRESS_UPDATE_EVERY: usize = 1_000;
+
 const WAL_PATH: &str = "wal";
 
 const SEGMENTS_PATH: &str = "segments";
@@ -618,6 +626,9 @@ impl LocalShard {
             );
         }
 
+        // Counter for processed WAL operations. Used to batch progress bar updates.
+        let mut processed_ops: usize = 0;
+
         // When `Segment`s are flushed, WAL is truncated up to the index of the last operation
         // that has been applied and flushed.
         //
@@ -668,10 +679,16 @@ impl LocalShard {
                 Ok(_) => (),
             }
 
-            // Update progress bar or show text progress every WAL_LOAD_REPORT_EVERY
-            bar.inc(1);
+            processed_ops += 1;
+
+            // Batch progress bar updates to reduce overhead.
+            if show_progress_bar && processed_ops % WAL_PROGRESS_UPDATE_EVERY == 0 {
+                bar.inc(WAL_PROGRESS_UPDATE_EVERY as u64);
+            }
+
+            // Fallback text progress reporting when the bar is hidden.
             if !show_progress_bar && last_progress_report.elapsed() >= WAL_LOAD_REPORT_EVERY {
-                let progress = bar.position();
+                let progress = processed_ops as u64;
                 log::info!(
                     "{progress}/{} ({}%)",
                     wal.len(false),
@@ -702,6 +719,11 @@ impl LocalShard {
             // consistency, if we happened to only apply *past* operations to a segment with newer
             // version.
             segments.flush_all(true, true)?;
+        }
+
+        // Make sure the progress bar reflects the real position if we were batching updates.
+        if show_progress_bar {
+            bar.set_position(processed_ops as u64);
         }
 
         bar.finish();
