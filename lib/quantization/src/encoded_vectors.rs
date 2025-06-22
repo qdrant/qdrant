@@ -46,6 +46,8 @@ pub trait EncodedVectors: Sized {
 
     fn quantized_vector_size(&self) -> usize;
 
+    /// Construct a query from stored vector, so it can be used for scoring.
+    /// Some implementations may not support this, in which case they should return `None`.
     fn encode_internal_vector(&self, id: u32) -> Option<Self::EncodedQuery>;
 }
 

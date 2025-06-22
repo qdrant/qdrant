@@ -82,6 +82,8 @@ impl<'a> FilteredScorer<'a> {
         point_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self> {
+        // This is a fallback function, which is used if quantized vector storage
+        // is not capable of reconstructing the query vector.
         let original_query_fn = || {
             let query = vectors.get_vector(point_id);
             let query: QueryVector = query.as_vec_ref().into();

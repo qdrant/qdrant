@@ -18,6 +18,8 @@ where
     hardware_counter: HardwareCounterCell,
 }
 
+/// Result of internal scorer creation.
+/// It can be constructed scorer or nothing but we want to get hardware counter ownership back
 pub enum QuantizedInternalScorerResult<'a, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors,
