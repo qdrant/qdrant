@@ -1307,6 +1307,12 @@ pub enum VectorStorageDatatype {
     Float16,
     // Unsigned 8-bit integer
     Uint8,
+    // 8-bit floating point (e4m3 format) – experimental
+    #[cfg(feature = "experimental_float8")]
+    Float8E4M3,
+    // 8-bit floating point (e5m2 format) – experimental
+    #[cfg(feature = "experimental_float8")]
+    Float8E5M2,
 }
 
 #[derive(

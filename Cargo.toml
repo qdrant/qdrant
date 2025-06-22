@@ -45,6 +45,8 @@ deb = []
 # More work is still required to eventually completely disable and remove it
 rocksdb = ["segment/rocksdb"]
 
+experimental_float8 = ["dep:once_cell"]
+
 [dev-dependencies]
 serde_urlencoded = "0.7"
 sealed_test = "1.1.0"
@@ -326,3 +328,7 @@ assets = [
     ["static/*/*", "etc/qdrant/static", "644"],
     ["config/deb.yaml", "etc/qdrant/config.yaml", "644"],
 ]
+
+[dependencies.once_cell]
+version = "1.19"
+optional = true
