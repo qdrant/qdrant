@@ -11460,6 +11460,11 @@
             "description": "Whether to actively migrate RocksDB based vector storages into a new format.",
             "default": false,
             "type": "boolean"
+          },
+          "migrate_rocksdb_payload_storage": {
+            "description": "Whether to actively migrate RocksDB based payload storages into a new format.",
+            "default": false,
+            "type": "boolean"
           }
         }
       },
