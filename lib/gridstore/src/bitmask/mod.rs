@@ -3,6 +3,7 @@ mod gaps;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use ahash::AHashSet;
 use bitvec::slice::BitSlice;
 use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
@@ -198,9 +199,6 @@ impl Bitmask {
             vec![RegionGaps::all_free(self.config.region_size_blocks as u16); new_regions];
         self.regions_gaps.extend(new_gaps.into_iter())?;
 
-        // update the previous last region gaps
-        self.update_region_gaps(previous_bitslice_len - 1..previous_bitslice_len + 2);
-
         assert_eq!(
             self.regions_gaps.len() * self.config.region_size_blocks,
             self.bitslice.len(),
@@ -379,27 +377,27 @@ impl Bitmask {
     ) {
         let page_start = self.range_of_page(page_id).start;
 
-        let mut lowest_offset = usize::MAX;
-        let mut highest_offset = page_start;
+        let est_num_ranges = local_block_ranges.size_hint().1.unwrap_or(1);
+        let mut dirty_regions = AHashSet::with_capacity(est_num_ranges);
+
         for range in local_block_ranges {
             let bitmask_range = (range.start + page_start)..(range.end + page_start);
             self.bitslice[bitmask_range.clone()].fill(used);
 
-            lowest_offset = lowest_offset.min(bitmask_range.start);
-            highest_offset = highest_offset.max(bitmask_range.end);
+            let start_region_id =
+                (bitmask_range.start / self.config.region_size_blocks) as RegionId;
+            let end_region_id =
+                bitmask_range.end.div_ceil(self.config.region_size_blocks) as RegionId;
+
+            dirty_regions.extend(start_region_id..end_region_id);
         }
 
-        // Only update if we actually processed any ranges
-        if lowest_offset != usize::MAX {
-            self.update_region_gaps(lowest_offset..highest_offset);
-        }
+        self.update_region_gaps(dirty_regions);
     }
 
-    fn update_region_gaps(&mut self, blocks_range: Range<usize>) {
-        let region_start_id = blocks_range.start / self.config.region_size_blocks;
-        let region_end_id = (blocks_range.end - 1) / self.config.region_size_blocks;
-
-        for region_id in region_start_id..=region_end_id {
+    fn update_region_gaps(&mut self, dirty_regions: AHashSet<RegionId>) {
+        for region_id in dirty_regions {
+            let region_id = region_id as usize;
             let region_start = region_id * self.config.region_size_blocks;
             let region_end = region_start + self.config.region_size_blocks;
 
