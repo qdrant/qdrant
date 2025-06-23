@@ -26,11 +26,13 @@ impl<TElement> CowMultiVector<'_, TElement>
 where
     TElement: PrimitiveVectorElement,
 {
-    pub fn dim(&self) -> usize {
+    fn flattened_len(&self) -> usize {
         match self {
-            CowMultiVector::Owned(typed_multi_dense_vector) => typed_multi_dense_vector.dim,
+            CowMultiVector::Owned(typed_multi_dense_vector) => {
+                typed_multi_dense_vector.flattened_len()
+            }
             CowMultiVector::Borrowed(typed_multi_dense_vector_ref) => {
-                typed_multi_dense_vector_ref.dim
+                typed_multi_dense_vector_ref.flattened_len()
             }
         }
     }
@@ -50,16 +52,14 @@ impl Default for CowVector<'_> {
 }
 
 impl CowVector<'_> {
-    pub fn dim(&self) -> usize {
-        match self {
-            CowVector::Dense(cow) => cow.len(),
-            CowVector::Sparse(cow) => cow.indices.len(),
-            CowVector::MultiDense(cow_multi_vector) => cow_multi_vector.dim(),
-        }
-    }
-
     pub fn estimate_size_in_bytes(&self) -> usize {
-        self.dim() * size_of::<VectorElementType>()
+        match self {
+            CowVector::Dense(cow) => cow.len() * size_of::<VectorElementType>(),
+            CowVector::Sparse(cow) => cow.indices.len() * size_of::<VectorElementType>() * 2, // indices & values
+            CowVector::MultiDense(cow_multi_vector) => {
+                cow_multi_vector.flattened_len() * size_of::<VectorElementType>()
+            }
+        }
     }
 }
 
@@ -72,7 +72,10 @@ pub struct NamedVectors<'a> {
 
 impl NamedVectors<'_> {
     pub fn estimate_size_in_bytes(&self) -> usize {
-        self.map.iter().map(|i| i.1.estimate_size_in_bytes()).sum()
+        self.map
+            .iter()
+            .map(|(_name, vector)| vector.estimate_size_in_bytes())
+            .sum()
     }
 }
 
