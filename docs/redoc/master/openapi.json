@@ -7658,12 +7658,8 @@
             "type": "boolean",
             "nullable": true
           },
-          "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
-            "type": "boolean",
-            "nullable": true
-          },
           "stopwords": {
+            "description": "Ignore this set of tokens. Can select from predefined languages and/or provide a custom set.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/StopwordsInterface"
@@ -7672,6 +7668,11 @@
                 "nullable": true
               }
             ]
+          },
+          "on_disk": {
+            "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
