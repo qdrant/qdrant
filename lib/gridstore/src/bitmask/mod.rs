@@ -387,9 +387,9 @@ impl Bitmask {
             let start_region_id =
                 (bitmask_range.start / self.config.region_size_blocks) as RegionId;
             let end_region_id =
-                ((bitmask_range.end - 1) / self.config.region_size_blocks) as RegionId;
+                bitmask_range.end.div_ceil(self.config.region_size_blocks) as RegionId;
 
-            dirty_regions.extend(start_region_id..=end_region_id);
+            dirty_regions.extend(start_region_id..end_region_id);
         }
 
         self.update_region_gaps(dirty_regions);
