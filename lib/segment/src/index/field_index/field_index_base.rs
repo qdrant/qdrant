@@ -533,7 +533,7 @@ pub enum FieldIndexBuilder {
     GeoMmapIndex(GeoMapIndexMmapBuilder),
     GeoGridstoreIndex(GeoMapIndexGridstoreBuilder),
     #[cfg(feature = "rocksdb")]
-    FullTextIndex(super::full_text_index::text_index::FullTextIndexBuilder),
+    FullTextIndex(super::full_text_index::text_index::FullTextIndexRocksDbBuilder),
     FullTextMmapIndex(FullTextMmapIndexBuilder),
     FullTextGridstoreIndex(FullTextGridstoreIndexBuilder),
     #[cfg(feature = "rocksdb")]

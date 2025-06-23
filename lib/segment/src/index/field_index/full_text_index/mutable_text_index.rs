@@ -18,6 +18,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 #[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::ValueIndexer;
 
 const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
     compression: Some(gridstore::config::Compression::None),
@@ -329,6 +330,27 @@ impl MutableFullTextIndex {
                 .get_value(idx, &HardwareCounterCell::disposable())
                 .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),
         }
+    }
+}
+
+impl ValueIndexer for MutableFullTextIndex {
+    type ValueType = String;
+
+    fn add_many(
+        &mut self,
+        idx: PointOffsetType,
+        values: Vec<String>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.add_many(idx, values, hw_counter)
+    }
+
+    fn get_value(value: &serde_json::Value) -> Option<String> {
+        FullTextIndex::get_value(value)
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        self.remove_point(id)
     }
 }
 
