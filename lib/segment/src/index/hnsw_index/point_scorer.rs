@@ -10,6 +10,7 @@ use crate::common::operation_error::{CancellableResult, OperationResult, check_p
 use crate::data_types::vectors::QueryVector;
 use crate::payload_storage::FilterContext;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
+use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{
     RawScorer, VectorStorage, VectorStorageEnum, check_deleted_condition, new_raw_scorer,
@@ -90,11 +91,11 @@ impl<'a> FilteredScorer<'a> {
             query
         };
         let raw_scorer = match quantized_vectors {
-            Some(quantized_vectors) => quantized_vectors.raw_internal_scorer(
-                point_id,
-                original_query_fn,
-                hardware_counter,
-            )?,
+            Some(quantized_vectors) => quantized_vectors
+                .raw_internal_scorer(point_id, hardware_counter)
+                .or_else(|InternalScorerUnsupported(hardware_counter)| {
+                    quantized_vectors.raw_scorer(original_query_fn(), hardware_counter)
+                })?,
             None => {
                 let query = original_query_fn();
                 new_raw_scorer(query, vectors, hardware_counter)?
