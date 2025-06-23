@@ -31,7 +31,7 @@ impl VectorInternal {
         match self {
             VectorInternal::Dense(_dense) => 1,
             VectorInternal::Sparse(sparse) => sparse.indices.len().div_ceil(SPARSE_DIMS_COST_UNIT),
-            VectorInternal::MultiDense(multivec) => multivec.len(),
+            VectorInternal::MultiDense(multivec) => multivec.vectors_count(),
         }
     }
 }
@@ -265,10 +265,6 @@ impl<T> TypedMultiDenseVector<T> {
 
         Ok(multi_dense)
     }
-
-    pub fn len(&self) -> usize {
-        self.flattened_vectors.len() / self.dim
-    }
 }
 
 pub type MultiDenseVectorInternal = TypedMultiDenseVector<VectorElementType>;
@@ -331,6 +327,10 @@ impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
     pub fn vectors_count(&self) -> usize {
         self.flattened_vectors.len() / self.dim
     }
+
+    pub fn flattened_len(&self) -> usize {
+        self.flattened_vectors.len()
+    }
 }
 
 impl<T: PrimitiveVectorElement> TryFrom<Vec<TypedDenseVector<T>>> for TypedMultiDenseVector<T> {
@@ -359,6 +359,10 @@ impl<'a, T: PrimitiveVectorElement> TypedMultiDenseVectorRef<'a, T> {
 
     pub fn vectors_count(self) -> usize {
         self.flattened_vectors.len() / self.dim
+    }
+
+    pub fn flattened_len(&self) -> usize {
+        self.flattened_vectors.len()
     }
 
     // Cannot use `ToOwned` trait because of `Borrow` implementation for `TypedMultiDenseVector`
