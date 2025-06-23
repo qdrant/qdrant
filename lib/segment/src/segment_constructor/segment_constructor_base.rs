@@ -1365,7 +1365,13 @@ fn migrate_rocksdb_payload_storage(
     match old_storage {
         PayloadStorageEnum::SimplePayloadStorage(storage) => storage.destroy()?,
         PayloadStorageEnum::OnDiskPayloadStorage(storage) => storage.destroy()?,
-        _ => unreachable!("unexpected payload storage type"),
+        PayloadStorageEnum::MmapPayloadStorage(_) => {
+            unreachable!("unexpected payload storage type")
+        }
+        #[cfg(feature = "testing")]
+        PayloadStorageEnum::InMemoryPayloadStorage(_) => {
+            unreachable!("unexpected payload storage type")
+        }
     }
 
     // Also update config in already loaded segment
