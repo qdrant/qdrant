@@ -223,7 +223,7 @@ tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.17", features = ["v4", "serde"] }
 validator = { version = "0.18.1", features = ["derive"] }
 wal = { git = "https://github.com/qdrant/wal.git", rev = "c4b26b9c0ccc0e06ba7391189e4c8eac051ca531" }
-zerocopy = { version = "0.8.25", features = ["derive"] }
+zerocopy = { version = "0.8.26", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
 thiserror = "2.0.12"
