@@ -18,15 +18,9 @@ where
     hardware_counter: HardwareCounterCell,
 }
 
-/// Result of internal scorer creation.
-/// It can be constructed scorer or nothing but we want to get hardware counter ownership back
-pub enum QuantizedInternalScorerResult<'a, TEncodedVectors>
-where
-    TEncodedVectors: quantization::EncodedVectors,
-{
-    Scorer(QuantizedQueryScorer<'a, TEncodedVectors>),
-    NotSupported(HardwareCounterCell),
-}
+/// Error type returned when [`QuantizedQueryScorer::new_internal`] fails.
+/// Contains the original [`HardwareCounterCell`] passed to [`QuantizedQueryScorer::new_internal`].
+pub struct InternalScorerUnsupported(pub HardwareCounterCell);
 
 impl<'a, TEncodedVectors> QuantizedQueryScorer<'a, TEncodedVectors>
 where
@@ -60,17 +54,19 @@ where
         }
     }
 
+    /// Build a raw scorer for the specified `point_id`.
+    /// If not supported, return [`InternalScorerUnsupported`] with the original `hardware_counter`.
     pub fn new_internal(
         point_id: PointOffsetType,
         quantized_data: &'a TEncodedVectors,
         mut hardware_counter: HardwareCounterCell,
-    ) -> QuantizedInternalScorerResult<'a, TEncodedVectors> {
+    ) -> Result<Self, InternalScorerUnsupported> {
         let Some(query) = quantized_data.encode_internal_vector(point_id) else {
-            return QuantizedInternalScorerResult::NotSupported(hardware_counter);
+            return Err(InternalScorerUnsupported(hardware_counter));
         };
 
         hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_data.is_on_disk()));
-        QuantizedInternalScorerResult::Scorer(Self {
+        Ok(Self {
             query,
             quantized_data,
             hardware_counter,
