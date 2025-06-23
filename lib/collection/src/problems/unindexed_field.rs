@@ -8,6 +8,7 @@ use http::{HeaderMap, HeaderValue, Method, Uri};
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
+use segment::data_types::index::TextIndexParams;
 use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -585,10 +586,18 @@ fn schema_capabilities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
             PayloadSchemaParams::Bool(_) => index_types.insert(FieldIndexType::BoolMatch),
             PayloadSchemaParams::Float(_) => index_types.insert(FieldIndexType::FloatRange),
             PayloadSchemaParams::Geo(_) => index_types.insert(FieldIndexType::Geo),
-            PayloadSchemaParams::Text(_) => index_types.insert(FieldIndexType::Text),
+            PayloadSchemaParams::Text(TextIndexParams {
+                phrase_matching, ..
+            }) => {
+                if phrase_matching.unwrap_or_default() {
+                    index_types.insert(FieldIndexType::TextPhrase);
+                }
+                index_types.insert(FieldIndexType::Text)
+            }
             PayloadSchemaParams::Datetime(_) => index_types.insert(FieldIndexType::DatetimeRange),
         },
     };
+
     index_types
 }
 

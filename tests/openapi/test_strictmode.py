@@ -302,6 +302,72 @@ def test_strict_mode_unindexed_filter_integer_read_validation(collection_name):
     assert not search_fail.ok
 
 
+def test_strict_mode_unindexed_filter_phrase_read_validation(collection_name):
+    # toggle `unindexed_filtering_retrieve`
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "unindexed_filtering_retrieve": False,
+    })
+
+    # add text index without phrase_matching
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "t",
+            "field_schema": {
+                "type": "text"
+            }
+        }
+    ).raise_for_status()
+
+    def search_request_with_filter(kind: str):
+        return request_with_validation(
+            api='/collections/{collection_name}/points/scroll',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "filter": {
+                    "must": [
+                        {
+                            "key": "t",
+                            "match": {
+                                kind: "some text"
+                            }
+                        }
+                    ]
+                }
+            })
+
+    # works for text matching
+    search_request_with_filter("text").raise_for_status()
+
+    # does not work if phrase_matching is not enabled
+    search_fail = search_request_with_filter("phrase")
+    assert "Help: Create an index" in search_fail.json()['status']['error']
+    assert not search_fail.ok
+
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "t",
+            "field_schema": {
+                "type": "text",
+                "phrase_matching": True
+            }
+        }
+    ).raise_for_status()
+
+    # Now it should work for both
+    search_request_with_filter("text").raise_for_status()
+    search_request_with_filter("phrase").raise_for_status()
+
+
 def test_strict_mode_unindexed_filter_write_validation(collection_name):
     def update_request_with_filter():
         return request_with_validation(

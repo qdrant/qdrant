@@ -6005,7 +6005,6 @@ dependencies = [
  "atomic_refcell",
  "atomicwrites",
  "bincode",
- "bitpacking",
  "bitvec",
  "bytemuck",
  "byteorder",
