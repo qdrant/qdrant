@@ -1387,7 +1387,6 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
     total_point_count: usize,
 ) -> OperationResult<PayloadStorageEnum> {
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::types::PointOffsetType;
 
     use crate::payload_storage::PayloadStorage;
     use crate::payload_storage::mmap_payload_storage::find_storage_files;
@@ -1399,7 +1398,6 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
     fn migrate(
         old_storage: &PayloadStorageEnum,
         segment_path: &Path,
-        total_vector_count: usize,
     ) -> OperationResult<PayloadStorageEnum> {
         // Construct mmap based payload storage
         // TODO(in-memory-mmap-payload-storage): once in-memory mmap payload storage is merged, create correct storage here
@@ -1409,10 +1407,13 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
 
         // Copy all payloads and deletes into new storage
         let hw_counter = HardwareCounterCell::disposable();
-        for internal_id in 0..total_vector_count as PointOffsetType {
-            let payload = old_storage.get_sequential(internal_id, &hw_counter)?;
-            new_storage.set(internal_id, &payload, &hw_counter)?;
-        }
+        old_storage.iter(
+            |internal_id, payload| {
+                new_storage.set(internal_id, payload, &hw_counter)?;
+                Ok(true)
+            },
+            &hw_counter,
+        )?;
 
         // Flush new storage
         new_storage.flusher()()?;
@@ -1420,7 +1421,7 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
         Ok(new_storage)
     }
 
-    let new_storage = match migrate(old_storage, segment_path, total_point_count) {
+    let new_storage = match migrate(old_storage, segment_path) {
         Ok(new_storage) => new_storage,
         // On migration error, clean up and remove all new storage files
         Err(err) => {
