@@ -507,6 +507,16 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     fn quantized_vector_size(&self) -> usize {
         self.metadata.vector_parameters.dim
     }
+
+    fn encode_internal_vector(&self, id: u32) -> Option<EncodedQueryU8> {
+        let (query_offset, q_ptr) = self.get_vec_ptr(id);
+        Some(EncodedQueryU8 {
+            offset: query_offset,
+            encoded_query: unsafe {
+                std::slice::from_raw_parts(q_ptr, self.metadata.actual_dim).to_vec()
+            },
+        })
+    }
 }
 
 fn impl_score_dot(q_ptr: *const u8, v_ptr: *const u8, actual_dim: usize) -> i32 {
