@@ -29,11 +29,11 @@ use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
 };
 use crate::vector_storage::quantized::quantized_query_scorer::{
-    QuantizedInternalScorerResult, QuantizedQueryScorer,
+    InternalScorerUnsupported, QuantizedQueryScorer,
 };
 use crate::vector_storage::{
-    DenseVectorStorage, MultiVectorStorage, RawScorer, VectorStorage, VectorStorageEnum,
-    raw_scorer_from_query_scorer,
+    DenseVectorStorage, MultiVectorStorage, RawScorer, RawScorerImpl, VectorStorage,
+    VectorStorageEnum,
 };
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
@@ -173,180 +173,55 @@ impl QuantizedVectors {
         .build()
     }
 
+    /// Build a raw scorer for the specified `point_id`.
+    /// If not supported, return [`InternalScorerUnsupported`] with the original `hardware_counter`.
     pub fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        original_query: impl FnOnce() -> QueryVector,
         hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
+        fn build<'a, TEncodedVectors: quantization::EncodedVectors>(
+            point_id: PointOffsetType,
+            quantized_data: &'a TEncodedVectors,
+            hardware_counter: HardwareCounterCell,
+        ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
+            let query_scorer =
+                QuantizedQueryScorer::new_internal(point_id, quantized_data, hardware_counter)?;
+            Ok(Box::new(RawScorerImpl { query_scorer }))
+        }
+
         match &self.storage_impl {
-            QuantizedVectorStorage::ScalarRam(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
+            QuantizedVectorStorage::ScalarRam(storage) => {
+                build(point_id, storage, hardware_counter)
             }
-            QuantizedVectorStorage::ScalarMmap(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
+            QuantizedVectorStorage::ScalarMmap(storage) => {
+                build(point_id, storage, hardware_counter)
             }
-            QuantizedVectorStorage::PQRam(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
+            QuantizedVectorStorage::PQRam(storage) => build(point_id, storage, hardware_counter),
+            QuantizedVectorStorage::PQMmap(storage) => build(point_id, storage, hardware_counter),
+            QuantizedVectorStorage::BinaryRam(storage) => {
+                build(point_id, storage, hardware_counter)
             }
-            QuantizedVectorStorage::PQMmap(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
+            QuantizedVectorStorage::BinaryMmap(storage) => {
+                build(point_id, storage, hardware_counter)
             }
-            QuantizedVectorStorage::BinaryRam(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
+            QuantizedVectorStorage::ScalarRamMulti(storage) => {
+                build(point_id, storage, hardware_counter)
             }
-            QuantizedVectorStorage::BinaryMmap(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
+            QuantizedVectorStorage::ScalarMmapMulti(storage) => {
+                build(point_id, storage, hardware_counter)
             }
-            QuantizedVectorStorage::ScalarRamMulti(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
+            QuantizedVectorStorage::PQRamMulti(storage) => {
+                build(point_id, storage, hardware_counter)
             }
-            QuantizedVectorStorage::ScalarMmapMulti(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
+            QuantizedVectorStorage::PQMmapMulti(storage) => {
+                build(point_id, storage, hardware_counter)
             }
-            QuantizedVectorStorage::PQRamMulti(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
+            QuantizedVectorStorage::BinaryRamMulti(storage) => {
+                build(point_id, storage, hardware_counter)
             }
-            QuantizedVectorStorage::PQMmapMulti(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
-            }
-            QuantizedVectorStorage::BinaryRamMulti(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
-            }
-            QuantizedVectorStorage::BinaryMmapMulti(quantized_data) => {
-                match QuantizedQueryScorer::<'a, _>::new_internal(
-                    point_id,
-                    quantized_data,
-                    hardware_counter,
-                ) {
-                    QuantizedInternalScorerResult::Scorer(quantized_query_scorer) => {
-                        raw_scorer_from_query_scorer(quantized_query_scorer)
-                    }
-                    QuantizedInternalScorerResult::NotSupported(hardware_counter) => {
-                        self.raw_scorer(original_query(), hardware_counter)
-                    }
-                }
+            QuantizedVectorStorage::BinaryMmapMulti(storage) => {
+                build(point_id, storage, hardware_counter)
             }
         }
     }
