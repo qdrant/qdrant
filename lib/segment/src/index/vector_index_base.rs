@@ -178,6 +178,22 @@ impl VectorIndexEnum {
             Self::SparseCompressedMmapU8(index) => index.fill_idf_statistics(idf, hw_counter),
         }
     }
+
+    pub fn indexed_vectors(&self) -> usize {
+        match self {
+            Self::Plain(index) => index.indexed_vector_count(),
+            Self::Hnsw(index) => index.indexed_vector_count(),
+            Self::SparseRam(index) => index.inverted_index().vector_count(),
+            Self::SparseImmutableRam(index) => index.inverted_index().vector_count(),
+            Self::SparseMmap(index) => index.inverted_index().vector_count(),
+            Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().vector_count(),
+            Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().vector_count(),
+            Self::SparseCompressedImmutableRamU8(index) => index.inverted_index().vector_count(),
+            Self::SparseCompressedMmapF32(index) => index.inverted_index().vector_count(),
+            Self::SparseCompressedMmapF16(index) => index.inverted_index().vector_count(),
+            Self::SparseCompressedMmapU8(index) => index.inverted_index().vector_count(),
+        }
+    }
 }
 
 impl VectorIndex for VectorIndexEnum {

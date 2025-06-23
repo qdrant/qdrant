@@ -14,7 +14,9 @@ use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
-use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
+use crate::data_types::query_context::{
+    FormulaContext, QueryContext, QueryIdfStats, SegmentQueryContext,
+};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::SegmentEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
@@ -870,12 +872,25 @@ impl SegmentEntry for Segment {
         query_context.add_available_point_count(self.available_point_count());
         let hw_acc = query_context.hardware_usage_accumulator();
         let hw_counter = hw_acc.get_counter_cell();
-        for (vector_name, idf) in query_context.mut_idf().iter_mut() {
+
+        let QueryIdfStats {
+            idf,
+            indexed_vectors,
+        } = query_context.mut_idf_stats();
+
+        for (vector_name, idf) in idf.iter_mut() {
             if let Some(vector_data) = self.vector_data.get(vector_name) {
-                vector_data
-                    .vector_index
-                    .borrow()
-                    .fill_idf_statistics(idf, &hw_counter);
+                let vector_index = vector_data.vector_index.borrow();
+
+                let indexed_vector_count = vector_index.indexed_vectors();
+
+                if let Some(count) = indexed_vectors.get_mut(vector_name) {
+                    *count += indexed_vector_count;
+                } else {
+                    indexed_vectors.insert(vector_name.clone(), indexed_vector_count);
+                }
+
+                vector_index.fill_idf_statistics(idf, &hw_counter);
             }
         }
     }
