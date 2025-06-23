@@ -292,6 +292,16 @@ where
     fn quantized_vector_size(&self) -> usize {
         self.quantized_storage.quantized_vector_size()
     }
+
+    fn encode_internal_vector(&self, id: u32) -> Option<Vec<QuantizedStorage::EncodedQuery>> {
+        let offset = self.offsets.get_offset(id);
+        let mut query = Vec::with_capacity(offset.count as usize);
+        for i in 0..offset.count {
+            let internal_id = offset.start + i;
+            query.push(self.quantized_storage.encode_internal_vector(internal_id)?)
+        }
+        Some(query)
+    }
 }
 
 impl<QuantizedStorage, TMultivectorOffsetsStorage> MultivectorOffsets

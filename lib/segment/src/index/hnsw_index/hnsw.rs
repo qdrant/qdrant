@@ -415,13 +415,11 @@ impl HNSWIndex {
 
             let insert_point = |vector_id| {
                 check_process_stopped(stopped)?;
-                let vector = vector_storage_ref.get_vector(vector_id);
-                let vector = vector.as_vec_ref().into();
                 // No need to accumulate hardware, since this is an internal operation
                 let internal_hardware_counter = HardwareCounterCell::disposable();
 
-                let points_scorer = FilteredScorer::new(
-                    vector,
+                let points_scorer = FilteredScorer::new_internal(
+                    vector_id,
                     vector_storage_ref.deref(),
                     quantized_vectors_ref.as_ref(),
                     None,
@@ -714,9 +712,6 @@ impl HNSWIndex {
         let insert_points = |block_point_id| {
             check_process_stopped(stopped)?;
 
-            let vector = vector_storage.get_vector(block_point_id);
-            let vector = vector.as_vec_ref().into();
-
             // This hardware counter can be discarded, since it is only used for internal operations
             let internal_hardware_counter = HardwareCounterCell::disposable();
 
@@ -724,8 +719,8 @@ impl HNSWIndex {
                 filter_list: block_filter_list,
                 current_point: block_point_id,
             };
-            let points_scorer = FilteredScorer::new(
-                vector,
+            let points_scorer = FilteredScorer::new_internal(
+                block_point_id,
                 vector_storage,
                 quantized_vectors.as_ref(),
                 Some(BoxCow::Borrowed(&block_condition_checker)),
@@ -773,11 +768,9 @@ impl HNSWIndex {
         stopped: &AtomicBool,
     ) -> OperationResult<Option<GraphLayersBuilder>> {
         let points_scorer_builder = |vector_id| {
-            let vector = vector_storage.get_vector(vector_id);
-            let vector = vector.as_vec_ref().into();
             let hardware_counter = HardwareCounterCell::disposable();
-            FilteredScorer::new(
-                vector,
+            FilteredScorer::new_internal(
+                vector_id,
                 vector_storage,
                 quantized_vectors.as_ref(),
                 None,
@@ -827,16 +820,14 @@ impl HNSWIndex {
             points_to_index.iter().copied(),
             1,
             |block_point_id| -> OperationResult<_> {
-                let vector = vector_storage.get_vector(block_point_id);
-                let vector = vector.as_vec_ref().into();
                 let hardware_counter = HardwareCounterCell::disposable();
                 let block_condition_checker: Box<dyn FilterContext> =
                     Box::new(BuildConditionChecker {
                         filter_list: block_filter_list,
                         current_point: block_point_id,
                     });
-                FilteredScorer::new(
-                    vector,
+                FilteredScorer::new_internal(
+                    block_point_id,
                     vector_storage,
                     quantized_vectors.as_ref(),
                     Some(BoxCow::Boxed(block_condition_checker)),

@@ -74,6 +74,41 @@ impl<'a> FilteredScorer<'a> {
         })
     }
 
+    pub fn new_internal(
+        point_id: PointOffsetType,
+        vectors: &'a VectorStorageEnum,
+        quantized_vectors: Option<&'a QuantizedVectors>,
+        filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+        point_deleted: &'a BitSlice,
+        hardware_counter: HardwareCounterCell,
+    ) -> OperationResult<Self> {
+        // This is a fallback function, which is used if quantized vector storage
+        // is not capable of reconstructing the query vector.
+        let original_query_fn = || {
+            let query = vectors.get_vector(point_id);
+            let query: QueryVector = query.as_vec_ref().into();
+            query
+        };
+        let raw_scorer = match quantized_vectors {
+            Some(quantized_vectors) => quantized_vectors.raw_internal_scorer(
+                point_id,
+                original_query_fn,
+                hardware_counter,
+            )?,
+            None => {
+                let query = original_query_fn();
+                new_raw_scorer(query, vectors, hardware_counter)?
+            }
+        };
+        Ok(FilteredScorer {
+            raw_scorer,
+            filter_context,
+            point_deleted,
+            vec_deleted: vectors.deleted_vector_bitslice(),
+            scores_buffer: Vec::new(),
+        })
+    }
+
     /// Create a new filtered scorer from a raw scorer.
     #[cfg(feature = "testing")]
     pub fn new_from_raw(
