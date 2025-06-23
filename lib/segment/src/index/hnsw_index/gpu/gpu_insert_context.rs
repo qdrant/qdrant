@@ -803,7 +803,7 @@ mod tests {
                 .internal_scorer((num_vectors + i) as PointOffsetType);
             let search_result = test
                 .graph_layers_builder
-                .search_entry_on_level(0, 0, &mut scorer);
+                .search_entry_on_level(0, 0, &mut scorer, &mut Vec::new());
             assert_eq!(search_result.idx, gpu_search_result);
         }
     }

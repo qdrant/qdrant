@@ -124,55 +124,33 @@ pub trait GraphLayersBase {
         points_scorer: &mut FilteredScorer,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<ScoredPointOffset> {
-        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
-
+        let mut links_buffer = Vec::new();
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
             score: points_scorer.score_point(entry_point),
         };
         for level in rev_range(top_level, target_level) {
             check_process_stopped(is_stopped)?;
-
-            let limit = self.get_m(level);
-
-            let mut changed = true;
-            while changed {
-                changed = false;
-
-                links.clear();
-                self.links_map(current_point.idx, level, |link| {
-                    links.push(link);
-                });
-
-                points_scorer
-                    .score_points(&mut links, limit)
-                    .for_each(|score_point| {
-                        if score_point.score > current_point.score {
-                            changed = true;
-                            current_point = score_point;
-                        }
-                    });
-            }
+            current_point =
+                self.search_entry_on_level(current_point, level, points_scorer, &mut links_buffer);
         }
         Ok(current_point)
     }
 
-    #[cfg(test)]
-    #[cfg(feature = "gpu")]
     fn search_entry_on_level(
         &self,
-        entry_point: PointOffsetType,
+        entry_point: ScoredPointOffset,
         level: usize,
         points_scorer: &mut FilteredScorer,
+        links: &mut Vec<PointOffsetType>,
     ) -> ScoredPointOffset {
         let limit = self.get_m(level);
-        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
-        let mut current_point = ScoredPointOffset {
-            idx: entry_point,
-            score: points_scorer.score_point(entry_point),
-        };
+
+        links.clear();
+        links.reserve(limit);
 
         let mut changed = true;
+        let mut current_point = entry_point;
         while changed {
             changed = false;
 
@@ -182,7 +160,7 @@ pub trait GraphLayersBase {
             });
 
             points_scorer
-                .score_points(&mut links, limit)
+                .score_points(links, limit)
                 .for_each(|score_point| {
                     if score_point.score > current_point.score {
                         changed = true;
