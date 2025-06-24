@@ -4326,7 +4326,10 @@ pub struct GetPoints {
 pub struct UpdatePointVectors {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -4697,7 +4700,10 @@ pub struct SearchParams {
 pub struct SearchPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// vector
     #[prost(float, repeated, tag = "2")]
@@ -9408,7 +9414,10 @@ pub mod points_server {
 pub struct SyncPoints {
     /// name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
@@ -9670,7 +9679,10 @@ pub struct SearchPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchBatchPointsInternal {
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     #[validate(nested)]
@@ -9762,7 +9774,10 @@ pub mod query_enum {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CoreSearchPoints {
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "2")]
     pub query: ::core::option::Option<QueryEnum>,
@@ -9794,7 +9809,10 @@ pub struct CoreSearchPoints {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CoreSearchBatchPointsInternal {
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     #[validate(nested)]
@@ -10019,7 +10037,10 @@ pub mod query_shard_points {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryBatchPointsInternal {
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub query_points: ::prost::alloc::vec::Vec<QueryShardPoints>,
@@ -10063,7 +10084,10 @@ pub struct QueryBatchResponseInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FacetCountsInternal {
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub key: ::prost::alloc::string::String,
@@ -12823,7 +12847,10 @@ pub struct DeleteFullSnapshotRequest {
 pub struct CreateSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
@@ -12833,7 +12860,10 @@ pub struct CreateSnapshotRequest {
 pub struct ListSnapshotsRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
@@ -12843,7 +12873,10 @@ pub struct ListSnapshotsRequest {
 pub struct DeleteSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// Name of the collection snapshot
     #[prost(string, tag = "2")]
@@ -13589,7 +13622,10 @@ pub mod snapshots_server {
 pub struct CreateShardSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// Id of the shard
     #[prost(uint32, tag = "2")]
@@ -13602,7 +13638,10 @@ pub struct CreateShardSnapshotRequest {
 pub struct ListShardSnapshotsRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// Id of the shard
     #[prost(uint32, tag = "2")]
@@ -13615,7 +13654,10 @@ pub struct ListShardSnapshotsRequest {
 pub struct DeleteShardSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// Id of the shard
     #[prost(uint32, tag = "2")]
@@ -13632,7 +13674,10 @@ pub struct DeleteShardSnapshotRequest {
 pub struct RecoverShardSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    #[validate(length(min = 1, max = 255))]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
     pub collection_name: ::prost::alloc::string::String,
     /// Id of the shard
     #[prost(uint32, tag = "2")]
