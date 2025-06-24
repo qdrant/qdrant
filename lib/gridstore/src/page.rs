@@ -88,6 +88,7 @@ impl Page {
     /// # Arguments
     /// - block_offset: The offset of the value in blocks
     /// - length: The number of blocks the value occupies
+    /// - READ_SEQUENTIAL: Whether to read mmap pages ahead to optimize sequential access
     ///
     /// # Returns
     /// - None if the value is not within the page
@@ -95,31 +96,28 @@ impl Page {
     ///
     /// # Panics
     ///
-    /// When the `block_offset` starts after the page ends
-    ///
-    pub fn read_value(
+    /// If the `block_offset` starts after the page ends.
+    pub fn read_value<const READ_SEQUENTIAL: bool>(
         &self,
         block_offset: BlockOffset,
         length: u32,
         block_size_bytes: usize,
     ) -> (&[u8], usize) {
-        Self::read_value_with_generic_storage(&self.mmap, block_offset, length, block_size_bytes)
-    }
-
-    /// Read a value from the page, similar to `read_value` but with optimizations for
-    /// sequential reads (i.e reading multiple pages ahead).
-    pub fn read_value_sequential(
-        &self,
-        block_offset: BlockOffset,
-        length: u32,
-        block_size_bytes: usize,
-    ) -> (&[u8], usize) {
-        Self::read_value_with_generic_storage(
-            &self.mmap_seq,
-            block_offset,
-            length,
-            block_size_bytes,
-        )
+        if READ_SEQUENTIAL {
+            Self::read_value_with_generic_storage(
+                &self.mmap_seq,
+                block_offset,
+                length,
+                block_size_bytes,
+            )
+        } else {
+            Self::read_value_with_generic_storage(
+                &self.mmap,
+                block_offset,
+                length,
+                block_size_bytes,
+            )
+        }
     }
 
     fn read_value_with_generic_storage(

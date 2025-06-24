@@ -199,52 +199,28 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Read raw value from the pages. Considering that they can span more than one page.
-    fn read_from_pages(
-        &self,
-        start_page_id: PageId,
-        block_offset: BlockOffset,
-        length: u32,
-    ) -> Vec<u8> {
-        self.read_from_pages_with_read_fn(
-            start_page_id,
-            block_offset,
-            length,
-            |page, block_offset: BlockOffset, length: u32, block_size_bytes: usize| {
-                page.read_value(block_offset, length, block_size_bytes)
-            },
-        )
-    }
-
-    /// Read raw value from the pages. Considering that they can span more than one page.
-    fn read_from_pages_sequential(
-        &self,
-        start_page_id: PageId,
-        block_offset: BlockOffset,
-        length: u32,
-    ) -> Vec<u8> {
-        self.read_from_pages_with_read_fn(
-            start_page_id,
-            block_offset,
-            length,
-            |page, block_offset: BlockOffset, length: u32, block_size_bytes: usize| {
-                page.read_value_sequential(block_offset, length, block_size_bytes)
-            },
-        )
-    }
-
-    fn read_from_pages_with_read_fn(
+    ///
+    /// # Arguments
+    ///
+    /// - `start_page_id` - The id of the first page to read from.
+    /// - `block_offset` - The offset within the first page to start reading from.
+    /// - `length` - The total length of the value to read.
+    /// - READ_SEQUENTIAL - Whether to optimize sequential reads by fetching next mmap pages.
+    fn read_from_pages<const READ_SEQUENTIAL: bool>(
         &self,
         start_page_id: PageId,
         mut block_offset: BlockOffset,
         mut length: u32,
-        read_fn: impl Fn(&Page, BlockOffset, u32, usize) -> (&[u8], usize),
     ) -> Vec<u8> {
         let mut raw_sections = Vec::with_capacity(length as usize);
 
         for page_id in start_page_id.. {
             let page = &self.pages[page_id as usize];
-            let (raw, unread_bytes) =
-                read_fn(page, block_offset, length, self.config.block_size_bytes);
+            let (raw, unread_bytes) = page.read_value::<READ_SEQUENTIAL>(
+                block_offset,
+                length,
+                self.config.block_size_bytes,
+            );
 
             raw_sections.extend(raw);
 
@@ -265,24 +241,25 @@ impl<V: Blob> Gridstore<V> {
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Option<V> {
-        let ValuePointer {
-            page_id,
-            block_offset,
-            length,
-        } = self.get_pointer(point_offset)?;
-
-        let raw = self.read_from_pages(page_id, block_offset, length);
-
-        hw_counter.payload_io_read_counter().incr_delta(raw.len());
-
-        let decompressed = self.decompress(raw);
-        let value = V::from_bytes(&decompressed);
-
-        Some(value)
+        self.read_value::<false>(point_offset, hw_counter)
     }
 
     /// Get the value for a given point offset, from the sequential mmap
     pub fn get_value_sequential(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<V> {
+        self.read_value::<true>(point_offset, hw_counter)
+    }
+
+    /// Read a value from the page
+    ///
+    /// # Arguments
+    /// - point_offset: The ID of the value.
+    /// - hw_counter: The hardware counter cell.
+    /// - READ_SEQUENTIAL: Whether to read mmap pages ahead to optimize sequential access
+    fn read_value<const READ_SEQUENTIAL: bool>(
         &self,
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
@@ -293,7 +270,7 @@ impl<V: Blob> Gridstore<V> {
             length,
         } = self.get_pointer(point_offset)?;
 
-        let raw = self.read_from_pages_sequential(page_id, block_offset, length);
+        let raw = self.read_from_pages::<READ_SEQUENTIAL>(page_id, block_offset, length);
 
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
@@ -482,7 +459,7 @@ impl<V: Blob> Gridstore<V> {
             block_offset,
             length,
         } = self.tracker.write().unset(point_offset)?;
-        let raw = self.read_from_pages(page_id, block_offset, length);
+        let raw = self.read_from_pages::<false>(page_id, block_offset, length);
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
 
@@ -543,7 +520,7 @@ impl<V: Blob> Gridstore<V> {
                 length,
             } = pointer;
 
-            let raw = self.read_from_pages(page_id, block_offset, length);
+            let raw = self.read_from_pages::<true>(page_id, block_offset, length);
 
             hw_counter.incr_delta(raw.len());
 
@@ -573,7 +550,7 @@ impl<V: Blob> Gridstore<V> {
                      block_offset,
                      length,
                  }| {
-                    let raw = self.read_from_pages_sequential(page_id, block_offset, length);
+                    let raw = self.read_from_pages::<true>(page_id, block_offset, length);
                     let decompressed = self.decompress(raw);
                     V::from_bytes(&decompressed)
                 },
@@ -882,7 +859,7 @@ mod tests {
         let block_offset = DEFAULT_REGION_SIZE_BLOCKS - 10;
         storage.write_into_pages(&value, 0, block_offset as u32);
 
-        let read_value = storage.read_from_pages(0, block_offset as u32, value_len as u32);
+        let read_value = storage.read_from_pages::<false>(0, block_offset as u32, value_len as u32);
         assert_eq!(value, read_value);
     }
 
