@@ -61,6 +61,7 @@ def setup_phrase_collection(
         "deep learning neural networks",
         "brown sugar and quick oats",
         "New York City is a bustling metropolis",
+        "writing tests is very very very important",
     ]
 
     test_data = [
@@ -125,6 +126,8 @@ def phrase_collection():
             "longer phrase match",
         ),
         ("", 0, set(), "empty phrase"),
+        ("very very very", 1, {11}, "repeated word"),
+        ("very very very very", 0, set(), "repeated word too many times"),
     ],
 )
 def test_phrase_matching(
