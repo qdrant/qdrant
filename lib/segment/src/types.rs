@@ -1873,7 +1873,7 @@ impl Display for PayloadFieldSchema {
                     if range && lookup {
                         write!(f, "integer")
                     } else {
-                        write!(f, "integer (with range: {}, lookup: {})", range, lookup)
+                        write!(f, "integer (with range: {range}, lookup: {lookup})")
                     }
                 }
                 PayloadSchemaParams::Text(text_params) => {
