@@ -8,6 +8,7 @@ use http::{HeaderMap, HeaderValue, Method, Uri};
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
+use segment::data_types::index::{TextIndexParams, TextIndexType};
 use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -228,6 +229,7 @@ fn infer_index_from_field_condition(field_condition: &FieldCondition) -> Vec<Fie
         required_indexes.extend(match r#match {
             Match::Value(match_value) => infer_index_from_match_value(match_value),
             Match::Text(_match_text) => vec![FieldIndexType::Text],
+            Match::Phrase(_match_text) => vec![FieldIndexType::TextPhrase],
             Match::Any(match_any) => infer_index_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_index_from_any_variants(&match_except.except),
         })
@@ -383,10 +385,7 @@ impl<'a> Extractor<'a> {
         let full_key = JsonPath::extend_or_new(nested_prefix, key);
 
         if self.needs_index(&full_key, &required_index) {
-            let schemas = required_index
-                .into_iter()
-                .map(PayloadSchemaType::from)
-                .map(PayloadFieldSchema::FieldType);
+            let schemas = required_index.into_iter().map(PayloadFieldSchema::from);
             self.unindexed_schema
                 .entry(full_key)
                 .or_default()
@@ -514,10 +513,7 @@ impl<'a> Extractor<'a> {
         }
 
         if self.needs_index(&key, &required_index) {
-            let schemas = required_index
-                .into_iter()
-                .map(PayloadSchemaType::from)
-                .map(PayloadFieldSchema::FieldType);
+            let schemas = required_index.into_iter().map(PayloadFieldSchema::from);
             self.unindexed_schema
                 .entry(key)
                 .or_default()
@@ -534,6 +530,7 @@ enum FieldIndexType {
     KeywordMatch,
     FloatRange,
     Text,
+    TextPhrase,
     BoolMatch,
     UuidMatch,
     UuidRange,
@@ -583,26 +580,45 @@ fn schema_capabilities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
             PayloadSchemaParams::Bool(_) => index_types.insert(FieldIndexType::BoolMatch),
             PayloadSchemaParams::Float(_) => index_types.insert(FieldIndexType::FloatRange),
             PayloadSchemaParams::Geo(_) => index_types.insert(FieldIndexType::Geo),
-            PayloadSchemaParams::Text(_) => index_types.insert(FieldIndexType::Text),
+            PayloadSchemaParams::Text(TextIndexParams {
+                phrase_matching, ..
+            }) => {
+                if phrase_matching.unwrap_or_default() {
+                    index_types.insert(FieldIndexType::TextPhrase);
+                }
+                index_types.insert(FieldIndexType::Text)
+            }
             PayloadSchemaParams::Datetime(_) => index_types.insert(FieldIndexType::DatetimeRange),
         },
     };
+
     index_types
 }
 
-impl From<FieldIndexType> for PayloadSchemaType {
+impl From<FieldIndexType> for PayloadFieldSchema {
     fn from(val: FieldIndexType) -> Self {
         match val {
-            FieldIndexType::IntMatch => PayloadSchemaType::Integer,
-            FieldIndexType::IntRange => PayloadSchemaType::Integer,
-            FieldIndexType::KeywordMatch => PayloadSchemaType::Keyword,
-            FieldIndexType::FloatRange => PayloadSchemaType::Float,
-            FieldIndexType::Text => PayloadSchemaType::Text,
-            FieldIndexType::BoolMatch => PayloadSchemaType::Bool,
-            FieldIndexType::UuidMatch => PayloadSchemaType::Uuid,
-            FieldIndexType::UuidRange => PayloadSchemaType::Uuid,
-            FieldIndexType::DatetimeRange => PayloadSchemaType::Datetime,
-            FieldIndexType::Geo => PayloadSchemaType::Geo,
+            FieldIndexType::IntMatch => PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+            FieldIndexType::IntRange => PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+            FieldIndexType::KeywordMatch => {
+                PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+            }
+            FieldIndexType::FloatRange => PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
+            FieldIndexType::Text => PayloadFieldSchema::FieldType(PayloadSchemaType::Text),
+            FieldIndexType::TextPhrase => {
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+                    r#type: TextIndexType::Text,
+                    phrase_matching: Some(true),
+                    ..Default::default()
+                }))
+            }
+            FieldIndexType::BoolMatch => PayloadFieldSchema::FieldType(PayloadSchemaType::Bool),
+            FieldIndexType::UuidMatch => PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid),
+            FieldIndexType::UuidRange => PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid),
+            FieldIndexType::DatetimeRange => {
+                PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime)
+            }
+            FieldIndexType::Geo => PayloadFieldSchema::FieldType(PayloadSchemaType::Geo),
         }
     }
 }

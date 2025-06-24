@@ -7653,12 +7653,13 @@
             "type": "boolean",
             "nullable": true
           },
-          "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+          "phrase_matching": {
+            "description": "If true, support phrase matching. Default: false.",
             "type": "boolean",
             "nullable": true
           },
           "stopwords": {
+            "description": "Ignore this set of tokens. Can select from predefined languages and/or provide a custom set.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/StopwordsInterface"
@@ -7667,6 +7668,11 @@
                 "nullable": true
               }
             ]
+          },
+          "on_disk": {
+            "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -8513,6 +8519,9 @@
             "$ref": "#/components/schemas/MatchText"
           },
           {
+            "$ref": "#/components/schemas/MatchPhrase"
+          },
+          {
             "$ref": "#/components/schemas/MatchAny"
           },
           {
@@ -8554,6 +8563,18 @@
         ],
         "properties": {
           "text": {
+            "type": "string"
+          }
+        }
+      },
+      "MatchPhrase": {
+        "description": "Full-text phrase match of the string.",
+        "type": "object",
+        "required": [
+          "phrase"
+        ],
+        "properties": {
+          "phrase": {
             "type": "string"
           }
         }

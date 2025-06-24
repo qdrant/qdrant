@@ -863,6 +863,9 @@ pub struct TextIndexParams {
     /// Stopwords for the text index
     #[prost(message, optional, tag = "6")]
     pub stopwords: ::core::option::Option<StopwordsSet>,
+    /// If true - support phrase matching.
+    #[prost(bool, optional, tag = "7")]
+    pub phrase_matching: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6525,7 +6528,7 @@ pub struct FieldCondition {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
+    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -6558,6 +6561,9 @@ pub mod r#match {
         /// Match any other value except those keywords
         #[prost(message, tag = "8")]
         ExceptKeywords(super::RepeatedStrings),
+        /// Match phrase text
+        #[prost(string, tag = "9")]
+        Phrase(::prost::alloc::string::String),
     }
 }
 #[derive(serde::Serialize)]

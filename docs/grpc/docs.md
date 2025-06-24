@@ -1617,6 +1617,7 @@ Note: 1kB = 1 vector of size 256. |
 | max_token_len | [uint64](#uint64) | optional | Maximal token length |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
 | stopwords | [StopwordsSet](#qdrant-StopwordsSet) | optional | Stopwords for the text index |
+| phrase_matching | [bool](#bool) | optional | If true - support phrase matching. |
 
 
 
@@ -3295,6 +3296,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | integers | [RepeatedIntegers](#qdrant-RepeatedIntegers) |  | Match multiple integers |
 | except_integers | [RepeatedIntegers](#qdrant-RepeatedIntegers) |  | Match any other value except those integers |
 | except_keywords | [RepeatedStrings](#qdrant-RepeatedStrings) |  | Match any other value except those keywords |
+| phrase | [string](#string) |  | Match phrase text |
 
 
 

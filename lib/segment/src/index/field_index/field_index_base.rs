@@ -28,8 +28,8 @@ use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, PayloadKeyType,
-    RangeInterface, UuidIntType, UuidPayloadType,
+    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchPhrase,
+    MatchText, PayloadKeyType, RangeInterface, UuidIntType, UuidPayloadType,
 };
 
 pub trait PayloadFieldIndex {
@@ -182,9 +182,12 @@ impl FieldIndex {
             FieldIndex::GeoIndex(_) => None,
             FieldIndex::BoolIndex(_) => None,
             FieldIndex::FullTextIndex(full_text_index) => match &condition.r#match {
-                Some(Match::Text(match_text)) => {
-                    Some(full_text_index.check_payload_match(payload_value, match_text, hw_counter))
-                }
+                Some(Match::Text(MatchText { text })) => Some(
+                    full_text_index.check_payload_match::<false>(payload_value, text, hw_counter),
+                ),
+                Some(Match::Phrase(MatchPhrase { phrase })) => Some(
+                    full_text_index.check_payload_match::<true>(payload_value, phrase, hw_counter),
+                ),
                 _ => None,
             },
             FieldIndex::UuidIndex(_) => None,
@@ -530,7 +533,7 @@ pub enum FieldIndexBuilder {
     GeoMmapIndex(GeoMapIndexMmapBuilder),
     GeoGridstoreIndex(GeoMapIndexGridstoreBuilder),
     #[cfg(feature = "rocksdb")]
-    FullTextIndex(super::full_text_index::text_index::FullTextIndexBuilder),
+    FullTextIndex(super::full_text_index::text_index::FullTextIndexRocksDbBuilder),
     FullTextMmapIndex(FullTextMmapIndexBuilder),
     FullTextGridstoreIndex(FullTextGridstoreIndexBuilder),
     #[cfg(feature = "rocksdb")]

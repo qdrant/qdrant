@@ -45,7 +45,7 @@ pub struct MmapInvertedIndex {
 }
 
 impl MmapInvertedIndex {
-    pub fn create(path: PathBuf, inverted_index: ImmutableInvertedIndex) -> OperationResult<()> {
+    pub fn create(path: PathBuf, inverted_index: &ImmutableInvertedIndex) -> OperationResult<()> {
         let ImmutableInvertedIndex {
             postings,
             vocab,
@@ -61,9 +61,9 @@ impl MmapInvertedIndex {
         let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
         match postings {
-            ImmutablePostings::Ids(postings) => MmapPostings::create(postings_path, &postings)?,
+            ImmutablePostings::Ids(postings) => MmapPostings::create(postings_path, postings)?,
             ImmutablePostings::WithPositions(postings) => {
-                MmapPostings::create(postings_path, &postings)?
+                MmapPostings::create(postings_path, postings)?
             }
         }
 
@@ -84,7 +84,7 @@ impl MmapInvertedIndex {
         MmapBitSlice::create(&deleted_points_path, &deleted_bitslice)?;
 
         // The actual values go in the slice
-        let point_to_tokens_count_iter = point_to_tokens_count.into_iter();
+        let point_to_tokens_count_iter = point_to_tokens_count.iter().copied();
 
         MmapSlice::create(&point_to_tokens_count_path, point_to_tokens_count_iter)?;
 
