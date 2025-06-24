@@ -77,6 +77,29 @@ pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
     }
 }
 
+/// Validate the collection name contains no illegal characters, legacy edition
+///
+/// Similar to [`validate_collection_name`], but this still allows some special characters that
+/// were supported pre Qdrant 1.5. More specifically, this only disallows characters that could
+/// never have been used on both Linux and Windows filesystems.
+///
+/// This does not check the length of the name.
+pub fn validate_collection_name_legacy(value: &str) -> Result<(), ValidationError> {
+    // Disallowed characters on on both Linux/Windows, sourced from: <https://stackoverflow.com/a/31976060/1000145>
+    const INVALID_CHARS: [char; 2] = ['/', '\0'];
+
+    match INVALID_CHARS.into_iter().find(|c| value.contains(*c)) {
+        Some(c) => {
+            let mut err = ValidationError::new("does_not_contain");
+            err.add_param(Cow::from("pattern"), &c);
+            err.message
+                .replace(format!("collection name cannot contain \"{c}\" char").into());
+            Err(err)
+        }
+        None => Ok(()),
+    }
+}
+
 /// Validate a polygon has at least 4 points and is closed.
 pub fn validate_geo_polygon<T>(points: &[T]) -> Result<(), ValidationError>
 where
@@ -303,6 +326,14 @@ mod tests {
         assert!(validate_collection_name("no/path").is_err());
         assert!(validate_collection_name("no*path").is_err());
         assert!(validate_collection_name("?").is_err());
+        assert!(validate_collection_name("\0").is_err());
+
+        assert!(validate_collection_name_legacy("test_collection").is_ok());
+        assert!(validate_collection_name_legacy("").is_ok());
+        assert!(validate_collection_name_legacy("no/path").is_err());
+        assert!(validate_collection_name_legacy("no*path").is_ok());
+        assert!(validate_collection_name_legacy("?").is_ok());
+        assert!(validate_collection_name_legacy("\0").is_err());
     }
 
     #[test]
