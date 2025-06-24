@@ -46,16 +46,20 @@ pub struct IntegerIndexParams {
     pub r#type: IntegerIndexType,
 
     /// If true - support direct lookups.
+    /// Default is true.
     pub lookup: Option<bool>,
 
     /// If true - support ranges filters.
+    /// Default is true.
     pub range: Option<bool>,
 
     /// If true - use this key to organize storage of the collection data.
     /// This option assumes that this key will be used in majority of filtered requests.
+    /// Default is false.
     pub is_principal: Option<bool>,
 
     /// If true, store the index on disk. Default: false.
+    /// Default is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
 }
