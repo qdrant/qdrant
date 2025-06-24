@@ -411,25 +411,20 @@ impl ShardReplicaSet {
         self.replica_state.read().peers()
     }
 
-    pub fn is_last_active_replica(&self, peer_id: PeerId) -> bool {
+    /// Checks if the current replica contains a unique source of truth and should never
+    /// be deactivated or removed.
+    /// If current replica is the only "alive" replica, it is considered the last source of truth.
+    ///
+    /// This includes `initializing` replica, as even if it contains no data,
+    /// as if it is deactivated, it can never be recovered.
+    pub fn is_last_source_of_truth_replica(&self, peer_id: PeerId) -> bool {
         // This includes `Active` and `ReshardingScaleDown` replicas!
-        let active_peers = self.replica_state.read().active_peers();
+        let active_peers = self.replica_state.read().active_or_initializing_peers();
         active_peers.len() == 1 && active_peers.contains(&peer_id)
     }
 
     pub fn peer_state(&self, peer_id: PeerId) -> Option<ReplicaState> {
         self.replica_state.read().get_peer_state(peer_id)
-    }
-
-    /// List the peer IDs on which this shard is active, both the local and remote peers.
-    pub fn active_shards(&self) -> Vec<PeerId> {
-        let replica_state = self.replica_state.read();
-        replica_state
-            // This is a part of deprecated built-in resharding implementation, so we don't care
-            .active_peers()
-            .into_iter()
-            .filter(|&peer_id| !self.is_locally_disabled(peer_id))
-            .collect()
     }
 
     /// List the remote peer IDs on which this shard is active, excludes the local peer ID.
@@ -1172,6 +1167,21 @@ impl ReplicaSetState {
 
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
         self.peers.clone()
+    }
+
+    pub fn active_or_initializing_peers(&self) -> Vec<PeerId> {
+        self.peers
+            .iter()
+            .filter_map(|(peer_id, state)| {
+                matches!(
+                    state,
+                    ReplicaState::Active
+                        | ReplicaState::Initializing
+                        | ReplicaState::ReshardingScaleDown
+                )
+                .then_some(*peer_id)
+            })
+            .collect()
     }
 
     pub fn active_peers(&self) -> Vec<PeerId> {
