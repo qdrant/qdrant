@@ -12,6 +12,17 @@ use crate::data_types::tiny_map;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::types::{ScoredPoint, VectorName, VectorNameBuf};
 
+#[derive(Debug, Default)]
+pub struct QueryIdfStats {
+    /// Statistics of the element frequency,
+    /// collected over all segments.
+    /// Required for processing sparse vector search with `idf-dot` similarity.
+    pub idf: tiny_map::TinyMap<VectorNameBuf, HashMap<DimId, usize>>,
+
+    /// Number of indexed vectors per vector name.
+    pub indexed_vectors: tiny_map::TinyMap<VectorNameBuf, usize>,
+}
+
 #[derive(Debug)]
 pub struct QueryContext {
     /// Total amount of available points in the segment.
@@ -28,7 +39,7 @@ pub struct QueryContext {
     /// Statistics of the element frequency,
     /// collected over all segments.
     /// Required for processing sparse vector search with `idf-dot` similarity.
-    idf: tiny_map::TinyMap<VectorNameBuf, HashMap<DimId, usize>>,
+    idf_stats: QueryIdfStats,
 
     /// Structure to accumulate and report hardware usage.
     /// Holds reference to the shared drain, which is used to accumulate the values.
@@ -44,7 +55,7 @@ impl QueryContext {
             available_point_count: 0,
             search_optimized_threshold_kb,
             is_stopped: Arc::new(AtomicBool::new(false)),
-            idf: tiny_map::TinyMap::new(),
+            idf_stats: QueryIdfStats::default(),
             hardware_usage_accumulator,
         }
     }
@@ -73,12 +84,18 @@ impl QueryContext {
     /// Fill indices of sparse vectors, which are required for `idf-dot` similarity
     /// with zeros, so the statistics can be collected.
     pub fn init_idf(&mut self, vector_name: &VectorName, indices: &[DimId]) {
+        self.idf_stats
+            .indexed_vectors
+            .insert(vector_name.to_owned(), 0);
+
         // ToDo: Would be nice to have an implementation of `entry` for `TinyMap`.
-        let idf = if let Some(idf) = self.idf.get_mut(vector_name) {
+        let idf = if let Some(idf) = self.idf_stats.idf.get_mut(vector_name) {
             idf
         } else {
-            self.idf.insert(vector_name.to_owned(), HashMap::default());
-            self.idf.get_mut(vector_name).unwrap()
+            self.idf_stats
+                .idf
+                .insert(vector_name.to_owned(), HashMap::default());
+            self.idf_stats.idf.get_mut(vector_name).unwrap()
         };
 
         for index in indices {
@@ -86,8 +103,8 @@ impl QueryContext {
         }
     }
 
-    pub fn mut_idf(&mut self) -> &mut tiny_map::TinyMap<VectorNameBuf, HashMap<DimId, usize>> {
-        &mut self.idf
+    pub fn mut_idf_stats(&mut self) -> &mut QueryIdfStats {
+        &mut self.idf_stats
     }
 
     pub fn get_segment_query_context(&self) -> SegmentQueryContext {
@@ -125,10 +142,15 @@ impl<'a> SegmentQueryContext<'a> {
 
     pub fn get_vector_context(&self, vector_name: &VectorName) -> VectorQueryContext {
         VectorQueryContext {
-            available_point_count: self.query_context.available_point_count,
             search_optimized_threshold_kb: self.query_context.search_optimized_threshold_kb,
             is_stopped: Some(&self.query_context.is_stopped),
-            idf: self.query_context.idf.get(vector_name),
+            idf: self.query_context.idf_stats.idf.get(vector_name),
+            indexed_vectors: self
+                .query_context
+                .idf_stats
+                .indexed_vectors
+                .get(vector_name)
+                .copied(),
             deleted_points: self.deleted_points,
             hardware_counter: self.hardware_counter.fork(),
         }
@@ -151,9 +173,6 @@ impl<'a> SegmentQueryContext<'a> {
 /// Query context related to a specific vector
 #[derive(Debug)]
 pub struct VectorQueryContext<'a> {
-    /// Total amount of available points in the segment.
-    available_point_count: usize,
-
     /// Parameter, which defines how big a plain segment can be to be considered
     /// small enough to be searched with `indexed_only` option.
     search_optimized_threshold_kb: usize,
@@ -161,6 +180,8 @@ pub struct VectorQueryContext<'a> {
     is_stopped: Option<&'a AtomicBool>,
 
     idf: Option<&'a HashMap<DimId, usize>>,
+
+    indexed_vectors: Option<usize>,
 
     deleted_points: Option<&'a BitSlice>,
 
@@ -188,10 +209,6 @@ impl VectorQueryContext<'_> {
         self.hardware_counter.fork()
     }
 
-    pub fn available_point_count(&self) -> usize {
-        self.available_point_count
-    }
-
     pub fn search_optimized_threshold_kb(&self) -> usize {
         self.search_optimized_threshold_kb
     }
@@ -215,7 +232,11 @@ impl VectorQueryContext<'_> {
 
     pub fn remap_idf_weights(&self, indices: &[DimId], weights: &mut [DimWeight]) {
         // Number of documents
-        let n = self.available_point_count as DimWeight;
+        let Some(indexed_vectors) = self.indexed_vectors else {
+            return;
+        };
+
+        let n = indexed_vectors as DimWeight;
         for (weight, index) in weights.iter_mut().zip(indices) {
             // Document frequency
             let df = self
@@ -229,7 +250,7 @@ impl VectorQueryContext<'_> {
     }
 
     pub fn is_require_idf(&self) -> bool {
-        self.idf.is_some()
+        self.idf.is_some() && self.indexed_vectors.is_some()
     }
 }
 
@@ -237,10 +258,10 @@ impl VectorQueryContext<'_> {
 impl Default for VectorQueryContext<'_> {
     fn default() -> Self {
         VectorQueryContext {
-            available_point_count: 0,
             search_optimized_threshold_kb: usize::MAX,
             is_stopped: None,
             idf: None,
+            indexed_vectors: None,
             deleted_points: None,
             hardware_counter: HardwareCounterCell::new(),
         }
