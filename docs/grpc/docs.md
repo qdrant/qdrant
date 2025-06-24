@@ -933,10 +933,10 @@
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| lookup | [bool](#bool) | optional | If true - support direct lookups. |
-| range | [bool](#bool) | optional | If true - support ranges filters. |
-| is_principal | [bool](#bool) | optional | If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests. |
-| on_disk | [bool](#bool) | optional | If true - store index on disk. |
+| lookup | [bool](#bool) | optional | If true - support direct lookups. Default is true. |
+| range | [bool](#bool) | optional | If true - support ranges filters. Default is true. |
+| is_principal | [bool](#bool) | optional | If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests. Default is false. |
+| on_disk | [bool](#bool) | optional | If true - store index on disk. Default is false. |
 
 
 
