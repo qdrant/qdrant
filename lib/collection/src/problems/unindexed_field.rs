@@ -563,15 +563,15 @@ fn schema_capabilities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
         PayloadFieldSchema::FieldParams(payload_schema_params) => match payload_schema_params {
             PayloadSchemaParams::Keyword(_) => index_types.insert(FieldIndexType::KeywordMatch),
             PayloadSchemaParams::Integer(integer_index_params) => {
-                if integer_index_params.lookup == Some(true) {
+                if integer_index_params.lookup.unwrap_or(true) {
                     index_types.insert(FieldIndexType::IntMatch);
                 }
-                if integer_index_params.range == Some(true) {
+                if integer_index_params.range.unwrap_or(true) {
                     index_types.insert(FieldIndexType::IntRange);
                 }
                 debug_assert!(
                     !index_types.is_empty(),
-                    "lookup or range must be true for Integer payload index"
+                    "lookup or range must be true for Integer payload index",
                 );
                 // unifying match arm types
                 true
