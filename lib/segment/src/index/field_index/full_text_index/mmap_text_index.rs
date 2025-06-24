@@ -14,6 +14,9 @@ use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::full_text_index::immutable_text_index::{
+    ImmutableFullTextIndex, Storage,
+};
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 
 pub struct MmapFullTextIndex {
@@ -97,7 +100,7 @@ pub struct FullTextMmapIndexBuilder {
 
 impl FullTextMmapIndexBuilder {
     pub fn new(path: PathBuf, config: TextIndexParams, is_on_disk: bool) -> Self {
-        let with_positions = config.phrase_matching == Some(true);
+        let with_positions = config.phrase_matching.unwrap_or_default();
         let tokenizer = Tokenizer::new(&config);
         Self {
             path,
@@ -187,19 +190,31 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
 
         create_dir_all(path.as_path())?;
 
-        MmapInvertedIndex::create(path.clone(), immutable)?;
+        MmapInvertedIndex::create(path.clone(), &immutable)?;
 
         let populate = !is_on_disk;
-        let has_positions = config.phrase_matching == Some(true);
+        let has_positions = config.phrase_matching.unwrap_or_default();
         let inverted_index = MmapInvertedIndex::open(path, populate, has_positions)?;
 
         let mmap_index = MmapFullTextIndex {
             inverted_index,
             #[cfg(feature = "rocksdb")]
-            config,
-            tokenizer,
+            config: config.clone(),
+            tokenizer: tokenizer.clone(),
         };
 
-        Ok(FullTextIndex::Mmap(Box::new(mmap_index)))
+        let text_index = if is_on_disk {
+            FullTextIndex::Mmap(Box::new(mmap_index))
+        } else {
+            FullTextIndex::Immutable(ImmutableFullTextIndex {
+                inverted_index: immutable,
+                #[cfg(feature = "rocksdb")]
+                config,
+                tokenizer,
+                storage: Storage::Mmap(Box::new(mmap_index)),
+            })
+        };
+
+        Ok(text_index)
     }
 }

@@ -17,6 +17,8 @@ use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDelet
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
+#[cfg(feature = "rocksdb")]
+use crate::index::field_index::full_text_index::mutable_text_index::{self, MutableFullTextIndex};
 
 pub struct ImmutableFullTextIndex {
     pub(super) inverted_index: ImmutableInvertedIndex,
@@ -24,10 +26,10 @@ pub struct ImmutableFullTextIndex {
     pub(super) config: TextIndexParams,
     pub(super) tokenizer: Tokenizer,
     // Backing storage, source of state, persists deletions
-    storage: Storage,
+    pub(super) storage: Storage,
 }
 
-enum Storage {
+pub(super) enum Storage {
     #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
     Mmap(Box<MmapFullTextIndex>),
@@ -115,7 +117,7 @@ impl ImmutableFullTextIndex {
     ///
     /// Loads in-memory index from mmap storage.
     fn load_mmap(&mut self) -> OperationResult<bool> {
-        #[allow(irrefutable_let_patterns)]
+        #[cfg_attr(not(feature = "rocksdb"), expect(irrefutable_let_patterns))]
         let Storage::Mmap(index) = &self.storage else {
             return Err(OperationError::service_error(
                 "Failed to load index from mmap, using different storage backend",
@@ -193,6 +195,29 @@ impl ImmutableFullTextIndex {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(ref db_wrapper) => db_wrapper.flusher(),
             Storage::Mmap(ref index) => index.flusher(),
+        }
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn from_rocksdb_mutable(mutable: MutableFullTextIndex) -> Self {
+        let MutableFullTextIndex {
+            inverted_index,
+            config,
+            tokenizer,
+            storage,
+        } = mutable;
+
+        let mutable_text_index::Storage::RocksDb(db) = storage else {
+            unreachable!(
+                "There is no Gridstore-backed immutable text index, it should be Mmap-backed instead"
+            );
+        };
+
+        Self {
+            inverted_index: ImmutableInvertedIndex::from(inverted_index),
+            config,
+            tokenizer,
+            storage: Storage::RocksDb(db),
         }
     }
 }

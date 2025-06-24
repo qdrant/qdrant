@@ -213,8 +213,8 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
             min_token_len,
             max_token_len,
             lowercase,
+            phrase_matching,
             on_disk,
-            phrase_matching: _, // todo(phrase_matching): populate this
             stopwords,
         } = params;
         let tokenizer = TokenizerType::from(tokenizer);
@@ -228,6 +228,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                 lowercase,
                 min_token_len: min_token_len.map(|x| x as u64),
                 max_token_len: max_token_len.map(|x| x as u64),
+                phrase_matching,
                 on_disk,
                 stopwords: stopwords_set,
             })),
@@ -479,6 +480,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             lowercase,
             min_token_len,
             max_token_len,
+            phrase_matching,
             on_disk,
             stopwords,
         } = params;
@@ -500,8 +502,8 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             lowercase,
             min_token_len: min_token_len.map(|x| x as usize),
             max_token_len: max_token_len.map(|x| x as usize),
+            phrase_matching,
             on_disk,
-            phrase_matching: None, // todo(phrase_matching): populate this
             stopwords: stopwords_converted,
         })
     }
@@ -1765,6 +1767,7 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::Integer(int) => int.into(),
                 MatchValue::Boolean(flag) => flag.into(),
                 MatchValue::Text(text) => segment::types::Match::Text(text.into()),
+                MatchValue::Phrase(phrase) => segment::types::Match::Phrase(phrase.into()),
                 MatchValue::Keywords(kwds) => kwds.strings.into(),
                 MatchValue::Integers(ints) => ints.integers.into(),
                 MatchValue::ExceptIntegers(kwds) => {
@@ -1789,6 +1792,9 @@ impl From<segment::types::Match> for Match {
             },
             segment::types::Match::Text(segment::types::MatchText { text }) => {
                 MatchValue::Text(text)
+            }
+            segment::types::Match::Phrase(segment::types::MatchPhrase { phrase }) => {
+                MatchValue::Phrase(phrase)
             }
             segment::types::Match::Any(any) => match any.any {
                 segment::types::AnyVariants::Strings(strings) => {

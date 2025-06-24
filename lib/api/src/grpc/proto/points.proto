@@ -425,7 +425,7 @@ enum RecommendStrategy {
   // examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
   // If the `max_neg_score` is chosen then it is squared and negated.
   BestScore = 1;
-  
+
   // Uses custom search objective. Compares against all inputs, sums all the scores.
   // Scores against positive vectors are added, against negatives are subtracted.
   SumScores = 2;
@@ -631,13 +631,13 @@ message PowExpression {
 
 message DecayParamsExpression {
     // The variable to decay
-    Expression x = 1; 
+    Expression x = 1;
     // The target value to start decaying from. Defaults to 0.
-    optional Expression target = 2; 
+    optional Expression target = 2;
     // The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
-    optional float scale = 3; 
+    optional float scale = 3;
     // The midpoint of the decay. Defaults to 0.5. Output will be this value when `|x - target| == scale`.
-    optional float midpoint = 4; 
+    optional float midpoint = 4;
 }
 
 message Query {
@@ -1081,6 +1081,7 @@ message Match {
     RepeatedIntegers integers = 6; // Match multiple integers
     RepeatedIntegers except_integers = 7; // Match any other value except those integers
     RepeatedStrings except_keywords = 8; // Match any other value except those keywords
+    string phrase = 9; // Match phrase text
   }
 }
 
