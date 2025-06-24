@@ -1860,7 +1860,30 @@ impl Display for PayloadFieldSchema {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             PayloadFieldSchema::FieldType(t) => write!(f, "{}", t.name()),
-            PayloadFieldSchema::FieldParams(p) => write!(f, "{}", p.name()),
+            PayloadFieldSchema::FieldParams(params) => match params {
+                PayloadSchemaParams::Keyword(_)
+                | PayloadSchemaParams::Float(_)
+                | PayloadSchemaParams::Geo(_)
+                | PayloadSchemaParams::Bool(_)
+                | PayloadSchemaParams::Datetime(_)
+                | PayloadSchemaParams::Uuid(_) => write!(f, "{}", params.name()),
+                PayloadSchemaParams::Integer(integer_params) => {
+                    let range = integer_params.range.unwrap_or(true);
+                    let lookup = integer_params.lookup.unwrap_or(true);
+                    if range && lookup {
+                        write!(f, "integer")
+                    } else {
+                        write!(f, "integer (with range: {}, lookup: {})", range, lookup)
+                    }
+                }
+                PayloadSchemaParams::Text(text_params) => {
+                    if text_params.phrase_matching.unwrap_or_default() {
+                        write!(f, "text (with phrase_matching: true)")
+                    } else {
+                        write!(f, "text")
+                    }
+                }
+            },
         }
     }
 }
