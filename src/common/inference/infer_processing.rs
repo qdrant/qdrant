@@ -45,10 +45,7 @@ impl BatchAccumInferred {
             .map(InferenceInput::from)
             .collect();
 
-        let InferenceResponse {
-            embeddings,
-            usage,
-        } = service
+        let InferenceResponse { embeddings, usage } = service
             .infer(inference_inputs, inference_type, inference_token)
             .await?;
 

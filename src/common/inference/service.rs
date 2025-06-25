@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use storage::content_manager::errors::StorageError;
 
-use crate::common::inference::config::InferenceConfig;
 use crate::common::inference::InferenceToken;
+use crate::common::inference::config::InferenceConfig;
 
 const DOCUMENT_DATA_TYPE: &str = "text";
 const IMAGE_DATA_TYPE: &str = "image";
