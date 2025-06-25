@@ -142,7 +142,7 @@ impl ShardReplicaSet {
             None => self.remotes.read().await,
         };
 
-        // We don't need to explicitly check partial snapshot recovery lock, because\
+        // We don't need to explicitly check partial snapshot recovery lock, because
         // - partial snapshot recovery *write-locks* `local` shard when applying partial snapshot
         // - this method *tries* to read-lock `local` shard, and if it's unavailable, fan-out
         //   request to other replicas
