@@ -57,7 +57,7 @@ use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{
-    FieldCondition, Filter, HnswConfig, QuantizationSearchParams, SearchParams,
+    FieldCondition, Filter, HnswConfig, HnswGlobalConfig, QuantizationSearchParams, SearchParams,
     default_quantization_ignore_value, default_quantization_oversampling_value,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -223,6 +223,7 @@ impl HNSWIndex {
             gpu_device,
             rng,
             stopped,
+            hnsw_global_config,
             feature_flags,
         } = build_args;
 
@@ -262,6 +263,7 @@ impl HNSWIndex {
                     &feature_flags,
                     old_index,
                     &config,
+                    hnsw_global_config,
                     &vector_storage_ref,
                     &quantized_vectors_ref,
                     id_tracker_ref.deref(),
@@ -1467,6 +1469,7 @@ impl<'a> OldIndexCandidate<'a> {
         feature_flags: &FeatureFlags,
         old_index: &'a Arc<AtomicRefCell<VectorIndexEnum>>,
         config: &HnswGraphConfig,
+        hnsw_global_config: &HnswGlobalConfig,
         vector_storage: &VectorStorageEnum,
         quantized_vectors: &Option<QuantizedVectors>,
         id_tracker: &IdTrackerSS,
@@ -1503,9 +1506,11 @@ impl<'a> OldIndexCandidate<'a> {
         let new_deleted = vector_storage.deleted_vector_bitslice();
         let old_id_tracker = old_index.id_tracker.borrow();
 
+        let healing_enabled = hnsw_global_config.healing_threshold > 0.0;
+
         if old_id_tracker.deleted_point_count() != 0 {
             // Old index has deleted points.
-            if !feature_flags.hnsw_healing {
+            if !healing_enabled {
                 return None;
             }
         }
@@ -1553,7 +1558,7 @@ impl<'a> OldIndexCandidate<'a> {
                 (None, Some(_)) => {
                     // Vector was in the old index, but not in the new one.
                     missing_points += 1;
-                    if !feature_flags.hnsw_healing {
+                    if !healing_enabled {
                         return None;
                     }
                 }
@@ -1566,7 +1571,7 @@ impl<'a> OldIndexCandidate<'a> {
                     } else {
                         // Vector is changed.
                         missing_points += 1;
-                        if !feature_flags.hnsw_healing {
+                        if !healing_enabled {
                             return None;
                         }
                     }
@@ -1581,7 +1586,7 @@ impl<'a> OldIndexCandidate<'a> {
             let old_offset = old_offset as PointOffsetType;
             if old_id_tracker.is_deleted_point(old_offset) && old_graph_has_point(old_offset) {
                 missing_points += 1;
-                if !feature_flags.hnsw_healing {
+                if !healing_enabled {
                     return None;
                 }
             }
@@ -1591,12 +1596,10 @@ impl<'a> OldIndexCandidate<'a> {
             return None;
         }
 
-        // Only allow up to 10% of points to be missing, otherwise healing
-        // would take longer than building from scratch.
-        let do_heal =
-            100 * (missing_points as u64) < 10 * (missing_points as u64 + valid_points as u64);
+        let missing_ratio = missing_points as f64 / (missing_points + valid_points) as f64;
+        let do_heal = missing_ratio <= hnsw_global_config.healing_threshold;
         debug!(
-            "valid points: {valid_points}, missing points: {missing_points}, do_heal: {do_heal}"
+            "valid points: {valid_points}, missing points: {missing_points}, missing ratio: {missing_ratio:.3}, do_heal: {do_heal}"
         );
         if !do_heal {
             return None;

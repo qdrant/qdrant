@@ -46,8 +46,8 @@ use crate::segment_constructor::{
     VectorIndexBuildArgs, VectorIndexOpenArgs, build_vector_index, load_segment,
 };
 use crate::types::{
-    CompactExtendedPointId, ExtendedPointId, PayloadFieldSchema, PayloadKeyType, SegmentConfig,
-    SegmentState, SeqNumberType, VectorNameBuf,
+    CompactExtendedPointId, ExtendedPointId, HnswGlobalConfig, PayloadFieldSchema, PayloadKeyType,
+    SegmentConfig, SegmentState, SeqNumberType, VectorNameBuf,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -59,6 +59,7 @@ pub struct SegmentBuilder {
     payload_storage: PayloadStorageEnum,
     vector_data: HashMap<VectorNameBuf, VectorData>,
     segment_config: SegmentConfig,
+    hnsw_global_config: HnswGlobalConfig,
 
     // The path, where fully created segment will be moved
     destination_path: PathBuf,
@@ -80,6 +81,7 @@ impl SegmentBuilder {
         segments_path: &Path,
         temp_dir: &Path,
         segment_config: &SegmentConfig,
+        hnsw_global_config: &HnswGlobalConfig,
     ) -> OperationResult<Self> {
         let temp_dir = create_temp_dir(temp_dir)?;
 
@@ -154,7 +156,7 @@ impl SegmentBuilder {
             payload_storage,
             vector_data,
             segment_config: segment_config.clone(),
-
+            hnsw_global_config: hnsw_global_config.clone(),
             destination_path,
             temp_dir,
             indexed_fields: Default::default(),
@@ -468,6 +470,7 @@ impl SegmentBuilder {
                 payload_storage,
                 mut vector_data,
                 segment_config,
+                hnsw_global_config,
                 destination_path,
                 temp_dir,
                 indexed_fields,
@@ -592,6 +595,7 @@ impl SegmentBuilder {
                         gpu_device: gpu_device.as_ref(),
                         stopped,
                         rng,
+                        hnsw_global_config: &hnsw_global_config,
                         feature_flags: feature_flags(),
                     },
                 )?;

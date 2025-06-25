@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
+use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentType};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegmentHolder, SegmentHolder, SegmentId,
@@ -28,11 +28,13 @@ pub struct IndexingOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
+    hnsw_global_config: HnswGlobalConfig,
     quantization_config: Option<QuantizationConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
 impl IndexingOptimizer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         default_segments_number: usize,
         thresholds_config: OptimizerThresholds,
@@ -40,6 +42,7 @@ impl IndexingOptimizer {
         collection_temp_dir: PathBuf,
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
+        hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> Self {
         IndexingOptimizer {
@@ -49,6 +52,7 @@ impl IndexingOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
+            hnsw_global_config,
             quantization_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
@@ -256,6 +260,10 @@ impl SegmentOptimizer for IndexingOptimizer {
         &self.hnsw_config
     }
 
+    fn hnsw_global_config(&self) -> &HnswGlobalConfig {
+        &self.hnsw_global_config
+    }
+
     fn quantization_config(&self) -> Option<QuantizationConfig> {
         self.quantization_config.clone()
     }
@@ -365,6 +373,7 @@ mod tests {
                 ..CollectionParams::empty()
             },
             Default::default(),
+            HnswGlobalConfig::default(),
             Default::default(),
         );
         let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
@@ -474,6 +483,7 @@ mod tests {
                 ..CollectionParams::empty()
             },
             Default::default(),
+            HnswGlobalConfig::default(),
             Default::default(),
         );
 
@@ -781,6 +791,7 @@ mod tests {
                 ..CollectionParams::empty()
             },
             Default::default(),
+            HnswGlobalConfig::default(),
             Default::default(),
         );
 
@@ -882,6 +893,7 @@ mod tests {
                 temp_dir.path().to_owned(),
                 collection_params.clone(),
                 hnsw_config.clone(),
+                HnswGlobalConfig::default(),
                 Default::default(),
             );
             let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
@@ -890,6 +902,7 @@ mod tests {
                 temp_dir.path().to_owned(),
                 collection_params.clone(),
                 hnsw_config.clone(),
+                HnswGlobalConfig::default(),
                 Default::default(),
             );
 
@@ -946,6 +959,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params.clone(),
             hnsw_config.clone(),
+            HnswGlobalConfig::default(),
             Default::default(),
         );
         let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
@@ -954,6 +968,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params,
             hnsw_config,
+            HnswGlobalConfig::default(),
             Default::default(),
         );
 

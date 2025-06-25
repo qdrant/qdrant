@@ -56,7 +56,7 @@ fn test_byte_storage_hnsw(
     use segment::json_path::JsonPath;
     use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
-    use segment::types::PayloadSchemaType;
+    use segment::types::{HnswGlobalConfig, PayloadSchemaType};
 
     let stopped = AtomicBool::new(false);
 
@@ -201,6 +201,7 @@ fn test_byte_storage_hnsw(
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

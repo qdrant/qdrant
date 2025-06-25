@@ -17,8 +17,8 @@ use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment_with_payload_storage;
 use segment::types::{
-    Distance, Indexes, PayloadContainer, PayloadFieldSchema, PayloadKeyType, PayloadSchemaType,
-    PayloadStorageType, SegmentConfig, VectorDataConfig, VectorStorageType,
+    Distance, HnswGlobalConfig, Indexes, PayloadContainer, PayloadFieldSchema, PayloadKeyType,
+    PayloadSchemaType, PayloadStorageType, SegmentConfig, VectorDataConfig, VectorStorageType,
 };
 use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
@@ -40,8 +40,13 @@ fn test_building_new_segment() {
     let segment1 = build_segment_1(dir.path());
     let mut segment2 = build_segment_2(dir.path());
 
-    let mut builder =
-        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
+    let mut builder = SegmentBuilder::new(
+        dir.path(),
+        temp_dir.path(),
+        &segment1.segment_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -123,8 +128,13 @@ fn test_building_new_defragmented_segment() {
         .create_field_index(17, &defragment_key, Some(&payload_schema), &hw_counter)
         .unwrap();
 
-    let mut builder =
-        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
+    let mut builder = SegmentBuilder::new(
+        dir.path(),
+        temp_dir.path(),
+        &segment1.segment_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
 
     // Include overlapping with segment1 to check the
     segment2
@@ -250,8 +260,13 @@ fn test_building_new_sparse_segment() {
     let segment1 = build_segment_sparse_1(dir.path());
     let mut segment2 = build_segment_sparse_2(dir.path());
 
-    let mut builder =
-        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
+    let mut builder = SegmentBuilder::new(
+        dir.path(),
+        temp_dir.path(),
+        &segment1.segment_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
 
     // Include overlapping with segment1 to check the
     let vec = SparseVector::new(vec![0, 1, 2, 3], vec![0.0, 0.0, 0.0, 0.0]).unwrap();
@@ -332,7 +347,13 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
         payload_storage_type: Default::default(),
     };
 
-    let mut builder = SegmentBuilder::new(dir.path(), temp_dir.path(), &segment_config).unwrap();
+    let mut builder = SegmentBuilder::new(
+        dir.path(),
+        temp_dir.path(),
+        &segment_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
 
     builder.update(&[segment], &stopped).unwrap();
 
@@ -382,8 +403,13 @@ fn test_building_new_segment_bug_5614() {
     let mut segment1 = build_segment_1(dir.path());
     let mut segment2 = build_segment_2(dir.path());
 
-    let mut builder =
-        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
+    let mut builder = SegmentBuilder::new(
+        dir.path(),
+        temp_dir.path(),
+        &segment1.segment_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
 
     let vector_100_low = only_default_vector(&[1., 1., 0., 0.]);
     let vector_101_low = only_default_vector(&[2., 2., 0., 0.]);
@@ -546,6 +572,7 @@ fn test_building_new_segment_with_mmap_payload() {
         segment_dir.path(),
         temp_dir.path(),
         &segment1.segment_config,
+        &HnswGlobalConfig::default(),
     )
     .unwrap();
 
