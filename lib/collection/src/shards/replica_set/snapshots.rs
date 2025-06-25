@@ -206,6 +206,13 @@ impl ShardReplicaSet {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
+        let _partial_snapshot_search_lock = match recovery_type {
+            RecoveryType::Full => None,
+            RecoveryType::Partial => {
+                Some(self.partial_snapshot_meta.take_search_write_lock().await)
+            }
+        };
+
         let mut local = cancel::future::cancel_on_token(cancel.clone(), self.local.write()).await?;
 
         // set shard_id initialization flag

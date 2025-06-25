@@ -113,10 +113,10 @@ impl ShardReplicaSet {
     where
         F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
-        let local = self
-            .partial_snapshot_meta
-            .cancel_on_recovery(self.local.read())
-            .await?;
+        let _partial_snapshot_search_lock =
+            self.partial_snapshot_meta.try_take_search_read_lock()?;
+
+        let local = self.local.read().await;
 
         let Some(local) = local.deref() else {
             return Err(CollectionError::service_error(format!(

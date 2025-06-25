@@ -36,9 +36,8 @@ pub struct PartialSnapshotMeta {
     /// each other.
     recovery_lock: Arc<tokio::sync::RwLock<()>>,
 
-    /// Allows cancelling async tasks (e.g., `local.read().await`), when partial snapshot recovery
-    /// starts.
-    recovery_notifier: tokio::sync::watch::Sender<()>,
+    /// Rejects read requests when partial snapshot recovery is in proggress.
+    search_lock: tokio::sync::RwLock<()>,
 
     /// Timestamp of the last successful snapshot recovery.
     recovery_timestamp: AtomicU64,
@@ -57,40 +56,26 @@ impl PartialSnapshotMeta {
     pub fn try_take_recovery_lock(
         &self,
     ) -> CollectionResult<tokio::sync::OwnedRwLockWriteGuard<()>> {
-        let recovery_lock = self
-            .recovery_lock
+        self.recovery_lock
             .clone()
             .try_write_owned()
-            .map_err(|_| recovery_in_progress())?;
-
-        self.recovery_notifier.send_replace(());
-
-        Ok(recovery_lock)
+            .map_err(|_| recovery_in_progress())
     }
 
     pub fn is_recovery_lock_taken(&self) -> bool {
         self.recovery_lock.try_read().is_err()
     }
 
-    pub async fn cancel_on_recovery<Fut: Future>(
+    pub async fn take_search_write_lock(&self) -> tokio::sync::RwLockWriteGuard<'_, ()> {
+        self.search_lock.write().await
+    }
+
+    pub fn try_take_search_read_lock(
         &self,
-        future: Fut,
-    ) -> CollectionResult<Fut::Output> {
-        // Subscribe for partial snapshot recovery notifications
-        let mut subscriber = self.recovery_notifier.subscribe();
-
-        // Check if partial snapshot recovery is currently in progress
-        let _ = self
-            .recovery_lock
+    ) -> CollectionResult<tokio::sync::RwLockReadGuard<'_, ()>> {
+        self.search_lock
             .try_read()
-            .map_err(|_| recovery_in_progress())?;
-
-        // Cancel `future`, if partial snapshot recovery started before it's resolved
-        tokio::select! {
-            biased;
-            output = future => Ok(output),
-            _ = subscriber.changed() => Err(recovery_in_progress()),
-        }
+            .map_err(|_| recovery_in_progress())
     }
 
     pub fn recovery_timestamp(&self) -> u64 {
