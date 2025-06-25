@@ -12509,6 +12509,7 @@
       "PartialSnapshotTelemetry": {
         "type": "object",
         "required": [
+          "is_recovering",
           "ongoing_create_snapshot_requests",
           "recovery_timestamp"
         ],
@@ -12517,6 +12518,9 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          },
+          "is_recovering": {
+            "type": "boolean"
           },
           "recovery_timestamp": {
             "type": "integer",
