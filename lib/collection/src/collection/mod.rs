@@ -432,7 +432,7 @@ impl Collection {
         // 3. Do not deactivate the last active replica
         //
         // `is_last_active_replica` counts both `Active` and `ReshardingScaleDown` replicas!
-        if replica_set.is_last_active_replica(peer_id) && !new_state.is_active() {
+        if replica_set.is_last_source_of_truth_replica(peer_id) && !new_state.is_active() {
             return Err(CollectionError::bad_input(format!(
                 "Cannot deactivate the last active replica {peer_id} of shard {shard_id}"
             )));
