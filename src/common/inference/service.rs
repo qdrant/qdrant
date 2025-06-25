@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use storage::content_manager::errors::StorageError;
 
-use crate::common::inference::InferenceToken;
 use crate::common::inference::config::InferenceConfig;
+use crate::common::inference::InferenceToken;
 
 const DOCUMENT_DATA_TYPE: &str = "text";
 const IMAGE_DATA_TYPE: &str = "image";
@@ -61,6 +61,11 @@ pub enum InferenceData {
     Document(Document),
     Image(Image),
     Object(InferenceObject),
+}
+
+#[derive(Debug, Deserialize)]
+struct InferenceError {
+    pub error: String,
 }
 
 impl InferenceData {
@@ -193,24 +198,30 @@ impl InferenceService {
             )
         })?;
 
-        let response = self
-            .client
-            .post(url)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| {
-                let error_body = e.to_string();
-                StorageError::service_error(format!(
-                    "Failed to send inference request to {url}: {e}, error details: {error_body}",
-                ))
-            })?;
+        let response = self.client.post(url).json(&request).send().await;
 
-        let status = response.status();
-        let response_body = response.text().await.map_err(|e| {
-            StorageError::service_error(format!("Failed to read inference response body: {e}",))
-        })?;
-
+        let (response_body, status) = match response {
+            Ok(response) => {
+                let status = response.status();
+                match response.text().await {
+                    Ok(body) => (body, status),
+                    Err(err) => {
+                        return Err(StorageError::service_error(format!(
+                            "Failed to read inference response body: {err}"
+                        )));
+                    }
+                }
+            }
+            Err(error) => {
+                if let Some(status) = error.status() {
+                    (format!("{error}"), status)
+                } else {
+                    return Err(StorageError::service_error(format!(
+                        "Failed to send inference request: {error}"
+                    )));
+                }
+            }
+        };
         Self::handle_inference_response(status, &response_body)
     }
 
@@ -228,20 +239,19 @@ impl InferenceService {
                     })
             }
             reqwest::StatusCode::BAD_REQUEST => {
-                let error_json: Value = serde_json::from_str(response_body).map_err(|e| {
-                    StorageError::service_error(format!(
-                        "Failed to parse error response: {e}. Raw response: {response_body}",
-                    ))
-                })?;
-
-                if let Some(error_message) = error_json["error"].as_str() {
-                    Err(StorageError::bad_request(format!(
-                        "Inference request validation failed: {error_message}",
-                    )))
-                } else {
-                    Err(StorageError::bad_request(format!(
-                        "Invalid inference request: {response_body}",
-                    )))
+                // Try to extract error description from the response body, if it is a valid JSON
+                let parsed_body: Result<InferenceError, _> = serde_json::from_str(response_body);
+                match parsed_body {
+                    Ok(InferenceError { error}) => {
+                        Err(StorageError::bad_request(format!(
+                            "Inference request validation failed: {error}",
+                        )))
+                    }
+                    Err(_) => {
+                        Err(StorageError::bad_request(format!(
+                            "Invalid inference request: {response_body}",
+                        )))
+                    }
                 }
             }
             status @ (reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN) => {
@@ -254,9 +264,21 @@ impl InferenceService {
             | reqwest::StatusCode::GATEWAY_TIMEOUT) => Err(StorageError::service_error(format!(
                 "Inference service error ({status}): {response_body}",
             ))),
-            _ => Err(StorageError::service_error(format!(
-                "Unexpected inference service response ({status}): {response_body}"
-            ))),
+            _ => {
+                if status.is_server_error() {
+                    Err(StorageError::service_error(format!(
+                        "Inference service error ({status}): {response_body}",
+                    )))
+                } else if status.is_client_error() {
+                    Err(StorageError::bad_request(format!(
+                        "Inference can't process request ({status}): {response_body}",
+                    )))
+                } else {
+                    Err(StorageError::service_error(format!(
+                        "Unexpected inference error ({status}): {response_body}",
+                    )))
+                }
+            },
         }
     }
 }

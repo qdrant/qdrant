@@ -50,10 +50,7 @@ impl BatchAccumInferred {
             usage,
         } = service
             .infer(inference_inputs, inference_type, inference_token)
-            .await
-            .map_err(|e| StorageError::service_error(
-                format!("Inference request failed. Check if inference service is running and properly configured: {e}")
-            ))?;
+            .await?;
 
         if embeddings.is_empty() {
             return Err(StorageError::service_error(
