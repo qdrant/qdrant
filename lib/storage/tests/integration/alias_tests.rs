@@ -61,6 +61,7 @@ fn test_alias_operation() {
             async_scorer: None,
         },
         hnsw_index: Default::default(),
+        hnsw_global_config: Default::default(),
         mmap_advice: madvise::Advice::Random,
         node_type: Default::default(),
         update_queue_size: Default::default(),

@@ -573,6 +573,24 @@ impl HnswConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone)]
+#[serde(rename_all = "snake_case", default)]
+#[anonymize(false)]
+pub struct HnswGlobalConfig {
+    /// Enable HNSW healing if the ratio of missing points is no more than this value.
+    /// To disable healing completely, set this value to `0.0`.
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub healing_threshold: f64,
+}
+
+impl Default for HnswGlobalConfig {
+    fn default() -> Self {
+        Self {
+            healing_threshold: 0.3,
+        }
+    }
+}
+
 const fn default_max_indexing_threads() -> usize {
     0
 }

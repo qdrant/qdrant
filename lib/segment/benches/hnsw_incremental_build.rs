@@ -35,7 +35,9 @@ use segment::index::{VectorIndex as _, VectorIndexEnum};
 use segment::segment::Segment;
 use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, ExtendedPointId, HnswConfig, SearchParams, SeqNumberType};
+use segment::types::{
+    Distance, ExtendedPointId, HnswConfig, HnswGlobalConfig, SearchParams, SeqNumberType,
+};
 use sha2::Digest as _;
 use tap::Pipe as _;
 use tempfile::Builder;
@@ -130,12 +132,7 @@ fn main() {
         .filter_level(log::LevelFilter::Debug)
         .init();
 
-    init_feature_flags({
-        let mut feature_flags = FeatureFlags::default();
-        feature_flags.incremental_hnsw_building = true;
-        feature_flags.hnsw_healing = true;
-        feature_flags
-    });
+    init_feature_flags(FeatureFlags::default());
 
     let args = Args::parse();
     log::info!("args={args:?}");
@@ -398,6 +395,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             gpu_device: None,
             rng,
             stopped: &AtomicBool::new(false),
+            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: feature_flags(),
         },
     )

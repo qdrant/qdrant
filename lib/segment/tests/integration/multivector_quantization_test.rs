@@ -179,6 +179,7 @@ fn test_multivector_quantization_hnsw(
 ) {
     use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
+    use segment::types::HnswGlobalConfig;
 
     let stopped = AtomicBool::new(false);
 
@@ -327,6 +328,7 @@ fn test_multivector_quantization_hnsw(
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

@@ -15,7 +15,7 @@ use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use crate::index::hnsw_index::num_rayon_threads;
 use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
-use crate::types::{Distance, HnswConfig, SeqNumberType};
+use crate::types::{Distance, HnswConfig, HnswGlobalConfig, SeqNumberType};
 
 #[test]
 fn test_graph_connectivity() {
@@ -81,6 +81,7 @@ fn test_graph_connectivity() {
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

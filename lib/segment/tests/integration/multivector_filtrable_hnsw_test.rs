@@ -43,6 +43,7 @@ fn test_multi_filterable_hnsw(
     use segment::json_path::JsonPath;
     use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
+    use segment::types::HnswGlobalConfig;
 
     let stopped = AtomicBool::new(false);
 
@@ -145,6 +146,7 @@ fn test_multi_filterable_hnsw(
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

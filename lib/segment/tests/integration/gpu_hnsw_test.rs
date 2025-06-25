@@ -20,8 +20,8 @@ use segment::payload_json;
 use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, PayloadSchemaType, Range,
-    SearchParams, SeqNumberType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, PayloadSchemaType,
+    Range, SearchParams, SeqNumberType,
 };
 use tempfile::Builder;
 
@@ -143,6 +143,7 @@ fn test_gpu_filterable_hnsw() {
             gpu_device: Some(&locked_device), // enable GPU
             rng: &mut rng,
             stopped: &stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

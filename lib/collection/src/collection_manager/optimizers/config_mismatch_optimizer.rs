@@ -6,7 +6,9 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
-use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentType, VectorName};
+use segment::types::{
+    HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentType, VectorName,
+};
 
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::segment_optimizer::{
@@ -26,6 +28,7 @@ pub struct ConfigMismatchOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
+    hnsw_global_config: HnswGlobalConfig,
     quantization_config: Option<QuantizationConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
@@ -37,6 +40,7 @@ impl ConfigMismatchOptimizer {
         collection_temp_dir: PathBuf,
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
+        hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> Self {
         ConfigMismatchOptimizer {
@@ -45,6 +49,7 @@ impl ConfigMismatchOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
+            hnsw_global_config,
             quantization_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
@@ -233,6 +238,10 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
         &self.hnsw_config
     }
 
+    fn hnsw_global_config(&self) -> &HnswGlobalConfig {
+        &self.hnsw_global_config
+    }
+
     fn quantization_config(&self) -> Option<QuantizationConfig> {
         self.quantization_config.clone()
     }
@@ -338,6 +347,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params.clone(),
             hnsw_config.clone(),
+            HnswGlobalConfig::default(),
             Default::default(),
         );
         let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
@@ -346,6 +356,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params,
             hnsw_config.clone(),
+            HnswGlobalConfig::default(),
             Default::default(),
         );
 
@@ -500,6 +511,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params.clone(),
             hnsw_config_collection.clone(),
+            HnswGlobalConfig::default(),
             Default::default(),
         );
         let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
@@ -508,6 +520,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params,
             hnsw_config_collection.clone(),
+            HnswGlobalConfig::default(),
             Default::default(),
         );
 
@@ -669,6 +682,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params.clone(),
             Default::default(),
+            HnswGlobalConfig::default(),
             Some(quantization_config_collection.clone()),
         );
         let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
@@ -677,6 +691,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params,
             Default::default(),
+            HnswGlobalConfig::default(),
             Some(quantization_config_collection),
         );
 

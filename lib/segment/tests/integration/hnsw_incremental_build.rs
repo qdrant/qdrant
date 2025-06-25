@@ -21,7 +21,7 @@ use segment::index::hnsw_index::num_rayon_threads;
 use segment::segment::Segment;
 use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, ExtendedPointId, HnswConfig, SeqNumberType};
+use segment::types::{Distance, ExtendedPointId, HnswConfig, HnswGlobalConfig, SeqNumberType};
 use tap::Tap as _;
 use tempfile::Builder;
 
@@ -153,6 +153,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             gpu_device: None,
             rng,
             stopped: &AtomicBool::new(false),
+            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default().tap_mut(|flags| {
                 flags.incremental_hnsw_building = true;
             }),
