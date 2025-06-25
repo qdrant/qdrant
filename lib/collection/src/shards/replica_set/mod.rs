@@ -415,11 +415,12 @@ impl ShardReplicaSet {
     /// be deactivated or removed.
     /// If current replica is the only "alive" replica, it is considered the last source of truth.
     ///
-    /// This includes `initializing` replica, as even if it contains no data,
-    /// as if it is deactivated, it can never be recovered.
+    /// If our replica is `Initializing`, we consider it to be the last source of truth if there is
+    /// no other active replicas. If we would deactivate it, it will be impossible to recover the
+    /// replica later. This may happen if we got killed or crashed during collection creation.
     ///
-    /// Same logic applies to `Listener` replicas, as they are not recoverable if
-    /// there are no other active replicas.
+    /// Same logic applies to `Listener` replicas, as they are not recoverable if there are no
+    /// other active replicas.
     ///
     /// Examples:
     /// Active(this), Initializing(other), Initializing(other) -> true
