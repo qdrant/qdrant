@@ -11441,6 +11441,11 @@
             "default": false,
             "type": "boolean"
           },
+          "payload_storage_skip_rocksdb": {
+            "description": "Whether to skip usage of RocksDB for new payload storages.\n\nNew on-disk payload storages were already using Gridstore. In-memory payload storages still choose RocksDB when this flag is not set.\n\nFirst implemented in Qdrant 1.15.0.",
+            "default": false,
+            "type": "boolean"
+          },
           "incremental_hnsw_building": {
             "description": "Whether to use incremental HNSW building.\n\nEnabled by default in Qdrant 1.14.1.",
             "default": true,
@@ -12263,6 +12268,20 @@
                 "type": "string",
                 "enum": [
                   "mmap"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "in_ram_mmap"
                 ]
               }
             }

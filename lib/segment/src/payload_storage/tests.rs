@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use rstest::rstest;
 
 use super::PayloadStorage;
 use super::mmap_payload_storage::MmapPayloadStorage;
@@ -138,9 +139,11 @@ fn test_in_memory_storage() {
     });
 }
 
-#[test]
-fn test_mmap_storage() {
-    test_trait_impl(|path| MmapPayloadStorage::open_or_create(path.to_path_buf()).unwrap());
+#[rstest]
+fn test_mmap_storage(#[values(false, true)] populate: bool) {
+    test_trait_impl(|path| {
+        MmapPayloadStorage::open_or_create(path.to_path_buf(), populate).unwrap()
+    });
 }
 
 #[test]

@@ -238,7 +238,11 @@ pub(crate) fn create_payload_storage(
         }
         PayloadStorageType::Mmap => PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(
             segment_path.to_path_buf(),
+            false,
         )?),
+        PayloadStorageType::InRamMmap => PayloadStorageEnum::from(
+            MmapPayloadStorage::open_or_create(segment_path.to_path_buf(), true)?,
+        ),
     };
     Ok(payload_storage)
 }

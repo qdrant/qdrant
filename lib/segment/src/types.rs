@@ -1181,6 +1181,8 @@ pub enum PayloadStorageType {
     OnDisk,
     // Store payload on disk and in memory, read from memory if possible
     Mmap,
+    // Store payload on disk and in memory, populate on load
+    InRamMmap,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -1199,13 +1201,13 @@ impl Default for PayloadStorageType {
 
 impl PayloadStorageType {
     pub fn is_on_disk(&self) -> bool {
-        #[cfg(feature = "rocksdb")]
-        {
-            matches!(self, PayloadStorageType::OnDisk | PayloadStorageType::Mmap)
-        }
-        #[cfg(not(feature = "rocksdb"))]
-        {
-            matches!(self, PayloadStorageType::Mmap)
+        match self {
+            #[cfg(feature = "rocksdb")]
+            PayloadStorageType::InMemory => false,
+            #[cfg(feature = "rocksdb")]
+            PayloadStorageType::OnDisk => true,
+            PayloadStorageType::Mmap => true,
+            PayloadStorageType::InRamMmap => false,
         }
     }
 }

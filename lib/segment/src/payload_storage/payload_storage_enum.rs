@@ -297,6 +297,7 @@ impl PayloadStorageEnum {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use tempfile::Builder;
 
     use super::*;
@@ -324,14 +325,14 @@ mod tests {
         assert_eq!(storage.get(100, &hw_counter).unwrap(), Default::default());
     }
 
-    #[test]
-    fn test_mmap_storage() {
+    #[rstest]
+    fn test_mmap_storage(#[values(false, true)] populate: bool) {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
         let mut storage: PayloadStorageEnum =
-            MmapPayloadStorage::open_or_create(dir.path().to_path_buf())
+            MmapPayloadStorage::open_or_create(dir.path().to_path_buf(), populate)
                 .unwrap()
                 .into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
