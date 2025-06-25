@@ -32,31 +32,41 @@ pub struct MmapPayloadStorage {
 }
 
 impl MmapPayloadStorage {
-    pub fn open_or_create(path: PathBuf) -> OperationResult<Self> {
+    pub fn open_or_create(path: PathBuf, populate: bool) -> OperationResult<Self> {
         let path = path.join(STORAGE_PATH);
         if path.exists() {
-            Self::open(path)
+            Self::open(path, populate)
         } else {
             // create folder if it does not exist
             std::fs::create_dir_all(&path).map_err(|_| {
                 OperationError::service_error("Failed to create mmap payload storage directory")
             })?;
-            Ok(Self::new(path)?)
+            Ok(Self::new(path, populate)?)
         }
     }
 
-    fn open(path: PathBuf) -> OperationResult<Self> {
+    fn open(path: PathBuf, populate: bool) -> OperationResult<Self> {
         let storage = Gridstore::open(path).map_err(|err| {
             OperationError::service_error(format!("Failed to open mmap payload storage: {err}"))
         })?;
         let storage = Arc::new(RwLock::new(storage));
+
+        if populate {
+            storage.read().populate()?;
+        }
+
         Ok(Self { storage })
     }
 
-    fn new(path: PathBuf) -> OperationResult<Self> {
+    fn new(path: PathBuf, populate: bool) -> OperationResult<Self> {
         let storage = Gridstore::new(path, StorageOptions::default())
             .map_err(OperationError::service_error)?;
         let storage = Arc::new(RwLock::new(storage));
+
+        if populate {
+            storage.read().populate()?;
+        }
+
         Ok(Self { storage })
     }
 

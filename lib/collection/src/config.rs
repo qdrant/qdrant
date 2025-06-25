@@ -126,12 +126,18 @@ impl CollectionParams {
         #[cfg(feature = "rocksdb")]
         if self.on_disk_payload {
             PayloadStorageType::Mmap
+        } else if common::flags::feature_flags().payload_storage_skip_rocksdb {
+            PayloadStorageType::InRamMmap
         } else {
             PayloadStorageType::InMemory
         }
 
         #[cfg(not(feature = "rocksdb"))]
-        PayloadStorageType::Mmap
+        if self.on_disk_payload {
+            PayloadStorageType::Mmap
+        } else {
+            PayloadStorageType::InRamMmap
+        }
     }
 
     pub fn check_compatible(&self, other: &CollectionParams) -> CollectionResult<()> {
