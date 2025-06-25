@@ -53,6 +53,10 @@ impl PartialSnapshotMeta {
         })
     }
 
+    pub fn is_recovery_lock_taken(&self) -> bool {
+        self.recovery_lock.try_lock().is_err()
+    }
+
     pub async fn take_search_write_lock(&self) -> tokio::sync::OwnedRwLockWriteGuard<()> {
         self.search_lock.clone().write_owned().await
     }
