@@ -1350,11 +1350,8 @@ fn migrate_rocksdb_payload_storage(
     }
 
     // Actively migrate away from RocksDB
-    let new_storage = migrate_rocksdb_payload_storage_to_mmap(
-        segment.payload_storage.borrow().deref(),
-        path,
-        segment.total_point_count(),
-    )?;
+    let new_storage =
+        migrate_rocksdb_payload_storage_to_mmap(segment.payload_storage.borrow().deref(), path)?;
 
     let old_storage = std::mem::replace(&mut *segment.payload_storage.borrow_mut(), new_storage);
 
@@ -1396,7 +1393,6 @@ fn migrate_rocksdb_payload_storage(
 pub fn migrate_rocksdb_payload_storage_to_mmap(
     old_storage: &PayloadStorageEnum,
     segment_path: &Path,
-    total_point_count: usize,
 ) -> OperationResult<PayloadStorageEnum> {
     use common::counter::hardware_counter::HardwareCounterCell;
 
@@ -1404,7 +1400,8 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
     use crate::payload_storage::mmap_payload_storage::find_storage_files;
 
     log::info!(
-        "Migrating payload storage for {total_point_count} points from RocksDB into new format",
+        "Migrating {} bytes of payload storage from RocksDB into new format",
+        old_storage.get_storage_size_bytes().unwrap_or(0),
     );
 
     fn migrate(

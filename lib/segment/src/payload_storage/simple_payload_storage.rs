@@ -124,7 +124,7 @@ mod tests {
 
         // Migrate from RocksDB to mmap storage
         let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let new_storage = migrate_rocksdb_payload_storage_to_mmap(&storage, storage_dir.path(), 0)
+        let new_storage = migrate_rocksdb_payload_storage_to_mmap(&storage, storage_dir.path())
             .expect("failed to migrate from RocksDB to mmap");
 
         // Destroy persisted RocksDB payload data
