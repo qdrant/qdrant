@@ -31,6 +31,7 @@ impl Blob for Payload {
 #[derive(Debug)]
 pub struct MmapPayloadStorage {
     storage: Arc<RwLock<Gridstore<Payload>>>,
+    populate: bool,
 }
 
 impl MmapPayloadStorage {
@@ -57,7 +58,7 @@ impl MmapPayloadStorage {
             storage.read().populate()?;
         }
 
-        Ok(Self { storage })
+        Ok(Self { storage, populate })
     }
 
     fn new(path: PathBuf, populate: bool) -> OperationResult<Self> {
@@ -69,7 +70,7 @@ impl MmapPayloadStorage {
             storage.read().populate()?;
         }
 
-        Ok(Self { storage })
+        Ok(Self { storage, populate })
     }
 
     /// Populate all pages in the mmap.
@@ -266,6 +267,10 @@ impl PayloadStorage for MmapPayloadStorage {
 
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         Ok(self.storage.read().get_storage_size_bytes())
+    }
+
+    fn is_on_disk(&self) -> bool {
+        !self.populate
     }
 }
 

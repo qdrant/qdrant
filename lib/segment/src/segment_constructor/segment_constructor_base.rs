@@ -1340,6 +1340,8 @@ fn migrate_rocksdb_payload_storage(
 ) -> OperationResult<()> {
     use std::ops::Deref;
 
+    use crate::payload_storage::PayloadStorage;
+
     if !matches!(
         segment.payload_storage.borrow().deref(),
         PayloadStorageEnum::SimplePayloadStorage(_) | PayloadStorageEnum::OnDiskPayloadStorage(_),
@@ -1358,7 +1360,11 @@ fn migrate_rocksdb_payload_storage(
 
     // Update storage type
     // TODO(in-memory-mmap-payload-storage): once in-memory mmap payload storage is merged, select correct type here
-    segment_state.config.payload_storage_type = PayloadStorageType::Mmap;
+    segment_state.config.payload_storage_type = if old_storage.is_on_disk() {
+        PayloadStorageType::Mmap
+    } else {
+        PayloadStorageType::InRamMmap
+    };
     Segment::save_state(segment_state, path)?;
 
     // Destroy persisted RocksDB payload data
@@ -1406,9 +1412,9 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
         segment_path: &Path,
     ) -> OperationResult<PayloadStorageEnum> {
         // Construct mmap based payload storage
-        // TODO(in-memory-mmap-payload-storage): once in-memory mmap payload storage is merged, create correct storage here
         let mut new_storage = PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(
             segment_path.to_path_buf(),
+            !old_storage.is_on_disk(),
         )?);
 
         // Copy all payloads and deletes into new storage
