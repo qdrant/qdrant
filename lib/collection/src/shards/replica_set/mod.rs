@@ -411,25 +411,45 @@ impl ShardReplicaSet {
         self.replica_state.read().peers()
     }
 
-    pub fn is_last_active_replica(&self, peer_id: PeerId) -> bool {
+    /// Checks if the current replica contains a unique source of truth and should never
+    /// be deactivated or removed.
+    /// If current replica is the only "alive" replica, it is considered the last source of truth.
+    ///
+    /// If our replica is `Initializing`, we consider it to be the last source of truth if there is
+    /// no other active replicas. If we would deactivate it, it will be impossible to recover the
+    /// replica later. This may happen if we got killed or crashed during collection creation.
+    ///
+    /// Same logic applies to `Listener` replicas, as they are not recoverable if there are no
+    /// other active replicas.
+    ///
+    /// Examples:
+    /// Active(this), Initializing(other), Initializing(other) -> true
+    /// Active(this), Active(other) -> false
+    /// Initializing(this) -> true
+    /// Initializing(this), Initializing(other) -> true
+    /// Initializing(this), Dead(other) -> true
+    /// Initializing(this), Active(other) -> false
+    /// Active(this), Initializing(other) -> true
+    ///
+    pub fn is_last_source_of_truth_replica(&self, peer_id: PeerId) -> bool {
         // This includes `Active` and `ReshardingScaleDown` replicas!
         let active_peers = self.replica_state.read().active_peers();
+        if active_peers.is_empty() {
+            if let Some(peer_state) = self.peer_state(peer_id) {
+                // If there are no other active peers, deactivating those replicas
+                // is not recoverable, so it is considered the last source of truth,
+                // even though it is not technically active.
+                return matches!(
+                    peer_state,
+                    ReplicaState::Initializing | ReplicaState::Listener
+                );
+            }
+        }
         active_peers.len() == 1 && active_peers.contains(&peer_id)
     }
 
     pub fn peer_state(&self, peer_id: PeerId) -> Option<ReplicaState> {
         self.replica_state.read().get_peer_state(peer_id)
-    }
-
-    /// List the peer IDs on which this shard is active, both the local and remote peers.
-    pub fn active_shards(&self) -> Vec<PeerId> {
-        let replica_state = self.replica_state.read();
-        replica_state
-            // This is a part of deprecated built-in resharding implementation, so we don't care
-            .active_peers()
-            .into_iter()
-            .filter(|&peer_id| !self.is_locally_disabled(peer_id))
-            .collect()
     }
 
     /// List the remote peer IDs on which this shard is active, excludes the local peer ID.
