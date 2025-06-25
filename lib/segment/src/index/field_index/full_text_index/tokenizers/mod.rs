@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+mod japanese;
+mod multilingual;
 
 use charabia::Tokenize;
 

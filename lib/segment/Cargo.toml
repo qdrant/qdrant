@@ -102,6 +102,8 @@ byteorder = { workspace = true }
 tap = { workspace = true }
 zerocopy = { workspace = true }
 lazy_static = "1.5.0"
+vaporetto = { version = "0.6.5" }
+rust-stemmers = { git = "https://github.com/qdrant/rust-stemmers", rev = "9b118a2" }
 
 sysinfo = "0.35"
 charabia = { version = "0.9.3", default-features = false, features = [
