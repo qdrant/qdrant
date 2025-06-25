@@ -27,6 +27,7 @@ use tempfile::Builder;
 #[case::streamable(SnapshotFormat::Streamable)]
 fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     use common::counter::hardware_counter::HardwareCounterCell;
+    use segment::types::HnswGlobalConfig;
 
     let _ = env_logger::builder().is_test(true).try_init();
 
@@ -131,6 +132,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         segment_base_dir.path(),
         segment_builder_dir.path(),
         &segment_config,
+        &HnswGlobalConfig::default(),
     )
     .unwrap();
     segment_builder.update(&[&segment], &false.into()).unwrap();

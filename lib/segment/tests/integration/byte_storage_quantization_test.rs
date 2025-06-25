@@ -20,9 +20,9 @@ use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::build_segment;
 use segment::types::{
     BinaryQuantizationConfig, CompressionRatio, Condition, Distance, FieldCondition, Filter,
-    HnswConfig, Indexes, PayloadSchemaType, ProductQuantizationConfig, QuantizationSearchParams,
-    Range, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
-    VectorStorageDatatype, VectorStorageType,
+    HnswConfig, HnswGlobalConfig, Indexes, PayloadSchemaType, ProductQuantizationConfig,
+    QuantizationSearchParams, Range, ScalarQuantizationConfig, SearchParams, SegmentConfig,
+    SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use segment::vector_storage::VectorStorageEnum;
 use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -350,6 +350,7 @@ fn test_byte_storage_binary_quantization_hnsw(
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

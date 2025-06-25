@@ -23,8 +23,8 @@ use segment::segment_constructor::simple_segment_constructor::build_simple_segme
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, MultiVectorConfig, PayloadSchemaType,
-    SeqNumberType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, MultiVectorConfig,
+    PayloadSchemaType, SeqNumberType,
 };
 use segment::vector_storage::VectorStorage;
 use segment::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_in_ram_multi_vector_storage_full;
@@ -146,6 +146,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

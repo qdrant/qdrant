@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::VectorIndex;
-use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
+use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentType};
 use segment::vector_storage::VectorStorage;
 
 use crate::collection_manager::holders::segment_holder::{
@@ -32,6 +32,7 @@ pub struct VacuumOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
+    hnsw_global_config: HnswGlobalConfig,
     quantization_config: Option<QuantizationConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
@@ -46,6 +47,7 @@ impl VacuumOptimizer {
         collection_temp_dir: PathBuf,
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
+        hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> Self {
         VacuumOptimizer {
@@ -57,6 +59,7 @@ impl VacuumOptimizer {
             collection_params,
             hnsw_config,
             quantization_config,
+            hnsw_global_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
     }
@@ -181,6 +184,10 @@ impl SegmentOptimizer for VacuumOptimizer {
 
     fn hnsw_config(&self) -> &HnswConfig {
         &self.hnsw_config
+    }
+
+    fn hnsw_global_config(&self) -> &HnswGlobalConfig {
+        &self.hnsw_global_config
     }
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {
@@ -326,6 +333,7 @@ mod tests {
                 ..CollectionParams::empty()
             },
             Default::default(),
+            HnswGlobalConfig::default(),
             Default::default(),
         );
 
@@ -474,6 +482,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params.clone(),
             hnsw_config.clone(),
+            HnswGlobalConfig::default(),
             Default::default(),
         );
         let vacuum_optimizer = VacuumOptimizer::new(
@@ -484,6 +493,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params,
             hnsw_config,
+            HnswGlobalConfig::default(),
             Default::default(),
         );
 

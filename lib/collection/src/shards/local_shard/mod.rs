@@ -385,6 +385,7 @@ impl LocalShard {
             &collection_config_read.params,
             &effective_optimizers_config,
             &collection_config_read.hnsw_config,
+            &shared_storage_config.hnsw_global_config,
             &collection_config_read.quantization_config,
         );
 
@@ -554,6 +555,7 @@ impl LocalShard {
             &config.params,
             &effective_optimizers_config,
             &config.hnsw_config,
+            &shared_storage_config.hnsw_global_config,
             &config.quantization_config,
         );
 
@@ -765,6 +767,7 @@ impl LocalShard {
             &config.params,
             &config.optimizer_config,
             &config.hnsw_config,
+            &self.shared_storage_config.hnsw_global_config,
             &config.quantization_config,
         );
         update_handler.optimizers = new_optimizers;

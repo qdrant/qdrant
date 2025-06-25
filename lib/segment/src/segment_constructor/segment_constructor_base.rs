@@ -47,9 +47,9 @@ use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
 #[cfg(feature = "rocksdb")]
 use crate::types::MultiVectorConfig;
 use crate::types::{
-    Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
-    SparseVectorStorageType, VectorDataConfig, VectorName, VectorStorageDatatype,
-    VectorStorageType,
+    Distance, HnswGlobalConfig, Indexes, PayloadStorageType, SegmentConfig, SegmentState,
+    SegmentType, SeqNumberType, SparseVectorStorageType, VectorDataConfig, VectorName,
+    VectorStorageDatatype, VectorStorageType,
 };
 use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_in_ram_vector_storage, open_appendable_memmap_vector_storage,
@@ -280,6 +280,7 @@ pub struct VectorIndexBuildArgs<'a, R: Rng + ?Sized> {
     pub gpu_device: Option<&'a LockedGpuDevice<'a>>,
     pub rng: &'a mut R,
     pub stopped: &'a AtomicBool,
+    pub hnsw_global_config: &'a HnswGlobalConfig,
     pub feature_flags: FeatureFlags,
 }
 

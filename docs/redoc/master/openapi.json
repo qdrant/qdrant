@@ -11362,6 +11362,16 @@
               }
             ]
           },
+          "hnsw_global_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswGlobalConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "system": {
             "anyOf": [
               {
@@ -11436,11 +11446,6 @@
             "default": true,
             "type": "boolean"
           },
-          "hnsw_healing": {
-            "description": "Whether to enable HNSW healing.",
-            "default": false,
-            "type": "boolean"
-          },
           "migrate_rocksdb_id_tracker": {
             "description": "Whether to actively migrate RocksDB based ID trackers into a new format.",
             "default": false,
@@ -11450,6 +11455,19 @@
             "description": "Whether to actively migrate RocksDB based vector storages into a new format.",
             "default": false,
             "type": "boolean"
+          }
+        }
+      },
+      "HnswGlobalConfig": {
+        "type": "object",
+        "properties": {
+          "healing_threshold": {
+            "description": "Enable HNSW healing if the ratio of missing points is no more than this value. To disable healing completely, set this value to `0.0`.",
+            "default": 0.3,
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0
           }
         }
       },

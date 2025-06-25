@@ -17,7 +17,7 @@ use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_with_u64_hashable_key};
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
-use segment::types::HnswConfig;
+use segment::types::{HnswConfig, HnswGlobalConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
 use validator::Validate;
@@ -83,6 +83,9 @@ pub struct StorageConfig {
     pub performance: PerformanceConfig,
     #[validate(nested)]
     pub hnsw_index: HnswConfig,
+    #[validate(nested)]
+    #[serde(default)]
+    pub hnsw_global_config: HnswGlobalConfig,
     #[serde(default = "default_mmap_advice")]
     pub mmap_advice: madvise::Advice,
     #[serde(default)]
@@ -127,6 +130,7 @@ impl StorageConfig {
             self.performance.outgoing_shard_transfers_limit,
             self.snapshots_path.clone(),
             self.snapshots_config.clone(),
+            self.hnsw_global_config.clone(),
             common::defaults::search_thread_count(self.performance.max_search_threads),
         )
     }

@@ -13,7 +13,7 @@ use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
 };
-use segment::types::{Distance, Payload, PointIdType, SeqNumberType};
+use segment::types::{Distance, HnswGlobalConfig, Payload, PointIdType, SeqNumberType};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
@@ -241,6 +241,7 @@ pub(crate) fn get_merge_optimizer(
             ..CollectionParams::empty()
         },
         Default::default(),
+        HnswGlobalConfig::default(),
         Default::default(),
     )
 }
@@ -266,6 +267,7 @@ pub(crate) fn get_indexing_optimizer(
             ..CollectionParams::empty()
         },
         Default::default(),
+        HnswGlobalConfig::default(),
         Default::default(),
     )
 }

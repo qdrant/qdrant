@@ -24,8 +24,8 @@ use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
-    CompressionRatio, Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes,
-    ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
+    CompressionRatio, Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig,
+    Indexes, ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
     ScalarQuantizationConfig, SearchParams,
 };
 use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -137,6 +137,7 @@ fn hnsw_quantized_search_test(
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )
@@ -424,7 +425,13 @@ fn test_build_hnsw_using_quantization() {
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hw_counter = HardwareCounterCell::new();
 
-    let mut builder = SegmentBuilder::new(dir.path(), temp_dir.path(), &config).unwrap();
+    let mut builder = SegmentBuilder::new(
+        dir.path(),
+        temp_dir.path(),
+        &config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
 
     builder.update(&[&segment1], &stopped).unwrap();
 

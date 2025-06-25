@@ -5,6 +5,7 @@ use common::flags::FeatureFlags;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::types::HnswGlobalConfig;
 use serde::Serialize;
 
 use crate::settings::Settings;
@@ -61,6 +62,8 @@ pub struct AppBuildTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_features: Option<FeatureFlags>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub hnsw_global_config: Option<HnswGlobalConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub system: Option<RunningEnvironmentTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jwt_rbac: Option<bool>,
@@ -87,6 +90,8 @@ impl AppBuildTelemetry {
             }),
             runtime_features: (detail.level >= DetailsLevel::Level1)
                 .then(common::flags::feature_flags),
+            hnsw_global_config: (detail.level >= DetailsLevel::Level1)
+                .then(|| settings.storage.hnsw_global_config.clone()),
             system: (detail.level >= DetailsLevel::Level1).then(get_system_data),
             jwt_rbac: settings.service.jwt_rbac,
             hide_jwt_dashboard: settings.service.hide_jwt_dashboard,

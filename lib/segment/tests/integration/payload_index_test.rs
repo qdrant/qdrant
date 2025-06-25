@@ -42,9 +42,9 @@ use segment::types::PayloadFieldSchema::{FieldParams, FieldType};
 use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
     AnyVariants, Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoLineString,
-    GeoPoint, GeoPolygon, GeoRadius, HnswConfig, Indexes, IsEmptyCondition, Match, Payload,
-    PayloadField, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType, Range, SegmentConfig,
-    ValueVariants, VectorDataConfig, VectorStorageType, WithPayload,
+    GeoPoint, GeoPolygon, GeoRadius, HnswConfig, HnswGlobalConfig, Indexes, IsEmptyCondition,
+    Match, Payload, PayloadField, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
+    Range, SegmentConfig, ValueVariants, VectorDataConfig, VectorStorageType, WithPayload,
 };
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tempfile::{Builder, TempDir};
@@ -284,6 +284,7 @@ impl TestSegments {
             path,
             &path.with_extension("tmp"),
             &Self::make_simple_config(false),
+            &HnswGlobalConfig::default(),
         )
         .unwrap();
 

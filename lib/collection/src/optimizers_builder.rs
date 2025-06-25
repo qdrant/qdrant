@@ -4,7 +4,7 @@ use std::sync::Arc;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::{HnswConfig, QuantizationConfig};
+use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
@@ -153,6 +153,7 @@ pub fn build_optimizers(
     collection_params: &CollectionParams,
     optimizers_config: &OptimizersConfig,
     hnsw_config: &HnswConfig,
+    hnsw_global_config: &HnswGlobalConfig,
     quantization_config: &Option<QuantizationConfig>,
 ) -> Arc<Vec<Arc<Optimizer>>> {
     let num_indexing_threads = num_rayon_threads(hnsw_config.max_indexing_threads);
@@ -168,6 +169,7 @@ pub fn build_optimizers(
             temp_segments_path.clone(),
             collection_params.clone(),
             hnsw_config.clone(),
+            hnsw_global_config.clone(),
             quantization_config.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
@@ -177,6 +179,7 @@ pub fn build_optimizers(
             temp_segments_path.clone(),
             collection_params.clone(),
             hnsw_config.clone(),
+            hnsw_global_config.clone(),
             quantization_config.clone(),
         )),
         Arc::new(VacuumOptimizer::new(
@@ -187,6 +190,7 @@ pub fn build_optimizers(
             temp_segments_path.clone(),
             collection_params.clone(),
             hnsw_config.clone(),
+            hnsw_global_config.clone(),
             quantization_config.clone(),
         )),
         Arc::new(ConfigMismatchOptimizer::new(
@@ -195,6 +199,7 @@ pub fn build_optimizers(
             temp_segments_path,
             collection_params.clone(),
             hnsw_config.clone(),
+            hnsw_global_config.clone(),
             quantization_config.clone(),
         )),
     ])

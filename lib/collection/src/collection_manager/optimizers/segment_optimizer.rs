@@ -20,7 +20,9 @@ use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType};
+use segment::types::{
+    HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
+};
 
 use crate::collection_manager::holders::proxy_segment::{self, ProxyIndexChange, ProxySegment};
 use crate::collection_manager::holders::segment_holder::{
@@ -62,6 +64,9 @@ pub trait SegmentOptimizer {
 
     /// Get HNSW config
     fn hnsw_config(&self) -> &HnswConfig;
+
+    /// Get HNSW global config
+    fn hnsw_global_config(&self) -> &HnswGlobalConfig;
 
     /// Get quantization config
     fn quantization_config(&self) -> Option<QuantizationConfig>;
@@ -300,6 +305,7 @@ pub trait SegmentOptimizer {
             self.segments_path(),
             self.temp_path(),
             &optimized_config,
+            self.hnsw_global_config(),
         )?)
     }
 

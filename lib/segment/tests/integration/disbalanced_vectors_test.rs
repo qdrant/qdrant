@@ -13,7 +13,7 @@ use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment,
 };
-use segment::types::Distance;
+use segment::types::{Distance, HnswGlobalConfig};
 use segment::vector_storage::VectorStorage;
 use tempfile::Builder;
 
@@ -90,8 +90,13 @@ fn test_rebuild_with_removed_vectors() {
         reference.push(vec);
     }
 
-    let mut builder =
-        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
+    let mut builder = SegmentBuilder::new(
+        dir.path(),
+        temp_dir.path(),
+        &segment1.segment_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
 
     builder.update(&[&segment1, &segment2], &stopped).unwrap();
 

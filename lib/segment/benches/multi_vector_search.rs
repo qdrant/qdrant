@@ -17,8 +17,8 @@ use segment::index::hnsw_index::num_rayon_threads;
 use segment::segment_constructor::{VectorIndexBuildArgs, build_segment};
 use segment::types::Distance::{Dot, Euclid};
 use segment::types::{
-    Distance, HnswConfig, Indexes, MultiVectorConfig, SegmentConfig, SeqNumberType,
-    VectorDataConfig, VectorStorageType,
+    Distance, HnswConfig, HnswGlobalConfig, Indexes, MultiVectorConfig, SegmentConfig,
+    SeqNumberType, VectorDataConfig, VectorStorageType,
 };
 use tempfile::Builder;
 
@@ -128,6 +128,7 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
             gpu_device: None,
             stopped: &stopped,
             rng,
+            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
+use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentType};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
@@ -29,6 +29,7 @@ pub struct MergeOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
+    hnsw_global_config: HnswGlobalConfig,
     quantization_config: Option<QuantizationConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
@@ -42,6 +43,7 @@ impl MergeOptimizer {
         collection_temp_dir: PathBuf,
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
+        hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> Self {
         MergeOptimizer {
@@ -51,6 +53,7 @@ impl MergeOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
+            hnsw_global_config,
             quantization_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
@@ -76,6 +79,10 @@ impl SegmentOptimizer for MergeOptimizer {
 
     fn hnsw_config(&self) -> &HnswConfig {
         &self.hnsw_config
+    }
+
+    fn hnsw_global_config(&self) -> &HnswGlobalConfig {
+        &self.hnsw_global_config
     }
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {
