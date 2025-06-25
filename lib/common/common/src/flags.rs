@@ -29,8 +29,8 @@ pub struct FeatureFlags {
     /// New on-disk payload storages were already using Gridstore. In-memory payload storages still
     /// choose RocksDB when this flag is not set.
     ///
-    /// First implemented in Qdrant 1.14.2.
-    // TODO(1.15): enable by default
+    /// First implemented in Qdrant 1.15.0.
+    // TODO(1.15.1): enable by default
     pub payload_storage_skip_rocksdb: bool,
 
     /// Whether to use incremental HNSW building.
@@ -46,7 +46,7 @@ pub struct FeatureFlags {
     pub migrate_rocksdb_id_tracker: bool,
 
     /// Whether to actively migrate RocksDB based vector storages into a new format.
-    // TODO(1.15): enable by default
+    // TODO(1.15.1): enable by default
     pub migrate_rocksdb_vector_storage: bool,
 }
 
