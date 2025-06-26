@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use charabia::normalizer::{ClassifierOption, NormalizedTokenIter, NormalizerOption};
-use charabia::{Language, Script, Segment, StrDetection, Token};
+use charabia::{Language, Script, Segment, StrDetection};
 use rust_stemmers::{Algorithm, Stemmer};
 
 use super::japanese;
@@ -75,7 +75,7 @@ impl MultilingualTokenizer {
             input,
             stopwords_filter,
             lowercase,
-            |i| stemmer.stem_cow(i.lemma),
+            |token| stemmer.stem_cow(token),
             cb,
         );
     }
@@ -87,7 +87,7 @@ impl MultilingualTokenizer {
         lowercase: bool,
         cb: C,
     ) {
-        Self::charabia(input, stopwords_filter, lowercase, |i| i.lemma, cb);
+        Self::charabia(input, stopwords_filter, lowercase, |token| token, cb);
     }
 
     // Tokenize input using charabia with a token transformation mapping.
@@ -95,20 +95,20 @@ impl MultilingualTokenizer {
         input: &'a str,
         stopwords_filter: &StopwordsFilter,
         lowercase: bool,
-        mut map_token: impl FnMut(Token<'a>) -> Cow<'a, str>,
+        mut process_token: impl FnMut(Cow<'a, str>) -> Cow<'a, str>,
         mut cb: C,
     ) {
         for token in charabia_token_iter(input) {
-            let mapped = apply_casing(map_token(token), lowercase);
+            let cased_token = apply_casing(token.lemma, lowercase);
 
-            // Prevent whitespaces and punctuation treated as separate tokens in the output.
-            if stopwords_filter.is_stopword(&mapped)
-                || mapped.chars().all(|char| !char.is_alphabetic())
+            if stopwords_filter.is_stopword(&cased_token)
+                || cased_token.chars().all(|char| !char.is_alphabetic())
             {
                 continue;
             }
 
-            cb(mapped)
+            let processed_token = process_token(cased_token);
+            cb(processed_token)
         }
     }
 }
