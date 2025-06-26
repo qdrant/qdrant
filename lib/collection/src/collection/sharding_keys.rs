@@ -53,6 +53,8 @@ impl Collection {
         .await
     }
 
+    /// Returns shard IDs of all created *local* replicas.
+    ///
     /// # Cancel safety
     ///
     /// This method is *not* cancel safe.
@@ -60,7 +62,8 @@ impl Collection {
         &self,
         shard_key: ShardKey,
         placement: ShardsPlacement,
-    ) -> CollectionResult<()> {
+        init_state: ReplicaState,
+    ) -> CollectionResult<Vec<ShardId>> {
         let hw_counter = HwMeasurementAcc::disposable(); // Internal operation. No measurement needed.
 
         let state = self.state().await;
@@ -100,8 +103,9 @@ impl Collection {
         }
 
         let max_shard_id = state.max_shard_id();
-
         let payload_schema = self.payload_index_schema.read().schema.clone();
+
+        let mut local_replicas = Vec::new();
 
         for (idx, shard_replicas_placement) in placement.iter().enumerate() {
             let shard_id = max_shard_id + idx as ShardId + 1;
@@ -111,7 +115,7 @@ impl Collection {
                     shard_id,
                     Some(shard_key.clone()),
                     shard_replicas_placement,
-                    None,
+                    Some(init_state),
                 )
                 .await?;
 
@@ -131,6 +135,10 @@ impl Collection {
                         false,
                     ) // TODO: Assign clock tag!? 🤔
                     .await?;
+
+                if replica_set.has_local_shard().await {
+                    local_replicas.push(shard_id);
+                }
             }
 
             self.shards_holder.write().await.add_shard(
@@ -139,7 +147,8 @@ impl Collection {
                 Some(shard_key.clone()),
             )?;
         }
-        Ok(())
+
+        Ok(local_replicas)
     }
 
     pub async fn drop_shard_key(&self, shard_key: ShardKey) -> CollectionResult<()> {
