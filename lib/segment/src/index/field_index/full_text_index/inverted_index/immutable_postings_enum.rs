@@ -1,4 +1,3 @@
-#[cfg(test)]
 use common::types::PointOffsetType;
 use posting_list::PostingList;
 
@@ -20,6 +19,13 @@ impl ImmutablePostings {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        match self {
+            ImmutablePostings::Ids(lists) => lists.is_empty(),
+            ImmutablePostings::WithPositions(lists) => lists.is_empty(),
+        }
+    }
+
     pub fn posting_len(&self, token: TokenId) -> Option<usize> {
         match self {
             ImmutablePostings::Ids(postings) => {
@@ -31,7 +37,6 @@ impl ImmutablePostings {
         }
     }
 
-    #[cfg(test)]
     pub fn iter_ids(
         &self,
         token_id: TokenId,

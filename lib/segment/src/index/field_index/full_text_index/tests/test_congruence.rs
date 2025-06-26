@@ -312,7 +312,10 @@ fn test_congruence(
         for query_range in [0..1, 2..4, 5..9, 0..10] {
             let keywords = &keywords[query_range];
             let parsed_query_a = parse_query(keywords, false, index_a);
+            let covered_points_a = index_a.get_query_posting(&parsed_query_a, &hw_counter);
+
             let parsed_query_b = parse_query(keywords, false, index_b);
+            let covered_points_b = index_b.get_query_posting(&parsed_query_b, &hw_counter);
 
             // Mutable index behaves different versus the others on point deletion
             // Mutable index updates postings, the others do not. Cardinality estimations are
@@ -337,8 +340,8 @@ fn test_congruence(
 
             for point_id in 0..POINT_COUNT as PointOffsetType {
                 assert_eq!(
-                    index_a.check_match(&parsed_query_a, point_id, &hw_counter),
-                    index_b.check_match(&parsed_query_b, point_id, &hw_counter),
+                    index_a.check_match(&parsed_query_a, point_id, &covered_points_a, &hw_counter),
+                    index_b.check_match(&parsed_query_b, point_id, &covered_points_b, &hw_counter),
                 );
             }
 
@@ -357,7 +360,10 @@ fn test_congruence(
                 eprintln!("Phrase: {phrase:?}");
 
                 let parsed_query_a = parse_query(phrase, true, index_a);
+                let covered_points_a = index_a.get_query_posting(&parsed_query_a, &hw_counter);
+
                 let parsed_query_b = parse_query(phrase, true, index_b);
+                let covered_points_b = index_a.get_query_posting(&parsed_query_b, &hw_counter);
 
                 let field_condition = FieldCondition::new_values_count(
                     JsonPath::new(FIELD_NAME),
@@ -378,8 +384,18 @@ fn test_congruence(
 
                 for point_id in 0..POINT_COUNT as PointOffsetType {
                     assert_eq!(
-                        index_a.check_match(&parsed_query_a, point_id, &hw_counter),
-                        index_b.check_match(&parsed_query_b, point_id, &hw_counter),
+                        index_a.check_match(
+                            &parsed_query_a,
+                            point_id,
+                            &covered_points_a,
+                            &hw_counter
+                        ),
+                        index_b.check_match(
+                            &parsed_query_b,
+                            point_id,
+                            &covered_points_b,
+                            &hw_counter
+                        ),
                     );
                 }
 
@@ -439,8 +455,9 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
             eprintln!("Phrase: {phrase:?}");
 
             let parsed_query = parse_query(phrase, phrase_matching, index);
+            let covered_points = index.get_query_posting(&parsed_query, &hw_counter);
 
-            assert!(index.check_match(&parsed_query, *exp_id, &hw_counter));
+            assert!(index.check_match(&parsed_query, *exp_id, &covered_points, &hw_counter));
 
             let result = index
                 .filter_query(parsed_query, &hw_counter)

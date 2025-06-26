@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
@@ -84,36 +85,6 @@ impl ImmutableInvertedIndex {
         match &self.postings {
             ImmutablePostings::Ids(postings) => intersection(postings, tokens, filter),
             ImmutablePostings::WithPositions(postings) => intersection(postings, tokens, filter),
-        }
-    }
-
-    fn check_has_subset(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
-        if tokens.is_empty() {
-            return false;
-        }
-
-        // check presence of the document
-        if self.values_is_empty(point_id) {
-            return false;
-        }
-
-        fn check_intersection<V: PostingValue>(
-            postings: &[PostingList<V>],
-            tokens: &TokenSet,
-            point_id: PointOffsetType,
-        ) -> bool {
-            // Check that all tokens are in document
-            tokens.tokens().iter().all(|token_id| {
-                let posting_list = &postings[*token_id as usize];
-                posting_list.visitor().contains(point_id)
-            })
-        }
-
-        match &self.postings {
-            ImmutablePostings::Ids(postings) => check_intersection(postings, tokens, point_id),
-            ImmutablePostings::WithPositions(postings) => {
-                check_intersection(postings, tokens, point_id)
-            }
         }
     }
 
@@ -228,10 +199,11 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
+        covered_points: &[AHashSet<PointOffsetType>],
         _hw_counter: &HardwareCounterCell,
     ) -> bool {
         match parsed_query {
-            ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id),
+            ParsedQuery::Tokens(_tokens) => self.check_has_subset(point_id, covered_points),
             ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id),
         }
     }
@@ -255,6 +227,19 @@ impl InvertedIndex for ImmutableInvertedIndex {
 
     fn get_token_id(&self, token: &str, _: &HardwareCounterCell) -> Option<TokenId> {
         self.vocab.get(token).copied()
+    }
+
+    fn token_point_ids(
+        &self,
+        token_ids: &[PointOffsetType],
+        _hw_counter: &HardwareCounterCell,
+    ) -> Vec<AHashSet<PointOffsetType>> {
+        token_ids
+            .iter()
+            .map(|token_id| self.postings.iter_ids(*token_id))
+            .map(|iter_opt| iter_opt.map(|iter| iter.collect()))
+            .map(|points_ids| points_ids.unwrap_or_default())
+            .collect()
     }
 }
 

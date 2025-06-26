@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
@@ -230,6 +231,7 @@ impl InvertedIndex for MutableInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
+        _covered_points: &[AHashSet<PointOffsetType>],
         _: &HardwareCounterCell,
     ) -> bool {
         match parsed_query {
@@ -267,5 +269,18 @@ impl InvertedIndex for MutableInvertedIndex {
 
     fn get_token_id(&self, token: &str, _hw_counter: &HardwareCounterCell) -> Option<TokenId> {
         self.vocab.get(token).copied()
+    }
+
+    fn token_point_ids(
+        &self,
+        token_ids: &[PointOffsetType],
+        _hw_counter: &HardwareCounterCell,
+    ) -> Vec<AHashSet<PointOffsetType>> {
+        token_ids
+            .iter()
+            .map(|token_id| self.get_tokens(*token_id))
+            .map(|iter_opt| iter_opt.map(|token_set| token_set.0.iter().copied().collect()))
+            .map(|points_ids| points_ids.unwrap_or_default())
+            .collect()
     }
 }
