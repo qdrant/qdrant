@@ -1016,9 +1016,12 @@ impl ShardReplicaSet {
             )
         );
 
-        let is_locally_disabled = self.is_locally_disabled(peer_id);
+        is_active_or_resharding && !self.is_locally_disabled(peer_id)
+    }
 
-        is_active_or_resharding && !is_locally_disabled
+    fn peer_is_initializing(&self, peer_id: PeerId) -> bool {
+        let is_initializing = matches!(self.peer_state(peer_id), Some(ReplicaState::Initializing));
+        is_initializing && !self.is_locally_disabled(peer_id)
     }
 
     fn is_locally_disabled(&self, peer_id: PeerId) -> bool {
