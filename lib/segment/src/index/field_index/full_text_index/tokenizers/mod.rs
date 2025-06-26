@@ -373,20 +373,19 @@ mod tests {
         });
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 3);
-        assert_eq!(tokens.first(), Some(&Cow::Borrowed("jīntiān")));
-        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("shì")));
-        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("xīngqīyī")));
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("今天")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("是")));
+        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("星期一")));
 
         tokens.clear();
 
         // Test stopwords getting applied
-        // TODO(multilingual): Chinese stopwords must be hanzi or stopword list must be in pinyin! <== Currently a bug!
-        let filter = StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["shì"])), false);
+        let filter = StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["是"])), false);
         MultilingualTokenizer::tokenize(text, true, &filter, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
-        assert_eq!(tokens.first(), Some(&Cow::Borrowed("jīntiān")));
-        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("xīngqīyī")));
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("今天")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("星期一")));
     }
 
     #[test]
