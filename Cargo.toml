@@ -129,8 +129,11 @@ pyroscope_pprofrs = "0.2.10"
 rstack-self = { version = "0.3.0", optional = true }
 
 [target.'cfg(all(not(target_env = "msvc"), any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
-tikv-jemallocator = { version = "0.6", features = ["stats", "unprefixed_malloc_on_supported_platforms", "background_threads"] }
+tikv-jemallocator = { version = "0.6", features = ["stats", "profiling", "unprefixed_malloc_on_supported_platforms", "background_threads"] }
 tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
+
+[target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
+jemalloc_pprof = "0.6"
 
 [workspace.lints.clippy]
 cast_lossless = "warn"
@@ -269,8 +272,11 @@ members = [
 ]
 
 [profile.release]
-lto = "fat"
+lto = "thin"
 codegen-units = 1
+
+# Used for pprof heap dump
+debug = "line-tables-only"
 
 # Inherit from release, because we are not rebuilding often,
 # and we don't want the huge binary sizes from debug builds.

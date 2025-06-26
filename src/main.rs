@@ -61,6 +61,14 @@ use crate::startup::{remove_started_file_indicator, touch_started_file_indicator
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+#[allow(non_upper_case_globals)]
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[unsafe(export_name = "malloc_conf")]
+pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
+
 const FULL_ACCESS: Access = Access::full("For main");
 
 /// Qdrant (read: quadrant ) is a vector similarity search engine.
