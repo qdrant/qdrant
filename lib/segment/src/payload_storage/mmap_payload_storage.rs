@@ -36,7 +36,7 @@ pub struct MmapPayloadStorage {
 
 impl MmapPayloadStorage {
     pub fn open_or_create(path: PathBuf, populate: bool) -> OperationResult<Self> {
-        let path = path.join(STORAGE_PATH);
+        let path = storage_dir(path);
         if path.exists() {
             Self::open(path, populate)
         } else {
@@ -274,9 +274,7 @@ impl PayloadStorage for MmapPayloadStorage {
     }
 }
 
-/// Find files related to this payload storage
-#[cfg(any(test, feature = "rocksdb"))]
-pub(crate) fn find_storage_files(segment_path: &Path) -> OperationResult<Vec<PathBuf>> {
-    let storage_path = segment_path.join(STORAGE_PATH);
-    Ok(common::disk::list_files(&storage_path)?)
+/// Get storage directory for this payload storage
+pub fn storage_dir<P: AsRef<Path>>(segment_path: P) -> PathBuf {
+    segment_path.as_ref().join(STORAGE_PATH)
 }

@@ -1395,8 +1395,7 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
 ) -> OperationResult<PayloadStorageEnum> {
     use common::counter::hardware_counter::HardwareCounterCell;
 
-    use crate::payload_storage::PayloadStorage;
-    use crate::payload_storage::mmap_payload_storage::find_storage_files;
+    use crate::payload_storage::{PayloadStorage, mmap_payload_storage};
 
     log::info!(
         "Migrating {} of payload storage from RocksDB into new format",
@@ -1433,21 +1432,12 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
         Ok(new_storage) => new_storage,
         // On migration error, clean up and remove all new storage files
         Err(err) => {
-            let files = find_storage_files(segment_path);
-            match files {
-                Ok(files) => {
-                    for file in files {
-                        if let Err(err) = std::fs::remove_file(&file) {
-                            log::error!(
-                                "Payload storage migration to mmap failed, failed to remove mmap file {} for cleanup: {err}",
-                                file.display(),
-                            );
-                        }
-                    }
-                }
-                Err(err) => {
+            let storage_dir = mmap_payload_storage::storage_dir(segment_path);
+            if storage_dir.is_dir() {
+                if let Err(err) = std::fs::remove_dir_all(&storage_dir) {
                     log::error!(
-                        "Payload storage migration to mmap failed, failed to list its storage files, they are left behind: {err}",
+                        "Payload storage migration to mmap failed, failed to remove mmap files in {} for cleanup: {err}",
+                        storage_dir.display(),
                     );
                 }
             }
