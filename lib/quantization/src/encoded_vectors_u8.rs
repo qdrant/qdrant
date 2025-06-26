@@ -509,7 +509,23 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     }
 
     fn encode_internal_vector(&self, id: u32) -> Option<EncodedQueryU8> {
+        let offset_difference = match self.metadata.vector_parameters.distance_type {
+            DistanceType::Dot => {
+                self.metadata.actual_dim as f32 * self.metadata.offset * self.metadata.offset
+            }
+            DistanceType::L1 => 0.0,
+            DistanceType::L2 => {
+                self.metadata.actual_dim as f32 * self.metadata.offset * self.metadata.offset
+            }
+        };
+        let offset_difference = if self.metadata.vector_parameters.invert {
+            -offset_difference
+        } else {
+            offset_difference
+        };
+
         let (query_offset, q_ptr) = self.get_vec_ptr(id);
+        let query_offset = query_offset + offset_difference;
         Some(EncodedQueryU8 {
             offset: query_offset,
             encoded_query: unsafe {
