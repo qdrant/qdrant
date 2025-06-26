@@ -111,7 +111,7 @@ mod test {
         let input = "日本語のテキストです。Qdrantのコードで単体テストで使用されています。";
         let mut out = vec![];
         tokenize(input, false, &StopwordsFilter::default(), |i| {
-            out.push(&i);
+            out.push(i.to_string());
         });
         assert_eq!(
             out,
@@ -143,7 +143,7 @@ mod test {
         let input = "日本語のテキストです。It's used in Qdrant's code in a unit test";
         let mut out = vec![];
         tokenize(input, false, &StopwordsFilter::default(), |i| {
-            out.push(&i);
+            out.push(i.to_string());
         });
         assert_eq!(
             out,

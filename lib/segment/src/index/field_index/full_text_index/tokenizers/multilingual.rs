@@ -113,7 +113,7 @@ impl MultilingualTokenizer {
     }
 }
 
-/// Applies `lowercase` to the given input, returing a cow.
+/// Applies `lowercase` to the given input, returning a cow.
 fn apply_casing<'a>(input: Cow<'a, str>, lowercase: bool) -> Cow<'a, str> {
     if lowercase {
         Cow::Owned(input.to_lowercase())
