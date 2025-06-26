@@ -214,7 +214,7 @@ impl InferenceService {
             }
             Err(error) => {
                 if let Some(status) = error.status() {
-                    (format!("{error}"), status)
+                    (error.to_string(), status)
                 } else {
                     return Err(StorageError::service_error(format!(
                         "Failed to send inference request: {error}"
