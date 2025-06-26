@@ -370,9 +370,9 @@ mod tests {
             .unwrap();
 
             let hw = HardwareCounterCell::new();
-            for i in 0..vectors_count {
+            for (i, vector) in vector_data.iter().enumerate() {
                 // encode vector using the encode_query method
-                let query = encoded.encode_query(&vector_data[i]);
+                let query = encoded.encode_query(vector);
                 // encode vector using the encode_internal_vector method
                 let query_internal = encoded.encode_internal_vector(i as u32).unwrap();
 
