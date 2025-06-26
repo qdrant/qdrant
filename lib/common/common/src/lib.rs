@@ -2,6 +2,7 @@ pub mod bitpacking;
 pub mod bitpacking_links;
 pub mod bitpacking_ordered;
 pub mod budget;
+pub mod bytes;
 pub mod counter;
 pub mod cpu;
 pub mod defaults;

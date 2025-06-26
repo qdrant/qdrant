@@ -1399,8 +1399,8 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
     use crate::payload_storage::mmap_payload_storage::find_storage_files;
 
     log::info!(
-        "Migrating {} bytes of payload storage from RocksDB into new format",
-        old_storage.get_storage_size_bytes().unwrap_or(0),
+        "Migrating {} of payload storage from RocksDB into new format",
+        common::bytes::bytes_to_human(old_storage.get_storage_size_bytes().unwrap_or(0)),
     );
 
     fn migrate(
