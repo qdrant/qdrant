@@ -134,9 +134,9 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
 
         let mut str_tokens = Vec::new();
 
-        for value in values {
-            self.tokenizer.tokenize_doc(&value, |token| {
-                str_tokens.push(token.to_owned());
+        for value in &values {
+            self.tokenizer.tokenize_doc(value, |token| {
+                str_tokens.push(token);
             });
         }
 

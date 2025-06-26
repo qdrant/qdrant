@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::PathBuf;
 #[cfg(feature = "rocksdb")]
 use std::sync::Arc;
@@ -241,10 +242,10 @@ impl FullTextIndex {
         bincode::deserialize(data).unwrap()
     }
 
-    pub(super) fn serialize_document(tokens: Vec<String>) -> OperationResult<Vec<u8>> {
+    pub(super) fn serialize_document(tokens: Vec<Cow<str>>) -> OperationResult<Vec<u8>> {
         #[derive(Serialize)]
-        struct StoredDocument {
-            tokens: Vec<String>,
+        struct StoredDocument<'a> {
+            tokens: Vec<Cow<'a, str>>,
         }
         let doc = StoredDocument { tokens };
         serde_cbor::to_vec(&doc).map_err(|e| {
@@ -300,7 +301,7 @@ impl FullTextIndex {
     ) -> Option<ParsedQuery> {
         let mut tokens = AHashSet::new();
         self.get_tokenizer().tokenize_query(text, |token| {
-            tokens.insert(self.get_token(token, hw_counter));
+            tokens.insert(self.get_token(token.as_ref(), hw_counter));
         });
         let tokens = tokens.into_iter().collect::<Option<TokenSet>>()?;
         Some(ParsedQuery::Tokens(tokens))
@@ -309,7 +310,7 @@ impl FullTextIndex {
     pub fn parse_tokenset(&self, text: &str, hw_counter: &HardwareCounterCell) -> TokenSet {
         let mut tokenset = AHashSet::new();
         self.get_tokenizer().tokenize_doc(text, |token| {
-            if let Some(token_id) = self.get_token(token, hw_counter) {
+            if let Some(token_id) = self.get_token(token.as_ref(), hw_counter) {
                 tokenset.insert(token_id);
             }
         });
@@ -319,7 +320,7 @@ impl FullTextIndex {
     pub fn parse_document(&self, text: &str, hw_counter: &HardwareCounterCell) -> Document {
         let mut document_tokens = Vec::new();
         self.get_tokenizer().tokenize_doc(text, |token| {
-            if let Some(token_id) = self.get_token(token, hw_counter) {
+            if let Some(token_id) = self.get_token(token.as_ref(), hw_counter) {
                 document_tokens.push(token_id);
             }
         });

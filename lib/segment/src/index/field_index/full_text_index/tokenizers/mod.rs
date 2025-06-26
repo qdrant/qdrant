@@ -2,7 +2,7 @@ use std::borrow::Cow;
 mod japanese;
 mod multilingual;
 
-use charabia::Tokenize;
+use multilingual::MultilingualTokenizer;
 
 use crate::data_types::index::{TextIndexParams, TokenizerType};
 use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
@@ -10,8 +10,8 @@ use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
 struct WhiteSpaceTokenizer;
 
 impl WhiteSpaceTokenizer {
-    fn tokenize<C: FnMut(&str)>(
-        text: &str,
+    fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
+        text: &'a str,
         lowercase: bool,
         stopwords_filter: &StopwordsFilter,
         mut callback: C,
@@ -30,7 +30,7 @@ impl WhiteSpaceTokenizer {
             if stopwords_filter.is_stopword(&token_cow) {
                 continue;
             }
-            callback(&token_cow);
+            callback(token_cow);
         }
     }
 }
@@ -38,8 +38,8 @@ impl WhiteSpaceTokenizer {
 struct WordTokenizer;
 
 impl WordTokenizer {
-    fn tokenize<C: FnMut(&str)>(
-        text: &str,
+    fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
+        text: &'a str,
         lowercase: bool,
         stopwords_filter: &StopwordsFilter,
         mut callback: C,
@@ -59,7 +59,7 @@ impl WordTokenizer {
                 continue;
             }
 
-            callback(&token_cow);
+            callback(token_cow);
         }
     }
 }
@@ -67,8 +67,8 @@ impl WordTokenizer {
 struct PrefixTokenizer;
 
 impl PrefixTokenizer {
-    fn tokenize<C: FnMut(&str)>(
-        text: &str,
+    fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
+        text: &'a str,
         lowercase: bool,
         stopwords_filter: &StopwordsFilter,
         min_ngram: usize,
@@ -89,11 +89,11 @@ impl PrefixTokenizer {
                 }
 
                 for n in min_ngram..=max_ngram {
-                    let ngram = word_cow.char_indices().map(|(i, _)| i).nth(n);
+                    let ngram = word_cow.as_ref().char_indices().map(|(i, _)| i).nth(n);
                     match ngram {
-                        Some(end) => callback(&word_cow[..end]),
+                        Some(end) => callback(truncate_cow_ref(&word_cow, end)),
                         None => {
-                            callback(&word_cow);
+                            callback(word_cow);
                             break;
                         }
                     }
@@ -117,8 +117,8 @@ impl PrefixTokenizer {
     /// Query tokens: `"hel"`   -> `["hel"]`
     /// Query tokens: `"hell"`  -> `["hell"]`
     /// Query tokens: `"hello"` -> `["hello"]`
-    fn tokenize_query<C: FnMut(&str)>(
-        text: &str,
+    fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(
+        text: &'a str,
         lowercase: bool,
         max_ngram: usize,
         mut callback: C,
@@ -134,37 +134,32 @@ impl PrefixTokenizer {
 
                 let ngram = word_cow.char_indices().map(|(i, _)| i).nth(max_ngram);
                 match ngram {
-                    Some(end) => callback(&word_cow[..end]),
+                    Some(end) => callback(truncate_cow(word_cow, end)),
                     None => {
-                        callback(&word_cow);
+                        callback(word_cow);
                     }
                 }
             });
     }
 }
 
-struct MultilingualTokenizer;
+/// Truncates a string inside a `Cow<str>` to the given `len` preserving the `Borrowed` and `Owned` state.
+fn truncate_cow<'a>(inp: Cow<'a, str>, len: usize) -> Cow<'a, str> {
+    match inp {
+        Cow::Borrowed(b) => Cow::Borrowed(&b[..len]),
+        Cow::Owned(mut b) => {
+            b.truncate(len);
+            Cow::Owned(b)
+        }
+    }
+}
 
-impl MultilingualTokenizer {
-    fn tokenize<C: FnMut(&str)>(
-        text: &str,
-        lowercase: bool,
-        stopwords_filter: &StopwordsFilter,
-        mut callback: C,
-    ) {
-        text.tokenize().for_each(|token| {
-            if token.is_word() {
-                let lemma = if lowercase {
-                    Cow::Owned(token.lemma.to_lowercase())
-                } else {
-                    token.lemma
-                };
-                if stopwords_filter.is_stopword(&lemma) {
-                    return;
-                }
-                callback(&lemma);
-            }
-        });
+/// Truncates a string inside a `&Cow<str>` to the given `len` preserving the `Borrowed` and `Owned` state.
+/// `truncate_cow` should be preferred over this function if Cow doesn't need to be passed as reference.
+fn truncate_cow_ref<'a>(inp: &Cow<'a, str>, len: usize) -> Cow<'a, str> {
+    match inp {
+        Cow::Borrowed(b) => Cow::Borrowed(&b[..len]),
+        Cow::Owned(b) => Cow::Owned(b[..len].to_string()),
     }
 }
 
@@ -201,11 +196,11 @@ impl Tokenizer {
         }
     }
 
-    fn doc_token_filter<'a, C: FnMut(&str) + 'a>(
+    fn doc_token_filter<'a, 'b, C: FnMut(Cow<'b, str>) + 'a>(
         &'a self,
         mut callback: C,
-    ) -> impl FnMut(&str) + 'a {
-        move |token: &str| {
+    ) -> impl FnMut(Cow<'b, str>) + 'a {
+        move |token: Cow<'b, str>| {
             if self
                 .min_token_len
                 .map(|min_len| token.len() < min_len && token.chars().count() < min_len)
@@ -225,7 +220,7 @@ impl Tokenizer {
         }
     }
 
-    pub fn tokenize_doc<C: FnMut(&str)>(&self, text: &str, mut callback: C) {
+    pub fn tokenize_doc<'a, C: FnMut(Cow<'a, str>)>(&self, text: &'a str, mut callback: C) {
         let token_filter = self.doc_token_filter(&mut callback);
         match self.tokenizer_type {
             TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(
@@ -254,7 +249,7 @@ impl Tokenizer {
         }
     }
 
-    pub fn tokenize_query<C: FnMut(&str)>(&self, text: &str, mut callback: C) {
+    pub fn tokenize_query<C: FnMut(Cow<str>)>(&self, text: &str, mut callback: C) {
         let token_filter = self.doc_token_filter(&mut callback);
         match self.tokenizer_type {
             TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(
@@ -292,11 +287,12 @@ mod tests {
         let text = "hello world";
         let mut tokens = Vec::new();
         WhiteSpaceTokenizer::tokenize(text, true, &StopwordsFilter::default(), |token| {
-            tokens.push(token.to_owned())
+            tokens.push(token)
         });
+
         assert_eq!(tokens.len(), 2);
-        assert_eq!(tokens.first(), Some(&"hello".to_owned()));
-        assert_eq!(tokens.get(1), Some(&"world".to_owned()));
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("hello")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("world")));
     }
 
     #[test]
@@ -304,13 +300,13 @@ mod tests {
         let text = "hello, world! Привет, мир!";
         let mut tokens = Vec::new();
         WordTokenizer::tokenize(text, true, &StopwordsFilter::default(), |token| {
-            tokens.push(token.to_owned())
+            tokens.push(token)
         });
         assert_eq!(tokens.len(), 4);
-        assert_eq!(tokens.first(), Some(&"hello".to_owned()));
-        assert_eq!(tokens.get(1), Some(&"world".to_owned()));
-        assert_eq!(tokens.get(2), Some(&"привет".to_owned()));
-        assert_eq!(tokens.get(3), Some(&"мир".to_owned()));
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("hello")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("world")));
+        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("привет")));
+        assert_eq!(tokens.get(3), Some(&Cow::Borrowed("мир")));
     }
 
     #[test]
@@ -318,59 +314,78 @@ mod tests {
         let text = "hello, мир!";
         let mut tokens = Vec::new();
         PrefixTokenizer::tokenize(text, true, &StopwordsFilter::default(), 1, 4, |token| {
-            tokens.push(token.to_owned())
+            tokens.push(token)
         });
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 7);
-        assert_eq!(tokens.first(), Some(&"h".to_owned()));
-        assert_eq!(tokens.get(1), Some(&"he".to_owned()));
-        assert_eq!(tokens.get(2), Some(&"hel".to_owned()));
-        assert_eq!(tokens.get(3), Some(&"hell".to_owned()));
-        assert_eq!(tokens.get(4), Some(&"м".to_owned()));
-        assert_eq!(tokens.get(5), Some(&"ми".to_owned()));
-        assert_eq!(tokens.get(6), Some(&"мир".to_owned()));
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("h")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("he")));
+        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("hel")));
+        assert_eq!(tokens.get(3), Some(&Cow::Borrowed("hell")));
+        assert_eq!(tokens.get(4), Some(&Cow::Borrowed("м")));
+        assert_eq!(tokens.get(5), Some(&Cow::Borrowed("ми")));
+        assert_eq!(tokens.get(6), Some(&Cow::Borrowed("мир")));
     }
 
     #[test]
     fn test_prefix_query_tokenizer() {
         let text = "hello, мир!";
         let mut tokens = Vec::new();
-        PrefixTokenizer::tokenize_query(text, true, 4, |token| tokens.push(token.to_owned()));
+        PrefixTokenizer::tokenize_query(text, true, 4, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
-        assert_eq!(tokens.first(), Some(&"hell".to_owned()));
-        assert_eq!(tokens.get(1), Some(&"мир".to_owned()));
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("hell")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("мир")));
     }
 
-    #[cfg(feature = "multiling-japanese")]
     #[test]
     fn test_multilingual_tokenizer_japanese() {
         let text = "本日の日付は";
         let mut tokens = Vec::new();
         MultilingualTokenizer::tokenize(text, true, &StopwordsFilter::default(), |token| {
-            tokens.push(token.to_owned())
+            tokens.push(token)
         });
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 4);
-        assert_eq!(tokens.first(), Some(&"本日".to_owned()));
-        assert_eq!(tokens.get(1), Some(&"の".to_owned()));
-        assert_eq!(tokens.get(2), Some(&"日付".to_owned()));
-        assert_eq!(tokens.get(3), Some(&"は".to_owned()));
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("本日")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("の")));
+        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("日付")));
+        assert_eq!(tokens.get(3), Some(&Cow::Borrowed("は")));
+
+        tokens.clear();
+
+        // Test stopwords getting applied
+        let filter =
+            StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["の", "は"])), false);
+        MultilingualTokenizer::tokenize(text, true, &filter, |token| tokens.push(token));
+        eprintln!("tokens = {tokens:#?}");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("本日")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("日付")));
     }
 
-    #[cfg(feature = "multiling-chinese")]
     #[test]
     fn test_multilingual_tokenizer_chinese() {
         let text = "今天是星期一";
         let mut tokens = Vec::new();
         MultilingualTokenizer::tokenize(text, true, &StopwordsFilter::default(), |token| {
-            tokens.push(token.to_owned())
+            tokens.push(token)
         });
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 3);
-        assert_eq!(tokens.first(), Some(&"jīntiān".to_owned()));
-        assert_eq!(tokens.get(1), Some(&"shì".to_owned()));
-        assert_eq!(tokens.get(2), Some(&"xīngqīyī".to_owned()));
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("今天")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("是")));
+        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("星期一")));
+
+        tokens.clear();
+
+        // Test stopwords getting applied
+        let filter = StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["是"])), false);
+        MultilingualTokenizer::tokenize(text, true, &filter, |token| tokens.push(token));
+        eprintln!("tokens = {tokens:#?}");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("今天")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("星期一")));
     }
 
     #[test]
@@ -378,14 +393,14 @@ mod tests {
         let text = "มาทำงานกันเถอะ";
         let mut tokens = Vec::new();
         MultilingualTokenizer::tokenize(text, true, &StopwordsFilter::default(), |token| {
-            tokens.push(token.to_owned())
+            tokens.push(token)
         });
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 4);
-        assert_eq!(tokens.first(), Some(&"มา".to_owned()));
-        assert_eq!(tokens.get(1), Some(&"ทางาน".to_owned()));
-        assert_eq!(tokens.get(2), Some(&"กน".to_owned()));
-        assert_eq!(tokens.get(3), Some(&"เถอะ".to_owned()));
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("มา")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("ทางาน")));
+        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("กน")));
+        assert_eq!(tokens.get(3), Some(&Cow::Borrowed("เถอะ")));
     }
 
     #[test]
@@ -393,15 +408,15 @@ mod tests {
         let text = "What are you waiting for?";
         let mut tokens = Vec::new();
         MultilingualTokenizer::tokenize(text, true, &StopwordsFilter::default(), |token| {
-            tokens.push(token.to_owned())
+            tokens.push(token)
         });
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 5);
-        assert_eq!(tokens.first(), Some(&"what".to_owned()));
-        assert_eq!(tokens.get(1), Some(&"are".to_owned()));
-        assert_eq!(tokens.get(2), Some(&"you".to_owned()));
-        assert_eq!(tokens.get(3), Some(&"waiting".to_owned()));
-        assert_eq!(tokens.get(4), Some(&"for".to_owned()));
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("what")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("are")));
+        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("you")));
+        assert_eq!(tokens.get(3), Some(&Cow::Borrowed("waiting")));
+        assert_eq!(tokens.get(4), Some(&Cow::Borrowed("for")));
     }
 
     #[test]
@@ -421,16 +436,16 @@ mod tests {
 
         let tokenizer = Tokenizer::new(&params);
 
-        tokenizer.tokenize_doc(text, |token| tokens.push(token.to_owned()));
+        tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 7);
-        assert_eq!(tokens.first(), Some(&"h".to_owned()));
-        assert_eq!(tokens.get(1), Some(&"he".to_owned()));
-        assert_eq!(tokens.get(2), Some(&"hel".to_owned()));
-        assert_eq!(tokens.get(3), Some(&"hell".to_owned()));
-        assert_eq!(tokens.get(4), Some(&"м".to_owned()));
-        assert_eq!(tokens.get(5), Some(&"ми".to_owned()));
-        assert_eq!(tokens.get(6), Some(&"мир".to_owned()));
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("h")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("he")));
+        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("hel")));
+        assert_eq!(tokens.get(3), Some(&Cow::Borrowed("hell")));
+        assert_eq!(tokens.get(4), Some(&Cow::Borrowed("м")));
+        assert_eq!(tokens.get(5), Some(&Cow::Borrowed("ми")));
+        assert_eq!(tokens.get(6), Some(&Cow::Borrowed("мир")));
     }
 
     #[test]
@@ -451,20 +466,20 @@ mod tests {
 
         let tokenizer = Tokenizer::new(&params);
 
-        tokenizer.tokenize_doc(text, |token| tokens.push(token.to_owned()));
+        tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
 
         // Check that stopwords are filtered out
-        assert!(!tokens.contains(&"the".to_owned()));
-        assert!(!tokens.contains(&"over".to_owned()));
+        assert!(!tokens.contains(&Cow::Borrowed("the")));
+        assert!(!tokens.contains(&Cow::Borrowed("over")));
 
         // Check that non-stopwords are present
-        assert!(tokens.contains(&"quick".to_owned()));
-        assert!(tokens.contains(&"brown".to_owned()));
-        assert!(tokens.contains(&"fox".to_owned()));
-        assert!(tokens.contains(&"jumps".to_owned()));
-        assert!(tokens.contains(&"lazy".to_owned()));
-        assert!(tokens.contains(&"dog".to_owned()));
+        assert!(tokens.contains(&Cow::Borrowed("quick")));
+        assert!(tokens.contains(&Cow::Borrowed("brown")));
+        assert!(tokens.contains(&Cow::Borrowed("fox")));
+        assert!(tokens.contains(&Cow::Borrowed("jumps")));
+        assert!(tokens.contains(&Cow::Borrowed("lazy")));
+        assert!(tokens.contains(&Cow::Borrowed("dog")));
     }
 
     #[test]
@@ -492,15 +507,15 @@ mod tests {
 
             let tokenizer = Tokenizer::new(&params);
 
-            tokenizer.tokenize_doc(text, |token| tokens.push(token.to_owned()));
+            tokenizer.tokenize_doc(text, |token| tokens.push(token));
 
             // Check that stopwords are filtered out
-            assert!(!tokens.contains(&"you".to_owned()));
-            assert!(!tokens.contains(&"ll".to_owned()));
-            assert!(!tokens.contains(&"you'll".to_owned()));
+            assert!(!tokens.contains(&Cow::Borrowed("you")));
+            assert!(!tokens.contains(&Cow::Borrowed("ll")));
+            assert!(!tokens.contains(&Cow::Borrowed("you'll")));
 
             // Check that non-stopwords are present
-            assert!(tokens.contains(&"town".to_owned()));
+            assert!(tokens.contains(&Cow::Borrowed("town")));
         }
     }
 
@@ -525,22 +540,22 @@ mod tests {
         };
 
         let tokenizer = Tokenizer::new(&params);
-        tokenizer.tokenize_doc(text, |token| tokens.push(token.to_owned()));
+        tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
 
         // Check that English stopwords are filtered out
-        assert!(!tokens.contains(&"the".to_owned()));
-        assert!(!tokens.contains(&"over".to_owned()));
+        assert!(!tokens.contains(&Cow::Borrowed("the")));
+        assert!(!tokens.contains(&Cow::Borrowed("over")));
 
         // Check that custom stopwords are filtered out
-        assert!(!tokens.contains(&"quick".to_owned()));
-        assert!(!tokens.contains(&"fox".to_owned()));
+        assert!(!tokens.contains(&Cow::Borrowed("quick")));
+        assert!(!tokens.contains(&Cow::Borrowed("fox")));
 
         // Check that non-stopwords are present
-        assert!(tokens.contains(&"brown".to_owned()));
-        assert!(tokens.contains(&"jumps".to_owned()));
-        assert!(tokens.contains(&"lazy".to_owned()));
-        assert!(tokens.contains(&"dog".to_owned()));
+        assert!(tokens.contains(&Cow::Borrowed("brown")));
+        assert!(tokens.contains(&Cow::Borrowed("jumps")));
+        assert!(tokens.contains(&Cow::Borrowed("lazy")));
+        assert!(tokens.contains(&Cow::Borrowed("dog")));
     }
 
     #[test]
@@ -560,23 +575,23 @@ mod tests {
 
         let tokenizer = Tokenizer::new(&params);
 
-        tokenizer.tokenize_doc(text, |token| tokens.push(token.to_owned()));
+        tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
 
         // stopwords are filtered out
-        assert!(!tokens.contains(&"as".to_owned()));
-        assert!(!tokens.contains(&"the".to_owned()));
-        assert!(!tokens.contains(&"a".to_owned()));
+        assert!(!tokens.contains(&Cow::Borrowed("as")));
+        assert!(!tokens.contains(&Cow::Borrowed("the")));
+        assert!(!tokens.contains(&Cow::Borrowed("a")));
 
         // non-stopwords are present
-        assert!(tokens.contains(&"quick".to_owned()));
-        assert!(tokens.contains(&"brown".to_owned()));
-        assert!(tokens.contains(&"fox".to_owned()));
-        assert!(tokens.contains(&"jumps".to_owned()));
-        assert!(tokens.contains(&"over".to_owned()));
-        assert!(tokens.contains(&"lazy".to_owned()));
-        assert!(tokens.contains(&"dog".to_owned()));
-        assert!(tokens.contains(&"test".to_owned()));
+        assert!(tokens.contains(&Cow::Borrowed("quick")));
+        assert!(tokens.contains(&Cow::Borrowed("brown")));
+        assert!(tokens.contains(&Cow::Borrowed("fox")));
+        assert!(tokens.contains(&Cow::Borrowed("jumps")));
+        assert!(tokens.contains(&Cow::Borrowed("over")));
+        assert!(tokens.contains(&Cow::Borrowed("lazy")));
+        assert!(tokens.contains(&Cow::Borrowed("dog")));
+        assert!(tokens.contains(&Cow::Borrowed("test")));
     }
 
     #[test]
@@ -597,20 +612,20 @@ mod tests {
 
         let tokenizer = Tokenizer::new(&params);
 
-        tokenizer.tokenize_doc(text, |token| tokens.push(token.to_owned()));
+        tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
 
         // Check that English stopwords are filtered out
-        assert!(!tokens.contains(&"the".to_owned()));
-        assert!(!tokens.contains(&"over".to_owned()));
+        assert!(!tokens.contains(&Cow::Borrowed("the")));
+        assert!(!tokens.contains(&Cow::Borrowed("over")));
 
         // Check that non-stopwords are present
-        assert!(tokens.contains(&"quick".to_owned()));
-        assert!(tokens.contains(&"brown".to_owned()));
-        assert!(tokens.contains(&"fox".to_owned()));
-        assert!(tokens.contains(&"jumps".to_owned()));
-        assert!(tokens.contains(&"lazy".to_owned()));
-        assert!(tokens.contains(&"dog".to_owned()));
+        assert!(tokens.contains(&Cow::Borrowed("quick")));
+        assert!(tokens.contains(&Cow::Borrowed("brown")));
+        assert!(tokens.contains(&Cow::Borrowed("fox")));
+        assert!(tokens.contains(&Cow::Borrowed("jumps")));
+        assert!(tokens.contains(&Cow::Borrowed("lazy")));
+        assert!(tokens.contains(&Cow::Borrowed("dog")));
     }
 
     #[test]
@@ -634,27 +649,27 @@ mod tests {
 
         let tokenizer = Tokenizer::new(&params);
 
-        tokenizer.tokenize_doc(text, |token| tokens.push(token.to_owned()));
+        tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
 
         // Check that English stopwords are filtered out
-        assert!(!tokens.contains(&"the".to_owned()));
-        assert!(!tokens.contains(&"over".to_owned()));
+        assert!(!tokens.contains(&Cow::Borrowed("the")));
+        assert!(!tokens.contains(&Cow::Borrowed("over")));
 
         // Check that Spanish stopwords are filtered out
-        assert!(!tokens.contains(&"y".to_owned()));
-        assert!(!tokens.contains(&"de".to_owned()));
+        assert!(!tokens.contains(&Cow::Borrowed("y")));
+        assert!(!tokens.contains(&Cow::Borrowed("de")));
 
         // Check that custom stopwords are filtered out
-        assert!(!tokens.contains(&"i'd".to_owned()));
+        assert!(!tokens.contains(&Cow::Borrowed("i'd")));
 
         // Check that non-stopwords are present
-        assert!(tokens.contains(&"quick".to_owned()));
-        assert!(tokens.contains(&"brown".to_owned()));
-        assert!(tokens.contains(&"fox".to_owned()));
-        assert!(tokens.contains(&"jumps".to_owned()));
-        assert!(tokens.contains(&"lazy".to_owned()));
-        assert!(tokens.contains(&"dog".to_owned()));
+        assert!(tokens.contains(&Cow::Borrowed("quick")));
+        assert!(tokens.contains(&Cow::Borrowed("brown")));
+        assert!(tokens.contains(&Cow::Borrowed("fox")));
+        assert!(tokens.contains(&Cow::Borrowed("jumps")));
+        assert!(tokens.contains(&Cow::Borrowed("lazy")));
+        assert!(tokens.contains(&Cow::Borrowed("dog")));
     }
 
     #[test]
@@ -674,22 +689,22 @@ mod tests {
 
         let tokenizer = Tokenizer::new(&params);
 
-        tokenizer.tokenize_doc(text, |token| tokens.push(token.to_owned()));
+        tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
 
         // Check that exact case stopwords are filtered out
-        assert!(!tokens.contains(&"The".to_owned()));
-        assert!(!tokens.contains(&"the".to_owned()));
+        assert!(!tokens.contains(&Cow::Borrowed("The")));
+        assert!(!tokens.contains(&Cow::Borrowed("the")));
 
         // Check that different case stopwords are not filtered out
-        assert!(tokens.contains(&"lazy".to_owned())); // "LAZY" is in stopwords, but "lazy" is not
+        assert!(tokens.contains(&Cow::Borrowed("lazy"))); // "LAZY" is in stopwords, but "lazy" is not
 
         // Check that non-stopwords are present
-        assert!(tokens.contains(&"quick".to_owned()));
-        assert!(tokens.contains(&"brown".to_owned()));
-        assert!(tokens.contains(&"fox".to_owned()));
-        assert!(tokens.contains(&"jumps".to_owned()));
-        assert!(tokens.contains(&"over".to_owned()));
-        assert!(tokens.contains(&"dog".to_owned()));
+        assert!(tokens.contains(&Cow::Borrowed("quick")));
+        assert!(tokens.contains(&Cow::Borrowed("brown")));
+        assert!(tokens.contains(&Cow::Borrowed("fox")));
+        assert!(tokens.contains(&Cow::Borrowed("jumps")));
+        assert!(tokens.contains(&Cow::Borrowed("over")));
+        assert!(tokens.contains(&Cow::Borrowed("dog")));
     }
 }
