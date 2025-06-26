@@ -105,7 +105,6 @@ charabia = { version = "0.9.3", default-features = false, features = [
     "thai",
     "chinese-segmentation",
     "chinese-normalization",
-    "chinese-normalization-pinyin",
 ] }
 
 gridstore = { path = "../gridstore" }
