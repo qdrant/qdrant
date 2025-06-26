@@ -3,6 +3,8 @@ use std::sync::LazyLock;
 
 use vaporetto::{Model, Predictor, Sentence};
 
+use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
+
 /// Vaporetto prediction model. Source: https://github.com/daac-tools/vaporetto-models/releases/tag/v0.5.0
 const MODEL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -35,29 +37,48 @@ impl JapaneseTokenizer {
         Self { predictor }
     }
 
-    fn tokenize<C: FnMut(Cow<str>)>(&self, input: &str, mut cb: C) {
+    fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
+        &self,
+        input: &'a str,
+        lowercase: bool,
+        stopwords_filter: &StopwordsFilter,
+        mut cb: C,
+    ) {
         let Ok(mut s) = Sentence::from_raw(Cow::Borrowed(input)) else {
             return;
         };
 
         self.predictor.predict(&mut s);
 
+        // TODO(multilingual): Implement similar method to `iter_tokens()` that allows returning borrowed Cows instead of needlessly cloning here.
         for i in s.iter_tokens() {
             let surface = i.surface();
 
             // Skip if all characters are not alphanumeric or if the surface is empty.
-            if surface.chars().all(|char| !char.is_alphabetic()) {
+            if stopwords_filter.is_stopword(surface)
+                || surface.chars().all(|char| !char.is_alphabetic())
+            {
                 continue;
             }
 
-            cb(Cow::Borrowed(surface));
+            let surface = if lowercase {
+                Cow::Owned(surface.to_lowercase())
+            } else {
+                Cow::Owned(surface.to_string())
+            };
+            cb(surface);
         }
     }
 }
 
 /// Tokenizes the given `input` of Japanese text and calls `cb` with each tokens.
-pub fn tokenize<C: FnMut(Cow<str>)>(input: &str, cb: C) {
-    GLOBAL_JAPANESE_TOKENIZER.tokenize(input, cb);
+pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
+    input: &'a str,
+    lowercase: bool,
+    stopwords_filter: &StopwordsFilter,
+    cb: C,
+) {
+    GLOBAL_JAPANESE_TOKENIZER.tokenize(input, lowercase, stopwords_filter, cb);
 }
 
 #[cfg(test)]
@@ -89,7 +110,7 @@ mod test {
     fn test_tokenization() {
         let input = "日本語のテキストです。Qdrantのコードで単体テストで使用されています。";
         let mut out = vec![];
-        tokenize(input, |i| {
+        tokenize(input, false, &StopwordsFilter::default(), |i| {
             out.push(i.to_string());
         });
         assert_eq!(
@@ -121,7 +142,7 @@ mod test {
     fn test_tokenization_partially_japanese() {
         let input = "日本語のテキストです。It's used in Qdrant's code in a unit test";
         let mut out = vec![];
-        tokenize(input, |i| {
+        tokenize(input, false, &StopwordsFilter::default(), |i| {
             out.push(i.to_string());
         });
         assert_eq!(
