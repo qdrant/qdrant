@@ -321,8 +321,42 @@ pub trait InvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
+        covered_points: &[AHashSet<PointOffsetType>],
         hw_counter: &HardwareCounterCell,
     ) -> bool;
+
+    fn check_has_subset(
+        &self,
+        point_id: PointOffsetType,
+        covered_points: &[AHashSet<PointOffsetType>],
+    ) -> bool {
+        // check presence of the document
+        if self.values_is_empty(point_id) {
+            return false;
+        }
+
+        // Check that all tokens are in document
+        covered_points
+            .iter()
+            .all(|points_for_token| points_for_token.contains(&point_id))
+    }
+
+    fn query_token_point_ids(
+        &self,
+        parsed_query: &ParsedQuery,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<AHashSet<PointOffsetType>> {
+        match parsed_query {
+            ParsedQuery::Tokens(tokens) => self.token_point_ids(&tokens.0, hw_counter),
+            ParsedQuery::Phrase(phrase) => self.token_point_ids(&phrase.0, hw_counter),
+        }
+    }
+
+    fn token_point_ids(
+        &self,
+        token_ids: &[PointOffsetType],
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<AHashSet<PointOffsetType>>;
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 

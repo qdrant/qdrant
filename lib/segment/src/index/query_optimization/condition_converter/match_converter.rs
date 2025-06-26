@@ -267,8 +267,10 @@ fn get_match_text_checker<const IS_PHRASE: bool>(
                 return Some(Box::new(|_| false));
             };
 
+            let covered_points = full_text_index.get_query_posting(&parsed_query, &hw_counter);
+
             Some(Box::new(move |point_id: PointOffsetType| {
-                full_text_index.check_match(&parsed_query, point_id, &hw_counter)
+                full_text_index.check_match(&parsed_query, point_id, &covered_points, &hw_counter)
             }))
         }
         FieldIndex::BoolIndex(_)

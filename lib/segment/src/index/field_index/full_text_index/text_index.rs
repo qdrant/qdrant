@@ -197,22 +197,47 @@ impl FullTextIndex {
         }
     }
 
+    pub fn get_query_posting(
+        &self,
+        parse_query: &ParsedQuery,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<AHashSet<PointOffsetType>> {
+        match self {
+            Self::Mutable(index) => index
+                .inverted_index
+                .query_token_point_ids(parse_query, hw_counter),
+            Self::Immutable(index) => index
+                .inverted_index
+                .query_token_point_ids(parse_query, hw_counter),
+            Self::Mmap(index) => index
+                .inverted_index
+                .query_token_point_ids(parse_query, hw_counter),
+        }
+    }
+
     pub fn check_match(
         &self,
         query: &ParsedQuery,
         point_id: PointOffsetType,
+        covered_points: &[AHashSet<PointOffsetType>],
         hw_counter: &HardwareCounterCell,
     ) -> bool {
         match self {
-            Self::Mutable(index) => index
-                .inverted_index
-                .check_match(query, point_id, hw_counter),
-            Self::Immutable(index) => index
-                .inverted_index
-                .check_match(query, point_id, hw_counter),
-            Self::Mmap(index) => index
-                .inverted_index
-                .check_match(query, point_id, hw_counter),
+            Self::Mutable(index) => {
+                index
+                    .inverted_index
+                    .check_match(query, point_id, covered_points, hw_counter)
+            }
+            Self::Immutable(index) => {
+                index
+                    .inverted_index
+                    .check_match(query, point_id, covered_points, hw_counter)
+            }
+            Self::Mmap(index) => {
+                index
+                    .inverted_index
+                    .check_match(query, point_id, covered_points, hw_counter)
+            }
         }
     }
 
