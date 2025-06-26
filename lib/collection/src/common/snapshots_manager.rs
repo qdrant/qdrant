@@ -60,7 +60,7 @@ impl SnapshotStorageManager {
                 Ok(SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS))
             }
             SnapshotsStorageConfig::S3 => {
-                let mut builder = AmazonS3Builder::new();
+                let mut builder = AmazonS3Builder::from_env();
                 if let Some(s3_config) = &snapshots_config.s3_config {
                     builder = builder.with_bucket_name(&s3_config.bucket);
 
