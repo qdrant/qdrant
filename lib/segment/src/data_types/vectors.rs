@@ -34,6 +34,14 @@ impl VectorInternal {
             VectorInternal::MultiDense(multivec) => multivec.vectors_count(),
         }
     }
+
+    pub fn as_vector_ref(&self) -> VectorRef<'_> {
+        match self {
+            VectorInternal::Dense(dense) => VectorRef::Dense(dense.as_slice()),
+            VectorInternal::Sparse(sparse) => VectorRef::Sparse(sparse),
+            VectorInternal::MultiDense(multivec) => VectorRef::MultiDense(multivec.into()),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -518,6 +526,18 @@ impl VectorStructInternal {
                 (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(v))
             }
             VectorStructInternal::Named(v) => v.get(name).map(VectorRef::from),
+        }
+    }
+
+    pub fn take(self, name: &VectorName) -> Option<VectorInternal> {
+        match self {
+            VectorStructInternal::Single(v) => {
+                (name == DEFAULT_VECTOR_NAME).then_some(VectorInternal::Dense(v))
+            }
+            VectorStructInternal::MultiDense(v) => {
+                (name == DEFAULT_VECTOR_NAME).then_some(VectorInternal::MultiDense(v))
+            }
+            VectorStructInternal::Named(mut v) => v.remove(name),
         }
     }
 }

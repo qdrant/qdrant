@@ -36,10 +36,12 @@ pub fn new_volatile_dense_vector_storage(dim: usize, distance: Distance) -> Vect
     VectorStorageEnum::DenseVolatile(VolatileDenseVectorStorage::new(dim, distance))
 }
 
+#[cfg(test)]
 pub fn new_volatile_dense_byte_vector_storage(dim: usize, distance: Distance) -> VectorStorageEnum {
     VectorStorageEnum::DenseVolatileByte(VolatileDenseVectorStorage::new(dim, distance))
 }
 
+#[cfg(test)]
 pub fn new_volatile_dense_half_vector_storage(dim: usize, distance: Distance) -> VectorStorageEnum {
     VectorStorageEnum::DenseVolatileHalf(VolatileDenseVectorStorage::new(dim, distance))
 }
