@@ -1356,7 +1356,6 @@ fn migrate_rocksdb_payload_storage(
     let old_storage = std::mem::replace(&mut *segment.payload_storage.borrow_mut(), new_storage);
 
     // Update storage type
-    // TODO(in-memory-mmap-payload-storage): once in-memory mmap payload storage is merged, select correct type here
     segment_state.config.payload_storage_type = if old_storage.is_on_disk() {
         PayloadStorageType::Mmap
     } else {
