@@ -16,7 +16,7 @@ use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
-use tokio::sync::OwnedMutexGuard;
+use tokio::sync::OwnedRwLockWriteGuard;
 
 use super::http_client::HttpClient;
 
@@ -321,7 +321,7 @@ pub async fn try_take_partial_snapshot_recovery_lock(
     shard_id: ShardId,
     access: &Access,
     pass: &VerificationPass,
-) -> Result<Option<OwnedMutexGuard<()>>, StorageError> {
+) -> Result<Option<OwnedRwLockWriteGuard<()>>, StorageError> {
     let collection_pass = access
         .check_global_access(AccessRequirements::new().manage())?
         .issue_pass(collection_name);

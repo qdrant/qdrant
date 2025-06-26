@@ -66,18 +66,8 @@ impl ShardReplicaSet {
 
     pub fn try_take_partial_snapshot_recovery_lock(
         &self,
-    ) -> CollectionResult<tokio::sync::OwnedMutexGuard<()>> {
+    ) -> CollectionResult<tokio::sync::OwnedRwLockWriteGuard<()>> {
         self.partial_snapshot_meta.try_take_recovery_lock()
-    }
-
-    pub async fn take_search_write_lock(&self) -> tokio::sync::OwnedRwLockWriteGuard<()> {
-        self.partial_snapshot_meta.take_search_write_lock().await
-    }
-
-    pub fn try_take_search_read_lock(
-        &self,
-    ) -> CollectionResult<tokio::sync::OwnedRwLockReadGuard<()>> {
-        self.partial_snapshot_meta.try_take_search_read_lock()
     }
 
     pub fn restore_snapshot(
@@ -215,6 +205,13 @@ impl ShardReplicaSet {
         // TODO:
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
+
+        let _partial_snapshot_search_lock = match recovery_type {
+            RecoveryType::Full => None,
+            RecoveryType::Partial => {
+                Some(self.partial_snapshot_meta.take_search_write_lock().await)
+            }
+        };
 
         let mut local = cancel::future::cancel_on_token(cancel.clone(), self.local.write()).await?;
 
