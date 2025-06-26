@@ -29,7 +29,7 @@ pub type PeerMetadataById = HashMap<PeerId, PeerMetadata>;
 pub struct PerformanceConfig {
     pub max_search_threads: usize,
     #[serde(default)]
-    pub max_optimization_threads: usize,
+    pub max_optimization_runtime_threads: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_rate_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

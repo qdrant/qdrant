@@ -307,7 +307,7 @@ fn main() -> anyhow::Result<()> {
         .expect("Can't search create runtime.");
 
     let update_runtime =
-        create_update_runtime(settings.storage.performance.max_optimization_threads)
+        create_update_runtime(settings.storage.performance.max_optimization_runtime_threads)
             .expect("Can't optimizer create runtime.");
 
     let general_runtime =
