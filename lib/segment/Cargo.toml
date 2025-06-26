@@ -13,13 +13,6 @@ workspace = true
 
 [features]
 default = ["rocksdb"]
-multiling-chinese = [
-    "charabia/chinese-segmentation",
-    "charabia/chinese-normalization",
-    "charabia/chinese-normalization-pinyin",
-]
-multiling-japanese = ["charabia/japanese"]
-multiling-korean = ["charabia/korean"]
 testing = ["common/testing", "sparse/testing", "gpu/testing"]
 gpu = ["gpu/gpu"]
 rocksdb = ["dep:rocksdb"]
@@ -110,6 +103,9 @@ charabia = { version = "0.9.3", default-features = false, features = [
     "greek",
     "hebrew",
     "thai",
+    "chinese-segmentation",
+    "chinese-normalization",
+    "chinese-normalization-pinyin",
 ] }
 
 gridstore = { path = "../gridstore" }

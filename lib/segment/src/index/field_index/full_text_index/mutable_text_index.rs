@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -235,11 +236,11 @@ impl MutableFullTextIndex {
             return Ok(());
         }
 
-        let mut str_tokens = Vec::new();
+        let mut str_tokens: Vec<Cow<str>> = Vec::new();
 
-        for value in values {
-            self.tokenizer.tokenize_doc(&value, |token| {
-                str_tokens.push(token.to_owned());
+        for value in &values {
+            self.tokenizer.tokenize_doc(value, |token| {
+                str_tokens.push(token);
             });
         }
 

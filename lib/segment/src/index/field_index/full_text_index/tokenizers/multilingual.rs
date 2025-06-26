@@ -1,18 +1,32 @@
-// TODO(multilingual): Remove and ensure all is used or removed.
-#![allow(dead_code)]
-
 use std::borrow::Cow;
 
-use charabia::{Language, Script, StrDetection, Tokenize};
+use charabia::normalizer::{ClassifierOption, NormalizedTokenIter, NormalizerOption};
+use charabia::{Language, Script, Segment, StrDetection, Token};
 use rust_stemmers::{Algorithm, Stemmer};
 
 use super::japanese;
-use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
 
-pub struct MultilingualV2;
+pub struct MultilingualTokenizer;
 
-impl MultilingualV2 {
-    pub fn tokenize<C: FnMut(Cow<str>)>(input: &str, _config: &TextIndexParams, cb: C) {
+/// Default normalizer options from charabia(https://github.com/meilisearch/charabia/blob/main/charabia/src/normalizer/mod.rs#L82) used
+/// in `str::tokenize()`.
+const DEFAULT_NORMALIZER: NormalizerOption = NormalizerOption {
+    create_char_map: false,
+    lossy: true,
+    classifier: ClassifierOption {
+        stop_words: None,
+        separators: None,
+    },
+};
+
+impl MultilingualTokenizer {
+    pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
+        input: &'a str,
+        lowercase: bool,
+        stopwords_filter: &StopwordsFilter,
+        cb: C,
+    ) {
         let script = detect_script_of_language(input);
 
         // TODO(multilingual): Replace this with a value from `config`!
@@ -21,7 +35,7 @@ impl MultilingualV2 {
         // If the script of the input is latin and we don't need to stem early, tokenize as-is.
         // This skips language detection, reduces overhead, and improves performance.
         if script_is_latin(script) && !stem {
-            Self::tokenize_charabia(input, cb);
+            Self::tokenize_charabia(input, stopwords_filter, lowercase, cb);
             return;
         }
 
@@ -30,53 +44,88 @@ impl MultilingualV2 {
 
         // If the script of the input is Japanese, use vaporetto to segment.
         if language == Some(Language::Jpn) {
-            japanese::tokenize(input, cb);
+            japanese::tokenize(input, lowercase, stopwords_filter, cb);
             return;
         }
 
         // If language detected, stemming is enabled and available.
         if let Some(algo) = language.and_then(lang_to_algorithm) {
             if stem {
-                Self::tokenize_charabia_and_stem(input, algo, cb);
+                Self::tokenize_charabia_and_stem(input, algo, stopwords_filter, lowercase, cb);
                 return;
             }
         }
 
         // Fallback for other (asian) languages, such as Chinese or Thai.
-        Self::tokenize_charabia(input, cb);
+        Self::tokenize_charabia(input, stopwords_filter, lowercase, cb);
     }
 
     // Tokenize input using charabia and stem using rust-stemmers.
-    fn tokenize_charabia_and_stem<C>(input: &str, stemming_algo: Algorithm, mut cb: C)
-    where
-        C: FnMut(Cow<str>),
+    fn tokenize_charabia_and_stem<'a, C>(
+        input: &'a str,
+        stemming_algo: Algorithm,
+        stopwords_filter: &StopwordsFilter,
+        lowercase: bool,
+        cb: C,
+    ) where
+        C: FnMut(Cow<'a, str>),
     {
         let stemmer = Stemmer::create(stemming_algo);
-        for token in input.tokenize() {
-            let base = stemmer.stem_cow(token.lemma);
-
-            // Prevent whitespaces and punctuation treated as separate tokens in the output.
-            if base.chars().all(|char| !char.is_alphabetic()) {
-                continue;
-            }
-
-            cb(base)
-        }
+        Self::charabia(
+            input,
+            stopwords_filter,
+            lowercase,
+            |i| stemmer.stem_cow(i.lemma),
+            cb,
+        );
     }
 
     // Tokenize input using charabia without applying stemming.
-    fn tokenize_charabia<C: FnMut(Cow<str>)>(input: &str, mut cb: C) {
-        for token in input.tokenize() {
-            let lemma = token.lemma;
+    fn tokenize_charabia<'a, C: FnMut(Cow<'a, str>)>(
+        input: &'a str,
+        stopwords_filter: &StopwordsFilter,
+        lowercase: bool,
+        cb: C,
+    ) {
+        Self::charabia(input, stopwords_filter, lowercase, |i| i.lemma, cb);
+    }
+
+    // Tokenize input using charabia with a token transformation mapping.
+    fn charabia<'a, C: FnMut(Cow<'a, str>)>(
+        input: &'a str,
+        stopwords_filter: &StopwordsFilter,
+        lowercase: bool,
+        mut map_token: impl FnMut(Token<'a>) -> Cow<'a, str>,
+        mut cb: C,
+    ) {
+        for token in charabia_token_iter(input) {
+            let mapped = apply_casing(map_token(token), lowercase);
 
             // Prevent whitespaces and punctuation treated as separate tokens in the output.
-            if lemma.chars().all(|char| !char.is_alphabetic()) {
+            if stopwords_filter.is_stopword(&mapped)
+                || mapped.chars().all(|char| !char.is_alphabetic())
+            {
                 continue;
             }
 
-            cb(lemma)
+            cb(mapped)
         }
     }
+}
+
+/// Applies `lowercase` to the given input, returing a cow.
+fn apply_casing<'a>(input: Cow<'a, str>, lowercase: bool) -> Cow<'a, str> {
+    if lowercase {
+        Cow::Owned(input.to_lowercase())
+    } else {
+        input
+    }
+}
+
+// Tokenize::tokenize() function from charabia unrolled due to lifetime issues
+// when using .tokenize() on a `str` directly.
+fn charabia_token_iter(inp: &str) -> NormalizedTokenIter {
+    inp.segment().normalize(&DEFAULT_NORMALIZER)
 }
 
 // Detect the script of the given input using charabia.
@@ -182,9 +231,10 @@ mod test {
     }
 
     fn assert_tokenization(inp: &str, expected: &str) {
-        let default_params = TextIndexParams::default();
+        let empty_filter = StopwordsFilter::default();
+
         let mut out = vec![];
-        MultilingualV2::tokenize(inp, &default_params, |i| out.push(i.to_string()));
+        MultilingualTokenizer::tokenize(inp, false, &empty_filter, |i| out.push(i.to_string()));
         let expected: Vec<_> = expected.split('|').collect();
         for i in out.iter().zip(expected.iter()) {
             assert_eq!(i.0, i.1);
