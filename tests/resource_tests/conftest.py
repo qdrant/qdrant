@@ -162,6 +162,44 @@ def _create_qdrant_container(docker_client, qdrant_image, config=None):
         raise
 
 
+def _extract_compose_container_info(container, project_name):
+    """Extract container info from a docker-compose container."""
+    container.reload()
+    
+    # Extract ports - compose might map them differently
+    port_bindings = container.attrs['NetworkSettings']['Ports']
+    
+    # Find HTTP port (6333)
+    http_port = None
+    if '6333/tcp' in port_bindings and port_bindings['6333/tcp']:
+        http_port = int(port_bindings['6333/tcp'][0]['HostPort'])
+    else:
+        # Look for any exposed HTTP port
+        for port_key, bindings in port_bindings.items():
+            if bindings and port_key.endswith('/tcp'):
+                port_num = int(port_key.split('/')[0])
+                if 6000 <= port_num <= 7000:  # Reasonable range for Qdrant
+                    http_port = int(bindings[0]['HostPort'])
+                    break
+    
+    if not http_port:
+        raise RuntimeError(f"Could not find HTTP port mapping for container {container.name}")
+    
+    # Find gRPC port (6334) - optional
+    grpc_port = None
+    if '6334/tcp' in port_bindings and port_bindings['6334/tcp']:
+        grpc_port = int(port_bindings['6334/tcp'][0]['HostPort'])
+    
+    return {
+        "container": container,
+        "host": "127.0.0.1",
+        "name": container.name,
+        "http_port": http_port,
+        "grpc_port": grpc_port,
+        "compose_project": project_name
+    }
+
+
 def _wait_for_qdrant_ready(port: int = 6333, timeout: int = 30) -> bool:
     """Wait for Qdrant service to be ready."""
     start_time = time.time()
@@ -265,6 +303,172 @@ def qdrant(docker_client, qdrant_image, request):
     finally:
         # Cleanup
         _cleanup_container(container_info["container"])
+
+
+@pytest.fixture
+def qdrant_compose(docker_client, request):
+    """
+    Fixture for creating Qdrant containers using docker-compose.yaml files.
+    
+    Usage with parametrization:
+        @pytest.mark.parametrize("qdrant_compose", [
+            {"compose_file": "path/to/docker-compose.yaml"}
+        ], indirect=True)
+        def test_something(qdrant_compose):
+            # qdrant_compose is a dict with container info
+            host = qdrant_compose["host"]
+            port = qdrant_compose["http_port"]
+            
+        # With custom service name (if compose has multiple services):
+        @pytest.mark.parametrize("qdrant_compose", [
+            {"compose_file": "docker-compose.yaml", "service_name": "qdrant-node"}
+        ], indirect=True)
+        def test_something(qdrant_compose):
+            # Uses specific service from compose file
+            
+    Returns a dict with:
+        - container: The Docker container object
+        - host: The host address (always "127.0.0.1")
+        - name: The container name
+        - http_port: The HTTP API port (6333)
+        - grpc_port: The gRPC API port (6334)
+        - compose_project: The docker-compose project name (for cleanup)
+    """
+    if not hasattr(request, "param") or not isinstance(request.param, dict):
+        raise ValueError("qdrant_compose fixture requires parametrization with compose_file path")
+    
+    config = request.param
+    compose_file = config.get("compose_file")
+    if not compose_file:
+        raise ValueError("compose_file parameter is required")
+    
+    # Convert to absolute path if relative
+    compose_path = Path(compose_file)
+    if not compose_path.is_absolute():
+        # Resolve relative to the test file's directory
+        test_dir = Path(__file__).parent
+        compose_path = test_dir / compose_path
+    
+    if not compose_path.exists():
+        raise FileNotFoundError(f"Docker compose file not found: {compose_path}")
+    
+    # Generate unique project name to avoid conflicts
+    project_name = f"qdrant-test-{uuid.uuid4().hex[:8]}"
+    service_name = config.get("service_name")  # None means return all services
+    compose_cmd = None  # Initialize to handle cleanup in finally block
+    
+    try:
+        # Try docker compose v2 first, then fall back to docker-compose v1
+        compose_commands = [
+            ["docker", "compose"],  # v2
+            ["docker-compose"]      # v1
+        ]
+        
+        compose_cmd = None
+        for cmd_prefix in compose_commands:
+            test_cmd = cmd_prefix + ["version"]
+            result = subprocess.run(test_cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                compose_cmd = cmd_prefix
+                break
+        
+        if not compose_cmd:
+            raise RuntimeError("Neither 'docker compose' nor 'docker-compose' command found")
+        
+        # Get list of services from compose file
+        services_cmd = compose_cmd + ["-f", str(compose_path), "config", "--services"]
+        result = subprocess.run(services_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to get services from compose file: {result.stderr}")
+        
+        services = [s.strip() for s in result.stdout.strip().split('\n') if s.strip()]
+        service_count = len(services)
+        
+        # Start the compose project
+        compose_up_cmd = compose_cmd + [
+            "-f", str(compose_path),
+            "-p", project_name,
+            "up", "-d"
+        ]
+        
+        result = subprocess.run(compose_up_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to start docker-compose: {result.stderr}")
+        # Wait for ports to be assigned
+        time.sleep(2)
+
+        if service_count == 1:
+            # Single service compose file - always return single object
+            project_containers = docker_client.containers.list(filters={"name": project_name})
+            if not project_containers:
+                raise RuntimeError(f"No containers found for project: {project_name}")
+            
+            container = project_containers[0]
+            container_info = _extract_compose_container_info(container, project_name)
+            
+            # Wait for this specific container to be ready
+            if not _wait_for_qdrant_ready(port=container_info["http_port"], timeout=60):
+                raise RuntimeError("Qdrant failed to start within 60 seconds")
+            
+        else:
+            # Multiple services compose file
+            if service_name:
+                # Specific service requested - return single object
+                container_name_prefix = f"{project_name}-{service_name}"
+                containers = docker_client.containers.list(filters={"name": container_name_prefix})
+                if not containers:
+                    raise RuntimeError(f"No container found with prefix: {container_name_prefix}")
+                
+                container = containers[0]
+                container_info = _extract_compose_container_info(container, project_name)
+                
+                # Wait for this specific container to be ready
+                if not _wait_for_qdrant_ready(port=container_info["http_port"], timeout=60):
+                    raise RuntimeError("Qdrant failed to start within 60 seconds")
+                
+            else:
+                # No specific service - return array of all container info
+                project_containers = docker_client.containers.list(filters={"name": project_name})
+                if not project_containers:
+                    raise RuntimeError(f"No containers found for project: {project_name}")
+                
+                container_infos = []
+                for container in project_containers:
+                    try:
+                        container_info = _extract_compose_container_info(container, project_name)
+                        container_infos.append(container_info)
+                    except Exception as e:
+                        print(f"Warning: Could not extract info for container {container.name}: {e}")
+                        continue
+                
+                if not container_infos:
+                    raise RuntimeError(f"No valid Qdrant containers found in project: {project_name}")
+                
+                # Wait for all containers to be ready
+                for info in container_infos:
+                    if not _wait_for_qdrant_ready(port=info["http_port"], timeout=60):
+                        print(f"Warning: Container {info['name']} failed to start within 60 seconds")
+                
+                container_info = container_infos  # Return the array
+        
+        yield container_info
+        
+    finally:
+        # Clean up the compose project using the same command that started it
+        if compose_cmd:
+            compose_down_cmd = compose_cmd + [
+                "-f", str(compose_path),
+                "-p", project_name,
+                "down", "-v"  # Also remove volumes
+            ]
+            
+            result = subprocess.run(compose_down_cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"Warning: Failed to stop docker-compose: {result.stderr}")
+            else:
+                print(f"Cleaned up compose project: {project_name}")
+        else:
+            print(f"Warning: Could not clean up compose project {project_name} - compose command not found")
 
 
 @pytest.fixture
