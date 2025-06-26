@@ -518,14 +518,13 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
                 self.metadata.actual_dim as f32 * self.metadata.offset * self.metadata.offset
             }
         };
-        let offset_difference = if self.metadata.vector_parameters.invert {
-            -offset_difference
-        } else {
-            offset_difference
-        };
 
         let (query_offset, q_ptr) = self.get_vec_ptr(id);
-        let query_offset = query_offset + offset_difference;
+        let query_offset = if self.metadata.vector_parameters.invert {
+            query_offset + offset_difference
+        } else {
+            query_offset - offset_difference
+        };
         Some(EncodedQueryU8 {
             offset: query_offset,
             encoded_query: unsafe {

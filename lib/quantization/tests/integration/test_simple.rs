@@ -338,4 +338,52 @@ mod tests {
             assert!((score - orginal_score).abs() < error);
         }
     }
+
+    #[test]
+    fn test_sq_u8_encode_internal() {
+        let vectors_count = 129;
+        let vector_dim = 70;
+        let error = 1e-3;
+
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut vector_data: Vec<Vec<f32>> = Vec::new();
+        for _ in 0..vectors_count {
+            let vector: Vec<f32> = (0..vector_dim)
+                .map(|_| 2.0 * rng.random::<f32>() - 1.0)
+                .collect();
+            vector_data.push(vector);
+        }
+
+        for distance_type in [DistanceType::Dot, DistanceType::L2] {
+            let encoded = EncodedVectorsU8::encode(
+                vector_data.iter(),
+                Vec::<u8>::new(),
+                &VectorParameters {
+                    dim: vector_dim,
+                    count: vectors_count,
+                    distance_type,
+                    invert: false,
+                },
+                Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+
+            let hw = HardwareCounterCell::new();
+            for i in 0..vectors_count {
+                // encode vector using the encode_query method
+                let query = encoded.encode_query(&vector_data[i]);
+                // encode vector using the encode_internal_vector method
+                let query_internal = encoded.encode_internal_vector(i as u32).unwrap();
+
+                let score_query = encoded.score_point(&query, 0, &hw);
+                let score_internal_query = encoded.score_point(&query_internal, 0, &hw);
+                let score_internal = encoded.score_internal(i as u32, 0, &hw);
+
+                assert!((score_query - score_internal).abs() < error);
+                assert!((score_internal_query - score_internal).abs() < error);
+                assert!((score_query - score_internal_query).abs() < error);
+            }
+        }
+    }
 }
