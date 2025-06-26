@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import tarfile
@@ -306,7 +307,7 @@ def qdrant(docker_client, qdrant_image, request):
 
 
 @pytest.fixture
-def qdrant_compose(docker_client, request):
+def qdrant_compose(docker_client, qdrant_image, request):
     """
     Fixture for creating Qdrant containers using docker-compose.yaml files.
     
@@ -384,14 +385,18 @@ def qdrant_compose(docker_client, request):
         services = [s.strip() for s in result.stdout.strip().split('\n') if s.strip()]
         service_count = len(services)
         
-        # Start the compose project
+        # Start the compose project with custom image override
+        # Set environment variable to override the image in compose services
+        env = dict(os.environ)
+        env["QDRANT_IMAGE"] = qdrant_image
+        
         compose_up_cmd = compose_cmd + [
             "-f", str(compose_path),
             "-p", project_name,
             "up", "-d"
         ]
         
-        result = subprocess.run(compose_up_cmd, capture_output=True, text=True)
+        result = subprocess.run(compose_up_cmd, capture_output=True, text=True, env=env)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to start docker-compose: {result.stderr}")
         # Wait for ports to be assigned
