@@ -113,6 +113,9 @@ impl ShardReplicaSet {
     where
         F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
+        let _partial_snapshot_search_lock =
+            self.partial_snapshot_meta.try_take_search_read_lock()?;
+
         let local = self.local.read().await;
 
         let Some(local) = local.deref() else {
@@ -121,8 +124,6 @@ impl ShardReplicaSet {
                 self.shard_id
             )));
         };
-
-        let _partial_snapshot_search_lock = self.try_take_search_read_lock()?;
 
         read_operation(local.get()).await
     }
@@ -141,6 +142,11 @@ impl ShardReplicaSet {
             None => self.remotes.read().await,
         };
 
+        // We don't need to explicitly check partial snapshot recovery lock, because
+        // - partial snapshot recovery *write-locks* `local` shard when applying partial snapshot
+        // - this method *tries* to read-lock `local` shard, and if it's unavailable, fan-out
+        //   request to other replicas
+
         let local_read = self.local.try_read().ok();
         let local_read = local_read.as_ref().and_then(|local| local.as_ref());
 
@@ -148,8 +154,10 @@ impl ShardReplicaSet {
             Some(local) => {
                 let update_watcher = local.watch_for_update();
                 let is_local_ready = !local.is_update_in_progress();
+
                 (Some(local), is_local_ready, Some(update_watcher))
             }
+
             None => (None, false, None),
         };
 
@@ -157,8 +165,6 @@ impl ShardReplicaSet {
 
         let local_operation = if local_is_active {
             let local_operation = async {
-                let _partial_snapshot_search_lock = self.try_take_search_read_lock()?;
-
                 let Some(local) = local else {
                     return Err(CollectionError::service_error(format!(
                         "Local shard {} not found",
