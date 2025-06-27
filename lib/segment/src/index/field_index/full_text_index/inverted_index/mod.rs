@@ -345,22 +345,15 @@ pub trait InvertedIndex {
         hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
-    fn query_token_point_ids(
+    fn query_tokens_posting_intersection(
         &self,
         parsed_query: &ParsedQuery,
         hw_counter: &HardwareCounterCell,
     ) -> AHashSet<PointOffsetType> {
-        match parsed_query {
-            ParsedQuery::Tokens(tokens) => self.token_postings_intersection(&tokens.0, hw_counter),
-            ParsedQuery::Phrase(phrase) => self.token_postings_intersection(&phrase.0, hw_counter),
-        }
-    }
-
-    fn token_postings_intersection(
-        &self,
-        token_ids: &[PointOffsetType],
-        hw_counter: &HardwareCounterCell,
-    ) -> AHashSet<PointOffsetType> {
+        let token_ids = match parsed_query {
+            ParsedQuery::Tokens(tokens) => &tokens.0,
+            ParsedQuery::Phrase(phrase) => &phrase.0,
+        };
         let posting_iterators = token_ids
             .iter()
             .filter_map(|token_id| self.iter_point_ids(*token_id, hw_counter))
@@ -378,6 +371,7 @@ pub trait InvertedIndex {
     fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId>;
 }
 
+/// Intersect a collection of sorted iterators
 fn intersect_sorted<I, T>(mut iterators: Vec<I>) -> Vec<T>
 where
     I: Iterator<Item = T>,
