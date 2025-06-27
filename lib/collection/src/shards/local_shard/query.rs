@@ -437,7 +437,8 @@ impl LocalShard {
             search_runtime_handle,
             timeout,
             hw_measurement_acc,
-        ).await?;
+        )
+        .await?;
 
         // Handle score threshold
         if let Some(score_threshold) = score_threshold {

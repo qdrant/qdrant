@@ -72,7 +72,8 @@ pub async fn mmr_from_points_with_vector(
         search_runtime_handle,
         timeout,
         hw_measurement_acc,
-    ).await?;
+    )
+    .await?;
 
     Ok(maximum_marginal_relevance(
         candidates,
@@ -165,9 +166,12 @@ async fn max_similarities(
         Ok(max_scores)
     };
 
-    tokio::time::timeout(timeout, search_runtime_handle
-        .spawn_blocking(compute_max_scores))
-        .await.map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "max_similarities"))??
+    tokio::time::timeout(
+        timeout,
+        search_runtime_handle.spawn_blocking(compute_max_scores),
+    )
+    .await
+    .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "max_similarities"))??
 }
 
 /// Apply Maximum Marginal Relevance algorithm.
