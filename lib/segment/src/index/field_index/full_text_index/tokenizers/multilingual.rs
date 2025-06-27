@@ -3,7 +3,6 @@ use std::borrow::Cow;
 use charabia::normalizer::{ClassifierOption, NormalizedTokenIter, NormalizerOption};
 use charabia::{Language, Script, Segment, StrDetection};
 
-use super::stemmer::Stemmer;
 use super::{TokenizerConfig, japanese};
 
 /// Default normalizer options from charabia(https://github.com/meilisearch/charabia/blob/main/charabia/src/normalizer/mod.rs#L82) used
@@ -56,7 +55,7 @@ impl MultilingualTokenizer {
                 continue;
             }
 
-            cb(config.stem_if_applicable(token.lemma))
+            cb(config.stem_if_applicable(cased_token))
         }
     }
 }
@@ -118,6 +117,7 @@ const SUPPORTED_LANGUAGES: &[charabia::Language] = &[
 mod test {
     use charabia::Language;
 
+    use super::stemmer::Stemmer;
     use super::*;
     use crate::data_types::index::{SnowballLanguage, StemmingAlgorithm};
 
