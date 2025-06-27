@@ -117,9 +117,9 @@ const SUPPORTED_LANGUAGES: &[charabia::Language] = &[
 mod test {
     use charabia::Language;
 
-    use super::stemmer::Stemmer;
     use super::*;
     use crate::data_types::index::{SnowballLanguage, StemmingAlgorithm};
+    use crate::index::field_index::full_text_index::tokenizers::stemmer::Stemmer;
 
     #[test]
     fn test_lang_detection() {
