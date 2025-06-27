@@ -58,6 +58,13 @@ pub async fn mmr_from_points_with_vector(
         })
         .unzip();
 
+    debug_assert_eq!(vectors.len(), candidates.len());
+
+    if candidates.len() < 2 {
+        // can't compute MMR for less than 2 points, just return as is
+        return Ok(candidates);
+    }
+
     let max_similarities = max_similarities(
         collection_params,
         vectors,
@@ -77,6 +84,8 @@ pub async fn mmr_from_points_with_vector(
 
 /// Selects the maximal similarity for each point in the provided set,
 /// compared to each other within the same set.
+///
+/// Panics if there are less than 2 vectors.
 async fn max_similarities(
     collection_params: &CollectionParams,
     vectors: Vec<VectorInternal>,
@@ -89,7 +98,7 @@ async fn max_similarities(
 
     // if we have less than 2 points, we can't build a matrix
     if num_vectors < 2 {
-        todo!()
+        panic!("There should be at least two vectors to calculate max similarities")
     }
 
     // Create temporary vector storage
