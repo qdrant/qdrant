@@ -259,7 +259,6 @@ impl ShardHolder {
         resharding_key: ReshardKey,
         force: bool,
     ) -> CollectionResult<()> {
-
         let ReshardKey {
             uuid: _,
             direction,
