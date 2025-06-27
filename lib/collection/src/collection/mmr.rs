@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::top_k::TopK;
@@ -26,6 +28,8 @@ use crate::operations::universal_query::shard_query::MmrInternal;
 /// * `points_with_vector` - The points with vectors.
 /// * `mmr` - The MMR parameters.
 /// * `limit` - The maximum number of points to return.
+/// * `search_runtime_handle` - The runtime handle for searching.
+/// * `timeout` - The timeout for the operation.
 /// * `hw_measurement_acc` - The hardware measurement accumulator.
 ///
 /// # Returns
@@ -37,6 +41,7 @@ pub async fn mmr_from_points_with_vector(
     mmr: MmrInternal,
     limit: usize,
     search_runtime_handle: &Handle,
+    timeout: Duration,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<ScoredPoint>, CollectionError> {
     let (vectors, candidates): (Vec<_>, Vec<_>) = points_with_vector
@@ -58,6 +63,7 @@ pub async fn mmr_from_points_with_vector(
         vectors,
         mmr.using,
         search_runtime_handle,
+        timeout,
         hw_measurement_acc,
     ).await?;
 
@@ -76,6 +82,7 @@ async fn max_similarities(
     vectors: Vec<VectorInternal>,
     using: VectorNameBuf,
     search_runtime_handle: &Handle,
+    timeout: Duration,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<ScoreType>> {
     let num_vectors = vectors.len();
@@ -149,9 +156,9 @@ async fn max_similarities(
         Ok(max_scores)
     };
 
-    search_runtime_handle
-        .spawn_blocking(compute_max_scores)
-        .await?
+    tokio::time::timeout(timeout, search_runtime_handle
+        .spawn_blocking(compute_max_scores))
+        .await.map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "max_similarities"))??
 }
 
 /// Apply Maximum Marginal Relevance algorithm.

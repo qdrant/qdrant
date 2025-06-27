@@ -435,6 +435,7 @@ impl LocalShard {
             mmr,
             limit,
             search_runtime_handle,
+            timeout,
             hw_measurement_acc,
         ).await?;
 
