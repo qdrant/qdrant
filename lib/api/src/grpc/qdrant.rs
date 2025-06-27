@@ -866,6 +866,35 @@ pub struct TextIndexParams {
     /// If true - support phrase matching.
     #[prost(bool, optional, tag = "7")]
     pub phrase_matching: ::core::option::Option<bool>,
+    /// Set an algorithm for stemming.
+    #[prost(message, optional, tag = "8")]
+    pub stemming: ::core::option::Option<StemmingAlgorithm>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StemmingAlgorithm {
+    #[prost(oneof = "stemming_algorithm::StemmingParams", tags = "1")]
+    pub stemming_params: ::core::option::Option<stemming_algorithm::StemmingParams>,
+}
+/// Nested message and enum types in `StemmingAlgorithm`.
+pub mod stemming_algorithm {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum StemmingParams {
+        /// Parameters for snowball stemming
+        #[prost(message, tag = "1")]
+        SnowballParams(super::SnowballStemmingParams),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnowballStemmingParams {
+    /// Which language the algorithm should stem.
+    #[prost(string, tag = "1")]
+    pub language: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

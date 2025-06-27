@@ -210,6 +210,101 @@ pub struct TextIndexParams {
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+
+    /// Algorithm for stemming. Default: disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stemmer: Option<StemmingAlgorithm>,
+}
+
+/// Different stemming algorithms with their configs.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[serde(tag = "stemmer")]
+pub enum StemmingAlgorithm {
+    Snowball { language: SnowballLanguage },
+}
+
+/// Languages supported by snowball stemmer.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+pub enum SnowballLanguage {
+    #[serde(alias = "ar")]
+    Arabic,
+    #[serde(alias = "hy")]
+    Armenian,
+    #[serde(alias = "da")]
+    Danish,
+    #[serde(alias = "nl")]
+    Dutch,
+    #[serde(alias = "en")]
+    English,
+    #[serde(alias = "fi")]
+    Finnish,
+    #[serde(alias = "fr")]
+    French,
+    #[serde(alias = "de")]
+    German,
+    #[serde(alias = "el")]
+    Greek,
+    #[serde(alias = "hu")]
+    Hungarian,
+    #[serde(alias = "it")]
+    Italian,
+    #[serde(alias = "no")]
+    Norwegian,
+    #[serde(alias = "pt")]
+    Portuguese,
+    #[serde(alias = "ro")]
+    Romanian,
+    #[serde(alias = "ru")]
+    Russian,
+    #[serde(alias = "es")]
+    Spanish,
+    #[serde(alias = "sv")]
+    Swedish,
+    #[serde(alias = "ta")]
+    Tamil,
+    #[serde(alias = "tr")]
+    Turkish,
+}
+
+impl From<SnowballLanguage> for rust_stemmers::Algorithm {
+    fn from(value: SnowballLanguage) -> Self {
+        match value {
+            SnowballLanguage::Arabic => rust_stemmers::Algorithm::Arabic,
+            SnowballLanguage::Armenian => rust_stemmers::Algorithm::Armenian,
+            SnowballLanguage::Danish => rust_stemmers::Algorithm::Danish,
+            SnowballLanguage::Dutch => rust_stemmers::Algorithm::Dutch,
+            SnowballLanguage::English => rust_stemmers::Algorithm::English,
+            SnowballLanguage::Finnish => rust_stemmers::Algorithm::Finnish,
+            SnowballLanguage::French => rust_stemmers::Algorithm::French,
+            SnowballLanguage::German => rust_stemmers::Algorithm::German,
+            SnowballLanguage::Greek => rust_stemmers::Algorithm::Greek,
+            SnowballLanguage::Hungarian => rust_stemmers::Algorithm::Hungarian,
+            SnowballLanguage::Italian => rust_stemmers::Algorithm::Italian,
+            SnowballLanguage::Norwegian => rust_stemmers::Algorithm::Norwegian,
+            SnowballLanguage::Portuguese => rust_stemmers::Algorithm::Portuguese,
+            SnowballLanguage::Romanian => rust_stemmers::Algorithm::Romanian,
+            SnowballLanguage::Russian => rust_stemmers::Algorithm::Russian,
+            SnowballLanguage::Spanish => rust_stemmers::Algorithm::Spanish,
+            SnowballLanguage::Swedish => rust_stemmers::Algorithm::Swedish,
+            SnowballLanguage::Tamil => rust_stemmers::Algorithm::Tamil,
+            SnowballLanguage::Turkish => rust_stemmers::Algorithm::Turkish,
+        }
+    }
+}
+
+impl fmt::Display for SnowballLanguage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let json_string = serde_json::to_string(self).map_err(|_| fmt::Error)?;
+        f.write_str(json_string.trim_matches('"'))
+    }
+}
+
+impl FromStr for SnowballLanguage {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_str(&format!("\"{s}\""))
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone, PartialEq, Hash, Eq)]

@@ -66,10 +66,12 @@
     - [ScalarQuantization](#qdrant-ScalarQuantization)
     - [ShardKey](#qdrant-ShardKey)
     - [ShardTransferInfo](#qdrant-ShardTransferInfo)
+    - [SnowballStemmingParams](#qdrant-SnowballStemmingParams)
     - [SparseIndexConfig](#qdrant-SparseIndexConfig)
     - [SparseVectorConfig](#qdrant-SparseVectorConfig)
     - [SparseVectorConfig.MapEntry](#qdrant-SparseVectorConfig-MapEntry)
     - [SparseVectorParams](#qdrant-SparseVectorParams)
+    - [StemmingAlgorithm](#qdrant-StemmingAlgorithm)
     - [StopwordsSet](#qdrant-StopwordsSet)
     - [StrictModeConfig](#qdrant-StrictModeConfig)
     - [StrictModeMultivector](#qdrant-StrictModeMultivector)
@@ -1399,6 +1401,21 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+<a name="qdrant-SnowballStemmingParams"></a>
+
+### SnowballStemmingParams
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| language | [string](#string) |  | Which language the algorithm should stem. |
+
+
+
+
+
+
 <a name="qdrant-SparseIndexConfig"></a>
 
 ### SparseIndexConfig
@@ -1457,6 +1474,21 @@ Note: 1kB = 1 vector of size 256. |
 | ----- | ---- | ----- | ----------- |
 | index | [SparseIndexConfig](#qdrant-SparseIndexConfig) | optional | Configuration of sparse index |
 | modifier | [Modifier](#qdrant-Modifier) | optional | If set - apply modifier to the vector values |
+
+
+
+
+
+
+<a name="qdrant-StemmingAlgorithm"></a>
+
+### StemmingAlgorithm
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| snowball_params | [SnowballStemmingParams](#qdrant-SnowballStemmingParams) |  | Parameters for snowball stemming |
 
 
 
@@ -1618,6 +1650,7 @@ Note: 1kB = 1 vector of size 256. |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
 | stopwords | [StopwordsSet](#qdrant-StopwordsSet) | optional | Stopwords for the text index |
 | phrase_matching | [bool](#bool) | optional | If true - support phrase matching. |
+| stemming | [StemmingAlgorithm](#qdrant-StemmingAlgorithm) | optional | Set an algorithm for stemming. |
 
 
 
