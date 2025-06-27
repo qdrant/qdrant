@@ -20,10 +20,10 @@ use super::postings_iterator::intersect_compressed_postings_iterator;
 use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::full_text_index::inverted_index::Document;
 use crate::index::field_index::full_text_index::inverted_index::postings_iterator::{
     check_compressed_postings_phrase, intersect_compressed_postings_phrase_iterator,
 };
-use crate::index::field_index::full_text_index::inverted_index::{Document, intersect_sorted};
 
 pub(super) mod mmap_postings;
 pub mod mmap_postings_enum;
@@ -404,16 +404,11 @@ impl InvertedIndex for MmapInvertedIndex {
             .copied()
     }
 
-    fn token_postings_intersection(
-        &self,
-        token_ids: &[PointOffsetType],
-        hw_counter: &HardwareCounterCell,
-    ) -> AHashSet<PointOffsetType> {
-        let posting_iterators = token_ids
-            .iter()
-            .filter_map(|token_id| self.postings.iter_ids(*token_id, hw_counter))
-            .collect();
-        let intersection = intersect_sorted(posting_iterators);
-        intersection.into_iter().collect()
+    fn iter_point_ids<'a>(
+        &'a self,
+        token_id: TokenId,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+        self.postings.iter_ids(token_id, hw_counter)
     }
 }

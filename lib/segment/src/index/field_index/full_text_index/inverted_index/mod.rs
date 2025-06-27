@@ -339,6 +339,12 @@ pub trait InvertedIndex {
         points_for_token.contains(&point_id)
     }
 
+    fn iter_point_ids<'a>(
+        &'a self,
+        token_id: TokenId,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
+
     fn query_token_point_ids(
         &self,
         parsed_query: &ParsedQuery,
@@ -354,7 +360,14 @@ pub trait InvertedIndex {
         &self,
         token_ids: &[PointOffsetType],
         hw_counter: &HardwareCounterCell,
-    ) -> AHashSet<PointOffsetType>;
+    ) -> AHashSet<PointOffsetType> {
+        let posting_iterators = token_ids
+            .iter()
+            .filter_map(|token_id| self.iter_point_ids(*token_id, hw_counter))
+            .collect();
+        let intersection = intersect_sorted(posting_iterators);
+        intersection.into_iter().collect()
+    }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 
