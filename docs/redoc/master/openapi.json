@@ -7673,6 +7673,17 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "stemmer": {
+            "description": "Algorithm for stemming. Default: disabled.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StemmingAlgorithm"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7756,6 +7767,54 @@
             "nullable": true
           }
         }
+      },
+      "StemmingAlgorithm": {
+        "description": "Different stemming algorithms with their configs.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "language",
+              "stemmer"
+            ],
+            "properties": {
+              "stemmer": {
+                "type": "string",
+                "enum": [
+                  "Snowball"
+                ]
+              },
+              "language": {
+                "$ref": "#/components/schemas/SnowballLanguage"
+              }
+            }
+          }
+        ]
+      },
+      "SnowballLanguage": {
+        "description": "Languages supported by snowball stemmer.",
+        "type": "string",
+        "enum": [
+          "Arabic",
+          "Armenian",
+          "Danish",
+          "Dutch",
+          "English",
+          "Finnish",
+          "French",
+          "German",
+          "Greek",
+          "Hungarian",
+          "Italian",
+          "Norwegian",
+          "Portuguese",
+          "Romanian",
+          "Russian",
+          "Spanish",
+          "Swedish",
+          "Tamil",
+          "Turkish"
+        ]
       },
       "BoolIndexParams": {
         "type": "object",
