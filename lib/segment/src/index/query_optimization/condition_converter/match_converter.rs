@@ -1,3 +1,4 @@
+use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
 use indexmap::IndexSet;
@@ -267,11 +268,15 @@ fn get_match_text_checker<const IS_PHRASE: bool>(
                 return Some(Box::new(|_| false));
             };
 
-            let covered_points =
-                full_text_index.get_query_posting_intersection(&parsed_query, &hw_counter);
+            let points_for_token = if IS_PHRASE {
+                // TODO(phrase-matching) prefetch points intersection with position
+                AHashSet::new()
+            } else {
+                full_text_index.get_query_posting_intersection(&parsed_query, &hw_counter)
+            };
 
             Some(Box::new(move |point_id: PointOffsetType| {
-                full_text_index.check_match(&parsed_query, point_id, &covered_points, &hw_counter)
+                full_text_index.check_match(&parsed_query, point_id, &points_for_token, &hw_counter)
             }))
         }
         FieldIndex::BoolIndex(_)
