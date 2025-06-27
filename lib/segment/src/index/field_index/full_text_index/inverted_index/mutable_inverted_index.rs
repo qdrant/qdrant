@@ -8,7 +8,6 @@ use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator;
 use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::full_text_index::inverted_index::intersect_sorted;
 
 #[cfg_attr(test, derive(Clone))]
 pub struct MutableInvertedIndex {
@@ -272,17 +271,13 @@ impl InvertedIndex for MutableInvertedIndex {
         self.vocab.get(token).copied()
     }
 
-    fn token_postings_intersection(
-        &self,
-        token_ids: &[PointOffsetType],
-        _hw_counter: &HardwareCounterCell,
-    ) -> AHashSet<PointOffsetType> {
-        let posting_iterators = token_ids
-            .iter()
-            .filter_map(|token_id| self.get_tokens(*token_id))
-            .map(|token_set| token_set.0.iter().copied())
-            .collect();
-        let intersection = intersect_sorted(posting_iterators);
-        intersection.into_iter().collect()
+    fn iter_point_ids<'a>(
+        &'a self,
+        token_id: TokenId,
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+        self.get_tokens(token_id).map(|token_set| {
+            Box::new(token_set.0.clone().into_iter()) as Box<dyn Iterator<Item = PointOffsetType>>
+        })
     }
 }
