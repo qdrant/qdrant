@@ -177,6 +177,8 @@ impl Collection {
         resharding_key: ReshardKey,
         force: bool,
     ) -> CollectionResult<()> {
+        log::warn!("Aborting resharding {resharding_key} (force: {force})");
+
         let mut shard_holder = self.shards_holder.write().await;
 
         if !force {

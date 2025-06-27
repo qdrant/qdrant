@@ -259,7 +259,6 @@ impl ShardHolder {
         resharding_key: ReshardKey,
         force: bool,
     ) -> CollectionResult<()> {
-        log::warn!("Aborting resharding {resharding_key}, force: {force}");
 
         let ReshardKey {
             uuid: _,
