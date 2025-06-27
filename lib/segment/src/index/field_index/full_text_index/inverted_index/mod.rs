@@ -321,42 +321,40 @@ pub trait InvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        covered_points: &[AHashSet<PointOffsetType>],
+        points_for_token: &AHashSet<PointOffsetType>,
         hw_counter: &HardwareCounterCell,
     ) -> bool;
 
+    // Check that the document is in the points intersection of the query token
     fn check_has_subset(
         &self,
         point_id: PointOffsetType,
-        covered_points: &[AHashSet<PointOffsetType>],
+        points_for_token: &AHashSet<PointOffsetType>,
     ) -> bool {
         // check presence of the document
         if self.values_is_empty(point_id) {
             return false;
         }
 
-        // Check that all tokens are in document
-        covered_points
-            .iter()
-            .all(|points_for_token| points_for_token.contains(&point_id))
+        points_for_token.contains(&point_id)
     }
 
     fn query_token_point_ids(
         &self,
         parsed_query: &ParsedQuery,
         hw_counter: &HardwareCounterCell,
-    ) -> Vec<AHashSet<PointOffsetType>> {
+    ) -> AHashSet<PointOffsetType> {
         match parsed_query {
-            ParsedQuery::Tokens(tokens) => self.token_point_ids(&tokens.0, hw_counter),
-            ParsedQuery::Phrase(phrase) => self.token_point_ids(&phrase.0, hw_counter),
+            ParsedQuery::Tokens(tokens) => self.token_postings_intersection(&tokens.0, hw_counter),
+            ParsedQuery::Phrase(phrase) => self.token_postings_intersection(&phrase.0, hw_counter),
         }
     }
 
-    fn token_point_ids(
+    fn token_postings_intersection(
         &self,
         token_ids: &[PointOffsetType],
         hw_counter: &HardwareCounterCell,
-    ) -> Vec<AHashSet<PointOffsetType>>;
+    ) -> AHashSet<PointOffsetType>;
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 
@@ -365,6 +363,47 @@ pub trait InvertedIndex {
     fn points_count(&self) -> usize;
 
     fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId>;
+}
+
+fn intersect_sorted<I, T>(mut iterators: Vec<I>) -> Vec<T>
+where
+    I: Iterator<Item = T>,
+    T: PartialEq + PartialOrd + Copy,
+{
+    if iterators.is_empty() {
+        return Vec::new();
+    }
+
+    // Start with the first iterator as the base
+    let mut result: Vec<T> = iterators.remove(0).collect();
+
+    for iter in iterators {
+        let mut new_result = Vec::new();
+        let mut i = result.into_iter();
+        let mut j = iter;
+
+        let mut a = i.next();
+        let mut b = j.next();
+
+        while let (Some(x), Some(y)) = (a, b) {
+            if x == y {
+                new_result.push(x);
+                a = i.next();
+                b = j.next();
+            } else if x < y {
+                a = i.next();
+            } else {
+                b = j.next();
+            }
+        }
+
+        result = new_result;
+        if result.is_empty() {
+            break; // early exit if there's no intersection
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -377,6 +416,7 @@ mod tests {
 
     use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
     use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
+    use crate::index::field_index::full_text_index::inverted_index::intersect_sorted;
     use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::MmapInvertedIndex;
     use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 
@@ -655,5 +695,44 @@ mod tests {
             assert_eq!(mut_filtered, imm_filtered);
             assert_eq!(imm_filtered, imm_mmap_filtered);
         }
+    }
+
+    #[test]
+    fn test_intersect_sorted() {
+        let a = vec![1, 2, 3, 4, 5];
+        let b = vec![3, 4, 5, 6, 7];
+        let c = vec![0, 3, 4, 8];
+
+        let result = intersect_sorted(vec![a.into_iter(), b.into_iter(), c.into_iter()]);
+
+        let expected: Vec<i32> = vec![3, 4];
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_no_intersection() {
+        let a = vec![1, 2];
+        let b = vec![3, 4];
+        let c = vec![5, 6];
+
+        let result = intersect_sorted(vec![a.into_iter(), b.into_iter(), c.into_iter()]);
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_intersect_single_iterator() {
+        let a = vec![1, 2, 3];
+
+        let result = intersect_sorted(vec![a.into_iter()]);
+
+        let expected: Vec<i32> = vec![1, 2, 3];
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_no_iterators() {
+        let result = intersect_sorted(Vec::<std::vec::IntoIter<u32>>::new());
+        assert!(result.is_empty());
     }
 }

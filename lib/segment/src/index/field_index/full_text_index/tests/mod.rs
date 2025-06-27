@@ -181,7 +181,7 @@ fn test_prefix_search() {
     let res: Vec<_> = index.query("ROBO", &hw_counter).collect();
 
     let query = index.parse_text_query("ROBO", &hw_counter).unwrap();
-    let covered_points = index.get_query_posting(&query, &hw_counter);
+    let covered_points = index.get_query_posting_intersection(&query, &hw_counter);
 
     for idx in res.iter().copied() {
         assert!(index.check_match(&query, idx, &covered_points, &hw_counter));
@@ -246,7 +246,7 @@ fn test_phrase_matching() {
         let text_query = index
             .parse_text_query("quick brown fox", &hw_counter)
             .unwrap();
-        let covered_points = index.get_query_posting(&text_query, &hw_counter);
+        let covered_points = index.get_query_posting_intersection(&text_query, &hw_counter);
         assert!(index.check_match(&text_query, 0, &covered_points, &hw_counter));
         assert!(index.check_match(&text_query, 1, &covered_points, &hw_counter));
         assert!(index.check_match(&text_query, 2, &covered_points, &hw_counter));
@@ -263,7 +263,7 @@ fn test_phrase_matching() {
         let phrase_query = index
             .parse_phrase_query("quick brown fox", &hw_counter)
             .unwrap();
-        let covered_points = index.get_query_posting(&phrase_query, &hw_counter);
+        let covered_points = index.get_query_posting_intersection(&phrase_query, &hw_counter);
         assert!(index.check_match(&phrase_query, 0, &covered_points, &hw_counter));
         assert!(index.check_match(&phrase_query, 2, &covered_points, &hw_counter));
 
@@ -288,7 +288,7 @@ fn test_phrase_matching() {
         let phrase_query = index
             .parse_phrase_query("brown brown fox", &hw_counter)
             .unwrap();
-        let covered_points = index.get_query_posting(&phrase_query, &hw_counter);
+        let covered_points = index.get_query_posting_intersection(&phrase_query, &hw_counter);
         assert!(index.check_match(&phrase_query, 4, &covered_points, &hw_counter));
 
         // Should only match document 4
