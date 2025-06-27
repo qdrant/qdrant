@@ -272,7 +272,7 @@ fn get_match_text_checker<const IS_PHRASE: bool>(
                 // TODO(phrase-matching) prefetch points intersection with position
                 AHashSet::new()
             } else {
-                full_text_index.get_query_posting_intersection(&parsed_query, &hw_counter)
+                full_text_index.query_tokens_posting_intersection(&parsed_query, &hw_counter)
             };
 
             Some(Box::new(move |point_id: PointOffsetType| {

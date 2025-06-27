@@ -182,10 +182,10 @@ fn test_prefix_search() {
     let res: Vec<_> = index.query("ROBO", &hw_counter).collect();
 
     let query = index.parse_text_query("ROBO", &hw_counter).unwrap();
-    let covered_points = index.get_query_posting_intersection(&query, &hw_counter);
+    let query_token_points = index.query_tokens_posting_intersection(&query, &hw_counter);
 
     for idx in res.iter().copied() {
-        assert!(index.check_match(&query, idx, &covered_points, &hw_counter));
+        assert!(index.check_match(&query, idx, &query_token_points, &hw_counter));
     }
 
     assert_eq!(res.len(), 3);
@@ -248,10 +248,10 @@ fn test_phrase_matching() {
         let text_query = index
             .parse_text_query("quick brown fox", &hw_counter)
             .unwrap();
-        let covered_points = index.get_query_posting_intersection(&text_query, &hw_counter);
-        assert!(index.check_match(&text_query, 0, &covered_points, &hw_counter));
-        assert!(index.check_match(&text_query, 1, &covered_points, &hw_counter));
-        assert!(index.check_match(&text_query, 2, &covered_points, &hw_counter));
+        let query_token_points = index.query_tokens_posting_intersection(&text_query, &hw_counter);
+        assert!(index.check_match(&text_query, 0, &query_token_points, &hw_counter));
+        assert!(index.check_match(&text_query, 1, &query_token_points, &hw_counter));
+        assert!(index.check_match(&text_query, 2, &query_token_points, &hw_counter));
 
         let text_results: Vec<_> = index.filter_query(text_query, &hw_counter).collect();
 
@@ -265,9 +265,10 @@ fn test_phrase_matching() {
         let phrase_query = index
             .parse_phrase_query("quick brown fox", &hw_counter)
             .unwrap();
-        let covered_points = index.get_query_posting_intersection(&phrase_query, &hw_counter);
-        assert!(index.check_match(&phrase_query, 0, &covered_points, &hw_counter));
-        assert!(index.check_match(&phrase_query, 2, &covered_points, &hw_counter));
+        let query_token_points =
+            index.query_tokens_posting_intersection(&phrase_query, &hw_counter);
+        assert!(index.check_match(&phrase_query, 0, &query_token_points, &hw_counter));
+        assert!(index.check_match(&phrase_query, 2, &query_token_points, &hw_counter));
 
         let phrase_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
 
@@ -290,8 +291,9 @@ fn test_phrase_matching() {
         let phrase_query = index
             .parse_phrase_query("brown brown fox", &hw_counter)
             .unwrap();
-        let covered_points = index.get_query_posting_intersection(&phrase_query, &hw_counter);
-        assert!(index.check_match(&phrase_query, 4, &covered_points, &hw_counter));
+        let query_token_points =
+            index.query_tokens_posting_intersection(&phrase_query, &hw_counter);
+        assert!(index.check_match(&phrase_query, 4, &query_token_points, &hw_counter));
 
         // Should only match document 4
         let filter_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
