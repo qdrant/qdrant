@@ -197,6 +197,7 @@ impl FullTextIndex {
         }
     }
 
+    /// Build the set intersection of point ids from the query tokens
     pub fn get_query_posting_intersection(
         &self,
         parse_query: &ParsedQuery,
