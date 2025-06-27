@@ -2,6 +2,7 @@ mod clean;
 mod collection_ops;
 pub mod distance_matrix;
 mod facet;
+pub mod mmr;
 pub mod payload_index_schema;
 mod point_ops;
 pub mod query;

@@ -70,7 +70,7 @@ pub enum SampleInternal {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MmrInternal {
     /// Vector name to use for similarity computation, defaults to empty string (default vector)
-    pub vector_name: VectorNameBuf,
+    pub using: VectorNameBuf,
     /// Lambda parameter controlling diversity vs relevance trade-off (0.0 = full diversity, 1.0 = full relevance)
     pub lambda: f32,
 }
