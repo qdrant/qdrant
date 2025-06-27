@@ -218,7 +218,7 @@ pub struct TextIndexParams {
 
 /// Different stemming algorithms with their configs.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(tag = "stemmer")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum StemmingAlgorithm {
     Snowball { language: SnowballLanguage },
 }

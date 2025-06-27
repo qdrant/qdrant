@@ -317,8 +317,17 @@ mod tests {
     #[test]
     fn test_word_tokenizer() {
         let text = "hello, world! Привет, мир!";
-        let config = TokenizerConfig::default();
+        let mut config = TokenizerConfig::default();
         let mut tokens = Vec::new();
+        WordTokenizer::tokenize(text, &config, |token| tokens.push(token));
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens.first(), Some(&Cow::Borrowed("hello")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("world")));
+        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("Привет")));
+        assert_eq!(tokens.get(3), Some(&Cow::Borrowed("мир")));
+
+        tokens.clear();
+        config.lowercase = true;
         WordTokenizer::tokenize(text, &config, |token| tokens.push(token));
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("hello")));
