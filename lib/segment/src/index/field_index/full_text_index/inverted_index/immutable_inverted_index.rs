@@ -14,6 +14,7 @@ use super::positions::Positions;
 use super::postings_iterator::intersect_compressed_postings_iterator;
 use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::full_text_index::inverted_index::intersect_sorted;
 use crate::index::field_index::full_text_index::inverted_index::postings_iterator::{
     check_compressed_postings_phrase, intersect_compressed_postings_phrase_iterator,
 };
@@ -199,11 +200,11 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        covered_points: &[AHashSet<PointOffsetType>],
+        points_for_token: &AHashSet<PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
     ) -> bool {
         match parsed_query {
-            ParsedQuery::Tokens(_tokens) => self.check_has_subset(point_id, covered_points),
+            ParsedQuery::Tokens(_tokens) => self.check_has_subset(point_id, points_for_token),
             ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id),
         }
     }
@@ -229,17 +230,17 @@ impl InvertedIndex for ImmutableInvertedIndex {
         self.vocab.get(token).copied()
     }
 
-    fn token_point_ids(
+    fn token_postings_intersection(
         &self,
         token_ids: &[PointOffsetType],
         _hw_counter: &HardwareCounterCell,
-    ) -> Vec<AHashSet<PointOffsetType>> {
-        token_ids
+    ) -> AHashSet<PointOffsetType> {
+        let posting_iterators = token_ids
             .iter()
-            .map(|token_id| self.postings.iter_ids(*token_id))
-            .map(|iter_opt| iter_opt.map(|iter| iter.collect()))
-            .map(|points_ids| points_ids.unwrap_or_default())
-            .collect()
+            .filter_map(|token_id| self.postings.iter_ids(*token_id))
+            .collect();
+        let intersection = intersect_sorted(posting_iterators);
+        intersection.into_iter().collect()
     }
 }
 

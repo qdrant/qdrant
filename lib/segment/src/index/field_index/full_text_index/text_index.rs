@@ -197,11 +197,11 @@ impl FullTextIndex {
         }
     }
 
-    pub fn get_query_posting(
+    pub fn get_query_posting_intersection(
         &self,
         parse_query: &ParsedQuery,
         hw_counter: &HardwareCounterCell,
-    ) -> Vec<AHashSet<PointOffsetType>> {
+    ) -> AHashSet<PointOffsetType> {
         match self {
             Self::Mutable(index) => index
                 .inverted_index
@@ -219,24 +219,24 @@ impl FullTextIndex {
         &self,
         query: &ParsedQuery,
         point_id: PointOffsetType,
-        covered_points: &[AHashSet<PointOffsetType>],
+        points_for_token: &AHashSet<PointOffsetType>,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
         match self {
             Self::Mutable(index) => {
                 index
                     .inverted_index
-                    .check_match(query, point_id, covered_points, hw_counter)
+                    .check_match(query, point_id, points_for_token, hw_counter)
             }
             Self::Immutable(index) => {
                 index
                     .inverted_index
-                    .check_match(query, point_id, covered_points, hw_counter)
+                    .check_match(query, point_id, points_for_token, hw_counter)
             }
             Self::Mmap(index) => {
                 index
                     .inverted_index
-                    .check_match(query, point_id, covered_points, hw_counter)
+                    .check_match(query, point_id, points_for_token, hw_counter)
             }
         }
     }
