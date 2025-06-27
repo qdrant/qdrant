@@ -7775,13 +7775,13 @@
             "type": "object",
             "required": [
               "language",
-              "stemmer"
+              "type"
             ],
             "properties": {
-              "stemmer": {
+              "type": {
                 "type": "string",
                 "enum": [
-                  "Snowball"
+                  "snowball"
                 ]
               },
               "language": {
