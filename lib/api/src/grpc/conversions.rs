@@ -360,8 +360,12 @@ impl From<segment::data_types::index::StopwordsInterface> for StopwordsSet {
 impl From<segment::data_types::index::StemmingAlgorithm> for StemmingAlgorithm {
     fn from(value: segment::data_types::index::StemmingAlgorithm) -> Self {
         let stemming_params = match value {
-            segment::data_types::index::StemmingAlgorithm::Snowball { language } => {
-                let language = format!("{language}");
+            segment::data_types::index::StemmingAlgorithm::Snowball(snowball_params) => {
+                let segment::data_types::index::SnowballParameters {
+                    r#type: _,
+                    language,
+                } = snowball_params;
+                let language = language.to_string();
                 StemmingParams::SnowballParams(SnowballStemmingParams { language })
             }
         };
@@ -545,7 +549,12 @@ impl TryFrom<StemmingParams> for segment::data_types::index::StemmingAlgorithm {
                 let language = SnowballLanguage::from_str(&params.language).map_err(|_| {
                     Status::invalid_argument(format!("Language {:?} not found.", params.language))
                 })?;
-                Ok(segment::data_types::index::StemmingAlgorithm::Snowball { language })
+                Ok(segment::data_types::index::StemmingAlgorithm::Snowball(
+                    segment::data_types::index::SnowballParameters {
+                        r#type: segment::data_types::index::Snowball::Snowball,
+                        language,
+                    },
+                ))
             }
         }
     }

@@ -7770,25 +7770,31 @@
       },
       "StemmingAlgorithm": {
         "description": "Different stemming algorithms with their configs.",
-        "oneOf": [
+        "anyOf": [
           {
-            "type": "object",
-            "required": [
-              "language",
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "snowball"
-                ]
-              },
-              "language": {
-                "$ref": "#/components/schemas/SnowballLanguage"
-              }
-            }
+            "$ref": "#/components/schemas/SnowballParameters"
           }
+        ]
+      },
+      "SnowballParameters": {
+        "type": "object",
+        "required": [
+          "language",
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/Snowball"
+          },
+          "language": {
+            "$ref": "#/components/schemas/SnowballLanguage"
+          }
+        }
+      },
+      "Snowball": {
+        "type": "string",
+        "enum": [
+          "snowball"
         ]
       },
       "SnowballLanguage": {

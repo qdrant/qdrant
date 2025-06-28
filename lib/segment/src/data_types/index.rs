@@ -216,11 +216,24 @@ pub struct TextIndexParams {
     pub stemmer: Option<StemmingAlgorithm>,
 }
 
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Snowball {
+    #[default]
+    Snowball,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+pub struct SnowballParameters {
+    pub r#type: Snowball,
+    pub language: SnowballLanguage,
+}
+
 /// Different stemming algorithms with their configs.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(untagged)]
 pub enum StemmingAlgorithm {
-    Snowball { language: SnowballLanguage },
+    Snowball(SnowballParameters),
 }
 
 /// Languages supported by snowball stemmer.

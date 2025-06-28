@@ -118,7 +118,7 @@ mod test {
     use charabia::Language;
 
     use super::*;
-    use crate::data_types::index::{SnowballLanguage, StemmingAlgorithm};
+    use crate::data_types::index::{SnowballLanguage, SnowballParameters, StemmingAlgorithm};
     use crate::index::field_index::full_text_index::tokenizers::stemmer::Stemmer;
 
     #[test]
@@ -187,9 +187,12 @@ mod test {
     #[test]
     fn test_multilingual_stemming() {
         let config = TokenizerConfig {
-            stemmer: Some(Stemmer::from_algorithm(&StemmingAlgorithm::Snowball {
-                language: SnowballLanguage::English,
-            })),
+            stemmer: Some(Stemmer::from_algorithm(&StemmingAlgorithm::Snowball(
+                SnowballParameters {
+                    r#type: Default::default(),
+                    language: SnowballLanguage::English,
+                },
+            ))),
             ..Default::default()
         };
 
