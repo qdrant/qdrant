@@ -65,6 +65,7 @@ fn setup() -> (TempDir, LocalShard) {
         quantization_config: Default::default(),
         strict_mode_config: Default::default(),
         uuid: None,
+        properties: None,
     };
 
     let optimizers_config = collection_config.optimizer_config.clone();
