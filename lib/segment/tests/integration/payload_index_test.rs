@@ -65,8 +65,8 @@ macro_rules! ensure {
 }
 
 const DIM: usize = 5;
-const ATTEMPTS: usize = 20;
-const RNG_SEED: u64 = 42;
+const ATTEMPTS: usize = 100;
+const RNG_SEED: u64 = 1;
 
 struct TestSegments {
     _base_dir: TempDir,
