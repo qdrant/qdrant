@@ -317,7 +317,7 @@ pub trait InvertedIndex {
             .filter_map(map_filter_condition)
     }
 
-    // TODO(phrase-matching)
+    // TODO(phrase-matching) leverage pre-computed intersection for tokens
     fn check_match(
         &self,
         parsed_query: &ParsedQuery,

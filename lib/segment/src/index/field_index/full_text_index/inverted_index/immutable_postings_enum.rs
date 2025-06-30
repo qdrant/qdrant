@@ -20,13 +20,6 @@ impl ImmutablePostings {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        match self {
-            ImmutablePostings::Ids(lists) => lists.is_empty(),
-            ImmutablePostings::WithPositions(lists) => lists.is_empty(),
-        }
-    }
-
     pub fn posting_len(&self, token: TokenId) -> Option<usize> {
         match self {
             ImmutablePostings::Ids(postings) => {
