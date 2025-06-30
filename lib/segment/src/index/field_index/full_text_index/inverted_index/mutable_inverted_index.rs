@@ -276,8 +276,8 @@ impl InvertedIndex for MutableInvertedIndex {
         token_id: TokenId,
         _hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        self.get_tokens(token_id).map(|token_set| {
-            Box::new(token_set.0.clone().into_iter()) as Box<dyn Iterator<Item = PointOffsetType>>
+        self.postings.get(token_id as usize).map(|posting_list| {
+            Box::new(posting_list.iter()) as Box<dyn Iterator<Item = PointOffsetType>>
         })
     }
 }
