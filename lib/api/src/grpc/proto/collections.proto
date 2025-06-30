@@ -2,6 +2,8 @@ syntax = "proto3";
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
+import "google/protobuf/struct.proto";
+
 enum Datatype {
   Default = 0;
   Float32 = 1;
@@ -400,6 +402,7 @@ message UpdateCollection {
   optional QuantizationConfigDiff quantization_config = 7; // Quantization configuration of vector
   optional SparseVectorConfig sparse_vectors_config = 8; // New sparse vector parameters
   optional StrictModeConfig strict_mode_config = 9; // New strict mode configuration
+  optional google.protobuf.Struct properties = 11; // Arbitrary metadata associated to this collection.
 }
 
 message DeleteCollection {
@@ -530,6 +533,7 @@ message CollectionInfo {
   map<string, PayloadSchemaInfo> payload_schema = 8; // Collection data types
   optional uint64 points_count = 9; // Approximate number of points in the collection
   optional uint64 indexed_vectors_count = 10; // Approximate number of indexed vectors in the collection.
+  optional google.protobuf.Struct properties = 11; // Arbitrary metadata associated to this collection.
 }
 
 message ChangeAliases {
