@@ -116,7 +116,9 @@ impl ShardReplicaSet {
             )
             .await?;
 
-        if responses.len() == 1 {
+        if responses.is_empty() {
+            Ok(Res::default())
+        } else if responses.len() == 1 {
             Ok(responses.pop().unwrap())
         } else {
             Ok(Res::resolve(responses, condition))

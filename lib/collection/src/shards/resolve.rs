@@ -27,7 +27,7 @@ impl ResolveCondition {
     }
 }
 
-pub trait Resolve: Sized {
+pub trait Resolve: Default + Sized {
     fn resolve(responses: Vec<Self>, condition: ResolveCondition) -> Self;
 }
 
