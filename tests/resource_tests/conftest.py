@@ -12,77 +12,7 @@ from docker.errors import ImageNotFound, NotFound
 import requests
 from pathlib import Path
 
-
-@pytest.fixture(scope="session")
-def docker_client():
-    """Create a Docker client instance."""
-    return docker.from_env()
-
-
-@pytest.fixture(scope="session")
-def qdrant_image(docker_client, request):
-    """
-    Build Qdrant Docker image once per test session.
-    
-    Can be used directly or with indirect parametrization:
-    
-    Direct usage:
-        def test_something(qdrant_image):
-            # Uses default tag "qdrant-recovery-test"
-    
-    Indirect parametrization:
-        @pytest.mark.parametrize("qdrant_image", [
-            {"tag": "custom-tag", "rebuild_image": True}
-        ], indirect=True)
-        def test_something(qdrant_image):
-            # Uses custom tag and forces rebuild
-    """
-    # Get configuration from parametrization or use defaults
-    if hasattr(request, "param") and isinstance(request.param, dict):
-        config = request.param
-    else:
-        config = {}
-    
-    # Determine image tag
-    image_tag = config.get("tag", "qdrant/qdrant:dev")
-    rebuild_image = config.get("rebuild_image", False)
-    
-    project_root = Path(__file__).parent.parent.parent
-    
-    # Check if image already exists
-    image_exists = False
-    try:
-        docker_client.images.get(image_tag)
-        image_exists = True
-        print(f"Docker image {image_tag} already exists")
-    except ImageNotFound:
-        print(f"Docker image {image_tag} not found, will build")
-    
-    # Build image if it doesn't exist or if rebuild is requested
-    if not image_exists or rebuild_image:
-        if rebuild_image and image_exists:
-            print(f"Rebuilding Docker image {image_tag} (rebuild_image=True)...")
-        else:
-            print(f"Building Docker image {image_tag}...")
-        
-        # Build image using docker buildx
-        build_cmd = [
-            "docker", "buildx", "build",
-            "--build-arg=PROFILE=ci",
-            "--load",
-            str(project_root),
-            f"--tag={image_tag}"
-        ]
-        
-        result = subprocess.run(build_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to build Docker image: {result.stderr}")
-        
-        print(f"Successfully built image {image_tag}")
-    else:
-        print(f"Using existing Docker image {image_tag}")
-    
-    return image_tag
+from resource_tests.utils import wait_for_qdrant_ready
 
 
 def _get_default_qdrant_config(qdrant_image):
@@ -98,6 +28,13 @@ def _get_default_qdrant_config(qdrant_image):
 def _extract_container_ports(container):
     """Extract HTTP and gRPC ports from container."""
     container.reload()
+    
+    # Check if container is using host network mode
+    if container.attrs.get('HostConfig', {}).get('NetworkMode') == 'host':
+        # For host network mode, use standard Qdrant ports
+        return 6333, 6334
+    
+    # For bridge/custom networks, extract mapped ports
     http_port = container.attrs['NetworkSettings']['Ports']['6333/tcp'][0]['HostPort']
     grpc_port = container.attrs['NetworkSettings']['Ports']['6334/tcp'][0]['HostPort']
     return int(http_port), int(grpc_port)
@@ -105,9 +42,16 @@ def _extract_container_ports(container):
 
 def _create_container_info(container, http_port, grpc_port):
     """Create standardized container info dictionary."""
+    # Check if container is using host network mode
+    container.reload()
+    if container.attrs.get('HostConfig', {}).get('NetworkMode') == 'host':
+        host = "localhost"
+    else:
+        host = "127.0.0.1"
+    
     return {
         "container": container,
-        "host": "127.0.0.1",
+        "host": host,
         "name": container.name,
         "http_port": http_port,
         "grpc_port": grpc_port
@@ -143,6 +87,10 @@ def _create_qdrant_container(docker_client, qdrant_image, config=None):
     default_config = _get_default_qdrant_config(qdrant_image)
     merged_config = {**default_config, **config}
     
+    # If using host network mode, remove port bindings
+    if merged_config.get('network_mode') == 'host':
+        merged_config.pop('ports', None)
+    
     # Create container
     container = docker_client.containers.run(**merged_config)
     
@@ -151,7 +99,7 @@ def _create_qdrant_container(docker_client, qdrant_image, config=None):
         http_port, grpc_port = _extract_container_ports(container)
         
         # Wait for readiness
-        if not _wait_for_qdrant_ready(port=http_port, timeout=30):
+        if not wait_for_qdrant_ready(port=http_port, timeout=30):
             if exit_on_error:
                 raise RuntimeError("Qdrant failed to start within 30 seconds")
         
@@ -161,6 +109,150 @@ def _create_qdrant_container(docker_client, qdrant_image, config=None):
         # Clean up on failure
         _cleanup_container(container)
         raise
+
+
+def _run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
+    """
+    Core function to run docker-compose and return container info.
+    
+    Args:
+        docker_client: Docker client instance
+        qdrant_image: Qdrant image to use
+        test_data_dir: Path to test data directory
+        config: Configuration dict with compose_file, wait_for_ready, service_name
+        
+    Returns:
+        tuple: (container_info, cleanup_function)
+    """
+    wait_for_ready = config.get("wait_for_ready", True)
+    compose_file = config.get("compose_file")
+    if not compose_file:
+        raise ValueError("compose_file parameter is required")
+    
+    # Construct the path to the compose file
+    compose_path = test_data_dir / compose_file
+    if not compose_path.exists():
+        raise FileNotFoundError(f"Docker compose file not found: {compose_path}")
+    
+    # Generate unique project name to avoid conflicts
+    project_name = f"qdrant-test-{uuid.uuid4().hex[:8]}"
+    service_name = config.get("service_name")  # None means return all services
+    
+    # Try docker compose v2 first, then fall back to docker-compose v1
+    compose_commands = [
+        ["docker", "compose"],  # v2
+        ["docker-compose"]      # v1
+    ]
+    
+    compose_cmd = None
+    for cmd_prefix in compose_commands:
+        test_cmd = cmd_prefix + ["version"]
+        result = subprocess.run(test_cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            compose_cmd = cmd_prefix
+            break
+    
+    if not compose_cmd:
+        raise RuntimeError("Neither 'docker compose' nor 'docker-compose' command found")
+    
+    # Get list of services from compose file
+    services_cmd = compose_cmd + ["-f", str(compose_path), "config", "--services"]
+    result = subprocess.run(services_cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to get services from compose file: {result.stderr}")
+    
+    services = [s.strip() for s in result.stdout.strip().split('\n') if s.strip()]
+    service_count = len(services)
+    
+    # Start the compose project with custom image override
+    # Set environment variable to override the image in compose services
+    env = dict(os.environ)
+    env["QDRANT_IMAGE"] = qdrant_image
+    
+    compose_up_cmd = compose_cmd + [
+        "-f", str(compose_path),
+        "-p", project_name,
+        "up", "-d"
+    ]
+    
+    result = subprocess.run(compose_up_cmd, capture_output=True, text=True, env=env)
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to start docker-compose: {result.stderr}")
+    # Wait for ports to be assigned
+    time.sleep(2)
+
+    if service_count == 1:
+        # Single service compose file - always return single object
+        project_containers = docker_client.containers.list(filters={"name": project_name})
+        if not project_containers:
+            raise RuntimeError(f"No containers found for project: {project_name}")
+        
+        container = project_containers[0]
+        container_info = _extract_compose_container_info(container, project_name)
+        
+        # Wait for this specific container to be ready
+        if wait_for_ready:
+            if not wait_for_qdrant_ready(port=container_info["http_port"], timeout=60):
+                raise RuntimeError("Qdrant failed to start within 60 seconds")
+        
+    else:
+        # Multiple services compose file
+        if service_name:
+            # Specific service requested - return single object
+            container_name_prefix = f"{project_name}-{service_name}"
+            containers = docker_client.containers.list(filters={"name": container_name_prefix})
+            if not containers:
+                raise RuntimeError(f"No container found with prefix: {container_name_prefix}")
+            
+            container = containers[0]
+            container_info = _extract_compose_container_info(container, project_name)
+            
+            # Wait for this specific container to be ready
+            if wait_for_ready:
+                if not wait_for_qdrant_ready(port=container_info["http_port"], timeout=60):
+                    raise RuntimeError("Qdrant failed to start within 60 seconds")
+            
+        else:
+            # No specific service - return array of all container info
+            project_containers = docker_client.containers.list(filters={"name": project_name})
+            if not project_containers:
+                raise RuntimeError(f"No containers found for project: {project_name}")
+            
+            container_infos = []
+            for container in project_containers:
+                try:
+                    container_info = _extract_compose_container_info(container, project_name)
+                    container_infos.append(container_info)
+                except Exception as e:
+                    print(f"Warning: Could not extract info for container {container.name}: {e}")
+                    continue
+            
+            if not container_infos:
+                raise RuntimeError(f"No valid Qdrant containers found in project: {project_name}")
+            
+            # Wait for all containers to be ready
+            if wait_for_ready:
+                for info in container_infos:
+                    if not wait_for_qdrant_ready(port=info["http_port"], timeout=60):
+                        print(f"Warning: Container {info['name']} failed to start within 60 seconds")
+            
+            container_info = container_infos  # Return the array
+    
+    # Define cleanup function
+    def cleanup():
+        compose_down_cmd = compose_cmd + [
+            "-f", str(compose_path),
+            "-p", project_name,
+            "down", "-v"  # Also remove volumes
+        ]
+        
+        result = subprocess.run(compose_down_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"Warning: Failed to stop docker-compose: {result.stderr}")
+        else:
+            print(f"Cleaned up compose project: {project_name}")
+    
+    return container_info, cleanup
 
 
 def _extract_compose_container_info(container, project_name):
@@ -201,25 +293,89 @@ def _extract_compose_container_info(container, project_name):
     }
 
 
-def _wait_for_qdrant_ready(port: int = 6333, timeout: int = 30) -> bool:
-    """Wait for Qdrant service to be ready."""
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            response = requests.get(f"http://localhost:{port}")
-            if response.status_code == 200:
-                return True
-        except requests.exceptions.ConnectionError:
-            pass
-        time.sleep(1)
-    return False
+@pytest.fixture(scope="session")
+def docker_client():
+    """Create a Docker client instance."""
+    return docker.from_env()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
+def test_data_dir():
+    """Path to the test data directory."""
+    return Path(__file__).parent / "test_data"
+
+
+@pytest.fixture(scope="session")
+def qdrant_image(docker_client, request):
+    """
+    Build Qdrant Docker image once per test session.
+
+    Can be used directly or with indirect parametrization:
+
+    Direct usage:
+        def test_something(qdrant_image):
+            # Uses default tag "dev"
+
+    Indirect parametrization:
+        @pytest.mark.parametrize("qdrant_image", [
+            {"tag": "qdrant-e2e-test", "rebuild_image": True}
+        ], indirect=True)
+        def test_something(qdrant_image):
+            # Uses custom tag and forces rebuild
+    """
+    # Get configuration from parametrization or use defaults
+    if hasattr(request, "param") and isinstance(request.param, dict):
+        config = request.param
+    else:
+        config = {}
+
+    # Determine image tag
+    image_tag = config.get("tag", "qdrant/qdrant:dev")
+    rebuild_image = config.get("rebuild_image", False)
+
+    project_root = Path(__file__).parent.parent.parent
+
+    # Check if image already exists
+    image_exists = False
+    try:
+        docker_client.images.get(image_tag)
+        image_exists = True
+        print(f"Docker image {image_tag} already exists")
+    except ImageNotFound:
+        print(f"Docker image {image_tag} not found, will build")
+
+    # Build image if it doesn't exist or if rebuild is requested
+    if not image_exists or rebuild_image:
+        if rebuild_image and image_exists:
+            print(f"Rebuilding Docker image {image_tag} (rebuild_image=True)...")
+        else:
+            print(f"Building Docker image {image_tag}...")
+
+        # Build image using docker buildx
+        build_cmd = [
+            "docker", "buildx", "build",
+            "--build-arg=PROFILE=ci",
+            "--load",
+            str(project_root),
+            f"--tag={image_tag}"
+        ]
+
+        result = subprocess.run(build_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to build Docker image: {result.stderr}")
+
+        print(f"Successfully built image {image_tag}")
+    else:
+        print(f"Using existing Docker image {image_tag}")
+
+    return image_tag
+
+
+@pytest.fixture(scope="function")
 def qdrant_container(docker_client, qdrant_image, request):
     """
     Fixture for creating Qdrant containers with different configurations.
-    
+
     Can be used as a factory or with indirect parametrization:
     
     Factory usage (returns a callable):
@@ -267,10 +423,11 @@ def qdrant_container(docker_client, qdrant_image, request):
         _cleanup_container(container)
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def qdrant(docker_client, qdrant_image, request):
     """
     Fixture that automatically creates a Qdrant container and returns its info.
+    If a default qdrant setup is needed, this fixture is the one that should be used.
     
     Direct usage (default configuration):
         def test_something(qdrant):
@@ -306,14 +463,14 @@ def qdrant(docker_client, qdrant_image, request):
         _cleanup_container(container_info["container"])
 
 
-@pytest.fixture
-def qdrant_compose(docker_client, qdrant_image, request):
+@pytest.fixture(scope="function")
+def qdrant_compose(docker_client, qdrant_image, test_data_dir, request):
     """
-    Fixture for creating Qdrant containers using docker-compose.yaml files.
+    Fixture for creating Qdrant containers using docker-compose.yaml files from test_data folder.
     
     Usage with parametrization:
         @pytest.mark.parametrize("qdrant_compose", [
-            {"compose_file": "path/to/docker-compose.yaml"}
+            {"compose_file": "docker-compose.yaml"}
         ], indirect=True)
         def test_something(qdrant_compose):
             # qdrant_compose is a dict with container info
@@ -339,144 +496,15 @@ def qdrant_compose(docker_client, qdrant_image, request):
         raise ValueError("qdrant_compose fixture requires parametrization with compose_file path")
     
     config = request.param
-    compose_file = config.get("compose_file")
-    if not compose_file:
-        raise ValueError("compose_file parameter is required")
-    
-    # Convert to absolute path if relative
-    compose_path = Path(compose_file)
-    if not compose_path.is_absolute():
-        # Resolve relative to the test file's directory
-        test_dir = Path(__file__).parent
-        compose_path = test_dir / compose_path
-    
-    if not compose_path.exists():
-        raise FileNotFoundError(f"Docker compose file not found: {compose_path}")
-    
-    # Generate unique project name to avoid conflicts
-    project_name = f"qdrant-test-{uuid.uuid4().hex[:8]}"
-    service_name = config.get("service_name")  # None means return all services
-    compose_cmd = None  # Initialize to handle cleanup in finally block
+    container_info, cleanup = _run_docker_compose(docker_client, qdrant_image, test_data_dir, config)
     
     try:
-        # Try docker compose v2 first, then fall back to docker-compose v1
-        compose_commands = [
-            ["docker", "compose"],  # v2
-            ["docker-compose"]      # v1
-        ]
-        
-        compose_cmd = None
-        for cmd_prefix in compose_commands:
-            test_cmd = cmd_prefix + ["version"]
-            result = subprocess.run(test_cmd, capture_output=True, text=True)
-            if result.returncode == 0:
-                compose_cmd = cmd_prefix
-                break
-        
-        if not compose_cmd:
-            raise RuntimeError("Neither 'docker compose' nor 'docker-compose' command found")
-        
-        # Get list of services from compose file
-        services_cmd = compose_cmd + ["-f", str(compose_path), "config", "--services"]
-        result = subprocess.run(services_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to get services from compose file: {result.stderr}")
-        
-        services = [s.strip() for s in result.stdout.strip().split('\n') if s.strip()]
-        service_count = len(services)
-        
-        # Start the compose project with custom image override
-        # Set environment variable to override the image in compose services
-        env = dict(os.environ)
-        env["QDRANT_IMAGE"] = qdrant_image
-        
-        compose_up_cmd = compose_cmd + [
-            "-f", str(compose_path),
-            "-p", project_name,
-            "up", "-d"
-        ]
-        
-        result = subprocess.run(compose_up_cmd, capture_output=True, text=True, env=env)
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to start docker-compose: {result.stderr}")
-        # Wait for ports to be assigned
-        time.sleep(2)
-
-        if service_count == 1:
-            # Single service compose file - always return single object
-            project_containers = docker_client.containers.list(filters={"name": project_name})
-            if not project_containers:
-                raise RuntimeError(f"No containers found for project: {project_name}")
-            
-            container = project_containers[0]
-            container_info = _extract_compose_container_info(container, project_name)
-            
-            # Wait for this specific container to be ready
-            if not _wait_for_qdrant_ready(port=container_info["http_port"], timeout=60):
-                raise RuntimeError("Qdrant failed to start within 60 seconds")
-            
-        else:
-            # Multiple services compose file
-            if service_name:
-                # Specific service requested - return single object
-                container_name_prefix = f"{project_name}-{service_name}"
-                containers = docker_client.containers.list(filters={"name": container_name_prefix})
-                if not containers:
-                    raise RuntimeError(f"No container found with prefix: {container_name_prefix}")
-                
-                container = containers[0]
-                container_info = _extract_compose_container_info(container, project_name)
-                
-                # Wait for this specific container to be ready
-                if not _wait_for_qdrant_ready(port=container_info["http_port"], timeout=60):
-                    raise RuntimeError("Qdrant failed to start within 60 seconds")
-                
-            else:
-                # No specific service - return array of all container info
-                project_containers = docker_client.containers.list(filters={"name": project_name})
-                if not project_containers:
-                    raise RuntimeError(f"No containers found for project: {project_name}")
-                
-                container_infos = []
-                for container in project_containers:
-                    try:
-                        container_info = _extract_compose_container_info(container, project_name)
-                        container_infos.append(container_info)
-                    except Exception as e:
-                        print(f"Warning: Could not extract info for container {container.name}: {e}")
-                        continue
-                
-                if not container_infos:
-                    raise RuntimeError(f"No valid Qdrant containers found in project: {project_name}")
-                
-                # Wait for all containers to be ready
-                for info in container_infos:
-                    if not _wait_for_qdrant_ready(port=info["http_port"], timeout=60):
-                        print(f"Warning: Container {info['name']} failed to start within 60 seconds")
-                
-                container_info = container_infos  # Return the array
-        
         yield container_info
-        
     finally:
-        # Clean up the compose project using the same command that started it
-        if compose_cmd:
-            compose_down_cmd = compose_cmd + [
-                "-f", str(compose_path),
-                "-p", project_name,
-                "down", "-v"  # Also remove volumes
-            ]
-            
-            result = subprocess.run(compose_down_cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                print(f"Warning: Failed to stop docker-compose: {result.stderr}")
-            else:
-                print(f"Cleaned up compose project: {project_name}")
-        else:
-            print(f"Warning: Could not clean up compose project {project_name} - compose command not found")
+        cleanup()
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def qdrant_cluster(docker_client, qdrant_container, request):
     """
     Create a Qdrant cluster with 1 leader and configurable number of followers.
@@ -524,7 +552,7 @@ def qdrant_cluster(docker_client, qdrant_container, request):
         )
         
         # Wait for leader to be ready
-        _wait_for_qdrant_ready(port=leader_info["http_port"], timeout=30)
+        wait_for_qdrant_ready(port=leader_info["http_port"], timeout=30)
         
         # Create follower nodes
         followers = []
@@ -550,7 +578,7 @@ def qdrant_cluster(docker_client, qdrant_container, request):
         
         # Wait for all followers to be ready
         for follower_info in followers:
-            _wait_for_qdrant_ready(port=follower_info["http_port"], timeout=60)
+            wait_for_qdrant_ready(port=follower_info["http_port"], timeout=60)
         
         # Give cluster time to stabilize
         time.sleep(5)
@@ -591,7 +619,7 @@ def qdrant_cluster(docker_client, qdrant_container, request):
             print(f"Error removing network {network_name}: {e}")
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def temp_storage_dir(request):
     """
     Create a temporary storage directory and ensure its removal after test.
@@ -617,8 +645,8 @@ def temp_storage_dir(request):
                 print(f"Warning: Failed to remove temp storage directory {test_dir}: {e}")
 
 
-@pytest.fixture
-def storage_from_archive(request, temp_storage_dir):
+@pytest.fixture(scope="function")
+def storage_from_archive(request, test_data_dir, temp_storage_dir):
     """
     Extract an archive from test_data directory into the storage directory.
     
@@ -633,11 +661,10 @@ def storage_from_archive(request, temp_storage_dir):
         raise ValueError("storage_with_archive fixture requires archive name via parametrization")
     
     # Path to test_data directory
-    test_data_dir = Path(__file__).parent / "test_data"
     archive_file = test_data_dir / archive_name
     
     if not archive_file.exists():
-        raise FileNotFoundError(f"Archive not found after git lfs pull: {archive_file}")
+        raise FileNotFoundError(f"Archive not found: {archive_file}")
     
     # Get the parent directory of storage (where we want to extract)
     extract_to = temp_storage_dir.parent
