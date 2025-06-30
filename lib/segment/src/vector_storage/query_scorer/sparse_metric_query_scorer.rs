@@ -22,8 +22,8 @@ impl<'a> SparseMetricQueryScorer<'a> {
         hardware_counter.set_cpu_multiplier(1);
 
         Self {
-            query,
             vector_storage,
+            query,
             hardware_counter,
         }
     }
@@ -58,7 +58,7 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
 
     #[inline]
     fn score(&self, v2: &SparseVector) -> ScoreType {
-        self.score_ref(&v2)
+        self.score_ref(v2)
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {

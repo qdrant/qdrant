@@ -417,7 +417,7 @@ mod tests {
         // The exact order depends on the similarity calculations, but we should get all different points
         let selected_ids: Vec<_> = scored_points.iter().map(|p| p.id).collect();
         let expected_ids = expected_order
-            .into_iter()
+            .iter()
             .map(|&id| id.into())
             .collect::<Vec<_>>();
 
@@ -591,8 +591,7 @@ mod tests {
 
             assert!(
                 result.is_ok(),
-                "Dense vectors failed for distance metric: {:?}",
-                distance
+                "Dense vectors failed for distance metric: {distance:?}"
             );
             let scored_points = result.unwrap();
             assert_eq!(scored_points.len(), 3);
@@ -702,8 +701,7 @@ mod tests {
 
             assert!(
                 multi_result.is_ok(),
-                "Multi-vectors failed for distance metric: {:?}",
-                distance
+                "Multi-vectors failed for distance metric: {distance:?}"
             );
             let multi_scored_points = multi_result.unwrap();
             assert_eq!(multi_scored_points.len(), 3);

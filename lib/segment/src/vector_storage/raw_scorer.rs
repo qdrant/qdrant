@@ -147,7 +147,7 @@ pub fn raw_sparse_scorer_volatile<'a>(
     let query_scorer =
         SparseMetricQueryScorer::new(sparse_vector, vector_storage, hardware_counter);
 
-    return raw_scorer_from_query_scorer(query_scorer);
+    raw_scorer_from_query_scorer(query_scorer)
 }
 
 pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
