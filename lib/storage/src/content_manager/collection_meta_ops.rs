@@ -182,7 +182,7 @@ pub struct CreateCollection {
     /// Specify some metadata associated to a collection to persist.
     #[serde(default)]
     #[schemars(skip)]
-    pub properties: Option<serde_json::Value>
+    pub properties: Option<serde_json::Value>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params

@@ -222,7 +222,7 @@ pub struct CollectionConfigInternal {
     #[serde(default)]
     pub uuid: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub properties: Option<serde_json::Value>
+    pub properties: Option<serde_json::Value>,
 }
 
 impl CollectionConfigInternal {

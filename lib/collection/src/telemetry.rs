@@ -87,7 +87,7 @@ pub struct CollectionConfigTelemetry {
     #[anonymize(value = None)]
     pub uuid: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub properties: Option<serde_json::Value>
+    pub properties: Option<serde_json::Value>,
 }
 
 impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
