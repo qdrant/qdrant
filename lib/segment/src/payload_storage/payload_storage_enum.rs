@@ -262,6 +262,18 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get_storage_size_bytes(),
         }
     }
+
+    fn is_on_disk(&self) -> bool {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.is_on_disk(),
+            #[cfg(feature = "rocksdb")]
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.is_on_disk(),
+            #[cfg(feature = "rocksdb")]
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.is_on_disk(),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.is_on_disk(),
+        }
+    }
 }
 
 impl PayloadStorageEnum {

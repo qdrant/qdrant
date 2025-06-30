@@ -138,6 +138,10 @@ impl PayloadStorage for InMemoryPayloadStorage {
         }
         Ok(estimated_size)
     }
+
+    fn is_on_disk(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

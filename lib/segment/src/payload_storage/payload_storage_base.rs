@@ -95,6 +95,9 @@ pub trait PayloadStorage {
 
     /// Return storage size in bytes
     fn get_storage_size_bytes(&self) -> OperationResult<usize>;
+
+    /// Whether this storage is on-disk or in-memory.
+    fn is_on_disk(&self) -> bool;
 }
 
 pub trait ConditionChecker {

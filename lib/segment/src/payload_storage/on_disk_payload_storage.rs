@@ -71,6 +71,12 @@ impl OnDiskPayloadStorage {
             .transpose()
             .map_err(OperationError::from)
     }
+
+    /// Destroy this payload storage, remove persisted data from RocksDB
+    pub fn destroy(&self) -> OperationResult<()> {
+        self.db_wrapper.remove_column_family()?;
+        Ok(())
+    }
 }
 
 impl PayloadStorage for OnDiskPayloadStorage {
@@ -208,5 +214,9 @@ impl PayloadStorage for OnDiskPayloadStorage {
 
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         self.db_wrapper.get_storage_size_bytes()
+    }
+
+    fn is_on_disk(&self) -> bool {
+        true
     }
 }

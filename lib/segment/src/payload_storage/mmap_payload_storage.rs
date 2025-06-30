@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -29,11 +29,12 @@ impl Blob for Payload {
 #[derive(Debug)]
 pub struct MmapPayloadStorage {
     storage: Arc<RwLock<Gridstore<Payload>>>,
+    populate: bool,
 }
 
 impl MmapPayloadStorage {
     pub fn open_or_create(path: PathBuf, populate: bool) -> OperationResult<Self> {
-        let path = path.join(STORAGE_PATH);
+        let path = storage_dir(path);
         if path.exists() {
             Self::open(path, populate)
         } else {
@@ -55,7 +56,7 @@ impl MmapPayloadStorage {
             storage.read().populate()?;
         }
 
-        Ok(Self { storage })
+        Ok(Self { storage, populate })
     }
 
     fn new(path: PathBuf, populate: bool) -> OperationResult<Self> {
@@ -67,7 +68,7 @@ impl MmapPayloadStorage {
             storage.read().populate()?;
         }
 
-        Ok(Self { storage })
+        Ok(Self { storage, populate })
     }
 
     /// Populate all pages in the mmap.
@@ -265,4 +266,13 @@ impl PayloadStorage for MmapPayloadStorage {
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         Ok(self.storage.read().get_storage_size_bytes())
     }
+
+    fn is_on_disk(&self) -> bool {
+        !self.populate
+    }
+}
+
+/// Get storage directory for this payload storage
+pub fn storage_dir<P: AsRef<Path>>(segment_path: P) -> PathBuf {
+    segment_path.as_ref().join(STORAGE_PATH)
 }

@@ -136,6 +136,10 @@ impl PayloadStorage for SimplePayloadStorage {
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         self.db_wrapper.get_storage_size_bytes()
     }
+
+    fn is_on_disk(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]
