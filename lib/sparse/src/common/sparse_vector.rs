@@ -138,6 +138,11 @@ impl SparseVector {
         self.indices.is_empty() && self.values.is_empty()
     }
 
+    /// Returns the number of elements in the vector.
+    pub fn len(&self) -> usize {
+        self.indices.len()
+    }
+
     /// Score this vector against another vector using dot product.
     /// Warning: Expects both vectors to be sorted by indices.
     ///

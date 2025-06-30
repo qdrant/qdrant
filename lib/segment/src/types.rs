@@ -261,6 +261,7 @@ impl From<CompactExtendedPointId> for ExtendedPointId {
     Eq,
     Hash,
     EnumString,
+    EnumIter,
 )]
 /// Distance function types used to compare vectors
 pub enum Distance {

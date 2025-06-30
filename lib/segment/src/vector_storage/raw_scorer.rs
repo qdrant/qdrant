@@ -15,7 +15,9 @@ use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
 use super::{DenseVectorStorage, MultiVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal, QueryVector};
+use crate::data_types::vectors::{
+    DenseVector, MultiDenseVectorInternal, QueryVector, VectorInternal,
+};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
@@ -23,6 +25,8 @@ use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::multi_metric_query_scorer::MultiMetricQueryScorer;
+use crate::vector_storage::query_scorer::sparse_metric_query_scorer::SparseMetricQueryScorer;
+use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
 
 pub trait RawScorer {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]);
@@ -90,7 +94,7 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseAppendableInRamHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         #[cfg(feature = "rocksdb")]
         VectorStorageEnum::SparseSimple(vs) => raw_sparse_scorer_impl(query, vs, hc),
-        VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_impl(query, vs, hc),
+        VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_volatile(query, vs, hc),
         VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs, hc),
         #[cfg(feature = "rocksdb")]
         VectorStorageEnum::MultiDenseSimple(vs) => raw_multi_scorer_impl(query, vs, hc),
@@ -125,6 +129,26 @@ pub fn new_raw_scorer<'a>(
 }
 
 pub static DEFAULT_STOPPED: AtomicBool = AtomicBool::new(false);
+
+pub fn raw_sparse_scorer_volatile<'a>(
+    query: QueryVector,
+    vector_storage: &'a VolatileSparseVectorStorage,
+    hardware_counter: HardwareCounterCell,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    let QueryVector::Nearest(vector) = query else {
+        return raw_sparse_scorer_impl(query, vector_storage, hardware_counter);
+    };
+    let VectorInternal::Sparse(sparse_vector) = vector else {
+        return Err(OperationError::service_error(
+            "Sparse vector expected to be used against a sparse vector storage",
+        ));
+    };
+
+    let query_scorer =
+        SparseMetricQueryScorer::new(sparse_vector, vector_storage, hardware_counter);
+
+    return raw_scorer_from_query_scorer(query_scorer);
+}
 
 pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
     query: QueryVector,
