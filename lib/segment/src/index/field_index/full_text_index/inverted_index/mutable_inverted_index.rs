@@ -270,14 +270,4 @@ impl InvertedIndex for MutableInvertedIndex {
     fn get_token_id(&self, token: &str, _hw_counter: &HardwareCounterCell) -> Option<TokenId> {
         self.vocab.get(token).copied()
     }
-
-    fn iter_point_ids<'a>(
-        &'a self,
-        token_id: TokenId,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        self.postings.get(token_id as usize).map(|posting_list| {
-            Box::new(posting_list.iter()) as Box<dyn Iterator<Item = PointOffsetType>>
-        })
-    }
 }
