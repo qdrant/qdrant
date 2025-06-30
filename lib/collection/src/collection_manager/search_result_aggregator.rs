@@ -22,9 +22,8 @@ impl SearchResultAggregator {
     }
 
     pub fn push(&mut self, point: ScoredPoint) {
-        let point_id = point.id;
-        if !self.seen.contains(&point_id) {
-            self.seen.insert(point_id);
+        // track new value in `queue`
+        if self.seen.insert(point.id) {
             self.queue.push(point);
         }
     }
