@@ -1,6 +1,6 @@
 use std::mem;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
