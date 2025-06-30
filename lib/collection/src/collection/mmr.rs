@@ -6,7 +6,7 @@ use common::top_k::TopK;
 use common::types::{ScoreType, ScoredPointOffset};
 use itertools::Itertools;
 use segment::common::operation_error::OperationResult;
-use segment::data_types::vectors::{QueryVector, VectorInternal};
+use segment::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
 use segment::types::{ScoredPoint, VectorNameBuf};
 use segment::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use segment::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
@@ -128,7 +128,7 @@ async fn max_similarities(
     // Populate storage with vectors
     let hw_counter = HardwareCounterCell::disposable();
     for (key, vector) in (0..).zip(&vectors) {
-        volatile_storage.insert_vector(key, vector.as_vector_ref(), &hw_counter)?;
+        volatile_storage.insert_vector(key, VectorRef::from(vector), &hw_counter)?;
     }
 
     let compute_max_scores = move || {

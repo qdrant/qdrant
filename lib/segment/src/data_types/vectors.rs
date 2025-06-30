@@ -34,14 +34,6 @@ impl VectorInternal {
             VectorInternal::MultiDense(multivec) => multivec.vectors_count(),
         }
     }
-
-    pub fn as_vector_ref(&self) -> VectorRef<'_> {
-        match self {
-            VectorInternal::Dense(dense) => VectorRef::Dense(dense.as_slice()),
-            VectorInternal::Sparse(sparse) => VectorRef::Sparse(sparse),
-            VectorInternal::MultiDense(multivec) => VectorRef::MultiDense(multivec.into()),
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
