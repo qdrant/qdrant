@@ -66,7 +66,6 @@ macro_rules! ensure {
 
 const DIM: usize = 5;
 const ATTEMPTS: usize = 100;
-const RNG_SEED: u64 = 1;
 
 struct TestSegments {
     _base_dir: TempDir,
@@ -81,7 +80,7 @@ impl TestSegments {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let mut rng = StdRng::seed_from_u64(RNG_SEED);
+        let mut rng = StdRng::seed_from_u64(42);
 
         let config = Self::make_simple_config(true);
 
@@ -491,7 +490,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 }
 
 fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Result<()> {
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut rng = rand::rng();
 
     for _i in 0..ATTEMPTS {
         let query = random_vector(&mut rng, DIM).into();
@@ -883,7 +882,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
 
 /// Compare search with plain, struct, and mmap indices.
 fn test_struct_payload_index(test_segments: &TestSegments) -> Result<()> {
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut rng = rand::rng();
 
     for _i in 0..ATTEMPTS {
         let query_vector = random_vector(&mut rng, DIM).into();
@@ -1005,7 +1004,7 @@ fn test_struct_payload_index(test_segments: &TestSegments) -> Result<()> {
 }
 
 fn test_struct_payload_geo_boundingbox_index(test_segments: &TestSegments) -> Result<()> {
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut rng = rand::rng();
 
     let geo_bbox = GeoBoundingBox {
         top_left: GeoPoint {
@@ -1029,7 +1028,7 @@ fn test_struct_payload_geo_boundingbox_index(test_segments: &TestSegments) -> Re
 }
 
 fn test_struct_payload_geo_radius_index(test_segments: &TestSegments) -> Result<()> {
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut rng = rand::rng();
 
     let r_meters = rng.random_range(1.0..10000.0);
     let geo_radius = GeoRadius {
@@ -1055,7 +1054,7 @@ fn test_struct_payload_geo_polygon_index(test_segments: &TestSegments) -> Result
     let interiors_num = 3;
 
     fn generate_ring(polygon_edge: i32) -> GeoLineString {
-        let mut rng = StdRng::seed_from_u64(RNG_SEED);
+        let mut rng = rand::rng();
         let mut line = GeoLineString {
             points: (0..polygon_edge)
                 .map(|_| GeoPoint {
@@ -1096,7 +1095,7 @@ fn test_struct_payload_index_nested_fields() {
     let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
     let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
 
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut rng = rand::rng();
 
     let (struct_segment, plain_segment) =
         build_test_segments_nested_payload(dir1.path(), dir2.path());
