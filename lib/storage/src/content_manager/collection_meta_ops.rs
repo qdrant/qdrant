@@ -179,6 +179,10 @@ pub struct CreateCollection {
     #[serde(default)]
     #[schemars(skip)]
     pub uuid: Option<Uuid>,
+    /// Specify some metadata associated to a collection to persist.
+    #[serde(default)]
+    #[schemars(skip)]
+    pub properties: Option<serde_json::Value>
 }
 
 /// Operation for creating new collection and (optionally) specify index params
@@ -423,6 +427,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             quantization_config,
             strict_mode_config,
             uuid,
+            properties: None,
         } = value;
 
         let CollectionParams {

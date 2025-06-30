@@ -215,6 +215,7 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             strict_mode_config,
             // Internal UUID to identify unique collections in consensus snapshots
             uuid: _,
+            properties: _,
         } = config;
 
         CollectionConfig {

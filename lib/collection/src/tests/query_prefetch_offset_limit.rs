@@ -58,6 +58,7 @@ async fn fixture() -> Collection {
         quantization_config: Default::default(),
         strict_mode_config: Default::default(),
         uuid: None,
+        properties: None,
     };
 
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();

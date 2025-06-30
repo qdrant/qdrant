@@ -47,6 +47,7 @@ impl TableOfContent {
             sparse_vectors,
             strict_mode_config,
             uuid,
+            properties,
         } = operation;
 
         {
@@ -162,6 +163,7 @@ impl TableOfContent {
             )?,
             read_fan_out_factor: None,
         };
+
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),
             Some(diff) => diff.update(&self.storage_config.wal)?,
@@ -217,6 +219,7 @@ impl TableOfContent {
             quantization_config,
             strict_mode_config,
             uuid,
+            properties,
         };
 
         // No shard key mapping on creation, shard keys are set up after creating the collection

@@ -221,6 +221,8 @@ pub struct CollectionConfigInternal {
     pub strict_mode_config: Option<StrictModeConfig>,
     #[serde(default)]
     pub uuid: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub properties: Option<serde_json::Value>
 }
 
 impl CollectionConfigInternal {
