@@ -203,16 +203,20 @@ impl FullTextIndex {
         parse_query: &ParsedQuery,
         hw_counter: &HardwareCounterCell,
     ) -> AHashSet<PointOffsetType> {
+        let parse_query = parse_query.clone();
         match self {
             Self::Mutable(index) => index
                 .inverted_index
-                .collect_intersection(parse_query, hw_counter),
+                .filter(parse_query, hw_counter)
+                .collect(),
             Self::Immutable(index) => index
                 .inverted_index
-                .collect_intersection(parse_query, hw_counter),
+                .filter(parse_query, hw_counter)
+                .collect(),
             Self::Mmap(index) => index
                 .inverted_index
-                .collect_intersection(parse_query, hw_counter),
+                .filter(parse_query, hw_counter)
+                .collect(),
         }
     }
 

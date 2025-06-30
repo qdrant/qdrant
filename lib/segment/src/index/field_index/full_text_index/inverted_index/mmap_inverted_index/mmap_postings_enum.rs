@@ -1,4 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+#[cfg(test)]
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
@@ -33,6 +34,7 @@ impl MmapPostingsEnum {
         }
     }
 
+    #[cfg(test)]
     pub fn iter_ids<'a>(
         &'a self,
         token_id: TokenId,

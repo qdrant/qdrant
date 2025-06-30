@@ -403,12 +403,4 @@ impl InvertedIndex for MmapInvertedIndex {
             .and_then(<[TokenId]>::first)
             .copied()
     }
-
-    fn iter_point_ids<'a>(
-        &'a self,
-        token_id: TokenId,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        self.postings.iter_ids(token_id, hw_counter)
-    }
 }

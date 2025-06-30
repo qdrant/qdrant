@@ -1,3 +1,4 @@
+#[cfg(test)]
 use common::types::PointOffsetType;
 use posting_list::PostingList;
 
@@ -37,6 +38,7 @@ impl ImmutablePostings {
         }
     }
 
+    #[cfg(test)]
     pub fn iter_ids(
         &self,
         token_id: TokenId,
