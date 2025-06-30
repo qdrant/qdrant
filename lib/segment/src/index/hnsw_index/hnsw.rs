@@ -1501,8 +1501,6 @@ impl<'a> OldIndexCandidate<'a> {
         }
         drop(old_quantized_vectors_ref);
 
-        let old_storage_ref = old_index.vector_storage.borrow();
-
         let new_deleted = vector_storage.deleted_vector_bitslice();
         let old_id_tracker = old_index.id_tracker.borrow();
 
@@ -1547,10 +1545,7 @@ impl<'a> OldIndexCandidate<'a> {
             let new_offset =
                 new_offset.filter(|&id| !new_deleted.get_bit(id as usize).unwrap_or(false));
 
-            // Even if the old vector is marked as deleted, we still might want
-            // to reuse the graph built with this vector.
-            // Thus, instead of checking `deleted_vector_bitslice`, we check
-            // that the vector present in the graph, and it's value is the same.
+            // If vector is not present in the old graph, assume it's deleted.
             let old_offset = old_offset.filter(|&id| old_graph_has_point(id));
 
             match (new_offset, old_offset) {
@@ -1563,13 +1558,14 @@ impl<'a> OldIndexCandidate<'a> {
                     }
                 }
                 (Some(new_offset), Some(old_offset)) => {
-                    let new_vector = vector_storage.get_vector(new_offset);
-                    let old_vector = old_storage_ref.get_vector(old_offset);
-                    if old_vector == new_vector {
+                    let new_version = id_tracker.internal_version(new_offset);
+                    let old_version = old_id_tracker.internal_version(old_offset);
+
+                    if old_version == new_version {
                         old_to_new[old_offset as usize] = Some(new_offset);
                         valid_points += 1;
                     } else {
-                        // Vector is changed.
+                        // Version is different.
                         missing_points += 1;
                         if !healing_enabled {
                             return None;
@@ -1606,7 +1602,6 @@ impl<'a> OldIndexCandidate<'a> {
         }
 
         drop(old_id_tracker);
-        drop(old_storage_ref);
 
         Some(OldIndexCandidate {
             index: old_index,
