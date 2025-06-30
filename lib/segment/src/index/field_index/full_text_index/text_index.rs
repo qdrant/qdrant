@@ -198,7 +198,7 @@ impl FullTextIndex {
     }
 
     /// Build the set intersection of point ids from the query tokens
-    pub fn query_tokens_posting_intersection(
+    pub fn collect_intersection(
         &self,
         parse_query: &ParsedQuery,
         hw_counter: &HardwareCounterCell,
@@ -206,13 +206,13 @@ impl FullTextIndex {
         match self {
             Self::Mutable(index) => index
                 .inverted_index
-                .query_tokens_posting_intersection(parse_query, hw_counter),
+                .collect_intersection(parse_query, hw_counter),
             Self::Immutable(index) => index
                 .inverted_index
-                .query_tokens_posting_intersection(parse_query, hw_counter),
+                .collect_intersection(parse_query, hw_counter),
             Self::Mmap(index) => index
                 .inverted_index
-                .query_tokens_posting_intersection(parse_query, hw_counter),
+                .collect_intersection(parse_query, hw_counter),
         }
     }
 

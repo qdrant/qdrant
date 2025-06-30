@@ -345,7 +345,7 @@ pub trait InvertedIndex {
         hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
-    fn query_tokens_posting_intersection(
+    fn collect_intersection(
         &self,
         parsed_query: &ParsedQuery,
         hw_counter: &HardwareCounterCell,
@@ -372,6 +372,12 @@ pub trait InvertedIndex {
 }
 
 /// Intersect a collection of sorted iterators
+///
+/// # Arguments
+/// * `iterators` - A vector of iterators that yield items in sorted order
+///
+/// # Returns
+/// A vector containing the intersection of all iterators, maintaining sorted order
 fn intersect_sorted<I, T>(mut iterators: Vec<I>) -> Vec<T>
 where
     I: Iterator<Item = T>,
