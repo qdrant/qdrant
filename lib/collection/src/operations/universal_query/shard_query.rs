@@ -69,6 +69,8 @@ pub enum SampleInternal {
 /// Maximum Marginal Relevance configuration
 #[derive(Debug, Clone, PartialEq)]
 pub struct MmrInternal {
+    /// Query vector, used to get the relevance of each point.
+    pub vector: VectorInternal,
     /// Vector name to use for similarity computation, defaults to empty string (default vector)
     pub using: VectorNameBuf,
     /// Lambda parameter controlling diversity vs relevance trade-off (0.0 = full diversity, 1.0 = full relevance)

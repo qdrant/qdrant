@@ -425,8 +425,21 @@ impl LocalShard {
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        // Flatten all source points into a single list
-        let points_with_vector = sources.into_iter().flatten();
+        let start = Instant::now();
+
+        let points_with_vector = self
+            .fill_with_payload_or_vectors(
+                sources,
+                false.into(),
+                WithVector::from(mmr.using.clone()),
+                timeout,
+                hw_measurement_acc.clone(),
+            )
+            .await?
+            .into_iter()
+            .flatten();
+
+        let timeout = timeout.saturating_sub(start.elapsed());
 
         let collection_params = &self.collection_config.read().await.params;
 

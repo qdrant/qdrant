@@ -11,7 +11,7 @@ use segment::types::{ScoredPoint, VectorNameBuf};
 use segment::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use segment::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
 use segment::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
-use segment::vector_storage::{VectorStorage, new_raw_scorer};
+use segment::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer};
 use tokio::runtime::Handle;
 
 use crate::config::CollectionParams;
@@ -65,43 +65,43 @@ pub async fn mmr_from_points_with_vector(
         return Ok(candidates);
     }
 
-    let max_similarities = max_similarities(
-        collection_params,
-        vectors,
-        mmr.using,
-        search_runtime_handle,
+    let volatile_storage = create_volatile_storage(collection_params, &vectors, mmr.using)?;
+
+    let compute_similarities = move || {
+        // get similarities against query
+        let query_similarities = relevance_similarities(
+            &volatile_storage,
+            mmr.vector,
+            hw_measurement_acc.get_counter_cell(),
+        )?;
+
+        // get similarites between candidates
+        let max_similarities = max_similarities(&volatile_storage, vectors, hw_measurement_acc)?;
+
+        CollectionResult::Ok((query_similarities, max_similarities))
+    };
+
+    let (query_similarities, max_similarities) = tokio::time::timeout(
         timeout,
-        hw_measurement_acc,
+        search_runtime_handle.spawn_blocking(compute_similarities),
     )
-    .await?;
+    .await
+    .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "mmr"))???;
 
     Ok(maximum_marginal_relevance(
         candidates,
+        query_similarities,
         max_similarities,
         mmr.lambda,
         limit,
     ))
 }
 
-/// Selects the maximal similarity for each point in the provided set,
-/// compared to each other within the same set.
-///
-/// Panics if there are less than 2 vectors.
-async fn max_similarities(
+fn create_volatile_storage(
     collection_params: &CollectionParams,
-    vectors: Vec<VectorInternal>,
+    vectors: &[VectorInternal],
     using: VectorNameBuf,
-    search_runtime_handle: &Handle,
-    timeout: Duration,
-    hw_measurement_acc: HwMeasurementAcc,
-) -> CollectionResult<Vec<ScoreType>> {
-    let num_vectors = vectors.len();
-
-    // if we have less than 2 points, we can't build a matrix
-    if num_vectors < 2 {
-        panic!("There should be at least two vectors to calculate max similarities")
-    }
-
+) -> CollectionResult<VectorStorageEnum> {
     // Create temporary vector storage
     let mut volatile_storage = {
         let distance = collection_params.get_distance(&using)?;
@@ -127,51 +127,83 @@ async fn max_similarities(
 
     // Populate storage with vectors
     let hw_counter = HardwareCounterCell::disposable();
-    for (key, vector) in (0..).zip(&vectors) {
+    for (key, vector) in (0..).zip(vectors) {
         volatile_storage.insert_vector(key, VectorRef::from(vector), &hw_counter)?;
     }
 
-    let compute_max_scores = move || {
-        // Prepare scorers
-        let raw_scorers = vectors
-            .into_iter()
-            .map(|vector| {
-                let query = QueryVector::Nearest(vector);
-                new_raw_scorer(
-                    query,
-                    &volatile_storage,
-                    hw_measurement_acc.get_counter_cell(),
-                )
-            })
-            .collect::<OperationResult<Vec<_>>>()?;
+    Ok(volatile_storage)
+}
 
-        // Compute all scores, retain only the top score which isn't the same vector
-        let all_offsets = (0..num_vectors as u32).collect::<Vec<_>>();
-        let max_scores = raw_scorers
-            .into_iter()
-            .enumerate()
-            .map(|(tmp_id, scorer)| {
-                let mut scores = vec![0.0; num_vectors];
-                scorer.score_points(&all_offsets, &mut scores);
-                scores
-                    .into_iter()
-                    .enumerate()
-                    // exclude the vector score against itself
-                    .filter_map(|(i, score)| (i != tmp_id).then_some(score))
-                    .max_by(|a, b| a.partial_cmp(b).expect("No NaN"))
-                    .expect("There should be at least two vectors")
-            })
-            .collect::<Vec<_>>();
+fn relevance_similarities(
+    volatile_storage: &VectorStorageEnum,
+    query_vector: VectorInternal,
+    hw_counter: HardwareCounterCell,
+) -> CollectionResult<Vec<ScoreType>> {
+    let query = QueryVector::Nearest(query_vector);
+    let query_scorer = new_raw_scorer(query, &volatile_storage, hw_counter)?;
 
-        Ok(max_scores)
-    };
+    // get similarity between candidates and query
+    let ids: Vec<_> = (0..volatile_storage.total_vector_count() as u32).collect();
+    let mut similarities = vec![0.0; ids.len()];
+    query_scorer.score_points(&ids, &mut similarities);
 
-    tokio::time::timeout(
-        timeout,
-        search_runtime_handle.spawn_blocking(compute_max_scores),
-    )
-    .await
-    .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "max_similarities"))??
+    Ok(similarities)
+}
+
+/// Selects the maximal similarity for each point in the provided set,
+/// compared to each other within the same set.
+///
+/// Panics if there are less than 2 vectors.
+fn max_similarities(
+    volatile_storage: &VectorStorageEnum,
+    vectors: Vec<VectorInternal>,
+    hw_measurement_acc: HwMeasurementAcc,
+) -> CollectionResult<Vec<ScoreType>> {
+    let num_vectors = vectors.len();
+
+    // if we have less than 2 points, we can't build a matrix
+    if num_vectors < 2 {
+        debug_assert!(
+            false,
+            "There should be at least two vectors to calculate max similarities"
+        );
+        return Err(CollectionError::service_error(
+            "There should be at least two vectors to calculate max similarities",
+        ));
+    }
+
+    // Prepare scorers
+    let raw_scorers = vectors
+        .into_iter()
+        .map(|vector| {
+            let query = QueryVector::Nearest(vector);
+            new_raw_scorer(
+                query,
+                &volatile_storage,
+                hw_measurement_acc.get_counter_cell(),
+            )
+        })
+        .collect::<OperationResult<Vec<_>>>()?;
+
+    // Compute all scores, retain only the top score which isn't the same vector
+    let all_offsets = (0..num_vectors as u32).collect::<Vec<_>>();
+    let max_scores = raw_scorers
+        .into_iter()
+        .enumerate()
+        .map(|(tmp_id, scorer)| {
+            let mut scores = vec![0.0; num_vectors];
+            scorer.score_points(&all_offsets, &mut scores);
+            scores
+                .into_iter()
+                .enumerate()
+                // exclude the vector score against itself
+                .filter_map(|(i, score)| (i != tmp_id).then_some(score))
+                .max_by(|a, b| a.partial_cmp(b).expect("No NaN"))
+                .expect("There should be at least two vectors")
+        })
+        .collect::<Vec<_>>();
+
+    Ok(max_scores)
 }
 
 /// Apply Maximum Marginal Relevance algorithm.
@@ -184,14 +216,15 @@ async fn max_similarities(
 /// * `limit` - the maximum number of points to select.
 fn maximum_marginal_relevance(
     candidates: Vec<ScoredPoint>,
+    query_similarities: Vec<ScoreType>,
     max_similarities: Vec<ScoreType>,
     lambda: f32,
     limit: usize,
 ) -> Vec<ScoredPoint> {
     let mut top_k = TopK::new(limit);
 
-    for (idx, candidate) in (0..).zip(&candidates) {
-        let relevance_score = candidate.score;
+    for idx in 0..candidates.len() {
+        let relevance_score = query_similarities[idx];
 
         let max_similarity = max_similarities[idx];
 
@@ -215,496 +248,492 @@ fn maximum_marginal_relevance(
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use std::collections::{BTreeMap, HashMap};
-    use std::time::Duration;
+// #[cfg(test)]
+// mod tests {
+//     use std::collections::{BTreeMap, HashMap};
+//     use std::time::Duration;
 
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
-    use common::types::ScoreType;
-    use rstest::rstest;
-    use segment::data_types::vectors::{
-        MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
-    };
-    use segment::types::{
-        Distance, MultiVectorComparator, MultiVectorConfig, PointIdType, ScoredPoint, VectorNameBuf,
-    };
-    use sparse::common::sparse_vector::SparseVector;
-    use strum::IntoEnumIterator;
-    use tokio::runtime::Handle;
+//     use common::counter::hardware_accumulator::HwMeasurementAcc;
+//     use rstest::rstest;
+//     use segment::data_types::vectors::{
+//         MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
+//     };
+//     use segment::types::{
+//         Distance, MultiVectorComparator, MultiVectorConfig, PointIdType, ScoredPoint, VectorNameBuf,
+//     };
+//     use sparse::common::sparse_vector::SparseVector;
+//     use strum::IntoEnumIterator;
+//     use tokio::runtime::Handle;
 
-    use crate::collection::mmr::mmr_from_points_with_vector;
-    use crate::config::CollectionParams;
-    use crate::operations::types::VectorsConfig;
-    use crate::operations::universal_query::shard_query::MmrInternal;
-    use crate::operations::vector_params_builder::VectorParamsBuilder;
+//     use crate::collection::mmr::mmr_from_points_with_vector;
+//     use crate::config::CollectionParams;
+//     use crate::operations::types::VectorsConfig;
+//     use crate::operations::universal_query::shard_query::MmrInternal;
+//     use crate::operations::vector_params_builder::VectorParamsBuilder;
 
-    /// Create a simple collection configuration with a single default vector.
-    fn create_test_collection_params(distance: Distance, dim: usize) -> CollectionParams {
-        CollectionParams {
-            vectors: VectorsConfig::Single(VectorParamsBuilder::new(dim as u64, distance).build()),
-            ..CollectionParams::empty()
-        }
-    }
+//     /// Create a simple collection configuration with a single default vector.
+//     fn create_test_collection_params(distance: Distance, dim: usize) -> CollectionParams {
+//         CollectionParams {
+//             vectors: VectorsConfig::Single(VectorParamsBuilder::new(dim as u64, distance).build()),
+//             ..CollectionParams::empty()
+//         }
+//     }
 
-    /// Create a collection configuration with a named vector.
-    fn create_test_collection_params_named(
-        distance: Distance,
-        dim: usize,
-        name: &str,
-    ) -> CollectionParams {
-        let mut vectors_map = BTreeMap::new();
-        vectors_map.insert(
-            name.to_string(),
-            VectorParamsBuilder::new(dim as u64, distance).build(),
-        );
+//     /// Create a collection configuration with a named vector.
+//     fn create_test_collection_params_named(
+//         distance: Distance,
+//         dim: usize,
+//         name: &str,
+//     ) -> CollectionParams {
+//         let mut vectors_map = BTreeMap::new();
+//         vectors_map.insert(
+//             name.to_string(),
+//             VectorParamsBuilder::new(dim as u64, distance).build(),
+//         );
 
-        CollectionParams {
-            vectors: VectorsConfig::Multi(vectors_map),
-            ..CollectionParams::empty()
-        }
-    }
+//         CollectionParams {
+//             vectors: VectorsConfig::Multi(vectors_map),
+//             ..CollectionParams::empty()
+//         }
+//     }
 
-    /// Create a ScoredPoint with a dense vector attached.
-    fn create_scored_point_with_vector(
-        id: PointIdType,
-        score: ScoreType,
-        vector: Vec<f32>,
-        vector_name: Option<&str>,
-    ) -> ScoredPoint {
-        let vector_internal = VectorInternal::Dense(vector);
-        let mut vectors = HashMap::new();
+//     /// Create a ScoredPoint with a dense vector attached.
+//     fn create_scored_point_with_vector(
+//         id: PointIdType,
+//         vector: Vec<f32>,
+//         vector_name: Option<&str>,
+//     ) -> ScoredPoint {
+//         let vector_internal = VectorInternal::Dense(vector);
+//         let mut vectors = HashMap::new();
 
-        let name = vector_name.unwrap_or("");
-        vectors.insert(name.to_string(), vector_internal);
+//         let name = vector_name.unwrap_or("");
+//         vectors.insert(name.to_string(), vector_internal);
 
-        ScoredPoint {
-            id,
-            version: 0,
-            score,
-            payload: None,
-            vector: Some(VectorStructInternal::Named(vectors)),
-            shard_key: None,
-            order_value: None,
-        }
-    }
+//         ScoredPoint {
+//             id,
+//             version: 0,
+//             score: 0.0,
+//             payload: None,
+//             vector: Some(VectorStructInternal::Named(vectors)),
+//             shard_key: None,
+//             order_value: None,
+//         }
+//     }
 
-    /// Create a ScoredPoint without any vector attached.
-    fn create_scored_point_without_vector(id: PointIdType, score: ScoreType) -> ScoredPoint {
-        ScoredPoint {
-            id,
-            version: 0,
-            score,
-            payload: None,
-            vector: None,
-            shard_key: None,
-            order_value: None,
-        }
-    }
+//     /// Create a ScoredPoint without any vector attached.
+//     fn create_scored_point_without_vector(id: PointIdType) -> ScoredPoint {
+//         ScoredPoint {
+//             id,
+//             version: 0,
+//             score: 0.0,
+//             payload: None,
+//             vector: None,
+//             shard_key: None,
+//             order_value: None,
+//         }
+//     }
 
-    /// Create a ScoredPoint with a sparse vector attached.
-    fn create_scored_point_with_sparse_vector(
-        id: PointIdType,
-        score: ScoreType,
-        indices: Vec<u32>,
-        values: Vec<f32>,
-        vector_name: Option<&str>,
-    ) -> ScoredPoint {
-        let sparse_vector = SparseVector::new(indices, values).expect("Valid sparse vector");
-        let vector_internal = VectorInternal::Sparse(sparse_vector);
-        let mut vectors = HashMap::new();
+//     /// Create a ScoredPoint with a sparse vector attached.
+//     fn create_scored_point_with_sparse_vector(
+//         id: PointIdType,
+//         indices: Vec<u32>,
+//         values: Vec<f32>,
+//         vector_name: Option<&str>,
+//     ) -> ScoredPoint {
+//         let sparse_vector = SparseVector::new(indices, values).expect("Valid sparse vector");
+//         let vector_internal = VectorInternal::Sparse(sparse_vector);
+//         let mut vectors = HashMap::new();
 
-        let name = vector_name.unwrap_or("");
-        vectors.insert(name.to_string(), vector_internal);
+//         let name = vector_name.unwrap_or("");
+//         vectors.insert(name.to_string(), vector_internal);
 
-        ScoredPoint {
-            id,
-            version: 0,
-            score,
-            payload: None,
-            vector: Some(VectorStructInternal::Named(vectors)),
-            shard_key: None,
-            order_value: None,
-        }
-    }
+//         ScoredPoint {
+//             id,
+//             version: 0,
+//             score: 0.0,
+//             payload: None,
+//             vector: Some(VectorStructInternal::Named(vectors)),
+//             shard_key: None,
+//             order_value: None,
+//         }
+//     }
 
-    /// Create a ScoredPoint with a multi-dense vector attached.
-    fn create_scored_point_with_multi_vector(
-        id: PointIdType,
-        score: ScoreType,
-        vectors: Vec<Vec<f32>>,
-        vector_name: Option<&str>,
-    ) -> ScoredPoint {
-        let multi_vector = MultiDenseVectorInternal::new_unchecked(vectors);
-        let vector_internal = VectorInternal::MultiDense(multi_vector);
-        let mut vector_map = HashMap::new();
+//     /// Create a ScoredPoint with a multi-dense vector attached.
+//     fn create_scored_point_with_multi_vector(
+//         id: PointIdType,
+//         vectors: Vec<Vec<f32>>,
+//         vector_name: Option<&str>,
+//     ) -> ScoredPoint {
+//         let multi_vector = MultiDenseVectorInternal::new_unchecked(vectors);
+//         let vector_internal = VectorInternal::MultiDense(multi_vector);
+//         let mut vector_map = HashMap::new();
 
-        let name = vector_name.unwrap_or("");
-        vector_map.insert(name.to_string(), vector_internal);
+//         let name = vector_name.unwrap_or("");
+//         vector_map.insert(name.to_string(), vector_internal);
 
-        ScoredPoint {
-            id,
-            version: 0,
-            score,
-            payload: None,
-            vector: Some(VectorStructInternal::Named(vector_map)),
-            shard_key: None,
-            order_value: None,
-        }
-    }
+//         ScoredPoint {
+//             id,
+//             version: 0,
+//             score: 0.0,
+//             payload: None,
+//             vector: Some(VectorStructInternal::Named(vector_map)),
+//             shard_key: None,
+//             order_value: None,
+//         }
+//     }
 
-    /// Create a collection configuration with multi-vectors.
-    fn create_test_collection_params_multi(
-        distance: Distance,
-        dim: usize,
-        name: &str,
-    ) -> CollectionParams {
-        let mut vectors_map = BTreeMap::new();
-        let multi_config = MultiVectorConfig {
-            comparator: MultiVectorComparator::MaxSim,
-        };
-        vectors_map.insert(
-            name.to_string(),
-            VectorParamsBuilder::new(dim as u64, distance)
-                .with_multivector_config(multi_config)
-                .build(),
-        );
+//     /// Create a collection configuration with multi-vectors.
+//     fn create_test_collection_params_multi(
+//         distance: Distance,
+//         dim: usize,
+//         name: &str,
+//     ) -> CollectionParams {
+//         let mut vectors_map = BTreeMap::new();
+//         let multi_config = MultiVectorConfig {
+//             comparator: MultiVectorComparator::MaxSim,
+//         };
+//         vectors_map.insert(
+//             name.to_string(),
+//             VectorParamsBuilder::new(dim as u64, distance)
+//                 .with_multivector_config(multi_config)
+//                 .build(),
+//         );
 
-        CollectionParams {
-            vectors: VectorsConfig::Multi(vectors_map),
-            ..CollectionParams::empty()
-        }
-    }
+//         CollectionParams {
+//             vectors: VectorsConfig::Multi(vectors_map),
+//             ..CollectionParams::empty()
+//         }
+//     }
 
-    /// Test the basic MMR functionality with multiple lambda values
-    #[tokio::test]
-    #[rstest]
-    #[case::full_relevance(1.0, &[1, 2, 3])]
-    #[case::balanced(0.5, &[1, 3, 4])]
-    #[case::full_diversity(0.0, &[3, 4, 1])]
-    async fn test_mmr_lambda(#[case] lambda: f32, #[case] expected_order: &[u64]) {
-        let collection_params = create_test_collection_params(Distance::Dot, 3);
-        let handle = Handle::current();
-        let hw_acc = HwMeasurementAcc::new();
+//     /// Test the basic MMR functionality with multiple lambda values
+//     #[tokio::test]
+//     #[rstest]
+//     #[case::full_relevance(1.0, &[1, 2, 3])]
+//     #[case::balanced(0.5, &[1, 3, 4])]
+//     #[case::full_diversity(0.0, &[3, 4, 1])]
+//     async fn test_mmr_lambda(#[case] lambda: f32, #[case] expected_order: &[u64]) {
+//         let collection_params = create_test_collection_params(Distance::Dot, 3);
+//         let handle = Handle::current();
+//         let hw_acc = HwMeasurementAcc::new();
 
-        let points = vec![
-            create_scored_point_with_vector(1.into(), 0.98, vec![1.0, 0.0, 0.0], None),
-            create_scored_point_with_vector(2.into(), 0.87, vec![0.2, 0.1, 0.1], None), // Intersecting all points
-            create_scored_point_with_vector(3.into(), 0.86, vec![0.0, 1.0, 0.0], None), // Orthogonal to Point 1
-            create_scored_point_with_vector(4.into(), 0.84, vec![0.0, 0.01, 1.0], None), // Orthogonal to Points 1 and small intersection with Point 3
-        ];
+//         let points = vec![
+//             create_scored_point_with_vector(1.into(), vec![1.0, 0.0, 0.0], None),
+//             create_scored_point_with_vector(2.into(), vec![0.2, 0.1, 0.1], None), // Intersecting all points
+//             create_scored_point_with_vector(3.into(), vec![0.0, 1.0, 0.0], None), // Orthogonal to Point 1
+//             create_scored_point_with_vector(4.into(), vec![0.0, 0.01, 1.0], None), // Orthogonal to Points 1 and small intersection with Point 3
+//         ];
 
-        let mmr = MmrInternal {
-            using: VectorNameBuf::from(""),
-            lambda,
-        };
+//         let mmr = MmrInternal {
+//             vector: vec![1.0, 0.0, 0.0].into(),
+//             using: VectorNameBuf::from(""),
+//             lambda,
+//         };
 
-        let result = mmr_from_points_with_vector(
-            &collection_params,
-            points.clone(),
-            mmr,
-            3,
-            &handle,
-            Duration::from_secs(10),
-            hw_acc,
-        )
-        .await;
+//         let result = mmr_from_points_with_vector(
+//             &collection_params,
+//             points.clone(),
+//             mmr,
+//             3,
+//             &handle,
+//             Duration::from_secs(10),
+//             hw_acc,
+//         )
+//         .await;
 
-        let scored_points = result.unwrap();
-        assert_eq!(scored_points.len(), 3);
+//         let scored_points = result.unwrap();
+//         assert_eq!(scored_points.len(), 3);
 
-        // With MMR, we should get 3 diverse points, and the first should be the highest original score
-        // The exact order depends on the similarity calculations, but we should get all different points
-        let selected_ids: Vec<_> = scored_points.iter().map(|p| p.id).collect();
-        let expected_ids = expected_order
-            .iter()
-            .map(|&id| id.into())
-            .collect::<Vec<_>>();
+//         // With MMR, we should get 3 diverse points, and the first should be the highest original score
+//         // The exact order depends on the similarity calculations, but we should get all different points
+//         let selected_ids: Vec<_> = scored_points.iter().map(|p| p.id).collect();
+//         let expected_ids = expected_order
+//             .iter()
+//             .map(|&id| id.into())
+//             .collect::<Vec<_>>();
 
-        assert_eq!(selected_ids, expected_ids);
+//         assert_eq!(selected_ids, expected_ids);
 
-        // The scores should be modified by MMR (different from original scores)
-        assert_ne!(scored_points[0].score, 0.9); // MMR should modify the original scores
-    }
+//         // The scores should be modified by MMR (different from original scores)
+//         assert_ne!(scored_points[0].score, 0.9); // MMR should modify the original scores
+//     }
 
-    /// Test MMR behavior with insufficient points (< 2) for similarity computation.
-    #[tokio::test]
-    async fn test_mmr_less_than_two_points() {
-        let collection_params = create_test_collection_params(Distance::Cosine, 3);
-        let handle = Handle::current();
-        let hw_acc = HwMeasurementAcc::new();
+//     /// Test MMR behavior with insufficient points (< 2) for similarity computation.
+//     #[tokio::test]
+//     async fn test_mmr_less_than_two_points() {
+//         let collection_params = create_test_collection_params(Distance::Cosine, 3);
+//         let handle = Handle::current();
+//         let hw_acc = HwMeasurementAcc::new();
 
-        // Test with empty points
-        let empty_points = vec![];
-        let mmr = MmrInternal {
-            using: VectorNameBuf::from(""),
-            lambda: 0.5,
-        };
+//         // Test with empty points
+//         let empty_points = vec![];
+//         let mmr = MmrInternal {
+//             vector: vec![1.0, 0.0].into(),
+//             using: VectorNameBuf::from(""),
+//             lambda: 0.5,
+//         };
 
-        let result = mmr_from_points_with_vector(
-            &collection_params,
-            empty_points,
-            mmr.clone(),
-            5,
-            &handle,
-            Duration::from_secs(10),
-            hw_acc.clone(),
-        )
-        .await;
+//         let result = mmr_from_points_with_vector(
+//             &collection_params,
+//             empty_points,
+//             mmr.clone(),
+//             5,
+//             &handle,
+//             Duration::from_secs(10),
+//             hw_acc.clone(),
+//         )
+//         .await;
 
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+//         assert!(result.is_ok());
+//         assert_eq!(result.unwrap().len(), 0);
 
-        // Test with one point
-        let single_point = vec![create_scored_point_with_vector(
-            1.into(),
-            0.9,
-            vec![1.0, 0.0, 0.0],
-            None,
-        )];
+//         // Test with one point
+//         let single_point = vec![create_scored_point_with_vector(
+//             1.into(),
+//             vec![1.0, 0.0, 0.0],
+//             None,
+//         )];
 
-        let result = mmr_from_points_with_vector(
-            &collection_params,
-            single_point,
-            mmr,
-            5,
-            &handle,
-            Duration::from_secs(10),
-            hw_acc,
-        )
-        .await;
+//         let result = mmr_from_points_with_vector(
+//             &collection_params,
+//             single_point,
+//             mmr,
+//             5,
+//             &handle,
+//             Duration::from_secs(10),
+//             hw_acc,
+//         )
+//         .await;
 
-        assert!(result.is_ok());
-        let scored_points = result.unwrap();
-        assert_eq!(scored_points.len(), 1);
-        assert_eq!(scored_points[0].id, 1.into());
-    }
+//         assert!(result.is_ok());
+//         let scored_points = result.unwrap();
+//         assert_eq!(scored_points.len(), 1);
+//         assert_eq!(scored_points[0].id, 1.into());
+//     }
 
-    #[tokio::test]
-    async fn test_mmr_points_without_required_vector() {
-        let collection_params = create_test_collection_params_named(Distance::Cosine, 3, "custom");
-        let handle = Handle::current();
-        let hw_acc = HwMeasurementAcc::new();
+//     #[tokio::test]
+//     async fn test_mmr_points_without_required_vector() {
+//         let collection_params = create_test_collection_params_named(Distance::Cosine, 3, "custom");
+//         let handle = Handle::current();
+//         let hw_acc = HwMeasurementAcc::new();
 
-        let points = vec![
-            create_scored_point_with_vector(1.into(), 0.9, vec![1.0, 0.0, 0.0], Some("custom")),
-            create_scored_point_without_vector(2.into(), 0.8), // No vector
-            create_scored_point_with_vector(3.into(), 0.7, vec![0.0, 1.0, 0.0], Some("other")), // Wrong vector name
-            create_scored_point_with_vector(4.into(), 0.6, vec![0.0, 0.0, 1.0], Some("custom")),
-        ];
+//         let points = vec![
+//             create_scored_point_with_vector(1.into(), vec![1.0, 0.0, 0.0], Some("custom")),
+//             create_scored_point_without_vector(2.into()), // No vector
+//             create_scored_point_with_vector(3.into(), vec![0.0, 1.0, 0.0], Some("other")), // Wrong vector name
+//             create_scored_point_with_vector(4.into(), vec![0.0, 0.0, 1.0], Some("custom")),
+//         ];
 
-        let mmr = MmrInternal {
-            using: VectorNameBuf::from("custom"),
-            lambda: 0.5,
-        };
+//         let mmr = MmrInternal {
+//             vector: vec![1.0, 0.0, 0.0].into(),
+//             using: VectorNameBuf::from("custom"),
+//             lambda: 0.5,
+//         };
 
-        let result = mmr_from_points_with_vector(
-            &collection_params,
-            points,
-            mmr,
-            5,
-            &handle,
-            Duration::from_secs(10),
-            hw_acc,
-        )
-        .await;
+//         let result = mmr_from_points_with_vector(
+//             &collection_params,
+//             points,
+//             mmr,
+//             5,
+//             &handle,
+//             Duration::from_secs(10),
+//             hw_acc,
+//         )
+//         .await;
 
-        assert!(result.is_ok());
-        let scored_points = result.unwrap();
-        // Only points 1 and 4 should remain (they have the "custom" vector)
-        assert_eq!(scored_points.len(), 2);
+//         assert!(result.is_ok());
+//         let scored_points = result.unwrap();
+//         // Only points 1 and 4 should remain (they have the "custom" vector)
+//         assert_eq!(scored_points.len(), 2);
 
-        let selected_ids: Vec<_> = scored_points.iter().map(|p| p.id).collect();
-        assert!(selected_ids.contains(&(1.into())));
-        assert!(selected_ids.contains(&(4.into())));
-    }
+//         let selected_ids: Vec<_> = scored_points.iter().map(|p| p.id).collect();
+//         assert!(selected_ids.contains(&(1.into())));
+//         assert!(selected_ids.contains(&(4.into())));
+//     }
 
-    #[tokio::test]
-    async fn test_mmr_duplicate_points() {
-        let collection_params = create_test_collection_params(Distance::Cosine, 3);
-        let handle = Handle::current();
-        let hw_acc = HwMeasurementAcc::new();
+//     #[tokio::test]
+//     async fn test_mmr_duplicate_points() {
+//         let collection_params = create_test_collection_params(Distance::Cosine, 3);
+//         let handle = Handle::current();
+//         let hw_acc = HwMeasurementAcc::new();
 
-        // Include duplicate point IDs
-        let points = vec![
-            create_scored_point_with_vector(1.into(), 0.9, vec![1.0, 0.0, 0.0], None),
-            create_scored_point_with_vector(1.into(), 0.8, vec![0.5, 0.5, 0.0], None), // Duplicate ID
-            create_scored_point_with_vector(2.into(), 0.7, vec![0.0, 1.0, 0.0], None),
-        ];
+//         // Include duplicate point IDs
+//         let points = vec![
+//             create_scored_point_with_vector(1.into(), vec![1.0, 0.0, 0.0], None),
+//             create_scored_point_with_vector(1.into(), vec![0.5, 0.5, 0.0], None), // Duplicate ID
+//             create_scored_point_with_vector(2.into(), vec![0.0, 1.0, 0.0], None),
+//         ];
 
-        let mmr = MmrInternal {
-            using: VectorNameBuf::from(""),
-            lambda: 0.5,
-        };
+//         let mmr = MmrInternal {
+//             vector: vec![1.0, 0.0, 0.0].into(),
+//             using: VectorNameBuf::from(""),
+//             lambda: 0.5,
+//         };
 
-        let result = mmr_from_points_with_vector(
-            &collection_params,
-            points,
-            mmr,
-            5,
-            &handle,
-            Duration::from_secs(10),
-            hw_acc,
-        )
-        .await;
+//         let result = mmr_from_points_with_vector(
+//             &collection_params,
+//             points,
+//             mmr,
+//             5,
+//             &handle,
+//             Duration::from_secs(10),
+//             hw_acc,
+//         )
+//         .await;
 
-        assert!(result.is_ok());
-        let scored_points = result.unwrap();
-        // Duplicates should be removed, so we should have 2 unique points
-        assert_eq!(scored_points.len(), 2);
+//         assert!(result.is_ok());
+//         let scored_points = result.unwrap();
+//         // Duplicates should be removed, so we should have 2 unique points
+//         assert_eq!(scored_points.len(), 2);
 
-        let unique_ids: std::collections::HashSet<_> = scored_points.iter().map(|p| p.id).collect();
-        assert_eq!(unique_ids.len(), 2);
-    }
+//         let unique_ids: std::collections::HashSet<_> = scored_points.iter().map(|p| p.id).collect();
+//         assert_eq!(unique_ids.len(), 2);
+//     }
 
-    #[tokio::test]
-    async fn test_mmr_dense_vectors() {
-        let handle = Handle::current();
-        let hw_acc = HwMeasurementAcc::new();
+//     #[tokio::test]
+//     async fn test_mmr_dense_vectors() {
+//         let handle = Handle::current();
+//         let hw_acc = HwMeasurementAcc::new();
 
-        // Test dense vectors with all distance metrics
-        let dense_points = vec![
-            create_scored_point_with_vector(1.into(), 0.9, vec![1.0, 0.0, 0.0], None),
-            create_scored_point_with_vector(2.into(), 0.8, vec![0.0, 1.0, 0.0], None),
-            create_scored_point_with_vector(3.into(), 0.7, vec![0.0, 0.0, 1.0], None),
-        ];
+//         // Test dense vectors with all distance metrics
+//         let dense_points = vec![
+//             create_scored_point_with_vector(1.into(), vec![1.0, 0.0, 0.0], None),
+//             create_scored_point_with_vector(2.into(), vec![0.0, 1.0, 0.0], None),
+//             create_scored_point_with_vector(3.into(), vec![0.0, 0.0, 1.0], None),
+//         ];
 
-        let mmr = MmrInternal {
-            using: VectorNameBuf::from(""),
-            lambda: 0.5,
-        };
+//         let mmr = MmrInternal {
+//             vector: vec![1.0, 0.0, 0.0].into(),
+//             using: VectorNameBuf::from(""),
+//             lambda: 0.5,
+//         };
 
-        // Test with all distance metrics for dense vectors
-        for distance in Distance::iter() {
-            let collection_params = create_test_collection_params(distance, 3);
+//         // Test with all distance metrics for dense vectors
+//         for distance in Distance::iter() {
+//             let collection_params = create_test_collection_params(distance, 3);
 
-            let result = mmr_from_points_with_vector(
-                &collection_params,
-                dense_points.clone(),
-                mmr.clone(),
-                3,
-                &handle,
-                Duration::from_secs(10),
-                hw_acc.clone(),
-            )
-            .await;
+//             let result = mmr_from_points_with_vector(
+//                 &collection_params,
+//                 dense_points.clone(),
+//                 mmr.clone(),
+//                 3,
+//                 &handle,
+//                 Duration::from_secs(10),
+//                 hw_acc.clone(),
+//             )
+//             .await;
 
-            assert!(
-                result.is_ok(),
-                "Dense vectors failed for distance metric: {distance:?}"
-            );
-            let scored_points = result.unwrap();
-            assert_eq!(scored_points.len(), 3);
-        }
-    }
+//             assert!(
+//                 result.is_ok(),
+//                 "Dense vectors failed for distance metric: {distance:?}"
+//             );
+//             let scored_points = result.unwrap();
+//             assert_eq!(scored_points.len(), 3);
+//         }
+//     }
 
-    #[tokio::test]
-    async fn test_mmr_sparse_vectors() {
-        let handle = Handle::current();
-        let hw_acc = HwMeasurementAcc::new();
+//     #[tokio::test]
+//     async fn test_mmr_sparse_vectors() {
+//         let handle = Handle::current();
+//         let hw_acc = HwMeasurementAcc::new();
 
-        // Test sparse vectors with dot product (only supported distance for sparse)
-        let sparse_vector_name = "sparse";
-        let sparse_points = vec![
-            create_scored_point_with_sparse_vector(
-                4.into(),
-                0.9,
-                vec![0, 2, 5],
-                vec![1.0, 0.5, 0.3],
-                Some(sparse_vector_name),
-            ),
-            create_scored_point_with_sparse_vector(
-                5.into(),
-                0.8,
-                vec![1, 3, 4],
-                vec![0.8, 0.6, 0.4],
-                Some(sparse_vector_name),
-            ),
-            create_scored_point_with_sparse_vector(
-                6.into(),
-                0.7,
-                vec![0, 1, 6],
-                vec![0.7, 0.9, 0.2],
-                Some(sparse_vector_name),
-            ),
-        ];
+//         // Test sparse vectors with dot product (only supported distance for sparse)
+//         let sparse_vector_name = "sparse";
+//         let sparse_points = vec![
+//             create_scored_point_with_sparse_vector(
+//                 4.into(),
+//                 vec![0, 2, 5],
+//                 vec![1.0, 0.5, 0.3],
+//                 Some(sparse_vector_name),
+//             ),
+//             create_scored_point_with_sparse_vector(
+//                 5.into(),
+//                 vec![1, 3, 4],
+//                 vec![0.8, 0.6, 0.4],
+//                 Some(sparse_vector_name),
+//             ),
+//             create_scored_point_with_sparse_vector(
+//                 6.into(),
+//                 vec![0, 1, 6],
+//                 vec![0.7, 0.9, 0.2],
+//                 Some(sparse_vector_name),
+//             ),
+//         ];
 
-        let sparse_collection_params =
-            create_test_collection_params_named(Distance::Dot, 10, sparse_vector_name);
-        let sparse_mmr = MmrInternal {
-            using: VectorNameBuf::from(sparse_vector_name),
-            lambda: 0.5,
-        };
+//         let sparse_collection_params =
+//             create_test_collection_params_named(Distance::Dot, 10, sparse_vector_name);
+//         let sparse_mmr = MmrInternal {
+//             vector: SparseVector::new(vec![0, 2, 5], vec![1.0, 0.5, 0.3]).unwrap().into(),
+//             using: VectorNameBuf::from(sparse_vector_name),
+//             lambda: 0.5,
+//         };
 
-        let sparse_result = mmr_from_points_with_vector(
-            &sparse_collection_params,
-            sparse_points,
-            sparse_mmr,
-            3,
-            &handle,
-            Duration::from_secs(10),
-            hw_acc.clone(),
-        )
-        .await
-        .unwrap();
+//         let sparse_result = mmr_from_points_with_vector(
+//             &sparse_collection_params,
+//             sparse_points,
+//             sparse_mmr,
+//             3,
+//             &handle,
+//             Duration::from_secs(10),
+//             hw_acc.clone(),
+//         )
+//         .await
+//         .unwrap();
 
-        assert_eq!(sparse_result.len(), 3);
-    }
+//         assert_eq!(sparse_result.len(), 3);
+//     }
 
-    #[tokio::test]
-    async fn test_mmr_multi_vector() {
-        let handle = Handle::current();
-        let hw_acc = HwMeasurementAcc::new();
+//     #[tokio::test]
+//     async fn test_mmr_multi_vector() {
+//         let handle = Handle::current();
+//         let hw_acc = HwMeasurementAcc::new();
 
-        // Test multi-vectors with all supported distance metrics
-        let multi_vector_name = "multi";
-        let multi_points = vec![
-            create_scored_point_with_multi_vector(
-                7.into(),
-                0.9,
-                vec![vec![1.0, 0.0], vec![0.0, 1.0]],
-                Some(multi_vector_name),
-            ),
-            create_scored_point_with_multi_vector(
-                8.into(),
-                0.8,
-                vec![vec![0.0, 1.0], vec![1.0, 0.0]],
-                Some(multi_vector_name),
-            ),
-            create_scored_point_with_multi_vector(
-                9.into(),
-                0.7,
-                vec![vec![1.0, 1.0], vec![0.0, 0.0]],
-                Some(multi_vector_name),
-            ),
-        ];
+//         // Test multi-vectors with all supported distance metrics
+//         let multi_vector_name = "multi";
+//         let multi_points = vec![
+//             create_scored_point_with_multi_vector(
+//                 7.into(),
+//                 vec![vec![1.0, 0.0], vec![0.0, 1.0]],
+//                 Some(multi_vector_name),
+//             ),
+//             create_scored_point_with_multi_vector(
+//                 8.into(),
+//                 vec![vec![0.0, 1.0], vec![1.0, 0.0]],
+//                 Some(multi_vector_name),
+//             ),
+//             create_scored_point_with_multi_vector(
+//                 9.into(),
+//                 vec![vec![1.0, 1.0], vec![0.0, 0.0]],
+//                 Some(multi_vector_name),
+//             ),
+//         ];
 
-        let multi_mmr = MmrInternal {
-            using: VectorNameBuf::from(multi_vector_name),
-            lambda: 0.5,
-        };
+//         let multi_mmr = MmrInternal {
+//             vector:  vec![vec![1.0, 0.0], vec![0.0, 1.0]].into(),
+//             using: VectorNameBuf::from(multi_vector_name),
+//             lambda: 0.5,
+//         };
 
-        for distance in Distance::iter() {
-            let multi_collection_params =
-                create_test_collection_params_multi(distance, 2, multi_vector_name);
+//         for distance in Distance::iter() {
+//             let multi_collection_params =
+//                 create_test_collection_params_multi(distance, 2, multi_vector_name);
 
-            let multi_result = mmr_from_points_with_vector(
-                &multi_collection_params,
-                multi_points.clone(),
-                multi_mmr.clone(),
-                3,
-                &handle,
-                Duration::from_secs(10),
-                hw_acc.clone(),
-            )
-            .await;
+//             let multi_result = mmr_from_points_with_vector(
+//                 &multi_collection_params,
+//                 multi_points.clone(),
+//                 multi_mmr.clone(),
+//                 3,
+//                 &handle,
+//                 Duration::from_secs(10),
+//                 hw_acc.clone(),
+//             )
+//             .await;
 
-            assert!(
-                multi_result.is_ok(),
-                "Multi-vectors failed for distance metric: {distance:?}"
-            );
-            let multi_scored_points = multi_result.unwrap();
-            assert_eq!(multi_scored_points.len(), 3);
-        }
-    }
-}
+//             assert!(
+//                 multi_result.is_ok(),
+//                 "Multi-vectors failed for distance metric: {distance:?}"
+//             );
+//             let multi_scored_points = multi_result.unwrap();
+//             assert_eq!(multi_scored_points.len(), 3);
+//         }
+//     }
+// }

@@ -3007,6 +3007,12 @@ impl From<bool> for WithVector {
     }
 }
 
+impl From<VectorNameBuf> for WithVector {
+    fn from(name: VectorNameBuf) -> Self {
+        WithVector::Selector(vec![name])
+    }
+}
+
 impl Default for WithVector {
     fn default() -> Self {
         WithVector::Bool(false)
