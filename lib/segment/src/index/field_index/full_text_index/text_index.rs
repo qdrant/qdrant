@@ -384,6 +384,15 @@ impl FullTextIndex {
         }
     }
 
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self {
+            FullTextIndex::Mutable(index) => index.is_rocksdb(),
+            FullTextIndex::Immutable(index) => index.is_rocksdb(),
+            FullTextIndex::Mmap(_) => false,
+        }
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {

@@ -373,6 +373,14 @@ impl MutableFullTextIndex {
                 .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),
         }
     }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Gridstore(_) => false,
+        }
+    }
 }
 
 impl ValueIndexer for MutableFullTextIndex {

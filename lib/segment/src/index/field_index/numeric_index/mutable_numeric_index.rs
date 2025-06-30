@@ -577,4 +577,12 @@ where
     pub fn get_max_values_per_point(&self) -> usize {
         self.in_memory_index.get_max_values_per_point()
     }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Gridstore(_) => false,
+        }
+    }
 }

@@ -539,4 +539,12 @@ where
     pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         Box::new(self.value_to_points.keys().map(|v| v.borrow()))
     }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Mmap(_) => false,
+        }
+    }
 }

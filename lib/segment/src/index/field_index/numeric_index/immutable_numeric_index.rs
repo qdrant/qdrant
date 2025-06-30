@@ -459,6 +459,14 @@ where
         map.values_range(Bound::Excluded(point.clone()), Bound::Unbounded)
             .next()
     }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Mmap(_) => false,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -387,6 +387,15 @@ impl GeoMapIndex {
         }
     }
 
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self {
+            GeoMapIndex::Mutable(index) => index.is_rocksdb(),
+            GeoMapIndex::Immutable(index) => index.is_rocksdb(),
+            GeoMapIndex::Mmap(_) => false,
+        }
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
