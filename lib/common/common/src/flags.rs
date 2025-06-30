@@ -45,6 +45,10 @@ pub struct FeatureFlags {
     /// Whether to actively migrate RocksDB based vector storages into a new format.
     // TODO(1.15.1): enable by default
     pub migrate_rocksdb_vector_storage: bool,
+
+    /// Whether to actively migrate RocksDB based payload storages into a new format.
+    // TODO(1.15): enable by default
+    pub migrate_rocksdb_payload_storage: bool,
 }
 
 impl Default for FeatureFlags {
@@ -57,6 +61,7 @@ impl Default for FeatureFlags {
             incremental_hnsw_building: true,
             migrate_rocksdb_id_tracker: false,
             migrate_rocksdb_vector_storage: false,
+            migrate_rocksdb_payload_storage: false,
         }
     }
 }
@@ -79,6 +84,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         incremental_hnsw_building,
         migrate_rocksdb_id_tracker,
         migrate_rocksdb_vector_storage,
+        migrate_rocksdb_payload_storage,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
@@ -89,6 +95,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         *incremental_hnsw_building = true;
         *migrate_rocksdb_id_tracker = true;
         *migrate_rocksdb_vector_storage = true;
+        *migrate_rocksdb_payload_storage = true;
     }
 
     let res = FEATURE_FLAGS.set(flags);
