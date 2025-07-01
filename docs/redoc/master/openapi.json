@@ -7026,6 +7026,17 @@
                 "nullable": true
               }
             ]
+          },
+          "query_encoding": {
+            "description": "Asymmetric quantization configuration allows a query to have different quantization than stored vectors. It can increase the accuracy of search at the cost of performance.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BinaryQuantizationQueryEncoding"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7035,6 +7046,23 @@
           "one_bit",
           "two_bits",
           "one_and_half_bits"
+        ]
+      },
+      "BinaryQuantizationQueryEncoding": {
+        "type": "string",
+        "enum": [
+          "default",
+          "binary",
+          "scalar4bits",
+          "scalar8bits"
+        ]
+      },
+      "Datatype": {
+        "type": "string",
+        "enum": [
+          "float32",
+          "uint8",
+          "float16"
         ]
       },
       "MultiVectorConfig": {
