@@ -1,5 +1,9 @@
+import concurrent.futures
 import pathlib
+import threading
+import time
 
+from .fixtures import *
 from .utils import *
 
 N_PEERS = 3
@@ -284,3 +288,59 @@ def test_shard_key_storage(tmp_path: pathlib.Path):
     for shard in info['local_shards']:
         # This was previously broken, changing numbers into strings on restart
         assert shard['shard_key'] in ["cats", "dogs", 123, 456]
+
+
+def test_create_shard_key_read_availability(tmp_path: pathlib.Path):
+    """
+    Creates shard key and asserts that read requests do not return error while custom shard is being
+    created.
+    """
+
+    assert_project_root()
+
+    # Bootstrap cluster
+    peer_urls, _, _ = start_cluster(tmp_path, N_PEERS)
+
+    # Wait until all peers submit their metadata to consensus
+    time.sleep(2)
+
+    create_collection_with_custom_sharding(peer_urls[0], shard_number = N_SHARDS, replication_factor = N_PEERS)
+    wait_collection_exists_and_active_on_all_peers(collection_name = COLLECTION_NAME, peer_api_uris = peer_urls)
+
+    # Spawn background search tasks for each peer
+    cancel = threading.Event()
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers = N_PEERS)
+    search_futures = [executor.submit(try_search_random, peer_urls[peer_idx], cancel) for peer_idx in range(N_PEERS)]
+
+    # Create shard keys
+    for idx in range(3):
+        create_shard(
+            peer_urls[0],
+            COLLECTION_NAME,
+            shard_key = f"shard_key_{idx}",
+            shard_number = 1,
+            replication_factor = 1,
+        )
+
+    # Stop search tasks
+    cancel.set()
+
+    # Assert that all search requests succeeded while custom shard was being created
+    assert all(search_future.result() for search_future in concurrent.futures.as_completed(search_futures))
+
+def try_search_random(peer_url: str, cancel: threading.Event):
+    while not cancel.is_set():
+        resp = requests.post(f"{peer_url}/collections/{COLLECTION_NAME}/points/search", json = {
+            "vector": random_dense_vector(),
+            "limit": 10,
+            "with_vectors": True,
+            "with_payload": True,
+        })
+
+        if not resp.ok:
+            print(f"Search on {peer_url} failed: {resp.json()}")
+            return False
+
+        time.sleep(0.05)
+
+    return True
