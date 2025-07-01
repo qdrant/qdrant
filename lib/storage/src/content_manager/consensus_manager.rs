@@ -1159,6 +1159,17 @@ mod tests {
     }
 
     #[test]
+    fn default_peer_id_is_persisted() {
+        let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
+        let peer_id = Some(0);
+        let state = Persistent::load_or_init(dir.path(), false, false, peer_id).unwrap();
+        assert_eq!(state.this_peer_id, 0);
+
+        let state_loaded = Persistent::load_or_init(dir.path(), false, false, None).unwrap();
+        assert_eq!(state_loaded.this_peer_id, 0);
+    }
+
+    #[test]
     fn unapplied_entries() {
         let mut entries = EntryApplyProgressQueue::new(0, 2);
         assert_eq!(entries.current(), Some(0));
