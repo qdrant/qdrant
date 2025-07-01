@@ -215,7 +215,7 @@ half = { version = "2.6.0", features = [
 http = "1.2.0"
 humantime = "2.2.0"
 indexmap = { version = "2", features = ["serde"] }
-indicatif = { version = "0.17.11", features = ["rayon"] }
+indicatif = { version = "0.17.12", features = ["rayon"] }
 itertools = "0.14.0"
 log = "0.4.27"
 memmap2 = "0.9.5"
