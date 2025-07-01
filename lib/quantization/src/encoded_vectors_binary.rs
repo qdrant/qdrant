@@ -735,48 +735,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         }
     }
 
-    fn calculate_metric_with_scalar(
-        &self,
-        v1: &[TBitsStoreType],
-        v2: &[TBitsStoreType],
-        bits_count: usize,
-    ) -> f32 {
-        // Dot product in a range [-1; 1] is approximated by NXOR in a range [0; 1]
-        // L1 distance in range [-1; 1] (alpha=2) is approximated by alpha*XOR in a range [0; 1]
-        // L2 distance in range [-1; 1] (alpha=2) is approximated by alpha*sqrt(XOR) in a range [0; 1]
-        // For example:
-
-        // |  A   |  B   | Dot product | L1 | L2 |
-        // | -0.5 | -0.5 |  0.25       | 0  | 0  |
-        // | -0.5 |  0.5 | -0.25       | 1  | 1  |
-        // |  0.5 | -0.5 | -0.25       | 1  | 1  |
-        // |  0.5 |  0.5 |  0.25       | 0  | 0  |
-
-        // | A | B | NXOR | XOR
-        // | 0 | 0 | 1    | 0
-        // | 0 | 1 | 0    | 1
-        // | 1 | 0 | 0    | 1
-        // | 1 | 1 | 1    | 0
-
-        let xor_product = TBitsStoreType::xor_popcnt_scalar(v1, v2, bits_count);
-        let xor_product = (xor_product as f32) / (((1 << bits_count) - 1) as f32);
-
-        let dim = self.metadata.vector_parameters.dim as f32;
-        let zeros_count = dim - xor_product;
-
-        match (
-            self.metadata.vector_parameters.distance_type,
-            self.metadata.vector_parameters.invert,
-        ) {
-            // So if `invert` is true we return XOR, otherwise we return (dim - XOR)
-            (DistanceType::Dot, true) => xor_product - zeros_count,
-            (DistanceType::Dot, false) => zeros_count - xor_product,
-            // This also results in exact ordering as L1 and L2 but reversed.
-            (DistanceType::L1 | DistanceType::L2, true) => zeros_count - xor_product,
-            (DistanceType::L1 | DistanceType::L2, false) => xor_product - zeros_count,
-        }
-    }
-
     pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
         self.encoded_vectors
             .get_vector_data(i as _, self.get_quantized_vector_size())
