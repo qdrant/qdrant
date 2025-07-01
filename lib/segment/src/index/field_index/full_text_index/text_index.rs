@@ -146,7 +146,7 @@ impl FullTextIndex {
         }
     }
 
-    pub(super) fn filter_query<'a>(
+    pub fn filter_query<'a>(
         &'a self,
         query: ParsedQuery,
         hw_counter: &'a HardwareCounterCell,
@@ -197,52 +197,22 @@ impl FullTextIndex {
         }
     }
 
-    /// Build the set intersection of point ids from the query tokens
-    pub fn collect_intersection(
-        &self,
-        parse_query: &ParsedQuery,
-        hw_counter: &HardwareCounterCell,
-    ) -> AHashSet<PointOffsetType> {
-        let parse_query = parse_query.clone();
-        match self {
-            Self::Mutable(index) => index
-                .inverted_index
-                .filter(parse_query, hw_counter)
-                .collect(),
-            Self::Immutable(index) => index
-                .inverted_index
-                .filter(parse_query, hw_counter)
-                .collect(),
-            Self::Mmap(index) => index
-                .inverted_index
-                .filter(parse_query, hw_counter)
-                .collect(),
-        }
-    }
-
     pub fn check_match(
         &self,
         query: &ParsedQuery,
         point_id: PointOffsetType,
-        points_for_token: &AHashSet<PointOffsetType>,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
         match self {
-            Self::Mutable(index) => {
-                index
-                    .inverted_index
-                    .check_match(query, point_id, points_for_token, hw_counter)
-            }
-            Self::Immutable(index) => {
-                index
-                    .inverted_index
-                    .check_match(query, point_id, points_for_token, hw_counter)
-            }
-            Self::Mmap(index) => {
-                index
-                    .inverted_index
-                    .check_match(query, point_id, points_for_token, hw_counter)
-            }
+            Self::Mutable(index) => index
+                .inverted_index
+                .check_match(query, point_id, hw_counter),
+            Self::Immutable(index) => index
+                .inverted_index
+                .check_match(query, point_id, hw_counter),
+            Self::Mmap(index) => index
+                .inverted_index
+                .check_match(query, point_id, hw_counter),
         }
     }
 
