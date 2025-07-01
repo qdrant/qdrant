@@ -272,6 +272,7 @@ fn main() -> anyhow::Result<()> {
         &settings.storage.storage_path,
         bootstrap.is_none(),
         args.reinit,
+        settings.storage.default_peer_id,
     )?;
 
     let is_distributed_deployment = settings.cluster.enabled;
