@@ -94,6 +94,9 @@ pub enum ScoringQuery {
 
     /// Sample points
     Sample(SampleInternal),
+
+    /// Maximum Marginal Relevance
+    Mmr(MmrInternal),
 }
 
 impl ScoringQuery {
@@ -108,7 +111,11 @@ impl ScoringQuery {
                 // We need the score distribution information of each prefetch
                 FusionInternal::Dbsf => true,
             },
-            Self::Vector(_) | Self::OrderBy(_) | Self::Formula(_) | Self::Sample(_) => false,
+            Self::Mmr(_)
+            | Self::Vector(_)
+            | Self::OrderBy(_)
+            | Self::Formula(_)
+            | Self::Sample(_) => false,
         }
     }
 
@@ -116,6 +123,7 @@ impl ScoringQuery {
     pub fn get_vector_name(&self) -> Option<&VectorName> {
         match self {
             Self::Vector(query) => Some(query.get_vector_name()),
+            Self::Mmr(mmr) => Some(&mmr.using),
             _ => None,
         }
     }
@@ -147,6 +155,8 @@ impl ScoringQuery {
                 ScoringQuery::OrderBy(order_by) => Some(Order::from(order_by.direction())),
                 // Random sample does not require ordering
                 ScoringQuery::Sample(SampleInternal::Random) => None,
+                // MMR returns results in descending order (higher scores are better)
+                ScoringQuery::Mmr(_) => Some(Order::LargeBetter),
             },
             None => {
                 // Order by ID
@@ -575,6 +585,16 @@ impl ScoringQuery {
                     Status::invalid_argument(format!("failed to parse formula: {e}"))
                 })?,
             ),
+            grpc::query_shard_points::query::Score::Mmr(grpc::MmrInternal { vector, lambda }) => {
+                let vector =
+                    vector.ok_or_else(|| Status::invalid_argument("missing field: mmr.vector"))?;
+                let vector = VectorInternal::try_from(vector)?;
+                ScoringQuery::Mmr(MmrInternal {
+                    vector,
+                    using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+                    lambda,
+                })
+            }
         };
 
         Ok(scoring_query)
@@ -626,6 +646,16 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
             },
             ScoringQuery::Sample(sample) => Self {
                 score: Some(Score::Sample(api::grpc::qdrant::Sample::from(sample) as i32)),
+            },
+            ScoringQuery::Mmr(MmrInternal {
+                vector,
+                using: _,
+                lambda,
+            }) => Self {
+                score: Some(Score::Mmr(grpc::MmrInternal {
+                    vector: Some(grpc::RawVector::from(vector)),
+                    lambda,
+                })),
             },
         }
     }

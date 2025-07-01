@@ -204,6 +204,11 @@ impl PlannedQuery {
 
                     vec![Source::ScrollsIdx(idx)]
                 }
+                Some(ScoringQuery::Mmr(_mmr)) => {
+                    return Err(CollectionError::bad_request(
+                        "cannot apply MMR without prefetches".to_string(),
+                    ));
+                }
                 None => {
                     // Everything should come from 1 scroll
                     let scroll = QueryScrollRequestInternal {
@@ -341,6 +346,11 @@ fn recurse_prefetches(
                     scrolls.push(scroll);
 
                     Source::ScrollsIdx(idx)
+                }
+                Some(ScoringQuery::Mmr(_mmr)) => {
+                    return Err(CollectionError::bad_request(
+                        "cannot apply MMR without prefetches".to_string(),
+                    ));
                 }
                 None => {
                     let scroll = QueryScrollRequestInternal {

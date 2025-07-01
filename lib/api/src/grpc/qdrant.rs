@@ -10055,6 +10055,17 @@ pub mod raw_query {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MmrInternal {
+    /// Query vector to use for relevance
+    #[prost(message, optional, tag = "1")]
+    pub vector: ::core::option::Option<RawVector>,
+    /// Lambda parameter controlling diversity vs relevance trade-off
+    #[prost(float, tag = "3")]
+    pub lambda: f32,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryShardPoints {
     #[prost(message, repeated, tag = "1")]
     pub prefetch: ::prost::alloc::vec::Vec<query_shard_points::Prefetch>,
@@ -10084,7 +10095,7 @@ pub mod query_shard_points {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Query {
-        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5")]
+        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6")]
         pub score: ::core::option::Option<query::Score>,
     }
     /// Nested message and enum types in `Query`.
@@ -10108,6 +10119,9 @@ pub mod query_shard_points {
             /// Use an arbitrary formula to rescore points
             #[prost(message, tag = "5")]
             Formula(super::super::Formula),
+            /// Maximum Marginal Relevance
+            #[prost(message, tag = "6")]
+            Mmr(super::super::MmrInternal),
         }
     }
     #[derive(serde::Serialize)]
