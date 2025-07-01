@@ -7,7 +7,6 @@ use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mmap_inverted_index::MmapInvertedIndex;
-use super::mmap_inverted_index::mmap_postings::{MmapPostingValue, MmapPostings};
 use super::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::positions::Positions;
@@ -393,76 +392,33 @@ fn create_compressed_postings_with_positions(
 
 impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
     fn from(index: &MmapInvertedIndex) -> Self {
-        fn optimized_postings_and_vocab<V: MmapPostingValue>(
-            postings: &MmapPostings<V>,
-            index: &MmapInvertedIndex,
-        ) -> (Vec<PostingList<V>>, HashMap<String, TokenId>) {
-            let hw_counter = HardwareCounterCell::disposable();
+        let hw_counter = HardwareCounterCell::disposable();
 
-            // Keep only tokens that have non-empty postings
-            let (posting_views, orig_to_new_token): (Vec<_>, HashMap<_, _>) = postings
-                .iter_postings(&hw_counter)
-                .enumerate()
-                .filter_map(|(orig_token, posting)| {
-                    posting
-                        .filter(|posting| !posting.is_empty())
-                        .map(|posting| (orig_token, posting))
-                })
-                .enumerate()
-                .map(|(new_token, (orig_token, posting))| {
-                    (posting, (orig_token as TokenId, new_token as TokenId))
-                })
-                .unzip();
-
-            // Update vocab entries
-            let mut vocab: HashMap<String, TokenId> = index
-                .iter_vocab()
-                .filter_map(|(key, orig_token)| {
-                    orig_to_new_token
-                        .get(orig_token)
-                        .map(|new_token| (key.to_string(), *new_token))
-                })
-                .collect();
-
-            let postings: Vec<PostingList<V>> = posting_views
-                .into_iter()
-                .map(PostingListView::to_owned)
-                .collect();
-
-            vocab.shrink_to_fit();
-
-            (postings, vocab)
-        }
-
-        let (postings, vocab) = match &index.postings {
-            MmapPostingsEnum::Ids(postings) => {
-                let (postings, vocab) = optimized_postings_and_vocab(postings, index);
-                (ImmutablePostings::Ids(postings), vocab)
-            }
-            MmapPostingsEnum::WithPositions(postings) => {
-                let (postings, vocab) = optimized_postings_and_vocab(postings, index);
-                (ImmutablePostings::WithPositions(postings), vocab)
-            }
+        let postings = match &index.postings {
+            MmapPostingsEnum::Ids(postings) => ImmutablePostings::Ids(
+                postings
+                    .iter_postings(&hw_counter)
+                    .map(PostingListView::to_owned)
+                    .collect(),
+            ),
+            MmapPostingsEnum::WithPositions(postings) => ImmutablePostings::WithPositions(
+                postings
+                    .iter_postings(&hw_counter)
+                    .map(PostingListView::to_owned)
+                    .collect(),
+            ),
         };
+
+        let vocab: HashMap<String, TokenId> = index
+            .vocab
+            .iter()
+            .map(|(token_str, token_id)| (token_str.to_owned(), token_id[0]))
+            .collect();
 
         debug_assert!(
             postings.len() == vocab.len(),
             "postings and vocab must be the same size",
         );
-
-        #[cfg(debug_assertions)]
-        {
-            index
-                .point_to_tokens_count
-                .iter()
-                .enumerate()
-                .for_each(|(i, &n)| {
-                    debug_assert!(
-                        index.is_active(i as u32) || n == 0,
-                        "deleted point index {i} has {n} tokens, expected zero",
-                    );
-                });
-        }
 
         ImmutableInvertedIndex {
             postings,
