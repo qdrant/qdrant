@@ -72,6 +72,7 @@ fn test_alias_operation() {
         shard_transfer_method: None,
         collection: None,
         max_collections: None,
+        default_peer_id: None,
     };
 
     let search_runtime = Runtime::new().unwrap();
