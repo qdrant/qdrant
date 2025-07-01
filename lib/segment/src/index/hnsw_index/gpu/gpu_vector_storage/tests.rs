@@ -224,7 +224,7 @@ fn test_gpu_vector_storage_bq(
         binary: BinaryQuantizationConfig {
             always_ram: Some(true),
             encoding: Some(encoding),
-            query_quantization: None,
+            query_encoding: None,
         },
     });
 
