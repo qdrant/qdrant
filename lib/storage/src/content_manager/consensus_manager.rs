@@ -1124,7 +1124,7 @@ mod tests {
     #[test]
     fn update_is_applied() {
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), false, false).unwrap();
+        let mut state = Persistent::load_or_init(dir.path(), false, false, None).unwrap();
         assert_eq!(state.state().hard_state.commit, 0);
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
@@ -1148,13 +1148,13 @@ mod tests {
     #[test]
     fn state_is_loaded() {
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), false, false).unwrap();
+        let mut state = Persistent::load_or_init(dir.path(), false, false, None).unwrap();
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
             .unwrap();
         assert_eq!(state.state().hard_state.commit, 1);
 
-        let state_loaded = Persistent::load_or_init(dir.path(), false, false).unwrap();
+        let state_loaded = Persistent::load_or_init(dir.path(), false, false, None).unwrap();
         assert_eq!(state_loaded.state().hard_state.commit, 1);
     }
 
@@ -1252,7 +1252,7 @@ mod tests {
         entries: Vec<Entry>,
         path: &std::path::Path,
     ) -> (ConsensusManager<NoCollections>, MemStorage) {
-        let persistent = Persistent::load_or_init(path, true, false).unwrap();
+        let persistent = Persistent::load_or_init(path, true, false, None).unwrap();
         let (sender, _) = mpsc::channel();
         let consensus_state = ConsensusManager::new(
             persistent,
