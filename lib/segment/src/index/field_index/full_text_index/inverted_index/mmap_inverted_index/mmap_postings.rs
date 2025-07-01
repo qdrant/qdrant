@@ -309,7 +309,9 @@ impl<V: MmapPostingValue> MmapPostings<V> {
     pub fn iter_postings<'a>(
         &'a self,
         hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = Option<PostingListView<'a, V>>> {
-        (0..self.header.posting_count as u32).map(|posting_idx| self.get(posting_idx, hw_counter))
+    ) -> impl Iterator<Item = PostingListView<'a, V>> {
+        (0..self.header.posting_count as u32)
+            // we are iterating over existing posting lists, all of them should return `Some`
+            .filter_map(|posting_idx| self.get(posting_idx, hw_counter))
     }
 }
