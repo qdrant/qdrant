@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
@@ -231,7 +230,6 @@ impl InvertedIndex for MutableInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        _points_for_token: &AHashSet<PointOffsetType>,
         _: &HardwareCounterCell,
     ) -> bool {
         match parsed_query {

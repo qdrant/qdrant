@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
@@ -86,6 +85,36 @@ impl ImmutableInvertedIndex {
         match &self.postings {
             ImmutablePostings::Ids(postings) => intersection(postings, tokens, filter),
             ImmutablePostings::WithPositions(postings) => intersection(postings, tokens, filter),
+        }
+    }
+
+    fn check_has_subset(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
+        if tokens.is_empty() {
+            return false;
+        }
+
+        // check presence of the document
+        if self.values_is_empty(point_id) {
+            return false;
+        }
+
+        fn check_intersection<V: PostingValue>(
+            postings: &[PostingList<V>],
+            tokens: &TokenSet,
+            point_id: PointOffsetType,
+        ) -> bool {
+            // Check that all tokens are in document
+            tokens.tokens().iter().all(|token_id| {
+                let posting_list = &postings[*token_id as usize];
+                posting_list.visitor().contains(point_id)
+            })
+        }
+
+        match &self.postings {
+            ImmutablePostings::Ids(postings) => check_intersection(postings, tokens, point_id),
+            ImmutablePostings::WithPositions(postings) => {
+                check_intersection(postings, tokens, point_id)
+            }
         }
     }
 
@@ -200,11 +229,10 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        points_for_token: &AHashSet<PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
     ) -> bool {
         match parsed_query {
-            ParsedQuery::Tokens(_tokens) => self.check_has_subset(point_id, points_for_token),
+            ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id),
             ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id),
         }
     }

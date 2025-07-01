@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use ahash::AHashSet;
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
@@ -188,6 +187,49 @@ impl MmapInvertedIndex {
         }
     }
 
+    fn check_has_subset(
+        &self,
+        tokens: &TokenSet,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        // check non-empty query
+        if tokens.is_empty() {
+            return false;
+        }
+
+        // check presence of the document
+        if self.values_is_empty(point_id) {
+            return false;
+        }
+
+        fn check_intersection<V: MmapPostingValue>(
+            postings: &MmapPostings<V>,
+            tokens: &TokenSet,
+            point_id: PointOffsetType,
+            hw_counter: &HardwareCounterCell,
+        ) -> bool {
+            // Check that all tokens are in document
+            tokens.tokens().iter().all(|query_token| {
+                postings
+                    .get(*query_token, hw_counter)
+                    // unwrap safety: all tokens exist in the vocabulary, otherwise there'd be no query tokens
+                    .unwrap()
+                    .visitor()
+                    .contains(point_id)
+            })
+        }
+
+        match &self.postings {
+            MmapPostingsEnum::Ids(postings) => {
+                check_intersection(postings, tokens, point_id, hw_counter)
+            }
+            MmapPostingsEnum::WithPositions(postings) => {
+                check_intersection(postings, tokens, point_id, hw_counter)
+            }
+        }
+    }
+
     /// Iterate over point ids whose documents contain all given tokens in the same order they are provided
     pub fn filter_has_phrase<'a>(
         &'a self,
@@ -354,11 +396,10 @@ impl InvertedIndex for MmapInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        points_for_token: &AHashSet<PointOffsetType>,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
         match parsed_query {
-            ParsedQuery::Tokens(_tokens) => self.check_has_subset(point_id, points_for_token),
+            ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id, hw_counter),
             ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id, hw_counter),
         }
     }

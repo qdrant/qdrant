@@ -317,28 +317,12 @@ pub trait InvertedIndex {
             .filter_map(map_filter_condition)
     }
 
-    // TODO(phrase-matching) leverage pre-computed intersection for tokens
     fn check_match(
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        points_for_token: &AHashSet<PointOffsetType>,
         hw_counter: &HardwareCounterCell,
     ) -> bool;
-
-    // Check that the document is in the points intersection of the query token
-    fn check_has_subset(
-        &self,
-        point_id: PointOffsetType,
-        points_for_token: &AHashSet<PointOffsetType>,
-    ) -> bool {
-        // check presence of the document
-        if self.values_is_empty(point_id) {
-            return false;
-        }
-
-        points_for_token.contains(&point_id)
-    }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 
