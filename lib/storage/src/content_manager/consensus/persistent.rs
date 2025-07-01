@@ -324,11 +324,11 @@ impl Persistent {
     fn init(
         path: PathBuf,
         first_peer: bool,
-        this_peer_id: Option<PeerId>,
+        default_peer_id: Option<PeerId>,
     ) -> Result<Self, StorageError> {
         // Do not generate too big peer ID, to avoid problems with serialization
         // (especially in json format)
-        let this_peer_id = this_peer_id.unwrap_or_else(|| rand::random::<PeerId>() % (1 << 53));
+        let this_peer_id = default_peer_id.unwrap_or_else(|| rand::random::<PeerId>() % (1 << 53));
         let voters = if first_peer {
             vec![this_peer_id]
         } else {
