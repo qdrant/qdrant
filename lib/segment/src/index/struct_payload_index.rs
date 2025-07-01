@@ -437,9 +437,13 @@ impl StructPayloadIndex {
 
             let one_condition = filter.total_conditions_count() == 1;
             let one_primary_clause = query_cardinality.primary_clauses.len() == 1;
-
+            // the payload index does not know about vector names
+            let not_has_vector = !matches!(
+                query_cardinality.primary_clauses[0],
+                PrimaryCondition::HasVector(_)
+            );
             let struct_filtered_check: Box<dyn Fn(PointOffsetType) -> bool> =
-                if one_condition && one_primary_clause {
+                if one_condition && one_primary_clause && not_has_vector {
                     // the primary clause will select the correct point ids right away
                     Box::new(|_id| true)
                 } else {
