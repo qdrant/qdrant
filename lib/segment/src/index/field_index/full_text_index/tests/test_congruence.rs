@@ -312,7 +312,6 @@ fn test_congruence(
         for query_range in [0..1, 2..4, 5..9, 0..10] {
             let keywords = &keywords[query_range];
             let parsed_query_a = parse_query(keywords, false, index_a);
-
             let parsed_query_b = parse_query(keywords, false, index_b);
 
             // Mutable index behaves different versus the others on point deletion
@@ -358,7 +357,6 @@ fn test_congruence(
                 eprintln!("Phrase: {phrase:?}");
 
                 let parsed_query_a = parse_query(phrase, true, index_a);
-
                 let parsed_query_b = parse_query(phrase, true, index_b);
 
                 let field_condition = FieldCondition::new_values_count(

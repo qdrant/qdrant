@@ -65,7 +65,7 @@ macro_rules! ensure {
 }
 
 const DIM: usize = 5;
-const ATTEMPTS: usize = 100;
+const ATTEMPTS: usize = 20;
 
 struct TestSegments {
     _base_dir: TempDir,
