@@ -281,14 +281,27 @@ impl UpdateHandler {
     {
         let mut scheduled_segment_ids = HashSet::<_>::default();
         let mut handles = vec![];
+        let is_optimization_failed = Arc::new(AtomicBool::new(false));
 
         'outer: for optimizer in optimizers.iter() {
+            // Loop until there are no more segments to with given optimizer
             loop {
                 // Return early if we reached the optimization job limit
                 if limit.map(|extra| handles.len() >= extra).unwrap_or(false) {
                     log::trace!("Reached optimization job limit, postponing other optimizations");
                     break 'outer;
                 }
+
+                // If optimization failed, we should not endlessly try to optimize same segments
+                if is_optimization_failed.load(Ordering::Relaxed) {
+                    log::debug!("Skipping further optimizations due to previous failure");
+                    break 'outer;
+                }
+
+                log::debug!(
+                    "is_optimization_failed: {}",
+                    is_optimization_failed.load(Ordering::Relaxed)
+                );
 
                 let nonoptimal_segment_ids =
                     optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
@@ -335,6 +348,7 @@ impl UpdateHandler {
                 let nsi = nonoptimal_segment_ids.clone();
                 scheduled_segment_ids.extend(&nsi);
                 let callback = callback.clone();
+                let is_optimization_failed = is_optimization_failed.clone();
 
                 let handle = spawn_stoppable(
                     // Stoppable task
@@ -383,6 +397,8 @@ impl UpdateHandler {
 
                                         tracker_handle
                                             .update(TrackerStatus::Error(error.to_string()));
+
+                                        is_optimization_failed.store(true, Ordering::Relaxed);
 
                                         panic!("Optimization error: {error}");
                                     }
