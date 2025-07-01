@@ -20,6 +20,7 @@ use crate::common::fetch_vectors::ReferencedVectors;
 use crate::lookup::WithLookup;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::universal_query::shard_query::MmrInternal;
 use crate::recommendations::avg_vector_for_recommendation;
 
 /// Internal representation of a query request, used to converge from REST and gRPC. This can have IDs referencing vectors.
@@ -95,6 +96,9 @@ pub enum Query {
 
     /// Sample points
     Sample(SampleInternal),
+
+    /// Maximal Marginal Relevance
+    Mmr(MmrInput),
 }
 
 impl Query {
@@ -118,6 +122,12 @@ impl Query {
             Query::OrderBy(order_by) => ScoringQuery::OrderBy(order_by),
             Query::Formula(formula) => ScoringQuery::Formula(ParsedFormula::try_from(formula)?),
             Query::Sample(sample) => ScoringQuery::Sample(sample),
+            Query::Mmr(mmr) => ScoringQuery::Mmr(mmr.into_mmr_internal(
+                using,
+                ids_to_vectors,
+                lookup_vector_name,
+                lookup_collection,
+            )?),
         };
 
         Ok(scoring_query)
@@ -342,6 +352,31 @@ impl VectorQuery<VectorInternal> {
         };
 
         Ok(query_enum)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MmrInput {
+    pub vector: VectorInputInternal,
+    pub lambda: f32,
+}
+
+impl MmrInput {
+    fn into_mmr_internal(
+        self,
+        using: VectorNameBuf,
+        ids_to_vectors: &ReferencedVectors,
+        lookup_vector_name: &VectorName,
+        lookup_collection: Option<&String>,
+    ) -> CollectionResult<MmrInternal> {
+        let vector = ids_to_vectors
+            .resolve_reference(lookup_collection, lookup_vector_name, self.vector)
+            .ok_or_else(|| vector_not_found_error(lookup_vector_name))?;
+        Ok(MmrInternal {
+            vector,
+            using,
+            lambda: self.lambda,
+        })
     }
 }
 
