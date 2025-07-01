@@ -1161,12 +1161,12 @@ mod tests {
     #[test]
     fn default_peer_id_is_persisted() {
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let peer_id = Some(0);
+        let peer_id = Some(101);
         let state = Persistent::load_or_init(dir.path(), false, false, peer_id).unwrap();
-        assert_eq!(state.this_peer_id, 0);
+        assert_eq!(state.this_peer_id, 101);
 
         let state_loaded = Persistent::load_or_init(dir.path(), false, false, None).unwrap();
-        assert_eq!(state_loaded.this_peer_id, 0);
+        assert_eq!(state_loaded.this_peer_id, 101);
     }
 
     #[test]
