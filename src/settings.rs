@@ -4,6 +4,7 @@ use api::grpc::transport_channel_pool::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
 };
 use collection::operations::validation;
+use collection::shards::shard::PeerId;
 use common::flags::FeatureFlags;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
 use serde::Deserialize;
@@ -65,6 +66,8 @@ impl ServiceConfig {
 #[derive(Debug, Deserialize, Clone, Default, Validate)]
 pub struct ClusterConfig {
     pub enabled: bool, // disabled by default
+    #[serde(default)]
+    pub default_peer_id: Option<PeerId>,
     #[serde(default = "default_timeout_ms")]
     #[validate(range(min = 1))]
     pub grpc_timeout_ms: u64,

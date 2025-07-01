@@ -63,8 +63,6 @@ const fn default_io_shard_transfers_limit() -> Option<usize> {
 pub struct StorageConfig {
     #[validate(length(min = 1))]
     pub storage_path: String,
-    #[serde(default)]
-    pub default_peer_id: Option<PeerId>,
     #[serde(default = "default_snapshots_path")]
     #[validate(length(min = 1))]
     pub snapshots_path: String,
