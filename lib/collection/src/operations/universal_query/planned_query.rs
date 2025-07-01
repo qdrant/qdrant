@@ -109,19 +109,26 @@ impl PlannedQuery {
             })?;
 
             if rescore.needs_intermediate_results() {
+                let with_vector_for_mmr = match rescore {
+                    ScoringQuery::Mmr(mmr) => WithVector::from(mmr.using),
+                    _ => WithVector::from(false),
+                };
+
+                let with_vector_merged = with_vector.merge(&with_vector_for_mmr);
+
                 let sources =
                     recurse_prefetches(&mut self.searches, &mut self.scrolls, prefetches, &filter)?;
 
                 let merge_plan = MergePlan {
                     sources,
-                    // We will propagate the intermediate results, the fusion will take place at collection level.
+                    // We will propagate the intermediate results, fusion or MMR will take place at collection level.
                     // It is fine to lose this rescore information here.
                     rescore_params: None,
                 };
 
                 RootPlan {
                     merge_plan,
-                    with_vector,
+                    with_vector: with_vector_merged,
                     with_payload,
                 }
             } else {
@@ -153,7 +160,7 @@ impl PlannedQuery {
                         filter,
                         score_threshold,
                         with_vector: Some(WithVector::from(false)), // will be fetched after aggregating from segments
-                        with_payload: Some(WithPayloadInterface::from(false)), // will be fetched after aggregating from segments\
+                        with_payload: Some(WithPayloadInterface::from(false)), // will be fetched after aggregating from segments
                         offset: 0, // offset is handled at collection level
                         params,
                         limit,

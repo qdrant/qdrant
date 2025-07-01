@@ -3,18 +3,19 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::ScoreType;
 use futures::{TryFutureExt, future};
 use itertools::{Either, Itertools};
 use rand::Rng;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
+use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{Order, ScoredPoint, WithPayloadInterface, WithVector};
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::sync::RwLockReadGuard;
 use tokio::time::Instant;
 
 use super::Collection;
+use crate::collection::mmr::mmr_from_points_with_vector;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
@@ -299,7 +300,7 @@ impl Collection {
                 read_consistency,
                 shard_selection,
                 timeout,
-                hw_measurement_acc,
+                hw_measurement_acc.clone(),
             )
             .await?;
 
@@ -311,13 +312,14 @@ impl Collection {
                     .merge_intermediate_results_from_shards(request, shards_results)
                     .await?;
 
-                let result = Self::intermediates_to_final_list(
-                    merged_intermediates,
-                    request.query.as_ref(),
-                    request.limit,
-                    request.offset,
-                    request.score_threshold,
-                )?;
+                let result = self
+                    .intermediates_to_final_list(
+                        merged_intermediates,
+                        request,
+                        timeout.map(|timeout| timeout.saturating_sub(instant.elapsed())),
+                        hw_measurement_acc.clone(),
+                    )
+                    .await?;
 
                 let filter_refs = request.filter_refs();
                 self.post_process_if_slow_request(instant.elapsed(), filter_refs);
@@ -329,27 +331,87 @@ impl Collection {
         Ok(results)
     }
 
-    fn intermediates_to_final_list(
+    /// Resolves the final list of scored points from the intermediate results.
+    ///
+    /// Finalizes queries like fusion and mmr after collecting from all shards.
+    /// For other kind of queries it just passes the results through.
+    ///
+    /// Handles offset and limit.
+    async fn intermediates_to_final_list(
+        &self,
         mut intermediates: Vec<Vec<ScoredPoint>>,
-        query: Option<&ScoringQuery>,
-        limit: usize,
-        offset: usize,
-        score_threshold: Option<ScoreType>,
+        request: &ShardQueryRequest,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        let result = match query {
+        let ShardQueryRequest {
+            prefetches: _,
+            query,
+            filter: _,
+            score_threshold,
+            limit,
+            offset,
+            params: _,
+            with_vector,
+            with_payload: _,
+        } = request;
+
+        let result = match query.as_ref() {
             Some(ScoringQuery::Fusion(fusion)) => {
                 // If the root query is a Fusion, the returned results correspond to each the prefetches.
                 let mut fused = match fusion {
                     FusionInternal::Rrf => rrf_scoring(intermediates),
                     FusionInternal::Dbsf => score_fusion(intermediates, ScoreFusion::dbsf()),
                 };
-                if let Some(score_threshold) = score_threshold {
+                if let Some(&score_threshold) = score_threshold.as_ref() {
                     fused = fused
                         .into_iter()
                         .take_while(|point| point.score >= score_threshold)
                         .collect();
                 }
                 fused
+            }
+            Some(ScoringQuery::Mmr(mmr)) => {
+                let points_with_vector = intermediates.into_iter().flatten();
+
+                let collection_params = self.collection_config.read().await.params.clone();
+                let search_runtime_handle = &self.search_runtime;
+                let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+
+                let mut mmr_result = mmr_from_points_with_vector(
+                    &collection_params,
+                    points_with_vector,
+                    mmr.clone(),
+                    *limit,
+                    search_runtime_handle,
+                    timeout,
+                    hw_measurement_acc,
+                )
+                .await?;
+
+                // strip mmr vector if necessary
+                match with_vector {
+                    WithVector::Bool(false) => mmr_result.iter_mut().for_each(|p| {
+                        p.vector.take();
+                    }),
+                    WithVector::Bool(true) => {}
+                    WithVector::Selector(items) => {
+                        if !items.contains(&mmr.using) {
+                            mmr_result.iter_mut().for_each(|p| {
+                                VectorStructInternal::take_opt(&mut p.vector, &mmr.using);
+                            })
+                        }
+                    }
+                };
+
+                // handle score threshold
+                if let Some(&score_threshold) = score_threshold.as_ref() {
+                    if let Some(pos) = mmr_result.iter().position(|p| p.score < score_threshold) {
+                        mmr_result.truncate(pos);
+                    }
+                }
+
+                mmr_result
             }
             _ => {
                 // Otherwise, it will be a list with a single list of scored points.
@@ -362,7 +424,7 @@ impl Collection {
             }
         };
 
-        let result: Vec<ScoredPoint> = result.into_iter().skip(offset).take(limit).collect();
+        let result: Vec<ScoredPoint> = result.into_iter().skip(*offset).take(*limit).collect();
 
         Ok(result)
     }

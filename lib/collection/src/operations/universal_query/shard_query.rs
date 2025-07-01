@@ -111,11 +111,10 @@ impl ScoringQuery {
                 // We need the score distribution information of each prefetch
                 FusionInternal::Dbsf => true,
             },
-            Self::Mmr(_)
-            | Self::Vector(_)
-            | Self::OrderBy(_)
-            | Self::Formula(_)
-            | Self::Sample(_) => false,
+            // We need the prefetches to merge with the corresponding prefetches from
+            // other shards before using them for MMR
+            Self::Mmr(_) => true,
+            Self::Vector(_) | Self::OrderBy(_) | Self::Formula(_) | Self::Sample(_) => false,
         }
     }
 

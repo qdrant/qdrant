@@ -14,6 +14,7 @@ use ecow::EcoString;
 use fnv::FnvBuildHasher;
 use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
 use indexmap::IndexSet;
+use itertools::Itertools;
 use merge::Merge;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
@@ -2997,6 +2998,27 @@ impl WithVector {
         match self {
             WithVector::Bool(b) => *b,
             WithVector::Selector(_) => true,
+        }
+    }
+
+    /// Merges two `WithVector` options, additively.
+    pub fn merge(&self, other: &WithVector) -> WithVector {
+        match (self, other) {
+            // if any is true, then true
+            (WithVector::Bool(true), _) => WithVector::Bool(true),
+            (_, WithVector::Bool(true)) => WithVector::Bool(true),
+
+            // if both are false, then false
+            (WithVector::Bool(false), WithVector::Bool(false)) => WithVector::Bool(false),
+
+            // merge selectors
+            (WithVector::Selector(s1), WithVector::Selector(s2)) => {
+                WithVector::Selector(s1.iter().chain(s2).unique().cloned().collect())
+            }
+
+            // use selector from the other option
+            (WithVector::Bool(false), WithVector::Selector(s)) => WithVector::Selector(s.clone()),
+            (WithVector::Selector(s), WithVector::Bool(false)) => WithVector::Selector(s.clone()),
         }
     }
 }
