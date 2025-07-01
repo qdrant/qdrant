@@ -125,6 +125,9 @@ impl Persistent {
             state
         } else {
             log::info!("Initializing new raft state at {}", path_json.display());
+            if let Some(default_peer_id) = default_peer_id {
+                log::debug!("Using default peer ID: {default_peer_id}");
+            };
             Self::init(path_json.clone(), first_peer, default_peer_id)?
         };
 
