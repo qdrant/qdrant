@@ -27,7 +27,7 @@ impl MultilingualTokenizer {
 
         // If the script of the input is latin and we don't need to stem early, tokenize as-is.
         // This skips language detection, reduces overhead, and improves performance.
-        if script_is_latin(script) && config.stemmer.is_none() {
+        if script_is_latin(script) {
             Self::tokenize_charabia(input, config, cb);
             return;
         }
@@ -55,7 +55,7 @@ impl MultilingualTokenizer {
                 continue;
             }
 
-            cb(config.stem_if_applicable(cased_token))
+            cb(config.stem_if_enabled(cased_token))
         }
     }
 }

@@ -484,13 +484,13 @@ message TextIndexParams {
 }
 
 message StemmingAlgorithm {
-    oneof stemming_params{
-        SnowballStemmingParams snowball_params = 1; // Parameters for snowball stemming
-    }
+  oneof stemming_params {
+    SnowballStemmingParams snowball_params = 1; // Parameters for snowball stemming
+  }
 }
 
-message SnowballStemmingParams{
-    string language = 1; // Which language the algorithm should stem.
+message SnowballStemmingParams {
+  string language = 1; // Which language the algorithm should stem.
 }
 
 message BoolIndexParams {

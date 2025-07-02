@@ -32,7 +32,7 @@ impl WhiteSpaceTokenizer {
                 continue;
             }
 
-            callback(config.stem_if_applicable(token_cow));
+            callback(config.stem_if_enabled(token_cow));
         }
     }
 }
@@ -60,7 +60,7 @@ impl WordTokenizer {
                 continue;
             }
 
-            callback(config.stem_if_applicable(token_cow));
+            callback(config.stem_if_enabled(token_cow));
         }
     }
 }
@@ -88,7 +88,7 @@ impl PrefixTokenizer {
                     return;
                 }
 
-                let word_cow = config.stem_if_applicable(word_cow);
+                let word_cow = config.stem_if_enabled(word_cow);
 
                 for n in min_ngram..=max_ngram {
                     let ngram = word_cow.as_ref().char_indices().map(|(i, _)| i).nth(n);
@@ -134,7 +134,7 @@ impl PrefixTokenizer {
                     Cow::Borrowed(word)
                 };
 
-                let word_cow = config.stem_if_applicable(word_cow);
+                let word_cow = config.stem_if_enabled(word_cow);
 
                 let ngram = word_cow.char_indices().map(|(i, _)| i).nth(max_ngram);
                 match ngram {
@@ -281,7 +281,7 @@ pub struct TokenizerConfig {
 impl TokenizerConfig {
     /// Applies stemming if enabled and applies the configured stemming algorithm. Does nothing if
     /// stemming is disabled.
-    pub fn stem_if_applicable<'a>(&self, input: Cow<'a, str>) -> Cow<'a, str> {
+    pub fn stem_if_enabled<'a>(&self, input: Cow<'a, str>) -> Cow<'a, str> {
         let Some(stemmer) = self.stemmer.as_ref() else {
             return input;
         };
