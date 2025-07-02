@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoreType;
+use indexmap::IndexSet;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::OperationResult;
@@ -245,7 +245,7 @@ pub fn maximum_marginal_relevance(
     }
 
     let mut selected_indices = Vec::with_capacity(limit);
-    let mut remaining_indices: AHashSet<usize> = (0..num_candidates).collect();
+    let mut remaining_indices: IndexSet<usize, ahash::RandomState> = (0..num_candidates).collect();
 
     // Select first point with highest relevance score
     if let Some(best_idx) = remaining_indices
@@ -254,7 +254,7 @@ pub fn maximum_marginal_relevance(
         .copied()
     {
         selected_indices.push(best_idx);
-        remaining_indices.remove(&best_idx);
+        remaining_indices.swap_remove(&best_idx);
     }
 
     // Iteratively select remaining points using MMR
@@ -287,7 +287,7 @@ pub fn maximum_marginal_relevance(
 
         if let Some((selected_idx, _mmr_score)) = best_candidate {
             // Select the best candidate and remove from remaining
-            remaining_indices.remove(&selected_idx);
+            remaining_indices.swap_remove(&selected_idx);
             selected_indices.push(selected_idx);
         } else {
             break;
@@ -299,7 +299,16 @@ pub fn maximum_marginal_relevance(
         .into_iter()
         .map(|idx| {
             let mut selected = candidates[idx].clone();
-            // Use original query similarity as score
+            // Use query similarity as score, without post-processing.
+            //
+            // We prefer this over MMR score because:
+            // - We already selected the top candidates based on MMR score.
+            // - If this is performed at collection level, we will pass this score to the user, which is arguably more meaningful.
+            // - If this is performed at local shard, it might be combined with other shards' results.
+            //    - MMR does not make sense to compare by score with a different set of MMR results
+            //    - It makes more sense to compare by query score.
+            //    - If this isn't the last rescore before sending to collection,
+            //        we are only interested in the selection of points, not the score itself.
             selected.score = query_similarities[idx];
             selected
         })
