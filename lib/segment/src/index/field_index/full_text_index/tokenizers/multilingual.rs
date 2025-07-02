@@ -2,12 +2,8 @@ use std::borrow::Cow;
 
 use charabia::normalizer::{ClassifierOption, NormalizedTokenIter, NormalizerOption};
 use charabia::{Language, Script, Segment, StrDetection};
-use rust_stemmers::{Algorithm, Stemmer};
 
-use super::japanese;
-use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
-
-pub struct MultilingualTokenizer;
+use super::{TokenizerConfig, japanese};
 
 /// Default normalizer options from charabia(https://github.com/meilisearch/charabia/blob/main/charabia/src/normalizer/mod.rs#L82) used
 /// in `str::tokenize()`.
@@ -20,95 +16,43 @@ const DEFAULT_NORMALIZER: NormalizerOption = NormalizerOption {
     },
 };
 
-impl MultilingualTokenizer {
-    pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
-        input: &'a str,
-        lowercase: bool,
-        stopwords_filter: &StopwordsFilter,
-        cb: C,
-    ) {
-        let script = detect_script_of_language(input);
+pub struct MultilingualTokenizer;
 
-        // TODO(multilingual): Replace this with a value from `config`!
-        let stem = false;
+impl MultilingualTokenizer {
+    pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(input: &'a str, config: &TokenizerConfig, cb: C) {
+        let script = detect_script_of_language(input);
 
         // If the script of the input is latin and we don't need to stem early, tokenize as-is.
         // This skips language detection, reduces overhead, and improves performance.
-        if script_is_latin(script) && !stem {
-            Self::tokenize_charabia(input, stopwords_filter, lowercase, cb);
+        if script_is_latin(script) {
+            Self::tokenize_charabia(input, config, cb);
             return;
         }
-
-        // Detect language to know if we're dealing with Japanese text, or what stemming algorithm to apply.
-        let language = detect_language(input);
 
         // If the script of the input is Japanese, use vaporetto to segment.
-        if language == Some(Language::Jpn) {
-            japanese::tokenize(input, lowercase, stopwords_filter, cb);
+        if detect_language(input) == Some(Language::Jpn) {
+            japanese::tokenize(input, config, cb);
             return;
         }
 
-        // If language detected, stemming is enabled and available.
-        if let Some(algo) = language.and_then(lang_to_algorithm) {
-            if stem {
-                Self::tokenize_charabia_and_stem(input, algo, stopwords_filter, lowercase, cb);
-                return;
-            }
-        }
-
-        // Fallback for other (asian) languages, such as Chinese or Thai.
-        Self::tokenize_charabia(input, stopwords_filter, lowercase, cb);
+        Self::tokenize_charabia(input, config, cb);
     }
 
-    // Tokenize input using charabia and stem using rust-stemmers.
-    fn tokenize_charabia_and_stem<'a, C>(
-        input: &'a str,
-        stemming_algo: Algorithm,
-        stopwords_filter: &StopwordsFilter,
-        lowercase: bool,
-        cb: C,
-    ) where
+    // Tokenize input using charabia. Automatically applies stemming and filters stopwords if configured.
+    fn tokenize_charabia<'a, C>(input: &'a str, config: &TokenizerConfig, mut cb: C)
+    where
         C: FnMut(Cow<'a, str>),
     {
-        let stemmer = Stemmer::create(stemming_algo);
-        Self::charabia(
-            input,
-            stopwords_filter,
-            lowercase,
-            |token| stemmer.stem_cow(token),
-            cb,
-        );
-    }
-
-    // Tokenize input using charabia without applying stemming.
-    fn tokenize_charabia<'a, C: FnMut(Cow<'a, str>)>(
-        input: &'a str,
-        stopwords_filter: &StopwordsFilter,
-        lowercase: bool,
-        cb: C,
-    ) {
-        Self::charabia(input, stopwords_filter, lowercase, |token| token, cb);
-    }
-
-    // Tokenize input using charabia with a token transformation mapping.
-    fn charabia<'a, C: FnMut(Cow<'a, str>)>(
-        input: &'a str,
-        stopwords_filter: &StopwordsFilter,
-        lowercase: bool,
-        mut process_token: impl FnMut(Cow<'a, str>) -> Cow<'a, str>,
-        mut cb: C,
-    ) {
         for token in charabia_token_iter(input) {
-            let cased_token = apply_casing(token.lemma, lowercase);
+            let cased_token = apply_casing(token.lemma, config.lowercase);
 
-            if stopwords_filter.is_stopword(&cased_token)
+            if config.stopwords_filter.is_stopword(&cased_token)
                 || cased_token.chars().all(|char| !char.is_alphabetic())
             {
                 continue;
             }
 
-            let processed_token = process_token(cased_token);
-            cb(processed_token)
+            cb(config.stem_if_enabled(cased_token))
         }
     }
 }
@@ -166,34 +110,13 @@ const SUPPORTED_LANGUAGES: &[charabia::Language] = &[
     charabia::Language::Jpn,
 ];
 
-fn lang_to_algorithm(lang: charabia::Language) -> Option<Algorithm> {
-    // Source: https://github.com/greyblake/whatlang-rs/blob/master/SUPPORTED_LANGUAGES.md
-    let algo = match lang {
-        charabia::Language::Eng => Algorithm::English,
-        charabia::Language::Rus => Algorithm::Russian,
-        charabia::Language::Por => Algorithm::Portuguese,
-        charabia::Language::Ita => Algorithm::Italian,
-        charabia::Language::Deu => Algorithm::German,
-        charabia::Language::Ara => Algorithm::Arabic,
-        charabia::Language::Dan => Algorithm::Danish,
-        charabia::Language::Swe => Algorithm::Swedish,
-        charabia::Language::Fin => Algorithm::Finnish,
-        charabia::Language::Tur => Algorithm::Turkish,
-        charabia::Language::Nld => Algorithm::Dutch,
-        charabia::Language::Hun => Algorithm::Hungarian,
-        charabia::Language::Ell => Algorithm::Greek,
-        charabia::Language::Tam => Algorithm::Tamil,
-        charabia::Language::Ron => Algorithm::Romanian,
-        _ => return None,
-    };
-    Some(algo)
-}
-
 #[cfg(test)]
 mod test {
     use charabia::Language;
 
     use super::*;
+    use crate::data_types::index::{SnowballLanguage, SnowballParameters, StemmingAlgorithm};
+    use crate::index::field_index::full_text_index::tokenizers::stemmer::Stemmer;
 
     #[test]
     fn test_lang_detection() {
@@ -231,10 +154,10 @@ mod test {
     }
 
     fn assert_tokenization(inp: &str, expected: &str) {
-        let empty_filter = StopwordsFilter::default();
+        let config = TokenizerConfig::default();
 
         let mut out = vec![];
-        MultilingualTokenizer::tokenize(inp, false, &empty_filter, |i| out.push(i.to_string()));
+        MultilingualTokenizer::tokenize(inp, &config, |i| out.push(i.to_string()));
         let expected: Vec<_> = expected.split('|').collect();
         for i in out.iter().zip(expected.iter()) {
             assert_eq!(i.0, i.1);
@@ -256,5 +179,23 @@ mod test {
             "日本語のテキストです。Qdrantのコードで単体テストで使用されています。",
             "日本|語|の|テキスト|です|Qdrant|の|コード|で|単体|テスト|で|使用|さ|れ|て|い|ます",
         );
+    }
+
+    #[test]
+    fn test_multilingual_stemming() {
+        let config = TokenizerConfig {
+            stemmer: Some(Stemmer::from_algorithm(&StemmingAlgorithm::Snowball(
+                SnowballParameters {
+                    r#type: Default::default(),
+                    language: SnowballLanguage::English,
+                },
+            ))),
+            ..Default::default()
+        };
+
+        let input = "Testing this";
+        let mut out = vec![];
+        MultilingualTokenizer::tokenize(input, &config, |i| out.push(i.to_string()));
+        assert_eq!(out, vec!["test", "this"]);
     }
 }

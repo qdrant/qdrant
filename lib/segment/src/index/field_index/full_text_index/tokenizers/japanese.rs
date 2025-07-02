@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 
 use vaporetto::{Model, Predictor, Sentence};
 
-use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
+use super::TokenizerConfig;
 
 /// Vaporetto prediction model. Source: https://github.com/daac-tools/vaporetto-models/releases/tag/v0.5.0
 const MODEL: &[u8] = include_bytes!(concat!(
@@ -40,8 +40,7 @@ impl JapaneseTokenizer {
     fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
         &self,
         input: &'a str,
-        lowercase: bool,
-        stopwords_filter: &StopwordsFilter,
+        config: &TokenizerConfig,
         mut cb: C,
     ) {
         let Ok(mut s) = Sentence::from_raw(Cow::Borrowed(input)) else {
@@ -55,13 +54,13 @@ impl JapaneseTokenizer {
             let surface = i.surface();
 
             // Skip if all characters are not alphanumeric or if the surface is empty.
-            if stopwords_filter.is_stopword(surface)
+            if config.stopwords_filter.is_stopword(surface)
                 || surface.chars().all(|char| !char.is_alphabetic())
             {
                 continue;
             }
 
-            let surface = if lowercase {
+            let surface = if config.lowercase {
                 Cow::Owned(surface.to_lowercase())
             } else {
                 Cow::Owned(surface.to_string())
@@ -72,13 +71,8 @@ impl JapaneseTokenizer {
 }
 
 /// Tokenizes the given `input` of Japanese text and calls `cb` with each tokens.
-pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
-    input: &'a str,
-    lowercase: bool,
-    stopwords_filter: &StopwordsFilter,
-    cb: C,
-) {
-    GLOBAL_JAPANESE_TOKENIZER.tokenize(input, lowercase, stopwords_filter, cb);
+pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(input: &'a str, config: &TokenizerConfig, cb: C) {
+    GLOBAL_JAPANESE_TOKENIZER.tokenize(input, config, cb);
 }
 
 #[cfg(test)]
@@ -109,8 +103,9 @@ mod test {
     #[test]
     fn test_tokenization() {
         let input = "日本語のテキストです。Qdrantのコードで単体テストで使用されています。";
+        let config = TokenizerConfig::default();
         let mut out = vec![];
-        tokenize(input, false, &StopwordsFilter::default(), |i| {
+        tokenize(input, &config, |i| {
             out.push(i.to_string());
         });
         assert_eq!(
@@ -141,8 +136,9 @@ mod test {
     #[test]
     fn test_tokenization_partially_japanese() {
         let input = "日本語のテキストです。It's used in Qdrant's code in a unit test";
+        let config = TokenizerConfig::default();
         let mut out = vec![];
-        tokenize(input, false, &StopwordsFilter::default(), |i| {
+        tokenize(input, &config, |i| {
             out.push(i.to_string());
         });
         assert_eq!(

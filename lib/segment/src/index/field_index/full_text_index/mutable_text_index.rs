@@ -403,6 +403,7 @@ mod tests {
             phrase_matching: None,
             on_disk: None,
             stopwords: None,
+            stemmer: None,
         };
 
         {

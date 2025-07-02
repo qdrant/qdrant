@@ -11,7 +11,7 @@ use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::index::{
     BoolIndexType, DatetimeIndexType, FloatIndexType, GeoIndexType, IntegerIndexType,
-    KeywordIndexType, TextIndexType, UuidIndexType,
+    KeywordIndexType, SnowballLanguage, TextIndexType, UuidIndexType,
 };
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
@@ -33,7 +33,8 @@ use super::qdrant::{
     StrictModeMultivector, StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig,
     UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
-use super::{Expression, Formula, RecoQuery, Usage};
+use super::stemming_algorithm::StemmingParams;
+use super::{Expression, Formula, RecoQuery, SnowballParameters, StemmingAlgorithm, Usage};
 use crate::conversions::json::{self, json_to_proto};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::r#match::MatchValue;
@@ -216,11 +217,14 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
             phrase_matching,
             on_disk,
             stopwords,
+            stemmer,
         } = params;
         let tokenizer = TokenizerType::from(tokenizer);
 
         // Convert stopwords if present
         let stopwords_set = stopwords.map(StopwordsSet::from);
+
+        let stemming_algo = stemmer.map(StemmingAlgorithm::from);
 
         PayloadIndexParams {
             index_params: Some(IndexParams::TextIndexParams(TextIndexParams {
@@ -231,6 +235,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                 phrase_matching,
                 on_disk,
                 stopwords: stopwords_set,
+                stemming: stemming_algo,
             })),
         }
     }
@@ -348,6 +353,25 @@ impl From<segment::data_types::index::StopwordsInterface> for StopwordsSet {
 
                 StopwordsSet { languages, custom }
             }
+        }
+    }
+}
+
+impl From<segment::data_types::index::StemmingAlgorithm> for StemmingAlgorithm {
+    fn from(value: segment::data_types::index::StemmingAlgorithm) -> Self {
+        let stemming_params = match value {
+            segment::data_types::index::StemmingAlgorithm::Snowball(snowball_params) => {
+                let segment::data_types::index::SnowballParameters {
+                    r#type: _,
+                    language,
+                } = snowball_params;
+                let language = language.to_string();
+                StemmingParams::Snowball(SnowballParameters { language })
+            }
+        };
+
+        StemmingAlgorithm {
+            stemming_params: Some(stemming_params),
         }
     }
 }
@@ -483,6 +507,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             phrase_matching,
             on_disk,
             stopwords,
+            stemming,
         } = params;
 
         // Convert stopwords if present
@@ -493,6 +518,11 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
         } else {
             None
         };
+
+        let stemmer = stemming
+            .and_then(|i| i.stemming_params)
+            .map(segment::data_types::index::StemmingAlgorithm::try_from)
+            .transpose()?;
 
         Ok(segment::data_types::index::TextIndexParams {
             r#type: TextIndexType::Text,
@@ -505,7 +535,28 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             phrase_matching,
             on_disk,
             stopwords: stopwords_converted,
+            stemmer,
         })
+    }
+}
+
+impl TryFrom<StemmingParams> for segment::data_types::index::StemmingAlgorithm {
+    type Error = Status;
+
+    fn try_from(value: StemmingParams) -> Result<Self, Self::Error> {
+        match value {
+            StemmingParams::Snowball(params) => {
+                let language = SnowballLanguage::from_str(&params.language).map_err(|_| {
+                    Status::invalid_argument(format!("Language {:?} not found.", params.language))
+                })?;
+                Ok(segment::data_types::index::StemmingAlgorithm::Snowball(
+                    segment::data_types::index::SnowballParameters {
+                        r#type: segment::data_types::index::Snowball::Snowball,
+                        language,
+                    },
+                ))
+            }
+        }
     }
 }
 
