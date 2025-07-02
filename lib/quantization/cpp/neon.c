@@ -71,27 +71,27 @@ EXPORT uint32_t impl_xor_popcnt_scalar8_neon_uint128(
     const uint8_t* vector_ptr,
     uint32_t count
 ) {
-    const uint64_t* v_ptr = (const uint64_t*)vector_ptr;
-    const uint64_t* q_ptr = (const uint64_t*)query_ptr;
+    const uint8_t* v_ptr = vector_ptr;
+    const uint8_t* q_ptr = query_ptr;
 
-    uint8x16_t result1 = vdupq_n_u32(0);
-    uint8x16_t result2 = vdupq_n_u32(0);
-    uint8x16_t result3 = vdupq_n_u32(0);
-    uint8x16_t result4 = vdupq_n_u32(0);
-    uint8x16_t result5 = vdupq_n_u32(0);
-    uint8x16_t result6 = vdupq_n_u32(0);
-    uint8x16_t result7 = vdupq_n_u32(0);
-    uint8x16_t result8 = vdupq_n_u32(0);
+    uint16x8_t result1 = vdupq_n_u16(0);
+    uint16x8_t result2 = vdupq_n_u16(0);
+    uint16x8_t result3 = vdupq_n_u16(0);
+    uint16x8_t result4 = vdupq_n_u16(0);
+    uint16x8_t result5 = vdupq_n_u16(0);
+    uint16x8_t result6 = vdupq_n_u16(0);
+    uint16x8_t result7 = vdupq_n_u16(0);
+    uint16x8_t result8 = vdupq_n_u16(0);
     for (uint32_t _i = 0; _i < count; _i++) {
         uint8x16_t v = vld1q_u8(v_ptr);
-        uint8x16_t x1 = veorq_u8(vld1q_u8(q_ptr), v);
-        uint8x16_t x2 = veorq_u8(vld1q_u8(q_ptr + 2), v);
-        uint8x16_t x3 = veorq_u8(vld1q_u8(q_ptr + 4), v);
-        uint8x16_t x4 = veorq_u8(vld1q_u8(q_ptr + 6), v);
-        uint8x16_t x5 = veorq_u8(vld1q_u8(q_ptr + 8), v);
-        uint8x16_t x6 = veorq_u8(vld1q_u8(q_ptr + 10), v);
-        uint8x16_t x7 = veorq_u8(vld1q_u8(q_ptr + 12), v);
-        uint8x16_t x8 = veorq_u8(vld1q_u8(q_ptr + 14), v);
+        uint8x16_t x1 = veorq_u8(vld1q_u8(q_ptr + 0), v);
+        uint8x16_t x2 = veorq_u8(vld1q_u8(q_ptr + 16), v);
+        uint8x16_t x3 = veorq_u8(vld1q_u8(q_ptr + 32), v);
+        uint8x16_t x4 = veorq_u8(vld1q_u8(q_ptr + 48), v);
+        uint8x16_t x5 = veorq_u8(vld1q_u8(q_ptr + 64), v);
+        uint8x16_t x6 = veorq_u8(vld1q_u8(q_ptr + 80), v);
+        uint8x16_t x7 = veorq_u8(vld1q_u8(q_ptr + 96), v);
+        uint8x16_t x8 = veorq_u8(vld1q_u8(q_ptr + 112), v);
 
         result1 = vpadalq_u8(result1, vcntq_u8(x1));
         result2 = vpadalq_u8(result2, vcntq_u8(x2));
@@ -102,49 +102,18 @@ EXPORT uint32_t impl_xor_popcnt_scalar8_neon_uint128(
         result7 = vpadalq_u8(result7, vcntq_u8(x7));
         result8 = vpadalq_u8(result8, vcntq_u8(x8));
 
-        v_ptr += 2;
-        q_ptr += 16;
+        v_ptr += 16;
+        q_ptr += 128;
     }
 
-    uint8x8_t result1_low = vget_low_u8(result1);
-    uint8x8_t result1_high = vget_high_u8(result1);
-    uint16x8_t sum1 = vaddl_u8(result1_low, result1_high);
-    uint32_t r1 = vaddvq_u16(sum1);
-
-    uint8x8_t result2_low = vget_low_u8(result2);
-    uint8x8_t result2_high = vget_high_u8(result2);
-    uint16x8_t sum2 = vaddl_u8(result2_low, result2_high);
-    uint32_t r2 = vaddvq_u16(sum2);
-
-    uint8x8_t result3_low = vget_low_u8(result3);
-    uint8x8_t result3_high = vget_high_u8(result3);
-    uint16x8_t sum3 = vaddl_u8(result3_low, result3_high);
-    uint32_t r3 = vaddvq_u16(sum3);
-
-    uint8x8_t result4_low = vget_low_u8(result4);
-    uint8x8_t result4_high = vget_high_u8(result4);
-    uint16x8_t sum4 = vaddl_u8(result4_low, result4_high);
-    uint32_t r4 = vaddvq_u16(sum4);
-
-    uint8x8_t result5_low = vget_low_u8(result5);
-    uint8x8_t result5_high = vget_high_u8(result5);
-    uint16x8_t sum5 = vaddl_u8(result5_low, result5_high);
-    uint32_t r5 = vaddvq_u16(sum5);
-
-    uint8x8_t result6_low = vget_low_u8(result6);
-    uint8x8_t result6_high = vget_high_u8(result6);
-    uint16x8_t sum6 = vaddl_u8(result6_low, result6_high);
-    uint32_t r6 = vaddvq_u16(sum6);
-
-    uint8x8_t result7_low = vget_low_u8(result7);
-    uint8x8_t result7_high = vget_high_u8(result7);
-    uint16x8_t sum7 = vaddl_u8(result7_low, result7_high);
-    uint32_t r7 = vaddvq_u16(sum7);
-
-    uint8x8_t result8_low = vget_low_u8(result8);
-    uint8x8_t result8_high = vget_high_u8(result8);
-    uint16x8_t sum8 = vaddl_u8(result8_low, result8_high);
-    uint32_t r8 = vaddvq_u16(sum8);
+    uint32_t r1 = vaddvq_u16(result1);
+    uint32_t r2 = vaddvq_u16(result2);
+    uint32_t r3 = vaddvq_u16(result3);
+    uint32_t r4 = vaddvq_u16(result4);
+    uint32_t r5 = vaddvq_u16(result5);
+    uint32_t r6 = vaddvq_u16(result6);
+    uint32_t r7 = vaddvq_u16(result7);
+    uint32_t r8 = vaddvq_u16(result8);
 
     return r1 + (r2 << 1) + (r3 << 2) + (r4 << 3) + (r5 << 4) + (r6 << 5) + (r7 << 6) + (r8 << 7);
 }
@@ -154,49 +123,33 @@ EXPORT uint32_t impl_xor_popcnt_scalar4_neon_uint128(
     const uint8_t* vector_ptr,
     uint32_t count
 ) {
-    const uint64_t* v_ptr = (const uint64_t*)vector_ptr;
-    const uint64_t* q_ptr = (const uint64_t*)query_ptr;
+    const uint8_t* v_ptr = vector_ptr;
+    const uint8_t* q_ptr = query_ptr;
 
-    uint8x16_t result1 = vdupq_n_u32(0);
-    uint8x16_t result2 = vdupq_n_u32(0);
-    uint8x16_t result3 = vdupq_n_u32(0);
-    uint8x16_t result4 = vdupq_n_u32(0);
+    uint16x8_t result1 = vdupq_n_u16(0);
+    uint16x8_t result2 = vdupq_n_u16(0);
+    uint16x8_t result3 = vdupq_n_u16(0);
+    uint16x8_t result4 = vdupq_n_u16(0);
     for (uint32_t _i = 0; _i < count; _i++) {
         uint8x16_t v = vld1q_u8(v_ptr);
         uint8x16_t x1 = veorq_u8(vld1q_u8(q_ptr + 0), v);
-        uint8x16_t x2 = veorq_u8(vld1q_u8(q_ptr + 2), v);
-        uint8x16_t x3 = veorq_u8(vld1q_u8(q_ptr + 4), v);
-        uint8x16_t x4 = veorq_u8(vld1q_u8(q_ptr + 6), v);
+        uint8x16_t x2 = veorq_u8(vld1q_u8(q_ptr + 16), v);
+        uint8x16_t x3 = veorq_u8(vld1q_u8(q_ptr + 32), v);
+        uint8x16_t x4 = veorq_u8(vld1q_u8(q_ptr + 48), v);
 
         result1 = vpadalq_u8(result1, vcntq_u8(x1));
         result2 = vpadalq_u8(result2, vcntq_u8(x2));
         result3 = vpadalq_u8(result3, vcntq_u8(x3));
         result4 = vpadalq_u8(result4, vcntq_u8(x4));
 
-        v_ptr += 2;
-        q_ptr += 8;
+        v_ptr += 16;
+        q_ptr += 64;
     }
 
-    uint8x8_t result1_low = vget_low_u8(result1);
-    uint8x8_t result1_high = vget_high_u8(result1);
-    uint16x8_t sum1 = vaddl_u8(result1_low, result1_high);
-    uint32_t r1 = vaddvq_u16(sum1);
-
-    uint8x8_t result2_low = vget_low_u8(result2);
-    uint8x8_t result2_high = vget_high_u8(result2);
-    uint16x8_t sum2 = vaddl_u8(result2_low, result2_high);
-    uint32_t r2 = vaddvq_u16(sum2);
-
-    uint8x8_t result3_low = vget_low_u8(result3);
-    uint8x8_t result3_high = vget_high_u8(result3);
-    uint16x8_t sum3 = vaddl_u8(result3_low, result3_high);
-    uint32_t r3 = vaddvq_u16(sum3);
-
-    uint8x8_t result4_low = vget_low_u8(result4);
-    uint8x8_t result4_high = vget_high_u8(result4);
-    uint16x8_t sum4 = vaddl_u8(result4_low, result4_high);
-    uint32_t r4 = vaddvq_u16(sum4);
-
+    uint32_t r1 = vaddvq_u16(result1);
+    uint32_t r2 = vaddvq_u16(result2);
+    uint32_t r3 = vaddvq_u16(result3);
+    uint32_t r4 = vaddvq_u16(result4);
     return r1 + (r2 << 1) + (r3 << 2) + (r4 << 3);
 }
 

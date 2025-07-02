@@ -175,28 +175,19 @@ EXPORT uint32_t impl_xor_popcnt_scalar4_sse_uint128(
         uint64_t v_1 = *v_ptr;
         uint64_t v_2 = *(v_ptr + 1);
 
-        uint64_t q_1_1 = *q_ptr;
-        uint64_t q_2_1 = *(q_ptr + 1);
-        uint64_t q_1_2 = *(q_ptr + 2);
-        uint64_t q_2_2 = *(q_ptr + 3);
-        uint64_t q_1_3 = *(q_ptr + 4);
-        uint64_t q_2_3 = *(q_ptr + 5);
-        uint64_t q_1_4 = *(q_ptr + 6);
-        uint64_t q_2_4 = *(q_ptr + 7);
-
         __m128i popcnt1 = _mm_set_epi32(
-            _mm_popcnt_u64(v_1 ^ q_1_1),
-            _mm_popcnt_u64(v_1 ^ q_1_2),
-            _mm_popcnt_u64(v_1 ^ q_1_3),
-            _mm_popcnt_u64(v_1 ^ q_1_4)
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 0)),
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 2)),
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 4)),
+            _mm_popcnt_u64(v_1 ^ *(q_ptr + 6))
         );
         sum = _mm_add_epi32(sum, popcnt1);
 
         __m128i popcnt2 = _mm_set_epi32(
-            _mm_popcnt_u64(v_2 ^ q_2_1),
-            _mm_popcnt_u64(v_2 ^ q_2_2),
-            _mm_popcnt_u64(v_2 ^ q_2_3),
-            _mm_popcnt_u64(v_2 ^ q_2_4)
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 1)),
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 3)),
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 5)),
+            _mm_popcnt_u64(v_2 ^ *(q_ptr + 7))
         );
         sum = _mm_add_epi32(sum, popcnt2);
 
