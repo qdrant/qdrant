@@ -423,11 +423,9 @@ impl StructPayloadIndex {
         query_cardinality: &'a CardinalityEstimation,
         hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
-        let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
-
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = id_tracker.iter_ids();
-
+            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
                 full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
@@ -436,6 +434,16 @@ impl StructPayloadIndex {
         } else {
             // CPU-optimized strategy here: points are made unique before applying other filters.
             let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
+
+            let struct_filtered_check: Box<dyn Fn(PointOffsetType) -> bool> =
+                if Self::primary_clause_covers_filter(filter, query_cardinality) {
+                    // the primary clause will select the correct point ids right away
+                    Box::new(|_id| true)
+                } else {
+                    // there are other conditions to consider
+                    let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
+                    Box::new(move |id| struct_filtered_context.check(id))
+                };
 
             let iter = query_cardinality
                 .primary_clauses
@@ -451,11 +459,26 @@ impl StructPayloadIndex {
                     })
                 })
                 .filter(move |&id| {
-                    !visited_list.check_and_update_visited(id) && struct_filtered_context.check(id)
+                    !visited_list.check_and_update_visited(id) && struct_filtered_check(id)
                 });
 
             Either::Right(iter)
         }
+    }
+
+    // TODO make more general by returning a new filter without the primary clauses
+    fn primary_clause_covers_filter<'a>(
+        filter: &'a Filter,
+        query_cardinality: &'a CardinalityEstimation,
+    ) -> bool {
+        let one_condition = filter.total_conditions_count() == 1;
+        let one_primary_clause = query_cardinality.primary_clauses.len() == 1;
+        // the payload index does not know about vector names
+        let no_vector_storage_needed = match query_cardinality.primary_clauses[0] {
+            PrimaryCondition::Condition(_) | PrimaryCondition::Ids(_) => true,
+            PrimaryCondition::HasVector(_) => false,
+        };
+        one_condition && one_primary_clause && no_vector_storage_needed
     }
 
     /// Select which type of PayloadIndex to use for the field
