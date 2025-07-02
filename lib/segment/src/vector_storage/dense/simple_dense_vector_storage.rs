@@ -236,6 +236,10 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for SimpleDenseVectorStora
     fn get_dense(&self, key: PointOffsetType) -> &[T] {
         self.vectors.get(key as VectorOffsetType)
     }
+
+    fn get_dense_sequential(&self, key: PointOffsetType) -> &[T] {
+        self.vectors.get(key as VectorOffsetType)
+    }
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {

@@ -39,6 +39,9 @@ impl<TMetric: Metric<VectorElementType>> DenseVectorStorage<VectorElementType>
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.vectors.get(key as _)
     }
+    fn get_dense_sequential(&self, key: PointOffsetType) -> &[VectorElementType] {
+        self.vectors.get(key as _)
+    }
 }
 
 impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer<TMetric> {

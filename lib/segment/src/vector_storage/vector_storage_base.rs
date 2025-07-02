@@ -142,6 +142,9 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn vector_dim(&self) -> usize;
     fn get_dense(&self, key: PointOffsetType) -> &[T];
 
+    /// Same as `get_dense`, but optimized for sequential access
+    fn get_dense_sequential(&self, key: PointOffsetType) -> &[T];
+
     /// Get the dense vectors by the given keys
     ///
     /// Implementation can assume that the keys are consecutive
