@@ -4,6 +4,11 @@
 
 #include "export_macro.h"
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#define __builtin_popcount __popcnt
+#endif
+
 #define HSUM128_PS(X, R) \
     float R = 0.0f; \
     { \
