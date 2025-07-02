@@ -45,7 +45,7 @@ pub async fn mmr_from_points_with_vector(
     timeout: Duration,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<ScoredPoint>, CollectionError> {
-    let (vectors, candidates): (Vec<_>, Vec<_>) = points_with_vector
+    let (vectors, mut candidates): (Vec<_>, Vec<_>) = points_with_vector
         .into_iter()
         .sorted_unstable_by_key(|p| p.id)
         .dedup_by(|a, b| a.id == b.id)
@@ -61,17 +61,27 @@ pub async fn mmr_from_points_with_vector(
 
     debug_assert_eq!(vectors.len(), candidates.len());
 
-    if candidates.len() < 2 {
-        // can't compute MMR for less than 2 points, just return as is
-        return Ok(candidates);
-    }
-
     let volatile_storage = create_volatile_storage(
         collection_params,
         &vectors,
         mmr.using,
         hw_measurement_acc.get_counter_cell(),
     )?;
+
+    if candidates.len() < 2 {
+        // can't compute MMR for less than 2 points, return with relevance score
+        let scores = relevance_similarities(
+            &volatile_storage,
+            mmr.vector,
+            hw_measurement_acc.get_counter_cell(),
+        )?;
+
+        for (p, score) in candidates.iter_mut().zip(scores) {
+            p.score = score;
+        }
+
+        return Ok(candidates);
+    }
 
     let compute_similarities = move || {
         // get similarities against query
@@ -171,11 +181,11 @@ fn similarity_matrix(
     let num_vectors = vectors.len();
 
     // if we have less than 2 points, we can't build a matrix
+    debug_assert!(
+        num_vectors >= 2,
+        "There should be at least two vectors to calculate similarity matrix"
+    );
     if num_vectors < 2 {
-        debug_assert!(
-            false,
-            "There should be at least two vectors to calculate similarity matrix"
-        );
         return Err(CollectionError::service_error(
             "There should be at least two vectors to calculate similarity matrix",
         ));
