@@ -98,28 +98,8 @@ pub trait SegmentOptimizer {
         )?))
     }
 
-    /// Build optimized segment
-    fn optimized_segment_builder(
-        &self,
-        optimizing_segments: &[LockedSegment],
-    ) -> CollectionResult<SegmentBuilder> {
-        // Example:
-        //
-        // S1: {
-        //     text_vectors: 10000,
-        //     image_vectors: 100
-        // }
-        // S2: {
-        //     text_vectors: 200,
-        //     image_vectors: 10000
-        // }
-
-        // Example: bytes_count_by_vector_name = {
-        //     text_vectors: 10200 * dim * VECTOR_ELEMENT_SIZE
-        //     image_vectors: 10100 * dim * VECTOR_ELEMENT_SIZE
-        // }
-        let mut bytes_count_by_vector_name = HashMap::new();
-
+    /// Returns error if segment size is larger than available disk space
+    fn check_segments_size(&self, optimizing_segments: &[LockedSegment]) -> CollectionResult<()> {
         // Counting up how much space do the segments being optimized actually take on the fs.
         // If there was at least one error while reading the size, this will be `None`.
         let mut space_occupied = Some(0u64);
@@ -133,13 +113,8 @@ pub trait SegmentOptimizer {
                     ));
                 }
             };
-            let locked_segment = segment.read();
 
-            for vector_name in locked_segment.vector_names() {
-                let vector_size = locked_segment.available_vectors_size_in_bytes(&vector_name)?;
-                let size = bytes_count_by_vector_name.entry(vector_name).or_insert(0);
-                *size += vector_size;
-            }
+            let locked_segment = segment.read();
 
             space_occupied =
                 space_occupied.and_then(|acc| match dir_size(locked_segment.data_path()) {
@@ -158,7 +133,6 @@ pub trait SegmentOptimizer {
         let space_needed = space_occupied.map(|x| 2 * x);
 
         // Ensure temp_path exists
-
         if !self.temp_path().exists() {
             std::fs::create_dir_all(self.temp_path()).map_err(|err| {
                 CollectionError::service_error(format!(
@@ -194,6 +168,49 @@ pub trait SegmentOptimizer {
                     "Could not estimate available storage space in `{}`; will try optimizing anyway",
                     self.name()
                 );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Build optimized segment
+    fn optimized_segment_builder(
+        &self,
+        optimizing_segments: &[LockedSegment],
+    ) -> CollectionResult<SegmentBuilder> {
+        // Example:
+        //
+        // S1: {
+        //     text_vectors: 10000,
+        //     image_vectors: 100
+        // }
+        // S2: {
+        //     text_vectors: 200,
+        //     image_vectors: 10000
+        // }
+
+        // Example: bytes_count_by_vector_name = {
+        //     text_vectors: 10200 * dim * VECTOR_ELEMENT_SIZE
+        //     image_vectors: 10100 * dim * VECTOR_ELEMENT_SIZE
+        // }
+        let mut bytes_count_by_vector_name = HashMap::new();
+
+        for segment in optimizing_segments {
+            let segment = match segment {
+                LockedSegment::Original(segment) => segment,
+                LockedSegment::Proxy(_) => {
+                    return Err(CollectionError::service_error(
+                        "Proxy segment is not expected here".to_string(),
+                    ));
+                }
+            };
+            let locked_segment = segment.read();
+
+            for vector_name in locked_segment.vector_names() {
+                let vector_size = locked_segment.available_vectors_size_in_bytes(&vector_name)?;
+                let size = bytes_count_by_vector_name.entry(vector_name).or_insert(0);
+                *size += vector_size;
             }
         }
 
@@ -597,6 +614,9 @@ pub trait SegmentOptimizer {
             .map(|id| segments_lock.get(id))
             .filter_map(|x| x.cloned())
             .collect();
+
+        // Check that we have enough disk space for optimization
+        self.check_segments_size(&optimizing_segments)?;
 
         // Check if all segments are not under other optimization or some ids are missing
         let all_segments_ok = optimizing_segments.len() == ids.len()
