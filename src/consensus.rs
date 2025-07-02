@@ -699,7 +699,7 @@ impl Consensus {
     }
 
     fn is_single_peer(&self) -> bool {
-        self.node.store().peers_count() == 1
+        self.node.store().peer_count() == 1
     }
 
     fn is_leader(&self) -> bool {

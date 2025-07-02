@@ -192,10 +192,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .collect()
     }
 
-    pub fn peers_count(&self) -> usize {
-        self.persistent.read().peer_address_by_id.read().len()
-    }
-
     pub fn first_voter(&self) -> PeerId {
         let state = self.persistent.read();
 
