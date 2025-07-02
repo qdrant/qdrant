@@ -66,7 +66,7 @@
     - [ScalarQuantization](#qdrant-ScalarQuantization)
     - [ShardKey](#qdrant-ShardKey)
     - [ShardTransferInfo](#qdrant-ShardTransferInfo)
-    - [SnowballStemmingParams](#qdrant-SnowballStemmingParams)
+    - [SnowballParameters](#qdrant-SnowballParameters)
     - [SparseIndexConfig](#qdrant-SparseIndexConfig)
     - [SparseVectorConfig](#qdrant-SparseVectorConfig)
     - [SparseVectorConfig.MapEntry](#qdrant-SparseVectorConfig-MapEntry)
@@ -1401,9 +1401,9 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
-<a name="qdrant-SnowballStemmingParams"></a>
+<a name="qdrant-SnowballParameters"></a>
 
-### SnowballStemmingParams
+### SnowballParameters
 
 
 
@@ -1488,7 +1488,7 @@ Note: 1kB = 1 vector of size 256. |
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| snowball_params | [SnowballStemmingParams](#qdrant-SnowballStemmingParams) |  | Parameters for snowball stemming |
+| snowball | [SnowballParameters](#qdrant-SnowballParameters) |  | Parameters for snowball stemming |
 
 
 
