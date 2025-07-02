@@ -22,9 +22,6 @@ impl MultilingualTokenizer {
     pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(input: &'a str, config: &TokenizerConfig, cb: C) {
         let script = detect_script_of_language(input);
 
-        let lowercase = config.lowercase;
-        let stopwords_filter = &config.stopwords_filter;
-
         // If the script of the input is latin and we don't need to stem early, tokenize as-is.
         // This skips language detection, reduces overhead, and improves performance.
         if script_is_latin(script) {
@@ -34,7 +31,7 @@ impl MultilingualTokenizer {
 
         // If the script of the input is Japanese, use vaporetto to segment.
         if detect_language(input) == Some(Language::Jpn) {
-            japanese::tokenize(input, lowercase, stopwords_filter, cb);
+            japanese::tokenize(input, config, cb);
             return;
         }
 
