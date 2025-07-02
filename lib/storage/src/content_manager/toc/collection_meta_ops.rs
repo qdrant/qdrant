@@ -625,23 +625,10 @@ impl TableOfContent {
             ReplicaState::Active
         };
 
-        let local_replicas = self
-            .get_collection_unchecked(&operation.collection_name)
+        self.get_collection_unchecked(&operation.collection_name)
             .await?
             .create_shard_key(operation.shard_key, operation.placement, init_state)
             .await?;
-
-        if use_initializing_state {
-            for shard_id in local_replicas {
-                self.send_set_replica_state_proposal(
-                    operation.collection_name.clone(),
-                    self.this_peer_id(),
-                    shard_id,
-                    ReplicaState::Active,
-                    Some(ReplicaState::Initializing),
-                )?;
-            }
-        }
 
         Ok(())
     }
