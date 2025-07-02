@@ -91,6 +91,7 @@ jobs:
           ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
           fetch-depth: 0 # Fetch all history for all tags and branches
       - name: Print Qdrant version and commit after checkout
+        shell: bash
         run: |
           version=$(grep -oP "^version = \"(.*)" Cargo.toml | cut -d'"' -f2)
           commit=$(git rev-parse HEAD)
@@ -99,6 +100,14 @@ jobs:
           echo "Detected Qdrant version: $version"
           echo "Latest commit hash: $commit"
           echo "Branch name: $branch"
+
+          # Github context variables:
+          echo "Event name: ${{ github.event_name }}"
+          echo "Ref name: ${{ github.ref_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Intended checkout ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}"
+          git branch -a
+          git log --oneline -5
 
       - name: Install lcov
         run: sudo apt install -y lcov
