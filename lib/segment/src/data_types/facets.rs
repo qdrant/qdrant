@@ -86,6 +86,7 @@ pub struct FacetHit<T: FacetValueTrait> {
     pub count: usize,
 }
 
+#[derive(Clone, Debug, Default)]
 pub struct FacetResponse {
     pub hits: Vec<FacetValueHit>,
 }

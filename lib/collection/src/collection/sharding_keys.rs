@@ -60,6 +60,7 @@ impl Collection {
         &self,
         shard_key: ShardKey,
         placement: ShardsPlacement,
+        init_state: ReplicaState,
     ) -> CollectionResult<()> {
         let hw_counter = HwMeasurementAcc::disposable(); // Internal operation. No measurement needed.
 
@@ -100,7 +101,6 @@ impl Collection {
         }
 
         let max_shard_id = state.max_shard_id();
-
         let payload_schema = self.payload_index_schema.read().schema.clone();
 
         for (idx, shard_replicas_placement) in placement.iter().enumerate() {
@@ -111,7 +111,7 @@ impl Collection {
                     shard_id,
                     Some(shard_key.clone()),
                     shard_replicas_placement,
-                    None,
+                    Some(init_state),
                 )
                 .await?;
 
@@ -139,6 +139,7 @@ impl Collection {
                 Some(shard_key.clone()),
             )?;
         }
+
         Ok(())
     }
 

@@ -284,7 +284,7 @@ impl Collection {
 
             let results_from_shards = all_searches_res
                 .iter_mut()
-                .map(|res| mem::take(&mut res[batch_index]));
+                .map(|res| res.get_mut(batch_index).map_or(Vec::new(), mem::take));
 
             let merged_iter = match order {
                 Order::LargeBetter => Either::Left(results_from_shards.kmerge_by(|a, b| a > b)),

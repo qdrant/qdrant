@@ -989,7 +989,7 @@ pub const fn default_exact_count() -> bool {
     true
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Default, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct CountResult {
     /// Number of points which satisfy the conditions

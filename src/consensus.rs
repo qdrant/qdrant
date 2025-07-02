@@ -530,9 +530,10 @@ impl Consensus {
             // If we only sent outgoing Raft messages, but did not change any state during `on_ready`,
             // we consider Raft node to be "idle"
             if is_idle {
-                // If we received new Raft messages (i.e., we are still connected to Raft leader)
-                // and Raft node is idle, count "idle cycle"
-                if raft_messages > 0 {
+                // If current node is the only peer in the cluster, or if we received new Raft messages
+                // (i.e., we are still connected to Raft leader/peers), and Raft node is idle,
+                // count "idle cycle"
+                if raft_messages > 0 || (self.is_single_peer() && self.is_leader()) {
                     idle_cycles += 1;
                 }
             } else {
@@ -695,6 +696,14 @@ impl Consensus {
         }
 
         Ok(())
+    }
+
+    fn is_single_peer(&self) -> bool {
+        self.node.store().peer_count() == 1
+    }
+
+    fn is_leader(&self) -> bool {
+        self.node.status().ss.raft_state == raft::StateRole::Leader
     }
 
     fn try_sync_local_state(&self) -> anyhow::Result<()> {
