@@ -1,3 +1,4 @@
+use std::cmp;
 use std::fmt::Write as _;
 use std::ops::Deref as _;
 
@@ -56,6 +57,7 @@ impl ShardReplicaSet {
 
         let local_count = usize::from(self.peer_state(self.this_peer_id()).is_some());
         let active_local_count = usize::from(self.peer_is_active(self.this_peer_id()));
+        let initializing_local_count = usize::from(self.peer_is_initializing(self.this_peer_id()));
 
         let remotes = self.remotes.read().await;
 
@@ -66,11 +68,16 @@ impl ShardReplicaSet {
             .iter()
             .filter(|remote| self.peer_is_active(remote.peer_id))
             .count();
+        let initializing_remotes_count = remotes
+            .iter()
+            .filter(|remote| self.peer_is_initializing(remote.peer_id))
+            .count();
 
         let total_count = local_count + remotes_count;
         let active_count = active_local_count + active_remotes_count;
+        let initializing_count = initializing_local_count + initializing_remotes_count;
 
-        let (required_successful_results, condition) = match read_consistency {
+        let (mut required_successful_results, condition) = match read_consistency {
             ReadConsistency::Type(ReadConsistencyType::All) => (total_count, ResolveCondition::All),
 
             ReadConsistency::Type(ReadConsistencyType::Majority) => {
@@ -86,12 +93,19 @@ impl ShardReplicaSet {
             }
         };
 
-        if active_count < required_successful_results {
+        if active_count + initializing_count < required_successful_results {
             return Err(CollectionError::service_error(format!(
                 "The replica set for shard {} on peer {} does not have enough active replicas",
                 self.shard_id,
                 self.this_peer_id(),
             )));
+        }
+
+        if active_count < required_successful_results {
+            required_successful_results = cmp::max(
+                required_successful_results.saturating_sub(initializing_count),
+                active_count,
+            );
         }
 
         let mut responses = self
@@ -102,7 +116,9 @@ impl ShardReplicaSet {
             )
             .await?;
 
-        if responses.len() == 1 {
+        if responses.is_empty() {
+            Ok(Res::default())
+        } else if responses.len() == 1 {
             Ok(responses.pop().unwrap())
         } else {
             Ok(Res::resolve(responses, condition))
