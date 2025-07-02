@@ -35,10 +35,12 @@ def count_ids_in_examples(context, target) -> int:
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors, collection_name):
+def setup(on_disk_vectors, collection_name, collection_name_lookup):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
+    # delete potential lookup_collection as well
+    drop_collection(collection_name=collection_name_lookup)
 
 
 # Context is when we don't include a target vector

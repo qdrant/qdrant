@@ -18,7 +18,7 @@ def lookup_collection_name(collection_name):
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors, collection_name):
+def setup(on_disk_vectors, collection_name, lookup_collection_name):
     full_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
 
     # keyword index on `city`
@@ -75,6 +75,8 @@ def setup(on_disk_vectors, collection_name):
 
     yield
     drop_collection(collection_name=collection_name)
+    # delete potential lookup_collection as well
+    drop_collection(collection_name=lookup_collection_name)
 
 
 def root_and_rescored_query(collection_name, query, using, filter=None, limit=None, with_payload=None):

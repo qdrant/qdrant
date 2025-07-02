@@ -19,7 +19,7 @@ def set_serializer(source_collection_name):
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(collection_name):
+def setup(collection_name, source_collection_name):
     yield
     drop_collection(collection_name=collection_name)
     drop_collection(collection_name=source_collection_name)
