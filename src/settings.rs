@@ -67,6 +67,7 @@ impl ServiceConfig {
 pub struct ClusterConfig {
     pub enabled: bool, // disabled by default
     #[serde(default)]
+    #[validate(range(min = 1, max = 2u64.pow(58) - 1))]
     pub default_peer_id: Option<PeerId>,
     #[serde(default = "default_timeout_ms")]
     #[validate(range(min = 1))]
