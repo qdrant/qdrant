@@ -61,6 +61,10 @@ pub async fn mmr_from_points_with_vector(
 
     debug_assert_eq!(vectors.len(), candidates.len());
 
+    if candidates.is_empty() {
+        return Ok(candidates);
+    }
+
     let volatile_storage = create_volatile_storage(
         collection_params,
         &vectors,
