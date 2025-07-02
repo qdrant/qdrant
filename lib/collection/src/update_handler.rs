@@ -336,8 +336,8 @@ impl UpdateHandler {
 
                 let permit_callback = callback.clone();
 
-                permit.set_on_release(move || {
-                    // Notify scheduler that resource budget changed
+                permit.set_on_manual_release(move || {
+                    // Notify scheduler that resource budget is explicitly changed
                     permit_callback(false);
                 });
 
