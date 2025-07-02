@@ -1,5 +1,6 @@
 syntax = "proto3";
 package qdrant;
+
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 enum Datatype {
@@ -48,8 +49,8 @@ message VectorsConfigDiff {
 }
 
 enum Modifier {
-    None = 0;
-    Idf = 1; // Apply Inverse Document Frequency
+  None = 0;
+  Idf = 1; // Apply Inverse Document Frequency
 }
 
 message SparseVectorParams {
@@ -62,13 +63,12 @@ message SparseVectorConfig {
 }
 
 enum MultiVectorComparator {
-    MaxSim = 0;
+  MaxSim = 0;
 }
 
 message MultiVectorConfig {
-    MultiVectorComparator comparator = 1; // Comparator for multi-vector search
+  MultiVectorComparator comparator = 1; // Comparator for multi-vector search
 }
-
 
 message GetCollectionInfoRequest {
   string collection_name = 1; // Name of the collection
@@ -87,8 +87,7 @@ message CollectionExistsResponse {
   double time = 2; // Time spent to process
 }
 
-message ListCollectionsRequest {
-}
+message ListCollectionsRequest {}
 
 message CollectionDescription {
   string name = 1; // Name of the collection
@@ -146,14 +145,14 @@ enum CompressionRatio {
 }
 
 message MaxOptimizationThreads {
-    enum Setting {
-        Auto = 0;
-    }
+  enum Setting {
+    Auto = 0;
+  }
 
-    oneof variant {
-        uint64 value = 1;
-        Setting setting = 2;
-    }
+  oneof variant {
+    uint64 value = 1;
+    Setting setting = 2;
+  }
 }
 
 message OptimizerStatus {
@@ -163,49 +162,49 @@ message OptimizerStatus {
 
 message HnswConfigDiff {
   /*
-  Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+     Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
   */
   optional uint64 m = 1;
   /*
-  Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
+     Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
   */
   optional uint64 ef_construct = 2;
   /*
-  Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
-  If the payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
-  in this case full-scan search should be preferred by query planner and additional indexing is not required.
-  Note: 1 Kb = 1 vector of size 256
+     Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
+     If the payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+     in this case full-scan search should be preferred by query planner and additional indexing is not required.
+     Note: 1 Kb = 1 vector of size 256
   */
   optional uint64 full_scan_threshold = 3;
   /*
-  Number of parallel threads used for background index building.
-  If 0 - automatically select from 8 to 16.
-  Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs.
-  On small CPUs, less threads are used.
+     Number of parallel threads used for background index building.
+     If 0 - automatically select from 8 to 16.
+     Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs.
+     On small CPUs, less threads are used.
   */
   optional uint64 max_indexing_threads = 4;
   /*
-  Store HNSW index on disk. If set to false, the index will be stored in RAM.
+     Store HNSW index on disk. If set to false, the index will be stored in RAM.
   */
   optional bool on_disk = 5;
   /*
-  Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used.
+     Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used.
   */
   optional uint64 payload_m = 6;
 }
 
 message SparseIndexConfig {
   /*
-    Prefer a full scan search upto (excluding) this number of vectors.
-    Note: this is number of vectors, not KiloBytes.
-   */
+     Prefer a full scan search upto (excluding) this number of vectors.
+     Note: this is number of vectors, not KiloBytes.
+  */
   optional uint64 full_scan_threshold = 1;
   /*
-  Store inverted index on disk. If set to false, the index will be stored in RAM.
-   */
+     Store inverted index on disk. If set to false, the index will be stored in RAM.
+  */
   optional bool on_disk = 2;
   /*
-  Datatype used to store weights in the index.
+     Datatype used to store weights in the index.
   */
   optional Datatype datatype = 3;
 }
@@ -217,58 +216,58 @@ message WalConfigDiff {
 
 message OptimizersConfigDiff {
   /*
-  The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+     The minimal fraction of deleted vectors in a segment, required to perform segment optimization
   */
   optional double deleted_threshold = 1;
   /*
-  The minimal number of vectors in a segment, required to perform segment optimization
+     The minimal number of vectors in a segment, required to perform segment optimization
   */
   optional uint64 vacuum_min_vector_number = 2;
   /*
-  Target amount of segments the optimizer will try to keep.
-  Real amount of segments may vary depending on multiple parameters:
+     Target amount of segments the optimizer will try to keep.
+     Real amount of segments may vary depending on multiple parameters:
 
-   - Amount of stored points.
-   - Current write RPS.
+      - Amount of stored points.
+      - Current write RPS.
 
-  It is recommended to select the default number of segments as a factor of the number of search threads,
-  so that each segment would be handled evenly by one of the threads.
+     It is recommended to select the default number of segments as a factor of the number of search threads,
+     so that each segment would be handled evenly by one of the threads.
   */
   optional uint64 default_segment_number = 3;
   /*
-  Do not create segments larger this size (in kilobytes).
-  Large segments might require disproportionately long indexation times,
-  therefore it makes sense to limit the size of segments.
+     Do not create segments larger this size (in kilobytes).
+     Large segments might require disproportionately long indexation times,
+     therefore it makes sense to limit the size of segments.
 
-  If indexing speed is more important - make this parameter lower.
-  If search speed is more important - make this parameter higher.
-  Note: 1Kb = 1 vector of size 256
-  If not set, will be automatically selected considering the number of available CPUs.
+     If indexing speed is more important - make this parameter lower.
+     If search speed is more important - make this parameter higher.
+     Note: 1Kb = 1 vector of size 256
+     If not set, will be automatically selected considering the number of available CPUs.
   */
   optional uint64 max_segment_size = 4;
   /*
-  Maximum size (in kilobytes) of vectors to store in-memory per segment.
-  Segments larger than this threshold will be stored as read-only memmapped file.
+     Maximum size (in kilobytes) of vectors to store in-memory per segment.
+     Segments larger than this threshold will be stored as read-only memmapped file.
 
-  Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value.
+     Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value.
 
-  To disable memmap storage, set this to `0`.
+     To disable memmap storage, set this to `0`.
 
-  Note: 1Kb = 1 vector of size 256
+     Note: 1Kb = 1 vector of size 256
   */
   optional uint64 memmap_threshold = 5;
   /*
-  Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
+     Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
 
-  Default value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.
+     Default value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.
 
-  To disable vector indexing, set to `0`.
+     To disable vector indexing, set to `0`.
 
-  Note: 1kB = 1 vector of size 256.
+     Note: 1kB = 1 vector of size 256.
   */
   optional uint64 indexing_threshold = 6;
   /*
-  Interval between forced flushes.
+     Interval between forced flushes.
   */
   optional uint64 flush_interval_sec = 7;
 
@@ -276,10 +275,10 @@ message OptimizersConfigDiff {
   optional uint64 deprecated_max_optimization_threads = 8;
 
   /*
-  Max number of threads (jobs) for running optimizations per shard.
-  Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
-  If "auto" - have no limit and choose dynamically to saturate CPU.
-  If 0 - no optimization threads, optimizations will be disabled.
+     Max number of threads (jobs) for running optimizations per shard.
+     Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
+     If "auto" - have no limit and choose dynamically to saturate CPU.
+     If 0 - no optimization threads, optimizations will be disabled.
   */
   optional MaxOptimizationThreads max_optimization_threads = 9;
 }
@@ -314,9 +313,7 @@ message QuantizationConfig {
   }
 }
 
-message Disabled {
-
-}
+message Disabled {}
 
 message QuantizationConfigDiff {
   oneof quantization {
@@ -340,10 +337,10 @@ message StrictModeConfig {
   optional bool unindexed_filtering_update = 5;
 
   optional uint32 search_max_hnsw_ef = 6;
-  optional bool search_allow_exact  = 7;
-  optional float search_max_oversampling  = 8;
-  optional uint64 upsert_max_batchsize  = 9;
-  optional uint64 max_collection_vector_size_bytes  = 10;
+  optional bool search_allow_exact = 7;
+  optional float search_max_oversampling = 8;
+  optional uint64 upsert_max_batchsize = 9;
+  optional uint64 max_collection_vector_size_bytes = 10;
   optional uint32 read_rate_limit = 11; // Max number of read operations per minute per replica
   optional uint32 write_rate_limit = 12; // Max number of write operations per minute per replica
   optional uint64 max_collection_payload_size_bytes = 13;
@@ -367,7 +364,7 @@ message StrictModeMultivectorConfig {
 }
 
 message StrictModeMultivector {
-  optional uint64 max_vectors  = 1;
+  optional uint64 max_vectors = 1;
 }
 
 message CreateCollection {
@@ -450,8 +447,8 @@ enum TokenizerType {
 }
 
 message KeywordIndexParams {
-    optional bool is_tenant = 1; // If true - used for tenant optimization.
-    optional bool on_disk = 2; // If true - store index on disk.
+  optional bool is_tenant = 1; // If true - used for tenant optimization.
+  optional bool on_disk = 2; // If true - store index on disk.
 }
 
 message IntegerIndexParams {
@@ -470,7 +467,6 @@ message GeoIndexParams {
   optional bool on_disk = 1; // If true - store index on disk.
 }
 
-
 message StopwordsSet {
   repeated string languages = 1; // List of languages to use stopwords from
   repeated string custom = 2; // List of custom stopwords
@@ -484,10 +480,21 @@ message TextIndexParams {
   optional bool on_disk = 5; // If true - store index on disk.
   optional StopwordsSet stopwords = 6; // Stopwords for the text index
   optional bool phrase_matching = 7; // If true - support phrase matching.
+  optional StemmingAlgorithm stemming = 8; // Set an algorithm for stemming.
+}
+
+message StemmingAlgorithm {
+  oneof stemming_params {
+    SnowballParameters snowball = 1; // Parameters for snowball stemming
+  }
+}
+
+message SnowballParameters {
+  string language = 1; // Which language the algorithm should stem.
 }
 
 message BoolIndexParams {
-    optional bool on_disk = 1; // If true - store index on disk.
+  optional bool on_disk = 1; // If true - store index on disk.
 }
 
 message DatetimeIndexParams {
@@ -559,8 +566,7 @@ message DeleteAlias {
   string alias_name = 1; // Name of the alias
 }
 
-message ListAliasesRequest {
-}
+message ListAliasesRequest {}
 
 message ListCollectionAliasesRequest {
   string collection_name = 1; // Name of the collection
@@ -602,7 +608,7 @@ message ShardKey {
 message LocalShardInfo {
   uint32 shard_id = 1; // Local shard id
   uint64 points_count = 2; // Number of points in the shard
-  ReplicaState state = 3;  // Is replica active
+  ReplicaState state = 3; // Is replica active
   optional ShardKey shard_key = 4; // User-defined shard key
 }
 
@@ -629,7 +635,7 @@ message ReshardingInfo {
 }
 
 /*
-  Resharding direction, scale up or down in number of shards
+   Resharding direction, scale up or down in number of shards
 */
 enum ReshardingDirection {
   Up = 0; // Scale up, add a new shard
@@ -637,7 +643,7 @@ enum ReshardingDirection {
 }
 
 message CollectionClusterInfoResponse {
-  uint64 peer_id = 1;  // ID of this peer
+  uint64 peer_id = 1; // ID of this peer
   uint64 shard_count = 2; // Total number of shards
   repeated LocalShardInfo local_shards = 3; // Local shards
   repeated RemoteShardInfo remote_shards = 4; // Remote shards
@@ -689,14 +695,14 @@ message Replica {
 }
 
 message CreateShardKey {
-    ShardKey shard_key = 1; // User-defined shard key
-    optional uint32 shards_number = 2; // Number of shards to create per shard key
-    optional uint32 replication_factor = 3; // Number of replicas of each shard to create
-    repeated uint64 placement = 4; // List of peer ids, allowed to create shards. If empty - all peers are allowed
+  ShardKey shard_key = 1; // User-defined shard key
+  optional uint32 shards_number = 2; // Number of shards to create per shard key
+  optional uint32 replication_factor = 3; // Number of replicas of each shard to create
+  repeated uint64 placement = 4; // List of peer ids, allowed to create shards. If empty - all peers are allowed
 }
 
 message DeleteShardKey {
-    ShardKey shard_key = 1; // Shard key to delete
+  ShardKey shard_key = 1; // Shard key to delete
 }
 
 message UpdateCollectionClusterSetupRequest {
@@ -718,21 +724,21 @@ message UpdateCollectionClusterSetupResponse {
 }
 
 message CreateShardKeyRequest {
-    string collection_name = 1; // Name of the collection
-    CreateShardKey request = 2; // Request to create shard key
-    optional uint64 timeout = 3; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+  string collection_name = 1; // Name of the collection
+  CreateShardKey request = 2; // Request to create shard key
+  optional uint64 timeout = 3; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
 }
 
 message DeleteShardKeyRequest {
-    string collection_name = 1; // Name of the collection
-    DeleteShardKey request = 2; // Request to delete shard key
-    optional uint64 timeout = 3; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+  string collection_name = 1; // Name of the collection
+  DeleteShardKey request = 2; // Request to delete shard key
+  optional uint64 timeout = 3; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
 }
 
 message CreateShardKeyResponse {
-    bool result = 1;
+  bool result = 1;
 }
 
 message DeleteShardKeyResponse {
-    bool result = 1;
+  bool result = 1;
 }

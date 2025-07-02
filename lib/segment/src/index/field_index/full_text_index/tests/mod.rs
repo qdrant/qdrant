@@ -163,6 +163,7 @@ fn test_prefix_search() {
         phrase_matching: None,
         stopwords: None,
         on_disk: None,
+        stemmer: None,
     };
 
     let mut index =
@@ -209,6 +210,7 @@ fn test_phrase_matching() {
         on_disk: None,
         phrase_matching: Some(true), // Enable phrase matching
         stopwords: None,
+        stemmer: None,
     };
 
     let mut mutable_index =
