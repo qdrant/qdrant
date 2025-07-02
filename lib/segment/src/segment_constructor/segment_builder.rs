@@ -732,6 +732,14 @@ impl SegmentBuilder {
         }
         Ok(quantized_vectors_map)
     }
+
+    /// Populate cache of all vector storages, so it will be faster to build index
+    pub fn cache_vectors(&self) -> OperationResult<()> {
+        for vector_data in self.vector_data.values() {
+            vector_data.vector_storage.populate()?;
+        }
+        Ok(())
+    }
 }
 
 fn uuid_hash<I>(hash: &mut u64, ids: I)
