@@ -435,54 +435,49 @@ impl StructPayloadIndex {
             // CPU-optimized strategy here: points are made unique before applying other filters.
             let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
 
-            let struct_filtered_check =
-                if Self::primary_clause_covers_filter(filter, query_cardinality) {
-                    // the primary clause will select the correct point ids right away
-                    None
-                } else {
-                    // there are other conditions to consider
-                    let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
-                    Some(move |id| struct_filtered_context.check(id))
-                };
-
-            let iter = query_cardinality
+            let mut primary_iters: Vec<_> = query_cardinality
                 .primary_clauses
                 .iter()
-                .flat_map(move |clause| {
-                    self.query_field(clause, hw_counter).unwrap_or_else(|| {
-                        // index is not built
-                        Box::new(id_tracker.iter_ids().measure_hw_with_cell(
-                            hw_counter,
-                            size_of::<PointOffsetType>(),
-                            |i| i.cpu_counter(),
-                        ))
-                    })
-                })
-                .filter(move |&id| {
-                    !visited_list.check_and_update_visited(id)
-                        && struct_filtered_check
-                            .as_ref()
-                            .map(|check| check(id))
-                            .unwrap_or(true)
-                });
+                .filter_map(move |clause| self.query_field(clause, hw_counter))
+                .collect();
+
+            // at least one of the primary clause is not supported by the payload index
+            let require_full_scan_fallback =
+                primary_iters.len() != query_cardinality.primary_clauses.len();
+
+            // skip matching if there is a single condition promoted as primary clause
+            // the primary clause will select the correct point ids right away
+            let skip_matching = !require_full_scan_fallback
+                && filter.total_conditions_count() == 1
+                && primary_iters.len() == 1;
+            let struct_filtered_check = if skip_matching {
+                None
+            } else {
+                // there are other conditions to consider
+                let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
+                Some(move |id| struct_filtered_context.check(id))
+            };
+
+            // add a full scan from id_tracker to compensate unhandled conditions
+            if require_full_scan_fallback {
+                let full_scan = Box::new(id_tracker.iter_ids().measure_hw_with_cell(
+                    hw_counter,
+                    size_of::<PointOffsetType>(),
+                    |i| i.cpu_counter(),
+                ));
+                primary_iters.push(full_scan);
+            }
+
+            let iter = primary_iters.into_iter().flatten().filter(move |&id| {
+                !visited_list.check_and_update_visited(id)
+                    && struct_filtered_check
+                        .as_ref()
+                        .map(|check| check(id))
+                        .unwrap_or(true)
+            });
 
             Either::Right(iter)
         }
-    }
-
-    // TODO make more general by returning a new filter without the primary clauses
-    fn primary_clause_covers_filter<'a>(
-        filter: &'a Filter,
-        query_cardinality: &'a CardinalityEstimation,
-    ) -> bool {
-        let one_condition = filter.total_conditions_count() == 1;
-        let one_primary_clause = query_cardinality.primary_clauses.len() == 1;
-        // the payload index does not know about vector names
-        let no_vector_storage_needed = match query_cardinality.primary_clauses[0] {
-            PrimaryCondition::Condition(_) | PrimaryCondition::Ids(_) => true,
-            PrimaryCondition::HasVector(_) => false,
-        };
-        one_condition && one_primary_clause && no_vector_storage_needed
     }
 
     /// Select which type of PayloadIndex to use for the field
