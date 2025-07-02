@@ -394,7 +394,8 @@ impl HNSWIndex {
                     config.ef_construct,
                 );
                 let old_vector_storage = old_index.index.vector_storage.borrow();
-                healer.heal(&pool, &old_vector_storage)?;
+                let old_quantized_vectors = old_index.index.quantized_vectors.borrow();
+                healer.heal(&pool, &old_vector_storage, old_quantized_vectors.as_ref())?;
                 healer.save_into_builder(&graph_layers_builder);
 
                 for vector_id in ids_iter {
