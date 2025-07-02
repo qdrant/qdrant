@@ -11,6 +11,7 @@ use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::{GraphLayersBuilder, LockedLayersContainer};
 use crate::index::hnsw_index::links_container::{ItemsBuffer, LinksContainer};
 use crate::index::visited_pool::VisitedPool;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer};
 
 pub struct GraphLayersHealer<'a> {
@@ -208,6 +209,7 @@ impl<'a> GraphLayersHealer<'a> {
         &mut self,
         pool: &ThreadPool,
         vector_storage: &VectorStorageEnum,
+        quantized_vectors: Option<&QuantizedVectors>,
     ) -> OperationResult<()> {
         pool.install(|| {
             std::mem::take(&mut self.to_heal)
@@ -215,11 +217,12 @@ impl<'a> GraphLayersHealer<'a> {
                 .try_for_each(|(offset, level)| {
                     // Internal operation. No measurements needed.
                     let internal_hardware_counter = HardwareCounterCell::disposable();
-                    let scorer = new_raw_scorer(
-                        vector_storage.get_vector(offset).as_vec_ref().into(),
-                        vector_storage,
-                        internal_hardware_counter,
-                    )?;
+                    let query = vector_storage.get_vector(offset).as_vec_ref().into();
+                    let scorer = if let Some(quantized_vectors) = quantized_vectors {
+                        quantized_vectors.raw_scorer(query, internal_hardware_counter)?
+                    } else {
+                        new_raw_scorer(query, vector_storage, internal_hardware_counter)?
+                    };
                     self.heal_point_on_level(offset, level, scorer.as_ref());
                     Ok(())
                 })
