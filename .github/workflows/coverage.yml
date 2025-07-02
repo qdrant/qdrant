@@ -90,6 +90,16 @@ jobs:
           # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
           ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
           fetch-depth: 0 # Fetch all history for all tags and branches
+      - name: Print Qdrant version and commit after checkout
+        run: |
+          version=$(grep -oP "^version = \"(.*)" Cargo.toml | cut -d'"' -f2)
+          commit=$(git rev-parse HEAD)
+          branch=$(git rev-parse --abbrev-ref HEAD)
+
+          echo "Detected Qdrant version: $version"
+          echo "Latest commit hash: $commit"
+          echo "Branch name: $branch"
+
       - name: Install lcov
         run: sudo apt install -y lcov
       - name: Download unit test coverage
