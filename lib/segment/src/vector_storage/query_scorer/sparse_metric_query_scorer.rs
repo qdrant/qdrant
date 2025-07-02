@@ -20,6 +20,10 @@ impl<'a> SparseMetricQueryScorer<'a> {
     ) -> Self {
         // We will count the number of intersections per pair of vectors.
         hardware_counter.set_cpu_multiplier(1);
+        // We don't measure `vector_io_read` because we are dealing with a volatile storage,
+        //   which is always in memory.
+        //   If we refactor this into accepting on_disk storages, we would set `vector_io_read_multiplier`
+        //   to 0 or 1 here, and measure it accordingly.
 
         Self {
             vector_storage,
@@ -51,7 +55,6 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
             .vector_storage
             .get_sparse(idx)
             .expect("Sparse vector not found");
-        self.hardware_counter.vector_io_read().incr();
 
         self.score_ref(&stored)
     }
@@ -63,8 +66,6 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
 
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
         debug_assert_eq!(ids.len(), scores.len());
-
-        self.hardware_counter.vector_io_read().incr_delta(ids.len());
 
         for idx in 0..ids.len() {
             scores[idx] = self.score_ref(
