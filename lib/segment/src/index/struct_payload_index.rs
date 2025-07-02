@@ -435,14 +435,14 @@ impl StructPayloadIndex {
             // CPU-optimized strategy here: points are made unique before applying other filters.
             let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
 
-            let struct_filtered_check: Box<dyn Fn(PointOffsetType) -> bool> =
+            let struct_filtered_check =
                 if Self::primary_clause_covers_filter(filter, query_cardinality) {
                     // the primary clause will select the correct point ids right away
-                    Box::new(|_id| true)
+                    None
                 } else {
                     // there are other conditions to consider
                     let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
-                    Box::new(move |id| struct_filtered_context.check(id))
+                    Some(move |id| struct_filtered_context.check(id))
                 };
 
             let iter = query_cardinality
@@ -459,7 +459,11 @@ impl StructPayloadIndex {
                     })
                 })
                 .filter(move |&id| {
-                    !visited_list.check_and_update_visited(id) && struct_filtered_check(id)
+                    !visited_list.check_and_update_visited(id)
+                        && struct_filtered_check
+                            .as_ref()
+                            .map(|check| check(id))
+                            .unwrap_or(true)
                 });
 
             Either::Right(iter)
