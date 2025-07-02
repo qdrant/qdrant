@@ -567,11 +567,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         bits_count: usize,
     ) -> EncodedScalarVector<TBitsStoreType> {
         match encoding {
-            Encoding::OneBit => Self::encode_scalar_extended_query_vector(query, bits_count),
+            Encoding::OneBit => Self::_encode_scalar_query_vector(query, bits_count),
             Encoding::TwoBits => {
                 let mut extended_query = query.to_vec();
                 extended_query.extend_from_slice(query);
-                Self::encode_scalar_extended_query_vector(&extended_query, bits_count)
+                Self::_encode_scalar_query_vector(&extended_query, bits_count)
             }
             Encoding::OneAndHalfBits => {
                 let mut extended_query = query.to_vec();
@@ -582,12 +582,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                         v[0]
                     }
                 }));
-                Self::encode_scalar_extended_query_vector(&extended_query, bits_count)
+                Self::_encode_scalar_query_vector(&extended_query, bits_count)
             }
         }
     }
 
-    fn encode_scalar_extended_query_vector(
+    fn _encode_scalar_query_vector(
         query: &[f32],
         bits_count: usize,
     ) -> EncodedScalarVector<TBitsStoreType> {
