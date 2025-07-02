@@ -178,6 +178,27 @@ impl BitsStoreType for u8 {
             }
         }
 
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if is_x86_feature_detected!("sse4.2") {
+            if bits_count == 8 {
+                unsafe {
+                    return impl_xor_popcnt_scalar8_sse_u8(
+                        v2.as_ptr().cast::<u8>(),
+                        v1.as_ptr().cast::<u8>(),
+                        v1.len() as u32,
+                    ) as usize;
+                }
+            } else if bits_count == 4 {
+                unsafe {
+                    return impl_xor_popcnt_scalar4_sse_u8(
+                        v2.as_ptr().cast::<u8>(),
+                        v1.as_ptr().cast::<u8>(),
+                        v1.len() as u32,
+                    ) as usize;
+                }
+            }
+        }
+
         let mut result = 0;
         for (&b1, b2_chunk) in v1.iter().zip(v2.chunks_exact(bits_count)) {
             for (i, &b2) in b2_chunk.iter().enumerate() {
@@ -869,6 +890,18 @@ unsafe extern "C" {
     ) -> u32;
 
     fn impl_xor_popcnt_scalar4_avx_uint128(
+        query_ptr: *const u8,
+        vector_ptr: *const u8,
+        count: u32,
+    ) -> u32;
+
+    fn impl_xor_popcnt_scalar8_sse_u8(
+        query_ptr: *const u8,
+        vector_ptr: *const u8,
+        count: u32,
+    ) -> u32;
+
+    fn impl_xor_popcnt_scalar4_sse_u8(
         query_ptr: *const u8,
         vector_ptr: *const u8,
         count: u32,
