@@ -66,7 +66,7 @@ pub enum SampleInternal {
     Random,
 }
 
-/// Maximum Marginal Relevance configuration
+/// Maximal Marginal Relevance configuration
 #[derive(Debug, Clone, PartialEq)]
 pub struct MmrInternal {
     /// Query vector, used to get the relevance of each point.
@@ -97,7 +97,7 @@ pub enum ScoringQuery {
     /// Sample points
     Sample(SampleInternal),
 
-    /// Maximum Marginal Relevance
+    /// Maximal Marginal Relevance
     ///
     /// This one behaves a little differently than the other scorings, since it is two parts.
     /// It will create one nearest neighbor search in segment space and then try to resolve MMR algorithm higher up.

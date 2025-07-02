@@ -290,6 +290,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("PowExpression.exponent", ""),
             ("DecayParamsExpression.x", ""),
             ("DecayParamsExpression.target", ""),
+            ("Mmr.vector", ""),
+            ("Mmr.lambda", "range(min = 0.0, max = 1.0)"),
             ("Query.variant", ""),
             ("PrefetchQuery.prefetch", ""),
             ("PrefetchQuery.query", ""),

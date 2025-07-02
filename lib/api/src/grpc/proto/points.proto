@@ -640,6 +640,18 @@ message DecayParamsExpression {
     optional float midpoint = 4;
 }
 
+// Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
+message Mmr {
+    // The query vector to determine relevance of each candidate point.
+    VectorInput vector = 1;
+
+    /// The lambda parameter for the MMR algorithm.
+    /// Determines the balance between diversity and relevance.
+    ///
+    /// A higher value favors relevance (similarity to the query vector), while a lower value favors diversity.
+    optional float lambda = 2;
+}
+
 message Query {
   oneof variant {
     VectorInput nearest = 1; // Find the nearest neighbors to this vector.
@@ -650,6 +662,7 @@ message Query {
     Fusion fusion = 6; // Fuse the results of multiple prefetches.
     Sample sample = 7; // Sample points from the collection.
     Formula formula = 8; // Score boosting via an arbitrary formula
+    Mmr mmr = 9; // Re-rank based on the Maximal Marginal Relevance algorithm.
   }
 }
 

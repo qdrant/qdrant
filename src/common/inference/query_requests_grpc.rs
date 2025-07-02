@@ -5,7 +5,7 @@ use api::grpc::{InferenceUsage, qdrant as grpc};
 use api::rest;
 use api::rest::RecommendStrategy;
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Query,
+    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, MmrInput, Query,
     VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
@@ -292,6 +292,12 @@ fn convert_query_with_inferred(
         Variant::Fusion(fusion) => Query::Fusion(FusionInternal::try_from(fusion)?),
         Variant::Formula(formula) => Query::Formula(FormulaInternal::try_from(formula)?),
         Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
+        Variant::Mmr(mmr) => {
+            let grpc::Mmr { vector, lambda } = mmr;
+            let vector = vector.ok_or_else(|| Status::invalid_argument("Mmr vector is missing"))?;
+            let vector = convert_vector_input_with_inferred(vector, inferred)?;
+            Query::Mmr(MmrInput { vector, lambda })
+        }
     };
 
     Ok(query)

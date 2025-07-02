@@ -5573,12 +5573,30 @@ pub struct DecayParamsExpression {
     #[prost(float, optional, tag = "4")]
     pub midpoint: ::core::option::Option<f32>,
 }
+/// Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Mmr {
+    /// The query vector to determine relevance of each candidate point.
+    #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
+    pub vector: ::core::option::Option<VectorInput>,
+    /// / The lambda parameter for the MMR algorithm.
+    /// / Determines the balance between diversity and relevance.
+    /// /
+    /// / A higher value favors relevance (similarity to the query vector), while a lower value favors diversity.
+    #[prost(float, optional, tag = "2")]
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub lambda: ::core::option::Option<f32>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
     #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
@@ -5612,6 +5630,9 @@ pub mod query {
         /// Score boosting via an arbitrary formula
         #[prost(message, tag = "8")]
         Formula(super::Formula),
+        /// Re-rank based on the Maximal Marginal Relevance algorithm.
+        #[prost(message, tag = "9")]
+        Mmr(super::Mmr),
     }
 }
 #[derive(validator::Validate)]
@@ -10121,7 +10142,7 @@ pub mod query_shard_points {
             /// Use an arbitrary formula to rescore points
             #[prost(message, tag = "5")]
             Formula(super::super::Formula),
-            /// Maximum Marginal Relevance
+            /// Maximal Marginal Relevance
             #[prost(message, tag = "6")]
             Mmr(super::super::MmrInternal),
         }

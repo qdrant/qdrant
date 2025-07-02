@@ -14638,6 +14638,9 @@
           },
           {
             "$ref": "#/components/schemas/SampleQuery"
+          },
+          {
+            "$ref": "#/components/schemas/MmrQuery"
           }
         ]
       },
@@ -15168,6 +15171,37 @@
         "enum": [
           "random"
         ]
+      },
+      "MmrQuery": {
+        "type": "object",
+        "required": [
+          "mmr"
+        ],
+        "properties": {
+          "mmr": {
+            "$ref": "#/components/schemas/MmrInput"
+          }
+        }
+      },
+      "MmrInput": {
+        "description": "Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.",
+        "type": "object",
+        "required": [
+          "vector"
+        ],
+        "properties": {
+          "vector": {
+            "$ref": "#/components/schemas/VectorInput"
+          },
+          "lambda": {
+            "description": "The lambda parameter for the MMR algorithm. Determines the balance between diversity and relevance.\n\nA higher value favors relevance (similarity to the query vector), while a lower value favors diversity.\n\nMust be in the range [0, 1]. Default value is 0.5.",
+            "type": "number",
+            "format": "float",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true
+          }
+        }
       },
       "QueryRequestBatch": {
         "type": "object",

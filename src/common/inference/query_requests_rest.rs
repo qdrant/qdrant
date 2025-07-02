@@ -2,7 +2,7 @@ use api::rest::models::InferenceUsage;
 use api::rest::schema as rest;
 use collection::lookup::WithLookup;
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Query,
+    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, MmrInput, Query,
     VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
@@ -256,6 +256,13 @@ fn convert_query_with_inferred(
         rest::Query::Fusion(fusion) => Ok(Query::Fusion(FusionInternal::from(fusion.fusion))),
         rest::Query::Formula(formula) => Ok(Query::Formula(FormulaInternal::from(formula))),
         rest::Query::Sample(sample) => Ok(Query::Sample(SampleInternal::from(sample.sample))),
+        rest::Query::Mmr(mmr) => {
+            let vector = convert_vector_input_with_inferred(mmr.mmr.vector, inferred)?;
+            Ok(Query::Mmr(MmrInput {
+                vector,
+                lambda: mmr.mmr.lambda,
+            }))
+        }
     }
 }
 

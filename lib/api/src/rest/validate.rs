@@ -41,6 +41,7 @@ impl Validate for Query {
             Query::Formula(formula) => formula.validate(),
             Query::OrderBy(order_by) => order_by.validate(),
             Query::Sample(sample) => sample.validate(),
+            Query::Mmr(mmr) => mmr.validate(),
         }
     }
 }

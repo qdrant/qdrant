@@ -470,6 +470,9 @@ pub enum Query {
 
     /// Sample points from the collection, non-deterministically.
     Sample(SampleQuery),
+
+    /// Maximum Marginal Relevance with respect to the provided vector
+    Mmr(MmrQuery),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -527,6 +530,32 @@ pub struct FormulaQuery {
 pub struct SampleQuery {
     #[validate(nested)]
     pub sample: Sample,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct MmrQuery {
+    #[validate(nested)]
+    pub mmr: MmrInput,
+}
+
+/// Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct MmrInput {
+    /// The query vector to determine relevance of each candidate point.
+    #[validate(nested)]
+    pub vector: VectorInput,
+
+    /// The lambda parameter for the MMR algorithm.
+    /// Determines the balance between diversity and relevance.
+    ///
+    /// A higher value favors relevance (similarity to the query vector), while a lower value favors diversity.
+    ///
+    /// Must be in the range [0, 1].
+    /// Default value is 0.5.
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub lambda: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

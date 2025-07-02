@@ -424,7 +424,7 @@ impl LocalShard {
         Ok(top_fused)
     }
 
-    /// Maximum Marginal Relevance rescoring
+    /// Maximal Marginal Relevance rescoring
     #[expect(clippy::too_many_arguments)]
     async fn mmr_rescore(
         &self,

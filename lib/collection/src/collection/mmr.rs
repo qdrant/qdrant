@@ -234,7 +234,7 @@ fn similarity_matrix(
     Ok(similarity_matrix)
 }
 
-/// Maximum Marginal Relevance (MMR) algorithm
+/// Maximal Marginal Relevance (MMR) algorithm
 ///
 /// Iteratively selects points by considering their similarity to
 /// already selected points, combining diversity and relevance.

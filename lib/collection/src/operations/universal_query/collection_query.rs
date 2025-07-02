@@ -23,6 +23,8 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
 use crate::recommendations::avg_vector_for_recommendation;
 
+const DEFAULT_MMR_LAMBDA: f32 = 0.5;
+
 /// Internal representation of a query request, used to converge from REST and gRPC. This can have IDs referencing vectors.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CollectionQueryRequest {

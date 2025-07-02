@@ -98,6 +98,7 @@ fn collect_query(query: &Query, batch: &mut BatchAccum) {
                 }
             }
         }
+        Query::Mmr(mmr) => collect_vector_input(&mmr.mmr.vector, batch),
         Query::OrderBy(_) | Query::Fusion(_) | Query::Formula(_) | Query::Sample(_) => {}
     }
 }
