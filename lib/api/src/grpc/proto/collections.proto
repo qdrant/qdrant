@@ -485,11 +485,11 @@ message TextIndexParams {
 
 message StemmingAlgorithm {
   oneof stemming_params {
-    SnowballStemmingParams snowball_params = 1; // Parameters for snowball stemming
+    SnowballParameters snowball = 1; // Parameters for snowball stemming
   }
 }
 
-message SnowballStemmingParams {
+message SnowballParameters {
   string language = 1; // Which language the algorithm should stem.
 }
 

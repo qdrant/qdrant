@@ -5265,7 +5265,7 @@ dependencies = [
 [[package]]
 name = "rust-stemmers"
 version = "1.2.0"
-source = "git+https://github.com/qdrant/rust-stemmers?rev=9b118a2#9b118a2b05d88fc96a54c8e0b1f7062a39964e5e"
+source = "git+https://github.com/qdrant/rust-stemmers.git?branch=master#9b118a2b05d88fc96a54c8e0b1f7062a39964e5e"
 dependencies = [
  "serde",
  "serde_derive",

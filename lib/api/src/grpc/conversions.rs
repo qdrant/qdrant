@@ -34,7 +34,7 @@ use super::qdrant::{
     UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
 use super::stemming_algorithm::StemmingParams;
-use super::{Expression, Formula, RecoQuery, SnowballStemmingParams, StemmingAlgorithm, Usage};
+use super::{Expression, Formula, RecoQuery, SnowballParameters, StemmingAlgorithm, Usage};
 use crate::conversions::json::{self, json_to_proto};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::r#match::MatchValue;
@@ -366,7 +366,7 @@ impl From<segment::data_types::index::StemmingAlgorithm> for StemmingAlgorithm {
                     language,
                 } = snowball_params;
                 let language = language.to_string();
-                StemmingParams::SnowballParams(SnowballStemmingParams { language })
+                StemmingParams::Snowball(SnowballParameters { language })
             }
         };
 
@@ -545,7 +545,7 @@ impl TryFrom<StemmingParams> for segment::data_types::index::StemmingAlgorithm {
 
     fn try_from(value: StemmingParams) -> Result<Self, Self::Error> {
         match value {
-            StemmingParams::SnowballParams(params) => {
+            StemmingParams::Snowball(params) => {
                 let language = SnowballLanguage::from_str(&params.language).map_err(|_| {
                     Status::invalid_argument(format!("Language {:?} not found.", params.language))
                 })?;

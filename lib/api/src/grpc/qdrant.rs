@@ -885,13 +885,13 @@ pub mod stemming_algorithm {
     pub enum StemmingParams {
         /// Parameters for snowball stemming
         #[prost(message, tag = "1")]
-        SnowballParams(super::SnowballStemmingParams),
+        Snowball(super::SnowballParameters),
     }
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SnowballStemmingParams {
+pub struct SnowballParameters {
     /// Which language the algorithm should stem.
     #[prost(string, tag = "1")]
     pub language: ::prost::alloc::string::String,
