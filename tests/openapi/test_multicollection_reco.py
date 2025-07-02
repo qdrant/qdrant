@@ -9,10 +9,12 @@ def collection_name2(collection_name):
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors, collection_name):
+def setup(on_disk_vectors, collection_name, collection_name2):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
+    # delete potential auxiliary collection as well
+    drop_collection(collection_name=collection_name2)
 
 
 def test_recommend_with_wrong_vector_size(on_disk_vectors, collection_name, collection_name2):
