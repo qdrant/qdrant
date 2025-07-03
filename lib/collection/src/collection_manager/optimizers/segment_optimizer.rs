@@ -461,7 +461,7 @@ pub trait SegmentOptimizer {
 
         // Before switching from IO to CPU, make sure that vectors cache is heated up,
         // so indexing process won't need to wait for IO.
-        segment_builder.cache_vectors()?;
+        segment_builder.populate_vector_storages()?;
 
         // 000 - acquired
         // +++ - blocked on waiting

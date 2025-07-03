@@ -734,7 +734,7 @@ impl SegmentBuilder {
     }
 
     /// Populate cache of all vector storages, so it will be faster to build index
-    pub fn cache_vectors(&self) -> OperationResult<()> {
+    pub fn populate_vector_storages(&self) -> OperationResult<()> {
         for vector_data in self.vector_data.values() {
             vector_data.vector_storage.populate()?;
         }
