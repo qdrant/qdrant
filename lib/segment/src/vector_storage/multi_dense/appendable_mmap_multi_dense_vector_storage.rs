@@ -149,7 +149,7 @@ impl<
                 .unwrap();
             (0..mmap_offset.count).map(|i| {
                 self.vectors
-                    .get((mmap_offset.offset + i) as VectorOffsetType)
+                    .get_sequential((mmap_offset.offset + i) as VectorOffsetType)
                     .unwrap()
             })
         })

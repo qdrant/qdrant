@@ -85,6 +85,12 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
             .expect("mmap vector not found")
     }
 
+    fn get_dense_sequential(&self, key: PointOffsetType) -> &[T] {
+        self.vectors
+            .get_sequential(key as VectorOffsetType)
+            .expect("mmap vector not found")
+    }
+
     fn get_dense_batch<'a>(
         &'a self,
         keys: &[PointOffsetType],

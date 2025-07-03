@@ -301,7 +301,7 @@ impl UpdateHandler {
                 // Determine how many Resources we prefer for optimization task, acquire permit for it
                 // And use same amount of IO threads as CPUs
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
-                let desired_io = num_rayon_threads(max_indexing_threads);
+                let desired_io = (num_rayon_threads(max_indexing_threads) / 2).max(1); // At least one IO unit
                 let Some(mut permit) = optimizer_resource_budget.try_acquire(0, desired_io) else {
                     // If there is no Resource budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up
@@ -636,7 +636,7 @@ impl UpdateHandler {
             // Otherwise skip now and start a task to trigger the optimizer again once resource
             // budget becomes available
             let desired_cpus = 0;
-            let desired_io = num_rayon_threads(max_indexing_threads);
+            let desired_io = (num_rayon_threads(max_indexing_threads) / 2).max(1); // At least one IO unit
             if !optimizer_resource_budget.has_budget(desired_cpus, desired_io) {
                 let trigger_active = resource_available_trigger
                     .as_ref()

@@ -409,7 +409,7 @@ impl QuantizedVectors {
             PrimitiveVectorElement::quantization_preprocess(
                 quantization_config,
                 distance,
-                vector_storage.get_dense(i),
+                vector_storage.get_dense_sequential(i),
             )
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
