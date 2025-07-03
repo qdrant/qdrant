@@ -9,7 +9,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::either_variant::EitherVariant;
 use common::types::PointOffsetType;
-use log::debug;
 use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndexBuilderTrait as _;
@@ -158,14 +157,14 @@ impl StructPayloadIndex {
                 break;
             }
         }
+
+        // If index is not properly loaded, recreate it
         if !is_loaded {
-            debug!("Index for `{field}` was not loaded. Building...");
-            debug_assert!(false, "Index should not need to be loaded during testing");
-            // todo(ivan): decide what to do with indexes, which were not loaded
+            log::debug!("Index for `{field}` was not loaded. Building...");
             indexes = self.build_field_indexes(
                 field,
                 payload_schema,
-                &HardwareCounterCell::disposable(), // Internal operation.
+                &HardwareCounterCell::disposable(), // Internal operation
             )?;
         }
 
