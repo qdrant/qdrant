@@ -590,7 +590,7 @@ impl ScoringQuery {
                 let vector = VectorInternal::try_from(vector)?;
                 ScoringQuery::Mmr(MmrInternal {
                     vector,
-                    using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+                    using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
                     lambda,
                 })
             }
