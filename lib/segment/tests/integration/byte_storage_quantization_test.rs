@@ -300,6 +300,7 @@ fn test_byte_storage_binary_quantization_hnsw(
         QuantizationVariant::Binary => BinaryQuantizationConfig {
             always_ram: None,
             encoding: None,
+            query_encoding: None,
         }
         .into(),
     };
