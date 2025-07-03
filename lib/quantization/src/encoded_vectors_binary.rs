@@ -203,17 +203,17 @@ impl BitsStoreType for u8 {
             if query_bits_count == 8 {
                 unsafe {
                     return impl_xor_popcnt_scalar8_neon_u8(
-                        v2.as_ptr().cast::<u8>(),
-                        v1.as_ptr().cast::<u8>(),
-                        v1.len() as u32,
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
                     ) as usize;
                 }
             } else if query_bits_count == 4 {
                 unsafe {
                     return impl_xor_popcnt_scalar4_neon_u8(
-                        v2.as_ptr().cast::<u8>(),
-                        v1.as_ptr().cast::<u8>(),
-                        v1.len() as u32,
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
                     ) as usize;
                 }
             }
@@ -310,17 +310,17 @@ impl BitsStoreType for u128 {
             if query_bits_count == 8 {
                 unsafe {
                     return impl_xor_popcnt_scalar8_neon_uint128(
-                        v2.as_ptr().cast::<u8>(),
-                        v1.as_ptr().cast::<u8>(),
-                        v1.len() as u32,
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
                     ) as usize;
                 }
             } else if query_bits_count == 4 {
                 unsafe {
                     return impl_xor_popcnt_scalar4_neon_uint128(
-                        v2.as_ptr().cast::<u8>(),
-                        v1.as_ptr().cast::<u8>(),
-                        v1.len() as u32,
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
                     ) as usize;
                 }
             }
