@@ -122,7 +122,7 @@ impl StructPayloadIndex {
     fn load_all_fields(&mut self, create_if_missing: bool) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
-        for (field, payload_schema) in &self.config.indexed_fields {
+        for (field, payload_schema) in &self.config.indexed_fields.clone() {
             let field_index = self.load_from_db(field, payload_schema, create_if_missing)?;
             field_indexes.insert(field.clone(), field_index);
         }
@@ -131,7 +131,7 @@ impl StructPayloadIndex {
     }
 
     fn load_from_db(
-        &self,
+        &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
         create_if_missing: bool,
@@ -157,6 +157,32 @@ impl StructPayloadIndex {
                 is_loaded = false;
                 break;
             }
+        }
+
+        // Actively migrate away from RocksDB indices
+        // Naively implemented by just rebuilding the indices from scratch
+        #[cfg(feature = "rocksdb")]
+        if common::flags::feature_flags().migrate_rocksdb_payload_indices
+            && indexes.iter().any(|index| index.is_rocksdb())
+        {
+            log::info!("Migrating away from RocksDB indices for field `{field}`");
+
+            // Trigger rebuild
+            is_loaded = false;
+
+            // Change storage type, set skip RocksDB flag and persist, rebuilds index with Gridstore
+            match self.storage_type {
+                StorageType::RocksDbAppendable(_) => {
+                    self.storage_type = StorageType::GridstoreAppendable;
+                }
+                StorageType::GridstoreAppendable => {}
+                StorageType::RocksDbNonAppendable(_) => {
+                    self.storage_type = StorageType::GridstoreNonAppendable;
+                }
+                StorageType::GridstoreNonAppendable => {}
+            }
+            self.config.skip_rocksdb.replace(true);
+            self.save_config()?;
         }
 
         // If index is not properly loaded, recreate it
