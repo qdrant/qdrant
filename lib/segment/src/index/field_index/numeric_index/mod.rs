@@ -199,9 +199,9 @@ where
         }
     }
 
-    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
+    pub fn new_gridstore(dir: PathBuf, create: bool) -> OperationResult<Self> {
         Ok(NumericIndexInner::Mutable(
-            MutableNumericIndex::open_gridstore(dir)?,
+            MutableNumericIndex::open_gridstore(dir, create)?,
         ))
     }
 
@@ -522,9 +522,9 @@ where
         })
     }
 
-    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
+    pub fn new_gridstore(dir: PathBuf, create: bool) -> OperationResult<Self> {
         Ok(Self {
-            inner: NumericIndexInner::new_gridstore(dir)?,
+            inner: NumericIndexInner::new_gridstore(dir, create)?,
             _phantom: PhantomData,
         })
     }
@@ -779,7 +779,7 @@ where
             "index must be initialized exactly once",
         );
         self.index
-            .replace(NumericIndex::new_gridstore(self.dir.clone())?);
+            .replace(NumericIndex::new_gridstore(self.dir.clone(), true)?);
         Ok(())
     }
 

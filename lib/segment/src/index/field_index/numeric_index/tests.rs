@@ -389,10 +389,11 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         IndexType::Mutable => {
             NumericIndexInner::<FloatPayloadType>::new_rocksdb(db.unwrap(), COLUMN_NAME, true)
         }
-        IndexType::MutableGridstore => {
-            NumericIndexInner::<FloatPayloadType>::new_gridstore(temp_dir.path().to_path_buf())
-                .unwrap()
-        }
+        IndexType::MutableGridstore => NumericIndexInner::<FloatPayloadType>::new_gridstore(
+            temp_dir.path().to_path_buf(),
+            true,
+        )
+        .unwrap(),
         #[cfg(feature = "rocksdb")]
         IndexType::Immutable => {
             NumericIndexInner::<FloatPayloadType>::new_rocksdb(db.unwrap(), COLUMN_NAME, false)

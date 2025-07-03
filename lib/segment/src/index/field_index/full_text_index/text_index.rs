@@ -76,9 +76,13 @@ impl FullTextIndex {
         }
     }
 
-    pub fn new_gridstore(dir: PathBuf, config: TextIndexParams) -> OperationResult<Self> {
+    pub fn new_gridstore(
+        dir: PathBuf,
+        config: TextIndexParams,
+        create: bool,
+    ) -> OperationResult<Self> {
         Ok(Self::Mutable(MutableFullTextIndex::open_gridstore(
-            dir, config,
+            dir, config, create,
         )?))
     }
 
@@ -640,6 +644,7 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
         self.index.replace(FullTextIndex::new_gridstore(
             self.dir.clone(),
             self.config.clone(),
+            true,
         )?);
         Ok(())
     }
