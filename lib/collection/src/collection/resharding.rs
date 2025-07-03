@@ -251,8 +251,10 @@ impl Collection {
         let resharding_transfers = shard_holder
             .get_transfers(|t| t.method == Some(ShardTransferMethod::ReshardingStreamRecords));
         for transfer in resharding_transfers {
-            self.abort_shard_transfer(transfer.key(), Some(&shard_holder))
+            let _is_resharding_transfer = self
+                .abort_shard_transfer_and_report_resharding(transfer.key(), &shard_holder)
                 .await?;
+            // We don't need to abort resharding again since we are already aborting it in next step
         }
 
         shard_holder
