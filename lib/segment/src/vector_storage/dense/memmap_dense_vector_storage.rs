@@ -152,6 +152,14 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
             .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
 
+    fn get_dense_sequential(&self, key: PointOffsetType) -> &[T] {
+        self.mmap_store
+            .as_ref()
+            .unwrap()
+            .get_vector_opt_sequential(key)
+            .unwrap_or_else(|| panic!("vector not found: {key}"))
+    }
+
     fn get_dense_batch<'a>(
         &'a self,
         keys: &[PointOffsetType],
