@@ -49,6 +49,12 @@ pub struct FeatureFlags {
     /// Whether to actively migrate RocksDB based payload storages into a new format.
     // TODO(1.15): enable by default
     pub migrate_rocksdb_payload_storage: bool,
+
+    /// Migrate away from RocksDB based payload indices.
+    ///
+    /// Triggers a payload index rebuild if RocksDB is used.
+    // TODO(1.15.1): enable by default
+    pub migrate_rocksdb_payload_indices: bool,
 }
 
 impl Default for FeatureFlags {
@@ -62,6 +68,7 @@ impl Default for FeatureFlags {
             migrate_rocksdb_id_tracker: false,
             migrate_rocksdb_vector_storage: false,
             migrate_rocksdb_payload_storage: false,
+            migrate_rocksdb_payload_indices: false,
         }
     }
 }
@@ -85,6 +92,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         migrate_rocksdb_id_tracker,
         migrate_rocksdb_vector_storage,
         migrate_rocksdb_payload_storage,
+        migrate_rocksdb_payload_indices,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
@@ -96,6 +104,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         *migrate_rocksdb_id_tracker = true;
         *migrate_rocksdb_vector_storage = true;
         *migrate_rocksdb_payload_storage = true;
+        *migrate_rocksdb_payload_indices = true;
     }
 
     let res = FEATURE_FLAGS.set(flags);
