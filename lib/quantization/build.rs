@@ -1,6 +1,7 @@
 use std::env;
 
 fn main() {
+    println!("cargo:rerun-if-changed=cpp");
     let mut builder = cc::Build::new();
 
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH")

@@ -4,7 +4,7 @@ mod tests {
 
     use quantization::EncodedVectorsPQ;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::encoded_vectors_binary::EncodedVectorsBin;
+    use quantization::encoded_vectors_binary::{EncodedVectorsBin, QueryEncoding};
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
     use tempfile::Builder;
 
@@ -102,6 +102,7 @@ mod tests {
             Vec::<u8>::new(),
             &vector_parameters,
             quantization::encoded_vectors_binary::Encoding::OneBit,
+            QueryEncoding::SameAsStorage,
             &AtomicBool::new(false),
         )
         .unwrap();
