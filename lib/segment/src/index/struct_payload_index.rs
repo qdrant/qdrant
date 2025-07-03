@@ -458,8 +458,9 @@ impl StructPayloadIndex {
                 Some(move |id| struct_filtered_context.check(id))
             };
 
-            // add a full scan from id_tracker to compensate unhandled conditions
+            // If even one iterator is None, we should replace the whole thing with an iterator over all ids.
             if require_full_scan_fallback {
+                primary_iters.clear();
                 let full_scan = Box::new(id_tracker.iter_ids().measure_hw_with_cell(
                     hw_counter,
                     size_of::<PointOffsetType>(),
