@@ -76,7 +76,7 @@ fn is_usage_none_or_empty(u: &Option<Usage>) -> bool {
 }
 
 /// Usage of the hardware resources, spent to process the request
-#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone)]
+#[derive(Debug, Default, Serialize, JsonSchema, Anonymize, Clone)]
 #[serde(rename_all = "snake_case")]
 #[anonymize(false)]
 pub struct HardwareUsage {

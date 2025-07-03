@@ -324,74 +324,78 @@ impl MetricsProvider for MemoryTelemetry {
     }
 }
 
+impl HardwareTelemetry {
+    // Helper function to create counter metrics of a single Hw type, like cpu.
+    fn make_metric_counters<F: Fn(&HardwareUsage) -> usize>(&self, f: F) -> Vec<Metric> {
+        self.collection_data
+            .iter()
+            .map(|(collection_id, hw_usage)| counter(f(hw_usage) as f64, &[("id", collection_id)]))
+            .collect()
+    }
+}
+
 impl MetricsProvider for HardwareTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        for (collection, hw_info) in self.collection_data.iter() {
-            let HardwareUsage {
-                cpu,
-                payload_io_read,
-                payload_io_write,
-                payload_index_io_read,
-                payload_index_io_write,
-                vector_io_read,
-                vector_io_write,
-            } = hw_info;
+        // Keep a dummy type decomposition of HwUsage here to enforce coverage of new fields in metrics.
+        // This gets optimized away by the compiler: https://godbolt.org/z/9cMTzcYr4
+        let HardwareUsage {
+            cpu: _,
+            payload_io_read: _,
+            payload_io_write: _,
+            payload_index_io_read: _,
+            payload_index_io_write: _,
+            vector_io_read: _,
+            vector_io_write: _,
+        } = HardwareUsage::default();
 
-            metrics.push(metric_family(
-                "collection_hardware_metric_cpu",
-                "CPU measurements of a collection",
-                MetricType::COUNTER,
-                vec![counter(*cpu as f64, &[("id", collection)])],
-            ));
+        metrics.push(metric_family(
+            "collection_hardware_metric_cpu",
+            "CPU measurements of a collection",
+            MetricType::COUNTER,
+            self.make_metric_counters(|hw| hw.cpu),
+        ));
 
-            metrics.push(metric_family(
-                "collection_hardware_metric_payload_io_read",
-                "Total IO payload read metrics of a collection",
-                MetricType::COUNTER,
-                vec![counter(*payload_io_read as f64, &[("id", collection)])],
-            ));
+        metrics.push(metric_family(
+            "collection_hardware_metric_payload_io_read",
+            "Total IO payload read metrics of a collection",
+            MetricType::COUNTER,
+            self.make_metric_counters(|hw| hw.payload_io_read),
+        ));
 
-            metrics.push(metric_family(
-                "collection_hardware_metric_payload_index_io_read",
-                "Total IO payload index read metrics of a collection",
-                MetricType::COUNTER,
-                vec![counter(
-                    *payload_index_io_read as f64,
-                    &[("id", collection)],
-                )],
-            ));
+        metrics.push(metric_family(
+            "collection_hardware_metric_payload_index_io_read",
+            "Total IO payload index read metrics of a collection",
+            MetricType::COUNTER,
+            self.make_metric_counters(|hw| hw.payload_index_io_read),
+        ));
 
-            metrics.push(metric_family(
-                "collection_hardware_metric_payload_index_io_write",
-                "Total IO payload index write metrics of a collection",
-                MetricType::COUNTER,
-                vec![counter(
-                    *payload_index_io_write as f64,
-                    &[("id", collection)],
-                )],
-            ));
+        metrics.push(metric_family(
+            "collection_hardware_metric_payload_index_io_write",
+            "Total IO payload index write metrics of a collection",
+            MetricType::COUNTER,
+            self.make_metric_counters(|hw| hw.payload_index_io_write),
+        ));
 
-            metrics.push(metric_family(
-                "collection_hardware_metric_payload_io_write",
-                "Total IO payload write metrics of a collection",
-                MetricType::COUNTER,
-                vec![counter(*payload_io_write as f64, &[("id", collection)])],
-            ));
+        metrics.push(metric_family(
+            "collection_hardware_metric_payload_io_write",
+            "Total IO payload write metrics of a collection",
+            MetricType::COUNTER,
+            self.make_metric_counters(|hw| hw.payload_io_write),
+        ));
 
-            metrics.push(metric_family(
-                "collection_hardware_metric_vector_io_read",
-                "Total IO vector read metrics of a collection",
-                MetricType::COUNTER,
-                vec![counter(*vector_io_read as f64, &[("id", collection)])],
-            ));
+        metrics.push(metric_family(
+            "collection_hardware_metric_vector_io_read",
+            "Total IO vector read metrics of a collection",
+            MetricType::COUNTER,
+            self.make_metric_counters(|hw| hw.vector_io_read),
+        ));
 
-            metrics.push(metric_family(
-                "collection_hardware_metric_vector_io_write",
-                "Total IO vector write metrics of a collection",
-                MetricType::COUNTER,
-                vec![counter(*vector_io_write as f64, &[("id", collection)])],
-            ));
-        }
+        metrics.push(metric_family(
+            "collection_hardware_metric_vector_io_write",
+            "Total IO vector write metrics of a collection",
+            MetricType::COUNTER,
+            self.make_metric_counters(|hw| hw.vector_io_write),
+        ));
     }
 }
 
