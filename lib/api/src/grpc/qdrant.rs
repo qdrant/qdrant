@@ -428,45 +428,6 @@ pub struct ProductQuantization {
     #[prost(bool, optional, tag = "2")]
     pub always_ram: ::core::option::Option<bool>,
 }
-#[derive(validator::Validate)]
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct BinaryQuantization {
-    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
-    #[prost(bool, optional, tag = "1")]
-    pub always_ram: ::core::option::Option<bool>,
-    /// Binary quantization encoding method
-    #[prost(enumeration = "BinaryQuantizationEncoding", optional, tag = "2")]
-    pub encoding: ::core::option::Option<i32>,
-    /// Asymmetric quantization configuration allows a query to have different quantization than stored vectors.
-    /// It can increase the accuracy of search at the cost of performance.
-    #[prost(message, optional, tag = "3")]
-    pub query_encoding: ::core::option::Option<BinaryQuantizationQueryEncoding>,
-}
-#[derive(validator::Validate)]
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct QuantizationConfig {
-    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2, 3")]
-    #[validate(nested)]
-    pub quantization: ::core::option::Option<quantization_config::Quantization>,
-}
-/// Nested message and enum types in `QuantizationConfig`.
-pub mod quantization_config {
-    #[derive(serde::Serialize)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Quantization {
-        #[prost(message, tag = "1")]
-        Scalar(super::ScalarQuantization),
-        #[prost(message, tag = "2")]
-        Product(super::ProductQuantization),
-        #[prost(message, tag = "3")]
-        Binary(super::BinaryQuantization),
-    }
-}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -525,6 +486,45 @@ pub mod binary_quantization_query_encoding {
     pub enum Variant {
         #[prost(enumeration = "Setting", tag = "4")]
         Setting(i32),
+    }
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BinaryQuantization {
+    /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[prost(bool, optional, tag = "1")]
+    pub always_ram: ::core::option::Option<bool>,
+    /// Binary quantization encoding method
+    #[prost(enumeration = "BinaryQuantizationEncoding", optional, tag = "2")]
+    pub encoding: ::core::option::Option<i32>,
+    /// Asymmetric quantization configuration allows a query to have different quantization than stored vectors.
+    /// It can increase the accuracy of search at the cost of performance.
+    #[prost(message, optional, tag = "3")]
+    pub query_encoding: ::core::option::Option<BinaryQuantizationQueryEncoding>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QuantizationConfig {
+    #[prost(oneof = "quantization_config::Quantization", tags = "1, 2, 3")]
+    #[validate(nested)]
+    pub quantization: ::core::option::Option<quantization_config::Quantization>,
+}
+/// Nested message and enum types in `QuantizationConfig`.
+pub mod quantization_config {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Quantization {
+        #[prost(message, tag = "1")]
+        Scalar(super::ScalarQuantization),
+        #[prost(message, tag = "2")]
+        Product(super::ProductQuantization),
+        #[prost(message, tag = "3")]
+        Binary(super::BinaryQuantization),
     }
 }
 #[derive(validator::Validate)]

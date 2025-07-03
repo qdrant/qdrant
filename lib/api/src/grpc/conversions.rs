@@ -1171,13 +1171,13 @@ impl From<segment::types::BinaryQuantization> for BinaryQuantization {
         let segment::types::BinaryQuantizationConfig {
             always_ram,
             encoding,
-            query_encoding: query_quantization,
+            query_encoding,
         } = binary;
         BinaryQuantization {
             always_ram,
             encoding: encoding
                 .map(|encoding| i32::from(BinaryQuantizationEncoding::from(encoding))),
-            query_encoding: query_quantization.map(BinaryQuantizationQueryEncoding::from),
+            query_encoding: query_encoding.map(BinaryQuantizationQueryEncoding::from),
         }
     }
 }
