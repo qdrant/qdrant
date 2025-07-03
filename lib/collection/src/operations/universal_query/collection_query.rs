@@ -58,8 +58,8 @@ impl CollectionQueryRequest {
 ///
 /// [`RetrieveRequest`]: crate::common::retrieve_request_trait::RetrieveRequest
 #[derive(Debug)]
-pub struct CollectionQueryResolveRequest<'a> {
-    pub vector_query: &'a VectorQuery<VectorInputInternal>,
+pub struct CollectionQueryResolveRequest {
+    pub referenced_ids: Vec<PointIdType>,
     pub lookup_from: Option<LookupLocation>,
     pub using: VectorNameBuf,
 }
@@ -123,6 +123,18 @@ impl Query {
         };
 
         Ok(scoring_query)
+    }
+
+    pub fn get_referenced_ids(&self) -> Vec<PointIdType> {
+        match self {
+            Self::Vector(vector_query) => vector_query
+                .get_referenced_ids()
+                .iter()
+                .map(|x| **x)
+                .collect(),
+            Self::Mmr(mmr_input) => mmr_input.get_referenced_id().iter().map(|x| **x).collect(),
+            Self::Fusion(_) | Self::OrderBy(_) | Self::Formula(_) | Self::Sample(_) => Vec::new(),
+        }
     }
 }
 
@@ -379,6 +391,10 @@ impl VectorQuery<VectorInternal> {
 
         Ok(ScoringQuery::Vector(query_enum))
     }
+
+    pub fn get_referenced_id(&self) -> Option<&PointIdType> {
+        self.vector.as_id()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -488,10 +504,16 @@ impl CollectionPrefetch {
 
     pub fn flatten_resolver_requests(&self) -> Vec<CollectionQueryResolveRequest> {
         let mut inner_queries = vec![];
-        // resolve query for root query
-        if let Some(Query::Vector(vector_query)) = &self.query {
+        // resolve ids for root query
+        let referenced_ids = self
+            .query
+            .as_ref()
+            .map(Query::get_referenced_ids)
+            .unwrap_or_default();
+
+        if !referenced_ids.is_empty() {
             let resolve_root = CollectionQueryResolveRequest {
-                vector_query,
+                referenced_ids,
                 lookup_from: self.lookup_from.clone(),
                 using: self.using.clone(),
             };
