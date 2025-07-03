@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -183,7 +183,7 @@ impl StructPayloadIndex {
                 })
             }
             Condition::CustomIdChecker(cond) => {
-                let segment_ids: HashSet<_> = id_tracker
+                let segment_ids: AHashSet<_> = id_tracker
                     .iter_external()
                     .filter(|&point_id| cond.check(point_id))
                     .filter_map(|external_id| id_tracker.internal_id(external_id))
