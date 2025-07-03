@@ -263,6 +263,7 @@ pub fn create_struct_payload_index(
         std::collections::HashMap::new(),
         path,
         true,
+        true,
     )
     .unwrap();
 

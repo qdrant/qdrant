@@ -119,11 +119,11 @@ impl StructPayloadIndex {
         self.config.save(&config_path)
     }
 
-    fn load_all_fields(&mut self) -> OperationResult<()> {
+    fn load_all_fields(&mut self, create: bool) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
         for (field, payload_schema) in &self.config.indexed_fields {
-            let field_index = self.load_from_db(field, payload_schema)?;
+            let field_index = self.load_from_db(field, payload_schema, create)?;
             field_indexes.insert(field.clone(), field_index);
         }
         self.field_indexes = field_indexes;
@@ -134,10 +134,11 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
+        create: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
         let mut indexes = self
             .selector(payload_schema)
-            .new_index(field, payload_schema)?;
+            .new_index(field, payload_schema, create)?;
 
         let total_point_count = self.id_tracker.borrow().total_point_count();
 
@@ -177,6 +178,7 @@ impl StructPayloadIndex {
         vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
         path: &Path,
         is_appendable: bool,
+        create: bool,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
@@ -257,7 +259,7 @@ impl StructPayloadIndex {
             index.save_config()?;
         }
 
-        index.load_all_fields()?;
+        index.load_all_fields(create)?;
 
         Ok(index)
     }

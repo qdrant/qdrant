@@ -51,7 +51,7 @@ where
 {
     #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
-    Gridstore(Arc<RwLock<Gridstore<Vec<T>>>>),
+    Gridstore(Option<Arc<RwLock<Gridstore<Vec<T>>>>>),
 }
 
 impl<N: MapIndexKey + ?Sized> MutableMapIndex<N>
@@ -85,19 +85,37 @@ where
     /// Open mutable map index from Gridstore storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
-    pub fn open_gridstore(path: PathBuf) -> OperationResult<Self> {
-        let options = default_gridstore_options(N::gridstore_block_size());
-        let store = Gridstore::open_or_create(path, options).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to open mutable map index on gridstore: {err}"
-            ))
-        })?;
+    ///
+    /// The `create` parameter indicates whether to create a new Gridstore if it does not exist. If
+    /// false and files don't exist, the load function will indicate nothing could be loaded.
+    pub fn open_gridstore(path: PathBuf, create: bool) -> OperationResult<Self> {
+        let store = if create {
+            let options = default_gridstore_options(N::gridstore_block_size());
+            Some(Arc::new(RwLock::new(
+                Gridstore::open_or_create(path, options).map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to open mutable map index on gridstore: {err}"
+                    ))
+                })?,
+            )))
+        } else if path.exists() {
+            Some(Arc::new(RwLock::new(Gridstore::open(path).map_err(
+                |err| {
+                    OperationError::service_error(format!(
+                        "failed to open mutable map index on gridstore: {err}"
+                    ))
+                },
+            )?)))
+        } else {
+            None
+        };
+
         Ok(Self {
             map: Default::default(),
             point_to_values: Vec::new(),
             indexed_points: 0,
             values_count: 0,
-            storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
+            storage: Storage::Gridstore(store),
         })
     }
 
@@ -108,7 +126,8 @@ where
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Gridstore(_) => self.load_gridstore(),
+            Storage::Gridstore(Some(_)) => self.load_gridstore(),
+            Storage::Gridstore(None) => Ok(false),
         }
     }
 
@@ -154,8 +173,7 @@ where
     ///
     /// Loads in-memory index from Gridstore storage.
     fn load_gridstore(&mut self) -> OperationResult<bool> {
-        #[allow(irrefutable_let_patterns)]
-        let Storage::Gridstore(store) = &self.storage else {
+        let Storage::Gridstore(Some(store)) = &self.storage else {
             return Err(OperationError::service_error(
                 "Failed to load index from Gridstore, using different storage backend",
             ));
@@ -230,7 +248,7 @@ where
                     db_wrapper.put(db_record, [])?;
                 }
             }
-            Storage::Gridstore(store) => {
+            Storage::Gridstore(Some(store)) => {
                 let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
                 for value in values.clone() {
@@ -248,6 +266,11 @@ where
                             "failed to put value in mutable map index gridstore: {err}"
                         ))
                     })?;
+            }
+            Storage::Gridstore(None) => {
+                return Err(OperationError::service_error(
+                    "Failed to add values to mutable map index, backing Gridstore storage does not exist",
+                ));
             }
         }
 
@@ -281,8 +304,13 @@ where
                     db_wrapper.remove(key)?;
                 }
             }
-            Storage::Gridstore(store) => {
+            Storage::Gridstore(Some(store)) => {
                 store.write().delete_value(idx);
+            }
+            Storage::Gridstore(None) => {
+                return Err(OperationError::service_error(
+                    "Failed to remove values to mutable map index, backing Gridstore storage does not exist",
+                ));
             }
         }
 
@@ -294,9 +322,10 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Gridstore(store) => store.write().clear().map_err(|err| {
+            Storage::Gridstore(Some(store)) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!("Failed to clear mutable map index: {err}",))
             }),
+            Storage::Gridstore(None) => Ok(()),
         }
     }
 
@@ -308,11 +337,12 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
-            Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
+            Storage::Gridstore(Some(index)) => index.read().clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable map index gridstore cache: {err}"
                 ))
             }),
+            Storage::Gridstore(None) => Ok(()),
         }
     }
 
@@ -321,7 +351,8 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
-            Storage::Gridstore(store) => store.read().files(),
+            Storage::Gridstore(Some(store)) => store.read().files(),
+            Storage::Gridstore(None) => vec![],
         }
     }
 
@@ -330,7 +361,7 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
-            Storage::Gridstore(store) => {
+            Storage::Gridstore(Some(store)) => {
                 let store = store.clone();
                 Box::new(move || {
                     store.read().flush().map_err(|err| {
@@ -340,6 +371,7 @@ where
                     })
                 })
             }
+            Storage::Gridstore(None) => Box::new(|| Ok(())),
         }
     }
 

@@ -62,14 +62,19 @@ impl IndexSelector<'_> {
         &self,
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
+        create: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
         let indexes = match payload_schema.expand().as_ref() {
-            PayloadSchemaParams::Keyword(_) => vec![FieldIndex::KeywordIndex(self.map_new(field)?)],
+            PayloadSchemaParams::Keyword(_) => {
+                vec![FieldIndex::KeywordIndex(self.map_new(field, create)?)]
+            }
             PayloadSchemaParams::Integer(integer_params) => itertools::chain(
                 integer_params
                     .lookup
                     .unwrap_or(true)
-                    .then(|| OperationResult::Ok(FieldIndex::IntMapIndex(self.map_new(field)?)))
+                    .then(|| {
+                        OperationResult::Ok(FieldIndex::IntMapIndex(self.map_new(field, create)?))
+                    })
                     .transpose()?,
                 integer_params
                     .range
@@ -92,7 +97,7 @@ impl IndexSelector<'_> {
                 vec![FieldIndex::DatetimeIndex(self.numeric_new(field)?)]
             }
             PayloadSchemaParams::Uuid(_) => {
-                vec![FieldIndex::UuidMapIndex(self.map_new(field)?)]
+                vec![FieldIndex::UuidMapIndex(self.map_new(field, create)?)]
             }
         };
 
@@ -183,7 +188,11 @@ impl IndexSelector<'_> {
         Ok(builders)
     }
 
-    fn map_new<N: MapIndexKey + ?Sized>(&self, field: &JsonPath) -> OperationResult<MapIndex<N>>
+    fn map_new<N: MapIndexKey + ?Sized>(
+        &self,
+        field: &JsonPath,
+        create: bool,
+    ) -> OperationResult<MapIndex<N>>
     where
         Vec<N::Owned>: Blob + Send + Sync,
     {
@@ -196,7 +205,7 @@ impl IndexSelector<'_> {
                 MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
-                MapIndex::new_gridstore(map_dir(dir, field))?
+                MapIndex::new_gridstore(map_dir(dir, field), create)?
             }
         })
     }
