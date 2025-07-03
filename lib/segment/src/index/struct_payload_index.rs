@@ -187,7 +187,12 @@ impl StructPayloadIndex {
             #[cfg(feature = "rocksdb")]
             {
                 let mut new_config = PayloadConfig::default();
-                if common::flags::feature_flags().payload_index_skip_rocksdb && !is_appendable {
+                let skip_rocksdb = if is_appendable {
+                    common::flags::feature_flags().payload_index_skip_mutable_rocksdb
+                } else {
+                    common::flags::feature_flags().payload_index_skip_rocksdb
+                };
+                if skip_rocksdb {
                     new_config.skip_rocksdb = Some(true);
                 }
                 new_config
