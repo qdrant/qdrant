@@ -24,6 +24,8 @@ num-traits = { workspace = true }
 memory = { path = "../common/memory" }
 common = { path = "../common/common" }
 io = { path = "../common/io" }
+strum = { workspace = true }
+bytemuck = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

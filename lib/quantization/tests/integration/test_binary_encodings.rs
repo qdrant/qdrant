@@ -8,6 +8,7 @@ mod tests {
         BitsStoreType, EncodedVectorsBin, Encoding, QueryEncoding,
     };
     use rand::{Rng, SeedableRng};
+    use strum::IntoEnumIterator;
 
     use crate::metrics::dot_similarity;
 
@@ -160,15 +161,8 @@ mod tests {
             vector_data.push(generate_vector(vector_dim, &mut rng));
         }
 
-        let query_encodings = [
-            QueryEncoding::SameAsStorage,
-            QueryEncoding::Scalar4bits,
-            QueryEncoding::Scalar8bits,
-        ];
-
-        let encoded: Vec<_> = query_encodings
-            .iter()
-            .map(|&query_encoding| {
+        let encoded: Vec<_> = QueryEncoding::iter()
+            .map(|query_encoding| {
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
                     vector_data.iter(),
                     Vec::<u8>::new(),

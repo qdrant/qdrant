@@ -6,6 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use io::file_operations::atomic_save_json;
 use memory::mmap_ops::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use serde::{Deserialize, Serialize};
+use strum::EnumIter;
 
 use crate::encoded_vectors::validate_vector_parameters;
 use crate::vector_stats::VectorStats;
@@ -21,7 +22,7 @@ pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedSto
     bits_store_type: PhantomData<TBitsStoreType>,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize, Default, EnumIter)]
 pub enum Encoding {
     #[default]
     OneBit,
@@ -35,7 +36,7 @@ impl Encoding {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize, Default, EnumIter)]
 pub enum QueryEncoding {
     #[default]
     SameAsStorage,
@@ -121,6 +122,7 @@ pub trait BitsStoreType:
     + num_traits::identities::One
     + num_traits::cast::FromPrimitive
     + num_traits::cast::ToPrimitive
+    + bytemuck::Pod
     + std::fmt::Debug
 {
     /// Xor vectors and return the number of bits set to 1
@@ -611,13 +613,17 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             Encoding::OneBit => Self::_encode_scalar_query_vector(query, bits_count),
             Encoding::TwoBits => {
                 // For two bits encoding we need to extend the query vector
-                let mut extended_query = query.to_vec();
+                let mut extended_query = Vec::with_capacity(query.len() * 2);
+                // Copy the original query vector twice: for first and second bits in 2bit BQ encoding
+                extended_query.extend_from_slice(query);
                 extended_query.extend_from_slice(query);
                 Self::_encode_scalar_query_vector(&extended_query, bits_count)
             }
             Encoding::OneAndHalfBits => {
                 // For one and half bits encoding we need to extend the query vector
-                let mut extended_query = query.to_vec();
+                let mut extended_query = Vec::with_capacity(query.len() + query.len().div_ceil(2));
+                extended_query.extend_from_slice(query);
+                // For 1.5bit BQ use max of two consecutive values
                 extended_query.extend(
                     query
                         .chunks(2)
@@ -749,9 +755,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     }
 
     pub fn encode_internal_query(&self, point_id: u32) -> EncodedQueryBQ<TBitsStoreType> {
-        let encoded_data = self.get_quantized_vector(point_id).to_vec();
+        // For internal queries we use the same encoding as for storage
         EncodedQueryBQ::Binary(EncodedBinVector {
-            encoded_vector: transmute_from_u8_to_slice(&encoded_data).to_vec(),
+            encoded_vector: bytemuck::cast_slice::<u8, TBitsStoreType>(
+                self.get_quantized_vector(point_id),
+            )
+            .to_vec(),
         })
     }
 }

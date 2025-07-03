@@ -4715,6 +4715,7 @@ dependencies = [
 name = "quantization"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "cc",
  "common",
  "criterion",
@@ -4727,6 +4728,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "strum",
  "tempfile",
 ]
 
