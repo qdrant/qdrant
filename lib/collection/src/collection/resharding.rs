@@ -181,7 +181,7 @@ impl Collection {
             "Invalidating local cleanup tasks and aborting resharding {resharding_key} (force: {force})"
         );
 
-        let mut shard_holder = self.shards_holder.write().await;
+        let shard_holder = self.shards_holder.read().await;
 
         if !force {
             shard_holder.check_abort_resharding(&resharding_key)?;
@@ -256,6 +256,9 @@ impl Collection {
                 .await?;
             // We don't need to abort resharding again since we are already aborting it in next step
         }
+
+        drop(shard_holder); // drop the read lock before acquiring write lock
+        let mut shard_holder = self.shards_holder.write().await;
 
         shard_holder
             .abort_resharding(resharding_key.clone(), force, is_in_progress)
