@@ -258,8 +258,11 @@ impl ShardHolder {
         &mut self,
         resharding_key: ReshardKey,
         force: bool,
+        is_in_progress: bool,
     ) -> CollectionResult<()> {
-        log::warn!("Aborting resharding {resharding_key} (force: {force})");
+        log::warn!(
+            "Aborting resharding {resharding_key} (force: {force}, in progress: {is_in_progress})"
+        );
 
         let ReshardKey {
             uuid: _,
@@ -268,39 +271,6 @@ impl ShardHolder {
             shard_id,
             ref shard_key,
         } = resharding_key;
-
-        let is_in_progress = match self.resharding_state.read().deref() {
-            Some(state) if state.matches(&resharding_key) => {
-                if !force && state.stage >= ReshardStage::ReadHashRingCommitted {
-                    return Err(CollectionError::bad_request(format!(
-                        "can't abort resharding {resharding_key}, \
-                         because read hash ring has been committed already, \
-                         resharding must be completed",
-                    )));
-                }
-
-                true
-            }
-
-            Some(state) => {
-                log::warn!(
-                    "aborting resharding {resharding_key}, \
-                     but another resharding is in progress:\n\
-                     {state:#?}"
-                );
-
-                false
-            }
-
-            None => {
-                log::warn!(
-                    "aborting resharding {resharding_key}, \
-                     but resharding is not in progress"
-                );
-
-                false
-            }
-        };
 
         // Cleanup existing shards if resharding down
         if is_in_progress && direction == ReshardingDirection::Down {
