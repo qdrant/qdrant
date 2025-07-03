@@ -6,10 +6,10 @@ use super::Collection;
 use crate::config::ShardingMethod;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ReplicaState;
-use crate::shards::resharding::{ReshardKey, ReshardState};
-use crate::shards::transfer::ShardTransferConsensus;
+use crate::shards::resharding::{ReshardKey, ReshardStage, ReshardState};
+use crate::shards::transfer::{ShardTransferConsensus, ShardTransferMethod};
 
 impl Collection {
     pub async fn resharding_state(&self) -> Option<ReshardState> {
@@ -214,8 +214,49 @@ impl Collection {
             },
         }
 
+        let is_in_progress = match self.resharding_state().await {
+            Some(state) if state.matches(&resharding_key) => {
+                if !force && state.stage >= ReshardStage::ReadHashRingCommitted {
+                    return Err(CollectionError::bad_request(format!(
+                        "can't abort resharding {resharding_key}, \
+                         because read hash ring has been committed already, \
+                         resharding must be completed",
+                    )));
+                }
+
+                true
+            }
+
+            Some(state) => {
+                log::warn!(
+                    "aborting resharding {resharding_key}, \
+                     but another resharding is in progress:\n\
+                     {state:#?}"
+                );
+
+                false
+            }
+
+            None => {
+                log::warn!(
+                    "aborting resharding {resharding_key}, \
+                     but resharding is not in progress"
+                );
+
+                false
+            }
+        };
+
+        // We need to abort all resharding transfers
+        let resharding_transfers = shard_holder
+            .get_transfers(|t| t.method == Some(ShardTransferMethod::ReshardingStreamRecords));
+        for transfer in resharding_transfers {
+            self.abort_shard_transfer(transfer.key(), Some(&shard_holder))
+                .await?;
+        }
+
         shard_holder
-            .abort_resharding(resharding_key.clone(), force)
+            .abort_resharding(resharding_key.clone(), force, is_in_progress)
             .await?;
 
         // Decrease the persisted shard count, ensures we don't load dropped shard on restart
