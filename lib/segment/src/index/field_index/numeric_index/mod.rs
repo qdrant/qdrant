@@ -199,9 +199,9 @@ where
         }
     }
 
-    pub fn new_gridstore(dir: PathBuf, create: bool) -> OperationResult<Self> {
+    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Self> {
         Ok(NumericIndexInner::Mutable(
-            MutableNumericIndex::open_gridstore(dir, create)?,
+            MutableNumericIndex::open_gridstore(dir, create_if_missing)?,
         ))
     }
 
@@ -522,9 +522,9 @@ where
         })
     }
 
-    pub fn new_gridstore(dir: PathBuf, create: bool) -> OperationResult<Self> {
+    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Self> {
         Ok(Self {
-            inner: NumericIndexInner::new_gridstore(dir, create)?,
+            inner: NumericIndexInner::new_gridstore(dir, create_if_missing)?,
             _phantom: PhantomData,
         })
     }

@@ -79,10 +79,12 @@ impl FullTextIndex {
     pub fn new_gridstore(
         dir: PathBuf,
         config: TextIndexParams,
-        create: bool,
+        create_if_missing: bool,
     ) -> OperationResult<Self> {
         Ok(Self::Mutable(MutableFullTextIndex::open_gridstore(
-            dir, config, create,
+            dir,
+            config,
+            create_if_missing,
         )?))
     }
 

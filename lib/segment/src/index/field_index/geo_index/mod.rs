@@ -72,9 +72,10 @@ impl GeoMapIndex {
         }
     }
 
-    pub fn new_gridstore(dir: PathBuf, create: bool) -> OperationResult<Self> {
+    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Self> {
         Ok(GeoMapIndex::Mutable(MutableGeoMapIndex::open_gridstore(
-            dir, create,
+            dir,
+            create_if_missing,
         )?))
     }
 

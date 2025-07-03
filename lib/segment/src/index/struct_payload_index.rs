@@ -119,11 +119,11 @@ impl StructPayloadIndex {
         self.config.save(&config_path)
     }
 
-    fn load_all_fields(&mut self, create: bool) -> OperationResult<()> {
+    fn load_all_fields(&mut self, create_if_missing: bool) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
         for (field, payload_schema) in &self.config.indexed_fields {
-            let field_index = self.load_from_db(field, payload_schema, create)?;
+            let field_index = self.load_from_db(field, payload_schema, create_if_missing)?;
             field_indexes.insert(field.clone(), field_index);
         }
         self.field_indexes = field_indexes;
@@ -134,11 +134,11 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
-        create: bool,
+        create_if_missing: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
-        let mut indexes = self
-            .selector(payload_schema)
-            .new_index(field, payload_schema, create)?;
+        let mut indexes =
+            self.selector(payload_schema)
+                .new_index(field, payload_schema, create_if_missing)?;
 
         let total_point_count = self.id_tracker.borrow().total_point_count();
 

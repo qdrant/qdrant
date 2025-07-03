@@ -94,10 +94,11 @@ impl MutableGeoMapIndex {
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
     ///
-    /// The `create` parameter indicates whether to create a new Gridstore if it does not exist. If
-    /// false and files don't exist, the load function will indicate nothing could be loaded.
-    pub fn open_gridstore(path: PathBuf, create: bool) -> OperationResult<Self> {
-        let store = if create {
+    /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
+    /// not exist. If false and files don't exist, the load function will indicate nothing could be
+    /// loaded.
+    pub fn open_gridstore(path: PathBuf, create_if_missing: bool) -> OperationResult<Self> {
+        let store = if create_if_missing {
             Some(Arc::new(RwLock::new(
                 Gridstore::open_or_create(path, GRIDSTORE_OPTIONS).map_err(|err| {
                     OperationError::service_error(format!(

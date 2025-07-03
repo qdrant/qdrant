@@ -130,9 +130,10 @@ where
         }
     }
 
-    pub fn new_gridstore(dir: PathBuf, create: bool) -> OperationResult<Self> {
+    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Self> {
         Ok(MapIndex::Mutable(MutableMapIndex::open_gridstore(
-            dir, create,
+            dir,
+            create_if_missing,
         )?))
     }
 
