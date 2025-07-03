@@ -293,7 +293,7 @@ fn convert_query_with_inferred(
         Variant::Formula(formula) => Query::Formula(FormulaInternal::try_from(formula)?),
         Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
         Variant::Mmr(mmr) => {
-            let grpc::Mmr { vector, lambda } = mmr;
+            let grpc::MmrInput { vector, lambda } = mmr;
             let vector = vector.ok_or_else(|| Status::invalid_argument("Mmr vector is missing"))?;
             let vector = convert_vector_input_with_inferred(vector, inferred)?;
             Query::Mmr(MmrInput { vector, lambda })

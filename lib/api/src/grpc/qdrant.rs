@@ -5578,7 +5578,7 @@ pub struct DecayParamsExpression {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Mmr {
+pub struct MmrInput {
     /// The query vector to determine relevance of each candidate point.
     #[prost(message, optional, tag = "1")]
     #[validate(nested)]
@@ -5632,7 +5632,7 @@ pub mod query {
         Formula(super::Formula),
         /// Re-rank based on the Maximal Marginal Relevance algorithm.
         #[prost(message, tag = "9")]
-        Mmr(super::Mmr),
+        Mmr(super::MmrInput),
     }
 }
 #[derive(validator::Validate)]

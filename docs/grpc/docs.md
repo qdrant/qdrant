@@ -191,7 +191,7 @@
     - [LookupLocation](#qdrant-LookupLocation)
     - [Match](#qdrant-Match)
     - [MinShould](#qdrant-MinShould)
-    - [Mmr](#qdrant-Mmr)
+    - [MmrInput](#qdrant-MmrInput)
     - [ModelUsage](#qdrant-ModelUsage)
     - [MultExpression](#qdrant-MultExpression)
     - [MultiDenseVector](#qdrant-MultiDenseVector)
@@ -3385,9 +3385,9 @@ Additionally, the first and last points of each GeoLineString must be the same.
 
 
 
-<a name="qdrant-Mmr"></a>
+<a name="qdrant-MmrInput"></a>
 
-### Mmr
+### MmrInput
 Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
 
 
@@ -3982,7 +3982,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | fusion | [Fusion](#qdrant-Fusion) |  | Fuse the results of multiple prefetches. |
 | sample | [Sample](#qdrant-Sample) |  | Sample points from the collection. |
 | formula | [Formula](#qdrant-Formula) |  | Score boosting via an arbitrary formula |
-| mmr | [Mmr](#qdrant-Mmr) |  | Re-rank based on the Maximal Marginal Relevance algorithm. |
+| mmr | [MmrInput](#qdrant-MmrInput) |  | Re-rank based on the Maximal Marginal Relevance algorithm. |
 
 
 

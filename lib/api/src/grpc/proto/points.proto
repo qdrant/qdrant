@@ -641,7 +641,7 @@ message DecayParamsExpression {
 }
 
 // Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
-message Mmr {
+message MmrInput {
     // The query vector to determine relevance of each candidate point.
     VectorInput vector = 1;
 
@@ -662,7 +662,7 @@ message Query {
     Fusion fusion = 6; // Fuse the results of multiple prefetches.
     Sample sample = 7; // Sample points from the collection.
     Formula formula = 8; // Score boosting via an arbitrary formula
-    Mmr mmr = 9; // Re-rank based on the Maximal Marginal Relevance algorithm.
+    MmrInput mmr = 9; // Re-rank based on the Maximal Marginal Relevance algorithm.
   }
 }
 
