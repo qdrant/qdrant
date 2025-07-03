@@ -636,7 +636,7 @@ impl UpdateHandler {
             // Otherwise skip now and start a task to trigger the optimizer again once resource
             // budget becomes available
             let desired_cpus = 0;
-            let desired_io = num_rayon_threads(max_indexing_threads);
+            let desired_io = (num_rayon_threads(max_indexing_threads) / 2).max(1); // At least one IO unit
             if !optimizer_resource_budget.has_budget(desired_cpus, desired_io) {
                 let trigger_active = resource_available_trigger
                     .as_ref()
