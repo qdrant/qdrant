@@ -43,14 +43,14 @@ use crate::types::{
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 #[derive(Debug)]
+#[expect(clippy::enum_variant_names)]
 enum StorageType {
     #[cfg(feature = "rocksdb")]
-    Appendable(std::sync::Arc<parking_lot::RwLock<rocksdb::DB>>),
-    #[cfg(not(feature = "rocksdb"))]
-    Appendable,
+    RocksDbAppendable(std::sync::Arc<parking_lot::RwLock<rocksdb::DB>>),
+    GridstoreAppendable,
     #[cfg(feature = "rocksdb")]
-    NonAppendableRocksDb(Arc<parking_lot::RwLock<rocksdb::DB>>),
-    NonAppendable,
+    RocksDbNonAppendable(Arc<parking_lot::RwLock<rocksdb::DB>>),
+    GridstoreNonAppendable,
 }
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
@@ -202,14 +202,20 @@ impl StructPayloadIndex {
         let storage_type = if is_appendable {
             #[cfg(feature = "rocksdb")]
             {
-                let db = crate::common::rocksdb_wrapper::open_db_with_existing_cf(path).map_err(
-                    |err| OperationError::service_error(format!("RocksDB open error: {err}")),
-                )?;
-                StorageType::Appendable(db)
+                let skip_rocksdb = config.skip_rocksdb.unwrap_or(false);
+                if !skip_rocksdb {
+                    let db = crate::common::rocksdb_wrapper::open_db_with_existing_cf(path)
+                        .map_err(|err| {
+                            OperationError::service_error(format!("RocksDB open error: {err}"))
+                        })?;
+                    StorageType::RocksDbAppendable(db)
+                } else {
+                    StorageType::GridstoreAppendable
+                }
             }
             #[cfg(not(feature = "rocksdb"))]
             {
-                StorageType::Appendable
+                StorageType::GridstoreAppendable
             }
         } else {
             #[cfg(feature = "rocksdb")]
@@ -220,14 +226,14 @@ impl StructPayloadIndex {
                         .map_err(|err| {
                             OperationError::service_error(format!("RocksDB open error: {err}"))
                         })?;
-                    StorageType::NonAppendableRocksDb(db)
+                    StorageType::RocksDbNonAppendable(db)
                 } else {
-                    StorageType::NonAppendable
+                    StorageType::GridstoreNonAppendable
                 }
             }
             #[cfg(not(feature = "rocksdb"))]
             {
-                StorageType::NonAppendable
+                StorageType::GridstoreNonAppendable
             }
         };
 
@@ -487,22 +493,15 @@ impl StructPayloadIndex {
 
         match &self.storage_type {
             #[cfg(feature = "rocksdb")]
-            StorageType::Appendable(db) => {
-                if !common::flags::feature_flags().payload_index_skip_mutable_rocksdb {
-                    return IndexSelector::RocksDb(IndexSelectorRocksDb {
-                        db,
-                        is_appendable: true,
-                    });
-                }
-
-                IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
-            }
-            #[cfg(not(feature = "rocksdb"))]
-            StorageType::Appendable => {
+            StorageType::RocksDbAppendable(db) => IndexSelector::RocksDb(IndexSelectorRocksDb {
+                db,
+                is_appendable: true,
+            }),
+            StorageType::GridstoreAppendable => {
                 IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
             }
             #[cfg(feature = "rocksdb")]
-            StorageType::NonAppendableRocksDb(db) => {
+            StorageType::RocksDbNonAppendable(db) => {
                 // legacy logic: we keep rocksdb, but load mmap indexes
                 if !is_on_disk {
                     return IndexSelector::RocksDb(IndexSelectorRocksDb {
@@ -516,7 +515,7 @@ impl StructPayloadIndex {
                     is_on_disk,
                 })
             }
-            StorageType::NonAppendable => IndexSelector::Mmap(IndexSelectorMmap {
+            StorageType::GridstoreNonAppendable => IndexSelector::Mmap(IndexSelectorMmap {
                 dir: &self.path,
                 is_on_disk,
             }),
@@ -872,15 +871,11 @@ impl PayloadIndex for StructPayloadIndex {
     #[cfg(feature = "rocksdb")]
     fn take_database_snapshot(&self, path: &Path) -> OperationResult<()> {
         match &self.storage_type {
-            StorageType::Appendable(db) => {
+            StorageType::RocksDbAppendable(db) | StorageType::RocksDbNonAppendable(db) => {
                 let db_guard = db.read();
                 crate::rocksdb_backup::create(&db_guard, path)
             }
-            StorageType::NonAppendableRocksDb(db) => {
-                let db_guard = db.read();
-                crate::rocksdb_backup::create(&db_guard, path)
-            }
-            StorageType::NonAppendable => Ok(()),
+            StorageType::GridstoreAppendable | StorageType::GridstoreNonAppendable => Ok(()),
         }
     }
 
