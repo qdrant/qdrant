@@ -168,7 +168,7 @@ impl StructPayloadIndex {
     }
 
     fn load_from_db(
-        &self,
+        &mut self,
         field: PayloadKeyTypeRef,
         // TODO: refactor this and remove the &mut reference.
         payload_schema: &mut PayloadFieldSchemaWithIndexType,
@@ -227,6 +227,33 @@ impl StructPayloadIndex {
             }
         }
 
+        // Actively migrate away from RocksDB indices
+        // Naively implemented by just rebuilding the indices from scratch
+        #[cfg(feature = "rocksdb")]
+        if common::flags::feature_flags().migrate_rocksdb_payload_indices
+            && indexes.iter().any(|index| index.is_rocksdb())
+        {
+            log::info!("Migrating away from RocksDB indices for field `{field}`");
+
+            // Trigger rebuild
+            is_loaded = false;
+
+            // Change storage type, set skip RocksDB flag and persist, rebuilds index with Gridstore
+            match self.storage_type {
+                StorageType::RocksDbAppendable(_) => {
+                    self.storage_type = StorageType::GridstoreAppendable;
+                }
+                StorageType::GridstoreAppendable => {}
+                StorageType::RocksDbNonAppendable(_) => {
+                    self.storage_type = StorageType::GridstoreNonAppendable;
+                }
+                StorageType::GridstoreNonAppendable => {}
+            }
+            self.config.skip_rocksdb.replace(true);
+            self.save_config()?;
+        }
+
+        // If index is not properly loaded, recreate it
         if !is_loaded {
             log::debug!("Index for `{field}` was not loaded. Building...");
             indexes = self.build_field_indexes(
