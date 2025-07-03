@@ -222,7 +222,7 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn check_abort_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+    pub fn check_abort_resharding(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let state = self.resharding_state.read();
 
         // - do not abort if no resharding operation is ongoing
