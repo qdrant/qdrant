@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -109,7 +110,7 @@ impl StructPayloadIndex {
             }
             // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
             Condition::HasId(has_id) => {
-                let segment_ids: HashSet<_> = has_id
+                let segment_ids: AHashSet<_> = has_id
                     .has_id
                     .iter()
                     .filter_map(|external_id| id_tracker.internal_id(*external_id))
