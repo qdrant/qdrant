@@ -8,6 +8,7 @@
     - [AliasDescription](#qdrant-AliasDescription)
     - [AliasOperations](#qdrant-AliasOperations)
     - [BinaryQuantization](#qdrant-BinaryQuantization)
+    - [BinaryQuantizationQueryEncoding](#qdrant-BinaryQuantizationQueryEncoding)
     - [BoolIndexParams](#qdrant-BoolIndexParams)
     - [ChangeAliases](#qdrant-ChangeAliases)
     - [CollectionClusterInfoRequest](#qdrant-CollectionClusterInfoRequest)
@@ -96,6 +97,7 @@
     - [WalConfigDiff](#qdrant-WalConfigDiff)
   
     - [BinaryQuantizationEncoding](#qdrant-BinaryQuantizationEncoding)
+    - [BinaryQuantizationQueryEncoding.Setting](#qdrant-BinaryQuantizationQueryEncoding-Setting)
     - [CollectionStatus](#qdrant-CollectionStatus)
     - [CompressionRatio](#qdrant-CompressionRatio)
     - [Datatype](#qdrant-Datatype)
@@ -399,6 +401,22 @@
 | ----- | ---- | ----- | ----------- |
 | always_ram | [bool](#bool) | optional | If true - quantized vectors always will be stored in RAM, ignoring the config of main storage |
 | encoding | [BinaryQuantizationEncoding](#qdrant-BinaryQuantizationEncoding) | optional | Binary quantization encoding method |
+| query_encoding | [BinaryQuantizationQueryEncoding](#qdrant-BinaryQuantizationQueryEncoding) | optional | Asymmetric quantization configuration allows a query to have different quantization than stored vectors. It can increase the accuracy of search at the cost of performance. |
+
+
+
+
+
+
+<a name="qdrant-BinaryQuantizationQueryEncoding"></a>
+
+### BinaryQuantizationQueryEncoding
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| setting | [BinaryQuantizationQueryEncoding.Setting](#qdrant-BinaryQuantizationQueryEncoding-Setting) |  |  |
 
 
 
@@ -1894,6 +1912,20 @@ Note: 1kB = 1 vector of size 256. |
 | OneBit | 0 |  |
 | TwoBits | 1 |  |
 | OneAndHalfBits | 2 |  |
+
+
+
+<a name="qdrant-BinaryQuantizationQueryEncoding-Setting"></a>
+
+### BinaryQuantizationQueryEncoding.Setting
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Default | 0 |  |
+| Binary | 1 |  |
+| Scalar4Bits | 2 |  |
+| Scalar8Bits | 3 |  |
 
 
 
