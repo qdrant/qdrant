@@ -162,13 +162,11 @@ impl Persistent {
     fn remove_unknown_peer_metadata(&self) -> Result<(), StorageError> {
         let is_updated = {
             let mut peer_metadata = self.peer_metadata_by_id.write();
-            let peer_metadata_len = peer_metadata.len();
-
             let peer_address = self.peer_address_by_id.read();
-            peer_metadata.retain(|peer_id, _| peer_address.contains_key(peer_id));
-
-            // Check, if peer metadata was updated
-            peer_metadata_len != peer_metadata.len()
+            peer_metadata
+                .extract_if(|peer_id, _| !peer_address.contains_key(peer_id))
+                .count()
+                > 0
         };
 
         if is_updated {
