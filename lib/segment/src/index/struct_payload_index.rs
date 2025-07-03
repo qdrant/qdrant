@@ -7,8 +7,8 @@ use ahash::AHashSet;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
+use common::either_variant::EitherVariant;
 use common::types::PointOffsetType;
-use itertools::Either;
 use log::debug;
 use schemars::_serde_json::Value;
 
@@ -423,38 +423,61 @@ impl StructPayloadIndex {
         query_cardinality: &'a CardinalityEstimation,
         hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
-        let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
-
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = id_tracker.iter_ids();
-
+            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
                 full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
 
-            Either::Left(matched_points)
+            EitherVariant::A(matched_points)
         } else {
             // CPU-optimized strategy here: points are made unique before applying other filters.
             let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
 
-            let iter = query_cardinality
+            // If even one iterator is None, we should replace the whole thing with
+            // an iterator over all ids.
+            let primary_clause_iterators: Option<Vec<_>> = query_cardinality
                 .primary_clauses
                 .iter()
-                .flat_map(move |clause| {
-                    self.query_field(clause, hw_counter).unwrap_or_else(|| {
-                        // index is not built
-                        Box::new(id_tracker.iter_ids().measure_hw_with_cell(
-                            hw_counter,
-                            size_of::<PointOffsetType>(),
-                            |i| i.cpu_counter(),
-                        ))
-                    })
+                .map(move |clause| self.query_field(clause, hw_counter))
+                .collect();
+
+            if let Some(primary_iterators) = primary_clause_iterators {
+                let num_primary_iterators = primary_iterators.len();
+                let joined_primary_iterator = primary_iterators.into_iter().flatten();
+
+                return if num_primary_iterators == filter.total_conditions_count() {
+                    // All conditions are primary clauses,
+                    // We can avoid post-filtering
+                    let iter = joined_primary_iterator
+                        .filter(move |&id| !visited_list.check_and_update_visited(id));
+                    EitherVariant::B(iter)
+                } else {
+                    // Some conditions are primary clauses, some are not
+                    let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
+                    let iter = joined_primary_iterator.filter(move |&id| {
+                        !visited_list.check_and_update_visited(id)
+                            && struct_filtered_context.check(id)
+                    });
+                    EitherVariant::C(iter)
+                };
+            }
+
+            // We can't use primary conditions, so we fall back to iterating over all ids
+            // and applying full filter.
+            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
+
+            let iter = id_tracker
+                .iter_ids()
+                .measure_hw_with_cell(hw_counter, size_of::<PointOffsetType>(), |i| {
+                    i.cpu_counter()
                 })
                 .filter(move |&id| {
                     !visited_list.check_and_update_visited(id) && struct_filtered_context.check(id)
                 });
 
-            Either::Right(iter)
+            EitherVariant::D(iter)
         }
     }
 
