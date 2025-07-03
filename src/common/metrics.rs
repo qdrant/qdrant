@@ -326,17 +326,17 @@ impl MetricsProvider for MemoryTelemetry {
 
 impl HardwareTelemetry {
     // Helper function to create counter metrics of a single Hw type, like cpu.
-    pub(crate) fn make_metric_counters<F: Fn(&HardwareUsage) -> usize>(&self, f: F) -> Vec<Metric> {
+    fn make_metric_counters<F: Fn(&HardwareUsage) -> usize>(&self, f: F) -> Vec<Metric> {
         self.collection_data
             .iter()
-            .map(|i| counter(f(i.1) as f64, &[("id", i.0)]))
-            .collect::<Vec<_>>()
+            .map(|(collection_id, hw_usage)| counter(f(hw_usage) as f64, &[("id", collection_id)]))
+            .collect()
     }
 }
 
 impl MetricsProvider for HardwareTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        // Keep a dummy type decomposition of HwUsage here to ensure new fields must be covered.
+        // Keep a dummy type decomposition of HwUsage here to enforce coverage of new fields in metrics.
         // This gets optimized away by the compiler: https://godbolt.org/z/9cMTzcYr4
         let HardwareUsage {
             cpu: _,
