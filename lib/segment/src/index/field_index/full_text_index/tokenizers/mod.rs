@@ -402,10 +402,11 @@ mod tests {
         let mut tokens = Vec::new();
         MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
-        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens.len(), 4);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("今天")));
         assert_eq!(tokens.get(1), Some(&Cow::Borrowed("是")));
-        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("星期一")));
+        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("星期")));
+        assert_eq!(tokens.get(3), Some(&Cow::Borrowed("一")));
 
         tokens.clear();
 
@@ -414,9 +415,10 @@ mod tests {
         config.stopwords_filter = filter;
         MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
-        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens.len(), 3);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("今天")));
-        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("星期一")));
+        assert_eq!(tokens.get(1), Some(&Cow::Borrowed("星期")));
+        assert_eq!(tokens.get(2), Some(&Cow::Borrowed("一")));
     }
 
     #[test]
