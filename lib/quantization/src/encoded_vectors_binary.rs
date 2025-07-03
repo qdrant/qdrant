@@ -88,7 +88,7 @@ pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
 /// This layout enables efficient batch operations:
 /// - Extract a single TBitsStoreType value from the BQ vector
 /// - Perform N parallel operations with corresponding scalar bits
-/// - Use shift operations to compute the final score: 
+/// - Use shift operations to compute the final score:
 ///   (scalar_1[0] ^ bq_vector[0] + ) << 0 +
 ///   (scalar_1[0] ^ bq_vector[0] + ) << 1 +
 ///   (scalar_1[0] ^ bq_vector[0] + ) << 2 ...
@@ -130,7 +130,7 @@ pub trait BitsStoreType:
     fn xor_popcnt(v1: &[Self], v2: &[Self]) -> usize;
 
     /// Calculate score between BQ encoded vector and `EncodedScalarVector<Self>` query.
-    /// 
+    ///
     /// It calculates sum of XOR popcount between each bit of the `vector` and the corresponding scalar value in the `query`.
     /// XOR between scalar and bit is a XOR for each bit of the scalar value.
     /// See `EncodedScalarVector` docs for more details about the transposition optimization to avoid extracting bits from BQ vectors.
@@ -618,13 +618,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             Encoding::OneAndHalfBits => {
                 // For one and half bits encoding we need to extend the query vector
                 let mut extended_query = query.to_vec();
-                extended_query.extend(query.chunks(2).map(|v| {
-                    if v.len() == 2 {
-                        v[0].max(v[1])
-                    } else {
-                        v[0]
-                    }
-                }));
+                extended_query.extend(
+                    query
+                        .chunks(2)
+                        .map(|v| if v.len() == 2 { v[0].max(v[1]) } else { v[0] }),
+                );
                 Self::_encode_scalar_query_vector(&extended_query, bits_count)
             }
         }
