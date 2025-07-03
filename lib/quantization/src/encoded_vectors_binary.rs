@@ -59,6 +59,42 @@ pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
     encoded_vector: Vec<TBitsStoreType>,
 }
 
+/// Transposed Scalar Encoded Vector
+///
+/// This data structure represents a scalar-encoded vector optimized for efficient scoring
+/// against Binary Quantized (BQ) vectors through bit-level transposition.
+///
+/// STANDARD ENCODING:
+/// A regular scalar vector [float_1, float_2, ..., float_n] is quantized to
+/// [scalar_1, scalar_2, ..., scalar_n], where each scalar_i is a u8 value.
+///
+/// PERFORMANCE ISSUE:
+/// Standard encoding is inefficient for scoring because it requires extracting
+/// individual bits from each BQ vector in the dataset to perform XOR operations
+/// with the scalar vector.
+///
+/// TRANSPOSITION OPTIMIZATION:
+/// To improve scoring efficiency, we reorganize the data using bit-level transposition:
+///
+/// 1. Take the encoded scalar vector [scalar_1, scalar_2, ..., scalar_n]
+/// 2. Divide into batches of size sizeof::<TBitsStoreType>() = N:
+///    [[scalar_1, scalar_2, ..., scalar_N], [scalar_N+1, ...], ...]
+/// 3. Transpose bit positions within each batch:
+///    - Store all first bits: [scalar_1[0], scalar_2[0], ..., scalar_N[0]]
+///    - Store all second bits: [scalar_1[1], scalar_2[1], ..., scalar_N[1]]
+///    - Continue for all bit positions...
+///
+/// SCORING ADVANTAGE:
+/// This layout enables efficient batch operations:
+/// - Extract a single TBitsStoreType value from the BQ vector
+/// - Perform N parallel operations with corresponding scalar bits
+/// - Use shift operations to compute the final score: 
+///   (scalar_1[0] ^ bq_vector[0] + ) << 0 +
+///   (scalar_1[0] ^ bq_vector[0] + ) << 1 +
+///   (scalar_1[0] ^ bq_vector[0] + ) << 2 ...
+///
+/// This eliminates the need to extract individual bits from BQ vectors during scoring.
+/// This idea was taken from http://arxiv.org/pdf/2405.12497, see Figure 2.
 pub struct EncodedScalarVector<TBitsStoreType: BitsStoreType> {
     encoded_vector: Vec<TBitsStoreType>,
 }
@@ -93,7 +129,12 @@ pub trait BitsStoreType:
     /// So it does not affect the resulting number of bits set to 1
     fn xor_popcnt(v1: &[Self], v2: &[Self]) -> usize;
 
-    fn xor_popcnt_scalar(v1: &[Self], v2: &[Self], bits_count: usize) -> usize;
+    /// Calculate score between BQ encoded vector and `EncodedScalarVector<Self>` query.
+    /// 
+    /// It calculates sum of XOR popcount between each bit of the `vector` and the corresponding scalar value in the `query`.
+    /// XOR between scalar and bit is a XOR for each bit of the scalar value.
+    /// See `EncodedScalarVector` docs for more details about the transposition optimization to avoid extracting bits from BQ vectors.
+    fn xor_popcnt_scalar(vector: &[Self], query: &[Self], query_bits_count: usize) -> usize;
 
     /// Estimates how many `StorageType` elements are needed to store `size` bits
     fn get_storage_size(size: usize) -> usize;
@@ -154,12 +195,12 @@ impl BitsStoreType for u8 {
         result
     }
 
-    fn xor_popcnt_scalar(v1: &[Self], v2: &[Self], bits_count: usize) -> usize {
-        debug_assert!(v2.len() >= v1.len() * bits_count);
+    fn xor_popcnt_scalar(vector: &[Self], query: &[Self], query_bits_count: usize) -> usize {
+        debug_assert!(query.len() >= vector.len() * query_bits_count);
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         if std::arch::is_aarch64_feature_detected!("neon") {
-            if bits_count == 8 {
+            if query_bits_count == 8 {
                 unsafe {
                     return impl_xor_popcnt_scalar8_neon_u8(
                         v2.as_ptr().cast::<u8>(),
@@ -167,7 +208,7 @@ impl BitsStoreType for u8 {
                         v1.len() as u32,
                     ) as usize;
                 }
-            } else if bits_count == 4 {
+            } else if query_bits_count == 4 {
                 unsafe {
                     return impl_xor_popcnt_scalar4_neon_u8(
                         v2.as_ptr().cast::<u8>(),
@@ -180,27 +221,27 @@ impl BitsStoreType for u8 {
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if is_x86_feature_detected!("sse4.2") {
-            if bits_count == 8 {
+            if query_bits_count == 8 {
                 unsafe {
                     return impl_xor_popcnt_scalar8_sse_u8(
-                        v2.as_ptr().cast::<u8>(),
-                        v1.as_ptr().cast::<u8>(),
-                        v1.len() as u32,
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
                     ) as usize;
                 }
-            } else if bits_count == 4 {
+            } else if query_bits_count == 4 {
                 unsafe {
                     return impl_xor_popcnt_scalar4_sse_u8(
-                        v2.as_ptr().cast::<u8>(),
-                        v1.as_ptr().cast::<u8>(),
-                        v1.len() as u32,
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
                     ) as usize;
                 }
             }
         }
 
         let mut result = 0;
-        for (&b1, b2_chunk) in v1.iter().zip(v2.chunks_exact(bits_count)) {
+        for (&b1, b2_chunk) in vector.iter().zip(query.chunks_exact(query_bits_count)) {
             for (i, &b2) in b2_chunk.iter().enumerate() {
                 result += (b1 ^ b2).count_ones() << i;
             }
@@ -261,12 +302,12 @@ impl BitsStoreType for u128 {
         result
     }
 
-    fn xor_popcnt_scalar(v1: &[Self], v2: &[Self], bits_count: usize) -> usize {
-        debug_assert!(v2.len() >= v1.len() * bits_count);
+    fn xor_popcnt_scalar(vector: &[Self], query: &[Self], query_bits_count: usize) -> usize {
+        debug_assert!(query.len() >= vector.len() * query_bits_count);
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         if std::arch::is_aarch64_feature_detected!("neon") {
-            if bits_count == 8 {
+            if query_bits_count == 8 {
                 unsafe {
                     return impl_xor_popcnt_scalar8_neon_uint128(
                         v2.as_ptr().cast::<u8>(),
@@ -274,7 +315,7 @@ impl BitsStoreType for u128 {
                         v1.len() as u32,
                     ) as usize;
                 }
-            } else if bits_count == 4 {
+            } else if query_bits_count == 4 {
                 unsafe {
                     return impl_xor_popcnt_scalar4_neon_uint128(
                         v2.as_ptr().cast::<u8>(),
@@ -287,20 +328,20 @@ impl BitsStoreType for u128 {
 
         #[cfg(target_arch = "x86_64")]
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("sse4.2") {
-            if bits_count == 8 {
+            if query_bits_count == 8 {
                 unsafe {
                     return impl_xor_popcnt_scalar8_avx_uint128(
-                        v2.as_ptr().cast::<u8>(),
-                        v1.as_ptr().cast::<u8>(),
-                        v1.len() as u32,
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
                     ) as usize;
                 }
-            } else if bits_count == 4 {
+            } else if query_bits_count == 4 {
                 unsafe {
                     return impl_xor_popcnt_scalar4_avx_uint128(
-                        v2.as_ptr().cast::<u8>(),
-                        v1.as_ptr().cast::<u8>(),
-                        v1.len() as u32,
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
                     ) as usize;
                 }
             }
@@ -308,27 +349,27 @@ impl BitsStoreType for u128 {
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if is_x86_feature_detected!("sse4.2") {
-            if bits_count == 8 {
+            if query_bits_count == 8 {
                 unsafe {
                     return impl_xor_popcnt_scalar8_sse_uint128(
-                        v2.as_ptr().cast::<u8>(),
-                        v1.as_ptr().cast::<u8>(),
-                        v1.len() as u32,
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
                     ) as usize;
                 }
-            } else if bits_count == 4 {
+            } else if query_bits_count == 4 {
                 unsafe {
                     return impl_xor_popcnt_scalar4_sse_uint128(
-                        v2.as_ptr().cast::<u8>(),
-                        v1.as_ptr().cast::<u8>(),
-                        v1.len() as u32,
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
                     ) as usize;
                 }
             }
         }
 
         let mut result = 0;
-        for (&b1, b2_chunk) in v1.iter().zip(v2.chunks_exact(bits_count)) {
+        for (&b1, b2_chunk) in vector.iter().zip(query.chunks_exact(query_bits_count)) {
             for (i, &b2) in b2_chunk.iter().enumerate() {
                 result += (b1 ^ b2).count_ones() << i;
             }
@@ -569,15 +610,17 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         match encoding {
             Encoding::OneBit => Self::_encode_scalar_query_vector(query, bits_count),
             Encoding::TwoBits => {
+                // For two bits encoding we need to extend the query vector
                 let mut extended_query = query.to_vec();
                 extended_query.extend_from_slice(query);
                 Self::_encode_scalar_query_vector(&extended_query, bits_count)
             }
             Encoding::OneAndHalfBits => {
+                // For one and half bits encoding we need to extend the query vector
                 let mut extended_query = query.to_vec();
                 extended_query.extend(query.chunks(2).map(|v| {
                     if v.len() == 2 {
-                        if v[0] > v[1] { v[0] } else { v[1] }
+                        v[0].max(v[1])
                     } else {
                         v[0]
                     }
@@ -644,9 +687,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
     fn calculate_metric(
         &self,
-        v1: &[TBitsStoreType],
-        v2: &[TBitsStoreType],
-        v2_bits_count: usize,
+        vector: &[TBitsStoreType],
+        query: &[TBitsStoreType],
+        query_bits_count: usize,
     ) -> f32 {
         // Dot product in a range [-1; 1] is approximated by NXOR in a range [0; 1]
         // L1 distance in range [-1; 1] (alpha=2) is approximated by alpha*XOR in a range [0; 1]
@@ -665,11 +708,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         // | 1 | 0 | 0    | 1
         // | 1 | 1 | 1    | 0
 
-        let xor_product = if v2_bits_count == 1 {
-            TBitsStoreType::xor_popcnt(v1, v2) as f32
+        let xor_product = if query_bits_count == 1 {
+            TBitsStoreType::xor_popcnt(vector, query) as f32
         } else {
-            let xor_product = TBitsStoreType::xor_popcnt_scalar(v1, v2, v2_bits_count);
-            (xor_product as f32) / (((1 << v2_bits_count) - 1) as f32)
+            let xor_product = TBitsStoreType::xor_popcnt_scalar(vector, query, query_bits_count);
+            (xor_product as f32) / (((1 << query_bits_count) - 1) as f32)
         };
 
         let dim = self.metadata.vector_parameters.dim as f32;
