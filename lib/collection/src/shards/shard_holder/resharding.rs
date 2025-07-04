@@ -258,11 +258,8 @@ impl ShardHolder {
         &mut self,
         resharding_key: ReshardKey,
         force: bool,
-        is_in_progress: bool,
     ) -> CollectionResult<()> {
-        log::warn!(
-            "Aborting resharding {resharding_key} (force: {force}, in progress: {is_in_progress})"
-        );
+        log::warn!("Aborting resharding {resharding_key} (force: {force})");
 
         let ReshardKey {
             uuid: _,
@@ -273,7 +270,7 @@ impl ShardHolder {
         } = resharding_key;
 
         // Cleanup existing shards if resharding down
-        if is_in_progress && direction == ReshardingDirection::Down {
+        if direction == ReshardingDirection::Down {
             for (&id, shard) in self.shards.iter() {
                 // Skip shards that does not belong to resharding shard key
                 if self.shard_id_to_key_mapping.get(&id) != shard_key.as_ref() {
@@ -318,7 +315,7 @@ impl ShardHolder {
         }
 
         // Remove new shard if resharding up
-        if is_in_progress && direction == ReshardingDirection::Up {
+        if direction == ReshardingDirection::Up {
             if let Some(shard) = self.get_shard(shard_id) {
                 // Remove all replicas from shard
                 for (peer_id, replica_state) in shard.peers() {
@@ -359,18 +356,16 @@ impl ShardHolder {
             }
         }
 
-        if is_in_progress {
-            self.resharding_state.write(|state| {
-                debug_assert!(
-                    state
-                        .as_ref()
-                        .is_some_and(|state| state.matches(&resharding_key)),
-                    "resharding {resharding_key} is not in progress:\n{state:#?}"
-                );
+        self.resharding_state.write(|state| {
+            debug_assert!(
+                state
+                    .as_ref()
+                    .is_some_and(|state| state.matches(&resharding_key)),
+                "resharding {resharding_key} is not in progress:\n{state:#?}"
+            );
 
-                state.take();
-            })?;
-        }
+            state.take();
+        })?;
 
         Ok(())
     }
