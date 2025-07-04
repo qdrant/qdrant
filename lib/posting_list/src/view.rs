@@ -192,6 +192,20 @@ impl<'a, V: PostingValue> PostingListView<'a, V> {
         debug_assert!(id >= chunks_slice[0].initial_id.get());
         debug_assert!(self.last_id.is_some_and(|last_id| id <= last_id));
 
+        // Fast-path: check if `id` falls into the first chunk's range
+        let first = &chunks_slice[0];
+        if let Some(second) = chunks_slice.get(1) {
+            let id0 = first.initial_id.get();
+            let id1 = second.initial_id.get();
+
+            if id0 <= id && id < id1 {
+                self.hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(size_of::<PostingChunk<SizedTypeFor<V>>>());
+                return Some(start_chunk);
+            }
+        }
+
         // Measure with complexity of the binary search
         self.hw_counter.payload_index_io_read_counter().incr_delta(
             chunks_slice.len().ilog2() as usize * size_of::<PostingChunk<SizedTypeFor<V>>>(),
