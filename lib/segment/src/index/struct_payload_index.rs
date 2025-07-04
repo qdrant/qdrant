@@ -219,10 +219,10 @@ impl StructPayloadIndex {
                 .collect::<OperationResult<Vec<_>>>()?
         };
 
-        let mut is_loaded = true;
+        let mut rebuild = false;
         for ref mut index in indexes.iter_mut() {
             if !index.load()? {
-                is_loaded = false;
+                rebuild = true;
                 log::debug!("Payload index for field `{field}` was not loaded, triggering rebuild");
                 break;
             }
@@ -236,8 +236,7 @@ impl StructPayloadIndex {
         {
             log::info!("Migrating away from RocksDB indices for field `{field}`");
 
-            // Trigger rebuild
-            is_loaded = false;
+            rebuild = true;
 
             // Change storage type, set skip RocksDB flag and persist, rebuilds index with Gridstore
             match self.storage_type {
@@ -252,10 +251,19 @@ impl StructPayloadIndex {
             }
             self.config.skip_rocksdb.replace(true);
             self.save_config()?;
+
+            // Clean-up all existing indices
+            for index in indexes.drain(..) {
+                index.cleanup().map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to clean up payload index for field `{field}` before rebuild: {err}"
+                    ))
+                })?;
+            }
         }
 
         // If index is not properly loaded, recreate it
-        if !is_loaded {
+        if rebuild {
             log::debug!("Rebuilding payload index for field `{field}`...");
             indexes = self.build_field_indexes(
                 field,
