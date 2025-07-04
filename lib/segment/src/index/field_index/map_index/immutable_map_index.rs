@@ -27,6 +27,7 @@ use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDelet
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::index::field_index::mmap_point_to_values::MmapValue;
+use crate::index::payload_config::StorageType;
 
 pub struct ImmutableMapIndex<N: MapIndexKey + Key + ?Sized> {
     value_to_points: HashMap<N::Owned, ContainerSegment>,
@@ -538,5 +539,15 @@ where
 
     pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         Box::new(self.value_to_points.keys().map(|v| v.borrow()))
+    }
+
+    pub fn storage_type(&self) -> StorageType {
+        match &self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => StorageType::RocksDB,
+            Storage::Mmap(index) => StorageType::Mmap {
+                is_on_disk: index.is_on_disk(),
+            },
+        }
     }
 }

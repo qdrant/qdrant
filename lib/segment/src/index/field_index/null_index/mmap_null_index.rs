@@ -11,6 +11,7 @@ use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
     PrimaryCondition,
 };
+use crate::index::payload_config::IndexMutability;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
@@ -29,6 +30,8 @@ pub struct MmapNullIndex {
     /// If true, then payload field contains null value.
     is_null_slice: DynamicMmapFlags,
     total_point_count: usize,
+    /// `true` if just created.
+    is_loaded: bool,
 }
 
 /// Don't populate null index as it is not essential
@@ -55,7 +58,10 @@ impl MmapNullIndex {
                     "Failed to create null-index directory: {err}, path: {path:?}"
                 ))
             })?;
-            Self::open(path, total_point_count)
+
+            let mut index = Self::open(path, total_point_count)?;
+            index.is_loaded = false;
+            Ok(index)
         }
     }
 
@@ -77,6 +83,7 @@ impl MmapNullIndex {
             has_values_slice,
             is_null_slice,
             total_point_count,
+            is_loaded: true,
         })
     }
 
@@ -96,6 +103,7 @@ impl MmapNullIndex {
                 has_values_slice,
                 is_null_slice,
                 total_point_count,
+                is_loaded: true,
             }))
         } else {
             Ok(None)
@@ -205,6 +213,12 @@ impl MmapNullIndex {
 
         Ok(())
     }
+
+    pub fn get_mutability_type(&self) -> IndexMutability {
+        IndexMutability::Mmap {
+            is_on_disk: self.is_on_disk(),
+        }
+    }
 }
 
 impl PayloadFieldIndex for MmapNullIndex {
@@ -214,7 +228,7 @@ impl PayloadFieldIndex for MmapNullIndex {
 
     fn load(&mut self) -> OperationResult<bool> {
         // Nothing needed
-        Ok(true)
+        Ok(self.is_loaded)
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -228,6 +242,7 @@ impl PayloadFieldIndex for MmapNullIndex {
             has_values_slice,
             is_null_slice,
             total_point_count: _,
+            is_loaded: _,
         } = self;
 
         let is_empty_flusher = has_values_slice.flusher();
@@ -246,6 +261,7 @@ impl PayloadFieldIndex for MmapNullIndex {
             has_values_slice,
             is_null_slice,
             total_point_count: _,
+            is_loaded: _,
         } = self;
 
         let mut files = has_values_slice.files();
