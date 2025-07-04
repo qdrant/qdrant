@@ -155,6 +155,7 @@ impl StructPayloadIndex {
         for ref mut index in indexes.iter_mut() {
             if !index.load()? {
                 is_loaded = false;
+                log::debug!("Payload index for field `{field}` was not loaded, triggering rebuild");
                 break;
             }
         }
@@ -187,7 +188,7 @@ impl StructPayloadIndex {
 
         // If index is not properly loaded, recreate it
         if !is_loaded {
-            log::debug!("Index for `{field}` was not loaded. Building...");
+            log::debug!("Rebuilding payload index for field `{field}`...");
             indexes = self.build_field_indexes(
                 field,
                 payload_schema,
