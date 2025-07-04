@@ -47,14 +47,14 @@ pub async fn mmr_from_points_with_vector(
 ) -> Result<Vec<ScoredPoint>, CollectionError> {
     let (vectors, mut candidates): (Vec<_>, Vec<_>) = points_with_vector
         .into_iter()
-        .sorted_unstable_by_key(|p| p.id)
-        .dedup_by(|a, b| a.id == b.id)
-        .filter_map(|mut p| {
+        .unique_by(|p| p.id)
+        .filter_map(|p| {
             let vector = p
                 .vector
-                .take()
+                .as_ref()
                 // silently ignore points without this named vector
-                .and_then(|v| v.take(&mmr.using))?;
+                .and_then(|v| v.get(&mmr.using))
+                .map(|v| v.to_owned())?;
             Some((vector, p))
         })
         .unzip();
