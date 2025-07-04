@@ -22,6 +22,7 @@ use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDelet
 #[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
+use crate::index::payload_config::StorageType;
 use crate::types::{GeoPoint, RawGeoPoint};
 
 /// Default options for Gridstore storage
@@ -441,6 +442,14 @@ impl MutableGeoMapIndex {
                 &self,
                 geo: GeoHash,
             ) -> impl Iterator<Item = PointOffsetType>;
+        }
+    }
+
+    pub fn storage_type(&self) -> StorageType {
+        match &self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => StorageType::RocksDB,
+            Storage::Gridstore(_) => StorageType::Gridstore,
         }
     }
 }

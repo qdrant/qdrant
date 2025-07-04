@@ -46,6 +46,7 @@ use crate::index::key_encoding::{
     decode_f64_key_ascending, decode_i64_key_ascending, decode_u128_key_ascending,
     encode_f64_key_ascending, encode_i64_key_ascending, encode_u128_key_ascending,
 };
+use crate::index::payload_config::IndexMutability;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchValue,
@@ -577,6 +578,16 @@ where
 
     pub fn mut_inner(&mut self) -> &mut NumericIndexInner<T> {
         &mut self.inner
+    }
+
+    pub fn get_mutability_type(&self) -> IndexMutability {
+        match &self.inner {
+            NumericIndexInner::Mutable(index) => IndexMutability::Mutable(index.storage_type()),
+            NumericIndexInner::Immutable(index) => IndexMutability::Immutable(index.storage_type()),
+            NumericIndexInner::Mmap(index) => IndexMutability::Mmap {
+                is_on_disk: index.is_on_disk(),
+            },
+        }
     }
 
     delegate! {

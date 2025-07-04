@@ -590,7 +590,8 @@ impl SegmentEntry for Segment {
             .into_iter()
             .map(|(key, index_schema)| {
                 let points_count = payload_index.indexed_points(&key);
-                (key, PayloadIndexInfo::new(index_schema, points_count))
+                let index_info = PayloadIndexInfo::new(index_schema, points_count);
+                (key, index_info)
             })
             .collect();
 

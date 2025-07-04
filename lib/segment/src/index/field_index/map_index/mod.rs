@@ -36,6 +36,7 @@ use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
+use crate::index::payload_config::IndexMutability;
 use crate::index::query_estimator::combine_should_estimations;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
@@ -524,6 +525,16 @@ where
             MapIndex::Mmap(index) => index.clear_cache()?,
         }
         Ok(())
+    }
+
+    pub fn get_mutability_type(&self) -> IndexMutability {
+        match self {
+            MapIndex::Mutable(index) => IndexMutability::Mutable(index.storage_type()),
+            MapIndex::Immutable(index) => IndexMutability::Immutable(index.storage_type()),
+            MapIndex::Mmap(index) => IndexMutability::Mmap {
+                is_on_disk: index.is_on_disk(),
+            },
+        }
     }
 }
 
