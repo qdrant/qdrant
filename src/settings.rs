@@ -15,6 +15,8 @@ use crate::common::debugger::DebuggerConfig;
 use crate::common::inference::config::InferenceConfig;
 use crate::tracing;
 
+const MAX_PEER_ID: u64 = (1 << 53) - 1;
+
 const DEFAULT_CONFIG: &str = include_str!("../config/config.yaml");
 
 #[derive(Debug, Deserialize, Validate, Clone)]
@@ -67,7 +69,7 @@ impl ServiceConfig {
 pub struct ClusterConfig {
     pub enabled: bool, // disabled by default
     #[serde(default)]
-    #[validate(range(min = 1, max = 2u64.pow(58) - 1))]
+    #[validate(range(min = 1, max = MAX_PEER_ID))]
     pub default_peer_id: Option<PeerId>,
     #[serde(default = "default_timeout_ms")]
     #[validate(range(min = 1))]
