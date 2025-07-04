@@ -15,9 +15,13 @@ use segment::vector_storage::sparse::volatile_sparse_vector_storage::new_volatil
 use segment::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer};
 use tokio::runtime::Handle;
 
+use crate::common::diagonal_matrix::DiagonalMatrix;
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
+
+/// (Diagonal) matrix of point similarities.
+type SimilarityMatrix = DiagonalMatrix<ScoreType>;
 
 /// Calculate the MMR (Maximal Marginal Relevance) score for a set of points with vectors.
 ///
@@ -184,7 +188,7 @@ fn similarity_matrix(
     volatile_storage: &VectorStorageEnum,
     vectors: Vec<VectorInternal>,
     hw_measurement_acc: HwMeasurementAcc,
-) -> CollectionResult<Vec<Vec<ScoreType>>> {
+) -> CollectionResult<SimilarityMatrix> {
     let num_vectors = vectors.len();
 
     // if we have less than 2 points, we can't build a matrix
@@ -199,7 +203,7 @@ fn similarity_matrix(
     }
 
     // Initialize similarity matrix with zeros
-    let mut similarity_matrix = vec![vec![0.0; num_vectors]; num_vectors];
+    let mut similarity_matrix = SimilarityMatrix::new(num_vectors, 0.0).unwrap();
 
     // Prepare all scorers
     let raw_scorers = vectors
@@ -226,9 +230,7 @@ fn similarity_matrix(
 
             for (&vector_idx, similarity) in upper_offsets.iter().zip(scores) {
                 let j = vector_idx as usize;
-                // Set both (i,j) and (j,i) since similarity is symmetric
-                similarity_matrix[i][j] = similarity;
-                similarity_matrix[j][i] = similarity;
+                similarity_matrix.set(i, j, similarity);
             }
         }
         // Diagonal elements remain 0.0 (self-similarity excluded)
@@ -252,8 +254,7 @@ fn similarity_matrix(
 pub fn maximal_marginal_relevance(
     candidates: Vec<ScoredPoint>,
     query_similarities: Vec<ScoreType>,
-    similarity_matrix: &[Vec<ScoreType>],
-    score_threshold: Option<ScoreType>,
+    similarity_matrix: &SimilarityMatrix,
     lambda: f32,
     limit: usize,
 ) -> Vec<ScoredPoint> {
@@ -296,7 +297,7 @@ pub fn maximal_marginal_relevance(
                 // Find maximum similarity to any already selected point
                 let max_similarity_to_selected = selected_indices
                     .iter()
-                    .map(|selected_idx| similarity_matrix[candidate_idx][*selected_idx])
+                    .map(|selected_idx| *similarity_matrix.get(candidate_idx, *selected_idx))
                     .max_by_key(|&sim| OrderedFloat(sim))
                     .unwrap_or(0.0);
 
