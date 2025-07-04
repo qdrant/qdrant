@@ -96,9 +96,6 @@ pub enum Query {
 
     /// Sample points
     Sample(SampleInternal),
-
-    /// Maximal Marginal Relevance
-    Mmr(MmrInput),
 }
 
 impl Query {
@@ -111,23 +108,16 @@ impl Query {
     ) -> CollectionResult<ScoringQuery> {
         let scoring_query = match self {
             Query::Vector(vector_query) => {
-                let query_enum = vector_query
+                vector_query
                     // Homogenize the input into raw vectors
                     .ids_into_vectors(ids_to_vectors, lookup_vector_name, lookup_collection)?
                     // Turn into QueryEnum
-                    .into_query_enum(using)?;
-                ScoringQuery::Vector(query_enum)
+                    .into_scoring_query(using)?
             }
             Query::Fusion(fusion) => ScoringQuery::Fusion(fusion),
             Query::OrderBy(order_by) => ScoringQuery::OrderBy(order_by),
             Query::Formula(formula) => ScoringQuery::Formula(ParsedFormula::try_from(formula)?),
             Query::Sample(sample) => ScoringQuery::Sample(sample),
-            Query::Mmr(mmr) => ScoringQuery::Mmr(mmr.into_mmr_internal(
-                using,
-                ids_to_vectors,
-                lookup_vector_name,
-                lookup_collection,
-            )?),
         };
 
         Ok(scoring_query)
@@ -152,6 +142,7 @@ impl VectorInputInternal {
 #[derive(Clone, Debug, PartialEq)]
 pub enum VectorQuery<T> {
     Nearest(T),
+    NearestWithMmr(NearestWithMmr<T>),
     RecommendAverageVector(RecoQuery<T>),
     RecommendBestScore(RecoQuery<T>),
     RecommendSumScores(RecoQuery<T>),
@@ -164,6 +155,7 @@ impl<T> VectorQuery<T> {
     pub fn flat_iter(&self) -> Box<dyn Iterator<Item = &T> + '_> {
         match self {
             VectorQuery::Nearest(input) => Box::new(std::iter::once(input)),
+            VectorQuery::NearestWithMmr(query) => Box::new(std::iter::once(&query.nearest)),
             VectorQuery::RecommendAverageVector(query)
             | VectorQuery::RecommendBestScore(query)
             | VectorQuery::RecommendSumScores(query) => Box::new(query.flat_iter()),
@@ -171,6 +163,18 @@ impl<T> VectorQuery<T> {
             VectorQuery::Context(query) => Box::new(query.flat_iter()),
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NearestWithMmr<T> {
+    pub nearest: T,
+    pub mmr: Mmr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Mmr {
+    pub lambda: f32,
+    pub candidate_limit: usize,
 }
 
 impl VectorQuery<VectorInputInternal> {
@@ -279,6 +283,13 @@ impl VectorQuery<VectorInputInternal> {
 
                 Ok(VectorQuery::Context(ContextQuery { pairs }))
             }
+            VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }) => {
+                let nearest = ids_to_vectors
+                    .resolve_reference(lookup_collection, lookup_vector_name, nearest)
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))?;
+
+                Ok(VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }))
+            }
         }
     }
 
@@ -320,7 +331,7 @@ fn vector_not_found_error(vector_name: &VectorName) -> CollectionError {
 }
 
 impl VectorQuery<VectorInternal> {
-    fn into_query_enum(self, using: VectorNameBuf) -> CollectionResult<QueryEnum> {
+    fn into_scoring_query(self, using: VectorNameBuf) -> CollectionResult<ScoringQuery> {
         let query_enum = match self {
             VectorQuery::Nearest(vector) => {
                 QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using))
@@ -349,34 +360,22 @@ impl VectorQuery<VectorInternal> {
                 query: context,
                 using: Some(using),
             }),
+            VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }) => {
+                let Mmr {
+                    lambda,
+                    candidate_limit,
+                } = mmr;
+
+                return Ok(ScoringQuery::Mmr(MmrInternal {
+                    vector: nearest,
+                    using,
+                    lambda,
+                    candidate_limit,
+                }));
+            }
         };
 
-        Ok(query_enum)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct MmrInput {
-    pub vector: VectorInputInternal,
-    pub lambda: f32,
-}
-
-impl MmrInput {
-    fn into_mmr_internal(
-        self,
-        using: VectorNameBuf,
-        ids_to_vectors: &ReferencedVectors,
-        lookup_vector_name: &VectorName,
-        lookup_collection: Option<&String>,
-    ) -> CollectionResult<MmrInternal> {
-        let vector = ids_to_vectors
-            .resolve_reference(lookup_collection, lookup_vector_name, self.vector)
-            .ok_or_else(|| vector_not_found_error(lookup_vector_name))?;
-        Ok(MmrInternal {
-            vector,
-            using,
-            lambda: self.lambda,
-        })
+        Ok(ScoringQuery::Vector(query_enum))
     }
 }
 

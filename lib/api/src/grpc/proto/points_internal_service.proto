@@ -266,7 +266,8 @@ message RawQuery {
 
 message MmrInternal {
     RawVector vector = 1; // Query vector to use for relevance
-    float lambda = 3; // Lambda parameter controlling diversity vs relevance trade-off
+    float lambda = 2; // Lambda parameter controlling diversity vs relevance trade-off
+    uint32 candidate_limit = 3;
 }
 
 message QueryShardPoints {

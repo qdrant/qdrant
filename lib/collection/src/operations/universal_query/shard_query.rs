@@ -75,6 +75,8 @@ pub struct MmrInternal {
     pub using: VectorNameBuf,
     /// Lambda parameter controlling diversity vs relevance trade-off (0.0 = full diversity, 1.0 = full relevance)
     pub lambda: f32,
+    /// Maximum number of candidates to pre-select using nearest neighbors.
+    pub candidate_limit: usize,
 }
 
 /// Same as `Query`, but with the resolved vector references.
@@ -96,6 +98,13 @@ pub enum ScoringQuery {
     Sample(SampleInternal),
 
     /// Maximum Marginal Relevance
+    ///
+    /// This one behaves a little differently than the other scorings, since it is two parts.
+    /// It will create one nearest neighbor search in segment space and then try to resolve MMR algorithm higher up.
+    ///
+    /// E.g. If it is the root query of a request:
+    ///   1. Performs search all the way down to segments.
+    ///   2. MMR gets calculated once results reach collection level.
     Mmr(MmrInternal),
 }
 
@@ -584,7 +593,11 @@ impl ScoringQuery {
                     Status::invalid_argument(format!("failed to parse formula: {e}"))
                 })?,
             ),
-            grpc::query_shard_points::query::Score::Mmr(grpc::MmrInternal { vector, lambda }) => {
+            grpc::query_shard_points::query::Score::Mmr(grpc::MmrInternal {
+                vector,
+                lambda,
+                candidate_limit,
+            }) => {
                 let vector =
                     vector.ok_or_else(|| Status::invalid_argument("missing field: mmr.vector"))?;
                 let vector = VectorInternal::try_from(vector)?;
@@ -592,6 +605,7 @@ impl ScoringQuery {
                     vector,
                     using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
                     lambda,
+                    candidate_limit: candidate_limit as usize,
                 })
             }
         };
@@ -650,10 +664,12 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
                 vector,
                 using: _,
                 lambda,
+                candidate_limit,
             }) => Self {
                 score: Some(Score::Mmr(grpc::MmrInternal {
                     vector: Some(grpc::RawVector::from(vector)),
                     lambda,
+                    candidate_limit: candidate_limit as u32,
                 })),
             },
         }

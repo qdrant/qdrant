@@ -48,11 +48,7 @@ impl Query {
         // Check only applies on `search_allow_exact`
         if strict_mode_config.search_allow_exact == Some(false) {
             match &self {
-                Query::Fusion(_)
-                | Query::OrderBy(_)
-                | Query::Formula(_)
-                | Query::Sample(_)
-                | Query::Mmr(_) => (),
+                Query::Fusion(_) | Query::OrderBy(_) | Query::Formula(_) | Query::Sample(_) => (),
                 Query::Vector(_) => {
                     let config = collection.collection_config.read().await;
 

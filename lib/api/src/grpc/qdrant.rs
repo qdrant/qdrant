@@ -10060,8 +10060,10 @@ pub struct MmrInternal {
     #[prost(message, optional, tag = "1")]
     pub vector: ::core::option::Option<RawVector>,
     /// Lambda parameter controlling diversity vs relevance trade-off
-    #[prost(float, tag = "3")]
+    #[prost(float, tag = "2")]
     pub lambda: f32,
+    #[prost(uint32, tag = "3")]
+    pub candidate_limit: u32,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
