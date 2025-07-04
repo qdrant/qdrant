@@ -339,11 +339,11 @@ impl Validate for super::qdrant::query::Variant {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
             grpc::query::Variant::Nearest(q) => q.validate(),
+            grpc::query::Variant::NearestWithMmr(q) => q.validate(),
             grpc::query::Variant::Recommend(q) => q.validate(),
             grpc::query::Variant::Discover(q) => q.validate(),
             grpc::query::Variant::Context(q) => q.validate(),
             grpc::query::Variant::Formula(q) => q.validate(),
-            grpc::query::Variant::Mmr(q) => q.validate(),
             grpc::query::Variant::Sample(_)
             | grpc::query::Variant::Fusion(_)
             | grpc::query::Variant::OrderBy(_) => Ok(()),

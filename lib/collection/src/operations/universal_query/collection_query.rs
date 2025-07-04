@@ -107,6 +107,7 @@ impl Query {
         lookup_vector_name: &VectorName,
         lookup_collection: Option<&String>,
         using: VectorNameBuf,
+        request_limit: usize,
     ) -> CollectionResult<ScoringQuery> {
         let scoring_query = match self {
             Query::Vector(vector_query) => {
@@ -114,7 +115,7 @@ impl Query {
                     // Homogenize the input into raw vectors
                     .ids_into_vectors(ids_to_vectors, lookup_vector_name, lookup_collection)?
                     // Turn into QueryEnum
-                    .into_scoring_query(using)?
+                    .into_scoring_query(using, request_limit)?
             }
             Query::Fusion(fusion) => ScoringQuery::Fusion(fusion),
             Query::OrderBy(order_by) => ScoringQuery::OrderBy(order_by),
@@ -132,7 +133,6 @@ impl Query {
                 .iter()
                 .map(|x| **x)
                 .collect(),
-            Self::Mmr(mmr_input) => mmr_input.get_referenced_id().iter().map(|x| **x).collect(),
             Self::Fusion(_) | Self::OrderBy(_) | Self::Formula(_) | Self::Sample(_) => Vec::new(),
         }
     }
@@ -187,8 +187,8 @@ pub struct NearestWithMmr<T> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mmr {
-    pub lambda: f32,
-    pub candidate_limit: usize,
+    pub lambda: Option<f32>,
+    pub candidate_limit: Option<usize>,
 }
 
 impl VectorQuery<VectorInputInternal> {
@@ -345,7 +345,11 @@ fn vector_not_found_error(vector_name: &VectorName) -> CollectionError {
 }
 
 impl VectorQuery<VectorInternal> {
-    fn into_scoring_query(self, using: VectorNameBuf) -> CollectionResult<ScoringQuery> {
+    fn into_scoring_query(
+        self,
+        using: VectorNameBuf,
+        request_limit: usize,
+    ) -> CollectionResult<ScoringQuery> {
         let query_enum = match self {
             VectorQuery::Nearest(vector) => {
                 QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using))
@@ -383,17 +387,13 @@ impl VectorQuery<VectorInternal> {
                 return Ok(ScoringQuery::Mmr(MmrInternal {
                     vector: nearest,
                     using,
-                    lambda,
-                    candidate_limit,
+                    lambda: lambda.unwrap_or(DEFAULT_MMR_LAMBDA),
+                    candidate_limit: candidate_limit.unwrap_or(request_limit),
                 }));
             }
         };
 
         Ok(ScoringQuery::Vector(query_enum))
-    }
-
-    pub fn get_referenced_id(&self) -> Option<&PointIdType> {
-        self.vector.as_id()
     }
 }
 
@@ -482,6 +482,7 @@ impl CollectionPrefetch {
                     &lookup_vector_name,
                     lookup_collection.as_ref(),
                     using,
+                    self.limit,
                 )
             })
             .transpose()?;
@@ -606,6 +607,7 @@ impl CollectionQueryRequest {
                     &query_lookup_vector_name,
                     query_lookup_collection.as_ref(),
                     using,
+                    self.limit,
                 )
             })
             .transpose()?;

@@ -98,7 +98,6 @@ fn collect_query(query: &Query, batch: &mut BatchAccum) {
                 }
             }
         }
-        Query::Mmr(mmr) => collect_vector_input(&mmr.mmr.vector, batch),
         Query::OrderBy(_) | Query::Fusion(_) | Query::Formula(_) | Query::Sample(_) => {}
     }
 }
@@ -316,6 +315,7 @@ mod tests {
         let request = QueryGroupsRequestInternal {
             query: Some(QueryInterface::Query(Query::Nearest(NearestQuery {
                 nearest: VectorInput::Document(create_test_document("test")),
+                mmr: None,
             }))),
             prefetch: Some(vec![Prefetch {
                 query: Some(QueryInterface::Query(Query::Discover(DiscoverQuery {

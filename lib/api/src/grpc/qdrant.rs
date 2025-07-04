@@ -5573,16 +5573,27 @@ pub struct DecayParamsExpression {
     #[prost(float, optional, tag = "4")]
     pub midpoint: ::core::option::Option<f32>,
 }
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NearestInputWithMmr {
+    /// The vector to search for nearest neighbors.
+    #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
+    pub nearest: ::core::option::Option<VectorInput>,
+    /// Perform MMR (Maximal Marginal Relevance) reranking after search,
+    /// using the same vector in this query to calculate relevance.
+    #[prost(message, optional, tag = "2")]
+    #[validate(nested)]
+    pub mmr: ::core::option::Option<Mmr>,
+}
 /// Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MmrInput {
-    /// The query vector to determine relevance of each candidate point.
-    #[prost(message, optional, tag = "1")]
-    #[validate(nested)]
-    pub vector: ::core::option::Option<VectorInput>,
+pub struct Mmr {
     /// / The lambda parameter for the MMR algorithm.
     /// / Determines the balance between diversity and relevance.
     /// /
@@ -5590,6 +5601,12 @@ pub struct MmrInput {
     #[prost(float, optional, tag = "2")]
     #[validate(range(min = 0.0, max = 1.0))]
     pub lambda: ::core::option::Option<f32>,
+    /// The maximum number of candidates to consider for re-ranking.
+    ///
+    /// If not specified, the `limit` value is used.
+    #[prost(uint32, optional, tag = "3")]
+    #[validate(range(max = 16_384))]
+    pub candidate_limit: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -5630,9 +5647,9 @@ pub mod query {
         /// Score boosting via an arbitrary formula
         #[prost(message, tag = "8")]
         Formula(super::Formula),
-        /// Re-rank based on the Maximal Marginal Relevance algorithm.
+        /// Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm.
         #[prost(message, tag = "9")]
-        Mmr(super::MmrInput),
+        NearestWithMmr(super::NearestInputWithMmr),
     }
 }
 #[derive(validator::Validate)]

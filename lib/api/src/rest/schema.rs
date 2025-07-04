@@ -470,16 +470,18 @@ pub enum Query {
 
     /// Sample points from the collection, non-deterministically.
     Sample(SampleQuery),
-
-    /// Maximum Marginal Relevance with respect to the provided vector
-    Mmr(MmrQuery),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct NearestQuery {
+    /// The vector to search for nearest neighbors.
     #[validate(nested)]
     pub nearest: VectorInput,
+
+    /// Perform MMR (Maximal Marginal Relevance) reranking after search,
+    /// using the same vector in this query to calculate relevance.
+    pub mmr: Option<Mmr>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -532,21 +534,10 @@ pub struct SampleQuery {
     pub sample: Sample,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
-pub struct MmrQuery {
-    #[validate(nested)]
-    pub mmr: MmrInput,
-}
-
 /// Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
-pub struct MmrInput {
-    /// The query vector to determine relevance of each candidate point.
-    #[validate(nested)]
-    pub vector: VectorInput,
-
+pub struct Mmr {
     /// The lambda parameter for the MMR algorithm.
     /// Determines the balance between diversity and relevance.
     ///
@@ -556,6 +547,12 @@ pub struct MmrInput {
     /// Default value is 0.5.
     #[validate(range(min = 0.0, max = 1.0))]
     pub lambda: Option<f32>,
+
+    /// The maximum number of candidates to consider for re-ranking.
+    ///
+    /// If not specified, the `limit` value is used.
+    #[validate(range(max = 16_384))] // artificial maximum, to avoid too expensive query.
+    pub candidate_limit: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
