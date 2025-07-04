@@ -9,6 +9,7 @@ use common::types::PointOffsetType;
 use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndex;
+use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerSS;
@@ -70,7 +71,11 @@ impl PlainPayloadIndex {
 
 impl PayloadIndex for PlainPayloadIndex {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.config.indexed_fields.clone()
+        self.config
+            .indexed_fields
+            .iter()
+            .map(|i| (i.0.clone(), i.1.schema.clone()))
+            .collect()
     }
 
     fn build_index(
@@ -86,15 +91,20 @@ impl PayloadIndex for PlainPayloadIndex {
         &mut self,
         field: PayloadKeyType,
         payload_schema: PayloadFieldSchema,
-        _field_index: Vec<FieldIndex>,
+        field_index: Vec<FieldIndex>,
     ) -> OperationResult<()> {
-        if let Some(prev_schema) = self
-            .config
-            .indexed_fields
-            .insert(field, payload_schema.clone())
-        {
+        if let Some(prev_schema) = self.config.indexed_fields.insert(
+            field,
+            PayloadFieldSchemaWithIndexType {
+                schema: payload_schema.clone(),
+                index_types: field_index
+                    .iter()
+                    .map(|i| i.get_full_index_type())
+                    .collect(),
+            },
+        ) {
             // the field is already present with the same schema, no need to save the config
-            if prev_schema == payload_schema {
+            if prev_schema.schema == payload_schema {
                 return Ok(());
             }
         }

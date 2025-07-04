@@ -25,6 +25,7 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::index::field_index::mmap_point_to_values::MmapValue;
+use crate::index::payload_config::StorageType;
 
 pub struct ImmutableNumericIndex<T: Encodable + Numericable + MmapValue + Default> {
     map: NumericKeySortedVec<T>,
@@ -458,6 +459,16 @@ where
     ) -> Option<Point<T>> {
         map.values_range(Bound::Excluded(point.clone()), Bound::Unbounded)
             .next()
+    }
+
+    pub fn storage_type(&self) -> StorageType {
+        match &self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => StorageType::RocksDB,
+            Storage::Mmap(index) => StorageType::Mmap {
+                is_on_disk: index.is_on_disk(),
+            },
+        }
     }
 }
 

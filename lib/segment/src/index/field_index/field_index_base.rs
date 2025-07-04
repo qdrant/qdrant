@@ -26,6 +26,7 @@ use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::null_index::mmap_null_index::{MmapNullIndex, MmapNullIndexBuilder};
 use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::payload_config::FullPayloadIndexType;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchPhrase,
@@ -473,6 +474,44 @@ impl FieldIndex {
             FieldIndex::UuidIndex(index) => index.clear_cache(),
             FieldIndex::UuidMapIndex(index) => index.clear_cache(),
             FieldIndex::NullIndex(index) => index.clear_cache(),
+        }
+    }
+
+    pub fn get_full_index_type(&self) -> FullPayloadIndexType {
+        match self {
+            FieldIndex::IntIndex(index) => {
+                FullPayloadIndexType::IntIndex(index.get_mutability_type())
+            }
+            FieldIndex::DatetimeIndex(index) => {
+                FullPayloadIndexType::DatetimeIndex(index.get_mutability_type())
+            }
+            FieldIndex::IntMapIndex(index) => {
+                FullPayloadIndexType::IntMapIndex(index.get_mutability_type())
+            }
+            FieldIndex::KeywordIndex(index) => {
+                FullPayloadIndexType::KeywordIndex(index.get_mutability_type())
+            }
+            FieldIndex::FloatIndex(index) => {
+                FullPayloadIndexType::FloatIndex(index.get_mutability_type())
+            }
+            FieldIndex::GeoIndex(index) => {
+                FullPayloadIndexType::GeoIndex(index.get_mutability_type())
+            }
+            FieldIndex::FullTextIndex(index) => {
+                FullPayloadIndexType::FullTextIndex(index.get_mutability_type())
+            }
+            FieldIndex::BoolIndex(index) => {
+                FullPayloadIndexType::BoolIndex(index.get_mutability_type())
+            }
+            FieldIndex::UuidIndex(index) => {
+                FullPayloadIndexType::UuidIndex(index.get_mutability_type())
+            }
+            FieldIndex::UuidMapIndex(index) => {
+                FullPayloadIndexType::UuidMapIndex(index.get_mutability_type())
+            }
+            FieldIndex::NullIndex(index) => {
+                FullPayloadIndexType::NullIndex(index.get_mutability_type())
+            }
         }
     }
 }

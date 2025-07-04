@@ -16,6 +16,7 @@ use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDelet
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
+use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
 #[derive(Copy, Clone, Debug)]
@@ -484,6 +485,16 @@ impl ImmutableGeoMapIndex {
                     );
                 };
             }
+        }
+    }
+
+    pub fn storage_type(&self) -> StorageType {
+        match &self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => StorageType::RocksDB,
+            Storage::Mmap(index) => StorageType::Mmap {
+                is_on_disk: index.is_on_disk(),
+            },
         }
     }
 }
