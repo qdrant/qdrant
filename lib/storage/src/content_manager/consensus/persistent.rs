@@ -102,10 +102,13 @@ impl Persistent {
     }
 
     /// Returns state and if it was initialized for the first time
+    ///
+    /// `default_peer_id` is used only when raft state is not found.
     pub fn load_or_init(
         storage_path: impl AsRef<Path>,
         first_peer: bool,
         reinit: bool,
+        default_peer_id: Option<PeerId>,
     ) -> Result<Self, StorageError> {
         create_dir_all(storage_path.as_ref())?;
         let path_legacy = storage_path.as_ref().join(STATE_FILE_NAME_CBOR);
@@ -122,7 +125,10 @@ impl Persistent {
             state
         } else {
             log::info!("Initializing new raft state at {}", path_json.display());
-            Self::init(path_json.clone(), first_peer, None)?
+            if let Some(default_peer_id) = default_peer_id {
+                log::debug!("Using default peer ID: {default_peer_id}");
+            };
+            Self::init(path_json.clone(), first_peer, default_peer_id)?
         };
 
         let state = if reinit {
@@ -318,11 +324,12 @@ impl Persistent {
     fn init(
         path: PathBuf,
         first_peer: bool,
-        this_peer_id: Option<PeerId>,
+        default_peer_id: Option<PeerId>,
     ) -> Result<Self, StorageError> {
         // Do not generate too big peer ID, to avoid problems with serialization
         // (especially in json format)
-        let this_peer_id = this_peer_id.unwrap_or_else(|| rand::random::<PeerId>() % (1 << 53));
+        let this_peer_id =
+            default_peer_id.unwrap_or_else(|| (rand::random::<PeerId>() % (1 << 53) + 1));
         let voters = if first_peer {
             vec![this_peer_id]
         } else {
