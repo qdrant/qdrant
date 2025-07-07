@@ -14,7 +14,8 @@ use collection::operations::types::{
     PointRequestInternal, RecommendExample, RecommendRequestInternal, ScrollRequestInternal,
 };
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryRequest, Query, VectorInputInternal, VectorQuery,
+    CollectionPrefetch, CollectionQueryRequest, NearestWithMmr, Query, VectorInputInternal,
+    VectorQuery,
 };
 use collection::operations::vector_ops::VectorOperations;
 use segment::data_types::facets::FacetParams;
@@ -149,6 +150,9 @@ impl CollectionAccessView<'_> {
                 for vector_input in context.flat_iter() {
                     self.check_vector_input(vector_input)?
                 }
+            }
+            VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr: _ }) => {
+                self.check_vector_input(nearest)?
             }
         };
 

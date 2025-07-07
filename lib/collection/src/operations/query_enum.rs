@@ -66,6 +66,7 @@ impl QueryEnum {
     }
 }
 
+/// Every kind of vector query that can be performed on segment level.
 #[derive(Debug, Clone, PartialEq)]
 pub enum QueryEnum {
     Nearest(NamedQuery<VectorInternal>),

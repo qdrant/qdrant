@@ -383,6 +383,18 @@ impl LocalShard {
                     })
                 }
             },
+            ScoringQuery::Mmr(mmr) => {
+                self.mmr_rescore(
+                    sources,
+                    mmr,
+                    score_threshold,
+                    limit,
+                    search_runtime_handle,
+                    timeout,
+                    hw_counter_acc,
+                )
+                .await
+            }
         }
     }
 
@@ -414,7 +426,6 @@ impl LocalShard {
 
     /// Maximum Marginal Relevance rescoring
     #[expect(clippy::too_many_arguments)]
-    #[expect(dead_code)] // todo: remove
     async fn mmr_rescore(
         &self,
         sources: Vec<Vec<ScoredPoint>>,

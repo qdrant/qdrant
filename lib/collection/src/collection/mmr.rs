@@ -509,6 +509,7 @@ mod tests {
             vector: vec![1.0, 0.0].into(),
             using: VectorNameBuf::from(""),
             lambda,
+            candidate_limit: 100,
         };
 
         let result = mmr_from_points_with_vector(
@@ -552,6 +553,7 @@ mod tests {
             vector: vec![1.0, 0.0].into(),
             using: VectorNameBuf::from(""),
             lambda: 0.5,
+            candidate_limit: 100,
         };
 
         let result = mmr_from_points_with_vector(
@@ -609,6 +611,7 @@ mod tests {
             vector: vec![1.0, 0.0, 0.0].into(),
             using: VectorNameBuf::from("custom"),
             lambda: 0.5,
+            candidate_limit: 100,
         };
 
         let result = mmr_from_points_with_vector(
@@ -649,6 +652,7 @@ mod tests {
             vector: vec![1.0, 0.0, 0.0].into(),
             using: VectorNameBuf::from(""),
             lambda: 0.5,
+            candidate_limit: 100,
         };
 
         let result = mmr_from_points_with_vector(
@@ -687,6 +691,7 @@ mod tests {
             vector: vec![1.0, 0.0, 0.0].into(),
             using: VectorNameBuf::from(""),
             lambda: 0.5,
+            candidate_limit: 100,
         };
 
         // Test with all distance metrics for dense vectors
@@ -749,6 +754,7 @@ mod tests {
                 .into(),
             using: VectorNameBuf::from(sparse_vector_name),
             lambda: 0.5,
+            candidate_limit: 100,
         };
 
         let sparse_result = mmr_from_points_with_vector(
@@ -795,6 +801,7 @@ mod tests {
             vector: MultiDenseVectorInternal::new(vec![1.0, 0.0, 0.0, 1.0], 2).into(),
             using: VectorNameBuf::from(multi_vector_name),
             lambda: 0.5,
+            candidate_limit: 100,
         };
 
         for distance in Distance::iter() {
