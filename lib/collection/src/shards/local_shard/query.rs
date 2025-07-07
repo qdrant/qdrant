@@ -1,6 +1,6 @@
 use std::mem;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -14,6 +14,7 @@ use tokio::runtime::Handle;
 use tokio::time::error::Elapsed;
 
 use super::LocalShard;
+use crate::collection::mmr::mmr_from_points_with_vector;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
@@ -23,7 +24,7 @@ use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, RescoreParams, RootPlan, Source,
 };
 use crate::operations::universal_query::shard_query::{
-    FusionInternal, SampleInternal, ScoringQuery, ShardQueryResponse,
+    FusionInternal, MmrInternal, SampleInternal, ScoringQuery, ShardQueryResponse,
 };
 
 pub enum FetchedSource {
@@ -409,6 +410,59 @@ impl LocalShard {
         };
 
         Ok(top_fused)
+    }
+
+    /// Maximum Marginal Relevance rescoring
+    #[expect(clippy::too_many_arguments)]
+    #[expect(dead_code)] // todo: remove
+    async fn mmr_rescore(
+        &self,
+        sources: Vec<Vec<ScoredPoint>>,
+        mmr: MmrInternal,
+        score_threshold: Option<f32>,
+        limit: usize,
+        search_runtime_handle: &Handle,
+        timeout: Duration,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        let start = Instant::now();
+
+        let points_with_vector = self
+            .fill_with_payload_or_vectors(
+                sources,
+                false.into(),
+                WithVector::from(mmr.using.clone()),
+                timeout,
+                hw_measurement_acc.clone(),
+            )
+            .await?
+            .into_iter()
+            .flatten();
+
+        let timeout = timeout.saturating_sub(start.elapsed());
+
+        let collection_params = &self.collection_config.read().await.params;
+
+        // Even if we have fewer points than requested, still calculate MMR.
+        let mut top_mmr = mmr_from_points_with_vector(
+            collection_params,
+            points_with_vector,
+            mmr,
+            limit,
+            search_runtime_handle,
+            timeout,
+            hw_measurement_acc,
+        )
+        .await?;
+
+        // Handle score threshold
+        if let Some(score_threshold) = score_threshold {
+            if let Some(truncate_len) = top_mmr.iter().position(|p| p.score < score_threshold) {
+                top_mmr.truncate(truncate_len);
+            }
+        }
+
+        Ok(top_mmr)
     }
 }
 

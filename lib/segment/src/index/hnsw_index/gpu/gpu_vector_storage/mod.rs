@@ -345,7 +345,6 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseSimpleHalf(vector_storage) => {
                 Self::new_dense_f16(device, vector_storage, stopped)
             }
-            #[cfg(test)]
             VectorStorageEnum::DenseVolatile(vector_storage) => {
                 Self::new_dense_f32(device, vector_storage, force_half_precision, stopped)
             }
@@ -397,7 +396,6 @@ impl GpuVectorStorage {
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::from(
                 gpu::GpuError::NotSupported("Sparse vectors are not supported on GPU".to_string()),
             )),
-            #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => Err(OperationError::from(
                 gpu::GpuError::NotSupported("Sparse vectors are not supported on GPU".to_string()),
             )),
@@ -419,7 +417,6 @@ impl GpuVectorStorage {
             VectorStorageEnum::MultiDenseSimpleHalf(vector_storage) => {
                 Self::new_multi_f16(device, vector_storage, stopped)
             }
-            #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(vector_storage) => Self::new_multi_f32(
                 device.clone(),
                 vector_storage,

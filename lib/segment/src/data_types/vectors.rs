@@ -520,6 +520,18 @@ impl VectorStructInternal {
             VectorStructInternal::Named(v) => v.get(name).map(VectorRef::from),
         }
     }
+
+    pub fn take(self, name: &VectorName) -> Option<VectorInternal> {
+        match self {
+            VectorStructInternal::Single(v) => {
+                (name == DEFAULT_VECTOR_NAME).then_some(VectorInternal::Dense(v))
+            }
+            VectorStructInternal::MultiDense(v) => {
+                (name == DEFAULT_VECTOR_NAME).then_some(VectorInternal::MultiDense(v))
+            }
+            VectorStructInternal::Named(mut v) => v.remove(name),
+        }
+    }
 }
 
 /// Dense vector data with name
