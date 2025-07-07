@@ -5,12 +5,15 @@ use std::time::{Duration, Instant};
 use api::rest::models::HardwareUsage;
 use collection::config::ShardingMethod;
 use collection::operations::verification::VerificationPass;
+use collection::shards::replica_set::ReplicaState;
 use common::counter::hardware_accumulator::HwSharedDrain;
 use common::defaults::CONSENSUS_META_OP_WAIT;
+use futures::StreamExt as _;
+use futures::stream::FuturesUnordered;
 
 use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::rbac::Access;
+use crate::rbac::{Access, CollectionMultipass};
 use crate::{
     ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
     TableOfContent,
@@ -175,6 +178,15 @@ impl Dispatcher {
                 | CollectionMetaOperations::Nop { .. } => false,
             };
 
+            let create_shard_key = match &op {
+                CollectionMetaOperations::CreateShardKey(op) => {
+                    let collection_name = op.collection_name.clone();
+                    let shard_key = op.shard_key.clone();
+                    Some((collection_name, shard_key))
+                }
+                _ => None,
+            };
+
             let res = state
                 .propose_consensus_op_with_await(
                     ConsensusOperations::CollectionMeta(Box::new(op)),
@@ -192,6 +204,42 @@ impl Dispatcher {
                     Err(err) => log::warn!("Awaiting for expected operations timed out: {err}"),
                 }
             }
+
+            if let Some((collection_name, shard_key)) = create_shard_key {
+                let mut wait_for_active = FuturesUnordered::new();
+
+                {
+                    let shard_holder = self
+                        .toc
+                        .get_collection(&CollectionMultipass.issue_pass(&collection_name))
+                        .await?
+                        .shards_holder()
+                        .read_owned()
+                        .await;
+
+                    for replica_set in shard_holder.all_shards() {
+                        if replica_set.shard_key() != Some(&shard_key) {
+                            continue;
+                        }
+
+                        for (peer_id, replica_state) in replica_set.peers() {
+                            if replica_state == ReplicaState::Active {
+                                continue;
+                            }
+
+                            wait_for_active.push(replica_set.wait_for_state(
+                                peer_id,
+                                ReplicaState::Active,
+                                Duration::from_secs(10),
+                            ));
+                        }
+                    }
+                }
+
+                while let Some(result) = wait_for_active.next().await {
+                    let _ = result?;
+                }
+            };
 
             // On some operations, synchronize all nodes to ensure all are ready for point operations
             if do_sync_nodes {
