@@ -237,7 +237,7 @@ impl Dispatcher {
                 }
 
                 while let Some(result) = wait_for_active.next().await {
-                    let _ = result?;
+                    result?;
                 }
             };
 
