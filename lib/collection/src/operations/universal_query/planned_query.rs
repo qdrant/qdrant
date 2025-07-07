@@ -84,6 +84,7 @@ impl PlannedQuery {
         Self::default()
     }
 
+    // ToDo: This function needs serious simplification: split and refactor
     pub fn add(&mut self, request: ShardQueryRequest) -> CollectionResult<()> {
         let depth = request.prefetches_depth();
         let ShardQueryRequest {

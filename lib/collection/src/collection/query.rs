@@ -406,7 +406,10 @@ impl Collection {
 
                 // handle score threshold
                 if let Some(&score_threshold) = score_threshold.as_ref() {
-                    mmr_result.into_iter().filter(|p| p.score >= score_threshold).collect()
+                    mmr_result
+                        .into_iter()
+                        .filter(|p| p.score >= score_threshold)
+                        .collect()
                 } else {
                     mmr_result
                 }
