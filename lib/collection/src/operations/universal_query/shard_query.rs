@@ -163,8 +163,8 @@ impl ScoringQuery {
                 ScoringQuery::OrderBy(order_by) => Some(Order::from(order_by.direction())),
                 // Random sample does not require ordering
                 ScoringQuery::Sample(SampleInternal::Random) => None,
-                // MMR returns results in descending order (higher scores are better)
-                ScoringQuery::Mmr(_) => Some(Order::LargeBetter),
+                // MMR cannot be reordered
+                ScoringQuery::Mmr(_) => None,
             },
             None => {
                 // Order by ID
