@@ -11551,6 +11551,11 @@
             "description": "Whether to actively migrate RocksDB based payload storages into a new format.",
             "default": false,
             "type": "boolean"
+          },
+          "migrate_rocksdb_payload_indices": {
+            "description": "Migrate away from RocksDB based payload indices.\n\nTriggers a payload index rebuild if RocksDB is used.",
+            "default": false,
+            "type": "boolean"
           }
         }
       },
