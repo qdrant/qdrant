@@ -521,19 +521,7 @@ impl VectorStructInternal {
         }
     }
 
-    pub fn take(self, name: &VectorName) -> Option<VectorInternal> {
-        match self {
-            VectorStructInternal::Single(v) => {
-                (name == DEFAULT_VECTOR_NAME).then_some(VectorInternal::Dense(v))
-            }
-            VectorStructInternal::MultiDense(v) => {
-                (name == DEFAULT_VECTOR_NAME).then_some(VectorInternal::MultiDense(v))
-            }
-            VectorStructInternal::Named(mut v) => v.remove(name),
-        }
-    }
-
-    /// Takes a vector by name, if it was the only one, leaves a None in `from`
+    /// Takes a vector by name. If it was the only one, leaves a None in `from`
     pub fn take_opt(from: &mut Option<Self>, name: &VectorName) -> Option<VectorInternal> {
         from.take().and_then(|v| match v {
             VectorStructInternal::Single(v) => {
