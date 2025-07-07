@@ -73,7 +73,8 @@ impl Segment {
                 // aka. read from facet index
                 //
                 // This is more similar to a full-scan, but we won't be hashing so many times.
-                context = payload_index.struct_filtered_context(filter, hw_counter);
+                context =
+                    payload_index.struct_filtered_context(filter, Box::new(|_| false), hw_counter);
 
                 let iter = facet_index
                     .iter_values_map(hw_counter)

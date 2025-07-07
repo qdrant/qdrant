@@ -298,12 +298,14 @@ impl StructPayloadIndex {
     pub fn struct_filtered_context<'a>(
         &'a self,
         filter: &'a Filter,
+        exclude_must_condition: Box<dyn Fn(&'a FieldCondition) -> bool + 'a>,
         hw_counter: &HardwareCounterCell,
     ) -> StructFilterContext<'a> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 
         let (optimized_filter, _) = self.optimize_filter(
             filter,
+            &*(exclude_must_condition),
             payload_provider,
             self.available_point_count(),
             hw_counter,
@@ -425,7 +427,8 @@ impl StructPayloadIndex {
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = id_tracker.iter_ids();
-            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
+            let struct_filtered_context =
+                self.struct_filtered_context(filter, Box::new(|_| false), hw_counter);
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
                 full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
@@ -454,8 +457,13 @@ impl StructPayloadIndex {
                         .filter(move |&id| !visited_list.check_and_update_visited(id));
                     EitherVariant::B(iter)
                 } else {
-                    // Some conditions are primary clauses, some are not
-                    let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
+                    // Some conditions are primary clauses, some are not.
+                    // Filter out primary conditions from filter as they are already handled
+                    let struct_filtered_context = self.struct_filtered_context(
+                        filter,
+                        Box::new(move |c| query_cardinality.has_primary_condition(c)),
+                        hw_counter,
+                    );
                     let iter = joined_primary_iterator.filter(move |&id| {
                         !visited_list.check_and_update_visited(id)
                             && struct_filtered_context.check(id)
@@ -466,7 +474,8 @@ impl StructPayloadIndex {
 
             // We can't use primary conditions, so we fall back to iterating over all ids
             // and applying full filter.
-            let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
+            let struct_filtered_context =
+                self.struct_filtered_context(filter, Box::new(|_| false), hw_counter);
 
             let iter = id_tracker
                 .iter_ids()
@@ -714,7 +723,7 @@ impl PayloadIndex for StructPayloadIndex {
         filter: &'a Filter,
         hw_counter: &HardwareCounterCell,
     ) -> Box<dyn FilterContext + 'a> {
-        Box::new(self.struct_filtered_context(filter, hw_counter))
+        Box::new(self.struct_filtered_context(filter, Box::new(|_| false), hw_counter))
     }
 
     fn payload_blocks(

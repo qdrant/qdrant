@@ -84,4 +84,17 @@ impl CardinalityEstimation {
     pub const fn equals_min_exp_max(&self, other: &Self) -> bool {
         self.min == other.min && self.exp == other.exp && self.max == other.max
     }
+
+    // TODO input should be a Condition
+    pub fn has_primary_condition(&self, condition: &FieldCondition) -> bool {
+        self.primary_clauses
+            .iter()
+            .any(|primary_condition| match primary_condition {
+                PrimaryCondition::Condition(field_condition) => {
+                    field_condition.as_ref() == condition
+                }
+                PrimaryCondition::Ids(_) => false,
+                PrimaryCondition::HasVector(_) => false,
+            })
+    }
 }

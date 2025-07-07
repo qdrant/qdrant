@@ -16,7 +16,7 @@ use crate::index::query_optimization::optimized_filter::{OptimizedCondition, che
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
-use crate::types::{DateTimePayloadType, GeoPoint};
+use crate::types::{DateTimePayloadType, FieldCondition, GeoPoint};
 
 const DEFAULT_SCORE: PreciseScore = 0.0;
 const DEFAULT_DECAY_TARGET: PreciseScore = 0.0;
@@ -78,8 +78,15 @@ impl StructPayloadIndex {
 
         let payload_provider = PayloadProvider::new(self.payload.clone());
         let total = self.available_point_count();
+        let exclude_condition_box: Box<dyn Fn(&FieldCondition) -> bool> = Box::new(|_| false);
         let condition_checkers = self
-            .convert_conditions(conditions, payload_provider, total, hw_counter)
+            .convert_conditions(
+                conditions,
+                &exclude_condition_box,
+                payload_provider,
+                total,
+                hw_counter,
+            )
             .into_iter()
             .map(|(checker, _estimation)| checker)
             .collect();
