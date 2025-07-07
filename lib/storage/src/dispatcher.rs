@@ -181,7 +181,7 @@ impl Dispatcher {
             };
 
             // During creation of a shard key, we must ensure that all replicas are ready to accept
-            // write requests, so the client-side script can relly on the fact that the
+            // write requests, so the client-side script can rely on the fact that the
             // shard creation request is complete.
             //
             // For this we explicitly wait for validation this, we do following checks:
