@@ -549,8 +549,9 @@ impl ShardReplicaSet {
             if status {
                 Ok(())
             } else {
-                Err(CollectionError::service_error(
-                    "Failed to wait for replica set state, timed out",
+                Err(CollectionError::timeout(
+                    timeout.as_secs() as usize,
+                    "wait for replica set state",
                 ))
             }
         }

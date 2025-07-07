@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use api::rest::models::HardwareUsage;
+use collection::common::fetch_vectors::CollectionName;
 use collection::config::ShardingMethod;
 use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::ReplicaState;
@@ -10,6 +11,7 @@ use common::counter::hardware_accumulator::HwSharedDrain;
 use common::defaults::CONSENSUS_META_OP_WAIT;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
+use segment::types::ShardKey;
 
 use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
@@ -178,15 +180,28 @@ impl Dispatcher {
                 | CollectionMetaOperations::Nop { .. } => false,
             };
 
+            // During creation of a shard key, we must ensure that all replicas are ready to accept
+            // write requests, so the client-side script can relly on the fact that the
+            // shard creation request is complete.
+            //
+            // For this we explicitly wait for validation this, we do following checks:
+            //
+            // 1. Wait for consensus to accept shard create operation on current machine.
+            //    ( here newly created shards should start to report state change from `Inactive` to `Active` )
+            // 2. Wait for all local shards to become active.
+            //    ( At this stage we are sure, that all consensus operations are created, but might not be applied everywhere )
+            // 3. Wait for all remote peers to have at least the same state as the current peer.
+            //    ( So we are sure, that all remote peers have also switched to `Active` state )
             let create_shard_key = match &op {
                 CollectionMetaOperations::CreateShardKey(op) => {
-                    let collection_name = op.collection_name.clone();
+                    let collection_name: CollectionName = op.collection_name.clone();
                     let shard_key = op.shard_key.clone();
                     Some((collection_name, shard_key))
                 }
                 _ => None,
             };
 
+            // Send operation to consensus and wait for it to be applied locally
             let res = state
                 .propose_consensus_op_with_await(
                     ConsensusOperations::CollectionMeta(Box::new(op)),
@@ -205,40 +220,12 @@ impl Dispatcher {
                 }
             }
 
+            // Wait for shards activation
             if let Some((collection_name, shard_key)) = create_shard_key {
-                let mut wait_for_active = FuturesUnordered::new();
-
-                {
-                    let shard_holder = self
-                        .toc
-                        .get_collection(&CollectionMultipass.issue_pass(&collection_name))
-                        .await?
-                        .shards_holder()
-                        .read_owned()
-                        .await;
-
-                    for replica_set in shard_holder.all_shards() {
-                        if replica_set.shard_key() != Some(&shard_key) {
-                            continue;
-                        }
-
-                        for (peer_id, replica_state) in replica_set.peers() {
-                            if replica_state == ReplicaState::Active {
-                                continue;
-                            }
-
-                            wait_for_active.push(replica_set.wait_for_state(
-                                peer_id,
-                                ReplicaState::Active,
-                                Duration::from_secs(10),
-                            ));
-                        }
-                    }
-                }
-
-                while let Some(result) = wait_for_active.next().await {
-                    result?;
-                }
+                let remaining_timeout =
+                    wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
+                self.wait_for_shard_key_activation(collection_name, shard_key, remaining_timeout)
+                    .await?;
             };
 
             // On some operations, synchronize all nodes to ensure all are ready for point operations
@@ -291,6 +278,52 @@ impl Dispatcher {
         } else {
             Ok(())
         }
+    }
+
+    /// Waits for all shards of a specific shard key to become active.
+    pub async fn wait_for_shard_key_activation(
+        &self,
+        collection_name: CollectionName,
+        shard_key: ShardKey,
+        timeout: Option<Duration>,
+    ) -> Result<(), StorageError> {
+        let timeout = timeout.unwrap_or(CONSENSUS_META_OP_WAIT);
+
+        let mut wait_for_active = FuturesUnordered::new();
+
+        {
+            let shard_holder = self
+                .toc
+                .get_collection(&CollectionMultipass.issue_pass(&collection_name))
+                .await?
+                .shards_holder()
+                .read_owned()
+                .await;
+
+            for replica_set in shard_holder.all_shards() {
+                if replica_set.shard_key() != Some(&shard_key) {
+                    continue;
+                }
+
+                for (peer_id, replica_state) in replica_set.peers() {
+                    if replica_state == ReplicaState::Active {
+                        continue;
+                    }
+
+                    wait_for_active.push(replica_set.wait_for_state(
+                        peer_id,
+                        ReplicaState::Active,
+                        timeout,
+                    ));
+                }
+            }
+        }
+
+        while let Some(result) = wait_for_active.next().await {
+            result?;
+        }
+
+        Ok(())
     }
 
     pub fn all_hw_metrics(&self) -> HashMap<String, HardwareUsage> {
