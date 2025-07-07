@@ -298,11 +298,6 @@ impl UpdateHandler {
                     break 'outer;
                 }
 
-                log::debug!(
-                    "is_optimization_failed: {}",
-                    is_optimization_failed.load(Ordering::Relaxed)
-                );
-
                 let nonoptimal_segment_ids =
                     optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
                 if nonoptimal_segment_ids.is_empty() {
