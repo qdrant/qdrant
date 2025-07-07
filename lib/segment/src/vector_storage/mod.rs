@@ -12,7 +12,6 @@ mod tests;
 #[cfg(target_os = "linux")]
 mod async_io;
 mod async_io_mock;
-#[cfg(any(test, feature = "rocksdb"))]
 mod bitvec;
 pub mod chunked_vector_storage;
 pub mod common;

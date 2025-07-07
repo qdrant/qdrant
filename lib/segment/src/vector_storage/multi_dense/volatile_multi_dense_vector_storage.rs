@@ -67,6 +67,7 @@ pub fn new_volatile_multi_dense_vector_storage(
     ))
 }
 
+#[cfg(test)]
 pub fn new_volatile_multi_dense_vector_storage_byte(
     dim: usize,
     distance: Distance,
@@ -79,6 +80,7 @@ pub fn new_volatile_multi_dense_vector_storage_byte(
     ))
 }
 
+#[cfg(test)]
 pub fn new_volatile_multi_dense_vector_storage_half(
     dim: usize,
     distance: Distance,

@@ -261,6 +261,7 @@ impl From<CompactExtendedPointId> for ExtendedPointId {
     Eq,
     Hash,
     EnumString,
+    EnumIter,
 )]
 /// Distance function types used to compare vectors
 pub enum Distance {
@@ -3003,6 +3004,12 @@ impl WithVector {
 impl From<bool> for WithVector {
     fn from(b: bool) -> Self {
         WithVector::Bool(b)
+    }
+}
+
+impl From<VectorNameBuf> for WithVector {
+    fn from(name: VectorNameBuf) -> Self {
+        WithVector::Selector(vec![name])
     }
 }
 
