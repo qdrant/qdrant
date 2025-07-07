@@ -406,12 +406,10 @@ impl Collection {
 
                 // handle score threshold
                 if let Some(&score_threshold) = score_threshold.as_ref() {
-                    if let Some(pos) = mmr_result.iter().position(|p| p.score < score_threshold) {
-                        mmr_result.truncate(pos);
-                    }
+                    mmr_result.into_iter().filter(|p| p.score >= score_threshold).collect()
+                } else {
+                    mmr_result
                 }
-
-                mmr_result
             }
             _ => {
                 // Otherwise, it will be a list with a single list of scored points.
