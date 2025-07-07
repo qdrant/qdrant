@@ -468,10 +468,8 @@ impl LocalShard {
 
         // Handle score threshold
         if let Some(score_threshold) = score_threshold {
-            if let Some(truncate_len) = top_mmr.iter().position(|p| p.score < score_threshold) {
-                top_mmr.truncate(truncate_len);
-            }
-        }
+            top_mmr.retain(|p| p.score >= score_threshold);
+        };
 
         Ok(top_mmr)
     }
