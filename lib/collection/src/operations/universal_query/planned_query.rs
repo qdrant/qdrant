@@ -1,9 +1,13 @@
 //! Types used within `LocalShard` to represent a planned `ShardQueryRequest`
 
 use common::types::ScoreType;
+use segment::data_types::vectors::NamedQuery;
 use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
 
-use super::shard_query::{SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest};
+use super::shard_query::{
+    MmrInternal, SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
+};
+use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, QueryScrollRequestInternal, ScrollOrder,
 };
@@ -80,6 +84,7 @@ impl PlannedQuery {
         Self::default()
     }
 
+    // ToDo: This function needs serious simplification: split and refactor
     pub fn add(&mut self, request: ShardQueryRequest) -> CollectionResult<()> {
         let depth = request.prefetches_depth();
         let ShardQueryRequest {
@@ -109,19 +114,42 @@ impl PlannedQuery {
             })?;
 
             if rescore.needs_intermediate_results() {
+                // Handle MMR case. We want to rescore as nearest neighbors at local shard, but compute MMR at collection level
+                let (rescore_params, with_vector_for_mmr) = match rescore {
+                    ScoringQuery::Mmr(MmrInternal {
+                        vector,
+                        using,
+                        lambda: _,
+                        candidate_limit,
+                    }) => {
+                        let rescore_params = RescoreParams {
+                            rescore: ScoringQuery::Vector(QueryEnum::Nearest(
+                                NamedQuery::new_from_vector(vector, using.clone()),
+                            )),
+                            limit: candidate_limit,
+                            score_threshold,
+                            params,
+                        };
+                        (Some(rescore_params), WithVector::from(using))
+                    }
+                    _ => (None, WithVector::from(false)),
+                };
+
+                let with_vector_merged = with_vector.merge(&with_vector_for_mmr);
+
                 let sources =
                     recurse_prefetches(&mut self.searches, &mut self.scrolls, prefetches, &filter)?;
 
                 let merge_plan = MergePlan {
                     sources,
-                    // We will propagate the intermediate results, the fusion will take place at collection level.
-                    // It is fine to lose this rescore information here.
-                    rescore_params: None,
+                    // We will propagate the intermediate results. Fusion and the rest of MMR will take place at collection level.
+                    // It is fine if this is None here.
+                    rescore_params,
                 };
 
                 RootPlan {
                     merge_plan,
-                    with_vector,
+                    with_vector: with_vector_merged,
                     with_payload,
                 }
             } else {
@@ -153,7 +181,7 @@ impl PlannedQuery {
                         filter,
                         score_threshold,
                         with_vector: Some(WithVector::from(false)), // will be fetched after aggregating from segments
-                        with_payload: Some(WithPayloadInterface::from(false)), // will be fetched after aggregating from segments\
+                        with_payload: Some(WithPayloadInterface::from(false)), // will be fetched after aggregating from segments
                         offset: 0, // offset is handled at collection level
                         params,
                         limit,
@@ -203,6 +231,31 @@ impl PlannedQuery {
                     self.scrolls.push(scroll);
 
                     vec![Source::ScrollsIdx(idx)]
+                }
+                Some(ScoringQuery::Mmr(MmrInternal {
+                    vector,
+                    using,
+                    lambda: _,
+                    candidate_limit,
+                })) => {
+                    // Everything should come from 1 core search
+                    let query = QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using));
+
+                    let core_search = CoreSearchRequest {
+                        query,
+                        filter,
+                        score_threshold,
+                        with_vector: Some(WithVector::from(false)), // will be fetched after aggregating from segments
+                        with_payload: Some(WithPayloadInterface::from(false)), // will be fetched after aggregating from segments
+                        offset: 0, // offset is handled at collection level
+                        params,
+                        limit: candidate_limit,
+                    };
+
+                    let idx = self.searches.len();
+                    self.searches.push(core_search);
+
+                    vec![Source::SearchesIdx(idx)]
                 }
                 None => {
                     // Everything should come from 1 scroll
@@ -341,6 +394,30 @@ fn recurse_prefetches(
                     scrolls.push(scroll);
 
                     Source::ScrollsIdx(idx)
+                }
+                Some(ScoringQuery::Mmr(MmrInternal {
+                    vector,
+                    using,
+                    lambda: _,
+                    candidate_limit,
+                })) => {
+                    let query = QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using));
+
+                    let core_search = CoreSearchRequest {
+                        query,
+                        filter,
+                        score_threshold,
+                        with_vector: Some(WithVector::from(false)), // will be fetched after aggregating from segments
+                        with_payload: Some(WithPayloadInterface::from(false)), // will be fetched after aggregating from segments
+                        offset: 0, // offset is handled at collection level
+                        params,
+                        limit: candidate_limit,
+                    };
+
+                    let idx = core_searches.len();
+                    core_searches.push(core_search);
+
+                    Source::SearchesIdx(idx)
                 }
                 None => {
                     let scroll = QueryScrollRequestInternal {
