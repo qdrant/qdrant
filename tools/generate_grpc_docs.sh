@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")/../"
 
 # Create a temporary directory and store its name in a variable.
-TEMPD=$(mktemp -d -t qdrant_docs.XXXXXXXXXX)
+TEMPD=$(mktemp -d -p . -t qdrant_docs)
 trap 'rm -rf -- "$TEMPD"' EXIT
 
 cp -r "$PWD"/lib/api/src/grpc/proto/* "$TEMPD"
