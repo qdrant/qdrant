@@ -289,11 +289,11 @@ where
     }
 
     #[inline]
-    pub(super) fn clear(self) -> OperationResult<()> {
+    pub(super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Mmap(index) => index.clear(),
+            Storage::Mmap(index) => index.wipe(),
         }
     }
 

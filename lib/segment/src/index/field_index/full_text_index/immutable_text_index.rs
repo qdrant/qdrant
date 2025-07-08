@@ -151,11 +151,11 @@ impl ImmutableFullTextIndex {
         Ok(())
     }
 
-    pub fn clear(self) -> OperationResult<()> {
+    pub fn wipe(self) -> OperationResult<()> {
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Mmap(index) => index.clear(),
+            Storage::Mmap(index) => index.wipe(),
         }
     }
 
