@@ -78,6 +78,9 @@ def test_shard_consistency(tmp_path: pathlib.Path):
     create_collection_with_custom_sharding(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICAS)
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris)
 
+    # Wait until all peers submit their metadata to consensus
+    time.sleep(2)
+
     # Create shards
     create_shard(
         peer_api_uris[0],
