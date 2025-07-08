@@ -53,7 +53,7 @@ impl From<SearchMatrixRequestInternal> for CollectionSearchMatrixRequest {
             limit_per_sample: limit
                 .unwrap_or(CollectionSearchMatrixRequest::DEFAULT_LIMIT_PER_SAMPLE),
             filter,
-            using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
+            using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned()),
         }
     }
 }

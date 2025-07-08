@@ -78,7 +78,7 @@ impl Query {
                     let vector_hnsw_payload_m = vector_hnsw_config
                         .map(|hnsw_config| hnsw_config.payload_m)
                         .flatten()
-                        .unwrap_or(config.hnsw_config.payload_m.unwrap_or(vector_hnsw_m));
+                        .unwrap_or_else(|| config.hnsw_config.payload_m.unwrap_or(vector_hnsw_m));
 
                     // no further check necessary if there is a global HNSW index
                     if vector_hnsw_m > 0 {
