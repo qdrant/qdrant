@@ -42,6 +42,21 @@ def wait_for_server(host: str, port: int, timeout: int = 30):
     return False
 
 
+def wait_for_collection_loaded(collection_name: str, port: int, timeout: int = 10) -> bool:
+    """Wait for a specific collection to be loaded."""
+    for _ in range(timeout):
+        try:
+            response = requests.get(f"http://localhost:{port}/collections")
+            if response.status_code == 200:
+                collections = response.json().get('result', {}).get('collections', [])
+                if any(col.get('name') == collection_name for col in collections):
+                    return True
+        except requests.exceptions.ConnectionError:
+            pass
+        time.sleep(1)
+    return False
+
+
 def generate_points(amount: int):
     for _ in range(amount):
         result_item = {"points": []}

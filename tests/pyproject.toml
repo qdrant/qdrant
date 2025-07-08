@@ -18,6 +18,7 @@ schemathesis = "^3.39.16"
 retry = "^0.9.2"
 docker = "^7.1.0"
 pytest-xdist = "^3.7.0"
+qdrant-client = "^1.14.3"
 
 [build-system]
 requires = ["poetry-core"]

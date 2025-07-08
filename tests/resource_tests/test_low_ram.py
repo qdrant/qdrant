@@ -1,22 +1,8 @@
 import pytest
 import requests
-import time
 import uuid
 
-
-def wait_for_collection_loaded(collection_name: str, port: int, timeout: int = 10) -> bool:
-    """Wait for a specific collection to be loaded."""
-    for _ in range(timeout):
-        try:
-            response = requests.get(f"http://localhost:{port}/collections")
-            if response.status_code == 200:
-                collections = response.json().get('result', {}).get('collections', [])
-                if any(col.get('name') == collection_name for col in collections):
-                    return True
-        except requests.exceptions.ConnectionError:
-            pass
-        time.sleep(1)
-    return False
+from resource_tests.client_utils import ClientUtils
 
 
 class TestLowRam:
@@ -67,8 +53,11 @@ class TestLowRam:
         recovery_container = recovery_container_info["container"]
         api_port = recovery_container_info["http_port"]
         
+        # Create ClientUtils instance for this container
+        client = ClientUtils(host=recovery_container_info['host'], port=api_port)
+        
         # Wait for collection to be loaded
-        assert wait_for_collection_loaded("low-ram", api_port), "Collection failed to load in ~10 seconds"
+        assert client.wait_for_collection_loaded("low-ram"), "Collection failed to load in ~10 seconds"
         
         # Check for recovery mode message in logs
         logs = recovery_container.logs().decode('utf-8')

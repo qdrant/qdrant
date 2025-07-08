@@ -4,39 +4,38 @@ import uuid
 from docker.types import Mount
 from typing import Literal
 
-from resource_tests.utils import create_collection, generate_points, insert_points, search_point, VECTOR_SIZE, \
-    update_collection, wait_for_status
+from resource_tests.client_utils import ClientUtils, VECTOR_SIZE
 
 
 class TestLowDisk:
     """Test Qdrant behavior under low disk conditions."""
 
     @staticmethod
-    def insert_points_and_search(qdrant_host, collection_name, points_amount):
-        collection_json = {
+    def insert_points_and_search(client: ClientUtils, collection_name, points_amount):
+        collection_config = {
             "vectors": {
                 "size": VECTOR_SIZE,
                 "distance": "Cosine"
             }
         }
-        create_collection(qdrant_host, collection_name, collection_json)
-        for points_batch in generate_points(points_amount):
-            insert_points(qdrant_host, collection_name, points_batch)
+        client.create_collection(collection_name, collection_config)
+        for points_batch in client.generate_points(points_amount):
+            client.insert_points(collection_name, points_batch)
 
-        search_point(qdrant_host, collection_name)
+        client.search_points(collection_name)
 
     @staticmethod
-    def insert_points_then_index(qdrant_host, collection_name, points_amount):
+    def insert_points_then_index(client: ClientUtils, collection_name, points_amount):
         """
         Disable indexing, create collection, insert points up to
         a point when there is no space left on disk, then start indexing.
         Wait for indexing then send a search request.
-        @param qdrant_host:
+        @param client:
         @param collection_name:
         @param points_amount:
         @return:
         """
-        collection_json = {
+        collection_config = {
             "vectors": {
                 "size": VECTOR_SIZE,
                 "distance": "Cosine"
@@ -49,22 +48,22 @@ class TestLowDisk:
                 "wal_capacity_mb": 1
             }
         }
-        create_collection(qdrant_host, collection_name, collection_json)
-        for points_batch in generate_points(points_amount):
-            res = insert_points(qdrant_host, collection_name, points_batch, quit_on_ood=True)
+        client.create_collection(collection_name, collection_config)
+        for points_batch in client.generate_points(points_amount):
+            res = client.insert_points(collection_name, points_batch, quit_on_ood=True)
             if res == "ood":
                 break
 
         # start indexing
-        collection_json = {
+        collection_params = {
             "optimizers_config": {
                 "indexing_threshold": 10
             }
         }
-        update_collection(qdrant_host, collection_name, collection_json)
-        wait_for_status(qdrant_host, collection_name, "yellow")
-        wait_for_status(qdrant_host, collection_name, "green")
-        search_point(qdrant_host, collection_name)
+        client.update_collection(collection_name, collection_params)
+        client.wait_for_status(collection_name, "yellow")
+        client.wait_for_status(collection_name, "green")
+        client.search_points(collection_name)
     
     @pytest.mark.parametrize("test_mode", ["search", "indexing"])
     def test_low_disk_handling(self, qdrant_container, test_mode: Literal["search", "indexing"]):
@@ -90,14 +89,15 @@ class TestLowDisk:
         )
         
         container = container_info["container"]
-        qdrant_host = f"http://{container_info['host']}:{container_info['http_port']}"
+        # Create ClientUtils instance for this container
+        client = ClientUtils(host=container_info['host'], port=container_info['http_port'])
         collection_name = "low-disk"
         points_amount = 2000
         
         if test_mode == "search":
-            self.insert_points_and_search(qdrant_host, collection_name, points_amount)
+            self.insert_points_and_search(client, collection_name, points_amount)
         elif test_mode == "indexing":
-            self.insert_points_then_index(qdrant_host, collection_name, points_amount)
+            self.insert_points_then_index(client, collection_name, points_amount)
 
         # Give some time for logs to be written
         time.sleep(5)
