@@ -551,6 +551,7 @@ impl SegmentBuilder {
                 vector_storages_arc.clone(),
                 &payload_index_path,
                 appendable_flag,
+                true,
             )?;
             for (field, payload_schema) in indexed_fields {
                 payload_index.set_indexed(&field, payload_schema, hw_counter)?;

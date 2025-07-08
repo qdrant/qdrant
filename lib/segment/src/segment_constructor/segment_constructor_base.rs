@@ -437,6 +437,7 @@ fn create_segment(
     segment_path: &Path,
     config: &SegmentConfig,
     stopped: &AtomicBool,
+    create: bool,
 ) -> OperationResult<Segment> {
     #[cfg(feature = "rocksdb")]
     let mut db_builder = RocksDbBuilder::new(segment_path, config)?;
@@ -504,6 +505,7 @@ fn create_segment(
         vector_storages.clone(),
         &payload_index_path,
         appendable_flag,
+        create,
     )?);
 
     let mut vector_data = HashMap::new();
@@ -740,6 +742,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         path,
         &segment_state.config,
         stopped,
+        false,
     )?;
 
     #[cfg(feature = "rocksdb")]
@@ -782,7 +785,14 @@ pub fn build_segment(
 
     std::fs::create_dir_all(&segment_path)?;
 
-    let segment = create_segment(None, None, &segment_path, config, &AtomicBool::new(false))?;
+    let segment = create_segment(
+        None,
+        None,
+        &segment_path,
+        config,
+        &AtomicBool::new(false),
+        true,
+    )?;
     segment.save_current_state()?;
 
     // Version is the last file to save, as it will be used to check if segment was built correctly.

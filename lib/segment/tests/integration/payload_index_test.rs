@@ -1196,6 +1196,7 @@ fn test_update_payload_index_type() {
         HashMap::new(),
         dir.path(),
         true,
+        true,
     )
     .unwrap();
 

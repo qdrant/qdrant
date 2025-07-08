@@ -77,6 +77,7 @@ fn test_filtering_context_consistency() {
         HashMap::new(),
         dir.path(),
         true,
+        true,
     )
     .unwrap();
 

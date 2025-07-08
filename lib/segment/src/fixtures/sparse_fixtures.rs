@@ -47,6 +47,7 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
         std::collections::HashMap::new(),
         payload_dir,
         true,
+        true,
     )?;
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 

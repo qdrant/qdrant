@@ -104,6 +104,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         std::collections::HashMap::new(),
         dir.path(),
         true,
+        true,
     )
     .unwrap();
 
