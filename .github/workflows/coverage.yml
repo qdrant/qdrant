@@ -6,7 +6,7 @@ on:
     - cron: "0 0 * * *" # Every day at midnight UTC
 
 env:
-  POETRY_VERSION: 1.8.5
+  POETRY_VERSION: 2.1.3
 
 jobs:
   unit-coverage:
@@ -70,8 +70,8 @@ jobs:
           echo "Installing Poetry $POETRY_VERSION"
           curl -sSL https://install.python-poetry.org | python3 - --version "$POETRY_VERSION"
 
-          poetry -C tests check --lock
-          poetry -C tests install --no-root
+          poetry --project tests check --lock
+          poetry --project tests install --no-root
       - name: Run integration tests with coverage
         run: tools/integration-test-coverage.sh
       - name: Upload integration test coverage artifact
