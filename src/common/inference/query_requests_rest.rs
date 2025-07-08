@@ -2,8 +2,8 @@ use api::rest::models::InferenceUsage;
 use api::rest::schema as rest;
 use collection::lookup::WithLookup;
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Mmr, Query,
-    VectorInputInternal, VectorQuery,
+    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Mmr, NearestWithMmr,
+    Query, VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
@@ -204,12 +204,10 @@ fn convert_query_with_inferred(
                     lambda: mmr.lambda,
                     candidate_limit: mmr.candidate_limit,
                 };
-                Ok(Query::Vector(VectorQuery::NearestWithMmr(
-                    collection::operations::universal_query::collection_query::NearestWithMmr {
-                        nearest: vector,
-                        mmr,
-                    },
-                )))
+                Ok(Query::Vector(VectorQuery::NearestWithMmr(NearestWithMmr {
+                    nearest: vector,
+                    mmr,
+                })))
             } else {
                 Ok(Query::Vector(VectorQuery::Nearest(vector)))
             }

@@ -130,8 +130,8 @@ impl Query {
         match self {
             Self::Vector(vector_query) => vector_query
                 .get_referenced_ids()
-                .iter()
-                .map(|x| **x)
+                .into_iter()
+                .copied()
                 .collect(),
             Self::Fusion(_) | Self::OrderBy(_) | Self::Formula(_) | Self::Sample(_) => Vec::new(),
         }

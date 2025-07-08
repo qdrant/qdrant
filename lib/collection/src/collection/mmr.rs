@@ -108,7 +108,7 @@ pub async fn mmr_from_points_with_vector(
     .await
     .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "mmr"))???;
 
-    Ok(maximum_marginal_relevance(
+    Ok(maximal_marginal_relevance(
         candidates,
         query_similarities,
         &similarity_matrix,
@@ -246,7 +246,7 @@ fn similarity_matrix(
 /// * `similarity_matrix` - full pairwise similarity matrix between candidates
 /// * `lambda` - the lambda parameter for the MMR algorithm (0.0 = max diversity, 1.0 = max relevance)
 /// * `limit` - the maximum number of points to select
-pub fn maximum_marginal_relevance(
+pub fn maximal_marginal_relevance(
     candidates: Vec<ScoredPoint>,
     query_similarities: Vec<ScoreType>,
     similarity_matrix: &[Vec<ScoreType>],

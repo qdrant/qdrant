@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-set -ex
+set -e
 
 # Ensure current path is project root
 cd "$(dirname "$0")/../"
 
 # Create a temporary directory and store its name in a variable.
-TEMPD=$(mktemp -d ./qdrant_docs.XXXXXXXXXX)
+TEMPD=$(mktemp -d -t qdrant_docs.XXXXXXXXXX)
 trap 'rm -rf -- "$TEMPD"' EXIT
 
 cp -r "$PWD"/lib/api/src/grpc/proto/* "$TEMPD"
