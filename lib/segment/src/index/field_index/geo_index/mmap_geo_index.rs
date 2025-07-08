@@ -313,7 +313,7 @@ impl MmapGeoMapIndex {
         }
     }
 
-    pub fn clear(self) -> OperationResult<()> {
+    pub fn wipe(self) -> OperationResult<()> {
         let files = self.files();
         let Self { path, .. } = self;
         for file in files {

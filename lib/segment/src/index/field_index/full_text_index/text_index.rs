@@ -540,9 +540,9 @@ impl PayloadFieldIndex for FullTextIndex {
 
     fn cleanup(self) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.clear(),
-            Self::Immutable(index) => index.clear(),
-            Self::Mmap(index) => index.clear(),
+            Self::Mutable(index) => index.wipe(),
+            Self::Immutable(index) => index.wipe(),
+            Self::Mmap(index) => index.wipe(),
         }
     }
 

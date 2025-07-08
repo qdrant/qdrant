@@ -133,7 +133,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         self.deleted.flusher()
     }
 
-    pub fn clear(self) -> OperationResult<()> {
+    pub fn wipe(self) -> OperationResult<()> {
         let files = self.files();
         let Self { path, .. } = self;
         for file in files {

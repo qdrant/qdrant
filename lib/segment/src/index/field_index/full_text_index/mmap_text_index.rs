@@ -54,7 +54,7 @@ impl MmapFullTextIndex {
         &self.inverted_index.path
     }
 
-    pub fn clear(self) -> OperationResult<()> {
+    pub fn wipe(self) -> OperationResult<()> {
         let files = self.files();
         let path = self.path();
         for file in files {
