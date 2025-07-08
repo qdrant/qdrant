@@ -261,23 +261,23 @@ impl Dispatcher {
     ) -> Result<(), StorageError> {
         let timeout = timeout.unwrap_or(CONSENSUS_META_OP_WAIT);
 
-        if let Some(state) = self.consensus_state.as_ref() {
-            let state = state.hard_state();
-            let term = state.term;
-            let commit = state.commit;
-            let channel_service = self.toc.get_channel_service();
-            let this_peer_id = self.toc.this_peer_id;
+        let Some(state) = self.consensus_state.as_ref() else {
+            return Ok(());
+        };
 
-            channel_service
-                .await_commit_on_all_peers(this_peer_id, commit, term, timeout)
-                .await?;
+        let state = state.hard_state();
+        let term = state.term;
+        let commit = state.commit;
+        let channel_service = self.toc.get_channel_service();
+        let this_peer_id = self.toc.this_peer_id;
 
-            log::debug!("Consensus is synchronized with term: {term}, commit: {commit}");
+        channel_service
+            .await_commit_on_all_peers(this_peer_id, commit, term, timeout)
+            .await?;
 
-            Ok(())
-        } else {
-            Ok(())
-        }
+        log::debug!("Consensus is synchronized with term: {term}, commit: {commit}");
+
+        Ok(())
     }
 
     /// Waits for all shards of a specific shard key to become active.
