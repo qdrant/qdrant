@@ -120,9 +120,8 @@ impl ScoringQuery {
                 // We need the score distribution information of each prefetch
                 FusionInternal::Dbsf => true,
             },
-            // We need the prefetches to merge with the corresponding prefetches from
-            // other shards before using them for MMR
-            Self::Mmr(_) => true,
+            // MMR is a nearest neighbors search before computing diversity at collection level
+            Self::Mmr(_) => false,
             Self::Vector(_) | Self::OrderBy(_) | Self::Formula(_) | Self::Sample(_) => false,
         }
     }
