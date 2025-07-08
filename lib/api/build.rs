@@ -292,7 +292,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DecayParamsExpression.target", ""),
             ("NearestInputWithMmr.nearest", ""),
             ("NearestInputWithMmr.mmr", ""),
-            ("Mmr.lambda", "range(min = 0.0, max = 1.0)"),
+            ("Mmr.diversity", "range(min = 0.0, max = 1.0)"),
             ("Mmr.candidate_limit", "range(max = 16_384)"),
             ("Query.variant", ""),
             ("PrefetchQuery.prefetch", ""),

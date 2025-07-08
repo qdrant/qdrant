@@ -299,11 +299,11 @@ fn convert_query_with_inferred(
 
             let mmr = mmr.ok_or_else(|| Status::invalid_argument("mmr is missing"))?;
             let grpc::Mmr {
-                lambda,
+                diversity,
                 candidate_limit,
             } = mmr;
             let mmr = Mmr {
-                lambda,
+                diversity,
                 candidate_limit: candidate_limit.map(|x| x as usize),
             };
 

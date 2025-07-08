@@ -5594,13 +5594,17 @@ pub struct NearestInputWithMmr {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Mmr {
-    /// / The lambda parameter for the MMR algorithm.
-    /// / Determines the balance between diversity and relevance.
-    /// /
-    /// / A higher value favors relevance (similarity to the query vector), while a lower value favors diversity.
+    /// Tunable parameter for the MMR algorithm.
+    /// Determines the balance between diversity and relevance.
+    ///
+    /// A higher value favors diversity (dissimilarity to selected results),
+    /// while a lower value favors relevance (similarity to the query vector).
+    ///
+    /// Must be in the range \[0, 1\].
+    /// Default value is 0.5.
     #[prost(float, optional, tag = "2")]
     #[validate(range(min = 0.0, max = 1.0))]
-    pub lambda: ::core::option::Option<f32>,
+    pub diversity: ::core::option::Option<f32>,
     /// The maximum number of candidates to consider for re-ranking.
     ///
     /// If not specified, the `limit` value is used.

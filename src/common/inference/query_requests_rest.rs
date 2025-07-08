@@ -201,7 +201,7 @@ fn convert_query_with_inferred(
 
             if let Some(mmr) = mmr {
                 let mmr = Mmr {
-                    lambda: mmr.lambda,
+                    diversity: mmr.diversity,
                     candidate_limit: mmr.candidate_limit,
                 };
                 Ok(Query::Vector(VectorQuery::NearestWithMmr(NearestWithMmr {
