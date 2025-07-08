@@ -235,7 +235,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                 phrase_matching,
                 on_disk,
                 stopwords: stopwords_set,
-                stemming: stemming_algo,
+                stemmer: stemming_algo,
             })),
         }
     }
@@ -507,7 +507,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             phrase_matching,
             on_disk,
             stopwords,
-            stemming,
+            stemmer,
         } = params;
 
         // Convert stopwords if present
@@ -519,7 +519,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             None
         };
 
-        let stemmer = stemming
+        let stemmer = stemmer
             .and_then(|i| i.stemming_params)
             .map(segment::data_types::index::StemmingAlgorithm::try_from)
             .transpose()?;

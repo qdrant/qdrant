@@ -932,7 +932,7 @@ pub struct TextIndexParams {
     pub phrase_matching: ::core::option::Option<bool>,
     /// Set an algorithm for stemming.
     #[prost(message, optional, tag = "8")]
-    pub stemming: ::core::option::Option<StemmingAlgorithm>,
+    pub stemmer: ::core::option::Option<StemmingAlgorithm>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
