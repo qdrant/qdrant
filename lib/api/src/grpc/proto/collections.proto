@@ -498,7 +498,7 @@ message TextIndexParams {
   optional bool on_disk = 5; // If true - store index on disk.
   optional StopwordsSet stopwords = 6; // Stopwords for the text index
   optional bool phrase_matching = 7; // If true - support phrase matching.
-  optional StemmingAlgorithm stemming = 8; // Set an algorithm for stemming.
+  optional StemmingAlgorithm stemmer = 8; // Set an algorithm for stemming.
 }
 
 message StemmingAlgorithm {
