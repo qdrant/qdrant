@@ -331,6 +331,26 @@ where
         }
     }
 
+    #[inline]
+    pub(super) fn wipe(self) -> OperationResult<()> {
+        match self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
+            Storage::Gridstore(mut store @ Some(_)) => {
+                let store = store.take().unwrap();
+                let store =
+                    Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
+
+                store.into_inner().clear().map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to wipe mutable map index: {err}",
+                    ))
+                })
+            }
+            Storage::Gridstore(None) => Ok(()),
+        }
+    }
+
     /// Clear cache
     ///
     /// Only clears cache of Gridstore storage if used. Does not clear in-memory representation of

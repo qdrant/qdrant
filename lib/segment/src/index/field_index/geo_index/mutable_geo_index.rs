@@ -263,6 +263,7 @@ impl MutableGeoMapIndex {
         Ok(true)
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), expect(dead_code))]
     #[inline]
     pub(super) fn clear(&self) -> OperationResult<()> {
         match &self.storage {
@@ -271,6 +272,26 @@ impl MutableGeoMapIndex {
             Storage::Gridstore(Some(store)) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!("Failed to clear mutable geo index: {err}",))
             }),
+            Storage::Gridstore(None) => Ok(()),
+        }
+    }
+
+    #[inline]
+    pub(super) fn wipe(self) -> OperationResult<()> {
+        match self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
+            Storage::Gridstore(mut store @ Some(_)) => {
+                let store = store.take().unwrap();
+                let store =
+                    Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
+
+                store.into_inner().wipe().map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to wipe mutable geo index: {err}",
+                    ))
+                })
+            }
             Storage::Gridstore(None) => Ok(()),
         }
     }

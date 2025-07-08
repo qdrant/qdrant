@@ -167,6 +167,7 @@ impl StructPayloadIndex {
         Ok(())
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), allow(clippy::needless_pass_by_ref_mut))]
     fn load_from_db(
         &mut self,
         field: PayloadKeyTypeRef,
