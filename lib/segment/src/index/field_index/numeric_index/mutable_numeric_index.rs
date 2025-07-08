@@ -434,13 +434,22 @@ where
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(Some(store)) => {
-                let store = store.clone();
+                let store = Arc::downgrade(store);
                 Box::new(move || {
-                    store.read().flush().map_err(|err| {
-                        OperationError::service_error(format!(
-                            "Failed to flush mutable numeric index gridstore: {err}"
-                        ))
-                    })
+                    store
+                        .upgrade()
+                        .ok_or_else(|| {
+                            OperationError::service_error(
+                                "Failed to flush mutable numeric index, backing Gridstore storage is already dropped",
+                            )
+                        })?
+                        .read()
+                        .flush()
+                        .map_err(|err| {
+                            OperationError::service_error(format!(
+                                "Failed to flush mutable numeric index gridstore: {err}"
+                            ))
+                        })
                 })
             }
             Storage::Gridstore(None) => Box::new(|| Ok(())),
