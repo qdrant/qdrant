@@ -2,7 +2,7 @@ name: Integration tests
 
 on:
   push:
-    branches: [ master, dev ]
+    branches: [ master, dev, improve-tests ]
   pull_request:
     branches: [ '**' ]
 
@@ -116,36 +116,6 @@ jobs:
         run: poetry run bash ./test_restart.sh
         working-directory: ./tests/consensus_tests
 
-  test-tls-compose:
-
-    name: "Basic TLS/HTTPS tests"
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Docker build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          tags: qdrant_tls
-          cache-from: |
-            type=gha,scope=${{ github.ref }}
-            type=gha,scope=${{ github.base_ref }}
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}
-          load: true
-          build-args: |
-            PROFILE=ci
-      - name: Run basic TLS/HTTPS test
-        run: ./test_tls.sh
-        working-directory: ./tests/tls
-      - name: Run snapshot shard transfer TLS/HTTPS test
-        run: ./test_tls_snapshot_shard_transfer.sh
-        working-directory: ./tests/tls
-
-
   test-consistency:
 
     runs-on: ubuntu-latest
@@ -181,94 +151,6 @@ jobs:
         run: ./tests/grpc_consistency_check.sh
       - name: OpenAPI file consistency check
         run: ./tests/openapi_consistency_check.sh
-
-
-  test-low-resources:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Install dependencies
-        run: sudo apt-get install git-lfs jq
-      - name: Setup git-lfs
-        run: git lfs install
-      - uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Docker build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          tags: qdrant-recovery
-          cache-from: |
-            type=gha,scope=${{ github.ref }}
-            type=gha,scope=${{ github.base_ref }}
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}
-          load: true
-          build-args: |
-            PROFILE=ci
-      - name: Run low RAM test
-        working-directory: ./tests/low-ram
-        shell: bash
-        run: ./low-ram.sh
-      - name: Run low Disk test - search
-        working-directory: ./tests/low-disk
-        shell: bash
-        run: ./low-disk.sh
-      - name: Run low Disk test - indexing
-        working-directory: ./tests/low-disk
-        shell: bash
-        run: ./low-disk.sh indexing
-
-  test-snapshot-operations-s3-minio:
-    runs-on: ubuntu-latest
-
-    # Setup minio server
-    services:
-      minio:
-        image: satantime/minio-server
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ACCESS_KEY: "minioadmin"
-          MINIO_SECRET_KEY: "minioadmin"
-
-    steps:
-      - name: Setup test bucket
-        env:
-          AWS_ACCESS_KEY_ID: "minioadmin"
-          AWS_SECRET_ACCESS_KEY: "minioadmin"
-          AWS_EC2_METADATA_DISABLED: "true"
-        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
-
-      - name: Install dependencies
-        run: sudo apt-get install git-lfs jq
-      - name: Setup git-lfs
-        run: git lfs install
-      - uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Docker build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          tags: qdrant-snapshots
-          cache-from: |
-            type=gha,scope=${{ github.ref }}
-            type=gha,scope=${{ github.base_ref }}
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}
-          load: true
-          build-args: |
-            PROFILE=ci
-      - name: Install dependencies
-        run: sudo snap install yq
-      - name: Run test snapshot operations on different storage filesystems
-        working-directory: ./tests/snapshots
-        shell: bash
-        run: ./snapshots-recovery.sh local
-      - name: Run test snapshot operations on different storage filesystems
-        working-directory: ./tests/snapshots
-        shell: bash
-        run: ./snapshots-recovery.sh s3
 
   test-shard-snapshot-api-s3-minio:
     runs-on: ubuntu-latest
@@ -325,3 +207,76 @@ jobs:
           sleep 10
 
           ./tests/shard-snapshot-api.sh test-all
+
+
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+
+    # Setup minio server
+    services:
+      minio:
+        image: satantime/minio-server
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ACCESS_KEY: "minioadmin"
+          MINIO_SECRET_KEY: "minioadmin"
+
+    steps:
+      - name: Setup test bucket
+        env:
+          AWS_ACCESS_KEY_ID: "minioadmin"
+          AWS_SECRET_ACCESS_KEY: "minioadmin"
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs
+          git lfs install
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install Python dependencies
+        run: |
+          poetry -C tests check --lock
+          poetry -C tests install --no-root
+      - name: Pull LFS files
+        run: git lfs pull
+      - name: Build Qdrant Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: qdrant/qdrant:e2e-tests
+          cache-from: |
+            type=gha,scope=${{ github.ref }}-e2e
+            type=gha,scope=${{ github.base_ref }}-e2e
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}-e2e
+          load: true
+          build-args: |
+            PROFILE=ci
+      - name: Verify Docker image
+        run: docker images | grep qdrant
+      - name: Run e2e tests
+        run: poetry -C tests run pytest -n 4 tests/resource_tests -v --tb=short --durations=5
+        shell: bash
+        timeout-minutes: 5
+      - name: Upload test logs on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-test-logs
+          path: |
+            tests/resource_tests/test_*.log
+            tests/resource_tests/**/logs/
+          retention-days: 7
