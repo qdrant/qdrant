@@ -376,11 +376,9 @@ impl ShardHolder {
     }
 
     pub fn register_finish_transfer(&self, key: &ShardTransferKey) -> CollectionResult<bool> {
-        let any_removed = self.shard_transfers.write(|transfers| {
-            let before_remove = transfers.len();
-            transfers.retain(|transfer| !key.check(transfer));
-            before_remove != transfers.len()
-        })?;
+        let any_removed = self
+            .shard_transfers
+            .write(|transfers| transfers.extract_if(|transfer| key.check(transfer)).count() > 0)?;
         let _ = self
             .shard_transfer_changes
             .send(ShardTransferChange::Finish(*key));
@@ -388,11 +386,9 @@ impl ShardHolder {
     }
 
     pub fn register_abort_transfer(&self, key: &ShardTransferKey) -> CollectionResult<bool> {
-        let any_removed = self.shard_transfers.write(|transfers| {
-            let before_remove = transfers.len();
-            transfers.retain(|transfer| !key.check(transfer));
-            before_remove != transfers.len()
-        })?;
+        let any_removed = self
+            .shard_transfers
+            .write(|transfers| transfers.extract_if(|transfer| key.check(transfer)).count() > 0)?;
         let _ = self
             .shard_transfer_changes
             .send(ShardTransferChange::Abort(*key));
