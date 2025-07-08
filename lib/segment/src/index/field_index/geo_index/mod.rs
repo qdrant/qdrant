@@ -640,9 +640,9 @@ impl PayloadFieldIndex for GeoMapIndex {
 
     fn cleanup(self) -> OperationResult<()> {
         match self {
-            GeoMapIndex::Mutable(index) => index.clear(),
-            GeoMapIndex::Immutable(index) => index.clear(),
-            GeoMapIndex::Mmap(index) => index.clear(),
+            GeoMapIndex::Mutable(index) => index.wipe(),
+            GeoMapIndex::Immutable(index) => index.wipe(),
+            GeoMapIndex::Mmap(index) => index.wipe(),
         }
     }
 

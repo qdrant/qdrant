@@ -196,15 +196,21 @@ impl MutableFullTextIndex {
     }
 
     #[inline]
-    pub(super) fn clear(self) -> OperationResult<()> {
+    pub(super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Gridstore(Some(store)) => store.write().clear().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to clear mutable full text index: {err}",
-                ))
-            }),
+            Storage::Gridstore(mut store @ Some(_)) => {
+                let store = store.take().unwrap();
+                let store =
+                    Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
+
+                store.into_inner().wipe().map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to wipe mutable full text index: {err}",
+                    ))
+                })
+            }
             Storage::Gridstore(None) => Ok(()),
         }
     }
@@ -336,7 +342,7 @@ impl MutableFullTextIndex {
         Ok(())
     }
 
-    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
+    #[cfg_attr(not(feature = "rocksdb"), allow(clippy::unnecessary_wraps))]
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
         match &self.storage {

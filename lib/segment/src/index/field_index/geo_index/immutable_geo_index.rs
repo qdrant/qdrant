@@ -308,11 +308,11 @@ impl ImmutableGeoMapIndex {
         }
     }
 
-    pub fn clear(self) -> OperationResult<()> {
+    pub fn wipe(self) -> OperationResult<()> {
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(ref db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Mmap(index) => index.clear(),
+            Storage::Mmap(index) => index.wipe(),
         }
     }
 

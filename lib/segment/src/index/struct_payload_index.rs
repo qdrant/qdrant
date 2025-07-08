@@ -42,7 +42,7 @@ use crate::types::{
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 #[derive(Debug)]
-#[expect(clippy::enum_variant_names)]
+#[allow(clippy::enum_variant_names)]
 enum StorageType {
     #[cfg(feature = "rocksdb")]
     RocksDbAppendable(std::sync::Arc<parking_lot::RwLock<rocksdb::DB>>),
@@ -130,6 +130,7 @@ impl StructPayloadIndex {
         Ok(())
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), allow(clippy::needless_pass_by_ref_mut))]
     fn load_from_db(
         &mut self,
         field: PayloadKeyTypeRef,

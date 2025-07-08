@@ -330,11 +330,11 @@ where
         self.values_count(idx) == 0
     }
 
-    fn clear(self) -> OperationResult<()> {
+    fn wipe(self) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.clear(),
-            MapIndex::Immutable(index) => index.clear(),
-            MapIndex::Mmap(index) => index.clear(),
+            MapIndex::Mutable(index) => index.wipe(),
+            MapIndex::Immutable(index) => index.wipe(),
+            MapIndex::Mmap(index) => index.wipe(),
         }
     }
 
@@ -706,7 +706,7 @@ impl PayloadFieldIndex for MapIndex<str> {
     }
 
     fn cleanup(self) -> OperationResult<()> {
-        self.clear()
+        self.wipe()
     }
 
     fn flusher(&self) -> Flusher {
@@ -860,7 +860,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
     }
 
     fn cleanup(self) -> OperationResult<()> {
-        self.clear()
+        self.wipe()
     }
 
     fn flusher(&self) -> Flusher {
@@ -1055,7 +1055,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 
     fn cleanup(self) -> OperationResult<()> {
-        self.clear()
+        self.wipe()
     }
 
     fn flusher(&self) -> Flusher {
