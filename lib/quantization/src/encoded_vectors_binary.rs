@@ -97,7 +97,7 @@ pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
 /// This eliminates the need to extract individual bits from BQ vectors during scoring.
 /// This idea was taken from http://arxiv.org/pdf/2405.12497, see Figure 2.
 pub struct EncodedScalarVector<TBitsStoreType: BitsStoreType> {
-    encoded_vector: Vec<TBitsStoreType>,
+    pub encoded_vector: Vec<TBitsStoreType>,
 }
 
 #[derive(Serialize, Deserialize)]
