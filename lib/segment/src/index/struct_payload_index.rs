@@ -221,13 +221,6 @@ impl StructPayloadIndex {
         };
 
         let mut rebuild = false;
-        for ref mut index in indexes.iter_mut() {
-            if !index.load()? {
-                rebuild = true;
-                log::debug!("Payload index for field `{field}` was not loaded, triggering rebuild");
-                break;
-            }
-        }
 
         // Actively migrate away from RocksDB indices
         // Naively implemented by just rebuilding the indices from scratch
@@ -263,7 +256,19 @@ impl StructPayloadIndex {
             }
         }
 
-        // If index is not properly loaded, recreate it
+        if !rebuild {
+            for ref mut index in indexes.iter_mut() {
+                if !index.load()? {
+                    rebuild = true;
+                    log::debug!(
+                        "Payload index for field `{field}` was not loaded, triggering rebuild",
+                    );
+                    break;
+                }
+            }
+        }
+
+        // If index is not properly loaded or when migrating, recreate it
         if rebuild {
             log::debug!("Rebuilding payload index for field `{field}`...");
             indexes = self.build_field_indexes(
