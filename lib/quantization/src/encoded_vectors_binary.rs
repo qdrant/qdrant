@@ -545,9 +545,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     fn encode_two_bits_value(value: f32, mean: f32, sd: f32) -> (bool, bool) {
         // Two bit encoding is a regular BQ with "zero".
         // It uses 2 bits per value and encodes values in the following way:
-        // 00 - if the value is in the range [-2*sigma; -sigma);
-        // 10 - if the value is in the range [-sigma; sigma);
-        // 11 - if the value is in the range [sigma; 2*sigma];
+        // 00 - if the value is in the range (-inf; -SIGMAS];
+        // 10 - if the value is in the range (-SIGMAS; SIGMAS);
+        // 11 - if the value is in the range [SIGMAS; +inf);
         // where sigma is the standard deviation of the value.
         //
         // Scoring for 2bit quantization is the same as for 1bit quantization.
@@ -558,30 +558,18 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             return (value > 0.0, false);
         }
 
-        // How many ranges we want to divide the values into, it's 3:
-        // [-2*sigma; -sigma), [-sigma; sigma), [sigma; 2*sigma)
-        let ranges = 3;
-
         // Calculate z-score for the value
         let v_z = (value - mean) / sd;
 
-        let min_border = -2.0; // -2*sigma
-        let max_border = 2.0; // 2*sigma
+        // Define sigmas count which describes a zero range for 2bit encoding.
+        const SIGMAS: f32 = 2.0 / 3.0;
 
-        // Normalize z-score to the range [-2*sigma; 2*sigma]
-        let normalized_z = (v_z - min_border) / (max_border - min_border);
-
-        // Calculate index in the ranges list: [-2*sigma; -sigma), [-sigma; sigma), [sigma; 2*sigma)
-        let index = normalized_z * (ranges as f32);
-
-        // Index 0 and less is [0, 0] encoding
-        // Index 1 is [1, 0] encoding
-        // Index 2 and more is [1, 1] encoding
-        if index >= 1.0 {
-            let count_ones = (index.floor() as usize).min(2);
-            (count_ones > 0, count_ones > 1)
+        if v_z <= -SIGMAS {
+            (false, false) // (-inf; -SIGMAS]
+        } else if v_z < SIGMAS {
+            (true, false) // (-SIGMAS; SIGMAS)
         } else {
-            (false, false)
+            (true, true) // [SIGMAS; +inf)
         }
     }
 
