@@ -380,6 +380,10 @@ impl ShardReplicaSet {
         replica_set
     }
 
+    pub fn shard_key(&self) -> Option<&ShardKey> {
+        self.shard_key.as_ref()
+    }
+
     pub fn this_peer_id(&self) -> PeerId {
         self.replica_state.read().this_peer_id
     }
@@ -503,17 +507,16 @@ impl ShardReplicaSet {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub async fn wait_for_state(
+    pub fn wait_for_state(
         &self,
         peer_id: PeerId,
         state: ReplicaState,
         timeout: Duration,
-    ) -> CollectionResult<()> {
+    ) -> impl Future<Output = CollectionResult<()>> + 'static {
         self.wait_for(
             move |replica_set_state| replica_set_state.get_peer_state(peer_id) == Some(state),
             timeout,
         )
-        .await
     }
 
     /// Wait for a replica set state condition to be true.
@@ -523,29 +526,35 @@ impl ShardReplicaSet {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    async fn wait_for<F>(&self, check: F, timeout: Duration) -> CollectionResult<()>
+    pub fn wait_for<F>(
+        &self,
+        check: F,
+        timeout: Duration,
+    ) -> impl Future<Output = CollectionResult<()>> + 'static
     where
         F: Fn(&ReplicaSetState) -> bool + Send + 'static,
     {
         // TODO: Propagate cancellation into `spawn_blocking` task!?
 
         let replica_state = self.replica_state.clone();
-        let timed_out =
-            !tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout))
-                .await
-                .map_err(|err| {
-                    CollectionError::service_error(format!(
-                        "Failed to wait for replica set state: {err}"
-                    ))
-                })?;
+        let task = tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout));
 
-        if timed_out {
-            return Err(CollectionError::service_error(
-                "Failed to wait for replica set state, timed out",
-            ));
+        async move {
+            let status = task.await.map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to wait for replica set state: {err}"
+                ))
+            })?;
+
+            if status {
+                Ok(())
+            } else {
+                Err(CollectionError::timeout(
+                    timeout.as_secs() as usize,
+                    "wait for replica set state",
+                ))
+            }
         }
-
-        Ok(())
     }
 
     /// Clears the local shard data and loads an empty local shard
