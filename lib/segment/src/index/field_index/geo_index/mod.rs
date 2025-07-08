@@ -72,9 +72,10 @@ impl GeoMapIndex {
         }
     }
 
-    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
+    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Self> {
         Ok(GeoMapIndex::Mutable(MutableGeoMapIndex::open_gridstore(
             dir,
+            create_if_missing,
         )?))
     }
 
@@ -585,7 +586,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
             "index must be initialized exactly once",
         );
         self.index
-            .replace(GeoMapIndex::new_gridstore(self.dir.clone())?);
+            .replace(GeoMapIndex::new_gridstore(self.dir.clone(), true)?);
         Ok(())
     }
 
@@ -1466,7 +1467,7 @@ mod tests {
             #[cfg(feature = "rocksdb")]
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
             IndexType::MutableGridstore => {
-                GeoMapIndex::new_gridstore(temp_dir.path().to_path_buf()).unwrap()
+                GeoMapIndex::new_gridstore(temp_dir.path().to_path_buf(), true).unwrap()
             }
             #[cfg(feature = "rocksdb")]
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
@@ -1547,7 +1548,7 @@ mod tests {
             #[cfg(feature = "rocksdb")]
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
             IndexType::MutableGridstore => {
-                GeoMapIndex::new_gridstore(temp_dir.path().to_path_buf()).unwrap()
+                GeoMapIndex::new_gridstore(temp_dir.path().to_path_buf(), true).unwrap()
             }
             #[cfg(feature = "rocksdb")]
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),

@@ -130,8 +130,11 @@ where
         }
     }
 
-    pub fn new_gridstore(dir: PathBuf) -> OperationResult<Self> {
-        Ok(MapIndex::Mutable(MutableMapIndex::open_gridstore(dir)?))
+    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Self> {
+        Ok(MapIndex::Mutable(MutableMapIndex::open_gridstore(
+            dir,
+            create_if_missing,
+        )?))
     }
 
     #[cfg(feature = "rocksdb")]
@@ -655,7 +658,7 @@ where
             "index must be initialized exactly once",
         );
         self.index
-            .replace(MapIndex::new_gridstore(self.dir.clone())?);
+            .replace(MapIndex::new_gridstore(self.dir.clone(), true)?);
         Ok(())
     }
 
@@ -1413,7 +1416,7 @@ mod tests {
                 true,
             ),
             IndexType::MutableGridstore => {
-                MapIndex::<N>::new_gridstore(path.to_path_buf()).unwrap()
+                MapIndex::<N>::new_gridstore(path.to_path_buf(), true).unwrap()
             }
             #[cfg(feature = "rocksdb")]
             IndexType::Immutable => MapIndex::<N>::new_rocksdb(

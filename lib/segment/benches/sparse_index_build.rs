@@ -54,6 +54,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
         std::collections::HashMap::new(),
         payload_dir.path(),
         true,
+        true,
     )
     .unwrap();
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));

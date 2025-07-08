@@ -68,6 +68,7 @@ fn range_filtering(c: &mut Criterion) {
         std::collections::HashMap::new(),
         dir.path(),
         true,
+        true,
     )
     .unwrap();
 
@@ -129,6 +130,7 @@ fn range_filtering(c: &mut Criterion) {
         std::collections::HashMap::new(),
         dir.path(),
         false,
+        true,
     )
     .unwrap();
 

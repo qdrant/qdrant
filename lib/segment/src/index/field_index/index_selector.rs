@@ -62,37 +62,62 @@ impl IndexSelector<'_> {
         &self,
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
+        create_if_missing: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
         let indexes = match payload_schema.expand().as_ref() {
-            PayloadSchemaParams::Keyword(_) => vec![FieldIndex::KeywordIndex(self.map_new(field)?)],
+            PayloadSchemaParams::Keyword(_) => {
+                vec![FieldIndex::KeywordIndex(
+                    self.map_new(field, create_if_missing)?,
+                )]
+            }
             PayloadSchemaParams::Integer(integer_params) => itertools::chain(
                 integer_params
                     .lookup
                     .unwrap_or(true)
-                    .then(|| OperationResult::Ok(FieldIndex::IntMapIndex(self.map_new(field)?)))
+                    .then(|| {
+                        OperationResult::Ok(FieldIndex::IntMapIndex(
+                            self.map_new(field, create_if_missing)?,
+                        ))
+                    })
                     .transpose()?,
                 integer_params
                     .range
                     .unwrap_or(true)
-                    .then(|| OperationResult::Ok(FieldIndex::IntIndex(self.numeric_new(field)?)))
+                    .then(|| {
+                        OperationResult::Ok(FieldIndex::IntIndex(
+                            self.numeric_new(field, create_if_missing)?,
+                        ))
+                    })
                     .transpose()?,
             )
             .collect(),
-            PayloadSchemaParams::Float(_) => vec![FieldIndex::FloatIndex(self.numeric_new(field)?)],
-            PayloadSchemaParams::Geo(_) => vec![FieldIndex::GeoIndex(self.geo_new(field)?)],
-            PayloadSchemaParams::Text(text_index_params) => {
-                vec![FieldIndex::FullTextIndex(
-                    self.text_new(field, text_index_params.clone())?,
+            PayloadSchemaParams::Float(_) => {
+                vec![FieldIndex::FloatIndex(
+                    self.numeric_new(field, create_if_missing)?,
                 )]
+            }
+            PayloadSchemaParams::Geo(_) => vec![FieldIndex::GeoIndex(
+                self.geo_new(field, create_if_missing)?,
+            )],
+            PayloadSchemaParams::Text(text_index_params) => {
+                vec![FieldIndex::FullTextIndex(self.text_new(
+                    field,
+                    text_index_params.clone(),
+                    create_if_missing,
+                )?)]
             }
             PayloadSchemaParams::Bool(_) => {
                 vec![self.bool_new(field)?]
             }
             PayloadSchemaParams::Datetime(_) => {
-                vec![FieldIndex::DatetimeIndex(self.numeric_new(field)?)]
+                vec![FieldIndex::DatetimeIndex(
+                    self.numeric_new(field, create_if_missing)?,
+                )]
             }
             PayloadSchemaParams::Uuid(_) => {
-                vec![FieldIndex::UuidMapIndex(self.map_new(field)?)]
+                vec![FieldIndex::UuidMapIndex(
+                    self.map_new(field, create_if_missing)?,
+                )]
             }
         };
 
@@ -183,7 +208,11 @@ impl IndexSelector<'_> {
         Ok(builders)
     }
 
-    fn map_new<N: MapIndexKey + ?Sized>(&self, field: &JsonPath) -> OperationResult<MapIndex<N>>
+    fn map_new<N: MapIndexKey + ?Sized>(
+        &self,
+        field: &JsonPath,
+        create_if_missing: bool,
+    ) -> OperationResult<MapIndex<N>>
     where
         Vec<N::Owned>: Blob + Send + Sync,
     {
@@ -196,7 +225,7 @@ impl IndexSelector<'_> {
                 MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
-                MapIndex::new_gridstore(map_dir(dir, field))?
+                MapIndex::new_gridstore(map_dir(dir, field), create_if_missing)?
             }
         })
     }
@@ -230,6 +259,7 @@ impl IndexSelector<'_> {
     fn numeric_new<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
+        create_if_missing: bool,
     ) -> OperationResult<NumericIndex<T, P>>
     where
         Vec<T>: Blob,
@@ -243,7 +273,7 @@ impl IndexSelector<'_> {
                 NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk)?
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
-                NumericIndex::new_gridstore(numeric_dir(dir, field))?
+                NumericIndex::new_gridstore(numeric_dir(dir, field), create_if_missing)?
             }
         })
     }
@@ -279,7 +309,7 @@ impl IndexSelector<'_> {
         }
     }
 
-    fn geo_new(&self, field: &JsonPath) -> OperationResult<GeoMapIndex> {
+    fn geo_new(&self, field: &JsonPath, create_if_missing: bool) -> OperationResult<GeoMapIndex> {
         Ok(match self {
             #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
@@ -289,7 +319,7 @@ impl IndexSelector<'_> {
                 GeoMapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
-                GeoMapIndex::new_gridstore(map_dir(dir, field))?
+                GeoMapIndex::new_gridstore(map_dir(dir, field), create_if_missing)?
             }
         })
     }
@@ -340,6 +370,7 @@ impl IndexSelector<'_> {
         &self,
         field: &JsonPath,
         config: TextIndexParams,
+        create_if_missing: bool,
     ) -> OperationResult<FullTextIndex> {
         Ok(match self {
             #[cfg(feature = "rocksdb")]
@@ -355,7 +386,7 @@ impl IndexSelector<'_> {
                 FullTextIndex::new_mmap(text_dir(dir, field), config, *is_on_disk)?
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
-                FullTextIndex::new_gridstore(text_dir(dir, field), config)?
+                FullTextIndex::new_gridstore(text_dir(dir, field), config, create_if_missing)?
             }
         })
     }
