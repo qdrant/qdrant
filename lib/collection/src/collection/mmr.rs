@@ -15,13 +15,13 @@ use segment::vector_storage::sparse::volatile_sparse_vector_storage::new_volatil
 use segment::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer};
 use tokio::runtime::Handle;
 
-use crate::common::diagonal_matrix::DiagonalMatrix;
+use crate::common::symmetric_matrix::SymmetricMatrix;
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
 
-/// (Diagonal) matrix of point similarities.
-type SimilarityMatrix = DiagonalMatrix<ScoreType>;
+/// (Symmetric) matrix of point similarities.
+type SimilarityMatrix = SymmetricMatrix<ScoreType>;
 
 /// Calculate the MMR (Maximal Marginal Relevance) score for a set of points with vectors.
 ///

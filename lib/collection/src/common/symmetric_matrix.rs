@@ -1,6 +1,6 @@
-/// Memory efficient and performant diagonal matrix implementation.
+/// Memory efficient and performant symmetric matrix implementation.
 #[derive(Clone)]
-pub struct DiagonalMatrix<I> {
+pub struct SymmetricMatrix<I> {
     // Stores only the upper part matrix, flattened.
     inner: Vec<I>,
 
@@ -8,8 +8,8 @@ pub struct DiagonalMatrix<I> {
     size: usize,
 }
 
-impl<T: Copy> DiagonalMatrix<T> {
-    /// Creates a new diagonal matrix with `init` as initial value.
+impl<T: Copy> SymmetricMatrix<T> {
+    /// Creates a new symmetric matrix with `init` as initial value.
     /// Returns `None` if `size` is smaller than 2 because this is the minimum size of a matrix.
     pub fn new(size: usize, init: T) -> Option<Self> {
         if size < 2 {
@@ -23,8 +23,8 @@ impl<T: Copy> DiagonalMatrix<T> {
     }
 }
 
-impl<T> DiagonalMatrix<T> {
-    /// Set the value at row x column. Since it's a diagonal matrix, column and row can be swapped.
+impl<T> SymmetricMatrix<T> {
+    /// Set the value at row x column. Since it's a symmetric matrix, column and row can be swapped.
     #[inline]
     pub fn set(&mut self, row: usize, column: usize, value: T) {
         let (row, column) = Self::handle_index(row, column);
@@ -32,7 +32,7 @@ impl<T> DiagonalMatrix<T> {
         self.inner[index] = value;
     }
 
-    /// Sets the value at row x column. Since it's a diagonal matrix, column and row can be swapped.
+    /// Sets the value at row x column. Since it's a symmetric matrix, column and row can be swapped.
     #[inline]
     pub fn get(&self, row: usize, column: usize) -> &T {
         let (row, column) = Self::handle_index(row, column);
@@ -40,7 +40,7 @@ impl<T> DiagonalMatrix<T> {
         &self.inner[index]
     }
 
-    /// Swap input parameters to always target the upper diagonal.
+    /// Swap input parameters to always target the upper symmetric.
     #[inline]
     fn handle_index(row: usize, column: usize) -> (usize, usize) {
         if column < row {
@@ -79,7 +79,7 @@ mod test {
     #[test]
     fn test_matrix() {
         let size = 10;
-        let mut matrix = DiagonalMatrix::<usize>::new(size, 0).unwrap();
+        let mut matrix = SymmetricMatrix::<usize>::new(size, 0).unwrap();
 
         let mut c = 0;
         for x in 0..size {
@@ -104,7 +104,7 @@ mod test {
     #[should_panic]
     fn test_oob() {
         let size = 10;
-        let mut matrix = DiagonalMatrix::<usize>::new(size, 0).unwrap();
+        let mut matrix = SymmetricMatrix::<usize>::new(size, 0).unwrap();
         matrix.set(0, 10, 1);
     }
 }

@@ -1,6 +1,5 @@
 pub mod batching;
 pub mod collection_size_stats;
-pub mod diagonal_matrix;
 pub mod eta_calculator;
 pub mod fetch_vectors;
 pub mod file_utils;
@@ -12,4 +11,5 @@ pub mod snapshots_manager;
 pub mod stoppable_task;
 pub mod stoppable_task_async;
 pub mod stopping_guard;
+pub mod symmetric_matrix;
 pub mod transpose_iterator;
