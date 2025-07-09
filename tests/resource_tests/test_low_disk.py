@@ -88,7 +88,6 @@ class TestLowDisk:
             remove=False  # Keep for logs
         )
         
-        container = container_info["container"]
         # Create ClientUtils instance for this container
         client = ClientUtils(host=container_info['host'], port=container_info['http_port'])
         collection_name = "low-disk"
@@ -102,7 +101,7 @@ class TestLowDisk:
         # Give some time for logs to be written
         time.sleep(5)
 
-        logs = container.logs().decode('utf-8')
+        logs = container_info["container"].logs().decode('utf-8')
         expected_msg = "No space left on device:"
         assert expected_msg in logs, f"'{expected_msg}' log message not found in container logs"
 

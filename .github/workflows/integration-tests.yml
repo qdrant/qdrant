@@ -230,13 +230,14 @@ jobs:
           AWS_SECRET_ACCESS_KEY: "minioadmin"
           AWS_EC2_METADATA_DISABLED: "true"
         run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
+
       - uses: actions/checkout@v4
         with:
           lfs: true
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install system dependencies
+      - name: Install and set up git-lfs
         run: |
           sudo apt-get update
           sudo apt-get install -y git-lfs
