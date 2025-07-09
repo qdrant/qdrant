@@ -75,9 +75,9 @@ impl IndexSelector<'_> {
                 // Note that `params.range == None` means the index was created without directly specifying these parameters.
                 // In those cases it defaults to `true` so we don't need to cover this case.
                 if params.range == Some(false) {
-                    return Err(OperationError::service_error(
-                        "Inconsistent payload schema: Int index configured but schema.range is false",
-                    ));
+                    log::warn!(
+                        "Inconsistent payload schema: Int index configured but schema.range is false"
+                    );
                 }
 
                 FieldIndex::IntIndex(self.numeric_new(field, create_if_missing)?)
@@ -88,9 +88,9 @@ impl IndexSelector<'_> {
                 // Note that `params.lookup == None` means the index was created without directly specifying these parameters.
                 // In those cases it defaults to `true` so we don't need to cover this case.
                 if params.lookup == Some(false) {
-                    return Err(OperationError::service_error(
+                    log::warn!(
                         "Inconsistent payload schema: IntMap index configured but schema.lookup is false",
-                    ));
+                    );
                 }
 
                 FieldIndex::IntMapIndex(self.map_new(field, create_if_missing)?)

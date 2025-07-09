@@ -93,18 +93,19 @@ impl PayloadIndex for PlainPayloadIndex {
         payload_schema: PayloadFieldSchema,
         field_index: Vec<FieldIndex>,
     ) -> OperationResult<()> {
-        if let Some(prev_schema) = self.config.indexed_fields.insert(
-            field,
-            PayloadFieldSchemaWithIndexType::new(
-                payload_schema.clone(),
-                field_index
-                    .iter()
-                    .map(|i| i.get_full_index_type())
-                    .collect(),
-            ),
-        ) {
+        let new_schema = PayloadFieldSchemaWithIndexType::new(
+            payload_schema,
+            field_index
+                .iter()
+                .map(|i| i.get_full_index_type())
+                .collect(),
+        );
+
+        let prev_schema = self.config.indexed_fields.insert(field, new_schema.clone());
+
+        if let Some(prev_schema) = prev_schema {
             // the field is already present with the same schema, no need to save the config
-            if prev_schema.schema == payload_schema {
+            if prev_schema == new_schema {
                 return Ok(());
             }
         }
