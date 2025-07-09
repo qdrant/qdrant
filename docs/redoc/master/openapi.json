@@ -7792,11 +7792,11 @@
         "description": "Different stemming algorithms with their configs.",
         "anyOf": [
           {
-            "$ref": "#/components/schemas/SnowballParameters"
+            "$ref": "#/components/schemas/SnowballParams"
           }
         ]
       },
-      "SnowballParameters": {
+      "SnowballParams": {
         "type": "object",
         "required": [
           "language",
