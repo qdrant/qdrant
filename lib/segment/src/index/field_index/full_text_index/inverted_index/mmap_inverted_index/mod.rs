@@ -17,6 +17,7 @@ use super::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 use super::positions::Positions;
 use super::postings_iterator::intersect_compressed_postings_iterator;
 use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
+use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::inverted_index::Document;
@@ -34,14 +35,18 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 
 pub struct MmapInvertedIndex {
     pub(in crate::index::field_index::full_text_index) path: PathBuf,
+    pub(in crate::index::field_index::full_text_index) storage: Option<Storage>,
+    /// Number of points which are not deleted
+    pub(in crate::index::field_index::full_text_index) active_points_count: usize,
+    is_on_disk: bool,
+}
+
+pub(in crate::index::field_index::full_text_index) struct Storage {
     pub(in crate::index::field_index::full_text_index) postings: MmapPostingsEnum,
     pub(in crate::index::field_index::full_text_index) vocab: MmapHashMap<str, TokenId>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count: MmapSlice<usize>,
     pub(in crate::index::field_index::full_text_index) deleted_points:
         MmapBitSliceBufferedUpdateWrapper,
-    /// Number of points which are not deleted
-    pub(in crate::index::field_index::full_text_index) active_points_count: usize,
-    is_on_disk: bool,
 }
 
 impl MmapInvertedIndex {
@@ -97,6 +102,16 @@ impl MmapInvertedIndex {
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
         let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
+        // If postings don't exist, assume the index doesn't exist on disk
+        if !postings_path.is_file() {
+            return Ok(Self {
+                path: path.clone(),
+                storage: None,
+                active_points_count: 0,
+                is_on_disk: !populate,
+            });
+        }
+
         let postings = match has_positions {
             false => MmapPostingsEnum::Ids(MmapPostings::<()>::open(&postings_path, populate)?),
             true => MmapPostingsEnum::WithPositions(MmapPostings::<Positions>::open(
@@ -124,24 +139,41 @@ impl MmapInvertedIndex {
 
         Ok(Self {
             path,
-            postings,
-            vocab,
-            point_to_tokens_count,
-            deleted_points,
+            storage: Some(Storage {
+                postings,
+                vocab,
+                point_to_tokens_count,
+                deleted_points,
+            }),
             active_points_count: points_count,
             is_on_disk: !populate,
         })
     }
 
-    pub(super) fn iter_vocab(&self) -> impl Iterator<Item = (&str, &TokenId)> {
+    pub fn load(&self) -> bool {
+        self.storage.is_some()
+    }
+
+    pub(super) fn iter_vocab(&self) -> Box<dyn Iterator<Item = (&str, &TokenId)> + '_> {
+        let Some(storage) = &self.storage else {
+            return Box::new(std::iter::empty());
+        };
+
         // unwrap safety: we know that each token points to a token id.
-        self.vocab.iter().map(|(k, v)| (k, v.first().unwrap()))
+        let iter = storage.vocab.iter().map(|(k, v)| (k, v.first().unwrap()));
+        Box::new(iter)
     }
 
     /// Returns whether the point id is valid and active.
     pub fn is_active(&self, point_id: PointOffsetType) -> bool {
-        let is_deleted = self.deleted_points.get(point_id as usize).unwrap_or(true);
+        let Some(storage) = &self.storage else {
+            return false;
+        };
 
+        let is_deleted = storage
+            .deleted_points
+            .get(point_id as usize)
+            .unwrap_or(true);
         !is_deleted
     }
 
@@ -151,6 +183,10 @@ impl MmapInvertedIndex {
         tokens: TokenSet,
         hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        let Some(storage) = &self.storage else {
+            return Box::new(std::iter::empty());
+        };
+
         // in case of mmap immutable index, deleted points are still in the postings
         let filter = move |idx| self.is_active(idx);
 
@@ -179,7 +215,7 @@ impl MmapInvertedIndex {
             intersect_compressed_postings_iterator(posting_readers, filter)
         }
 
-        match &self.postings {
+        match &storage.postings {
             MmapPostingsEnum::Ids(postings) => intersection(postings, tokens, filter, hw_counter),
             MmapPostingsEnum::WithPositions(postings) => {
                 intersection(postings, tokens, filter, hw_counter)
@@ -193,6 +229,10 @@ impl MmapInvertedIndex {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
+        let Some(storage) = &self.storage else {
+            return false;
+        };
+
         // check non-empty query
         if tokens.is_empty() {
             return false;
@@ -220,7 +260,7 @@ impl MmapInvertedIndex {
             })
         }
 
-        match &self.postings {
+        match &storage.postings {
             MmapPostingsEnum::Ids(postings) => {
                 check_intersection(postings, tokens, point_id, hw_counter)
             }
@@ -236,10 +276,14 @@ impl MmapInvertedIndex {
         phrase: Document,
         hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        let Some(storage) = &self.storage else {
+            return Box::new(std::iter::empty());
+        };
+
         // in case of mmap immutable index, deleted points are still in the postings
         let is_active = move |idx| self.is_active(idx);
 
-        match &self.postings {
+        match &storage.postings {
             MmapPostingsEnum::WithPositions(postings) => {
                 intersect_compressed_postings_phrase_iterator(
                     phrase,
@@ -258,12 +302,16 @@ impl MmapInvertedIndex {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
+        let Some(storage) = &self.storage else {
+            return false;
+        };
+
         // in case of mmap immutable index, deleted points are still in the postings
         if !self.is_active(point_id) {
             return false;
         }
 
-        match &self.postings {
+        match &storage.postings {
             MmapPostingsEnum::WithPositions(postings) => {
                 check_compressed_postings_phrase(phrase, point_id, |token_id| {
                     postings.get(*token_id, hw_counter)
@@ -291,6 +339,14 @@ impl MmapInvertedIndex {
         ]
     }
 
+    pub fn flusher(&self) -> Flusher {
+        if let Some(storage) = &self.storage {
+            storage.deleted_points.flusher()
+        } else {
+            Box::new(|| Ok(()))
+        }
+    }
+
     pub fn is_on_disk(&self) -> bool {
         self.is_on_disk
     }
@@ -298,9 +354,11 @@ impl MmapInvertedIndex {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
-        self.postings.populate();
-        self.vocab.populate()?;
-        self.point_to_tokens_count.populate()?;
+        if let Some(storage) = &self.storage {
+            storage.postings.populate();
+            storage.vocab.populate()?;
+            storage.point_to_tokens_count.populate()?;
+        }
         Ok(())
     }
 
@@ -343,7 +401,11 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn remove(&mut self, idx: PointOffsetType) -> bool {
-        let Some(is_deleted) = self.deleted_points.get(idx as usize) else {
+        let Some(storage) = &mut self.storage else {
+            return false;
+        };
+
+        let Some(is_deleted) = storage.deleted_points.get(idx as usize) else {
             return false; // Never existed
         };
 
@@ -351,8 +413,8 @@ impl InvertedIndex for MmapInvertedIndex {
             return false; // Already removed
         }
 
-        self.deleted_points.set(idx as usize, true);
-        if let Some(count) = self.point_to_tokens_count.get_mut(idx as usize) {
+        storage.deleted_points.set(idx as usize, true);
+        if let Some(count) = storage.point_to_tokens_count.get_mut(idx as usize) {
             *count = 0;
 
             // `deleted_points`'s length can be larger than `point_to_tokens_count`'s length.
@@ -379,17 +441,27 @@ impl InvertedIndex for MmapInvertedIndex {
         token_id: TokenId,
         hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
-        self.postings.posting_len(token_id, hw_counter)
+        self.storage
+            .as_ref()?
+            .postings
+            .posting_len(token_id, hw_counter)
     }
 
-    fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
+    #[expect(refining_impl_trait_internal)]
+    fn vocab_with_postings_len_iter(&self) -> Box<dyn Iterator<Item = (&str, usize)> + '_> {
+        let Some(storage) = &self.storage else {
+            return Box::new(std::iter::empty());
+        };
+
         let hw_counter = HardwareCounterCell::disposable(); // No propagation needed here because this function is only used for building HNSW index.
 
-        self.iter_vocab().filter_map(move |(token, &token_id)| {
-            self.postings
+        let iter = self.iter_vocab().filter_map(move |(token, &token_id)| {
+            storage
+                .postings
                 .posting_len(token_id, &hw_counter)
                 .map(|posting_len| (token, posting_len))
-        })
+        });
+        Box::new(iter)
     }
 
     fn check_match(
@@ -405,10 +477,19 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        if self.deleted_points.get(point_id as usize).unwrap_or(true) {
+        let Some(storage) = &self.storage else {
+            return true;
+        };
+
+        if storage
+            .deleted_points
+            .get(point_id as usize)
+            .unwrap_or(true)
+        {
             return true;
         }
-        self.point_to_tokens_count
+        storage
+            .point_to_tokens_count
             .get(point_id as usize)
             .map(|count| *count == 0)
             // if the point does not exist, it is considered empty
@@ -416,10 +497,20 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {
-        if self.deleted_points.get(point_id as usize).unwrap_or(true) {
+        let Some(storage) = &self.storage else {
+            return 0;
+        };
+
+        if storage
+            .deleted_points
+            .get(point_id as usize)
+            .unwrap_or(true)
+        {
             return 0;
         }
-        self.point_to_tokens_count
+
+        storage
+            .point_to_tokens_count
             .get(point_id as usize)
             .copied()
             // if the point does not exist, it is considered empty
@@ -431,13 +522,18 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
+        let Some(storage) = &self.storage else {
+            return None;
+        };
+
         if self.is_on_disk {
             hw_counter.payload_index_io_read_counter().incr_delta(
                 READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
             );
         }
 
-        self.vocab
+        storage
+            .vocab
             .get(token)
             .ok()
             .flatten()
