@@ -202,7 +202,8 @@ fn similarity_matrix(
         ));
     }
 
-    // Initialize similarity matrix with zeros
+    // Initialize similarity matrix with zeros. We can unwrap here because ::new() only fails
+    // if `num_vectors < 2`, which we ensured is not the case above.
     let mut similarity_matrix = SimilarityMatrix::new(num_vectors, 0.0).unwrap();
 
     // Prepare all scorers
@@ -220,17 +221,20 @@ fn similarity_matrix(
 
     // Compute similarities only for upper triangle to optimize (i < j)
     // Since similarity is symmetric: sim(i,j) == sim(j,i), we can avoid duplicate computation
-    for i in 0..num_vectors {
+
+    let mut scores = vec![0.0; num_vectors - 1];
+
+    for (i, raw_scorer) in raw_scorers.iter().enumerate().take(num_vectors) {
         // Only compute scores for the upper triangle
         let upper_offsets: Vec<u32> = ((i + 1)..num_vectors).map(|j| j as u32).collect();
 
         if !upper_offsets.is_empty() {
-            let mut scores = vec![0.0; upper_offsets.len()];
-            raw_scorers[i].score_points(&upper_offsets, &mut scores);
+            scores.resize(upper_offsets.len(), 0.0);
+            raw_scorer.score_points(&upper_offsets, &mut scores);
 
-            for (&vector_idx, similarity) in upper_offsets.iter().zip(scores) {
+            for (&vector_idx, similarity) in upper_offsets.iter().zip(&scores) {
                 let j = vector_idx as usize;
-                similarity_matrix.set(i, j, similarity);
+                similarity_matrix.set(i, j, *similarity);
             }
         }
         // Diagonal elements remain 0.0 (self-similarity excluded)
