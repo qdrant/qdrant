@@ -67,7 +67,7 @@ class TestLowDisk:
         client.search_points(collection_name)
     
     @pytest.mark.parametrize("test_mode", ["search", "indexing"])
-    def test_low_disk_handling(self, qdrant_container, test_mode: Literal["search", "indexing"]):
+    def test_low_disk_handling(self, qdrant_container_factory, test_mode: Literal["search", "indexing"]):
         """
         Test that Qdrant handles low disk conditions gracefully. Start a container with limited tmpfs mount (10MB),
         perform operations, ensure container doesn't crash.
@@ -88,7 +88,7 @@ class TestLowDisk:
             ],
             remove=False  # Keep for logs
         )
-        container_info = qdrant_container(config)
+        container_info = qdrant_container_factory(config)
         
         # Create ClientUtils instance for this container
         client = ClientUtils(host=container_info.host, port=container_info.http_port)

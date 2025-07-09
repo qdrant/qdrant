@@ -10,7 +10,7 @@ class TestLowRam:
     """Test Qdrant behavior under low RAM conditions and recovery mode."""
     
     @pytest.mark.parametrize("storage_from_archive", ["storage.tar.xz"], indirect=True)
-    def test_oom_with_insufficient_memory(self, qdrant_container, storage_from_archive):
+    def test_oom_with_insufficient_memory(self, qdrant_container_factory, storage_from_archive):
         """
         Test that Qdrant OOMs when started with insufficient memory.
         """
@@ -24,7 +24,7 @@ class TestLowRam:
             remove=False,
             exit_on_error=False  # Don't raise error when Qdrant fails to start
         )
-        oom_container_info = qdrant_container(config)
+        oom_container_info = qdrant_container_factory(config)
         
         oom_container = oom_container_info.container
         
@@ -36,7 +36,7 @@ class TestLowRam:
         print("Container OOMed as expected")
 
     @pytest.mark.parametrize("storage_from_archive", ["storage.tar.xz"], indirect=True)
-    def test_recovery_mode_with_low_memory(self, qdrant_container, storage_from_archive):
+    def test_recovery_mode_with_low_memory(self, qdrant_container_factory, storage_from_archive):
         """
         Test that:
         1. Qdrant can start in recovery mode with low memory limit
@@ -51,7 +51,7 @@ class TestLowRam:
                 "QDRANT_ALLOW_RECOVERY_MODE": "true"
             }
         )
-        recovery_container_info = qdrant_container(config)
+        recovery_container_info = qdrant_container_factory(config)
         
         recovery_container = recovery_container_info.container
         api_port = recovery_container_info.http_port

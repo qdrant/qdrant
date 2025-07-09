@@ -7,6 +7,8 @@ import requests
 import time
 import uuid
 
+from resource_tests.conftest import QdrantContainerConfig
+
 
 class TestMultiContainer:
     def test_cluster_with_fixture(self, qdrant_cluster):
@@ -85,7 +87,7 @@ class TestMultiContainer:
         
         print("Large cluster test passed!")
     
-    def test_three_node_cluster_manual(self, qdrant_container):
+    def test_three_node_cluster_manual(self, qdrant_container_factory):
         """
         Example test that manually sets up 3 Qdrant containers in a cluster configuration.
         
@@ -102,7 +104,7 @@ class TestMultiContainer:
         
         try:
             # Container 1: Leader node
-            leader_info = qdrant_container(
+            leader_config = QdrantContainerConfig(
                 name=f"qdrant-leader-{test_id}",
                 network=network_name,
                 environment={
@@ -113,9 +115,10 @@ class TestMultiContainer:
                 # Use custom command to set URI
                 command=["./qdrant", "--uri", f"http://qdrant-leader-{test_id}:6335"],
             )
+            leader_info = qdrant_container_factory(leader_config)
             
             # Container 2: Follower node 1
-            follower1_info = qdrant_container(
+            follower1_config = QdrantContainerConfig(
                 name=f"qdrant-follower1-{test_id}",
                 network=network_name,
                 environment={
@@ -129,9 +132,10 @@ class TestMultiContainer:
                     f"sleep 3 && ./qdrant --bootstrap 'http://qdrant-leader-{test_id}:6335' --uri 'http://qdrant-follower1-{test_id}:6335'"
                 ],
             )
+            follower1_info = qdrant_container_factory(follower1_config)
             
             # Container 3: Follower node 2
-            follower2_info = qdrant_container(
+            follower2_config = QdrantContainerConfig(
                 name=f"qdrant-follower2-{test_id}",
                 network=network_name,
                 environment={
@@ -145,6 +149,7 @@ class TestMultiContainer:
                     f"sleep 4 && ./qdrant --bootstrap 'http://qdrant-leader-{test_id}:6335' --uri 'http://qdrant-follower2-{test_id}:6335'"
                 ],
             )
+            follower2_info = qdrant_container_factory(follower2_config)
             
             # Give cluster time to stabilize
             time.sleep(8)
@@ -201,7 +206,7 @@ class TestComposeExample:
     ], indirect=True)
     def test_qdrant_compose_with_service_name(self, qdrant_compose):
         """
-        Test using a specific service from a multi-service docker-compose file.
+        Test using a specific service from a multiservice docker-compose file.
         """
         api_url = f"http://{qdrant_compose.host}:{qdrant_compose.http_port}"
 
@@ -245,7 +250,7 @@ class TestComposeExample:
     ], indirect=True)
     def test_multi_service_without_service_name_returns_array(self, qdrant_compose):
         """
-        Test that a multi-service compose file without service_name returns an array.
+        Test that a multiservice compose file without service_name returns an array.
         """
         # Should be a list of dicts
         assert isinstance(qdrant_compose, list)
@@ -261,52 +266,55 @@ class TestComposeExample:
 class TestContainerExample:
     """Simple example test demonstrating container setup and API calls."""
 
-    def test_qdrant_fixture_defaults(self, qdrant):
+    def test_qdrant_fixture_defaults(self, qdrant_container):
         """
         Test that spins up a container with default configuration,
         using the new 'qdrant' fixture.
         """
-        api_url = f"http://{qdrant.host}:{qdrant.http_port}"
+        api_url = f"http://{qdrant_container.host}:{qdrant_container.http_port}"
 
         response = requests.get(f"{api_url}/collections")
         assert response.status_code == 200, f"Expected status code 200, got {response.status_code}"
 
-    @pytest.mark.parametrize("qdrant", [
-        {"mem_limit": "256m", "environment": {"QDRANT__LOG_LEVEL": "DEBUG"}}
+    @pytest.mark.parametrize("qdrant_container", [
+        QdrantContainerConfig(mem_limit="256m", environment={"QDRANT__LOG_LEVEL": "DEBUG"})
     ], indirect=True)
-    def test_qdrant_fixture_with_custom_config(self, qdrant):
+    def test_qdrant_fixture_with_custom_config(self, qdrant_container):
         """
         Test with custom container configuration using indirect parametrization.
         """
-        api_url = f"http://{qdrant.host}:{qdrant.http_port}"
+        api_url = f"http://{qdrant_container.host}:{qdrant_container.http_port}"
 
         response = requests.get(f"{api_url}/collections")
         assert response.status_code == 200
 
-    def test_factory_qdrant_container_fixture_defaults(self, qdrant_container):
+    def test_factory_qdrant_container_fixture_defaults(self, qdrant_container_factory):
         """
         Test that the factory pattern works for multiple containers.
         """
-        container1 = qdrant_container()
-        container2 = qdrant_container()
+        container1 = qdrant_container_factory()
+        container2 = qdrant_container_factory()
 
         for container in [container1, container2]:
             api_url = f"http://{container.host}:{container.http_port}"
             response = requests.get(f"{api_url}/collections")
             assert response.status_code == 200
 
-    def test_factory_qdrant_container_fixture_with_custom_config(self, qdrant_container):
+    def test_factory_qdrant_container_fixture_with_custom_config(self, qdrant_container_factory):
         """
         Test that the factory pattern works for multiple containers.
         """
-        container1 = qdrant_container(
+        config1 = QdrantContainerConfig(
             name=f"qdrant-test-1",
             environment={"QDRANT__LOG_LEVEL": "DEBUG"}
         )
-        container2 = qdrant_container(
+        container1 = qdrant_container_factory(config1)
+        
+        config2 = QdrantContainerConfig(
             name=f"qdrant-test-2",
             environment={"QDRANT__STORAGE__HANDLE_COLLECTION_LOAD_ERRORS": "true"}
         )
+        container2 = qdrant_container_factory(config2)
 
         for container in [container1, container2]:
             api_url = f"http://{container.host}:{container.http_port}"

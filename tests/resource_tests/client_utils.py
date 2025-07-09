@@ -65,6 +65,33 @@ class ClientUtils:
             time.sleep(1)
         return False
     
+    def list_collections_names(self) -> List[str]:
+        """List all collections names."""
+        try:
+            collections_response = self.client.get_collections()
+            if collections_response and collections_response.collections:
+                return [col.name for col in collections_response.collections]
+            return []
+        except Exception as e:
+            raise Exception(f"Failed to list collections: {e}")
+    
+    def get_collection_info_dict(self, collection_name: str) -> Dict[str, Any]:
+        """Get detailed information about a specific collection."""
+        try:
+            collection_info = self.client.get_collection(collection_name)
+            return {
+                "result": {
+                    "status": collection_info.status.value if hasattr(collection_info.status, 'value') else str(collection_info.status),
+                    "vectors_count": collection_info.vectors_count,
+                    "points_count": collection_info.points_count,
+                    "config": collection_info.config
+                },
+                "status": "ok",
+                "time": 0
+            }
+        except Exception as e:
+            raise Exception(f"Failed to get collection info for '{collection_name}': {e}")
+    
     @staticmethod
     def generate_points(amount: int) -> Generator[Dict[str, List[models.PointStruct]], None, None]:
         """Generate batches of points for insertion."""

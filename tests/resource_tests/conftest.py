@@ -1,10 +1,8 @@
 import os
 import shutil
 import subprocess
-import tarfile
 import time
 import uuid
-import zipfile
 from typing import Optional, List, Dict, Any, Tuple, Generator, Union
 from dataclasses import dataclass, field
 
@@ -16,7 +14,7 @@ from docker.errors import ImageNotFound, NotFound
 import requests
 from pathlib import Path
 
-from resource_tests.utils import wait_for_qdrant_ready
+from resource_tests.utils import wait_for_qdrant_ready, extract_archive
 
 
 class QdrantContainer:
@@ -502,7 +500,7 @@ def qdrant_image(docker_client: docker.DockerClient, request) -> str:
         config = {}
 
     # Determine image tag
-    image_tag = config.get("tag", "qdrant/qdrant:dev")
+    image_tag = config.get("tag", "qdrant/qdrant:e2e-tests")
     rebuild_image = config.get("rebuild_image", False)
 
     project_root = Path(__file__).parent.parent.parent
@@ -544,7 +542,7 @@ def qdrant_image(docker_client: docker.DockerClient, request) -> str:
 
 
 @pytest.fixture(scope="function")
-def qdrant_container(docker_client, qdrant_image, request):
+def qdrant_container_factory(docker_client, qdrant_image, request):
     """
     Fixture for creating Qdrant containers with provided configuration.
     For a simple use case with default configuration, use qdrant fixture instead.
@@ -552,17 +550,17 @@ def qdrant_container(docker_client, qdrant_image, request):
     Can be used as a factory or with indirect parametrization:
     
     Factory usage (returns a callable):
-        def test_something(qdrant_container):
-            container_info = qdrant_container(mem_limit="128m", environment={...})
+        def test_something(qdrant_container_factory):
+            container_info = qdrant_container_factory(mem_limit="128m", environment={...})
             
     Indirect parametrization (returns container info directly):
-        @pytest.mark.parametrize("qdrant_container", [
+        @pytest.mark.parametrize("qdrant_container_factory", [
             {"mem_limit": "256m", "environment": {"KEY": "value"}}
         ], indirect=True)
-        def test_something(qdrant_container):
-            # qdrant_container is already the container info object
-            host = qdrant_container.host
-            port = qdrant_container.http_port
+        def test_something(qdrant_container_factory):
+            # qdrant_container_factory is already the container info object
+            host = qdrant_container_factory.host
+            port = qdrant_container_factory.http_port
     
     Returns a QdrantContainer object with:
         - container: The Docker container object
@@ -606,7 +604,7 @@ def qdrant_container(docker_client, qdrant_image, request):
             # Indirect parametrization mode with QdrantContainerConfig - use directly
             config = request.param
         else:
-            raise ValueError(f"Unsupported parameter type for qdrant_container: {type(request.param)}")
+            raise ValueError(f"Unsupported parameter type for qdrant_container_factory: {type(request.param)}")
         
         container_info = _create_qdrant_container(docker_client, qdrant_image, config)
         containers.append(container_info.container)
@@ -621,22 +619,22 @@ def qdrant_container(docker_client, qdrant_image, request):
 
 
 @pytest.fixture(scope="function")
-def qdrant(docker_client, qdrant_image, request):
+def qdrant_container(docker_client, qdrant_image, request):
     """
-    A simplification of a qdrant_container fixture.
+    A simplification of a qdrant_container_factory fixture.
     If a default qdrant setup is needed, this fixture is the one that should be used.
 
     Direct usage (default configuration):
-        def test_something(qdrant):
-            host = qdrant.host
-            port = qdrant.http_port
+        def test_something(qdrant_container):
+            host = qdrant_container.host
+            port = qdrant_container.http_port
 
     Indirect parametrization (custom configuration):
-        @pytest.mark.parametrize("qdrant", [
+        @pytest.mark.parametrize("qdrant_container", [
             {"mem_limit": "256m", "environment": {"KEY": "value"}}
         ], indirect=True)
-        def test_something(qdrant):
-            # qdrant is the container info object with custom config
+        def test_something(qdrant_container):
+            # qdrant_container is the container info object with custom config
 
     Returns a QdrantContainer object with:
         - container: The Docker container object
@@ -651,8 +649,13 @@ def qdrant(docker_client, qdrant_image, request):
         - Any other Docker container run parameters
     """
     config = QdrantContainerConfig()
-    if hasattr(request, "param") and isinstance(request.param, dict):
-        config = QdrantContainerConfig(**request.param)
+    if hasattr(request, "param"):
+        if isinstance(request.param, dict):
+            config = QdrantContainerConfig(**request.param)
+        elif isinstance(request.param, QdrantContainerConfig):
+            config = request.param
+        else:
+            raise ValueError(f"Unsupported parameter type for qdrant: {type(request.param)}")
 
     container_info = _create_qdrant_container(docker_client, qdrant_image, config)
 
@@ -685,7 +688,7 @@ def qdrant_compose(docker_client, qdrant_image, test_data_dir, request):
             
     Parameters (via indirect parametrization):
         - compose_file (str, required): Name of compose file in test_data directory
-        - service_name (str, optional): Specific service name for multi-service compose files.
+        - service_name (str, optional): Specific service name for multiservice compose files.
                                        If not provided:
                                        - Single-service compose: returns QdrantContainer object
                                        - Multi-service compose: returns list of QdrantContainer objects
@@ -717,7 +720,7 @@ def qdrant_compose(docker_client, qdrant_image, test_data_dir, request):
 
 
 @pytest.fixture(scope="function")
-def qdrant_cluster(docker_client, qdrant_container, request):
+def qdrant_cluster(docker_client, qdrant_container_factory, request):
     """
     Create a Qdrant cluster with 1 leader and configurable number of followers.
 
@@ -760,7 +763,7 @@ def qdrant_cluster(docker_client, qdrant_container, request):
     try:
         # Create leader node
         leader_name = f"qdrant-leader-{test_id}"
-        leader_info = qdrant_container(
+        leader_info = qdrant_container_factory(
             name=leader_name,
             network=network_name,
             environment={
@@ -781,7 +784,7 @@ def qdrant_cluster(docker_client, qdrant_container, request):
             follower_name = f"qdrant-follower{i+1}-{test_id}"
             sleep_time = 3 + i  # Stagger startup times
             
-            follower_info = qdrant_container(
+            follower_info = qdrant_container_factory(
                 name=follower_name,
                 network=network_name,
                 environment={
@@ -896,46 +899,10 @@ def storage_from_archive(request, test_data_dir: Path, temp_storage_dir: Path) -
         archive_name = request.param
     else:
         raise ValueError("storage_with_archive fixture requires archive name via parametrization")
-    
-    # Path to test_data directory
-    archive_file = test_data_dir / archive_name
-    
-    if not archive_file.exists():
-        raise FileNotFoundError(f"Archive not found: {archive_file}")
-    
-    # Get the parent directory of storage (where we want to extract)
-    extract_to = temp_storage_dir.parent
-    file_name = archive_file.name.lower()
 
-    try:
-        if file_name.endswith(('.tar.xz', '.tar.gz', '.tar.bz2', '.tgz', '.tbz2')):
-            # Handle compressed tar files
-            with tarfile.open(archive_file, 'r:*') as tar:
-                tar.extractall(path=extract_to)
-                print(f"Extracted {archive_file} to {extract_to}")
-        elif file_name.endswith('.tar'):
-            # Handle uncompressed tar files
-            with tarfile.open(archive_file, 'r:') as tar:
-                tar.extractall(path=extract_to)
-                print(f"Extracted {archive_file} to {extract_to}")
-        elif file_name.endswith('.zip'):
-            # Handle zip files
-            with zipfile.ZipFile(archive_file, 'r') as zip_file:
-                zip_file.extractall(path=extract_to)
-                print(f"Extracted {archive_file} to {extract_to}")
-        else:
-            raise ValueError(f"Unsupported archive format: {archive_file}")
-    except Exception as e:
-        print(f"Failed to extract archive {archive_file}: {e}")
-        # Try fallback to subprocess for tar files
-        if file_name.endswith(('.tar.xz', '.tar.gz', '.tar.bz2', '.tgz', '.tbz2', '.tar')):
-            try:
-                print(f"Trying fallback extraction with tar command...")
-                subprocess.run(["tar", "-xf", str(archive_file)], cwd=str(extract_to), check=True)
-                print(f"Successfully extracted {archive_file} using tar command")
-            except subprocess.CalledProcessError as tar_error:
-                raise RuntimeError(f"Failed to extract archive: {tar_error}")
-        else:
-            raise
+    archive_file = test_data_dir / archive_name
+    extract_to = temp_storage_dir.parent
+
+    extract_archive(archive_file, extract_to)
     
     return temp_storage_dir
