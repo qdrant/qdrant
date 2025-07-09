@@ -58,7 +58,18 @@ impl ImmutableFullTextIndex {
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
     pub fn open_mmap(index: MmapFullTextIndex) -> Self {
-        let inverted_index = match index.inverted_index.postings {
+        // If we have no storage, load a dummy index
+        let Some(index_storage) = &index.inverted_index.storage else {
+            return Self {
+                inverted_index: ImmutableInvertedIndex::ids_empty(),
+                #[cfg(feature = "rocksdb")]
+                config: index.config.clone(),
+                tokenizer: index.tokenizer.clone(),
+                storage: Storage::Mmap(Box::new(index)),
+            };
+        };
+
+        let inverted_index = match index_storage.postings {
             MmapPostingsEnum::Ids(_) => ImmutableInvertedIndex::ids_empty(),
             MmapPostingsEnum::WithPositions(_) => ImmutableInvertedIndex::positions_empty(),
         };
