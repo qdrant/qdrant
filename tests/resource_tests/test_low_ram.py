@@ -24,7 +24,7 @@ class TestLowRam:
             exit_on_error=False  # Don't raise error when Qdrant fails to start
         )
         
-        oom_container = oom_container_info["container"]
+        oom_container = oom_container_info.container
         
         # Wait for container to exit
         exit_code = oom_container.wait()['StatusCode']
@@ -50,11 +50,11 @@ class TestLowRam:
             }
         )
         
-        recovery_container = recovery_container_info["container"]
-        api_port = recovery_container_info["http_port"]
+        recovery_container = recovery_container_info.container
+        api_port = recovery_container_info.http_port
         
         # Create ClientUtils instance for this container
-        client = ClientUtils(host=recovery_container_info['host'], port=api_port)
+        client = ClientUtils(host=recovery_container_info.host, port=api_port)
         
         # Wait for collection to be loaded
         assert client.wait_for_collection_loaded("low-ram"), "Collection failed to load in ~10 seconds"

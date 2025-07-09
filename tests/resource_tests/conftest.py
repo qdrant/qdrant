@@ -5,9 +5,12 @@ import tarfile
 import time
 import uuid
 import zipfile
+from typing import Optional, List, Dict, Any, Tuple, Generator
 
 import pytest
 import docker
+import docker.models.containers
+import docker.models.networks
 from docker.errors import ImageNotFound, NotFound
 import requests
 from pathlib import Path
@@ -15,7 +18,38 @@ from pathlib import Path
 from resource_tests.utils import wait_for_qdrant_ready
 
 
-def _get_default_qdrant_config(qdrant_image):
+class QdrantContainer:
+    """Container info object for Qdrant containers."""
+    
+    def __init__(self, container: docker.models.containers.Container, host: str, name: str, 
+                 http_port: int, grpc_port: Optional[int], compose_project: Optional[str] = None) -> None:
+        self.container = container
+        self.host = host
+        self.name = name
+        self.http_port = http_port
+        self.grpc_port = grpc_port
+        self.compose_project = compose_project
+    
+    def __repr__(self) -> str:
+        return f"QdrantContainer(name='{self.name}', host='{self.host}', http_port={self.http_port}, grpc_port={self.grpc_port})"
+
+
+class QdrantCluster:
+    """Cluster info object for Qdrant clusters."""
+    
+    def __init__(self, leader: QdrantContainer, followers: List[QdrantContainer], 
+                 network: docker.models.networks.Network, network_name: str) -> None:
+        self.leader = leader
+        self.followers = followers
+        self.all_nodes = [leader] + followers
+        self.network = network
+        self.network_name = network_name
+    
+    def __repr__(self) -> str:
+        return f"QdrantCluster(leader={self.leader.name}, followers={len(self.followers)}, network='{self.network_name}')"
+
+
+def _get_default_qdrant_config(qdrant_image: str) -> Dict[str, Any]:
     """Get default configuration for Qdrant container.
     
     Args:
@@ -32,7 +66,7 @@ def _get_default_qdrant_config(qdrant_image):
     }
 
 
-def _extract_container_ports(container):
+def _extract_container_ports(container: docker.models.containers.Container) -> Tuple[int, int]:
     """Extract HTTP and gRPC ports from container.
     For host network mode, returns standard Qdrant ports (6333, 6334).
     For bridge/custom networks, extracts mapped ports from container attributes.
@@ -55,8 +89,8 @@ def _extract_container_ports(container):
     return int(http_port), int(grpc_port)
 
 
-def _create_container_info(container, http_port, grpc_port):
-    """Create standardized container info dictionary.
+def _create_container_info(container: docker.models.containers.Container, http_port: int, grpc_port: int) -> QdrantContainer:
+    """Create standardized container info object.
     
     Args:
         container: Docker container object
@@ -64,12 +98,7 @@ def _create_container_info(container, http_port, grpc_port):
         grpc_port: gRPC API port number
         
     Returns:
-        dict: Container info with keys:
-            - container: The Docker container object
-            - host: Host address ("localhost" for host network, "127.0.0.1" otherwise)
-            - name: Container name
-            - http_port: HTTP API port
-            - grpc_port: gRPC API port
+        QdrantContainer: Container info object with container, host, name, http_port, and grpc_port attributes
     """
     container.reload()
     if container.attrs.get('HostConfig', {}).get('NetworkMode') == 'host':
@@ -77,16 +106,16 @@ def _create_container_info(container, http_port, grpc_port):
     else:
         host = "127.0.0.1"
     
-    return {
-        "container": container,
-        "host": host,
-        "name": container.name,
-        "http_port": http_port,
-        "grpc_port": grpc_port
-    }
+    return QdrantContainer(
+        container=container,
+        host=host,
+        name=container.name,
+        http_port=http_port,
+        grpc_port=grpc_port
+    )
 
 
-def _cleanup_container(container):
+def _cleanup_container(container: docker.models.containers.Container) -> None:
     """Clean up a Docker container.
     Stops the container and removes it if AutoRemove is not enabled.
     Handles NotFound exceptions gracefully.
@@ -106,7 +135,7 @@ def _cleanup_container(container):
         print(f"Error stopping container {container.name if hasattr(container, 'name') else 'unknown'}: {e}")
 
 
-def _create_qdrant_container(docker_client, qdrant_image, config=None):
+def _create_qdrant_container(docker_client: docker.DockerClient, qdrant_image: str, config: Optional[Dict[str, Any]] = None) -> QdrantContainer:
     """Core function to create a Qdrant container with given configuration.
     
     Args:
@@ -118,7 +147,7 @@ def _create_qdrant_container(docker_client, qdrant_image, config=None):
             All other parameters are passed to docker_client.containers.run()
             
     Returns:
-        dict: Container info (see _create_container_info)
+        QdrantContainer: Container info object (see _create_container_info)
         
     Raises:
         RuntimeError: If Qdrant fails to start and exit_on_error=True
@@ -234,7 +263,7 @@ def _run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
         
         # Wait for this specific container to be ready
         if wait_for_ready:
-            if not wait_for_qdrant_ready(port=container_info["http_port"], timeout=60):
+            if not wait_for_qdrant_ready(port=container_info.http_port, timeout=60):
                 raise RuntimeError("Qdrant failed to start within 60 seconds")
         
     else:
@@ -251,7 +280,7 @@ def _run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
             
             # Wait for this specific container to be ready
             if wait_for_ready:
-                if not wait_for_qdrant_ready(port=container_info["http_port"], timeout=60):
+                if not wait_for_qdrant_ready(port=container_info.http_port, timeout=60):
                     raise RuntimeError("Qdrant failed to start within 60 seconds")
             
         else:
@@ -275,8 +304,8 @@ def _run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
             # Wait for all containers to be ready
             if wait_for_ready:
                 for info in container_infos:
-                    if not wait_for_qdrant_ready(port=info["http_port"], timeout=60):
-                        print(f"Warning: Container {info['name']} failed to start within 60 seconds")
+                    if not wait_for_qdrant_ready(port=info.http_port, timeout=60):
+                        print(f"Warning: Container {info.name} failed to start within 60 seconds")
             
             container_info = container_infos  # Return the array
     
@@ -296,7 +325,7 @@ def _run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
     return container_info, cleanup
 
 
-def _extract_compose_container_info(container, project_name):
+def _extract_compose_container_info(container: docker.models.containers.Container, project_name: str) -> QdrantContainer:
     """Extract container info from a docker-compose container.
     
     Args:
@@ -304,13 +333,7 @@ def _extract_compose_container_info(container, project_name):
         project_name: Docker-compose project name
         
     Returns:
-        dict: Container info with keys:
-            - container: The Docker container object
-            - host: Host address (always "127.0.0.1")
-            - name: Container name
-            - http_port: HTTP API port (extracted from port bindings)
-            - grpc_port: gRPC API port (optional, may be None)
-            - compose_project: The docker-compose project name
+        QdrantContainer: Container info object with compose_project set
             
     Raises:
         RuntimeError: If HTTP port mapping cannot be found
@@ -340,18 +363,18 @@ def _extract_compose_container_info(container, project_name):
     if '6334/tcp' in port_bindings and port_bindings['6334/tcp']:
         grpc_port = int(port_bindings['6334/tcp'][0]['HostPort'])
     
-    return {
-        "container": container,
-        "host": "127.0.0.1",
-        "name": container.name,
-        "http_port": http_port,
-        "grpc_port": grpc_port,
-        "compose_project": project_name
-    }
+    return QdrantContainer(
+        container=container,
+        host="127.0.0.1",
+        name=container.name,
+        http_port=http_port,
+        grpc_port=grpc_port,
+        compose_project=project_name
+    )
 
 
 @pytest.fixture(scope="session")
-def docker_client():
+def docker_client() -> docker.DockerClient:
     """Create a Docker client instance.
     
     Returns:
@@ -361,7 +384,7 @@ def docker_client():
 
 
 @pytest.fixture(scope="session")
-def test_data_dir():
+def test_data_dir() -> Path:
     """Path to the test data directory.
     
     Returns:
@@ -371,7 +394,7 @@ def test_data_dir():
 
 
 @pytest.fixture(scope="session")
-def qdrant_image(docker_client, request):
+def qdrant_image(docker_client: docker.DockerClient, request) -> str:
     """
     Build Qdrant Docker image once per test session.
 
@@ -401,7 +424,7 @@ def qdrant_image(docker_client, request):
         config = {}
 
     # Determine image tag
-    image_tag = config.get("tag", "qdrant/qdrant:e2e-tests")
+    image_tag = config.get("tag", "qdrant/qdrant:dev")
     rebuild_image = config.get("rebuild_image", False)
 
     project_root = Path(__file__).parent.parent.parent
@@ -459,11 +482,11 @@ def qdrant_container(docker_client, qdrant_image, request):
             {"mem_limit": "256m", "environment": {"KEY": "value"}}
         ], indirect=True)
         def test_something(qdrant_container):
-            # qdrant_container is already the container info dict
-            host = qdrant_container["host"]
-            port = qdrant_container["http_port"]
+            # qdrant_container is already the container info object
+            host = qdrant_container.host
+            port = qdrant_container.http_port
     
-    Returns a dict with:
+    Returns a QdrantContainer object with:
         - container: The Docker container object
         - host: The host address ("127.0.0.1" or "localhost" for host network)
         - name: The container name
@@ -487,7 +510,7 @@ def qdrant_container(docker_client, qdrant_image, request):
     
     def _create_container(**kwargs):
         container_info = _create_qdrant_container(docker_client, qdrant_image, kwargs)
-        containers.append(container_info["container"])
+        containers.append(container_info.container)
         return container_info
     
     # Check if this is being used with indirect parametrization
@@ -512,17 +535,17 @@ def qdrant(docker_client, qdrant_image, request):
 
     Direct usage (default configuration):
         def test_something(qdrant):
-            host = qdrant["host"]
-            port = qdrant["http_port"]
+            host = qdrant.host
+            port = qdrant.http_port
 
     Indirect parametrization (custom configuration):
         @pytest.mark.parametrize("qdrant", [
             {"mem_limit": "256m", "environment": {"KEY": "value"}}
         ], indirect=True)
         def test_something(qdrant):
-            # qdrant is the container info dict with custom config
+            # qdrant is the container info object with custom config
 
-    Returns a dict with:
+    Returns a QdrantContainer object with:
         - container: The Docker container object
         - host: The host address ("127.0.0.1" or "localhost" for host network)
         - name: The container name
@@ -543,7 +566,7 @@ def qdrant(docker_client, qdrant_image, request):
     try:
         yield container_info
     finally:
-        _cleanup_container(container_info["container"])
+        _cleanup_container(container_info.container)
 
 
 @pytest.fixture(scope="function")
@@ -556,9 +579,9 @@ def qdrant_compose(docker_client, qdrant_image, test_data_dir, request):
             {"compose_file": "docker-compose.yaml"}
         ], indirect=True)
         def test_something(qdrant_compose):
-            # qdrant_compose is a dict with container info
-            host = qdrant_compose["host"]
-            port = qdrant_compose["http_port"]
+            # qdrant_compose is a QdrantContainer object with container info
+            host = qdrant_compose.host
+            port = qdrant_compose.http_port
             
         # With custom service name (if compose has multiple services):
         @pytest.mark.parametrize("qdrant_compose", [
@@ -571,13 +594,13 @@ def qdrant_compose(docker_client, qdrant_image, test_data_dir, request):
         - compose_file (str, required): Name of compose file in test_data directory
         - service_name (str, optional): Specific service name for multi-service compose files.
                                        If not provided:
-                                       - Single-service compose: returns container info dict
-                                       - Multi-service compose: returns list of all container info dicts
+                                       - Single-service compose: returns QdrantContainer object
+                                       - Multi-service compose: returns list of QdrantContainer objects
         - wait_for_ready (bool): Whether to wait for containers to be ready (default: True)
         
     Returns:
         Single-service compose or when service_name specified:
-            dict: Container info with keys:
+            QdrantContainer: Container info object with:
                 - container: The Docker container object
                 - host: The host address (always "127.0.0.1")
                 - name: The container name
@@ -586,7 +609,7 @@ def qdrant_compose(docker_client, qdrant_image, test_data_dir, request):
                 - compose_project: The docker-compose project name
                 
         Multi-service compose without service_name:
-            list: Array of container info dicts (one per service)
+            list: Array of QdrantContainer objects (one per service)
     """
     if not hasattr(request, "param") or not isinstance(request.param, dict):
         raise ValueError("qdrant_compose fixture requires parametrization with compose_file path")
@@ -623,9 +646,9 @@ def qdrant_cluster(docker_client, qdrant_container, request):
     Parameters (via indirect parametrization):
         - follower_count (int): Number of follower nodes (default: 2)
         
-    Returns a dict with:
-        - leader: Leader node info dict (container, host, name, http_port, grpc_port)
-        - followers: List of follower node info dicts
+    Returns a QdrantCluster object with:
+        - leader: Leader node (QdrantContainer object)
+        - followers: List of follower nodes (QdrantContainer objects)
         - all_nodes: List of all nodes (leader + followers)
         - network: Docker network object
         - network_name: Docker network name
@@ -657,7 +680,7 @@ def qdrant_cluster(docker_client, qdrant_container, request):
         )
         
         # Wait for leader to be ready
-        wait_for_qdrant_ready(port=leader_info["http_port"], timeout=30)
+        wait_for_qdrant_ready(port=leader_info.http_port, timeout=30)
         
         # Create follower nodes
         followers = []
@@ -683,7 +706,7 @@ def qdrant_cluster(docker_client, qdrant_container, request):
         
         # Wait for all followers to be ready
         for follower_info in followers:
-            wait_for_qdrant_ready(port=follower_info["http_port"], timeout=60)
+            wait_for_qdrant_ready(port=follower_info.http_port, timeout=60)
         
         # Give cluster time to stabilize
         time.sleep(5)
@@ -691,7 +714,7 @@ def qdrant_cluster(docker_client, qdrant_container, request):
         # Verify cluster formation
         try:
             response = requests.get(
-                f"http://{leader_info['host']}:{leader_info['http_port']}/cluster",
+                f"http://{leader_info.host}:{leader_info.http_port}/cluster",
                 timeout=10
             )
             if response.status_code == 200:
@@ -705,13 +728,12 @@ def qdrant_cluster(docker_client, qdrant_container, request):
         except Exception as e:
             print(f"Warning: Could not verify cluster: {e}")
         
-        cluster_data = {
-            "leader": leader_info,
-            "followers": followers,
-            "all_nodes": [leader_info] + followers,
-            "network": network,
-            "network_name": network_name
-        }
+        cluster_data = QdrantCluster(
+            leader=leader_info,
+            followers=followers,
+            network=network,
+            network_name=network_name
+        )
         
         yield cluster_data
         
@@ -725,7 +747,7 @@ def qdrant_cluster(docker_client, qdrant_container, request):
 
 
 @pytest.fixture(scope="function")
-def temp_storage_dir(request):
+def temp_storage_dir(request) -> Generator[Path, None, None]:
     """
     Create a temporary storage directory and ensure its removal after test.
 
@@ -757,7 +779,7 @@ def temp_storage_dir(request):
 
 
 @pytest.fixture(scope="function")
-def storage_from_archive(request, test_data_dir, temp_storage_dir):
+def storage_from_archive(request, test_data_dir: Path, temp_storage_dir: Path) -> Path:
     """
     Extract an archive from test_data directory into the storage directory.
 

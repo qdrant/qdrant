@@ -18,25 +18,25 @@ class TestMultiContainer:
         """
         cluster = qdrant_cluster
         
-        print(f"Cluster created with {len(cluster['all_nodes'])} nodes:")
-        print(f"  Leader: {cluster['leader']['name']} on port {cluster['leader']['http_port']}")
-        for i, follower in enumerate(cluster['followers']):
-            print(f"  Follower {i+1}: {follower['name']} on port {follower['http_port']}")
+        print(f"Cluster created with {len(cluster.all_nodes)} nodes:")
+        print(f"  Leader: {cluster.leader.name} on port {cluster.leader.http_port}")
+        for i, follower in enumerate(cluster.followers):
+            print(f"  Follower {i+1}: {follower.name} on port {follower.http_port}")
         
         # Verify cluster is formed - check cluster info on leader
         response = requests.get(
-            f"http://{cluster['leader']['host']}:{cluster['leader']['http_port']}/cluster"
+            f"http://{cluster.leader.host}:{cluster.leader.http_port}/cluster"
         )
         assert response.status_code == 200
         
         cluster_info = response.json()
         peers = cluster_info.get("result", {}).get("peers", {})
-        expected_nodes = len(cluster['all_nodes'])
+        expected_nodes = len(cluster.all_nodes)
         assert len(peers) == expected_nodes, f"Expected {expected_nodes} peers, found {len(peers)}"
         
         # Create a collection on the leader
         collection_response = requests.put(
-            f"http://{cluster['leader']['host']}:{cluster['leader']['http_port']}/collections/test-collection",
+            f"http://{cluster.leader.host}:{cluster.leader.http_port}/collections/test-collection",
             json={
                 "vectors": {
                     "size": 4,
@@ -50,11 +50,11 @@ class TestMultiContainer:
         time.sleep(2)
         
         # Verify collection exists on all nodes
-        for node_info in cluster['all_nodes']:
+        for node_info in cluster.all_nodes:
             response = requests.get(
-                f"http://{node_info['host']}:{node_info['http_port']}/collections/test-collection"
+                f"http://{node_info.host}:{node_info.http_port}/collections/test-collection"
             )
-            assert response.status_code == 200, f"Collection not found on node {node_info['name']}"
+            assert response.status_code == 200, f"Collection not found on node {node_info.name}"
         
         print("Cluster test with fixture passed!")
     
@@ -68,14 +68,14 @@ class TestMultiContainer:
         cluster = qdrant_cluster
         
         # Verify we have the expected number of nodes
-        assert len(cluster['all_nodes']) == 5, f"Expected 5 nodes, got {len(cluster['all_nodes'])}"
-        assert len(cluster['followers']) == 4, f"Expected 4 followers, got {len(cluster['followers'])}"
+        assert len(cluster.all_nodes) == 5, f"Expected 5 nodes, got {len(cluster.all_nodes)}"
+        assert len(cluster.followers) == 4, f"Expected 4 followers, got {len(cluster.followers)}"
         
-        print(f"Large cluster created with {len(cluster['all_nodes'])} nodes")
+        print(f"Large cluster created with {len(cluster.all_nodes)} nodes")
         
         # Test basic cluster functionality
         response = requests.get(
-            f"http://{cluster['leader']['host']}:{cluster['leader']['http_port']}/cluster"
+            f"http://{cluster.leader.host}:{cluster.leader.http_port}/cluster"
         )
         assert response.status_code == 200
         
@@ -151,7 +151,7 @@ class TestMultiContainer:
             
             # Verify cluster is formed - check cluster info on leader
             response = requests.get(
-                f"http://{leader_info['host']}:{leader_info['http_port']}/cluster"
+                f"http://{leader_info.host}:{leader_info.http_port}/cluster"
             )
             assert response.status_code == 200
             
@@ -183,7 +183,7 @@ class TestComposeExample:
         Test that creates a Qdrant container using docker-compose.yaml file.
         """
         # qdrant_compose returns the same structure as other fixtures
-        api_url = f"http://{qdrant_compose['host']}:{qdrant_compose['http_port']}"
+        api_url = f"http://{qdrant_compose.host}:{qdrant_compose.http_port}"
 
         # Test basic connectivity
         response = requests.get(f"{api_url}/collections")
@@ -194,8 +194,7 @@ class TestComposeExample:
         assert "collections" in data["result"]
 
         # Additional info available
-        assert "compose_project" in qdrant_compose
-        print(f"Running with compose project: {qdrant_compose['compose_project']}")
+        print(f"Running with compose project: {qdrant_compose.compose_project}")
 
     @pytest.mark.parametrize("qdrant_compose", [
         {"compose_file": "multi-service-compose.yaml", "service_name": "qdrant-node1"}
@@ -204,7 +203,7 @@ class TestComposeExample:
         """
         Test using a specific service from a multi-service docker-compose file.
         """
-        api_url = f"http://{qdrant_compose['host']}:{qdrant_compose['http_port']}"
+        api_url = f"http://{qdrant_compose.host}:{qdrant_compose.http_port}"
 
         # Create a collection
         collection_name = "compose_test_collection"
@@ -236,13 +235,8 @@ class TestComposeExample:
         Test that a single-service compose file always returns a single object,
         regardless of whether service_name is provided.
         """
-        # Should be a dict, not a list
-        assert isinstance(qdrant_compose, dict)
-        assert "http_port" in qdrant_compose
-        assert "host" in qdrant_compose
-
         # Test connectivity
-        api_url = f"http://{qdrant_compose['host']}:{qdrant_compose['http_port']}"
+        api_url = f"http://{qdrant_compose.host}:{qdrant_compose.http_port}"
         response = requests.get(f"{api_url}/collections")
         assert response.status_code == 200
 
@@ -258,12 +252,8 @@ class TestComposeExample:
         assert len(qdrant_compose) == 3  # Should have 3 nodes
 
         for container_info in qdrant_compose:
-            assert isinstance(container_info, dict)
-            assert "http_port" in container_info
-            assert "host" in container_info
-
             # Test connectivity to each node
-            api_url = f"http://{container_info['host']}:{container_info['http_port']}"
+            api_url = f"http://{container_info.host}:{container_info.http_port}"
             response = requests.get(f"{api_url}/collections")
             assert response.status_code == 200
 
@@ -276,7 +266,7 @@ class TestContainerExample:
         Test that spins up a container with default configuration,
         using the new 'qdrant' fixture.
         """
-        api_url = f"http://{qdrant['host']}:{qdrant['http_port']}"
+        api_url = f"http://{qdrant.host}:{qdrant.http_port}"
 
         response = requests.get(f"{api_url}/collections")
         assert response.status_code == 200, f"Expected status code 200, got {response.status_code}"
@@ -288,7 +278,7 @@ class TestContainerExample:
         """
         Test with custom container configuration using indirect parametrization.
         """
-        api_url = f"http://{qdrant['host']}:{qdrant['http_port']}"
+        api_url = f"http://{qdrant.host}:{qdrant.http_port}"
 
         response = requests.get(f"{api_url}/collections")
         assert response.status_code == 200
@@ -301,7 +291,7 @@ class TestContainerExample:
         container2 = qdrant_container()
 
         for container in [container1, container2]:
-            api_url = f"http://{container['host']}:{container['http_port']}"
+            api_url = f"http://{container.host}:{container.http_port}"
             response = requests.get(f"{api_url}/collections")
             assert response.status_code == 200
 
@@ -319,6 +309,6 @@ class TestContainerExample:
         )
 
         for container in [container1, container2]:
-            api_url = f"http://{container['host']}:{container['http_port']}"
+            api_url = f"http://{container.host}:{container.http_port}"
             response = requests.get(f"{api_url}/collections")
             assert response.status_code == 200

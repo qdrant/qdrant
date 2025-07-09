@@ -144,11 +144,11 @@ class TestStorageCompatibility:
         
         try:
             # Wait for server to start
-            if not wait_for_server(container_info["host"], container_info["http_port"]):
+            if not wait_for_server(container_info.host, container_info.http_port):
                 pytest.fail(f"Server failed to start for {version}")
             
             # Check collections
-            if not self._check_collections(container_info["host"], container_info["http_port"]):
+            if not self._check_collections(container_info.host, container_info.http_port):
                 pytest.fail(f"Storage compatibility failed for {version}")
             
             print(f"Storage compatibility test passed for {version}")
@@ -156,7 +156,7 @@ class TestStorageCompatibility:
         finally:
             # Cleanup container
             from resource_tests.conftest import _cleanup_container
-            _cleanup_container(container_info["container"])
+            _cleanup_container(container_info.container)
 
     def _test_snapshot_compatibility(self, docker_client, qdrant_image, version: str, storage_test_dir: Path):
         """Test snapshot recovery compatibility for a specific version."""
@@ -181,11 +181,11 @@ class TestStorageCompatibility:
         
         try:
             # Wait for server to start
-            if not wait_for_server(container_info["host"], container_info["http_port"]):
+            if not wait_for_server(container_info.host, container_info.http_port):
                 pytest.fail(f"Server failed to start from snapshot for {version}")
             
             # Check collections
-            if not self._check_collections(container_info["host"], container_info["http_port"]):
+            if not self._check_collections(container_info.host, container_info.http_port):
                 pytest.fail(f"Snapshot compatibility failed for {version}")
             
             print(f"Snapshot compatibility test passed for {version}")
@@ -193,7 +193,7 @@ class TestStorageCompatibility:
         finally:
             # Cleanup container
             from resource_tests.conftest import _cleanup_container
-            _cleanup_container(container_info["container"])
+            _cleanup_container(container_info.container)
             
             # Cleanup snapshot file
             snapshot_file.unlink(missing_ok=True)
@@ -238,11 +238,11 @@ class TestStorageCompatibility:
         
         try:
             # Wait for server to start
-            if not wait_for_server(container_info["host"], container_info["http_port"]):
+            if not wait_for_server(container_info.host, container_info.http_port):
                 pytest.fail("Server failed to start with local storage")
             
             # Check collections - don't expect specific collections for local test data
-            if not self._check_collections(container_info["host"], container_info["http_port"]):
+            if not self._check_collections(container_info.host, container_info.http_port):
                 pytest.fail("Local storage compatibility failed")
             
             print("Local storage compatibility test passed")
@@ -250,4 +250,4 @@ class TestStorageCompatibility:
         finally:
             # Cleanup container
             from resource_tests.conftest import _cleanup_container
-            _cleanup_container(container_info["container"])
+            _cleanup_container(container_info.container)

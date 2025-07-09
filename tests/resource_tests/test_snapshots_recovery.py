@@ -20,7 +20,7 @@ def test_snapshots_recovery(qdrant_container, storage_method, tmp_path):
             pytest.skip("MinIO is not available for S3 testing")
     
     container_info = qdrant_container
-    client = ClientUtils(host=container_info['host'], port=container_info['http_port'])
+    client = ClientUtils(host=container_info.host, port=container_info.http_port)
     
     # Create collection and insert points
     collection_config = {"vectors": {"size": 4, "distance": "Dot"}}

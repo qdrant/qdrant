@@ -43,8 +43,8 @@ class TestTLS:
     @staticmethod
     def _test_http_tls_connectivity(node_info, tls_certs, node_name):
         """Helper method to test HTTP TLS connectivity for a single node."""
-        host = node_info.get('host', 'localhost')
-        api_url = f"https://{host}:{node_info.get('http_port')}"
+        host = node_info.host
+        api_url = f"https://{host}:{node_info.http_port}"
         
         # Create SSL context for mutual TLS
         session = requests.Session()
@@ -78,7 +78,7 @@ class TestTLS:
         """Helper method to test gRPC TLS connectivity for a single node."""
         try:
             cert_hostname = f"{node_name}.qdrant"
-            compose_project = node_info.get('compose_project')
+            compose_project = node_info.compose_project
             network_name = f"{compose_project}_qdrant-network"
             
             # Get absolute paths for certificates 
@@ -136,7 +136,7 @@ class TestTLS:
         """
         # Use the first node for operations
         node_info = tls_cluster[0]
-        api_url = f"https://127.0.0.1:{node_info['http_port']}"
+        api_url = f"https://127.0.0.1:{node_info.http_port}"
         
         # Create SSL context for mutual TLS
         session = requests.Session()
