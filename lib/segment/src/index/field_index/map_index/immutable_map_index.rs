@@ -191,13 +191,18 @@ where
             ));
         };
 
+        if !index.load()? {
+            return Ok(false);
+        }
+        let index_storage = index.storage.as_ref().unwrap();
+
         // Construct intermediate values to points map from backing storage
         let mapping = || {
-            index.value_to_points.iter().map(|(value, ids)| {
+            index_storage.value_to_points.iter().map(|(value, ids)| {
                 (
                     value,
                     ids.iter().copied().filter(|idx| {
-                        let is_deleted = index.deleted.get(*idx as usize).unwrap_or(false);
+                        let is_deleted = index_storage.deleted.get(*idx as usize).unwrap_or(false);
                         !is_deleted
                     }),
                 )
