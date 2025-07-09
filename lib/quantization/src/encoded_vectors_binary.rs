@@ -406,11 +406,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
 
-        let vector_stats = match encoding {
-            Encoding::OneBit => None,
-            Encoding::TwoBits | Encoding::OneAndHalfBits => {
+        let vector_stats = match (encoding, query_encoding) {
+            (Encoding::TwoBits | Encoding::OneAndHalfBits, _)
+            | (_, QueryEncoding::Scalar4bits | QueryEncoding::Scalar8bits) => {
                 Some(VectorStats::build(orig_data.clone(), vector_parameters))
             }
+            (_, _) => None,
         };
 
         for vector in orig_data {
@@ -584,28 +585,34 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                 EncodedQueryBQ::Binary(Self::encode_vector(query, vector_stats, encoding))
             }
             QueryEncoding::Scalar8bits => EncodedQueryBQ::Scalar8bits(
-                Self::encode_scalar_query_vector(query, encoding, u8::BITS as usize),
+                Self::encode_scalar_query_vector(query, vector_stats, encoding, u8::BITS as usize),
             ),
-            QueryEncoding::Scalar4bits => EncodedQueryBQ::Scalar4bits(
-                Self::encode_scalar_query_vector(query, encoding, (u8::BITS / 2) as usize),
-            ),
+            QueryEncoding::Scalar4bits => {
+                EncodedQueryBQ::Scalar4bits(Self::encode_scalar_query_vector(
+                    query,
+                    vector_stats,
+                    encoding,
+                    (u8::BITS / 2) as usize,
+                ))
+            }
         }
     }
 
     fn encode_scalar_query_vector(
         query: &[f32],
+        vector_stats: &Option<VectorStats>,
         encoding: Encoding,
         bits_count: usize,
     ) -> EncodedScalarVector<TBitsStoreType> {
         match encoding {
-            Encoding::OneBit => Self::_encode_scalar_query_vector(query, bits_count),
+            Encoding::OneBit => Self::_encode_scalar_query_vector(query, vector_stats, bits_count),
             Encoding::TwoBits => {
                 // For two bits encoding we need to extend the query vector
                 let mut extended_query = Vec::with_capacity(query.len() * 2);
                 // Copy the original query vector twice: for first and second bits in 2bit BQ encoding
                 extended_query.extend_from_slice(query);
                 extended_query.extend_from_slice(query);
-                Self::_encode_scalar_query_vector(&extended_query, bits_count)
+                Self::_encode_scalar_query_vector(&extended_query, vector_stats, bits_count)
             }
             Encoding::OneAndHalfBits => {
                 // For one and half bits encoding we need to extend the query vector
@@ -617,21 +624,37 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                         .chunks(2)
                         .map(|v| if v.len() == 2 { v[0].max(v[1]) } else { v[0] }),
                 );
-                Self::_encode_scalar_query_vector(&extended_query, bits_count)
+                Self::_encode_scalar_query_vector(&extended_query, vector_stats, bits_count)
             }
         }
     }
 
     fn _encode_scalar_query_vector(
         query: &[f32],
+        vector_stats: &Option<VectorStats>,
         bits_count: usize,
     ) -> EncodedScalarVector<TBitsStoreType> {
         let encoded_query_size = TBitsStoreType::get_storage_size(query.len().max(1)) * bits_count;
         let mut encoded_query: Vec<TBitsStoreType> = vec![Default::default(); encoded_query_size];
 
-        let max_abs_value = query.iter().map(|x| x.abs()).fold(0.0, f32::max);
-        let max = max_abs_value;
-        let min = -max_abs_value;
+        let (min, max) = if let Some(vector_stats) = vector_stats {
+            let max_abs_value = vector_stats
+                .elements_stats
+                .iter()
+                .map(|stat| (stat.mean - 2.0 * stat.stddev).abs())
+                .chain(
+                    vector_stats
+                        .elements_stats
+                        .iter()
+                        .map(|stat| (stat.mean - 2.0 * stat.stddev).abs()),
+                )
+                .fold(0.0, f32::max);
+            (-max_abs_value, max_abs_value)
+        } else {
+            debug_assert!(false, "Vector stats must be provided for scalar encoding");
+            let max_abs_value = query.iter().map(|x| x.abs()).fold(0.0, f32::max);
+            (-max_abs_value, max_abs_value)
+        };
 
         let ranges = (1usize << bits_count) - 1;
         let delta = (max - min) / ranges as f32;
@@ -801,13 +824,14 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                     "Failed to get vector stats path",
                 )
             })?;
-        let vector_stats = match metadata.encoding {
-            Encoding::OneBit => None,
-            Encoding::TwoBits | Encoding::OneAndHalfBits => {
+        let vector_stats = match (metadata.encoding, metadata.query_encoding) {
+            (Encoding::TwoBits | Encoding::OneAndHalfBits, _)
+            | (_, QueryEncoding::Scalar4bits | QueryEncoding::Scalar8bits) => {
                 let vector_stats_contents = std::fs::read_to_string(&vector_stats_path)?;
                 let vector_stats: VectorStats = serde_json::from_str(&vector_stats_contents)?;
                 Some(vector_stats)
             }
+            (_, _) => None,
         };
 
         let result = Self {
