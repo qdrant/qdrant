@@ -124,10 +124,25 @@ impl StructPayloadIndex {
     fn load_all_fields(&mut self, create_if_missing: bool) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
-        for (field, payload_schema) in &self.config.indexed_fields {
+        let mut indexed_fields = std::mem::take(&mut self.config.indexed_fields);
+
+        // Whether there is a field without an assigned index-type. In case there is, we need to
+        // save the config again since we set this index-type inside `load_from_db`.
+        let had_index_without_type = indexed_fields.iter().any(|i| i.1.index_types.is_empty());
+
+        for (field, payload_schema) in indexed_fields.iter_mut() {
             let field_index = self.load_from_db(field, payload_schema, create_if_missing)?;
             field_indexes.insert(field.clone(), field_index);
         }
+
+        self.config.indexed_fields = indexed_fields;
+
+        // If any payload_schema didn't have an index type assigned, it has now
+        // and therefore we need to store it.
+        if had_index_without_type {
+            self.save_config()?;
+        }
+
         self.field_indexes = field_indexes;
         Ok(())
     }
@@ -135,7 +150,8 @@ impl StructPayloadIndex {
     fn load_from_db(
         &self,
         field: PayloadKeyTypeRef,
-        payload_schema: &PayloadFieldSchemaWithIndexType,
+        // TODO: refactor this and remove the &mut reference.
+        payload_schema: &mut PayloadFieldSchemaWithIndexType,
         create_if_missing: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
         let total_point_count = self.id_tracker.borrow().total_point_count();
@@ -155,6 +171,11 @@ impl StructPayloadIndex {
                 //       Maybe we should set `is_loaded` to false to trigger index building.
                 indexes.push(null_index);
             }
+
+            payload_schema.index_types = indexes
+                .iter()
+                .map(|i| i.get_full_index_type())
+                .collect::<Vec<_>>();
 
             indexes
         } else {
@@ -581,9 +602,12 @@ impl StructPayloadIndex {
                                 ));
                             };
 
+                            let is_appendable =
+                                matches!(self.storage_type, StorageType::RocksDbAppendable(..));
+
                             return Ok(IndexSelector::RocksDb(IndexSelectorRocksDb {
                                 db,
-                                is_appendable: false,
+                                is_appendable,
                             }));
                         }
 
@@ -989,5 +1013,93 @@ impl PayloadIndex for StructPayloadIndex {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         Vec::new() // TODO!
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+    use std::sync::atomic::AtomicBool;
+
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::data_types::vectors::only_default_vector;
+    use crate::entry::SegmentEntry;
+    use crate::segment_constructor::load_segment;
+    use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
+    use crate::types::{Distance, PayloadSchemaType};
+
+    #[test]
+    fn test_load_payload_index() {
+        let data = r#"
+               {
+                   "name": "John Doe"
+               }"#;
+
+        let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+        let dim = 2;
+
+        let hw_counter = HardwareCounterCell::new();
+
+        let key = JsonPath::from_str("name").unwrap();
+
+        let full_segment_path = {
+            let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+            segment
+                .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+                .unwrap();
+
+            let payload: Payload = serde_json::from_str(data).unwrap();
+
+            segment
+                .set_full_payload(0, 0.into(), &payload, &hw_counter)
+                .unwrap();
+
+            segment
+                .create_field_index(
+                    0,
+                    &key,
+                    Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+                    &HardwareCounterCell::new(),
+                )
+                .unwrap();
+
+            segment.current_path.clone()
+        };
+
+        let expected_index_types = vec![
+            FullPayloadIndexType::KeywordIndex(IndexMutability::Mutable(
+                payload_config::StorageType::Gridstore,
+            )),
+            FullPayloadIndexType::NullIndex(IndexMutability::Mmap { is_on_disk: true }),
+        ];
+
+        let payload_config_path = full_segment_path.join("payload_index/config.json");
+        let mut payload_config = PayloadConfig::load(&payload_config_path).unwrap();
+
+        assert_eq!(payload_config.indexed_fields.len(), 1);
+
+        let schema = payload_config.indexed_fields.get_mut(&key).unwrap();
+        assert_eq!(schema.index_types, expected_index_types);
+
+        // Clear index types to check loading from an old segment.
+        schema.index_types.clear();
+        payload_config.save(&payload_config_path).unwrap();
+
+        // Load once and drop.
+        {
+            load_segment(&full_segment_path, &AtomicBool::new(false))
+                .unwrap()
+                .unwrap();
+        }
+
+        // Check that index type has been written to disk again.
+        let payload_config_path = full_segment_path.join("payload_index/config.json");
+        let mut payload_config = PayloadConfig::load(&payload_config_path).unwrap();
+        assert_eq!(payload_config.indexed_fields.len(), 1);
+
+        let schema = payload_config.indexed_fields.get_mut(&key).unwrap();
+        assert_eq!(schema.index_types, expected_index_types);
     }
 }

@@ -35,7 +35,7 @@ impl PayloadConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub struct PayloadFieldSchemaWithIndexType {
     #[serde(flatten)]
     pub schema: PayloadFieldSchema,
@@ -53,7 +53,7 @@ impl PayloadFieldSchemaWithIndexType {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub enum FullPayloadIndexType {
     IntIndex(IndexMutability),
     DatetimeIndex(IndexMutability),
@@ -86,14 +86,14 @@ impl FullPayloadIndexType {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 pub enum IndexMutability {
     Mutable(StorageType),
     Immutable(StorageType),
     Mmap { is_on_disk: bool },
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 pub enum StorageType {
     Gridstore,
     RocksDB,
