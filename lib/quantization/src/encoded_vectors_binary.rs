@@ -646,7 +646,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                     vector_stats
                         .elements_stats
                         .iter()
-                        .map(|stat| (stat.mean - 2.0 * stat.stddev).abs()),
+                        .map(|stat| (stat.mean + 2.0 * stat.stddev).abs()),
                 )
                 .fold(0.0, f32::max);
             (-max_abs_value, max_abs_value)
