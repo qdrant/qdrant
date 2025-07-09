@@ -63,7 +63,7 @@ impl GeoMapIndex {
     }
 
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        let mmap_index = MmapGeoMapIndex::load(path, is_on_disk)?;
+        let mmap_index = MmapGeoMapIndex::open(path, is_on_disk)?;
         if is_on_disk {
             Ok(GeoMapIndex::Mmap(Box::new(mmap_index)))
         } else {
@@ -531,7 +531,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(GeoMapIndex::Mmap(Box::new(MmapGeoMapIndex::new(
+        Ok(GeoMapIndex::Mmap(Box::new(MmapGeoMapIndex::build(
             self.in_memory_index,
             &self.path,
             self.is_on_disk,
@@ -644,8 +644,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         match self {
             GeoMapIndex::Mutable(index) => index.load(),
             GeoMapIndex::Immutable(index) => index.load(),
-            // Mmap index is always loaded
-            GeoMapIndex::Mmap(_) => Ok(true),
+            GeoMapIndex::Mmap(index) => index.load(),
         }
     }
 
@@ -1493,7 +1492,7 @@ mod tests {
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
-                MmapGeoMapIndex::load(temp_dir.path(), false).unwrap(),
+                MmapGeoMapIndex::open(temp_dir.path(), false).unwrap(),
             )),
         };
         new_index.load().unwrap();
@@ -1574,7 +1573,7 @@ mod tests {
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
-                MmapGeoMapIndex::load(temp_dir.path(), false).unwrap(),
+                MmapGeoMapIndex::open(temp_dir.path(), false).unwrap(),
             )),
         };
         new_index.load().unwrap();
