@@ -224,7 +224,7 @@ pub enum Snowball {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-pub struct SnowballParameters {
+pub struct SnowballParams {
     pub r#type: Snowball,
     pub language: SnowballLanguage,
 }
@@ -233,7 +233,7 @@ pub struct SnowballParameters {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(untagged)]
 pub enum StemmingAlgorithm {
-    Snowball(SnowballParameters),
+    Snowball(SnowballParams),
 }
 
 /// Languages supported by snowball stemmer.

@@ -294,12 +294,12 @@ impl TokenizerConfig {
 mod tests {
     use super::*;
     use crate::data_types::index::{
-        Language, Snowball, SnowballLanguage, SnowballParameters, StemmingAlgorithm,
+        Language, Snowball, SnowballLanguage, SnowballParams, StemmingAlgorithm,
         StopwordsInterface, TextIndexType,
     };
 
     fn make_stemmer(language: SnowballLanguage) -> Stemmer {
-        Stemmer::from_algorithm(&StemmingAlgorithm::Snowball(SnowballParameters {
+        Stemmer::from_algorithm(&StemmingAlgorithm::Snowball(SnowballParams {
             r#type: Snowball::Snowball,
             language,
         }))
