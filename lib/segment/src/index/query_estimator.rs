@@ -269,6 +269,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
+
     use super::*;
     use crate::json_path::JsonPath;
     use crate::types::{FieldCondition, HasIdCondition};
@@ -316,13 +318,7 @@ mod tests {
                 _ => CardinalityEstimation::unknown(TOTAL),
             },
             Condition::HasId(has_id) => CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Ids(
-                    has_id
-                        .has_id
-                        .iter()
-                        .map(|&x| format!("{x}").parse().unwrap()) // hack to convert ID as "number"
-                        .collect(),
-                )],
+                primary_clauses: vec![PrimaryCondition::Ids(has_id.has_id.deref().clone())],
                 min: has_id.has_id.len(),
                 exp: has_id.has_id.len(),
                 max: has_id.has_id.len(),
