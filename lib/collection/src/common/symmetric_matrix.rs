@@ -107,4 +107,46 @@ mod test {
         let mut matrix = SymmetricMatrix::<usize>::new(size, 0).unwrap();
         matrix.set(0, 10, 1);
     }
+
+    #[test]
+    fn test_matrix_vs_naive_implementation() {
+        let size = 5;
+        let init_value = 42;
+
+        // Create symmetric matrix
+        let mut symmetric_matrix = SymmetricMatrix::<i32>::new(size, init_value).unwrap();
+
+        // Create naive 2D vector matrix
+        let mut naive_matrix = vec![vec![init_value; size]; size];
+
+        // Set some values in both matrices
+        let test_values = vec![
+            (0, 1, 10),
+            (1, 3, 20),
+            (2, 4, 30),
+            (0, 4, 40),
+            (1, 2, 50),
+            (3, 3, 100), // Also supports the diagonal elements
+        ];
+
+        for (row, col, value) in &test_values {
+            symmetric_matrix.set(*row, *col, *value);
+            // Insert into naive matrix
+            naive_matrix[*row][*col] = *value;
+            naive_matrix[*col][*row] = *value;
+        }
+
+        // Compare all values
+        for row in 0..size {
+            for col in 0..size {
+                assert_eq!(
+                    *symmetric_matrix.get(row, col),
+                    naive_matrix[row][col],
+                    "Mismatch at position ({}, {})",
+                    row,
+                    col
+                );
+            }
+        }
+    }
 }
