@@ -460,16 +460,17 @@ impl LocalShard {
             points_with_vector,
             mmr,
             limit,
+            score_threshold,
             search_runtime_handle,
             timeout,
             hw_measurement_acc,
         )
         .await?;
 
-        // Handle score threshold
-        if let Some(score_threshold) = score_threshold {
-            top_mmr.retain(|p| p.score >= score_threshold);
-        };
+        // strip mmr vector. We will handle user-requested vectors at root level of request.
+        for p in &mut top_mmr {
+            p.vector = None;
+        }
 
         Ok(top_mmr)
     }

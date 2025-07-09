@@ -383,6 +383,7 @@ impl Collection {
                     points_with_vector,
                     mmr.clone(),
                     *limit,
+                    *score_threshold,
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
@@ -403,11 +404,6 @@ impl Collection {
                         }
                     }
                 };
-
-                // handle score threshold
-                if let Some(&score_threshold) = score_threshold.as_ref() {
-                    mmr_result.retain(|p| p.score >= score_threshold);
-                }
                 mmr_result
             }
             _ => {
