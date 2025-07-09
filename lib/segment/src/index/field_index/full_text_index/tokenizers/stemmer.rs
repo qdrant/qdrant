@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use rust_stemmers::Algorithm;
 
-use crate::data_types::index::{SnowballParameters, StemmingAlgorithm};
+use crate::data_types::index::{SnowballParams, StemmingAlgorithm};
 
 /// Abstraction to handle different stemming libraries and algorithms with a clean API.
 #[derive(Clone)]
@@ -23,7 +23,7 @@ impl std::fmt::Debug for Stemmer {
 impl Stemmer {
     pub fn from_algorithm(config: &StemmingAlgorithm) -> Self {
         match config {
-            StemmingAlgorithm::Snowball(SnowballParameters {
+            StemmingAlgorithm::Snowball(SnowballParams {
                 r#type: _,
                 language,
             }) => Self::Snowball(Arc::new(rust_stemmers::Stemmer::create(Algorithm::from(
