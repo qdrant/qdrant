@@ -53,6 +53,15 @@ impl<T> DiagonalMatrix<T> {
     /// Calculates the flattened index given the row and column. Parameters aren't allowed to be swapped!
     #[inline]
     fn calculate_index(&self, row: usize, column: usize) -> usize {
+        // Prevent an out of bounds column to access elements from the next row.
+        // Disabled in release for performance.
+        debug_assert!(
+            column < self.size,
+            "Column index {column} out of bounds for {}x{} matrix",
+            self.size,
+            self.size
+        );
+
         ((row * self.size) + column) - Self::triangular(row)
     }
 
@@ -70,7 +79,6 @@ mod test {
     #[test]
     fn test_matrix() {
         let size = 10;
-
         let mut matrix = DiagonalMatrix::<usize>::new(size, 0).unwrap();
 
         let mut c = 0;
@@ -90,5 +98,13 @@ mod test {
                 c += 1;
             }
         }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_oob() {
+        let size = 10;
+        let mut matrix = DiagonalMatrix::<usize>::new(size, 0).unwrap();
+        matrix.set(0, 10, 1);
     }
 }
