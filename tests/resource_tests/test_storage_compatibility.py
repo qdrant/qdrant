@@ -7,7 +7,7 @@ import time
 import random
 from pathlib import Path
 
-from resource_tests.conftest import _create_qdrant_container
+from resource_tests.conftest import _create_qdrant_container, QdrantContainerConfig, _cleanup_container
 from resource_tests.utils import wait_for_server
 
 
@@ -133,29 +133,22 @@ class TestStorageCompatibility:
         storage_dir = self._extract_storage_data(compatibility_file, storage_test_dir)
         
         # Create container with mounted storage
-        container_info = _create_qdrant_container(
-            docker_client, 
-            qdrant_image, 
-            {
-                "volumes": {str(storage_dir): {"bind": "/qdrant/storage", "mode": "rw"}},
-                "exit_on_error": False
-            }
+        config = QdrantContainerConfig(
+            volumes={str(storage_dir): {"bind": "/qdrant/storage", "mode": "rw"}},
+            exit_on_error=False
         )
+        container_info = _create_qdrant_container(docker_client, qdrant_image, config)
         
         try:
-            # Wait for server to start
             if not wait_for_server(container_info.host, container_info.http_port):
                 pytest.fail(f"Server failed to start for {version}")
             
-            # Check collections
             if not self._check_collections(container_info.host, container_info.http_port):
                 pytest.fail(f"Storage compatibility failed for {version}")
             
             print(f"Storage compatibility test passed for {version}")
             
         finally:
-            # Cleanup container
-            from resource_tests.conftest import _cleanup_container
             _cleanup_container(container_info.container)
 
     def _test_snapshot_compatibility(self, docker_client, qdrant_image, version: str, storage_test_dir: Path):
@@ -169,33 +162,24 @@ class TestStorageCompatibility:
             return
         
         # Create container with snapshot recovery
-        container_info = _create_qdrant_container(
-            docker_client,
-            qdrant_image,
-            {
-                "volumes": {str(snapshot_file): {"bind": "/qdrant/snapshot.snapshot", "mode": "ro"}},
-                "command": ["./qdrant", "--storage-snapshot", "/qdrant/snapshot.snapshot"],
-                "exit_on_error": False
-            }
+        config = QdrantContainerConfig(
+            volumes={str(snapshot_file): {"bind": "/qdrant/snapshot.snapshot", "mode": "ro"}},
+            command=["./qdrant", "--storage-snapshot", "/qdrant/snapshot.snapshot"],
+            exit_on_error=False
         )
+        container_info = _create_qdrant_container(docker_client, qdrant_image, config)
         
         try:
-            # Wait for server to start
             if not wait_for_server(container_info.host, container_info.http_port):
                 pytest.fail(f"Server failed to start from snapshot for {version}")
             
-            # Check collections
             if not self._check_collections(container_info.host, container_info.http_port):
                 pytest.fail(f"Snapshot compatibility failed for {version}")
             
             print(f"Snapshot compatibility test passed for {version}")
             
         finally:
-            # Cleanup container
-            from resource_tests.conftest import _cleanup_container
             _cleanup_container(container_info.container)
-            
-            # Cleanup snapshot file
             snapshot_file.unlink(missing_ok=True)
     
     @pytest.mark.parametrize("version", [PREV_PATCH_VERSION, PREV_MINOR_VERSION])
@@ -216,38 +200,28 @@ class TestStorageCompatibility:
         self._test_snapshot_compatibility(docker_client, qdrant_image, version, temp_storage_dir)
     
     @pytest.mark.parametrize("storage_from_archive", ["storage.tar.xz"], indirect=True)
-    def test_local_storage_compatibility(self, docker_client, qdrant_image, storage_from_archive):
+    def test_local_storage_compatibility(self, docker_client, qdrant_image, qdrant_container, storage_from_archive):
         """Test storage compatibility using local test data - parallel safe."""
         print("Testing local storage compatibility")
         
-        # storage_from_archive fixture extracts the archive to temp_storage_dir
-        storage_dir = storage_from_archive
-        
-        if not storage_dir.exists():
+        if not storage_from_archive.exists():
             pytest.skip("Extracted storage directory not found")
         
         # Create container with mounted storage
-        container_info = _create_qdrant_container(
-            docker_client,
-            qdrant_image,
-            {
-                "volumes": {str(storage_dir): {"bind": "/qdrant/storage", "mode": "rw"}},
-                "exit_on_error": False
-            }
+        config = QdrantContainerConfig(
+            volumes={str(storage_from_archive): {"bind": "/qdrant/storage", "mode": "rw"}},
+            exit_on_error=False
         )
+        container_info = _create_qdrant_container(docker_client, qdrant_image, config)
         
         try:
-            # Wait for server to start
             if not wait_for_server(container_info.host, container_info.http_port):
                 pytest.fail("Server failed to start with local storage")
             
-            # Check collections - don't expect specific collections for local test data
             if not self._check_collections(container_info.host, container_info.http_port):
                 pytest.fail("Local storage compatibility failed")
             
             print("Local storage compatibility test passed")
             
         finally:
-            # Cleanup container
-            from resource_tests.conftest import _cleanup_container
             _cleanup_container(container_info.container)

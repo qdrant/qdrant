@@ -5,6 +5,7 @@ from docker.types import Mount
 from typing import Literal
 
 from resource_tests.client_utils import ClientUtils, VECTOR_SIZE
+from resource_tests.conftest import QdrantContainerConfig
 
 
 class TestLowDisk:
@@ -75,7 +76,7 @@ class TestLowDisk:
             test_mode: Either "search" (test during points insertion) or "indexing" (test during index building)
         """
         unique_suffix = str(uuid.uuid4())[:8]
-        container_info = qdrant_container(
+        config = QdrantContainerConfig(
             name=f"qdrant-ood-{test_mode}-{unique_suffix}",
             mounts=[
                 Mount(
@@ -87,6 +88,7 @@ class TestLowDisk:
             ],
             remove=False  # Keep for logs
         )
+        container_info = qdrant_container(config)
         
         # Create ClientUtils instance for this container
         client = ClientUtils(host=container_info.host, port=container_info.http_port)

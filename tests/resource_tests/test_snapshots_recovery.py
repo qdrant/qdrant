@@ -2,11 +2,12 @@ import pytest
 import requests
 
 from resource_tests.client_utils import ClientUtils
+from resource_tests.conftest import QdrantContainerConfig
 
 
 @pytest.mark.parametrize("qdrant_container, storage_method", [
-    ({"network_mode": "host"}, "local"),
-    ({"network_mode": "host"}, "s3")
+    (QdrantContainerConfig(network_mode="host"), "local"),
+    (QdrantContainerConfig(network_mode="host"), "s3")
 ], indirect=["qdrant_container"])
 def test_snapshots_recovery(qdrant_container, storage_method, tmp_path):
     """Test snapshot creation, download, and recovery with both local and S3 storage."""

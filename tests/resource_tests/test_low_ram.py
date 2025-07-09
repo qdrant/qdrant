@@ -3,6 +3,7 @@ import requests
 import uuid
 
 from resource_tests.client_utils import ClientUtils
+from resource_tests.conftest import QdrantContainerConfig
 
 
 class TestLowRam:
@@ -15,7 +16,7 @@ class TestLowRam:
         """
         print("Starting container with 128MB memory limit - expecting OOM...")
         unique_suffix = str(uuid.uuid4())[:8]
-        oom_container_info = qdrant_container(
+        config = QdrantContainerConfig(
             name=f"qdrant-oom-{unique_suffix}",
             mem_limit="128m",
             volumes={str(storage_from_archive): {'bind': '/qdrant/storage', 'mode': 'rw'}},
@@ -23,6 +24,7 @@ class TestLowRam:
             remove=False,
             exit_on_error=False  # Don't raise error when Qdrant fails to start
         )
+        oom_container_info = qdrant_container(config)
         
         oom_container = oom_container_info.container
         
@@ -41,7 +43,7 @@ class TestLowRam:
         2. Collection loads as a dummy shard in recovery mode
         """
         print("Starting container in recovery mode...")
-        recovery_container_info = qdrant_container(
+        config = QdrantContainerConfig(
             mem_limit="128m",
             volumes={str(storage_from_archive): {'bind': '/qdrant/storage', 'mode': 'rw'}},
             environment={
@@ -49,6 +51,7 @@ class TestLowRam:
                 "QDRANT_ALLOW_RECOVERY_MODE": "true"
             }
         )
+        recovery_container_info = qdrant_container(config)
         
         recovery_container = recovery_container_info.container
         api_port = recovery_container_info.http_port

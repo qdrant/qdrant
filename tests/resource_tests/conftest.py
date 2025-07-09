@@ -5,7 +5,8 @@ import tarfile
 import time
 import uuid
 import zipfile
-from typing import Optional, List, Dict, Any, Tuple, Generator
+from typing import Optional, List, Dict, Any, Tuple, Generator, Union
+from dataclasses import dataclass, field
 
 import pytest
 import docker
@@ -47,6 +48,78 @@ class QdrantCluster:
     
     def __repr__(self) -> str:
         return f"QdrantCluster(leader={self.leader.name}, followers={len(self.followers)}, network='{self.network_name}')"
+
+
+@dataclass
+class QdrantContainerConfig:
+    """Configuration for creating Qdrant containers with proper typing and defaults."""
+    
+    # Container identification
+    name: Optional[str] = None
+    
+    # Resource limits
+    mem_limit: Optional[str] = None
+    cpu_limit: Optional[str] = None
+    
+    # Network configuration
+    network: Optional[str] = None
+    network_mode: Optional[str] = None
+    
+    # Storage configuration
+    volumes: Optional[Dict[str, Dict[str, str]]] = None
+    mounts: Optional[List[Any]] = None
+    
+    # Environment and command
+    environment: Optional[Dict[str, str]] = None
+    command: Optional[Union[str, List[str]]] = None
+    
+    # Container behavior
+    remove: bool = True
+    detach: bool = True
+    
+    # Qdrant-specific settings
+    exit_on_error: bool = True
+    
+    # Additional Docker parameters
+    additional_params: Optional[Dict[str, Any]] = field(default_factory=dict)
+    
+    def to_docker_config(self, qdrant_image: str) -> Dict[str, Any]:
+        """Convert this config to Docker container.run() parameters."""
+        config = {
+            "image": qdrant_image,
+            "detach": self.detach,
+            "remove": self.remove,
+        }
+        
+        # Add port bindings unless host network mode
+        if self.network_mode != 'host':
+            config["ports"] = {'6333/tcp': ('127.0.0.1', None), '6334/tcp': ('127.0.0.1', None)}
+        
+        # Add optional parameters
+        if self.name:
+            config["name"] = self.name
+        if self.mem_limit:
+            config["mem_limit"] = self.mem_limit
+        if self.cpu_limit:
+            config["cpu_limit"] = self.cpu_limit
+        if self.network:
+            config["network"] = self.network
+        if self.network_mode:
+            config["network_mode"] = self.network_mode
+        if self.volumes:
+            config["volumes"] = self.volumes
+        if self.mounts:
+            config["mounts"] = self.mounts
+        if self.environment:
+            config["environment"] = self.environment
+        if self.command:
+            config["command"] = self.command
+        
+        # Add any additional parameters
+        if self.additional_params:
+            config.update(self.additional_params)
+        
+        return config
 
 
 def _get_default_qdrant_config(qdrant_image: str) -> Dict[str, Any]:
@@ -135,13 +208,13 @@ def _cleanup_container(container: docker.models.containers.Container) -> None:
         print(f"Error stopping container {container.name if hasattr(container, 'name') else 'unknown'}: {e}")
 
 
-def _create_qdrant_container(docker_client: docker.DockerClient, qdrant_image: str, config: Optional[Dict[str, Any]] = None) -> QdrantContainer:
+def _create_qdrant_container(docker_client: docker.DockerClient, qdrant_image: str, config: Optional[Union[Dict[str, Any], QdrantContainerConfig]] = None) -> QdrantContainer:
     """Core function to create a Qdrant container with given configuration.
     
     Args:
         docker_client: Docker client instance
         qdrant_image: Qdrant Docker image to use
-        config: Optional dict with container configuration. Special parameters:
+        config: Optional configuration (dict or QdrantContainerConfig). Special parameters:
             - exit_on_error (bool): If True (default), raises RuntimeError when Qdrant fails to start.
                                    If False, returns container info even if Qdrant doesn't start.
             All other parameters are passed to docker_client.containers.run()
@@ -155,17 +228,22 @@ def _create_qdrant_container(docker_client: docker.DockerClient, qdrant_image: s
     if config is None:
         config = {}
     
-    config = dict(config)
-    
-    # Extract custom parameters
-    exit_on_error = config.pop("exit_on_error", True)
-    
-    default_config = _get_default_qdrant_config(qdrant_image)
-    merged_config = {**default_config, **config}
-    
-    # If using host network mode, remove port bindings
-    if merged_config.get('network_mode') == 'host':
-        merged_config.pop('ports', None)
+    # Handle both dict and QdrantContainerConfig inputs
+    if isinstance(config, QdrantContainerConfig):
+        exit_on_error = config.exit_on_error
+        merged_config = config.to_docker_config(qdrant_image)
+    else:
+        config = dict(config)
+        
+        # Extract custom parameters
+        exit_on_error = config.pop("exit_on_error", True)
+        
+        default_config = _get_default_qdrant_config(qdrant_image)
+        merged_config = {**default_config, **config}
+        
+        # If using host network mode, remove port bindings
+        if merged_config.get('network_mode') == 'host':
+            merged_config.pop('ports', None)
     
     container = docker_client.containers.run(**merged_config)
     
@@ -508,15 +586,30 @@ def qdrant_container(docker_client, qdrant_image, request):
     """
     containers = []
     
-    def _create_container(**kwargs):
-        container_info = _create_qdrant_container(docker_client, qdrant_image, kwargs)
+    def _create_container(*args, **kwargs):
+        # Handle both QdrantContainerConfig objects and keyword arguments
+        if len(args) == 1 and isinstance(args[0], QdrantContainerConfig):
+            config = args[0]
+        else:
+            # Convert kwargs to QdrantContainerConfig for better type safety
+            config = QdrantContainerConfig(**kwargs)
+        container_info = _create_qdrant_container(docker_client, qdrant_image, config)
         containers.append(container_info.container)
         return container_info
     
     # Check if this is being used with indirect parametrization
-    if hasattr(request, "param") and isinstance(request.param, dict):
-        # Indirect parametrization mode - create container directly with provided config
-        container_info = _create_container(**request.param)
+    if hasattr(request, "param"):
+        if isinstance(request.param, dict):
+            # Indirect parametrization mode with dict - create container directly with provided config
+            config = QdrantContainerConfig(**request.param)
+        elif isinstance(request.param, QdrantContainerConfig):
+            # Indirect parametrization mode with QdrantContainerConfig - use directly
+            config = request.param
+        else:
+            raise ValueError(f"Unsupported parameter type for qdrant_container: {type(request.param)}")
+        
+        container_info = _create_qdrant_container(docker_client, qdrant_image, config)
+        containers.append(container_info.container)
         yield container_info
     else:
         # Factory mode - return the factory function
@@ -557,9 +650,9 @@ def qdrant(docker_client, qdrant_image, request):
         - environment (dict): Environment variables (e.g., {"QDRANT__LOG_LEVEL": "DEBUG"})
         - Any other Docker container run parameters
     """
-    config = {}
+    config = QdrantContainerConfig()
     if hasattr(request, "param") and isinstance(request.param, dict):
-        config = request.param
+        config = QdrantContainerConfig(**request.param)
 
     container_info = _create_qdrant_container(docker_client, qdrant_image, config)
 
