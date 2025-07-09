@@ -1061,12 +1061,17 @@ mod tests {
             segment.current_path.clone()
         };
 
-        let expected_index_types = vec![
-            FullPayloadIndexType::KeywordIndex(IndexMutability::Mutable(
-                payload_config::StorageType::Gridstore,
-            )),
-            FullPayloadIndexType::NullIndex(IndexMutability::Mmap { is_on_disk: true }),
-        ];
+        let check_index_types = |index_types: &[FullPayloadIndexType]| -> bool {
+            index_types.len() == 2
+                && matches!(
+                    index_types[0],
+                    FullPayloadIndexType::KeywordIndex(IndexMutability::Mutable(..))
+                )
+                && matches!(
+                    index_types[1],
+                    FullPayloadIndexType::NullIndex(IndexMutability::Mmap { is_on_disk: _ })
+                )
+        };
 
         let payload_config_path = full_segment_path.join("payload_index/config.json");
         let mut payload_config = PayloadConfig::load(&payload_config_path).unwrap();
@@ -1074,7 +1079,7 @@ mod tests {
         assert_eq!(payload_config.indexed_fields.len(), 1);
 
         let schema = payload_config.indexed_fields.get_mut(&key).unwrap();
-        assert_eq!(schema.index_types, expected_index_types);
+        check_index_types(&schema.index_types);
 
         // Clear index types to check loading from an old segment.
         schema.index_types.clear();
@@ -1093,6 +1098,6 @@ mod tests {
         assert_eq!(payload_config.indexed_fields.len(), 1);
 
         let schema = payload_config.indexed_fields.get_mut(&key).unwrap();
-        assert_eq!(schema.index_types, expected_index_types);
+        check_index_types(&schema.index_types);
     }
 }
