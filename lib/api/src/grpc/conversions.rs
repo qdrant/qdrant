@@ -34,7 +34,7 @@ use super::qdrant::{
     UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
 use super::stemming_algorithm::StemmingParams;
-use super::{Expression, Formula, RecoQuery, SnowballParameters, StemmingAlgorithm, Usage};
+use super::{Expression, Formula, RecoQuery, SnowballParams, StemmingAlgorithm, Usage};
 use crate::conversions::json::{self, json_to_proto};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::r#match::MatchValue;
@@ -366,7 +366,7 @@ impl From<segment::data_types::index::StemmingAlgorithm> for StemmingAlgorithm {
                     language,
                 } = snowball_params;
                 let language = language.to_string();
-                StemmingParams::Snowball(SnowballParameters { language })
+                StemmingParams::Snowball(SnowballParams { language })
             }
         };
 

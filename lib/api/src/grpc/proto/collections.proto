@@ -503,11 +503,11 @@ message TextIndexParams {
 
 message StemmingAlgorithm {
   oneof stemming_params {
-    SnowballParameters snowball = 1; // Parameters for snowball stemming
+    SnowballParams snowball = 1; // Parameters for snowball stemming
   }
 }
 
-message SnowballParameters {
+message SnowballParams {
   string language = 1; // Which language the algorithm should stem.
 }
 
