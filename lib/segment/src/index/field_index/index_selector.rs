@@ -71,7 +71,10 @@ impl IndexSelector<'_> {
         let index = match (index_type, payload_schema.expand().as_ref()) {
             (FullPayloadIndexType::IntIndex(_), PayloadSchemaParams::Integer(params)) => {
                 // IntIndex only gets created if `range` is true. This will only throw an error if storage is corrupt.
-                if !params.range.unwrap_or(false) {
+                //
+                // Note that `params.range == None` means the index was created without directly specifying these parameters.
+                // In those cases it defaults to `true` so we don't need to cover this case.
+                if params.range == Some(false) {
                     return Err(OperationError::service_error(
                         "Inconsistent payload schema: Int index configured but schema.range is false",
                     ));
@@ -81,7 +84,10 @@ impl IndexSelector<'_> {
             }
             (FullPayloadIndexType::IntMapIndex(_), PayloadSchemaParams::Integer(params)) => {
                 // IntMapIndex only gets created if `lookup` is true. This will only throw an error if storage is corrupt.
-                if !params.lookup.unwrap_or(false) {
+                //
+                // Note that `params.lookup == None` means the index was created without directly specifying these parameters.
+                // In those cases it defaults to `true` so we don't need to cover this case.
+                if params.lookup == Some(false) {
                     return Err(OperationError::service_error(
                         "Inconsistent payload schema: IntMap index configured but schema.lookup is false",
                     ));
