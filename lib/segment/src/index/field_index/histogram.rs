@@ -131,7 +131,7 @@ impl Numericable for u128 {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq)]
 pub struct Histogram<T: Numericable + Serialize + DeserializeOwned> {
     max_bucket_size: usize,
     precision: f64,
