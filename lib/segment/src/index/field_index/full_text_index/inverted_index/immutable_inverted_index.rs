@@ -225,12 +225,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         })
     }
 
-    fn check_match(
-        &self,
-        parsed_query: &ParsedQuery,
-        point_id: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
-    ) -> bool {
+    fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
         match parsed_query {
             ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id),
             ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id),

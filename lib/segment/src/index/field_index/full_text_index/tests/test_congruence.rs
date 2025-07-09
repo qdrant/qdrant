@@ -337,8 +337,8 @@ fn test_congruence(
 
             for point_id in 0..POINT_COUNT as PointOffsetType {
                 assert_eq!(
-                    index_a.check_match(&parsed_query_a, point_id, &hw_counter),
-                    index_b.check_match(&parsed_query_b, point_id, &hw_counter),
+                    index_a.check_match(&parsed_query_a, point_id),
+                    index_b.check_match(&parsed_query_b, point_id),
                 );
             }
 
@@ -378,8 +378,8 @@ fn test_congruence(
 
                 for point_id in 0..POINT_COUNT as PointOffsetType {
                     assert_eq!(
-                        index_a.check_match(&parsed_query_a, point_id, &hw_counter),
-                        index_b.check_match(&parsed_query_b, point_id, &hw_counter),
+                        index_a.check_match(&parsed_query_a, point_id),
+                        index_b.check_match(&parsed_query_b, point_id),
                     );
                 }
 
@@ -440,7 +440,7 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
 
             let parsed_query = parse_query(phrase, phrase_matching, index);
 
-            assert!(index.check_match(&parsed_query, *exp_id, &hw_counter));
+            assert!(index.check_match(&parsed_query, *exp_id));
 
             let result = index
                 .filter_query(parsed_query, &hw_counter)

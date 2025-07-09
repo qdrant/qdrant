@@ -223,12 +223,7 @@ impl MmapInvertedIndex {
         }
     }
 
-    fn check_has_subset(
-        &self,
-        tokens: &TokenSet,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> bool {
+    fn check_has_subset(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
         let Some(storage) = &self.storage else {
             return false;
         };
@@ -247,12 +242,15 @@ impl MmapInvertedIndex {
             postings: &MmapPostings<V>,
             tokens: &TokenSet,
             point_id: PointOffsetType,
-            hw_counter: &HardwareCounterCell,
         ) -> bool {
+            // Do not track the HW counter for reading the query posting list because:
+            // - it is repeated many times (once per matched point_id)
+            // - it is most likely mmap cached after the first call
+            let disposable = HardwareCounterCell::disposable();
             // Check that all tokens are in document
             tokens.tokens().iter().all(|query_token| {
                 postings
-                    .get(*query_token, hw_counter)
+                    .get(*query_token, &disposable)
                     // unwrap safety: all tokens exist in the vocabulary, otherwise there'd be no query tokens
                     .unwrap()
                     .visitor()
@@ -261,11 +259,9 @@ impl MmapInvertedIndex {
         }
 
         match &storage.postings {
-            MmapPostingsEnum::Ids(postings) => {
-                check_intersection(postings, tokens, point_id, hw_counter)
-            }
+            MmapPostingsEnum::Ids(postings) => check_intersection(postings, tokens, point_id),
             MmapPostingsEnum::WithPositions(postings) => {
-                check_intersection(postings, tokens, point_id, hw_counter)
+                check_intersection(postings, tokens, point_id)
             }
         }
     }
@@ -296,12 +292,7 @@ impl MmapInvertedIndex {
         }
     }
 
-    pub fn check_has_phrase(
-        &self,
-        phrase: &Document,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> bool {
+    pub fn check_has_phrase(&self, phrase: &Document, point_id: PointOffsetType) -> bool {
         let Some(storage) = &self.storage else {
             return false;
         };
@@ -313,8 +304,12 @@ impl MmapInvertedIndex {
 
         match &storage.postings {
             MmapPostingsEnum::WithPositions(postings) => {
+                // Do not track the HW counter for reading the phrase posting lists because:
+                // - it is repeated many times (once per matched point_id)
+                // - it is most likely mmap cached after the first call
+                let disposable = HardwareCounterCell::disposable();
                 check_compressed_postings_phrase(phrase, point_id, |token_id| {
-                    postings.get(*token_id, hw_counter)
+                    postings.get(*token_id, &disposable)
                 })
             }
             // cannot do phrase matching if there's no positional information
@@ -464,15 +459,10 @@ impl InvertedIndex for MmapInvertedIndex {
         Box::new(iter)
     }
 
-    fn check_match(
-        &self,
-        parsed_query: &ParsedQuery,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> bool {
+    fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
         match parsed_query {
-            ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id, hw_counter),
-            ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id, hw_counter),
+            ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id),
+            ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id),
         }
     }
 

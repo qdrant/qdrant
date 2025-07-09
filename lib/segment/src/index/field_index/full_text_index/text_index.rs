@@ -204,22 +204,11 @@ impl FullTextIndex {
         }
     }
 
-    pub fn check_match(
-        &self,
-        query: &ParsedQuery,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> bool {
+    pub fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> bool {
         match self {
-            Self::Mutable(index) => index
-                .inverted_index
-                .check_match(query, point_id, hw_counter),
-            Self::Immutable(index) => index
-                .inverted_index
-                .check_match(query, point_id, hw_counter),
-            Self::Mmap(index) => index
-                .inverted_index
-                .check_match(query, point_id, hw_counter),
+            Self::Mutable(index) => index.inverted_index.check_match(query, point_id),
+            Self::Immutable(index) => index.inverted_index.check_match(query, point_id),
+            Self::Mmap(index) => index.inverted_index.check_match(query, point_id),
         }
     }
 
