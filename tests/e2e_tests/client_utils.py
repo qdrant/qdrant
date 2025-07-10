@@ -156,7 +156,7 @@ class ClientUtils:
     
     def wait_for_status(self, collection_name: str, status: str) -> str:
         """Wait for collection to reach the specified status."""
-        for i in range(30):
+        for _ in range(30):
             try:
                 collection_info = self.client.get_collection(collection_name)
                 curr_status = collection_info.status.value if hasattr(collection_info.status, 'value') else str(collection_info.status)
@@ -234,9 +234,8 @@ class ClientUtils:
                 "time": 0
             }
             
-        except Exception:
-            print("Search failed")
-            raise RuntimeError("Search failed")
+        except Exception as e:
+            raise RuntimeError("Search failed") from e
     
     def create_snapshot(self, collection_name: str = "test_collection") -> str:
         """Create a snapshot of the collection."""

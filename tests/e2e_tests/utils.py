@@ -83,11 +83,11 @@ def extract_archive(archive_file: Path, extract_to: Path, cleanup_archive: bool 
         # Try fallback to subprocess for tar files
         if file_name.endswith(('.tar.xz', '.tar.gz', '.tar.bz2', '.tgz', '.tbz2', '.tar')):
             try:
-                print(f"Trying fallback extraction with tar command...")
+                print("Trying fallback extraction with tar command...")
                 subprocess.run(["tar", "-xf", str(archive_file)], cwd=str(extract_to), check=True)
                 print(f"Successfully extracted {archive_file} using tar command")
             except subprocess.CalledProcessError as tar_error:
-                raise RuntimeError(f"Failed to extract archive: {tar_error}")
+                raise RuntimeError(f"Failed to extract archive: {tar_error}") from tar_error
         else:
             raise
 

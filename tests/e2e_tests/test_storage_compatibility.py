@@ -2,8 +2,6 @@ import uuid
 
 import pytest
 import requests
-import time
-import random
 from pathlib import Path
 
 from e2e_tests.conftest import _create_qdrant_container, QdrantContainerConfig, _cleanup_container

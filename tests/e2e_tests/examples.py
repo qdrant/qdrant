@@ -305,13 +305,13 @@ class TestContainerExample:
         Test that the factory pattern works for multiple containers.
         """
         config1 = QdrantContainerConfig(
-            name=f"qdrant-test-1",
+            name="qdrant-test-1",
             environment={"QDRANT__LOG_LEVEL": "DEBUG"}
         )
         container1 = qdrant_container_factory(config1)
         
         config2 = QdrantContainerConfig(
-            name=f"qdrant-test-2",
+            name="qdrant-test-2",
             environment={"QDRANT__STORAGE__HANDLE_COLLECTION_LOAD_ERRORS": "true"}
         )
         container2 = qdrant_container_factory(config2)

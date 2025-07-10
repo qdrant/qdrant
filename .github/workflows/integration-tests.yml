@@ -257,17 +257,17 @@ jobs:
         with:
           context: .
           tags: qdrant/qdrant:e2e-tests
-#          cache-from: |
-#            type=gha,scope=${{ github.ref }}-e2e
-#            type=gha,scope=${{ github.base_ref }}-e2e
-#          cache-to: type=gha,mode=max,scope=${{ github.ref }}-e2e
+          cache-from: |
+            type=gha,scope=${{ github.ref }}-e2e
+            type=gha,scope=${{ github.base_ref }}-e2e
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}-e2e
           load: true
           build-args: |
             PROFILE=ci
       - name: Verify Docker image
         run: docker images | grep qdrant
       - name: Run e2e tests
-        run: poetry -C tests run pytest -n 4 tests/e2e_tests -v --tb=short --durations=5
+        run: poetry --project tests run pytest -n 4 tests/e2e_tests -v --tb=short --durations=5
         shell: bash
         timeout-minutes: 5
       - name: Upload test logs on failure
