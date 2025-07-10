@@ -24,10 +24,12 @@ mod utils;
 
 pub use field_index_base::*;
 
+use crate::utils::maybe_arc::MaybeArc;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum PrimaryCondition {
     Condition(Box<FieldCondition>),
-    Ids(AHashSet<PointIdType>),
+    Ids(MaybeArc<AHashSet<PointIdType>>),
     HasVector(VectorNameBuf),
 }
 
@@ -98,7 +100,7 @@ impl CardinalityEstimation {
                     _ => false,
                 },
                 PrimaryCondition::Ids(ids) => match condition {
-                    Condition::HasId(has_id) => ids == has_id.has_id.deref(),
+                    Condition::HasId(has_id) => ids.deref() == has_id.has_id.deref(),
                     _ => false,
                 },
                 PrimaryCondition::HasVector(has_vector) => match condition {

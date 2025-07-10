@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fs::create_dir_all;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -360,7 +359,7 @@ impl StructPayloadIndex {
             }
             Condition::HasId(has_id) => {
                 let num_ids = has_id.has_id.len();
-                let ids = has_id.has_id.deref().clone();
+                let ids = has_id.has_id.clone();
                 CardinalityEstimation {
                     primary_clauses: vec![PrimaryCondition::Ids(ids)],
                     min: num_ids,

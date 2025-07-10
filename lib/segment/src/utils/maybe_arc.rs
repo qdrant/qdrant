@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 // Structure that acts as `T` most of the time but allows to interchange being wrapped within an `Arc` or not.
 // This is helpful, when a variable can become memory-intensive but must remain the ability to get cloned.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(untagged)] // Make this type transparent when de/serializing and always deserialize as `NoArc`, since it's the first enum kind that matches.
 pub enum MaybeArc<T> {
     NoArc(T),
@@ -47,6 +47,15 @@ impl<T: Clone> MaybeArc<T> {
         match self {
             Self::Arc(a) => Arc::unwrap_or_clone(a),
             Self::NoArc(a) => a,
+        }
+    }
+}
+
+impl<T: Clone> Clone for MaybeArc<T> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Arc(a) => Self::Arc(a.clone()),
+            Self::NoArc(a) => Self::NoArc(a.clone()),
         }
     }
 }
