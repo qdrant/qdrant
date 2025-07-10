@@ -14,7 +14,7 @@ from docker.errors import ImageNotFound, NotFound
 import requests
 from pathlib import Path
 
-from resource_tests.utils import wait_for_qdrant_ready, extract_archive
+from e2e_tests.utils import wait_for_qdrant_ready, extract_archive
 
 
 class QdrantContainer:
@@ -464,7 +464,7 @@ def test_data_dir() -> Path:
     """Path to the test data directory.
     
     Returns:
-        Path: Absolute path to tests/resource_tests/test_data directory
+        Path: Absolute path to tests/e2e_tests/test_data directory
     """
     return Path(__file__).parent / "test_data"
 

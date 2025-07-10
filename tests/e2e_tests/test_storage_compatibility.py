@@ -4,9 +4,9 @@ import time
 import random
 from pathlib import Path
 
-from resource_tests.conftest import _create_qdrant_container, QdrantContainerConfig, _cleanup_container
-from resource_tests.client_utils import ClientUtils
-from resource_tests.utils import extract_archive
+from e2e_tests.conftest import _create_qdrant_container, QdrantContainerConfig, _cleanup_container
+from e2e_tests.client_utils import ClientUtils
+from e2e_tests.utils import extract_archive
 
 
 class TestStorageCompatibility:

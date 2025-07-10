@@ -5,7 +5,7 @@ import subprocess
 
 from pathlib import Path
 
-from resource_tests.conftest import _run_docker_compose
+from e2e_tests.conftest import _run_docker_compose
 
 
 class TestTLS:

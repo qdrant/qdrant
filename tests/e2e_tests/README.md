@@ -10,6 +10,6 @@ As features are added, the storage format may change. This means updating the re
 
 Follow those steps to recreate the reference storage data and snapshot.
 
-1. run `PROJECT_ROOT/tests/resource_tests/test_data/storage-compat/gen_storage_compat_data.sh`
+1. run `PROJECT_ROOT/tests/e2e_tests/test_data/storage-compat/gen_storage_compat_data.sh`
 2. make sure to pick the right version when asked for which system generated the files
 3. push the new archives to the GCP bucket (ask for the credentials if you don't have them)

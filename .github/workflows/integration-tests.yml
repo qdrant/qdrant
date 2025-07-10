@@ -269,7 +269,7 @@ jobs:
       - name: Verify Docker image
         run: docker images | grep qdrant
       - name: Run e2e tests
-        run: poetry -C tests run pytest -n 4 tests/resource_tests -v --tb=short --durations=5
+        run: poetry -C tests run pytest -n 4 tests/e2e_tests -v --tb=short --durations=5
         shell: bash
         timeout-minutes: 5
       - name: Upload test logs on failure
@@ -278,6 +278,6 @@ jobs:
         with:
           name: e2e-test-logs
           path: |
-            tests/resource_tests/test_*.log
-            tests/resource_tests/**/logs/
+            tests/e2e_tests/test_*.log
+            tests/e2e_tests/**/logs/
           retention-days: 7

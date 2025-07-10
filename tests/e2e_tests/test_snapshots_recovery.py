@@ -3,8 +3,8 @@ import requests
 import yaml
 from pathlib import Path
 
-from resource_tests.client_utils import ClientUtils
-from resource_tests.conftest import QdrantContainerConfig
+from e2e_tests.client_utils import ClientUtils
+from e2e_tests.conftest import QdrantContainerConfig
 
 
 class TestSnapshotsRecovery:

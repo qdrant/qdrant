@@ -4,8 +4,8 @@ import uuid
 from docker.types import Mount
 from typing import Literal
 
-from resource_tests.client_utils import ClientUtils, VECTOR_SIZE
-from resource_tests.conftest import QdrantContainerConfig
+from e2e_tests.client_utils import ClientUtils, VECTOR_SIZE
+from e2e_tests.conftest import QdrantContainerConfig
 
 
 class TestLowDisk:

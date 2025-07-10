@@ -7,7 +7,7 @@ import requests
 import time
 import uuid
 
-from resource_tests.conftest import QdrantContainerConfig
+from e2e_tests.conftest import QdrantContainerConfig
 
 
 class TestMultiContainer:
