@@ -77,7 +77,8 @@ def extract_archive(archive_file: Path, extract_to: Path, cleanup_archive: bool 
         else:
             raise ValueError(f"Unsupported archive format: {archive_file}")
 
-    except Exception as e:
+
+    except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as e:
         print(f"Failed to extract archive {archive_file}: {e}")
         # Try fallback to subprocess for tar files
         if file_name.endswith(('.tar.xz', '.tar.gz', '.tar.bz2', '.tgz', '.tbz2', '.tar')):

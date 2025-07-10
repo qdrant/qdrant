@@ -132,7 +132,7 @@ class TestMultiContainer:
                     f"sleep 3 && ./qdrant --bootstrap 'http://qdrant-leader-{test_id}:6335' --uri 'http://qdrant-follower1-{test_id}:6335'"
                 ],
             )
-            follower1_info = qdrant_container_factory(follower1_config)
+            qdrant_container_factory(follower1_config)
             
             # Container 3: Follower node 2
             follower2_config = QdrantContainerConfig(
@@ -149,7 +149,7 @@ class TestMultiContainer:
                     f"sleep 4 && ./qdrant --bootstrap 'http://qdrant-leader-{test_id}:6335' --uri 'http://qdrant-follower2-{test_id}:6335'"
                 ],
             )
-            follower2_info = qdrant_container_factory(follower2_config)
+            qdrant_container_factory(follower2_config)
             
             # Give cluster time to stabilize
             time.sleep(8)

@@ -73,7 +73,7 @@ class ClientUtils:
                 return [col.name for col in collections_response.collections]
             return []
         except Exception as e:
-            raise Exception(f"Failed to list collections: {e}")
+            raise Exception(f"Failed to list collections: {e}") from e
     
     def get_collection_info_dict(self, collection_name: str) -> Dict[str, Any]:
         """Get detailed information about a specific collection."""
@@ -90,7 +90,7 @@ class ClientUtils:
                 "time": 0
             }
         except Exception as e:
-            raise Exception(f"Failed to get collection info for '{collection_name}': {e}")
+            raise Exception(f"Failed to get collection info for '{collection_name}': {e}") from e
     
     @staticmethod
     def generate_points(amount: int) -> Generator[Dict[str, List[models.PointStruct]], None, None]:
@@ -152,7 +152,7 @@ class ClientUtils:
             )
         except Exception as e:
             print(f"Collection patching failed with error: {e}")
-            exit(-1)
+            raise RuntimeError(f"Collection patching failed: {e}") from e
     
     def wait_for_status(self, collection_name: str, status: str) -> str:
         """Wait for collection to reach the specified status."""
@@ -169,7 +169,7 @@ class ClientUtils:
                 print(f"Wait for status {status}")
             except Exception as e:
                 print(f"Collection info fetching failed with error: {e}")
-                exit(-1)
+                raise RuntimeError(f"Collection info fetching failed: {e}") from e
         
         print(f"After 30s status is not {status}. Stop waiting.")
         return "timeout"
@@ -201,7 +201,7 @@ class ClientUtils:
                     return "ood"
             else:
                 print(f"Points insertions failed with error: {e}")
-                exit(-2)
+                raise RuntimeError(f"Points insertion failed: {e}") from e
 
     def search_points(self, collection_name: str) -> Dict[str, Any]:
         """Search for points in the collection using the modern query_points API."""
@@ -236,7 +236,7 @@ class ClientUtils:
             
         except Exception:
             print("Search failed")
-            exit(-3)
+            raise RuntimeError("Search failed")
     
     def create_snapshot(self, collection_name: str = "test_collection") -> str:
         """Create a snapshot of the collection."""

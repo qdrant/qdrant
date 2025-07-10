@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 import requests
 import time
@@ -36,7 +38,7 @@ class TestStorageCompatibility:
     def _download_compatibility_data(version: str, storage_test_dir: Path):
         """Download compatibility data for a specific version."""
         # Use test-specific filename to avoid conflicts in parallel execution
-        test_id = f"{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
+        test_id = str(uuid.uuid4())[:8]
         compatibility_file = storage_test_dir / f"compatibility_{version}_{test_id}.tar"
         
         url = f"https://storage.googleapis.com/qdrant-backward-compatibility/compatibility-{version}.tar"

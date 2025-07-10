@@ -46,7 +46,6 @@ class TestSnapshotsRecovery:
     @pytest.mark.parametrize("storage_method", ["local", "s3"])
     def test_snapshots_recovery(self, qdrant_container_factory, storage_method, tmp_path):
         """Test snapshot creation, download, and recovery with both local and S3 storage."""
-        
         if storage_method == "s3":
             # For S3 testing, we'd need a MinIO container or mock S3
             # For now, skip if MinIO is not available
@@ -58,7 +57,6 @@ class TestSnapshotsRecovery:
         # Create config file with the specified storage method
         config_file = self.create_config_with_storage(storage_method, tmp_path)
         
-        # Create container with mounted config using QdrantContainerConfig
         config = QdrantContainerConfig(
             network_mode="host",
             volumes={
