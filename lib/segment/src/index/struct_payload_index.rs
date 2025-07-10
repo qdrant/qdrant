@@ -52,6 +52,19 @@ enum StorageType {
     GridstoreNonAppendable,
 }
 
+impl StorageType {
+    pub fn is_appendable(&self) -> bool {
+        match self {
+            #[cfg(feature = "rocksdb")]
+            StorageType::RocksDbAppendable(_) => true,
+            StorageType::GridstoreAppendable => true,
+            #[cfg(feature = "rocksdb")]
+            StorageType::RocksDbNonAppendable(_) => false,
+            StorageType::GridstoreNonAppendable => false,
+        }
+    }
+}
+
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 #[derive(Debug)]
 pub struct StructPayloadIndex {
@@ -599,12 +612,9 @@ impl StructPayloadIndex {
                                 ));
                             };
 
-                            let is_appendable =
-                                matches!(self.storage_type, StorageType::RocksDbAppendable(..));
-
                             return Ok(IndexSelector::RocksDb(IndexSelectorRocksDb {
                                 db,
-                                is_appendable,
+                                is_appendable: self.storage_type.is_appendable(),
                             }));
                         }
 
