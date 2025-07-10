@@ -7247,7 +7247,7 @@
             "nullable": true
           },
           "indexing_threshold": {
-            "description": "Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing\n\nDefault value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.\n\nTo disable vector indexing, set to `0`.\n\nNote: 1kB = 1 vector of size 256.",
+            "description": "Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing\n\nDefault value is 10,000, based on experiments and observations.\n\nTo disable vector indexing, set to `0`.\n\nNote: 1kB = 1 vector of size 256.",
             "default": null,
             "type": "integer",
             "format": "uint",
