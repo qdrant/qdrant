@@ -28,7 +28,7 @@ use crate::json_path::JsonPath;
 use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 
 /// Selects index and index builder types based on field type.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum IndexSelector<'a> {
     /// In-memory index on RocksDB, appendable or non-appendable
     #[cfg(feature = "rocksdb")]
@@ -40,19 +40,19 @@ pub enum IndexSelector<'a> {
 }
 
 #[cfg(feature = "rocksdb")]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct IndexSelectorRocksDb<'a> {
     pub db: &'a Arc<parking_lot::RwLock<rocksdb::DB>>,
     pub is_appendable: bool,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct IndexSelectorMmap<'a> {
     pub dir: &'a Path,
     pub is_on_disk: bool,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct IndexSelectorGridstore<'a> {
     pub dir: &'a Path,
 }

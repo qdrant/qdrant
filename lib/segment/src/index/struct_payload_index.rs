@@ -41,7 +41,7 @@ use crate::types::{
 };
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(clippy::enum_variant_names)]
 enum StorageType {
     #[cfg(feature = "rocksdb")]
@@ -138,21 +138,28 @@ impl StructPayloadIndex {
 
         let mut indices = std::mem::take(&mut self.config.indices);
 
-        // If there is any field without an explicit index type, we will assign it below and must
-        // save the configuration after
-        let had_index_without_type = indices.any_has_no_type();
+        let mut dirty = false;
+
+        // Catch the current storage type as we might change it inside `load_from_db` when migrating
+        // but need to be able to load existing indices properly.
+        let initial_storage_type = self.storage_type.clone();
 
         for (field, payload_schema) in indices.iter_mut() {
-            let field_index = self.load_from_db(field, payload_schema, create_if_missing)?;
+            let (field_index, is_dirty) = self.load_from_db(
+                field,
+                payload_schema,
+                create_if_missing,
+                &initial_storage_type,
+            )?;
+            dirty |= is_dirty;
+
             field_indexes.insert(field.clone(), field_index);
         }
 
         // Put updated payload schemas back into the config
         self.config.indices = indices;
 
-        // If any payload_schema didn't have an index type assigned, it has now
-        // and therefore we need to store it.
-        if had_index_without_type {
+        if dirty {
             self.save_config()?;
         }
 
@@ -167,15 +174,15 @@ impl StructPayloadIndex {
         // TODO: refactor this and remove the &mut reference.
         payload_schema: &mut PayloadFieldSchemaWithIndexType,
         create_if_missing: bool,
-    ) -> OperationResult<Vec<FieldIndex>> {
+        initial_storage_type: &StorageType,
+    ) -> OperationResult<(Vec<FieldIndex>, bool)> {
+        let mut dirty = false;
         let total_point_count = self.id_tracker.borrow().total_point_count();
 
         let mut indexes = if payload_schema.types.is_empty() {
-            let mut indexes = self.selector(&payload_schema.schema).new_index(
-                field,
-                &payload_schema.schema,
-                create_if_missing,
-            )?;
+            let mut indexes = self
+                .selector(&payload_schema.schema, initial_storage_type)
+                .new_index(field, &payload_schema.schema, create_if_missing)?;
 
             // Special null index complements every index.
             if let Some(null_index) = IndexSelector::new_null_index(
@@ -194,13 +201,16 @@ impl StructPayloadIndex {
                 .map(|i| i.get_full_index_type())
                 .collect::<Vec<_>>();
 
+            dirty = true;
+
             indexes
         } else {
             payload_schema
                 .types
                 .iter()
                 .filter_map(|index| {
-                    self.selector_with_type(index)
+                    // TODO: remove the `initial_storage_type` parameter
+                    self.selector_with_type(index, initial_storage_type)
                         .and_then(|selector| {
                             selector.new_index_with_type(
                                 field,
@@ -240,7 +250,9 @@ impl StructPayloadIndex {
                 StorageType::GridstoreNonAppendable => {}
             }
             self.config.skip_rocksdb.replace(true);
-            self.save_config()?;
+
+            // Save later
+            dirty = true;
 
             // Clean-up all existing indices
             for index in indexes.drain(..) {
@@ -253,7 +265,7 @@ impl StructPayloadIndex {
         }
 
         if !rebuild {
-            for ref mut index in indexes.iter_mut() {
+            for index in indexes.iter_mut() {
                 if !index.load()? {
                     rebuild = true;
                     log::debug!(
@@ -272,9 +284,19 @@ impl StructPayloadIndex {
                 &payload_schema.schema,
                 &HardwareCounterCell::disposable(), // Internal operation
             )?;
+
+            payload_schema.types = indexes
+                .iter()
+                .map(|i| i.get_full_index_type())
+                .collect::<Vec<_>>();
+
+            // Save later
+            dirty = true;
+
+            log::info!("Rebuilding done");
         }
 
-        Ok(indexes)
+        Ok((indexes, dirty))
     }
 
     pub fn open(
@@ -376,9 +398,8 @@ impl StructPayloadIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
-        let mut builders = self
-            .selector(payload_schema)
-            .index_builder(field, payload_schema)?;
+        let selector = self.selector(payload_schema, &self.storage_type);
+        let mut builders = selector.index_builder(field, payload_schema)?;
 
         // Special null index complements every index.
         let null_index = IndexSelector::null_builder(&self.path, field)?;
@@ -605,10 +626,14 @@ impl StructPayloadIndex {
     }
 
     /// Select which type of PayloadIndex to use for the field
-    fn selector(&self, payload_schema: &PayloadFieldSchema) -> IndexSelector {
+    fn selector<'a>(
+        &'a self,
+        payload_schema: &PayloadFieldSchema,
+        storage_type: &'a StorageType,
+    ) -> IndexSelector<'a> {
         let is_on_disk = payload_schema.is_on_disk();
 
-        match &self.storage_type {
+        match storage_type {
             #[cfg(feature = "rocksdb")]
             StorageType::RocksDbAppendable(db) => IndexSelector::RocksDb(IndexSelectorRocksDb {
                 db,
@@ -639,10 +664,11 @@ impl StructPayloadIndex {
         }
     }
 
-    fn selector_with_type(
-        &self,
+    fn selector_with_type<'a>(
+        &'a self,
         index_type: &FullPayloadIndexType,
-    ) -> OperationResult<IndexSelector> {
+        storage_type: &'a StorageType,
+    ) -> OperationResult<IndexSelector<'a>> {
         let selector = match index_type.storage_type {
             payload_config::StorageType::Gridstore => {
                 IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
@@ -660,7 +686,7 @@ impl StructPayloadIndex {
 
                     return Ok(IndexSelector::RocksDb(IndexSelectorRocksDb {
                         db,
-                        is_appendable: self.storage_type.is_appendable(),
+                        is_appendable: storage_type.is_appendable(),
                     }));
                 }
 
