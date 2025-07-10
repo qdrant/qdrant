@@ -382,6 +382,14 @@ impl MutableFullTextIndex {
             Storage::Gridstore(_) => StorageType::Gridstore,
         }
     }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Gridstore(_) => false,
+        }
+    }
 }
 
 impl ValueIndexer for MutableFullTextIndex {
