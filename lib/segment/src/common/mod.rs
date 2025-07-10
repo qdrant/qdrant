@@ -25,6 +25,7 @@ use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::types::{SegmentConfig, SparseVectorDataConfig, VectorDataConfig, VectorName};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
+
 /// Check that the given vector name is part of the segment config.
 ///
 /// Returns an error if incompatible.
