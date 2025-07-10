@@ -11,6 +11,36 @@ def setup(on_disk_vectors, collection_name):
     drop_collection(collection_name=collection_name)
 
 
+def test_min_should_never(collection_name):
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "min_should": {
+                  "conditions": [
+                    {
+                      "has_id": [1,2]
+                    },
+                    {
+                      "has_id": [4,5,6]
+                    },
+                    {
+                      "has_id": [7,8,9,10]
+                    }
+                  ],
+                  "min_count": 2
+                }
+              },
+              "limit": 100
+            }
+    )
+    assert response.ok
+
+    json = response.json()
+    assert len(json['result']['points']) == 0
+
 def test_min_should(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
