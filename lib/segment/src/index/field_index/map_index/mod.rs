@@ -504,6 +504,15 @@ where
         }
     }
 
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self {
+            MapIndex::Mutable(index) => index.is_rocksdb(),
+            MapIndex::Immutable(index) => index.is_rocksdb(),
+            MapIndex::Mmap(_) => false,
+        }
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {

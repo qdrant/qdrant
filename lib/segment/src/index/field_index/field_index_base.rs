@@ -442,6 +442,23 @@ impl FieldIndex {
         }
     }
 
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self {
+            FieldIndex::IntIndex(index) => index.is_rocksdb(),
+            FieldIndex::DatetimeIndex(index) => index.is_rocksdb(),
+            FieldIndex::IntMapIndex(index) => index.is_rocksdb(),
+            FieldIndex::KeywordIndex(index) => index.is_rocksdb(),
+            FieldIndex::FloatIndex(index) => index.is_rocksdb(),
+            FieldIndex::GeoIndex(index) => index.is_rocksdb(),
+            FieldIndex::BoolIndex(index) => index.is_rocksdb(),
+            FieldIndex::FullTextIndex(index) => index.is_rocksdb(),
+            FieldIndex::UuidIndex(index) => index.is_rocksdb(),
+            FieldIndex::UuidMapIndex(index) => index.is_rocksdb(),
+            FieldIndex::NullIndex(_) => false,
+        }
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
