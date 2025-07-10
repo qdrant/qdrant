@@ -304,7 +304,7 @@ def qdrant_image(docker_client: docker.DockerClient, request) -> str:
         config = {}
 
     # Determine image tag
-    image_tag = config.get("tag", "qdrant/qdrant:dev")
+    image_tag = config.get("tag", "qdrant/qdrant:e2e-tests")
     rebuild_image = config.get("rebuild_image", False)
 
     project_root = Path(__file__).parent.parent.parent

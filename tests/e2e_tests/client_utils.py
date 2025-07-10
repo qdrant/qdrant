@@ -1,9 +1,10 @@
 import hashlib
 import io
 import random
+import requests
 import time
 import uuid
-from typing import Optional, Dict, Any, List, Generator
+from typing import Optional, Dict, Any, List, Generator, Tuple
 
 from qdrant_client import QdrantClient, models
 from qdrant_client.http.exceptions import UnexpectedResponse
@@ -21,36 +22,22 @@ class ClientUtils:
         self.timeout = timeout
         self.client = QdrantClient(host=host, port=port, timeout=timeout)
     
-    def wait_for_qdrant_ready(self, timeout: int = 30) -> bool:
-        """Wait for Qdrant service to be ready."""
+    def wait_for_server(self, timeout: int = 30) -> bool:
+        """Wait for Qdrant server to be ready."""
         start_time = time.time()
         while time.time() - start_time < timeout:
             try:
-                # Try to get collections to check if service is ready
-                self.client.get_collections()
-                return True
-            except Exception:
-                pass
-            time.sleep(1)
-        return False
-    
-    def wait_for_server(self, timeout: int = 30) -> bool:
-        """Wait for Qdrant server to be ready."""
-        for _ in range(timeout):
-            try:
-                # Check if server is healthy
                 info = self.client.get_collections()
                 if info is not None:
                     print("Server ready to serve traffic")
                     return True
             except Exception:
                 pass
-            
+
             print("Waiting for server to start...")
             time.sleep(1)
-        
         return False
-    
+
     def wait_for_collection_loaded(self, collection_name: str, timeout: int = 10) -> bool:
         """Wait for a specific collection to be loaded."""
         for _ in range(timeout):
@@ -242,11 +229,10 @@ class ClientUtils:
         snapshot_info = self.client.create_snapshot(collection_name=collection_name)
         return snapshot_info.name
     
-    def download_snapshot(self, collection_name: str, snapshot_name: str) -> tuple[bytes, str]:
+    def download_snapshot(self, collection_name: str, snapshot_name: str) -> Tuple[bytes, str]:
         """Download a snapshot and return its content and checksum."""
         # Note: qdrant-client doesn't have a direct method to download snapshot content
         # This would need to be implemented using the REST API directly
-        import requests
         snapshot_url = f"http://{self.host}:{self.port}/collections/{collection_name}/snapshots/{snapshot_name}"
         response = requests.get(snapshot_url)
         response.raise_for_status()
@@ -259,7 +245,6 @@ class ClientUtils:
         """Recover a collection from a snapshot URL."""
         # Note: qdrant-client doesn't have a direct method for URL recovery
         # This would need to be implemented using the REST API directly
-        import requests
         body = {
             "location": snapshot_url,
             "wait": "true"
@@ -280,7 +265,6 @@ class ClientUtils:
         """Upload a snapshot file directly."""
         # Note: qdrant-client doesn't have a direct method for snapshot upload
         # This would need to be implemented using the REST API directly
-        import requests
         files = {
             'snapshot': ('snapshot.tar', io.BytesIO(snapshot_content), 'application/octet-stream')
         }
@@ -304,7 +288,6 @@ class ClientUtils:
         """Download a shard snapshot and return its content."""
         # Note: qdrant-client doesn't have a direct method to download shard snapshot content
         # This would need to be implemented using the REST API directly
-        import requests
         snapshot_url = f"http://{self.host}:{self.port}/collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}"
         response = requests.get(snapshot_url)
         response.raise_for_status()
@@ -324,7 +307,6 @@ class ClientUtils:
         """Upload a shard snapshot file directly."""
         # Note: qdrant-client doesn't have a direct method for shard snapshot upload
         # This would need to be implemented using the REST API directly
-        import requests
         files = {
             'snapshot': ('shard_snapshot.tar', io.BytesIO(snapshot_content), 'application/octet-stream')
         }
@@ -338,19 +320,14 @@ class ClientUtils:
     
     def verify_collection_exists(self, collection_name: str) -> Dict[str, Any]:
         """Verify that a collection exists and is accessible."""
-        try:
-            collection_info = self.client.get_collection(collection_name)
-            return {
-                "result": {
-                    "status": collection_info.status,
-                    "vectors_count": collection_info.vectors_count,
-                    "points_count": collection_info.points_count,
-                    "config": collection_info.config
-                },
-                "status": "ok",
-                "time": 0
-            }
-        except UnexpectedResponse as e:
-            if e.status_code == 404:
-                raise
-            raise
+        collection_info = self.client.get_collection(collection_name)
+        return {
+            "result": {
+                "status": collection_info.status,
+                "vectors_count": collection_info.vectors_count,
+                "points_count": collection_info.points_count,
+                "config": collection_info.config
+            },
+            "status": "ok",
+            "time": 0
+        }
