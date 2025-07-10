@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -18,7 +18,6 @@ use crate::{
 pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
-    vector_stats: Option<VectorStats>,
     bits_store_type: PhantomData<TBitsStoreType>,
 }
 
@@ -109,6 +108,10 @@ struct Metadata {
     #[serde(default)]
     #[serde(skip_serializing_if = "QueryEncoding::is_same_as_storage")]
     query_encoding: QueryEncoding,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vector_stats: Option<VectorStats>,
 }
 
 pub trait BitsStoreType:
@@ -406,12 +409,21 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
 
-        let vector_stats = match (encoding, query_encoding) {
-            (Encoding::TwoBits | Encoding::OneAndHalfBits, _)
-            | (_, QueryEncoding::Scalar4bits | QueryEncoding::Scalar8bits) => {
-                Some(VectorStats::build(orig_data.clone(), vector_parameters))
-            }
-            (_, _) => None,
+        let storage_encoding_needs_states = match encoding {
+            Encoding::OneBit => false,
+            // Requires stats for bit boundaries
+            Encoding::TwoBits | Encoding::OneAndHalfBits => true,
+        };
+
+        let query_encoding_needs_stats = match query_encoding {
+            QueryEncoding::SameAsStorage => storage_encoding_needs_states,
+            QueryEncoding::Scalar4bits | QueryEncoding::Scalar8bits => true,
+        };
+
+        let vector_stats = if storage_encoding_needs_states || query_encoding_needs_stats {
+            Some(VectorStats::build(orig_data.clone(), vector_parameters))
+        } else {
+            None
         };
 
         for vector in orig_data {
@@ -431,8 +443,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                 vector_parameters: vector_parameters.clone(),
                 encoding,
                 query_encoding,
+                vector_stats,
             },
-            vector_stats,
             bits_store_type: PhantomData,
         })
     }
@@ -759,12 +771,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         self.metadata.vector_parameters.count
     }
 
-    fn get_vector_stats_path_from_meta_path(meta_path: &Path) -> Option<PathBuf> {
-        let mut vector_stats_path = meta_path.parent()?.to_owned();
-        vector_stats_path.push("vector_stats.json");
-        Some(vector_stats_path)
-    }
-
     pub fn encode_internal_query(&self, point_id: u32) -> EncodedQueryBQ<TBitsStoreType> {
         // For internal queries we use the same encoding as for storage
         EncodedQueryBQ::Binary(EncodedBinVector {
@@ -788,20 +794,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         data_path.parent().map(std::fs::create_dir_all);
         self.encoded_vectors.save_to_file(data_path)?;
 
-        let vector_stats_path =
-            Self::get_vector_stats_path_from_meta_path(meta_path).ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "Failed to get vector stats path",
-                )
-            })?;
-        if let Some(vector_stats) = &self.vector_stats {
-            vector_stats_path.parent().map(std::fs::create_dir_all);
-            atomic_save_json(&vector_stats_path, &vector_stats)?;
-        } else if let Ok(true) = std::fs::exists(&vector_stats_path) {
-            std::fs::remove_file(&vector_stats_path)?;
-        }
-
         Ok(())
     }
 
@@ -817,27 +809,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         let encoded_vectors =
             TStorage::from_file(data_path, quantized_vector_size, vector_parameters.count)?;
 
-        let vector_stats_path =
-            Self::get_vector_stats_path_from_meta_path(meta_path).ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "Failed to get vector stats path",
-                )
-            })?;
-        let vector_stats = match (metadata.encoding, metadata.query_encoding) {
-            (Encoding::TwoBits | Encoding::OneAndHalfBits, _)
-            | (_, QueryEncoding::Scalar4bits | QueryEncoding::Scalar8bits) => {
-                let vector_stats_contents = std::fs::read_to_string(&vector_stats_path)?;
-                let vector_stats: VectorStats = serde_json::from_str(&vector_stats_contents)?;
-                Some(vector_stats)
-            }
-            (_, _) => None,
-        };
-
         let result = Self {
             metadata,
             encoded_vectors,
-            vector_stats,
             bits_store_type: PhantomData,
         };
         Ok(result)
@@ -851,7 +825,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         debug_assert!(query.len() == self.metadata.vector_parameters.dim);
         Self::encode_query_vector(
             query,
-            &self.vector_stats,
+            &self.metadata.vector_stats,
             self.metadata.encoding,
             self.metadata.query_encoding,
         )
