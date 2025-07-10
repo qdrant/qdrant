@@ -1100,6 +1100,7 @@ mod tests {
         }
 
         // Check that index type has been written to disk again.
+        // Proves we'll always persist the exact index type if it wasn't known yet at that time
         let payload_config_path = full_segment_path.join("payload_index/config.json");
         let mut payload_config = PayloadConfig::load(&payload_config_path).unwrap();
         assert_eq!(payload_config.indexed_fields.len(), 1);
