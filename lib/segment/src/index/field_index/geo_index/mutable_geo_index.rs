@@ -431,6 +431,14 @@ impl MutableGeoMapIndex {
             .map(|v| v.iter())
     }
 
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Gridstore(_) => false,
+        }
+    }
+
     delegate! {
         to self.in_memory_index {
             pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&GeoPoint) -> bool) -> bool;
