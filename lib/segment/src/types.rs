@@ -2916,7 +2916,7 @@ impl Condition {
             | Condition::IsNull(_)
             | Condition::CustomIdChecker(_)
             | Condition::HasId(_)
-            | Condition::HasVector(_) => 0,
+            | Condition::HasVector(_) => 1,
         }
     }
 
@@ -3296,7 +3296,7 @@ impl Filter {
     pub fn total_conditions_count(&self) -> usize {
         fn count_all_conditions(field: Option<&Vec<Condition>>) -> usize {
             field
-                .map(|i| i.len() + i.iter().map(|j| j.sub_conditions_count()).sum::<usize>())
+                .map(|i| i.iter().map(|j| j.sub_conditions_count()).sum::<usize>())
                 .unwrap_or(0)
         }
 

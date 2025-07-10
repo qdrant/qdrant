@@ -1,7 +1,8 @@
-use ahash::AHashSet;
-use common::types::PointOffsetType;
+use std::ops::Deref;
 
-use crate::types::{FieldCondition, VectorNameBuf};
+use ahash::AHashSet;
+
+use crate::types::{Condition, FieldCondition, PointIdType, VectorNameBuf};
 
 pub mod bool_index;
 pub(super) mod facet_index;
@@ -23,10 +24,12 @@ mod utils;
 
 pub use field_index_base::*;
 
+use crate::utils::maybe_arc::MaybeArc;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum PrimaryCondition {
     Condition(Box<FieldCondition>),
-    Ids(AHashSet<PointOffsetType>),
+    Ids(MaybeArc<AHashSet<PointIdType>>),
     HasVector(VectorNameBuf),
 }
 
@@ -83,5 +86,29 @@ impl CardinalityEstimation {
     #[cfg(test)]
     pub const fn equals_min_exp_max(&self, other: &Self) -> bool {
         self.min == other.min && self.exp == other.exp && self.max == other.max
+    }
+
+    /// Checks that the given condition is a primary condition of the estimation.
+    pub fn is_primary(&self, condition: &Condition) -> bool {
+        self.primary_clauses
+            .iter()
+            .any(|primary_condition| match primary_condition {
+                PrimaryCondition::Condition(primary_field_condition) => match condition {
+                    Condition::Field(field_condition) => {
+                        primary_field_condition.as_ref() == field_condition
+                    }
+                    _ => false,
+                },
+                PrimaryCondition::Ids(ids) => match condition {
+                    Condition::HasId(has_id) => ids.deref() == has_id.has_id.deref(),
+                    _ => false,
+                },
+                PrimaryCondition::HasVector(has_vector) => match condition {
+                    Condition::HasVector(vector_condition) => {
+                        has_vector == &vector_condition.has_vector
+                    }
+                    _ => false,
+                },
+            })
     }
 }

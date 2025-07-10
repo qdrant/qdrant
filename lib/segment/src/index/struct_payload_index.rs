@@ -3,7 +3,6 @@ use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ahash::AHashSet;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
@@ -42,7 +41,7 @@ use crate::types::{
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 #[derive(Debug)]
-#[expect(clippy::enum_variant_names)]
+#[allow(clippy::enum_variant_names)]
 enum StorageType {
     #[cfg(feature = "rocksdb")]
     RocksDbAppendable(std::sync::Arc<parking_lot::RwLock<rocksdb::DB>>),
@@ -105,7 +104,14 @@ impl StructPayloadIndex {
                     .iter()
                     .find_map(|field_index| field_index.filter(field_condition, hw_counter))
             }
-            PrimaryCondition::Ids(ids) => Some(Box::new(ids.iter().copied())),
+            PrimaryCondition::Ids(ids) => {
+                let id_tracker_ref = self.id_tracker.borrow();
+                let mapped_ids: Vec<PointOffsetType> = ids
+                    .iter()
+                    .filter_map(|external_id| id_tracker_ref.internal_id(*external_id))
+                    .collect();
+                Some(Box::new(mapped_ids.into_iter()))
+            }
             PrimaryCondition::HasVector(_) => None,
         }
     }
@@ -352,15 +358,10 @@ impl StructPayloadIndex {
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::HasId(has_id) => {
-                let id_tracker_ref = self.id_tracker.borrow();
-                let mapped_ids: AHashSet<PointOffsetType> = has_id
-                    .has_id
-                    .iter()
-                    .filter_map(|external_id| id_tracker_ref.internal_id(*external_id))
-                    .collect();
-                let num_ids = mapped_ids.len();
+                let num_ids = has_id.has_id.len();
+                let ids = has_id.has_id.clone();
                 CardinalityEstimation {
-                    primary_clauses: vec![PrimaryCondition::Ids(mapped_ids)],
+                    primary_clauses: vec![PrimaryCondition::Ids(ids)],
                     min: num_ids,
                     exp: num_ids,
                     max: num_ids,
@@ -456,10 +457,13 @@ impl StructPayloadIndex {
                 .collect();
 
             if let Some(primary_iterators) = primary_clause_iterators {
-                let num_primary_iterators = primary_iterators.len();
+                let all_conditions_are_primary = filter
+                    .iter_conditions()
+                    .all(|condition| query_cardinality.is_primary(condition));
+
                 let joined_primary_iterator = primary_iterators.into_iter().flatten();
 
-                return if num_primary_iterators == filter.total_conditions_count() {
+                return if all_conditions_are_primary {
                     // All conditions are primary clauses,
                     // We can avoid post-filtering
                     let iter = joined_primary_iterator
