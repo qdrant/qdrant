@@ -16,8 +16,8 @@ use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;
 
-const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 200_000;
-pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 20_000;
+const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 256_000;
+pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 10_000;
 const SEGMENTS_PATH: &str = "segments";
 const TEMP_SEGMENTS_PATH: &str = "temp_segments";
 
@@ -64,7 +64,7 @@ pub struct OptimizersConfig {
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
     ///
-    /// Default value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.
+    /// Default value is 10,000, based on experiments and observations.
     ///
     /// To disable vector indexing, set to `0`.
     ///
@@ -100,9 +100,12 @@ impl OptimizersConfig {
     pub fn get_number_segments(&self) -> usize {
         if self.default_segment_number == 0 {
             let num_cpus = common::cpu::get_num_cpus();
+            // Configure 1 segment per 2 CPUs, as a middle ground between
+            // latency and RPS.
+            let expected_segments = num_cpus / 2;
             // Do not configure less than 2 and more than 8 segments
             // until it is not explicitly requested
-            num_cpus.clamp(2, 8)
+            expected_segments.clamp(2, 8)
         } else {
             self.default_segment_number
         }
