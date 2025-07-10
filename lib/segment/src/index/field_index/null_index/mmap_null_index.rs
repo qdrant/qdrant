@@ -25,13 +25,15 @@ const IS_NULL_DIRNAME: &str = "is_null";
 /// in case of IsNull and IsEmpty conditions.
 pub struct MmapNullIndex {
     base_dir: PathBuf,
+    storage: Option<Storage>,
+    total_point_count: usize,
+}
+
+struct Storage {
     /// If true, payload field has some values.
     has_values_slice: DynamicMmapFlags,
     /// If true, then payload field contains null value.
     is_null_slice: DynamicMmapFlags,
-    total_point_count: usize,
-    /// `true` if just created.
-    is_loaded: bool,
 }
 
 /// Don't populate null index as it is not essential
@@ -40,37 +42,40 @@ const POPULATE_NULL_INDEX: bool = false;
 
 impl MmapNullIndex {
     pub fn builder(path: &Path) -> OperationResult<MmapNullIndexBuilder> {
-        Ok(MmapNullIndexBuilder(Self::open_or_create(path, 0)?))
+        Ok(MmapNullIndexBuilder(Self::open(path, 0, true)?))
     }
 
-    /// Creates a new null index at the given path.
-    /// If it already exists, loads the index.
+    /// Open or create a null index at the given path.
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
-    pub fn open_or_create(path: &Path, total_point_count: usize) -> OperationResult<Self> {
+    /// - `total_point_count` - Total number of points in the segment.
+    /// - `create_if_missing` - If true, creates the index if it doesn't exist.
+    pub fn open(
+        path: &Path,
+        total_point_count: usize,
+        create_if_missing: bool,
+    ) -> OperationResult<Self> {
         let has_values_dir = path.join(HAS_VALUES_DIRNAME);
-        if has_values_dir.is_dir() {
-            Self::open(path, total_point_count)
-        } else {
-            std::fs::create_dir_all(path).map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to create null-index directory: {err}, path: {path:?}"
-                ))
-            })?;
 
-            let mut index = Self::open(path, total_point_count)?;
-            index.is_loaded = false;
-            Ok(index)
+        // If has values directory doesn't exist, assume the index doesn't exist on disk
+        if !has_values_dir.is_dir() && !create_if_missing {
+            return Ok(Self {
+                base_dir: path.to_path_buf(),
+                storage: None,
+                total_point_count,
+            });
         }
+
+        Self::open_or_create(path, total_point_count)
     }
 
-    fn open(path: &Path, total_point_count: usize) -> OperationResult<Self> {
-        if !path.is_dir() {
-            return Err(OperationError::service_error(format!(
-                "Path is not a directory {path:?}"
-            )));
-        }
+    fn open_or_create(path: &Path, total_point_count: usize) -> OperationResult<Self> {
+        std::fs::create_dir_all(path).map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to create null-index directory: {err}, path: {path:?}"
+            ))
+        })?;
 
         let has_values_path = path.join(HAS_VALUES_DIRNAME);
         let has_values_slice = DynamicMmapFlags::open(&has_values_path, POPULATE_NULL_INDEX)?;
@@ -80,15 +85,23 @@ impl MmapNullIndex {
 
         Ok(Self {
             base_dir: path.to_path_buf(),
-            has_values_slice,
-            is_null_slice,
+            storage: Some(Storage {
+                has_values_slice,
+                is_null_slice,
+            }),
             total_point_count,
-            is_loaded: true,
         })
     }
 
-    pub fn open_if_exists(path: &Path, total_point_count: usize) -> OperationResult<Option<Self>> {
+    pub fn open_if_exists(
+        path: &Path,
+        total_point_count: usize,
+        create_if_missing: bool,
+    ) -> OperationResult<Option<Self>> {
         if !path.is_dir() {
+            if create_if_missing {
+                return Ok(Some(Self::open_or_create(path, total_point_count)?));
+            }
             return Ok(None);
         }
 
@@ -100,10 +113,11 @@ impl MmapNullIndex {
             let is_null_slice = DynamicMmapFlags::open(&is_null_path, POPULATE_NULL_INDEX)?;
             Ok(Some(Self {
                 base_dir: path.to_path_buf(),
-                has_values_slice,
-                is_null_slice,
+                storage: Some(Storage {
+                    has_values_slice,
+                    is_null_slice,
+                }),
                 total_point_count,
-                is_loaded: true,
             }))
         } else {
             Ok(None)
@@ -116,6 +130,12 @@ impl MmapNullIndex {
         payload: &[&Value],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        let Some(storage) = &mut self.storage else {
+            return Err(OperationError::service_error(
+                "MmapNullIndex storage is not initialized".to_string(),
+            ));
+        };
+
         let mut is_null = false;
         let mut has_values = false;
         for value in payload {
@@ -151,9 +171,11 @@ impl MmapNullIndex {
 
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
-        self.has_values_slice
+        storage
+            .has_values_slice
             .set_with_resize(id, has_values, hw_counter_ref)?;
-        self.is_null_slice
+        storage
+            .is_null_slice
             .set_with_resize(id, is_null, hw_counter_ref)?;
 
         // Update total_points to track the highest point offset seen
@@ -163,32 +185,49 @@ impl MmapNullIndex {
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        let Some(storage) = &mut self.storage else {
+            return Ok(());
+        };
+
         let disposed_hw = HardwareCounterCell::disposable(); // Deleting is unmeasured OP.
         let disposed_hw = disposed_hw.ref_payload_index_io_write_counter();
 
-        self.has_values_slice
+        storage
+            .has_values_slice
             .set_with_resize(id, false, disposed_hw)?;
-        self.is_null_slice.set_with_resize(id, false, disposed_hw)?;
+        storage
+            .is_null_slice
+            .set_with_resize(id, false, disposed_hw)?;
         Ok(())
     }
 
     pub fn values_count(&self, id: PointOffsetType) -> usize {
-        usize::from(self.has_values_slice.get(id))
+        self.storage
+            .as_ref()
+            .map_or(0, |storage| usize::from(storage.has_values_slice.get(id)))
     }
 
     pub fn values_is_empty(&self, id: PointOffsetType) -> bool {
-        !self.has_values_slice.get(id)
+        self.storage
+            .as_ref()
+            .is_none_or(|storage| !storage.has_values_slice.get(id))
     }
 
     pub fn values_is_null(&self, id: PointOffsetType) -> bool {
-        self.is_null_slice.get(id)
+        self.storage
+            .as_ref()
+            .is_some_and(|storage| storage.is_null_slice.get(id))
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        let points_count = self
+            .storage
+            .as_ref()
+            .map_or(0, |storage| storage.has_values_slice.len());
         PayloadIndexTelemetry {
             field_name: None,
-            points_count: self.has_values_slice.len(),
-            points_values_count: self.has_values_slice.len(),
+            points_count,
+            points_values_count: points_count,
             histogram_bucket_size: None,
             index_type: "mmap_null_index",
         }
@@ -201,15 +240,19 @@ impl MmapNullIndex {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
-        self.is_null_slice.populate()?;
-        self.has_values_slice.populate()?;
+        if let Some(storage) = &self.storage {
+            storage.is_null_slice.populate()?;
+            storage.has_values_slice.populate()?;
+        }
         Ok(())
     }
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.is_null_slice.clear_cache()?;
-        self.has_values_slice.clear_cache()?;
+        if let Some(storage) = &self.storage {
+            storage.is_null_slice.clear_cache()?;
+            storage.has_values_slice.clear_cache()?;
+        }
 
         Ok(())
     }
@@ -223,12 +266,14 @@ impl MmapNullIndex {
 
 impl PayloadFieldIndex for MmapNullIndex {
     fn count_indexed_points(&self) -> usize {
-        self.has_values_slice.len()
+        self.storage
+            .as_ref()
+            .map_or(0, |storage| storage.has_values_slice.len())
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        // Nothing needed
-        Ok(self.is_loaded)
+        let is_loaded = self.storage.is_some();
+        Ok(is_loaded)
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -237,13 +282,19 @@ impl PayloadFieldIndex for MmapNullIndex {
     }
 
     fn flusher(&self) -> Flusher {
+        let Some(storage) = &self.storage else {
+            return Box::new(|| Ok(()));
+        };
+
         let Self {
             base_dir: _,
+            storage: _,
+            total_point_count: _,
+        } = self;
+        let Storage {
             has_values_slice,
             is_null_slice,
-            total_point_count: _,
-            is_loaded: _,
-        } = self;
+        } = storage;
 
         let is_empty_flusher = has_values_slice.flusher();
         let is_null_flusher = is_null_slice.flusher();
@@ -256,13 +307,19 @@ impl PayloadFieldIndex for MmapNullIndex {
     }
 
     fn files(&self) -> Vec<PathBuf> {
+        let Some(storage) = &self.storage else {
+            return vec![];
+        };
+
         let Self {
             base_dir: _,
+            storage: _,
+            total_point_count: _,
+        } = self;
+        let Storage {
             has_values_slice,
             is_null_slice,
-            total_point_count: _,
-            is_loaded: _,
-        } = self;
+        } = storage;
 
         let mut files = has_values_slice.files();
         files.extend(is_null_slice.files());
@@ -278,6 +335,10 @@ impl PayloadFieldIndex for MmapNullIndex {
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+        let Some(storage) = &self.storage else {
+            return None;
+        };
+
         let FieldCondition {
             key: _,
             r#match: _,
@@ -293,38 +354,40 @@ impl PayloadFieldIndex for MmapNullIndex {
         if let Some(is_empty) = is_empty {
             hw_counter
                 .payload_index_io_read_counter()
-                .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
+                .incr_delta(storage.has_values_slice.len() / u8::BITS as usize);
 
             if *is_empty {
                 // Iterate over all tracked values, but filter out those which have a value
                 let iter = (0..self.total_point_count as PointOffsetType)
-                    .filter(move |&id| !self.has_values_slice.get(id))
+                    .filter(move |&id| !storage.has_values_slice.get(id))
                     .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
             } else {
                 // Non-empty values are registered in the index explicitly
-                let iter =
-                    self.has_values_slice
-                        .iter_trues()
-                        .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
+                let iter = storage.has_values_slice.iter_trues().measure_hw_with_cell(
+                    hw_counter,
+                    1,
+                    |i| i.payload_index_io_read_counter(),
+                );
                 Some(Box::new(iter))
             }
         } else if let Some(is_null) = is_null {
             hw_counter
                 .payload_index_io_read_counter()
-                .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
+                .incr_delta(storage.is_null_slice.len() / u8::BITS as usize);
             if *is_null {
                 // We DO have list of all null values, so we can iterate over them
                 // Null values are explicitly marked in the index
                 let iter =
-                    self.is_null_slice
+                    storage
+                        .is_null_slice
                         .iter_trues()
                         .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
             } else {
                 // Iterate over all tracked values, but filter out those which are null
                 let iter = (0..self.total_point_count as PointOffsetType)
-                    .filter(move |&id| !self.is_null_slice.get(id))
+                    .filter(move |&id| !storage.is_null_slice.get(id))
                     .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
             }
@@ -338,6 +401,10 @@ impl PayloadFieldIndex for MmapNullIndex {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
+        let Some(storage) = &self.storage else {
+            return None;
+        };
+
         let FieldCondition {
             key,
             r#match: _,
@@ -353,12 +420,12 @@ impl PayloadFieldIndex for MmapNullIndex {
         if let Some(is_empty) = is_empty {
             hw_counter
                 .payload_index_io_read_counter()
-                .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
+                .incr_delta(storage.has_values_slice.len() / u8::BITS as usize);
             if *is_empty {
                 // We can estimate using the total_point_count, but not exactly since we don't know which are deleted
                 let estimated = self
                     .total_point_count
-                    .saturating_sub(self.has_values_slice.count_flags());
+                    .saturating_sub(storage.has_values_slice.count_flags());
 
                 Some(CardinalityEstimation {
                     min: 0,
@@ -372,7 +439,7 @@ impl PayloadFieldIndex for MmapNullIndex {
             } else {
                 // All non-empty values are explicitly marked in the index
                 Some(
-                    CardinalityEstimation::exact(self.has_values_slice.count_flags())
+                    CardinalityEstimation::exact(storage.has_values_slice.count_flags())
                         .with_primary_clause(PrimaryCondition::from(FieldCondition::new_is_empty(
                             key.clone(),
                             false,
@@ -382,12 +449,12 @@ impl PayloadFieldIndex for MmapNullIndex {
         } else if let Some(is_null) = is_null {
             hw_counter
                 .payload_index_io_read_counter()
-                .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
+                .incr_delta(storage.is_null_slice.len() / u8::BITS as usize);
 
             if *is_null {
                 // Null values are explicitly marked in the index
                 Some(
-                    CardinalityEstimation::exact(self.is_null_slice.count_flags())
+                    CardinalityEstimation::exact(storage.is_null_slice.count_flags())
                         .with_primary_clause(PrimaryCondition::from(FieldCondition::new_is_null(
                             key.clone(),
                             true,
@@ -397,7 +464,7 @@ impl PayloadFieldIndex for MmapNullIndex {
                 // We can estimate the non-null values from the total number of values
                 let estimated = self
                     .total_point_count
-                    .saturating_sub(self.is_null_slice.count_flags());
+                    .saturating_sub(storage.is_null_slice.count_flags());
 
                 Some(CardinalityEstimation {
                     min: 0,                 // assuming all points are deleted
