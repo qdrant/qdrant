@@ -640,6 +640,33 @@ message DecayParamsExpression {
     optional float midpoint = 4;
 }
 
+message NearestInputWithMmr {
+    // The vector to search for nearest neighbors.
+    VectorInput nearest = 1;
+
+    // Perform MMR (Maximal Marginal Relevance) reranking after search,
+    // using the same vector in this query to calculate relevance.
+    Mmr mmr = 2;
+}
+
+// Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
+message Mmr {
+    // Tunable parameter for the MMR algorithm.
+    // Determines the balance between diversity and relevance.
+    //
+    // A higher value favors diversity (dissimilarity to selected results),
+    // while a lower value favors relevance (similarity to the query vector).
+    //
+    // Must be in the range [0, 1].
+    // Default value is 0.5.
+    optional float diversity = 2;
+
+    // The maximum number of candidates to consider for re-ranking.
+    //
+    // If not specified, the `limit` value is used.
+    optional uint32 candidates_limit = 3;
+}
+
 message Query {
   oneof variant {
     VectorInput nearest = 1; // Find the nearest neighbors to this vector.
@@ -650,6 +677,7 @@ message Query {
     Fusion fusion = 6; // Fuse the results of multiple prefetches.
     Sample sample = 7; // Sample points from the collection.
     Formula formula = 8; // Score boosting via an arbitrary formula
+    NearestInputWithMmr nearest_with_mmr = 9; // Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm.
   }
 }
 

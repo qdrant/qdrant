@@ -23,6 +23,8 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
 use crate::recommendations::avg_vector_for_recommendation;
 
+const DEFAULT_MMR_LAMBDA: f32 = 0.5;
+
 /// Internal representation of a query request, used to converge from REST and gRPC. This can have IDs referencing vectors.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CollectionQueryRequest {
@@ -56,8 +58,8 @@ impl CollectionQueryRequest {
 ///
 /// [`RetrieveRequest`]: crate::common::retrieve_request_trait::RetrieveRequest
 #[derive(Debug)]
-pub struct CollectionQueryResolveRequest<'a> {
-    pub vector_query: &'a VectorQuery<VectorInputInternal>,
+pub struct CollectionQueryResolveRequest {
+    pub referenced_ids: Vec<PointIdType>,
     pub lookup_from: Option<LookupLocation>,
     pub using: VectorNameBuf,
 }
@@ -105,6 +107,7 @@ impl Query {
         lookup_vector_name: &VectorName,
         lookup_collection: Option<&String>,
         using: VectorNameBuf,
+        request_limit: usize,
     ) -> CollectionResult<ScoringQuery> {
         let scoring_query = match self {
             Query::Vector(vector_query) => {
@@ -112,7 +115,7 @@ impl Query {
                     // Homogenize the input into raw vectors
                     .ids_into_vectors(ids_to_vectors, lookup_vector_name, lookup_collection)?
                     // Turn into QueryEnum
-                    .into_scoring_query(using)?
+                    .into_scoring_query(using, request_limit)?
             }
             Query::Fusion(fusion) => ScoringQuery::Fusion(fusion),
             Query::OrderBy(order_by) => ScoringQuery::OrderBy(order_by),
@@ -121,6 +124,17 @@ impl Query {
         };
 
         Ok(scoring_query)
+    }
+
+    pub fn get_referenced_ids(&self) -> Vec<PointIdType> {
+        match self {
+            Self::Vector(vector_query) => vector_query
+                .get_referenced_ids()
+                .into_iter()
+                .copied()
+                .collect(),
+            Self::Fusion(_) | Self::OrderBy(_) | Self::Formula(_) | Self::Sample(_) => Vec::new(),
+        }
     }
 }
 
@@ -173,8 +187,8 @@ pub struct NearestWithMmr<T> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mmr {
-    pub lambda: f32,
-    pub candidate_limit: usize,
+    pub diversity: Option<f32>,
+    pub candidates_limit: Option<usize>,
 }
 
 impl VectorQuery<VectorInputInternal> {
@@ -331,7 +345,11 @@ fn vector_not_found_error(vector_name: &VectorName) -> CollectionError {
 }
 
 impl VectorQuery<VectorInternal> {
-    fn into_scoring_query(self, using: VectorNameBuf) -> CollectionResult<ScoringQuery> {
+    fn into_scoring_query(
+        self,
+        using: VectorNameBuf,
+        request_limit: usize,
+    ) -> CollectionResult<ScoringQuery> {
         let query_enum = match self {
             VectorQuery::Nearest(vector) => {
                 QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using))
@@ -362,15 +380,15 @@ impl VectorQuery<VectorInternal> {
             }),
             VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }) => {
                 let Mmr {
-                    lambda,
-                    candidate_limit,
+                    diversity,
+                    candidates_limit,
                 } = mmr;
 
                 return Ok(ScoringQuery::Mmr(MmrInternal {
                     vector: nearest,
                     using,
-                    lambda,
-                    candidate_limit,
+                    lambda: diversity.map(|x| 1.0 - x).unwrap_or(DEFAULT_MMR_LAMBDA),
+                    candidates_limit: candidates_limit.unwrap_or(request_limit),
                 }));
             }
         };
@@ -464,6 +482,7 @@ impl CollectionPrefetch {
                     &lookup_vector_name,
                     lookup_collection.as_ref(),
                     using,
+                    self.limit,
                 )
             })
             .transpose()?;
@@ -486,10 +505,16 @@ impl CollectionPrefetch {
 
     pub fn flatten_resolver_requests(&self) -> Vec<CollectionQueryResolveRequest> {
         let mut inner_queries = vec![];
-        // resolve query for root query
-        if let Some(Query::Vector(vector_query)) = &self.query {
+        // resolve ids for root query
+        let referenced_ids = self
+            .query
+            .as_ref()
+            .map(Query::get_referenced_ids)
+            .unwrap_or_default();
+
+        if !referenced_ids.is_empty() {
             let resolve_root = CollectionQueryResolveRequest {
-                vector_query,
+                referenced_ids,
                 lookup_from: self.lookup_from.clone(),
                 using: self.using.clone(),
             };
@@ -582,6 +607,7 @@ impl CollectionQueryRequest {
                     &query_lookup_vector_name,
                     query_lookup_collection.as_ref(),
                     using,
+                    self.limit,
                 )
             })
             .transpose()?;

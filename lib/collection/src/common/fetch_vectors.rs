@@ -18,9 +18,8 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionError, CollectionResult, PointRequestInternal, RecommendExample, RecordInternal,
 };
-use crate::operations::universal_query::collection_query;
 use crate::operations::universal_query::collection_query::{
-    CollectionQueryRequest, CollectionQueryResolveRequest, VectorInputInternal,
+    CollectionQueryRequest, CollectionQueryResolveRequest, Query, VectorInputInternal,
 };
 
 pub async fn retrieve_points(
@@ -409,15 +408,21 @@ pub fn build_vector_resolver_queries(
     resolve_prefetches
 }
 
-pub fn build_vector_resolver_query<'a>(
-    request: &'a CollectionQueryRequest,
-    shard_selector: &'a ShardSelectorInternal,
-) -> Vec<(CollectionQueryResolveRequest<'a>, ShardSelectorInternal)> {
+pub fn build_vector_resolver_query(
+    request: &CollectionQueryRequest,
+    shard_selector: &ShardSelectorInternal,
+) -> Vec<(CollectionQueryResolveRequest, ShardSelectorInternal)> {
     let mut resolve_prefetches = vec![];
-    // resolve query for root query
-    if let Some(collection_query::Query::Vector(vector_query)) = &request.query {
+    // resolve ids for root query
+    let referenced_ids = request
+        .query
+        .as_ref()
+        .map(Query::get_referenced_ids)
+        .unwrap_or_default();
+
+    if !referenced_ids.is_empty() {
         let resolve_root = CollectionQueryResolveRequest {
-            vector_query,
+            referenced_ids,
             lookup_from: request.lookup_from.clone(),
             using: request.using.clone(),
         };

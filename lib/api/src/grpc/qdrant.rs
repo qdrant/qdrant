@@ -5577,8 +5577,47 @@ pub struct DecayParamsExpression {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NearestInputWithMmr {
+    /// The vector to search for nearest neighbors.
+    #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
+    pub nearest: ::core::option::Option<VectorInput>,
+    /// Perform MMR (Maximal Marginal Relevance) reranking after search,
+    /// using the same vector in this query to calculate relevance.
+    #[prost(message, optional, tag = "2")]
+    #[validate(nested)]
+    pub mmr: ::core::option::Option<Mmr>,
+}
+/// Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Mmr {
+    /// Tunable parameter for the MMR algorithm.
+    /// Determines the balance between diversity and relevance.
+    ///
+    /// A higher value favors diversity (dissimilarity to selected results),
+    /// while a lower value favors relevance (similarity to the query vector).
+    ///
+    /// Must be in the range \[0, 1\].
+    /// Default value is 0.5.
+    #[prost(float, optional, tag = "2")]
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub diversity: ::core::option::Option<f32>,
+    /// The maximum number of candidates to consider for re-ranking.
+    ///
+    /// If not specified, the `limit` value is used.
+    #[prost(uint32, optional, tag = "3")]
+    #[validate(range(max = 16_384))]
+    pub candidates_limit: ::core::option::Option<u32>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
     #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
@@ -5612,6 +5651,9 @@ pub mod query {
         /// Score boosting via an arbitrary formula
         #[prost(message, tag = "8")]
         Formula(super::Formula),
+        /// Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm.
+        #[prost(message, tag = "9")]
+        NearestWithMmr(super::NearestInputWithMmr),
     }
 }
 #[derive(validator::Validate)]
@@ -10063,7 +10105,7 @@ pub struct MmrInternal {
     #[prost(float, tag = "2")]
     pub lambda: f32,
     #[prost(uint32, tag = "3")]
-    pub candidate_limit: u32,
+    pub candidates_limit: u32,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -10121,7 +10163,7 @@ pub mod query_shard_points {
             /// Use an arbitrary formula to rescore points
             #[prost(message, tag = "5")]
             Formula(super::super::Formula),
-            /// Maximum Marginal Relevance
+            /// Maximal Marginal Relevance
             #[prost(message, tag = "6")]
             Mmr(super::super::MmrInternal),
         }

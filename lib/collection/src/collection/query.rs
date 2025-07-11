@@ -28,7 +28,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::CollectionQueryRequest;
 use crate::operations::universal_query::shard_query::{
-    FusionInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
+    FusionInternal, MmrInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
 
 /// A factor which determines if we need to use the 2-step search or not.
@@ -383,6 +383,7 @@ impl Collection {
                     points_with_vector,
                     mmr.clone(),
                     *limit,
+                    *score_threshold,
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
@@ -403,16 +404,7 @@ impl Collection {
                         }
                     }
                 };
-
-                // handle score threshold
-                if let Some(&score_threshold) = score_threshold.as_ref() {
-                    mmr_result
-                        .into_iter()
-                        .filter(|p| p.score >= score_threshold)
-                        .collect()
-                } else {
-                    mmr_result
-                }
+                mmr_result
             }
             _ => {
                 // Otherwise, it will be a list with a single list of scored points.
@@ -694,27 +686,42 @@ impl Collection {
 ///
 /// Example: `[info1, info2, info3]` corresponds to `[result1, result2, result3]` of each shard
 fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQueryInfo<'_>> {
-    let needs_intermediate_results = request
-        .query
-        .as_ref()
-        .map(|sq| sq.needs_intermediate_results())
-        .unwrap_or(false);
+    let scoring_query = request.query.as_ref();
 
-    if needs_intermediate_results {
-        // In case of Fusion, expect the propagated intermediate results
-        request
-            .prefetches
-            .iter()
-            .map(|prefetch| IntermediateQueryInfo {
-                scoring_query: prefetch.query.as_ref(),
-                take: prefetch.limit,
-            })
-            .collect_vec()
-    } else {
-        // Otherwise, we expect the root result
-        vec![IntermediateQueryInfo {
-            scoring_query: request.query.as_ref(),
-            take: request.offset + request.limit,
-        }]
+    match scoring_query {
+        Some(ScoringQuery::Fusion(_)) => {
+            // In case of Fusion, expect the propagated intermediate results
+            request
+                .prefetches
+                .iter()
+                .map(|prefetch| IntermediateQueryInfo {
+                    scoring_query: prefetch.query.as_ref(),
+                    take: prefetch.limit,
+                })
+                .collect_vec()
+        }
+        Some(ScoringQuery::Mmr(MmrInternal {
+            vector: _,
+            using: _,
+            lambda: _,
+            candidates_limit,
+        })) => {
+            // In case of MMR, expect a single list with the amount of candidates
+            vec![IntermediateQueryInfo {
+                scoring_query: request.query.as_ref(),
+                take: *candidates_limit,
+            }]
+        }
+        None
+        | Some(ScoringQuery::Vector(_))
+        | Some(ScoringQuery::OrderBy(_))
+        | Some(ScoringQuery::Formula(_))
+        | Some(ScoringQuery::Sample(_)) => {
+            // Otherwise, we expect the root result
+            vec![IntermediateQueryInfo {
+                scoring_query: request.query.as_ref(),
+                take: request.offset + request.limit,
+            }]
+        }
     }
 }

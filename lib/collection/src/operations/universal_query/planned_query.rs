@@ -84,9 +84,14 @@ impl PlannedQuery {
         Self::default()
     }
 
-    // ToDo: This function needs serious simplification: split and refactor
     pub fn add(&mut self, request: ShardQueryRequest) -> CollectionResult<()> {
         let depth = request.prefetches_depth();
+        if depth > MAX_PREFETCH_DEPTH {
+            return Err(CollectionError::bad_request(format!(
+                "prefetches depth {depth} exceeds max depth {MAX_PREFETCH_DEPTH}"
+            )));
+        }
+
         let ShardQueryRequest {
             prefetches,
             query,
@@ -102,194 +107,140 @@ impl PlannedQuery {
         // Adjust limit so that we have enough results when we cut off the offset at a higher level
         let limit = limit + offset;
 
-        let merge_plan = if !prefetches.is_empty() {
-            if depth > MAX_PREFETCH_DEPTH {
-                return Err(CollectionError::bad_request(format!(
-                    "prefetches depth {depth} exceeds max depth {MAX_PREFETCH_DEPTH}"
-                )));
-            }
-
-            let rescore = query.ok_or_else(|| {
-                CollectionError::bad_request("cannot have prefetches without a query".to_string())
-            })?;
-
-            if rescore.needs_intermediate_results() {
-                // Handle MMR case. We want to rescore as nearest neighbors at local shard, but compute MMR at collection level
-                let (rescore_params, with_vector_for_mmr) = match rescore {
-                    ScoringQuery::Mmr(MmrInternal {
-                        vector,
-                        using,
-                        lambda: _,
-                        candidate_limit,
-                    }) => {
-                        let rescore_params = RescoreParams {
-                            rescore: ScoringQuery::Vector(QueryEnum::Nearest(
-                                NamedQuery::new_from_vector(vector, using.clone()),
-                            )),
-                            limit: candidate_limit,
-                            score_threshold,
-                            params,
-                        };
-                        (Some(rescore_params), WithVector::from(using))
-                    }
-                    _ => (None, WithVector::from(false)),
-                };
-
-                let with_vector_merged = with_vector.merge(&with_vector_for_mmr);
-
-                let sources =
-                    recurse_prefetches(&mut self.searches, &mut self.scrolls, prefetches, &filter)?;
-
-                let merge_plan = MergePlan {
-                    sources,
-                    // We will propagate the intermediate results. Fusion and the rest of MMR will take place at collection level.
-                    // It is fine if this is None here.
-                    rescore_params,
-                };
-
-                RootPlan {
-                    merge_plan,
-                    with_vector: with_vector_merged,
-                    with_payload,
-                }
-            } else {
-                let sources =
-                    recurse_prefetches(&mut self.searches, &mut self.scrolls, prefetches, &filter)?;
-
-                let merge_plan = MergePlan {
-                    sources,
-                    rescore_params: Some(RescoreParams {
-                        rescore,
-                        limit,
-                        score_threshold,
-                        params,
-                    }),
-                };
-
-                RootPlan {
-                    merge_plan,
-                    with_vector,
-                    with_payload,
-                }
-            }
-        } else {
-            let sources = match query {
-                Some(ScoringQuery::Vector(query)) => {
-                    // Everything should come from 1 core search
-                    let core_search = CoreSearchRequest {
-                        query,
-                        filter,
-                        score_threshold,
-                        with_vector: Some(WithVector::from(false)), // will be fetched after aggregating from segments
-                        with_payload: Some(WithPayloadInterface::from(false)), // will be fetched after aggregating from segments
-                        offset: 0, // offset is handled at collection level
-                        params,
-                        limit,
-                    };
-
-                    let idx = self.searches.len();
-                    self.searches.push(core_search);
-
-                    vec![Source::SearchesIdx(idx)]
-                }
-                Some(ScoringQuery::Fusion(_)) => {
-                    return Err(CollectionError::bad_request(
-                        "cannot apply Fusion without prefetches".to_string(),
-                    ));
-                }
-                Some(ScoringQuery::OrderBy(order_by)) => {
-                    // Everything should come from 1 scroll
-                    let scroll = QueryScrollRequestInternal {
-                        scroll_order: ScrollOrder::ByField(order_by),
-                        limit,
-                        filter,
-                        with_vector: WithVector::from(false), // will be fetched after aggregating from segments
-                        with_payload: WithPayloadInterface::from(false), // will be fetched after aggregating from segments
-                    };
-
-                    let idx = self.scrolls.len();
-                    self.scrolls.push(scroll);
-
-                    vec![Source::ScrollsIdx(idx)]
-                }
-                Some(ScoringQuery::Formula(_formula)) => {
-                    return Err(CollectionError::bad_request(
-                        "cannot apply Formula without prefetches".to_string(),
-                    ));
-                }
-                Some(ScoringQuery::Sample(SampleInternal::Random)) => {
-                    // Everything should come from 1 scroll
-                    let scroll = QueryScrollRequestInternal {
-                        scroll_order: ScrollOrder::Random,
-                        limit,
-                        filter,
-                        with_vector: WithVector::from(false), // will be fetched after aggregating from segments
-                        with_payload: WithPayloadInterface::from(false), // will be fetched after aggregating from segments
-                    };
-
-                    let idx = self.scrolls.len();
-                    self.scrolls.push(scroll);
-
-                    vec![Source::ScrollsIdx(idx)]
-                }
-                Some(ScoringQuery::Mmr(MmrInternal {
-                    vector,
-                    using,
-                    lambda: _,
-                    candidate_limit,
-                })) => {
-                    // Everything should come from 1 core search
-                    let query = QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using));
-
-                    let core_search = CoreSearchRequest {
-                        query,
-                        filter,
-                        score_threshold,
-                        with_vector: Some(WithVector::from(false)), // will be fetched after aggregating from segments
-                        with_payload: Some(WithPayloadInterface::from(false)), // will be fetched after aggregating from segments
-                        offset: 0, // offset is handled at collection level
-                        params,
-                        limit: candidate_limit,
-                    };
-
-                    let idx = self.searches.len();
-                    self.searches.push(core_search);
-
-                    vec![Source::SearchesIdx(idx)]
-                }
-                None => {
-                    // Everything should come from 1 scroll
-                    let scroll = QueryScrollRequestInternal {
-                        scroll_order: ScrollOrder::ById,
-                        limit,
-                        filter,
-                        with_vector: WithVector::from(false), // will be fetched after aggregating from segments
-                        with_payload: WithPayloadInterface::from(false), // will be fetched after aggregating from segments
-                    };
-
-                    let idx = self.scrolls.len();
-                    self.scrolls.push(scroll);
-
-                    vec![Source::ScrollsIdx(idx)]
-                }
-            };
-
-            let merge_plan = MergePlan {
-                sources,
-                // Root-level query without prefetches means we won't do any extra rescoring
-                rescore_params: None,
-            };
-
-            RootPlan {
-                merge_plan,
-                with_vector,
-                with_payload,
-            }
+        // Adjust with_vector based on the root query variant
+        let with_vector = match &query {
+            None
+            | Some(ScoringQuery::Vector(_))
+            | Some(ScoringQuery::Fusion(_))
+            | Some(ScoringQuery::OrderBy(_))
+            | Some(ScoringQuery::Formula(_))
+            | Some(ScoringQuery::Sample(_)) => with_vector,
+            Some(ScoringQuery::Mmr(mmr)) => with_vector.merge(&WithVector::from(mmr.using.clone())),
         };
 
-        self.root_plans.push(merge_plan);
+        let root_plan = if prefetches.is_empty() {
+            self.root_plan_without_prefetches(
+                query,
+                filter,
+                score_threshold,
+                with_vector,
+                with_payload,
+                params,
+                limit,
+            )?
+        } else {
+            self.root_plan_with_prefetches(
+                prefetches,
+                query,
+                filter,
+                score_threshold,
+                with_vector,
+                with_payload,
+                params,
+                limit,
+            )?
+        };
+
+        self.root_plans.push(root_plan);
 
         Ok(())
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    fn root_plan_without_prefetches(
+        &mut self,
+        query: Option<ScoringQuery>,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+        with_vector: WithVector,
+        with_payload: WithPayloadInterface,
+        params: Option<SearchParams>,
+        limit: usize,
+    ) -> Result<RootPlan, CollectionError> {
+        // Everything must come from a single source.
+        let sources = vec![leaf_source_from_scoring_query(
+            &mut self.searches,
+            &mut self.scrolls,
+            query,
+            limit,
+            params,
+            score_threshold,
+            filter,
+        )?];
+
+        let merge_plan = MergePlan {
+            sources,
+            // Root-level query without prefetches means we won't do any extra rescoring
+            rescore_params: None,
+        };
+        Ok(RootPlan {
+            merge_plan,
+            with_vector,
+            with_payload,
+        })
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    fn root_plan_with_prefetches(
+        &mut self,
+        prefetches: Vec<ShardPrefetch>,
+        query: Option<ScoringQuery>,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+        with_vector: WithVector,
+        with_payload: WithPayloadInterface,
+        params: Option<SearchParams>,
+        limit: usize,
+    ) -> Result<RootPlan, CollectionError> {
+        let rescoring_query = query.ok_or_else(|| {
+            CollectionError::bad_request("cannot have prefetches without a query".to_string())
+        })?;
+
+        let sources =
+            recurse_prefetches(&mut self.searches, &mut self.scrolls, prefetches, &filter)?;
+
+        let rescore_params = match rescoring_query {
+            ScoringQuery::Mmr(MmrInternal {
+                vector,
+                using,
+                lambda: _,
+                candidates_limit,
+            }) => {
+                let rescore_params = RescoreParams {
+                    rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new_from_vector(
+                        vector, using,
+                    ))),
+                    limit: candidates_limit,
+                    score_threshold,
+                    params,
+                };
+                // Although MMR gets computed at collection level, we select top candidates via a nearest rescoring first
+                Some(rescore_params)
+            }
+            rescore @ (ScoringQuery::Vector(_)
+            | ScoringQuery::OrderBy(_)
+            | ScoringQuery::Formula(_)
+            | ScoringQuery::Sample(_)) => Some(RescoreParams {
+                rescore,
+                limit,
+                score_threshold,
+                params,
+            }),
+            // We will propagate the intermediate results. Fusion will take place at collection level.
+            // It is fine if this is None here.
+            ScoringQuery::Fusion(_) => None,
+        };
+
+        let merge_plan = MergePlan {
+            sources,
+            rescore_params,
+        };
+
+        Ok(RootPlan {
+            merge_plan,
+            with_vector,
+            with_payload,
+        })
     }
 }
 
@@ -301,9 +252,6 @@ fn recurse_prefetches(
     propagate_filter: &Option<Filter>, // Global filter to apply to all prefetches
 ) -> CollectionResult<Vec<Source>> {
     let mut sources = Vec::with_capacity(prefetches.len());
-
-    let with_payload = WithPayloadInterface::Bool(false);
-    let with_vector = WithVector::Bool(false);
 
     for prefetch in prefetches {
         let ShardPrefetch {
@@ -318,7 +266,18 @@ fn recurse_prefetches(
         // Filters are propagated into the leaves
         let filter = Filter::merge_opts(propagate_filter.clone(), filter);
 
-        let source = if !prefetches.is_empty() {
+        let source = if prefetches.is_empty() {
+            // This is a leaf prefetch. Fetch this info from the segments
+            leaf_source_from_scoring_query(
+                core_searches,
+                scrolls,
+                query,
+                limit,
+                params,
+                score_threshold,
+                filter,
+            )?
+        } else {
             // This has nested prefetches. Recurse into them
             let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches, &filter)?;
 
@@ -337,108 +296,123 @@ fn recurse_prefetches(
             };
 
             Source::Prefetch(Box::new(merge_plan))
-        } else {
-            // This is a leaf prefetch. Fetch this info from the segments
-            match query {
-                Some(ScoringQuery::Vector(query_enum)) => {
-                    let core_search = CoreSearchRequest {
-                        query: query_enum,
-                        filter,
-                        params,
-                        limit,
-                        offset: 0,
-                        with_vector: Some(with_vector.clone()),
-                        with_payload: Some(with_payload.clone()),
-                        score_threshold,
-                    };
-
-                    let idx = core_searches.len();
-                    core_searches.push(core_search);
-
-                    Source::SearchesIdx(idx)
-                }
-                Some(ScoringQuery::Fusion(_)) => {
-                    return Err(CollectionError::bad_request(
-                        "cannot apply Fusion without prefetches".to_string(),
-                    ));
-                }
-                Some(ScoringQuery::OrderBy(order_by)) => {
-                    let scroll = QueryScrollRequestInternal {
-                        scroll_order: ScrollOrder::ByField(order_by),
-                        filter,
-                        with_vector: with_vector.clone(),
-                        with_payload: with_payload.clone(),
-                        limit,
-                    };
-
-                    let idx = scrolls.len();
-                    scrolls.push(scroll);
-
-                    Source::ScrollsIdx(idx)
-                }
-                Some(ScoringQuery::Formula(_)) => {
-                    return Err(CollectionError::bad_request(
-                        "cannot apply Formula without prefetches".to_string(),
-                    ));
-                }
-                Some(ScoringQuery::Sample(SampleInternal::Random)) => {
-                    let scroll = QueryScrollRequestInternal {
-                        scroll_order: ScrollOrder::Random,
-                        filter,
-                        with_vector: with_vector.clone(),
-                        with_payload: with_payload.clone(),
-                        limit,
-                    };
-
-                    let idx = scrolls.len();
-                    scrolls.push(scroll);
-
-                    Source::ScrollsIdx(idx)
-                }
-                Some(ScoringQuery::Mmr(MmrInternal {
-                    vector,
-                    using,
-                    lambda: _,
-                    candidate_limit,
-                })) => {
-                    let query = QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using));
-
-                    let core_search = CoreSearchRequest {
-                        query,
-                        filter,
-                        score_threshold,
-                        with_vector: Some(WithVector::from(false)), // will be fetched after aggregating from segments
-                        with_payload: Some(WithPayloadInterface::from(false)), // will be fetched after aggregating from segments
-                        offset: 0, // offset is handled at collection level
-                        params,
-                        limit: candidate_limit,
-                    };
-
-                    let idx = core_searches.len();
-                    core_searches.push(core_search);
-
-                    Source::SearchesIdx(idx)
-                }
-                None => {
-                    let scroll = QueryScrollRequestInternal {
-                        scroll_order: Default::default(),
-                        filter,
-                        with_vector: with_vector.clone(),
-                        with_payload: with_payload.clone(),
-                        limit,
-                    };
-
-                    let idx = scrolls.len();
-                    scrolls.push(scroll);
-
-                    Source::ScrollsIdx(idx)
-                }
-            }
         };
         sources.push(source);
     }
 
     Ok(sources)
+}
+
+/// Crafts a "leaf source" from a scoring query. This means that the scoring query
+/// does not act over prefetched points and will be executed over the segments directly.
+///
+/// Only `Source::SearchesIdx` or `Source::ScrollsIdx` variants are returned.
+fn leaf_source_from_scoring_query(
+    core_searches: &mut Vec<CoreSearchRequest>,
+    scrolls: &mut Vec<QueryScrollRequestInternal>,
+    query: Option<ScoringQuery>,
+    limit: usize,
+    params: Option<SearchParams>,
+    score_threshold: Option<f32>,
+    filter: Option<Filter>,
+) -> Result<Source, CollectionError> {
+    let source = match query {
+        Some(ScoringQuery::Vector(query_enum)) => {
+            let core_search = CoreSearchRequest {
+                query: query_enum,
+                filter,
+                params,
+                limit,
+                offset: 0,
+                with_vector: Some(WithVector::from(false)),
+                with_payload: Some(WithPayloadInterface::from(false)),
+                score_threshold,
+            };
+
+            let idx = core_searches.len();
+            core_searches.push(core_search);
+
+            Source::SearchesIdx(idx)
+        }
+        Some(ScoringQuery::Fusion(_)) => {
+            return Err(CollectionError::bad_request(
+                "cannot apply Fusion without prefetches".to_string(),
+            ));
+        }
+        Some(ScoringQuery::OrderBy(order_by)) => {
+            let scroll = QueryScrollRequestInternal {
+                scroll_order: ScrollOrder::ByField(order_by),
+                filter,
+                with_vector: WithVector::from(false),
+                with_payload: WithPayloadInterface::from(false),
+                limit,
+            };
+
+            let idx = scrolls.len();
+            scrolls.push(scroll);
+
+            Source::ScrollsIdx(idx)
+        }
+        Some(ScoringQuery::Formula(_)) => {
+            return Err(CollectionError::bad_request(
+                "cannot apply Formula without prefetches".to_string(),
+            ));
+        }
+        Some(ScoringQuery::Sample(SampleInternal::Random)) => {
+            let scroll = QueryScrollRequestInternal {
+                scroll_order: ScrollOrder::Random,
+                filter,
+                with_vector: WithVector::from(false),
+                with_payload: WithPayloadInterface::from(false),
+                limit,
+            };
+
+            let idx = scrolls.len();
+            scrolls.push(scroll);
+
+            Source::ScrollsIdx(idx)
+        }
+        Some(ScoringQuery::Mmr(MmrInternal {
+            vector,
+            using,
+            lambda: _,
+            candidates_limit,
+        })) => {
+            let query = QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using));
+
+            let core_search = CoreSearchRequest {
+                query,
+                filter,
+                score_threshold,
+                with_vector: Some(WithVector::from(false)),
+                with_payload: Some(WithPayloadInterface::from(false)),
+                offset: 0,
+                params,
+                limit: candidates_limit,
+            };
+
+            let idx = core_searches.len();
+            core_searches.push(core_search);
+
+            Source::SearchesIdx(idx)
+        }
+        None => {
+            let scroll = QueryScrollRequestInternal {
+                scroll_order: Default::default(),
+                filter,
+                with_vector: WithVector::from(false),
+                with_payload: WithPayloadInterface::from(false),
+                limit,
+            };
+
+            let idx = scrolls.len();
+            scrolls.push(scroll);
+
+            Source::ScrollsIdx(idx)
+        }
+    };
+
+    Ok(source)
 }
 
 impl TryFrom<Vec<ShardQueryRequest>> for PlannedQuery {
