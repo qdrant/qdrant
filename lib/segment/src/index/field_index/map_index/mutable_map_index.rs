@@ -341,7 +341,7 @@ where
                 let store =
                     Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
 
-                store.into_inner().clear().map_err(|err| {
+                store.into_inner().wipe().map_err(|err| {
                     OperationError::service_error(format!(
                         "Failed to wipe mutable map index: {err}",
                     ))
