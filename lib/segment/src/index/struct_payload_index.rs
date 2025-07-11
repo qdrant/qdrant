@@ -1072,7 +1072,7 @@ mod tests {
                 && index_types[0].index_type == PayloadIndexType::KeywordIndex
                 && index_types[0].mutability == IndexMutability::Mutable
                 && index_types[1].index_type == PayloadIndexType::NullIndex
-                && index_types[1].mutability == IndexMutability::Both
+                && index_types[1].mutability == IndexMutability::Mutable
         };
 
         let payload_config_path = full_segment_path.join("payload_index/config.json");

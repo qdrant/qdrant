@@ -584,7 +584,8 @@ where
         match &self.inner {
             NumericIndexInner::Mutable(_) => IndexMutability::Mutable,
             NumericIndexInner::Immutable(_) => IndexMutability::Immutable,
-            NumericIndexInner::Mmap(_) => IndexMutability::Both,
+            // Mmap index can be both mutable and immutable, so we pick mutable
+            NumericIndexInner::Mmap(_) => IndexMutability::Mutable,
         }
     }
 

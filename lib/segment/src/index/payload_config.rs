@@ -177,7 +177,6 @@ impl FullPayloadIndexType {
 pub enum IndexMutability {
     Mutable,
     Immutable,
-    Both,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]

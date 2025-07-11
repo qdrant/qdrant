@@ -128,7 +128,8 @@ impl BoolIndex {
         match self {
             #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(_) => IndexMutability::Mutable,
-            BoolIndex::Mmap(_) => IndexMutability::Both,
+            // Mmap index can be both mutable and immutable, so we pick mutable
+            BoolIndex::Mmap(_) => IndexMutability::Mutable,
         }
     }
 
