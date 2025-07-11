@@ -97,11 +97,6 @@ impl<
         self.vectors.dim()
     }
 
-    /// Panics if key is not found
-    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
-        self.get_multi_opt(key).expect("vector not found")
-    }
-
     /// Returns None if key is not found
     fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>> {
         self.offsets

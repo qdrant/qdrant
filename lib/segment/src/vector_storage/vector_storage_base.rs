@@ -34,6 +34,7 @@ use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
+use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient_points;
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::sparse::simple_sparse_vector_storage::SimpleSparseVectorStorage;
 
@@ -166,10 +167,26 @@ pub trait SparseVectorStorage: VectorStorage {
 
 pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn vector_dim(&self) -> usize;
-    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T>;
+
+    /// Panics if key is out of bounds
+    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
+        self.get_multi_opt(key).expect("vector not found")
+    }
+
+    /// Panics if key is out of bounds
+    fn get_multi_sequential(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
+        self.get_multi_opt_sequential(key)
+            .expect("vector not found")
+    }
+
+    /// Get single vector
     fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>>;
+
+    /// Get single vector from optimized sequential storage
     fn get_multi_opt_sequential(&self, key: PointOffsetType)
     -> Option<TypedMultiDenseVectorRef<T>>;
+
+    /// Get multi vector at once (possibly optimized for sequential reads)
     fn get_batch_multi<'a>(
         &'a self,
         keys: &[PointOffsetType],
@@ -177,7 +194,16 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     ) -> &'a [TypedMultiDenseVectorRef<'a, T>] {
         debug_assert_eq!(keys.len(), vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
-        maybe_uninit_fill_from(vectors, keys.iter().map(|key| self.get_multi(*key))).0
+        let do_sequential_read = is_read_with_prefetch_efficient_points(keys);
+        if do_sequential_read {
+            maybe_uninit_fill_from(
+                vectors,
+                keys.iter().map(|key| self.get_multi_sequential(*key)),
+            )
+            .0
+        } else {
+            maybe_uninit_fill_from(vectors, keys.iter().map(|key| self.get_multi(*key))).0
+        }
     }
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;

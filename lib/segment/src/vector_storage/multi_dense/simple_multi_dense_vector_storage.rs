@@ -334,11 +334,6 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
         self.dim
     }
 
-    /// Panics if key is out of bounds
-    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
-        self.get_multi_opt(key).expect("vector not found")
-    }
-
     /// None if key is out of bounds
     fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>> {
         self.vectors_metadata.get(key as usize).map(|metadata| {
