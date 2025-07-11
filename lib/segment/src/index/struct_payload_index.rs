@@ -169,7 +169,7 @@ impl StructPayloadIndex {
     ) -> OperationResult<Vec<FieldIndex>> {
         let total_point_count = self.id_tracker.borrow().total_point_count();
 
-        let mut indexes = if payload_schema.index_types.is_empty() {
+        let mut indexes = if payload_schema.types.is_empty() {
             let mut indexes = self.selector(&payload_schema.schema).new_index(
                 field,
                 &payload_schema.schema,
@@ -185,7 +185,7 @@ impl StructPayloadIndex {
                 indexes.push(null_index);
             }
 
-            payload_schema.index_types = indexes
+            payload_schema.types = indexes
                 .iter()
                 .map(|i| i.get_full_index_type())
                 .collect::<Vec<_>>();
@@ -193,7 +193,7 @@ impl StructPayloadIndex {
             indexes
         } else {
             payload_schema
-                .index_types
+                .types
                 .iter()
                 .filter_map(|index| {
                     self.selector_with_type(index)
@@ -1086,10 +1086,10 @@ mod tests {
         assert_eq!(payload_config.indices.len(), 1);
 
         let schema = payload_config.indices.get_mut(&key).unwrap();
-        check_index_types(&schema.index_types);
+        check_index_types(&schema.types);
 
         // Clear index types to check loading from an old segment.
-        schema.index_types.clear();
+        schema.types.clear();
         payload_config.save(&payload_config_path).unwrap();
         drop(payload_config);
 
@@ -1106,6 +1106,6 @@ mod tests {
         assert_eq!(payload_config.indices.len(), 1);
 
         let schema = payload_config.indices.get(&key).unwrap();
-        check_index_types(&schema.index_types);
+        check_index_types(&schema.types);
     }
 }

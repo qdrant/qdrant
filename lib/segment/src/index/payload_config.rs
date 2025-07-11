@@ -52,9 +52,7 @@ impl PayloadIndices {
     ///
     /// Returns false if empty.
     pub fn any_has_no_type(&self) -> bool {
-        self.fields
-            .values()
-            .any(|index| index.index_types.is_empty())
+        self.fields.values().any(|index| index.types.is_empty())
     }
 
     pub fn to_schemas(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
@@ -89,8 +87,8 @@ pub struct PayloadIndicesStorage {
 
     /// Map of indexed fields and their explicit index types
     ///
-    /// If empty, no explicit payload index type mappings have been stored yet.
-    /// Then use `schemas` to determine the index types.
+    /// If empty for a field, no explicit payload index type mappings have been stored yet.
+    /// Then use `schemas` to determine the index types with a best effort approach.
     ///
     /// Added since Qdrant 1.15
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -120,8 +118,8 @@ impl From<PayloadIndices> for PayloadIndicesStorage {
             (HashMap::new(), HashMap::new()),
             |(mut fields, mut types), (field, schema)| {
                 fields.insert(field.clone(), schema.schema);
-                if !schema.index_types.is_empty() {
-                    types.insert(field, schema.index_types);
+                if !schema.types.is_empty() {
+                    types.insert(field, schema.types);
                 }
                 (fields, types)
             },
@@ -136,15 +134,12 @@ impl From<PayloadIndices> for PayloadIndicesStorage {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PayloadFieldSchemaWithIndexType {
     pub schema: PayloadFieldSchema,
-    pub index_types: Vec<FullPayloadIndexType>,
+    pub types: Vec<FullPayloadIndexType>,
 }
 
 impl PayloadFieldSchemaWithIndexType {
-    pub fn new(schema: PayloadFieldSchema, index_types: Vec<FullPayloadIndexType>) -> Self {
-        Self {
-            schema,
-            index_types,
-        }
+    pub fn new(schema: PayloadFieldSchema, types: Vec<FullPayloadIndexType>) -> Self {
+        Self { schema, types }
     }
 }
 
