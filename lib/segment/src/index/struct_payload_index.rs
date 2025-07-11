@@ -104,7 +104,9 @@ impl StructPayloadIndex {
                     .iter()
                     .find_map(|field_index| field_index.filter(field_condition, hw_counter))
             }
-            PrimaryCondition::Ids(ids) => Some(Box::new(ids.resolved_point_offsets.iter().copied())),
+            PrimaryCondition::Ids(ids) => {
+                Some(Box::new(ids.resolved_point_offsets.iter().copied()))
+            }
             PrimaryCondition::HasVector(_) => None,
         }
     }

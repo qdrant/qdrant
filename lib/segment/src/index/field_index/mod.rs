@@ -1,8 +1,9 @@
 use std::ops::Deref;
 
-use crate::types::{Condition, FieldCondition, PointIdType, VectorNameBuf};
 use ahash::AHashSet;
 use common::types::PointOffsetType;
+
+use crate::types::{Condition, FieldCondition, PointIdType, VectorNameBuf};
 
 pub mod bool_index;
 pub(super) mod facet_index;
