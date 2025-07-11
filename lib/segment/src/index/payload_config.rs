@@ -12,7 +12,9 @@ pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "config.json";
 /// Keeps information of which field should be index
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct PayloadConfig {
-    pub indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchemaWithIndexType>,
+    /// Mapping of payload index schemas and types
+    #[serde(flatten)]
+    pub indices: PayloadIndices,
 
     /// If true, don't create/initialize RocksDB for payload index
     /// This is required for migrating away from RocksDB in favor of the
@@ -35,12 +37,113 @@ impl PayloadConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-pub struct PayloadFieldSchemaWithIndexType {
-    #[serde(flatten)]
-    pub schema: PayloadFieldSchema,
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
+pub struct PayloadIndices {
+    /// Map of indexed fields and their schema
+    #[serde(rename = "indexed_fields")]
+    pub schemas: HashMap<PayloadKeyType, PayloadFieldSchema>,
 
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Map of indexed fields and their explicit index types
+    ///
+    /// If empty, no explicit payload index type mappings have been stored yet.
+    /// Then use `schemas` to determine the index types.
+    ///
+    /// Added since Qdrant 1.15
+    #[serde(
+        default,
+        rename = "indexed_types",
+        skip_serializing_if = "HashMap::is_empty"
+    )]
+    pub types: HashMap<PayloadKeyType, Vec<FullPayloadIndexType>>,
+}
+
+impl PayloadIndices {
+    /// Get index schema and type configuration for the given field
+    pub fn get(&self, field: &PayloadKeyType) -> Option<PayloadFieldSchemaWithIndexType> {
+        self.schemas.get(field).map(|schema| {
+            let index_types = self.types.get(field).cloned().unwrap_or_default();
+            PayloadFieldSchemaWithIndexType::new(schema.clone(), index_types)
+        })
+    }
+
+    /// Add a payload field with its schema and index types.
+    pub fn insert(
+        &mut self,
+        field: PayloadKeyType,
+        schema: PayloadFieldSchemaWithIndexType,
+    ) -> Option<PayloadFieldSchemaWithIndexType> {
+        let old_schema = self.schemas.insert(field.clone(), schema.schema);
+        let old_types = if !schema.index_types.is_empty() {
+            self.types.insert(field, schema.index_types)
+        } else {
+            self.types.remove(&field)
+        };
+
+        old_schema.map(|schema| PayloadFieldSchemaWithIndexType {
+            schema,
+            index_types: old_types.unwrap_or_default(),
+        })
+    }
+
+    /// Remove the given field
+    pub fn remove(&mut self, field: &PayloadKeyType) -> Option<PayloadFieldSchema> {
+        let removed = self.schemas.remove(field);
+        self.types.remove(field);
+        removed
+    }
+
+    /// Get number of fields a payload index is configured on
+    pub fn len(&self) -> usize {
+        self.schemas.len()
+    }
+
+    /// Check if no payload fields have been configured
+    pub fn is_empty(&self) -> bool {
+        self.schemas.is_empty()
+    }
+
+    /// Check if any payload field has no explicit types configured
+    ///
+    /// Returns true if empty.
+    pub fn any_has_no_type(&self) -> bool {
+        // No fields configured at all
+        if self.is_empty() {
+            return true;
+        }
+
+        // Check if any field has no types at all, or an empty list of types
+        self.schemas
+            .keys()
+            .any(|key| self.types.get(key).is_none_or(|types| types.is_empty()))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (PayloadKeyType, PayloadFieldSchemaWithIndexType)> {
+        self.schemas.iter().map(move |(field_name, schema)| {
+            let index_types = self.types.get(field_name).cloned().unwrap_or_default();
+            (
+                field_name.clone(),
+                PayloadFieldSchemaWithIndexType::new(schema.clone(), index_types),
+            )
+        })
+    }
+
+    #[allow(clippy::should_implement_trait)]
+    pub fn into_iter(
+        mut self,
+    ) -> impl Iterator<Item = (PayloadKeyType, PayloadFieldSchemaWithIndexType)> {
+        self.schemas.into_iter().map(move |(field_name, schema)| {
+            let index_types = self.types.remove(&field_name).unwrap_or_default();
+            (
+                field_name,
+                PayloadFieldSchemaWithIndexType::new(schema, index_types),
+            )
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PayloadFieldSchemaWithIndexType {
+    pub schema: PayloadFieldSchema,
     pub index_types: Vec<FullPayloadIndexType>,
 }
 
@@ -129,7 +232,7 @@ mod test {
         let old_config: PayloadFieldSchema = serde_json::from_value(old_schema).unwrap();
         assert_eq!(
             payload_config
-                .indexed_fields
+                .indices
                 .get(&JsonPath::from_str("c").unwrap())
                 .unwrap()
                 .schema,

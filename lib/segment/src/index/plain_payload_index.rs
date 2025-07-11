@@ -71,11 +71,7 @@ impl PlainPayloadIndex {
 
 impl PayloadIndex for PlainPayloadIndex {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.config
-            .indexed_fields
-            .iter()
-            .map(|i| (i.0.clone(), i.1.schema.clone()))
-            .collect()
+        self.config.indices.schemas.clone()
     }
 
     fn build_index(
@@ -101,7 +97,7 @@ impl PayloadIndex for PlainPayloadIndex {
                 .collect(),
         );
 
-        let prev_schema = self.config.indexed_fields.insert(field, new_schema.clone());
+        let prev_schema = self.config.indices.insert(field, new_schema.clone());
 
         if let Some(prev_schema) = prev_schema {
             // the field is already present with the same schema, no need to save the config
@@ -125,7 +121,7 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        self.config.indexed_fields.remove(field);
+        self.config.indices.remove(field);
         self.save_config()
     }
 
@@ -135,8 +131,7 @@ impl PayloadIndex for PlainPayloadIndex {
         _new_payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<()> {
         // Just always drop the index, as we don't have any indexes
-        self.config.indexed_fields.remove(field);
-        self.save_config()
+        self.drop_index(field)
     }
 
     fn estimate_cardinality(
