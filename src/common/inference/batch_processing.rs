@@ -315,6 +315,7 @@ mod tests {
         let request = QueryGroupsRequestInternal {
             query: Some(QueryInterface::Query(Query::Nearest(NearestQuery {
                 nearest: VectorInput::Document(create_test_document("test")),
+                mmr: None,
             }))),
             prefetch: Some(vec![Prefetch {
                 query: Some(QueryInterface::Query(Query::Discover(DiscoverQuery {

@@ -105,17 +105,13 @@ impl RetrieveRequest for DiscoverRequestInternal {
     }
 }
 
-impl RetrieveRequest for CollectionQueryResolveRequest<'_> {
+impl RetrieveRequest for CollectionQueryResolveRequest {
     fn get_lookup_collection(&self) -> Option<&String> {
         self.lookup_from.as_ref().map(|x| &x.collection)
     }
 
     fn get_referenced_point_ids(&self) -> Vec<PointIdType> {
-        self.vector_query
-            .get_referenced_ids()
-            .iter()
-            .map(|x| **x)
-            .collect()
+        self.referenced_ids.clone()
     }
 
     fn get_lookup_vector_name(&self) -> VectorNameBuf {

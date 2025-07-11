@@ -2,8 +2,8 @@ use api::rest::models::InferenceUsage;
 use api::rest::schema as rest;
 use collection::lookup::WithLookup;
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Query,
-    VectorInputInternal, VectorQuery,
+    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Mmr, NearestWithMmr,
+    Query, VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
@@ -196,9 +196,21 @@ fn convert_query_with_inferred(
 ) -> Result<Query, StorageError> {
     let query = rest::Query::from(query);
     match query {
-        rest::Query::Nearest(nearest) => {
-            let vector = convert_vector_input_with_inferred(nearest.nearest, inferred)?;
-            Ok(Query::Vector(VectorQuery::Nearest(vector)))
+        rest::Query::Nearest(rest::NearestQuery { nearest, mmr }) => {
+            let vector = convert_vector_input_with_inferred(nearest, inferred)?;
+
+            if let Some(mmr) = mmr {
+                let mmr = Mmr {
+                    diversity: mmr.diversity,
+                    candidates_limit: mmr.candidates_limit,
+                };
+                Ok(Query::Vector(VectorQuery::NearestWithMmr(NearestWithMmr {
+                    nearest: vector,
+                    mmr,
+                })))
+            } else {
+                Ok(Query::Vector(VectorQuery::Nearest(vector)))
+            }
         }
         rest::Query::Recommend(recommend) => {
             let rest::RecommendInput {
@@ -432,6 +444,7 @@ mod tests {
         let inferred = create_test_inferred_batch();
         let nearest = NearestQuery {
             nearest: rest::VectorInput::Document(create_test_document("test")),
+            mmr: None,
         };
         let query = rest::QueryInterface::Query(rest::Query::Nearest(nearest));
 

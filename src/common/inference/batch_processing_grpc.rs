@@ -162,6 +162,13 @@ pub(crate) fn collect_query(query: &Query, batch: &mut BatchAccumGrpc) -> Result
         query::Variant::Fusion(_) => {}
         query::Variant::Sample(_) => {}
         query::Variant::Formula(_) => {}
+        query::Variant::NearestWithMmr(nearest_with_mmr) => {
+            nearest_with_mmr
+                .nearest
+                .as_ref()
+                .map(|vector| collect_vector_input(vector, batch))
+                .transpose()?;
+        }
     }
 
     Ok(())

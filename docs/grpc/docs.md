@@ -191,6 +191,7 @@
     - [LookupLocation](#qdrant-LookupLocation)
     - [Match](#qdrant-Match)
     - [MinShould](#qdrant-MinShould)
+    - [Mmr](#qdrant-Mmr)
     - [ModelUsage](#qdrant-ModelUsage)
     - [MultExpression](#qdrant-MultExpression)
     - [MultiDenseVector](#qdrant-MultiDenseVector)
@@ -198,6 +199,7 @@
     - [NamedVectors.VectorsEntry](#qdrant-NamedVectors-VectorsEntry)
     - [NamedVectorsOutput](#qdrant-NamedVectorsOutput)
     - [NamedVectorsOutput.VectorsEntry](#qdrant-NamedVectorsOutput-VectorsEntry)
+    - [NearestInputWithMmr](#qdrant-NearestInputWithMmr)
     - [NestedCondition](#qdrant-NestedCondition)
     - [OrderBy](#qdrant-OrderBy)
     - [OrderValue](#qdrant-OrderValue)
@@ -3384,6 +3386,28 @@ Additionally, the first and last points of each GeoLineString must be the same.
 
 
 
+<a name="qdrant-Mmr"></a>
+
+### Mmr
+Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| diversity | [float](#float) | optional | Tunable parameter for the MMR algorithm. Determines the balance between diversity and relevance.
+
+A higher value favors diversity (dissimilarity to selected results), while a lower value favors relevance (similarity to the query vector).
+
+Must be in the range [0, 1]. Default value is 0.5. |
+| candidates_limit | [uint32](#uint32) | optional | The maximum number of candidates to consider for re-ranking.
+
+If not specified, the `limit` value is used. |
+
+
+
+
+
+
 <a name="qdrant-ModelUsage"></a>
 
 ### ModelUsage
@@ -3485,6 +3509,22 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
 | value | [VectorOutput](#qdrant-VectorOutput) |  |  |
+
+
+
+
+
+
+<a name="qdrant-NearestInputWithMmr"></a>
+
+### NearestInputWithMmr
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| nearest | [VectorInput](#qdrant-VectorInput) |  | The vector to search for nearest neighbors. |
+| mmr | [Mmr](#qdrant-Mmr) |  | Perform MMR (Maximal Marginal Relevance) reranking after search, using the same vector in this query to calculate relevance. |
 
 
 
@@ -3965,6 +4005,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | fusion | [Fusion](#qdrant-Fusion) |  | Fuse the results of multiple prefetches. |
 | sample | [Sample](#qdrant-Sample) |  | Sample points from the collection. |
 | formula | [Formula](#qdrant-Formula) |  | Score boosting via an arbitrary formula |
+| nearest_with_mmr | [NearestInputWithMmr](#qdrant-NearestInputWithMmr) |  | Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm. |
 
 
 

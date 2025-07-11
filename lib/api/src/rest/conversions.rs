@@ -143,7 +143,10 @@ impl From<OrderByInterface> for OrderBy {
 impl From<QueryInterface> for Query {
     fn from(value: QueryInterface) -> Self {
         match value {
-            QueryInterface::Nearest(vector) => Query::Nearest(NearestQuery { nearest: vector }),
+            QueryInterface::Nearest(vector) => Query::Nearest(NearestQuery {
+                nearest: vector,
+                mmr: None,
+            }),
             QueryInterface::Query(query) => query,
         }
     }

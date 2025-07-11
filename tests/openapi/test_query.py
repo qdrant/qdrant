@@ -394,7 +394,7 @@ def test_basic_rrf(collection_name):
     )
     assert response.ok
     search_result_1 = response.json()["result"]
-    
+
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",
         method="POST",
@@ -406,9 +406,9 @@ def test_basic_rrf(collection_name):
     )
     assert response.ok
     search_result_2 = response.json()["result"]
-    
+
     rrf_expected = reciprocal_rank_fusion([search_result_1, search_result_2], limit=10)
-    
+
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -423,16 +423,16 @@ def test_basic_rrf(collection_name):
     )
     assert response.ok, response.json()
     rrf_result = response.json()["result"]["points"]
-    
+
     def get_id(x):
         return x["id"]
-    
+
     # rrf order is not deterministic with same scores, so we need to sort by id
     for expected, result in zip(sorted(rrf_expected, key=get_id), sorted(rrf_result, key=get_id)):
         assert expected["id"] == result["id"]
         assert expected.get("payload") == result.get("payload")
         assert isclose(expected["score"], result["score"], rel_tol=1e-5)
-        
+
 
 def test_basic_dbsf(collection_name):
     response = request_with_validation(
@@ -446,7 +446,7 @@ def test_basic_dbsf(collection_name):
     )
     assert response.ok
     search_result_1 = response.json()["result"]
-    
+
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",
         method="POST",
@@ -458,9 +458,9 @@ def test_basic_dbsf(collection_name):
     )
     assert response.ok
     search_result_2 = response.json()["result"]
-    
+
     dbsf_expected = distribution_based_score_fusion([search_result_1, search_result_2], limit=10)
-    
+
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -475,13 +475,74 @@ def test_basic_dbsf(collection_name):
     )
     assert response.ok, response.json()
     dbsf_result = response.json()["result"]["points"]
-    
+
     for point, expected in zip(dbsf_result, dbsf_expected):
         assert point["id"] == expected["id"]
         assert point.get("payload") == expected.get("payload")
         assert isclose(point["score"], expected["score"], rel_tol=1e-5)
 
-    
+
+def test_nearest_with_mmr(collection_name):
+    # Regular nearest neighbor search
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "nearest": [0.35, 0.08, 0.11, 0.47]
+            },
+        },
+    )
+    assert response.ok, response.json()
+    search_result = response.json()["result"]["points"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "nearest": [0.35, 0.08, 0.11, 0.47],
+                "mmr": {
+                    "diversity": 0.5,
+                    "candidates_limit": 100
+                }
+            },
+        },
+    )
+    assert response.ok, response.json()
+    mmr_result = response.json()["result"]["points"]
+
+    # Assert that both results are in different order
+    search_ids = [point["id"] for point in search_result]
+    mmr_ids = [point["id"] for point in mmr_result]
+    assert search_ids != mmr_ids, "MMR should produce different ordering than regular search"
+
+    # We didn't request vectors nor payloads
+    for point in mmr_result:
+        assert point.get("payload") is None
+        assert point.get("vector") is None
+
+    # Run request with default parameters
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "nearest": [0.35, 0.08, 0.11, 0.47],
+                "mmr": {}
+            },
+        },
+    )
+    assert response.ok, response.json()
+    mmr_default_result = response.json()["result"]["points"]
+
+    # Assert that both results are equal
+    assert mmr_result == mmr_default_result, "MMR with explicit vs implicit defaults should produce the same output"
+
+
 @pytest.mark.parametrize("body", [
     {
         "prefetch": [
@@ -492,7 +553,6 @@ def test_basic_dbsf(collection_name):
     },
     { "query": [0.1, 0.2, 0.3, 0.4] }
 ])
-
 def test_score_threshold(body, collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
@@ -504,10 +564,10 @@ def test_score_threshold(body, collection_name):
     )
     assert response.ok, response.json()
     points = response.json()["result"]["points"]
-    
+
     assert len(points) == 8
     score_threshold = points[3]["score"]
-    
+
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -519,7 +579,7 @@ def test_score_threshold(body, collection_name):
     )
     assert response.ok, response.json()
     points = response.json()["result"]["points"]
-    
+
     assert len(points) < 8
     for point in points:
         assert point["score"] >= score_threshold

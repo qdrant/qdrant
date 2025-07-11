@@ -36,11 +36,13 @@ use crate::operations::universal_query::shard_query::MmrInternal;
 /// # Returns
 ///
 /// A vector of scored points.
+#[expect(clippy::too_many_arguments)]
 pub async fn mmr_from_points_with_vector(
     collection_params: &CollectionParams,
     points_with_vector: impl IntoIterator<Item = ScoredPoint>,
     mmr: MmrInternal,
     limit: usize,
+    score_threshold: Option<ScoreType>,
     search_runtime_handle: &Handle,
     timeout: Duration,
     hw_measurement_acc: HwMeasurementAcc,
@@ -108,10 +110,11 @@ pub async fn mmr_from_points_with_vector(
     .await
     .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "mmr"))???;
 
-    Ok(maximum_marginal_relevance(
+    Ok(maximal_marginal_relevance(
         candidates,
         query_similarities,
         &similarity_matrix,
+        score_threshold,
         mmr.lambda,
         limit,
     ))
@@ -234,7 +237,7 @@ fn similarity_matrix(
     Ok(similarity_matrix)
 }
 
-/// Maximum Marginal Relevance (MMR) algorithm
+/// Maximal Marginal Relevance (MMR) algorithm
 ///
 /// Iteratively selects points by considering their similarity to
 /// already selected points, combining diversity and relevance.
@@ -246,10 +249,11 @@ fn similarity_matrix(
 /// * `similarity_matrix` - full pairwise similarity matrix between candidates
 /// * `lambda` - the lambda parameter for the MMR algorithm (0.0 = max diversity, 1.0 = max relevance)
 /// * `limit` - the maximum number of points to select
-pub fn maximum_marginal_relevance(
+pub fn maximal_marginal_relevance(
     candidates: Vec<ScoredPoint>,
     query_similarities: Vec<ScoreType>,
     similarity_matrix: &[Vec<ScoreType>],
+    score_threshold: Option<ScoreType>,
     lambda: f32,
     limit: usize,
 ) -> Vec<ScoredPoint> {
@@ -275,8 +279,13 @@ pub fn maximum_marginal_relevance(
     while selected_indices.len() < limit && !remaining_indices.is_empty() {
         let best_candidate = remaining_indices
             .iter()
-            .map(|&candidate_idx| {
+            .filter_map(|&candidate_idx| {
                 let relevance_score = query_similarities[candidate_idx];
+
+                // Exclude candidate if relevance is too low
+                if score_threshold.is_some_and(|threshold| relevance_score < threshold) {
+                    return None;
+                }
 
                 debug_assert!(
                     selected_indices
@@ -295,7 +304,7 @@ pub fn maximum_marginal_relevance(
                 let mmr_score =
                     lambda * relevance_score - (1.0 - lambda) * max_similarity_to_selected;
 
-                (candidate_idx, mmr_score)
+                Some((candidate_idx, mmr_score))
             })
             .max_by_key(|(_candidate_idx, mmr_score)| OrderedFloat(*mmr_score));
 
@@ -509,7 +518,7 @@ mod tests {
             vector: vec![1.0, 0.0].into(),
             using: VectorNameBuf::from(""),
             lambda,
-            candidate_limit: 100,
+            candidates_limit: 100,
         };
 
         let result = mmr_from_points_with_vector(
@@ -517,6 +526,7 @@ mod tests {
             points.clone(),
             mmr,
             3,
+            None,
             &handle,
             Duration::from_secs(10),
             hw_acc,
@@ -553,7 +563,7 @@ mod tests {
             vector: vec![1.0, 0.0].into(),
             using: VectorNameBuf::from(""),
             lambda: 0.5,
-            candidate_limit: 100,
+            candidates_limit: 100,
         };
 
         let result = mmr_from_points_with_vector(
@@ -561,6 +571,7 @@ mod tests {
             empty_points,
             mmr.clone(),
             5,
+            None,
             &handle,
             Duration::from_secs(10),
             hw_acc.clone(),
@@ -582,6 +593,7 @@ mod tests {
             single_point,
             mmr,
             5,
+            None,
             &handle,
             Duration::from_secs(10),
             hw_acc,
@@ -611,7 +623,7 @@ mod tests {
             vector: vec![1.0, 0.0, 0.0].into(),
             using: VectorNameBuf::from("custom"),
             lambda: 0.5,
-            candidate_limit: 100,
+            candidates_limit: 100,
         };
 
         let result = mmr_from_points_with_vector(
@@ -619,6 +631,7 @@ mod tests {
             points,
             mmr,
             5,
+            None,
             &handle,
             Duration::from_secs(10),
             hw_acc,
@@ -652,7 +665,7 @@ mod tests {
             vector: vec![1.0, 0.0, 0.0].into(),
             using: VectorNameBuf::from(""),
             lambda: 0.5,
-            candidate_limit: 100,
+            candidates_limit: 100,
         };
 
         let result = mmr_from_points_with_vector(
@@ -660,6 +673,7 @@ mod tests {
             points,
             mmr,
             5,
+            None,
             &handle,
             Duration::from_secs(10),
             hw_acc,
@@ -691,7 +705,7 @@ mod tests {
             vector: vec![1.0, 0.0, 0.0].into(),
             using: VectorNameBuf::from(""),
             lambda: 0.5,
-            candidate_limit: 100,
+            candidates_limit: 100,
         };
 
         // Test with all distance metrics for dense vectors
@@ -703,6 +717,7 @@ mod tests {
                 dense_points.clone(),
                 mmr.clone(),
                 3,
+                None,
                 &handle,
                 Duration::from_secs(10),
                 hw_acc.clone(),
@@ -754,7 +769,7 @@ mod tests {
                 .into(),
             using: VectorNameBuf::from(sparse_vector_name),
             lambda: 0.5,
-            candidate_limit: 100,
+            candidates_limit: 100,
         };
 
         let sparse_result = mmr_from_points_with_vector(
@@ -762,6 +777,7 @@ mod tests {
             sparse_points,
             sparse_mmr,
             3,
+            None,
             &handle,
             Duration::from_secs(10),
             hw_acc.clone(),
@@ -801,7 +817,7 @@ mod tests {
             vector: MultiDenseVectorInternal::new(vec![1.0, 0.0, 0.0, 1.0], 2).into(),
             using: VectorNameBuf::from(multi_vector_name),
             lambda: 0.5,
-            candidate_limit: 100,
+            candidates_limit: 100,
         };
 
         for distance in Distance::iter() {
@@ -813,6 +829,7 @@ mod tests {
                 multi_points.clone(),
                 multi_mmr.clone(),
                 3,
+                None,
                 &handle,
                 Duration::from_secs(10),
                 hw_acc.clone(),

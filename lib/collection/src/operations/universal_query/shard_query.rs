@@ -66,7 +66,7 @@ pub enum SampleInternal {
     Random,
 }
 
-/// Maximum Marginal Relevance configuration
+/// Maximal Marginal Relevance configuration
 #[derive(Debug, Clone, PartialEq)]
 pub struct MmrInternal {
     /// Query vector, used to get the relevance of each point.
@@ -76,7 +76,7 @@ pub struct MmrInternal {
     /// Lambda parameter controlling diversity vs relevance trade-off (0.0 = full diversity, 1.0 = full relevance)
     pub lambda: f32,
     /// Maximum number of candidates to pre-select using nearest neighbors.
-    pub candidate_limit: usize,
+    pub candidates_limit: usize,
 }
 
 /// Same as `Query`, but with the resolved vector references.
@@ -97,7 +97,7 @@ pub enum ScoringQuery {
     /// Sample points
     Sample(SampleInternal),
 
-    /// Maximum Marginal Relevance
+    /// Maximal Marginal Relevance
     ///
     /// This one behaves a little differently than the other scorings, since it is two parts.
     /// It will create one nearest neighbor search in segment space and then try to resolve MMR algorithm higher up.
@@ -120,9 +120,8 @@ impl ScoringQuery {
                 // We need the score distribution information of each prefetch
                 FusionInternal::Dbsf => true,
             },
-            // We need the prefetches to merge with the corresponding prefetches from
-            // other shards before using them for MMR
-            Self::Mmr(_) => true,
+            // MMR is a nearest neighbors search before computing diversity at collection level
+            Self::Mmr(_) => false,
             Self::Vector(_) | Self::OrderBy(_) | Self::Formula(_) | Self::Sample(_) => false,
         }
     }
@@ -596,7 +595,7 @@ impl ScoringQuery {
             grpc::query_shard_points::query::Score::Mmr(grpc::MmrInternal {
                 vector,
                 lambda,
-                candidate_limit,
+                candidates_limit,
             }) => {
                 let vector =
                     vector.ok_or_else(|| Status::invalid_argument("missing field: mmr.vector"))?;
@@ -605,7 +604,7 @@ impl ScoringQuery {
                     vector,
                     using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
                     lambda,
-                    candidate_limit: candidate_limit as usize,
+                    candidates_limit: candidates_limit as usize,
                 })
             }
         };
@@ -664,12 +663,12 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
                 vector,
                 using: _,
                 lambda,
-                candidate_limit,
+                candidates_limit,
             }) => Self {
                 score: Some(Score::Mmr(grpc::MmrInternal {
                     vector: Some(grpc::RawVector::from(vector)),
                     lambda,
-                    candidate_limit: candidate_limit as u32,
+                    candidates_limit: candidates_limit as u32,
                 })),
             },
         }
