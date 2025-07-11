@@ -414,8 +414,7 @@ impl GeoMapIndex {
         match self {
             Self::Mutable(_) => IndexMutability::Mutable,
             Self::Immutable(_) => IndexMutability::Immutable,
-            // Mmap index can be both mutable and immutable, so we pick mutable
-            Self::Mmap(_) => IndexMutability::Mutable,
+            Self::Mmap(_) => IndexMutability::Immutable,
         }
     }
 
