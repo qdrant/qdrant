@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 
 use io::file_operations::{atomic_save_json, read_json};
@@ -47,42 +48,6 @@ pub struct PayloadIndices {
 }
 
 impl PayloadIndices {
-    /// Get index schema and type configuration for the given field
-    pub fn get(&self, field: &PayloadKeyType) -> Option<&PayloadFieldSchemaWithIndexType> {
-        self.fields.get(field)
-    }
-
-    /// Get index schema and type configuration for the given field
-    pub fn get_mut(
-        &mut self,
-        field: &PayloadKeyType,
-    ) -> Option<&mut PayloadFieldSchemaWithIndexType> {
-        self.fields.get_mut(field)
-    }
-
-    /// Add a payload field with its schema and index types
-    ///
-    /// Returns the previous value if it existed.
-    pub fn insert(
-        &mut self,
-        field: PayloadKeyType,
-        schema: PayloadFieldSchemaWithIndexType,
-    ) -> Option<PayloadFieldSchemaWithIndexType> {
-        self.fields.insert(field, schema)
-    }
-
-    pub fn remove(&mut self, field: &PayloadKeyType) -> Option<PayloadFieldSchemaWithIndexType> {
-        self.fields.remove(field)
-    }
-
-    pub fn len(&self) -> usize {
-        self.fields.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.fields.is_empty()
-    }
-
     /// Check if any payload field has no explicit types configured
     ///
     /// Returns false if empty.
@@ -92,23 +57,24 @@ impl PayloadIndices {
             .any(|index| index.index_types.is_empty())
     }
 
-    pub fn iter(
-        &self,
-    ) -> impl Iterator<Item = (&PayloadKeyType, &PayloadFieldSchemaWithIndexType)> {
-        self.fields.iter()
-    }
-
-    pub fn iter_mut(
-        &mut self,
-    ) -> impl Iterator<Item = (&PayloadKeyType, &mut PayloadFieldSchemaWithIndexType)> {
-        self.fields.iter_mut()
-    }
-
     pub fn to_schemas(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.fields
             .iter()
             .map(|(field, index)| (field.clone(), index.schema.clone()))
             .collect()
+    }
+}
+
+impl Deref for PayloadIndices {
+    type Target = HashMap<PayloadKeyType, PayloadFieldSchemaWithIndexType>;
+    fn deref(&self) -> &Self::Target {
+        &self.fields
+    }
+}
+
+impl DerefMut for PayloadIndices {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.fields
     }
 }
 
