@@ -1,5 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
+use ahash::AHashMap;
 use api::rest::PointVectors;
 use api::rest::schema::ShardKeySelector;
 use schemars::JsonSchema;
@@ -100,8 +101,8 @@ impl SplitByShard for VectorOperations {
                             .map(move |shard_id| (shard_id, point.clone()))
                     })
                     .fold(
-                        HashMap::new(),
-                        |mut map: HashMap<u32, Vec<PointVectorsPersisted>>, (shard_id, points)| {
+                        AHashMap::new(),
+                        |mut map: AHashMap<u32, Vec<PointVectorsPersisted>>, (shard_id, points)| {
                             map.entry(shard_id).or_default().push(points);
                             map
                         },
