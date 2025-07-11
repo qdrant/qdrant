@@ -204,13 +204,13 @@ impl PlannedQuery {
                 vector,
                 using,
                 lambda: _,
-                candidate_limit,
+                candidates_limit,
             }) => {
                 let rescore_params = RescoreParams {
                     rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new_from_vector(
                         vector, using,
                     ))),
-                    limit: candidate_limit,
+                    limit: candidates_limit,
                     score_threshold,
                     params,
                 };
@@ -376,7 +376,7 @@ fn leaf_source_from_scoring_query(
             vector,
             using,
             lambda: _,
-            candidate_limit,
+            candidates_limit,
         })) => {
             let query = QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using));
 
@@ -388,7 +388,7 @@ fn leaf_source_from_scoring_query(
                 with_payload: Some(WithPayloadInterface::from(false)),
                 offset: 0,
                 params,
-                limit: candidate_limit,
+                limit: candidates_limit,
             };
 
             let idx = core_searches.len();

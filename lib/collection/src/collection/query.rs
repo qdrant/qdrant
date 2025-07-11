@@ -704,12 +704,12 @@ fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQuer
             vector: _,
             using: _,
             lambda: _,
-            candidate_limit,
+            candidates_limit,
         })) => {
             // In case of MMR, expect a single list with the amount of candidates
             vec![IntermediateQueryInfo {
                 scoring_query: request.query.as_ref(),
-                take: *candidate_limit,
+                take: *candidates_limit,
             }]
         }
         None

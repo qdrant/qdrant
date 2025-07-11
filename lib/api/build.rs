@@ -293,7 +293,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("NearestInputWithMmr.nearest", ""),
             ("NearestInputWithMmr.mmr", ""),
             ("Mmr.diversity", "range(min = 0.0, max = 1.0)"),
-            ("Mmr.candidate_limit", "range(max = 16_384)"),
+            ("Mmr.candidates_limit", "range(max = 16_384)"),
             ("Query.variant", ""),
             ("PrefetchQuery.prefetch", ""),
             ("PrefetchQuery.query", ""),

@@ -506,7 +506,7 @@ def test_nearest_with_mmr(collection_name):
                 "nearest": [0.35, 0.08, 0.11, 0.47],
                 "mmr": {
                     "diversity": 0.5,
-                    "candidate_limit": 10
+                    "candidates_limit": 100
                 }
             },
         },

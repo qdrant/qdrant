@@ -5609,6 +5609,7 @@ pub struct Mmr {
     ///
     /// If not specified, the `limit` value is used.
     #[prost(uint32, optional, tag = "3")]
+    #[validate(range(max = 16_384))]
     pub candidates_limit: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
@@ -10104,7 +10105,7 @@ pub struct MmrInternal {
     #[prost(float, tag = "2")]
     pub lambda: f32,
     #[prost(uint32, tag = "3")]
-    pub candidate_limit: u32,
+    pub candidates_limit: u32,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

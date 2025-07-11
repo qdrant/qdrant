@@ -304,7 +304,7 @@ fn convert_query_with_inferred(
             } = mmr;
             let mmr = Mmr {
                 diversity,
-                candidate_limit: candidates_limit.map(|x| x as usize),
+                candidates_limit: candidates_limit.map(|x| x as usize),
             };
 
             Query::Vector(VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }))

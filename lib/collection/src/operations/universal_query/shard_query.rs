@@ -76,7 +76,7 @@ pub struct MmrInternal {
     /// Lambda parameter controlling diversity vs relevance trade-off (0.0 = full diversity, 1.0 = full relevance)
     pub lambda: f32,
     /// Maximum number of candidates to pre-select using nearest neighbors.
-    pub candidate_limit: usize,
+    pub candidates_limit: usize,
 }
 
 /// Same as `Query`, but with the resolved vector references.
@@ -595,7 +595,7 @@ impl ScoringQuery {
             grpc::query_shard_points::query::Score::Mmr(grpc::MmrInternal {
                 vector,
                 lambda,
-                candidate_limit,
+                candidates_limit,
             }) => {
                 let vector =
                     vector.ok_or_else(|| Status::invalid_argument("missing field: mmr.vector"))?;
@@ -604,7 +604,7 @@ impl ScoringQuery {
                     vector,
                     using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
                     lambda,
-                    candidate_limit: candidate_limit as usize,
+                    candidates_limit: candidates_limit as usize,
                 })
             }
         };
@@ -663,12 +663,12 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
                 vector,
                 using: _,
                 lambda,
-                candidate_limit,
+                candidates_limit,
             }) => Self {
                 score: Some(Score::Mmr(grpc::MmrInternal {
                     vector: Some(grpc::RawVector::from(vector)),
                     lambda,
-                    candidate_limit: candidate_limit as u32,
+                    candidates_limit: candidates_limit as u32,
                 })),
             },
         }

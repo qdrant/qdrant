@@ -188,7 +188,7 @@ pub struct NearestWithMmr<T> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mmr {
     pub diversity: Option<f32>,
-    pub candidate_limit: Option<usize>,
+    pub candidates_limit: Option<usize>,
 }
 
 impl VectorQuery<VectorInputInternal> {
@@ -381,14 +381,14 @@ impl VectorQuery<VectorInternal> {
             VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }) => {
                 let Mmr {
                     diversity,
-                    candidate_limit,
+                    candidates_limit,
                 } = mmr;
 
                 return Ok(ScoringQuery::Mmr(MmrInternal {
                     vector: nearest,
                     using,
                     lambda: diversity.map(|x| 1.0 - x).unwrap_or(DEFAULT_MMR_LAMBDA),
-                    candidate_limit: candidate_limit.unwrap_or(request_limit),
+                    candidates_limit: candidates_limit.unwrap_or(request_limit),
                 }));
             }
         };
