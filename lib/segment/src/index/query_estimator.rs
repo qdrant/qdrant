@@ -270,6 +270,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::field_index::ResolvedHasId;
     use crate::json_path::JsonPath;
     use crate::types::{FieldCondition, HasIdCondition};
 
@@ -316,7 +317,14 @@ mod tests {
                 _ => CardinalityEstimation::unknown(TOTAL),
             },
             Condition::HasId(has_id) => CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Ids(has_id.has_id.clone())],
+                primary_clauses: vec![PrimaryCondition::Ids(ResolvedHasId {
+                    point_ids: has_id.has_id.clone(),
+                    resolved_point_offsets: has_id
+                        .has_id
+                        .iter()
+                        .map(|id| id.to_string().parse().unwrap())
+                        .collect(),
+                })],
                 min: has_id.has_id.len(),
                 exp: has_id.has_id.len(),
                 max: has_id.has_id.len(),
