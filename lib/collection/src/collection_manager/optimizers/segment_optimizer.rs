@@ -443,7 +443,8 @@ pub trait SegmentOptimizer {
                 .config()
                 .indices
                 .iter()
-                .filter_map(|(key, schema)| schema.schema.is_tenant().then_some(key));
+                .filter(|(_, schema)| schema.schema.is_tenant())
+                .map(|(key, _)| key.clone());
             defragmentation_keys.extend(keys);
         }
 

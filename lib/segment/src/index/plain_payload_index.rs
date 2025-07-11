@@ -71,7 +71,7 @@ impl PlainPayloadIndex {
 
 impl PayloadIndex for PlainPayloadIndex {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.config.indices.schemas.clone()
+        self.config.indices.to_schemas()
     }
 
     fn build_index(

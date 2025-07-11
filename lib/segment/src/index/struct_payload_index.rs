@@ -136,17 +136,19 @@ impl StructPayloadIndex {
     fn load_all_fields(&mut self, create_if_missing: bool) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
+        let mut indices = std::mem::take(&mut self.config.indices);
+
         // If there is any field without an explicit index type, we will assign it below and must
         // save the configuration after
-        let had_index_without_type = self.config.indices.any_has_no_type();
+        let had_index_without_type = indices.any_has_no_type();
 
-        for (field, mut payload_schema) in std::mem::take(&mut self.config.indices).into_iter() {
-            let field_index = self.load_from_db(&field, &mut payload_schema, create_if_missing)?;
+        for (field, payload_schema) in indices.iter_mut() {
+            let field_index = self.load_from_db(field, payload_schema, create_if_missing)?;
             field_indexes.insert(field.clone(), field_index);
-
-            // Put updated payload schema back into the config
-            self.config.indices.insert(field, payload_schema);
         }
+
+        // Put updated payload schemas back into the config
+        self.config.indices = indices;
 
         // If any payload_schema didn't have an index type assigned, it has now
         // and therefore we need to store it.
@@ -676,7 +678,7 @@ impl StructPayloadIndex {
 
 impl PayloadIndex for StructPayloadIndex {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.config.indices.schemas.clone()
+        self.config.indices.to_schemas()
     }
 
     fn build_index(
@@ -1083,12 +1085,11 @@ mod tests {
 
         assert_eq!(payload_config.indices.len(), 1);
 
-        let mut schema = payload_config.indices.get(&key).unwrap();
+        let schema = payload_config.indices.get_mut(&key).unwrap();
         check_index_types(&schema.index_types);
 
         // Clear index types to check loading from an old segment.
         schema.index_types.clear();
-        payload_config.indices.insert(key.clone(), schema);
         payload_config.save(&payload_config_path).unwrap();
         drop(payload_config);
 

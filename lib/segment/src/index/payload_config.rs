@@ -37,11 +37,89 @@ impl PayloadConfig {
     }
 }
 
+/// Map of indexed fields with their schema and type
+///
+/// Virtual structure, serialized and deserialized through `PayloadIndicesStorage`.
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
+#[serde(from = "PayloadIndicesStorage", into = "PayloadIndicesStorage")]
 pub struct PayloadIndices {
+    fields: HashMap<PayloadKeyType, PayloadFieldSchemaWithIndexType>,
+}
+
+impl PayloadIndices {
+    /// Get index schema and type configuration for the given field
+    pub fn get(&self, field: &PayloadKeyType) -> Option<&PayloadFieldSchemaWithIndexType> {
+        self.fields.get(field)
+    }
+
+    /// Get index schema and type configuration for the given field
+    pub fn get_mut(
+        &mut self,
+        field: &PayloadKeyType,
+    ) -> Option<&mut PayloadFieldSchemaWithIndexType> {
+        self.fields.get_mut(field)
+    }
+
+    /// Add a payload field with its schema and index types
+    ///
+    /// Returns the previous value if it existed.
+    pub fn insert(
+        &mut self,
+        field: PayloadKeyType,
+        schema: PayloadFieldSchemaWithIndexType,
+    ) -> Option<PayloadFieldSchemaWithIndexType> {
+        self.fields.insert(field, schema)
+    }
+
+    pub fn remove(&mut self, field: &PayloadKeyType) -> Option<PayloadFieldSchemaWithIndexType> {
+        self.fields.remove(field)
+    }
+
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    /// Check if any payload field has no explicit types configured
+    ///
+    /// Returns false if empty.
+    pub fn any_has_no_type(&self) -> bool {
+        self.fields
+            .values()
+            .any(|index| index.index_types.is_empty())
+    }
+
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (&PayloadKeyType, &PayloadFieldSchemaWithIndexType)> {
+        self.fields.iter()
+    }
+
+    pub fn iter_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&PayloadKeyType, &mut PayloadFieldSchemaWithIndexType)> {
+        self.fields.iter_mut()
+    }
+
+    pub fn to_schemas(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
+        self.fields
+            .iter()
+            .map(|(field, index)| (field.clone(), index.schema.clone()))
+            .collect()
+    }
+}
+
+/// Storage helper for `PayloadIndices`
+///
+/// This type is used for serialization and deserialization of the payload indices. It is
+/// compatible with the old format of payload indices, which only stored the indexed fields.
+#[derive(Deserialize, Serialize)]
+pub struct PayloadIndicesStorage {
     /// Map of indexed fields and their schema
-    #[serde(rename = "indexed_fields")]
-    pub schemas: HashMap<PayloadKeyType, PayloadFieldSchema>,
+    pub indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
 
     /// Map of indexed fields and their explicit index types
     ///
@@ -49,95 +127,43 @@ pub struct PayloadIndices {
     /// Then use `schemas` to determine the index types.
     ///
     /// Added since Qdrant 1.15
-    #[serde(
-        default,
-        rename = "indexed_types",
-        skip_serializing_if = "HashMap::is_empty"
-    )]
-    pub types: HashMap<PayloadKeyType, Vec<FullPayloadIndexType>>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub indexed_types: HashMap<PayloadKeyType, Vec<FullPayloadIndexType>>,
 }
 
-impl PayloadIndices {
-    /// Get index schema and type configuration for the given field
-    pub fn get(&self, field: &PayloadKeyType) -> Option<PayloadFieldSchemaWithIndexType> {
-        self.schemas.get(field).map(|schema| {
-            let index_types = self.types.get(field).cloned().unwrap_or_default();
-            PayloadFieldSchemaWithIndexType::new(schema.clone(), index_types)
-        })
+impl From<PayloadIndicesStorage> for PayloadIndices {
+    fn from(mut storage: PayloadIndicesStorage) -> Self {
+        let fields = storage
+            .indexed_fields
+            .into_iter()
+            .map(|(field, schema)| {
+                let index_types = storage.indexed_types.remove(&field).unwrap_or_default();
+                (
+                    field,
+                    PayloadFieldSchemaWithIndexType::new(schema, index_types),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        Self { fields }
     }
+}
 
-    /// Add a payload field with its schema and index types.
-    pub fn insert(
-        &mut self,
-        field: PayloadKeyType,
-        schema: PayloadFieldSchemaWithIndexType,
-    ) -> Option<PayloadFieldSchemaWithIndexType> {
-        let old_schema = self.schemas.insert(field.clone(), schema.schema);
-        let old_types = if !schema.index_types.is_empty() {
-            self.types.insert(field, schema.index_types)
-        } else {
-            self.types.remove(&field)
-        };
-
-        old_schema.map(|schema| PayloadFieldSchemaWithIndexType {
-            schema,
-            index_types: old_types.unwrap_or_default(),
-        })
-    }
-
-    /// Remove the given field
-    pub fn remove(&mut self, field: &PayloadKeyType) -> Option<PayloadFieldSchema> {
-        let removed = self.schemas.remove(field);
-        self.types.remove(field);
-        removed
-    }
-
-    /// Get number of fields a payload index is configured on
-    pub fn len(&self) -> usize {
-        self.schemas.len()
-    }
-
-    /// Check if no payload fields have been configured
-    pub fn is_empty(&self) -> bool {
-        self.schemas.is_empty()
-    }
-
-    /// Check if any payload field has no explicit types configured
-    ///
-    /// Returns true if empty.
-    pub fn any_has_no_type(&self) -> bool {
-        // No fields configured at all
-        if self.is_empty() {
-            return true;
+impl From<PayloadIndices> for PayloadIndicesStorage {
+    fn from(storage: PayloadIndices) -> Self {
+        let (indexed_fields, indexed_types) = storage.fields.into_iter().fold(
+            (HashMap::new(), HashMap::new()),
+            |(mut fields, mut types), (field, schema)| {
+                fields.insert(field.clone(), schema.schema);
+                if !schema.index_types.is_empty() {
+                    types.insert(field, schema.index_types);
+                }
+                (fields, types)
+            },
+        );
+        Self {
+            indexed_fields,
+            indexed_types,
         }
-
-        // Check if any field has no types at all, or an empty list of types
-        self.schemas
-            .keys()
-            .any(|key| self.types.get(key).is_none_or(|types| types.is_empty()))
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (PayloadKeyType, PayloadFieldSchemaWithIndexType)> {
-        self.schemas.iter().map(move |(field_name, schema)| {
-            let index_types = self.types.get(field_name).cloned().unwrap_or_default();
-            (
-                field_name.clone(),
-                PayloadFieldSchemaWithIndexType::new(schema.clone(), index_types),
-            )
-        })
-    }
-
-    #[allow(clippy::should_implement_trait)]
-    pub fn into_iter(
-        mut self,
-    ) -> impl Iterator<Item = (PayloadKeyType, PayloadFieldSchemaWithIndexType)> {
-        self.schemas.into_iter().map(move |(field_name, schema)| {
-            let index_types = self.types.remove(&field_name).unwrap_or_default();
-            (
-                field_name,
-                PayloadFieldSchemaWithIndexType::new(schema, index_types),
-            )
-        })
     }
 }
 
