@@ -16,4 +16,3 @@ zerocopy = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
-tempfile = { workspace = true }
