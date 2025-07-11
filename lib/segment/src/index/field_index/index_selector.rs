@@ -16,13 +16,14 @@ use super::numeric_index::{
     Encodable, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue, NumericIndexMmapBuilder,
 };
 use super::{FieldIndexBuilder, ValueIndexer};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::null_index::mmap_null_index::MmapNullIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
+use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
 use crate::json_path::JsonPath;
 use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 
@@ -57,6 +58,96 @@ pub struct IndexSelectorGridstore<'a> {
 }
 
 impl IndexSelector<'_> {
+    /// Loads the correct index based on `index_type`.
+    pub fn new_index_with_type(
+        &self,
+        field: &JsonPath,
+        payload_schema: &PayloadFieldSchema,
+        index_type: &FullPayloadIndexType,
+        path: &Path,
+        total_point_count: usize,
+        create_if_missing: bool,
+    ) -> OperationResult<Option<FieldIndex>> {
+        let index = match (&index_type.index_type, payload_schema.expand().as_ref()) {
+            (PayloadIndexType::IntIndex, PayloadSchemaParams::Integer(params)) => {
+                // IntIndex only gets created if `range` is true. This will only throw an error if storage is corrupt.
+                //
+                // Note that `params.range == None` means the index was created without directly specifying these parameters.
+                // In those cases it defaults to `true` so we don't need to cover this case.
+                if params.range == Some(false) {
+                    log::warn!(
+                        "Inconsistent payload schema: Int index configured but schema.range is false"
+                    );
+                }
+
+                FieldIndex::IntIndex(self.numeric_new(field, create_if_missing)?)
+            }
+            (PayloadIndexType::IntMapIndex, PayloadSchemaParams::Integer(params)) => {
+                // IntMapIndex only gets created if `lookup` is true. This will only throw an error if storage is corrupt.
+                //
+                // Note that `params.lookup == None` means the index was created without directly specifying these parameters.
+                // In those cases it defaults to `true` so we don't need to cover this case.
+                if params.lookup == Some(false) {
+                    log::warn!(
+                        "Inconsistent payload schema: IntMap index configured but schema.lookup is false",
+                    );
+                }
+
+                FieldIndex::IntMapIndex(self.map_new(field, create_if_missing)?)
+            }
+            (PayloadIndexType::DatetimeIndex, PayloadSchemaParams::Datetime(_)) => {
+                FieldIndex::DatetimeIndex(self.numeric_new(field, create_if_missing)?)
+            }
+
+            (PayloadIndexType::KeywordIndex, PayloadSchemaParams::Keyword(_)) => {
+                FieldIndex::KeywordIndex(self.map_new(field, create_if_missing)?)
+            }
+
+            (PayloadIndexType::FloatIndex, PayloadSchemaParams::Float(_)) => {
+                FieldIndex::FloatIndex(self.numeric_new(field, create_if_missing)?)
+            }
+
+            (PayloadIndexType::GeoIndex, PayloadSchemaParams::Geo(_)) => {
+                FieldIndex::GeoIndex(self.geo_new(field, create_if_missing)?)
+            }
+
+            (PayloadIndexType::FullTextIndex, PayloadSchemaParams::Text(params)) => {
+                FieldIndex::FullTextIndex(self.text_new(
+                    field,
+                    params.clone(),
+                    create_if_missing,
+                )?)
+            }
+
+            (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => self.bool_new(field)?,
+
+            (PayloadIndexType::UuidIndex, PayloadSchemaParams::Uuid(_)) => {
+                FieldIndex::UuidMapIndex(self.map_new(field, create_if_missing)?)
+            }
+
+            (PayloadIndexType::UuidMapIndex, PayloadSchemaParams::Uuid(_)) => {
+                FieldIndex::UuidMapIndex(self.map_new(field, create_if_missing)?)
+            }
+
+            (PayloadIndexType::NullIndex, _) => {
+                let Some(null_index) = MmapNullIndex::open_if_exists(path, total_point_count)?
+                else {
+                    return Ok(None);
+                };
+                FieldIndex::NullIndex(null_index)
+            }
+
+            // Storage inconsistency. Should never happen.
+            (index_type, schema) => {
+                return Err(OperationError::service_error(format!(
+                    "Payload index storage inconsistent. Schema defines {schema:?} but storage is {index_type:?}"
+                )));
+            }
+        };
+
+        Ok(Some(index))
+    }
+
     /// Selects index type based on field type.
     pub fn new_index(
         &self,

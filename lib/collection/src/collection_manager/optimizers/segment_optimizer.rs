@@ -441,10 +441,10 @@ pub trait SegmentOptimizer {
 
             let keys = payload_index
                 .config()
-                .indexed_fields
+                .indices
                 .iter()
-                .filter_map(|(key, schema)| schema.is_tenant().then_some(key))
-                .cloned();
+                .filter(|(_, schema)| schema.schema.is_tenant())
+                .map(|(key, _)| key.clone());
             defragmentation_keys.extend(keys);
         }
 

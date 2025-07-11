@@ -17,6 +17,7 @@ use super::field_index::index_selector::{
     IndexSelector, IndexSelectorGridstore, IndexSelectorMmap,
 };
 use super::field_index::{FieldIndexBuilderTrait as _, ResolvedHasId};
+use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
@@ -24,7 +25,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PrimaryCondition,
 };
-use crate::index::payload_config::PayloadConfig;
+use crate::index::payload_config::{self, PayloadConfig};
 use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
@@ -49,6 +50,18 @@ enum StorageType {
     #[cfg(feature = "rocksdb")]
     RocksDbNonAppendable(Arc<parking_lot::RwLock<rocksdb::DB>>),
     GridstoreNonAppendable,
+}
+
+impl StorageType {
+    #[cfg(feature = "rocksdb")]
+    pub fn is_appendable(&self) -> bool {
+        match self {
+            StorageType::RocksDbAppendable(_) => true,
+            StorageType::GridstoreAppendable => true,
+            StorageType::RocksDbNonAppendable(_) => false,
+            StorageType::GridstoreNonAppendable => false,
+        }
+    }
 }
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
@@ -123,10 +136,26 @@ impl StructPayloadIndex {
     fn load_all_fields(&mut self, create_if_missing: bool) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
-        for (field, payload_schema) in &self.config.indexed_fields {
+        let mut indices = std::mem::take(&mut self.config.indices);
+
+        // If there is any field without an explicit index type, we will assign it below and must
+        // save the configuration after
+        let had_index_without_type = indices.any_has_no_type();
+
+        for (field, payload_schema) in indices.iter_mut() {
             let field_index = self.load_from_db(field, payload_schema, create_if_missing)?;
             field_indexes.insert(field.clone(), field_index);
         }
+
+        // Put updated payload schemas back into the config
+        self.config.indices = indices;
+
+        // If any payload_schema didn't have an index type assigned, it has now
+        // and therefore we need to store it.
+        if had_index_without_type {
+            self.save_config()?;
+        }
+
         self.field_indexes = field_indexes;
         Ok(())
     }
@@ -134,23 +163,54 @@ impl StructPayloadIndex {
     fn load_from_db(
         &self,
         field: PayloadKeyTypeRef,
-        payload_schema: &PayloadFieldSchema,
+        // TODO: refactor this and remove the &mut reference.
+        payload_schema: &mut PayloadFieldSchemaWithIndexType,
         create_if_missing: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
-        let mut indexes =
-            self.selector(payload_schema)
-                .new_index(field, payload_schema, create_if_missing)?;
-
         let total_point_count = self.id_tracker.borrow().total_point_count();
 
-        // Special null index complements every index.
-        if let Some(null_index) =
-            IndexSelector::new_null_index(&self.path, field, total_point_count)?
-        {
-            // todo: This means that null index will not be built if it is not loaded here.
-            //       Maybe we should set `is_loaded` to false to trigger index building.
-            indexes.push(null_index);
-        }
+        let mut indexes = if payload_schema.types.is_empty() {
+            let mut indexes = self.selector(&payload_schema.schema).new_index(
+                field,
+                &payload_schema.schema,
+                create_if_missing,
+            )?;
+
+            // Special null index complements every index.
+            if let Some(null_index) =
+                IndexSelector::new_null_index(&self.path, field, total_point_count)?
+            {
+                // todo: This means that null index will not be built if it is not loaded here.
+                //       Maybe we should set `is_loaded` to false to trigger index building.
+                indexes.push(null_index);
+            }
+
+            payload_schema.types = indexes
+                .iter()
+                .map(|i| i.get_full_index_type())
+                .collect::<Vec<_>>();
+
+            indexes
+        } else {
+            payload_schema
+                .types
+                .iter()
+                .filter_map(|index| {
+                    self.selector_with_type(index)
+                        .and_then(|selector| {
+                            selector.new_index_with_type(
+                                field,
+                                &payload_schema.schema,
+                                index,
+                                &self.path,
+                                total_point_count,
+                                create_if_missing,
+                            )
+                        })
+                        .transpose()
+                })
+                .collect::<OperationResult<Vec<_>>>()?
+        };
 
         let mut is_loaded = true;
         for ref mut index in indexes.iter_mut() {
@@ -160,12 +220,11 @@ impl StructPayloadIndex {
             }
         }
 
-        // If index is not properly loaded, recreate it
         if !is_loaded {
             log::debug!("Index for `{field}` was not loaded. Building...");
             indexes = self.build_field_indexes(
                 field,
-                payload_schema,
+                &payload_schema.schema,
                 &HardwareCounterCell::disposable(), // Internal operation
             )?;
         }
@@ -426,9 +485,9 @@ impl StructPayloadIndex {
 
     pub fn is_tenant(&self, field: &PayloadKeyType) -> bool {
         self.config
-            .indexed_fields
+            .indices
             .get(field)
-            .map(|indexed_field| indexed_field.is_tenant())
+            .map(|indexed_field| indexed_field.schema.is_tenant())
             .unwrap_or(false)
     }
 
@@ -535,6 +594,47 @@ impl StructPayloadIndex {
         }
     }
 
+    fn selector_with_type(
+        &self,
+        index_type: &FullPayloadIndexType,
+    ) -> OperationResult<IndexSelector> {
+        let selector = match index_type.storage_type {
+            payload_config::StorageType::Gridstore => {
+                IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
+            }
+            payload_config::StorageType::RocksDb => {
+                #[cfg(feature = "rocksdb")]
+                {
+                    let (StorageType::RocksDbAppendable(db)
+                    | StorageType::RocksDbNonAppendable(db)) = &self.storage_type
+                    else {
+                        return Err(OperationError::service_error(
+                            "Loading payload index failed: Configured storage type and payload schema mismatch!",
+                        ));
+                    };
+
+                    return Ok(IndexSelector::RocksDb(IndexSelectorRocksDb {
+                        db,
+                        is_appendable: self.storage_type.is_appendable(),
+                    }));
+                }
+
+                #[cfg(not(feature = "rocksdb"))]
+                return Err(OperationError::service_error(
+                    "Loading payload index failed: Index is rocksDB but RocksDB feature is disabled.",
+                ));
+            }
+            payload_config::StorageType::Mmap { is_on_disk } => {
+                IndexSelector::Mmap(IndexSelectorMmap {
+                    dir: &self.path,
+                    is_on_disk,
+                })
+            }
+        };
+
+        Ok(selector)
+    }
+
     pub fn get_facet_index(&self, key: &JsonPath) -> OperationResult<FacetIndexEnum> {
         self.field_indexes
             .get(key)
@@ -576,7 +676,7 @@ impl StructPayloadIndex {
 
 impl PayloadIndex for StructPayloadIndex {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.config.indexed_fields.clone()
+        self.config.indices.to_schemas()
     }
 
     fn build_index(
@@ -585,10 +685,10 @@ impl PayloadIndex for StructPayloadIndex {
         payload_schema: &PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildIndexResult> {
-        if let Some(prev_schema) = self.config.indexed_fields.get(field) {
+        if let Some(prev_schema) = self.config.indices.get(field) {
             // the field is already indexed with the same schema
             // no need to rebuild index and to save the config
-            return if prev_schema == payload_schema {
+            return if prev_schema.schema == *payload_schema {
                 Ok(BuildIndexResult::AlreadyBuilt)
             } else {
                 Ok(BuildIndexResult::IncompatibleSchema)
@@ -604,9 +704,16 @@ impl PayloadIndex for StructPayloadIndex {
         payload_schema: PayloadFieldSchema,
         field_index: Vec<FieldIndex>,
     ) -> OperationResult<()> {
+        let index_types: Vec<_> = field_index
+            .iter()
+            .map(|i| i.get_full_index_type())
+            .collect();
         self.field_indexes.insert(field.clone(), field_index);
 
-        self.config.indexed_fields.insert(field, payload_schema);
+        self.config.indices.insert(
+            field,
+            PayloadFieldSchemaWithIndexType::new(payload_schema, index_types),
+        );
 
         self.save_config()?;
 
@@ -644,7 +751,7 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        self.config.indexed_fields.remove(field);
+        self.config.indices.remove(field);
         let removed_indexes = self.field_indexes.remove(field);
 
         if let Some(indexes) = removed_indexes {
@@ -662,10 +769,10 @@ impl PayloadIndex for StructPayloadIndex {
         field: PayloadKeyTypeRef,
         new_payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<()> {
-        if let Some(current_schema) = self.config.indexed_fields.get(field) {
+        if let Some(current_schema) = self.config.indices.get(field) {
             // the field is already indexed with the same schema
             // no need to rebuild index and to save the config
-            if current_schema != new_payload_schema {
+            if current_schema.schema != *new_payload_schema {
                 self.drop_index(field)?;
             }
         }
@@ -904,5 +1011,96 @@ impl PayloadIndex for StructPayloadIndex {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         Vec::new() // TODO!
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+    use std::sync::atomic::AtomicBool;
+
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::data_types::vectors::only_default_vector;
+    use crate::entry::SegmentEntry;
+    use crate::index::payload_config::{IndexMutability, PayloadIndexType};
+    use crate::segment_constructor::load_segment;
+    use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
+    use crate::types::{Distance, PayloadSchemaType};
+
+    #[test]
+    fn test_load_payload_index() {
+        let data = r#"
+               {
+                   "name": "John Doe"
+               }"#;
+
+        let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+        let dim = 2;
+
+        let hw_counter = HardwareCounterCell::new();
+
+        let key = JsonPath::from_str("name").unwrap();
+
+        let full_segment_path = {
+            let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+            segment
+                .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+                .unwrap();
+
+            let payload: Payload = serde_json::from_str(data).unwrap();
+
+            segment
+                .set_full_payload(0, 0.into(), &payload, &hw_counter)
+                .unwrap();
+
+            segment
+                .create_field_index(
+                    0,
+                    &key,
+                    Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+                    &HardwareCounterCell::new(),
+                )
+                .unwrap();
+
+            segment.current_path.clone()
+        };
+
+        let check_index_types = |index_types: &[FullPayloadIndexType]| -> bool {
+            index_types.len() == 2
+                && index_types[0].index_type == PayloadIndexType::KeywordIndex
+                && index_types[0].mutability == IndexMutability::Mutable
+                && index_types[1].index_type == PayloadIndexType::NullIndex
+                && index_types[1].mutability == IndexMutability::Mutable
+        };
+
+        let payload_config_path = full_segment_path.join("payload_index/config.json");
+        let mut payload_config = PayloadConfig::load(&payload_config_path).unwrap();
+
+        assert_eq!(payload_config.indices.len(), 1);
+
+        let schema = payload_config.indices.get_mut(&key).unwrap();
+        check_index_types(&schema.types);
+
+        // Clear index types to check loading from an old segment.
+        schema.types.clear();
+        payload_config.save(&payload_config_path).unwrap();
+        drop(payload_config);
+
+        // Load once and drop.
+        {
+            load_segment(&full_segment_path, &AtomicBool::new(false))
+                .unwrap()
+                .unwrap();
+        }
+
+        // Check that index type has been written to disk again.
+        // Proves we'll always persist the exact index type if it wasn't known yet at that time
+        let payload_config = PayloadConfig::load(&payload_config_path).unwrap();
+        assert_eq!(payload_config.indices.len(), 1);
+
+        let schema = payload_config.indices.get(&key).unwrap();
+        check_index_types(&schema.types);
     }
 }

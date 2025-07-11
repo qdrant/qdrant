@@ -33,6 +33,7 @@ use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardin
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
+use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 
@@ -406,6 +407,25 @@ impl GeoMapIndex {
             // Only clears backing mmap storage if used, not in-memory representation
             GeoMapIndex::Immutable(index) => index.clear_cache(),
             GeoMapIndex::Mmap(index) => index.clear_cache(),
+        }
+    }
+
+    pub fn get_mutability_type(&self) -> IndexMutability {
+        match self {
+            Self::Mutable(_) => IndexMutability::Mutable,
+            Self::Immutable(_) => IndexMutability::Immutable,
+            // Mmap index can be both mutable and immutable, so we pick mutable
+            Self::Mmap(_) => IndexMutability::Mutable,
+        }
+    }
+
+    pub fn get_storage_type(&self) -> StorageType {
+        match self {
+            Self::Mutable(index) => index.storage_type(),
+            Self::Immutable(index) => index.storage_type(),
+            Self::Mmap(index) => StorageType::Mmap {
+                is_on_disk: index.is_on_disk(),
+            },
         }
     }
 }

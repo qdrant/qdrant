@@ -9,6 +9,7 @@ use common::types::PointOffsetType;
 use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndex;
+use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerSS;
@@ -70,7 +71,7 @@ impl PlainPayloadIndex {
 
 impl PayloadIndex for PlainPayloadIndex {
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.config.indexed_fields.clone()
+        self.config.indices.to_schemas()
     }
 
     fn build_index(
@@ -86,15 +87,21 @@ impl PayloadIndex for PlainPayloadIndex {
         &mut self,
         field: PayloadKeyType,
         payload_schema: PayloadFieldSchema,
-        _field_index: Vec<FieldIndex>,
+        field_index: Vec<FieldIndex>,
     ) -> OperationResult<()> {
-        if let Some(prev_schema) = self
-            .config
-            .indexed_fields
-            .insert(field, payload_schema.clone())
-        {
+        let new_schema = PayloadFieldSchemaWithIndexType::new(
+            payload_schema,
+            field_index
+                .iter()
+                .map(|i| i.get_full_index_type())
+                .collect(),
+        );
+
+        let prev_schema = self.config.indices.insert(field, new_schema.clone());
+
+        if let Some(prev_schema) = prev_schema {
             // the field is already present with the same schema, no need to save the config
-            if prev_schema == payload_schema {
+            if prev_schema == new_schema {
                 return Ok(());
             }
         }
@@ -114,7 +121,7 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        self.config.indexed_fields.remove(field);
+        self.config.indices.remove(field);
         self.save_config()
     }
 
@@ -124,8 +131,7 @@ impl PayloadIndex for PlainPayloadIndex {
         _new_payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<()> {
         // Just always drop the index, as we don't have any indexes
-        self.config.indexed_fields.remove(field);
-        self.save_config()
+        self.drop_index(field)
     }
 
     fn estimate_cardinality(

@@ -20,6 +20,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::ValueIndexer;
+use crate::index::payload_config::StorageType;
 
 const GRIDSTORE_OPTIONS: StorageOptions = StorageOptions {
     compression: Some(gridstore::config::Compression::None),
@@ -327,6 +328,7 @@ impl MutableFullTextIndex {
         Ok(())
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
         match &self.storage {
@@ -370,6 +372,14 @@ impl MutableFullTextIndex {
                 .read()
                 .get_value(idx, &HardwareCounterCell::disposable())
                 .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),
+        }
+    }
+
+    pub fn storage_type(&self) -> StorageType {
+        match &self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => StorageType::RocksDb,
+            Storage::Gridstore(_) => StorageType::Gridstore,
         }
     }
 }
