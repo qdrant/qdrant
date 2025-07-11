@@ -11,4 +11,5 @@ pub mod snapshots_manager;
 pub mod stoppable_task;
 pub mod stoppable_task_async;
 pub mod stopping_guard;
+pub mod symmetric_matrix;
 pub mod transpose_iterator;
