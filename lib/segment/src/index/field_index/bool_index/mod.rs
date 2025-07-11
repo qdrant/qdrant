@@ -128,7 +128,7 @@ impl BoolIndex {
         match self {
             #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(_) => {
-                IndexMutability::Mutable(crate::index::payload_config::StorageType::RocksDB)
+                IndexMutability::Mutable(crate::index::payload_config::StorageType::RocksDb)
             }
             BoolIndex::Mmap(mmap_bool_index) => IndexMutability::Mmap {
                 is_on_disk: mmap_bool_index.is_on_disk(),

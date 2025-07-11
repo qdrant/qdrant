@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 
 use io::file_operations::{atomic_save_json, read_json};
@@ -12,12 +13,15 @@ pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "config.json";
 /// Keeps information of which field should be index
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct PayloadConfig {
-    pub indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchemaWithIndexType>,
+    /// Mapping of payload index schemas and types
+    #[serde(flatten)]
+    pub indices: PayloadIndices,
 
     /// If true, don't create/initialize RocksDB for payload index
     /// This is required for migrating away from RocksDB in favor of the
     /// custom storage engine
     #[cfg(feature = "rocksdb")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub skip_rocksdb: Option<bool>,
 }
 
@@ -35,25 +39,113 @@ impl PayloadConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-pub struct PayloadFieldSchemaWithIndexType {
-    #[serde(flatten)]
-    pub schema: PayloadFieldSchema,
-
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub index_types: Vec<FullPayloadIndexType>,
+/// Map of indexed fields with their schema and type
+///
+/// Virtual structure, serialized and deserialized through `PayloadIndicesStorage`.
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
+#[serde(from = "PayloadIndicesStorage", into = "PayloadIndicesStorage")]
+pub struct PayloadIndices {
+    fields: HashMap<PayloadKeyType, PayloadFieldSchemaWithIndexType>,
 }
 
-impl PayloadFieldSchemaWithIndexType {
-    pub fn new(schema: PayloadFieldSchema, index_types: Vec<FullPayloadIndexType>) -> Self {
+impl PayloadIndices {
+    /// Check if any payload field has no explicit types configured
+    ///
+    /// Returns false if empty.
+    pub fn any_has_no_type(&self) -> bool {
+        self.fields.values().any(|index| index.types.is_empty())
+    }
+
+    pub fn to_schemas(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
+        self.fields
+            .iter()
+            .map(|(field, index)| (field.clone(), index.schema.clone()))
+            .collect()
+    }
+}
+
+impl Deref for PayloadIndices {
+    type Target = HashMap<PayloadKeyType, PayloadFieldSchemaWithIndexType>;
+    fn deref(&self) -> &Self::Target {
+        &self.fields
+    }
+}
+
+impl DerefMut for PayloadIndices {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.fields
+    }
+}
+
+/// Storage helper for `PayloadIndices`
+///
+/// This type is used for serialization and deserialization of the payload indices. It is
+/// compatible with the old format of payload indices, which only stored the indexed fields.
+#[derive(Deserialize, Serialize)]
+pub struct PayloadIndicesStorage {
+    /// Map of indexed fields and their schema
+    pub indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
+
+    /// Map of indexed fields and their explicit index types
+    ///
+    /// If empty for a field, no explicit payload index type mappings have been stored yet.
+    /// Then use `schemas` to determine the index types with a best effort approach.
+    ///
+    /// Added since Qdrant 1.15
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub indexed_types: HashMap<PayloadKeyType, Vec<FullPayloadIndexType>>,
+}
+
+impl From<PayloadIndicesStorage> for PayloadIndices {
+    fn from(mut storage: PayloadIndicesStorage) -> Self {
+        let fields = storage
+            .indexed_fields
+            .into_iter()
+            .map(|(field, schema)| {
+                let index_types = storage.indexed_types.remove(&field).unwrap_or_default();
+                (
+                    field,
+                    PayloadFieldSchemaWithIndexType::new(schema, index_types),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        Self { fields }
+    }
+}
+
+impl From<PayloadIndices> for PayloadIndicesStorage {
+    fn from(storage: PayloadIndices) -> Self {
+        let (indexed_fields, indexed_types) = storage.fields.into_iter().fold(
+            (HashMap::new(), HashMap::new()),
+            |(mut fields, mut types), (field, schema)| {
+                fields.insert(field.clone(), schema.schema);
+                if !schema.types.is_empty() {
+                    types.insert(field, schema.types);
+                }
+                (fields, types)
+            },
+        );
         Self {
-            schema,
-            index_types,
+            indexed_fields,
+            indexed_types,
         }
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct PayloadFieldSchemaWithIndexType {
+    pub schema: PayloadFieldSchema,
+    pub types: Vec<FullPayloadIndexType>,
+}
+
+impl PayloadFieldSchemaWithIndexType {
+    pub fn new(schema: PayloadFieldSchema, types: Vec<FullPayloadIndexType>) -> Self {
+        Self { schema, types }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum FullPayloadIndexType {
     IntIndex(IndexMutability),
     DatetimeIndex(IndexMutability),
@@ -87,6 +179,7 @@ impl FullPayloadIndexType {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum IndexMutability {
     Mutable(StorageType),
     Immutable(StorageType),
@@ -94,9 +187,10 @@ pub enum IndexMutability {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum StorageType {
     Gridstore,
-    RocksDB,
+    RocksDb,
     Mmap { is_on_disk: bool },
 }
 
@@ -129,7 +223,7 @@ mod test {
         let old_config: PayloadFieldSchema = serde_json::from_value(old_schema).unwrap();
         assert_eq!(
             payload_config
-                .indexed_fields
+                .indices
                 .get(&JsonPath::from_str("c").unwrap())
                 .unwrap()
                 .schema,
