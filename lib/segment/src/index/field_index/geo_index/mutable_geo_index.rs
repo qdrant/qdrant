@@ -448,7 +448,7 @@ impl MutableGeoMapIndex {
     pub fn storage_type(&self) -> StorageType {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => StorageType::RocksDB,
+            Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Gridstore(_) => StorageType::Gridstore,
         }
     }

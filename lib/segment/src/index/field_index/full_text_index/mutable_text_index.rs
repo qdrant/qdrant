@@ -328,6 +328,7 @@ impl MutableFullTextIndex {
         Ok(())
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
         match &self.storage {
@@ -377,7 +378,7 @@ impl MutableFullTextIndex {
     pub fn storage_type(&self) -> StorageType {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => StorageType::RocksDB,
+            Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Gridstore(_) => StorageType::Gridstore,
         }
     }
