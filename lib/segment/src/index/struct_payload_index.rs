@@ -10,13 +10,13 @@ use common::either_variant::EitherVariant;
 use common::types::PointOffsetType;
 use schemars::_serde_json::Value;
 
-use super::field_index::FieldIndexBuilderTrait as _;
 use super::field_index::facet_index::FacetIndexEnum;
 #[cfg(feature = "rocksdb")]
 use super::field_index::index_selector::IndexSelectorRocksDb;
 use super::field_index::index_selector::{
     IndexSelector, IndexSelectorGridstore, IndexSelectorMmap,
 };
+use super::field_index::{FieldIndexBuilderTrait as _, ResolvedHasId};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
@@ -104,14 +104,7 @@ impl StructPayloadIndex {
                     .iter()
                     .find_map(|field_index| field_index.filter(field_condition, hw_counter))
             }
-            PrimaryCondition::Ids(ids) => {
-                let id_tracker_ref = self.id_tracker.borrow();
-                let mapped_ids: Vec<PointOffsetType> = ids
-                    .iter()
-                    .filter_map(|external_id| id_tracker_ref.internal_id(*external_id))
-                    .collect();
-                Some(Box::new(mapped_ids.into_iter()))
-            }
+            PrimaryCondition::Ids(ids) => Some(Box::new(ids.resolved_point_offsets.iter().copied())),
             PrimaryCondition::HasVector(_) => None,
         }
     }
@@ -358,10 +351,18 @@ impl StructPayloadIndex {
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::HasId(has_id) => {
-                let num_ids = has_id.has_id.len();
-                let ids = has_id.has_id.clone();
+                let point_ids = has_id.has_id.clone();
+                let id_tracker = self.id_tracker.borrow();
+                let resolved_point_offsets: Vec<PointOffsetType> = point_ids
+                    .iter()
+                    .filter_map(|external_id| id_tracker.internal_id(*external_id))
+                    .collect();
+                let num_ids = resolved_point_offsets.len();
                 CardinalityEstimation {
-                    primary_clauses: vec![PrimaryCondition::Ids(ids)],
+                    primary_clauses: vec![PrimaryCondition::Ids(ResolvedHasId {
+                        point_ids,
+                        resolved_point_offsets,
+                    })],
                     min: num_ids,
                     exp: num_ids,
                     max: num_ids,

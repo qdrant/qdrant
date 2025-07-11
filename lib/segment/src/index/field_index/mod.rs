@@ -1,8 +1,8 @@
 use std::ops::Deref;
 
-use ahash::AHashSet;
-
 use crate::types::{Condition, FieldCondition, PointIdType, VectorNameBuf};
+use ahash::AHashSet;
+use common::types::PointOffsetType;
 
 pub mod bool_index;
 pub(super) mod facet_index;
@@ -27,9 +27,18 @@ pub use field_index_base::*;
 use crate::utils::maybe_arc::MaybeArc;
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedHasId {
+    /// Original IDs, as provided in filtering condition
+    pub point_ids: MaybeArc<AHashSet<PointIdType>>,
+
+    /// Resolved point offsets, which are specific to the segment.
+    pub resolved_point_offsets: Vec<PointOffsetType>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum PrimaryCondition {
     Condition(Box<FieldCondition>),
-    Ids(MaybeArc<AHashSet<PointIdType>>),
+    Ids(ResolvedHasId),
     HasVector(VectorNameBuf),
 }
 
@@ -100,7 +109,7 @@ impl CardinalityEstimation {
                     _ => false,
                 },
                 PrimaryCondition::Ids(ids) => match condition {
-                    Condition::HasId(has_id) => ids.deref() == has_id.has_id.deref(),
+                    Condition::HasId(has_id) => ids.point_ids.deref() == has_id.has_id.deref(),
                     _ => false,
                 },
                 PrimaryCondition::HasVector(has_vector) => match condition {
