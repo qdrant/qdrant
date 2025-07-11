@@ -677,7 +677,7 @@ impl StructPayloadIndex {
                 #[cfg(feature = "rocksdb")]
                 {
                     let (StorageType::RocksDbAppendable(db)
-                    | StorageType::RocksDbNonAppendable(db)) = &self.storage_type
+                    | StorageType::RocksDbNonAppendable(db)) = storage_type
                     else {
                         return Err(OperationError::service_error(
                             "Loading payload index failed: Configured storage type and payload schema mismatch!",
