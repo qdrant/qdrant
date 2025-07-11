@@ -246,7 +246,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     #[inline]
     fn get_vec_ptr(&self, i: u32) -> (f32, *const u8) {
         unsafe {
-            let vector_data_size = self.metadata.actual_dim + std::mem::size_of::<f32>();
+            let vector_data_size = self.quantized_vector_size();
             let v_ptr = self
                 .encoded_vectors
                 .get_vector_data(i as usize, vector_data_size)
@@ -505,7 +505,9 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     }
 
     fn quantized_vector_size(&self) -> usize {
-        self.metadata.vector_parameters.dim
+        // actual_dim rounds up vector_dimension to the next multiple of ALIGNMENT
+        // also add scaling factor to the tally
+        self.metadata.actual_dim + std::mem::size_of::<f32>()
     }
 
     fn encode_internal_vector(&self, id: u32) -> Option<EncodedQueryU8> {
