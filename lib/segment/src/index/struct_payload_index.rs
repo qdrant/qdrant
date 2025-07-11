@@ -598,7 +598,7 @@ impl StructPayloadIndex {
                     payload_config::StorageType::Gridstore => {
                         IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
                     }
-                    payload_config::StorageType::RocksDB => {
+                    payload_config::StorageType::RocksDb => {
                         #[cfg(feature = "rocksdb")]
                         {
                             let (StorageType::RocksDbAppendable(db)

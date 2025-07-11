@@ -491,7 +491,7 @@ impl ImmutableGeoMapIndex {
     pub fn storage_type(&self) -> StorageType {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => StorageType::RocksDB,
+            Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Mmap(index) => StorageType::Mmap {
                 is_on_disk: index.is_on_disk(),
             },
