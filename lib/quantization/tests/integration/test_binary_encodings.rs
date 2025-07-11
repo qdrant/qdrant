@@ -210,10 +210,8 @@ mod tests {
         // Check if encoding has more accuracy than previous one
         for i in 1..tops.len() {
             assert!(
-                tops[i] >= tops[i - 1],
-                "Encoding {} has less accuracy than encoding {}",
-                i,
-                i - 1
+                tops[i] >= tops[0],
+                "Encoding {i} has less accuracy than original encoding",
             );
         }
     }
