@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
@@ -304,10 +305,10 @@ fn optimized_postings_and_vocab(
 ) -> (
     Vec<super::posting_list::PostingList>,
     HashMap<String, u32>,
-    HashMap<u32, u32>,
+    AHashMap<u32, u32>,
 ) {
     // Keep only tokens that have non-empty postings
-    let (postings, orig_to_new_token): (Vec<_>, HashMap<_, _>) = postings
+    let (postings, orig_to_new_token): (Vec<_>, AHashMap<_, _>) = postings
         .into_iter()
         .enumerate()
         .filter_map(|(orig_token, posting)| (!posting.is_empty()).then_some((orig_token, posting)))
@@ -350,21 +351,21 @@ fn create_compressed_postings(
 fn create_compressed_postings_with_positions(
     postings: Vec<super::posting_list::PostingList>,
     point_to_doc: Vec<Option<Document>>,
-    orig_to_new_token: &HashMap<TokenId, TokenId>,
+    orig_to_new_token: &AHashMap<TokenId, TokenId>,
 ) -> Vec<PostingList<Positions>> {
     // precalculate positions for each token in each document
-    let mut point_to_tokens_positions: Vec<HashMap<TokenId, Positions>> = point_to_doc
+    let mut point_to_tokens_positions: Vec<AHashMap<TokenId, Positions>> = point_to_doc
         .into_iter()
         .map(|doc_opt| {
             let Some(doc) = doc_opt else {
-                return HashMap::new();
+                return AHashMap::new();
             };
 
             // get positions for each token in the document
             let doc_len = doc.len();
             (0u32..).zip(doc).fold(
-                HashMap::with_capacity(doc_len),
-                |mut map: HashMap<u32, Positions>, (position, token)| {
+                AHashMap::with_capacity(doc_len),
+                |mut map: AHashMap<u32, Positions>, (position, token)| {
                     // use translation of original token to new token from postings optimization
                     let new_token = orig_to_new_token[&token];
                     map.entry(new_token).or_default().push(position);
