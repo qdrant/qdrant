@@ -176,7 +176,9 @@ impl FullPayloadIndexType {
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum IndexMutability {
+    /// Supports insertions, updates, and deletions
     Mutable,
+    /// Only supports deletions
     Immutable,
 }
 

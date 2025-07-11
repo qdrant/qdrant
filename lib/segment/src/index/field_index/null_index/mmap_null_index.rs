@@ -215,7 +215,7 @@ impl MmapNullIndex {
     }
 
     pub fn get_mutability_type(&self) -> IndexMutability {
-        // Mmap index can be both mutable and immutable, so we pick mutable
+        // Mmap null index can be both mutable and immutable, so we pick mutable
         IndexMutability::Mutable
     }
 

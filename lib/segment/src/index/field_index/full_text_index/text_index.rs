@@ -411,8 +411,7 @@ impl FullTextIndex {
         match self {
             FullTextIndex::Mutable(_) => IndexMutability::Mutable,
             FullTextIndex::Immutable(_) => IndexMutability::Immutable,
-            // Mmap index can be both mutable and immutable, so we pick mutable
-            FullTextIndex::Mmap(_) => IndexMutability::Mutable,
+            FullTextIndex::Mmap(_) => IndexMutability::Immutable,
         }
     }
 
