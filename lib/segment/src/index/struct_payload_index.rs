@@ -43,7 +43,7 @@ use crate::types::{
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 #[derive(Debug)]
-#[expect(clippy::enum_variant_names)]
+#[allow(clippy::enum_variant_names)]
 enum StorageType {
     #[cfg(feature = "rocksdb")]
     RocksDbAppendable(std::sync::Arc<parking_lot::RwLock<rocksdb::DB>>),
@@ -54,6 +54,7 @@ enum StorageType {
 }
 
 impl StorageType {
+    #[cfg(feature = "rocksdb")]
     pub fn is_appendable(&self) -> bool {
         match self {
             #[cfg(feature = "rocksdb")]
