@@ -119,7 +119,7 @@ where
 
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        let mmap_index = MmapMapIndex::load(path, is_on_disk)?;
+        let mmap_index = MmapMapIndex::open(path, is_on_disk)?;
         if is_on_disk {
             // Use on mmap directly
             Ok(MapIndex::Mmap(Box::new(mmap_index)))
@@ -162,8 +162,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.load(),
             MapIndex::Immutable(index) => index.load(),
-            // Mmap based index is always loaded
-            MapIndex::Mmap(_) => Ok(true),
+            MapIndex::Mmap(index) => index.load(),
         }
     }
 

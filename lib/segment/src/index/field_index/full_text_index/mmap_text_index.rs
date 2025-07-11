@@ -42,6 +42,10 @@ impl MmapFullTextIndex {
         })
     }
 
+    pub fn load(&self) -> bool {
+        self.inverted_index.load()
+    }
+
     pub fn files(&self) -> Vec<PathBuf> {
         self.inverted_index.files()
     }
@@ -69,7 +73,7 @@ impl MmapFullTextIndex {
     }
 
     pub fn flusher(&self) -> Flusher {
-        self.inverted_index.deleted_points.flusher()
+        self.inverted_index.flusher()
     }
 
     pub fn is_on_disk(&self) -> bool {

@@ -113,7 +113,12 @@ impl<T: Encodable + Numericable + Default + MmapValue> InMemoryNumericIndex<T> {
     ///
     /// Expensive because this reads the full mmap index.
     pub(super) fn from_mmap(mmap_index: &MmapNumericIndex<T>) -> Self {
-        (0..mmap_index.point_to_values.len() as PointOffsetType)
+        let point_count = mmap_index
+            .storage
+            .as_ref()
+            .map_or(0, |storage| storage.point_to_values.len());
+
+        (0..point_count as PointOffsetType)
             .filter_map(|idx| mmap_index.get_values(idx).map(|values| (idx, values)))
             .flat_map(|(idx, values)| values.into_iter().map(move |value| (idx, value)))
             .collect::<InMemoryNumericIndex<T>>()
