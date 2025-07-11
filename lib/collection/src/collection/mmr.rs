@@ -229,10 +229,10 @@ fn similarity_matrix(
         let upper_offsets: Vec<u32> = ((i + 1)..num_vectors).map(|j| j as u32).collect();
 
         if !upper_offsets.is_empty() {
-            scores.resize(upper_offsets.len(), 0.0);
-            raw_scorer.score_points(&upper_offsets, &mut scores);
+            let scores = &mut scores[..upper_offsets.len()];
+            raw_scorer.score_points(&upper_offsets, scores);
 
-            for (&vector_idx, similarity) in upper_offsets.iter().zip(&scores) {
+            for (&vector_idx, similarity) in upper_offsets.iter().zip(scores) {
                 let j = vector_idx as usize;
                 similarity_matrix.set(i, j, *similarity);
             }
@@ -259,6 +259,7 @@ pub fn maximal_marginal_relevance(
     candidates: Vec<ScoredPoint>,
     query_similarities: Vec<ScoreType>,
     similarity_matrix: &SimilarityMatrix,
+    score_threshold: Option<ScoreType>,
     lambda: f32,
     limit: usize,
 ) -> Vec<ScoredPoint> {
