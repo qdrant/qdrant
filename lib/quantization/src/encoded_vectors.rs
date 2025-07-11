@@ -44,6 +44,7 @@ pub trait EncodedVectors: Sized {
 
     fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32;
 
+    /// Return size in bytes of a quantized vector
     fn quantized_vector_size(&self) -> usize;
 
     /// Construct a query from stored vector, so it can be used for scoring.
