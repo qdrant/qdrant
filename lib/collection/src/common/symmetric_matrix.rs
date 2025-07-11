@@ -137,14 +137,13 @@ mod test {
         }
 
         // Compare all values
+        #[allow(clippy::needless_range_loop)]
         for row in 0..size {
             for col in 0..size {
                 assert_eq!(
                     *symmetric_matrix.get(row, col),
                     naive_matrix[row][col],
-                    "Mismatch at position ({}, {})",
-                    row,
-                    col
+                    "Mismatch at position ({row}, {col})",
                 );
             }
         }
