@@ -11,7 +11,7 @@ use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
     PrimaryCondition,
 };
-use crate::index::payload_config::IndexMutability;
+use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
@@ -215,7 +215,11 @@ impl MmapNullIndex {
     }
 
     pub fn get_mutability_type(&self) -> IndexMutability {
-        IndexMutability::Mmap {
+        IndexMutability::Both
+    }
+
+    pub fn get_storage_type(&self) -> StorageType {
+        StorageType::Mmap {
             is_on_disk: self.is_on_disk(),
         }
     }

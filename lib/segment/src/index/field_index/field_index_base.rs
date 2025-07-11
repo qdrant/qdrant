@@ -26,7 +26,9 @@ use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::null_index::mmap_null_index::{MmapNullIndex, MmapNullIndexBuilder};
 use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
-use crate::index::payload_config::FullPayloadIndexType;
+use crate::index::payload_config::{
+    FullPayloadIndexType, IndexMutability, PayloadIndexType, StorageType,
+};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchPhrase,
@@ -478,40 +480,56 @@ impl FieldIndex {
     }
 
     pub fn get_full_index_type(&self) -> FullPayloadIndexType {
+        let index_type = match self {
+            FieldIndex::IntIndex(_) => PayloadIndexType::IntIndex,
+            FieldIndex::DatetimeIndex(_) => PayloadIndexType::DatetimeIndex,
+            FieldIndex::IntMapIndex(_) => PayloadIndexType::IntMapIndex,
+            FieldIndex::KeywordIndex(_) => PayloadIndexType::KeywordIndex,
+            FieldIndex::FloatIndex(_) => PayloadIndexType::FloatIndex,
+            FieldIndex::GeoIndex(_) => PayloadIndexType::GeoIndex,
+            FieldIndex::FullTextIndex(_) => PayloadIndexType::FullTextIndex,
+            FieldIndex::BoolIndex(_) => PayloadIndexType::BoolIndex,
+            FieldIndex::UuidIndex(_) => PayloadIndexType::UuidIndex,
+            FieldIndex::UuidMapIndex(_) => PayloadIndexType::UuidMapIndex,
+            FieldIndex::NullIndex(_) => PayloadIndexType::NullIndex,
+        };
+
+        FullPayloadIndexType {
+            index_type,
+            mutability: self.get_mutability_type(),
+            storage_type: self.get_storage_type(),
+        }
+    }
+
+    fn get_mutability_type(&self) -> IndexMutability {
         match self {
-            FieldIndex::IntIndex(index) => {
-                FullPayloadIndexType::IntIndex(index.get_mutability_type())
-            }
-            FieldIndex::DatetimeIndex(index) => {
-                FullPayloadIndexType::DatetimeIndex(index.get_mutability_type())
-            }
-            FieldIndex::IntMapIndex(index) => {
-                FullPayloadIndexType::IntMapIndex(index.get_mutability_type())
-            }
-            FieldIndex::KeywordIndex(index) => {
-                FullPayloadIndexType::KeywordIndex(index.get_mutability_type())
-            }
-            FieldIndex::FloatIndex(index) => {
-                FullPayloadIndexType::FloatIndex(index.get_mutability_type())
-            }
-            FieldIndex::GeoIndex(index) => {
-                FullPayloadIndexType::GeoIndex(index.get_mutability_type())
-            }
-            FieldIndex::FullTextIndex(index) => {
-                FullPayloadIndexType::FullTextIndex(index.get_mutability_type())
-            }
-            FieldIndex::BoolIndex(index) => {
-                FullPayloadIndexType::BoolIndex(index.get_mutability_type())
-            }
-            FieldIndex::UuidIndex(index) => {
-                FullPayloadIndexType::UuidIndex(index.get_mutability_type())
-            }
-            FieldIndex::UuidMapIndex(index) => {
-                FullPayloadIndexType::UuidMapIndex(index.get_mutability_type())
-            }
-            FieldIndex::NullIndex(index) => {
-                FullPayloadIndexType::NullIndex(index.get_mutability_type())
-            }
+            FieldIndex::IntIndex(index) => index.get_mutability_type(),
+            FieldIndex::DatetimeIndex(index) => index.get_mutability_type(),
+            FieldIndex::IntMapIndex(index) => index.get_mutability_type(),
+            FieldIndex::KeywordIndex(index) => index.get_mutability_type(),
+            FieldIndex::FloatIndex(index) => index.get_mutability_type(),
+            FieldIndex::GeoIndex(index) => index.get_mutability_type(),
+            FieldIndex::FullTextIndex(index) => index.get_mutability_type(),
+            FieldIndex::BoolIndex(index) => index.get_mutability_type(),
+            FieldIndex::UuidIndex(index) => index.get_mutability_type(),
+            FieldIndex::UuidMapIndex(index) => index.get_mutability_type(),
+            FieldIndex::NullIndex(index) => index.get_mutability_type(),
+        }
+    }
+
+    fn get_storage_type(&self) -> StorageType {
+        match self {
+            FieldIndex::IntIndex(index) => index.get_storage_type(),
+            FieldIndex::DatetimeIndex(index) => index.get_storage_type(),
+            FieldIndex::IntMapIndex(index) => index.get_storage_type(),
+            FieldIndex::KeywordIndex(index) => index.get_storage_type(),
+            FieldIndex::FloatIndex(index) => index.get_storage_type(),
+            FieldIndex::GeoIndex(index) => index.get_storage_type(),
+            FieldIndex::FullTextIndex(index) => index.get_storage_type(),
+            FieldIndex::BoolIndex(index) => index.get_storage_type(),
+            FieldIndex::UuidIndex(index) => index.get_storage_type(),
+            FieldIndex::UuidMapIndex(index) => index.get_storage_type(),
+            FieldIndex::NullIndex(index) => index.get_storage_type(),
         }
     }
 }

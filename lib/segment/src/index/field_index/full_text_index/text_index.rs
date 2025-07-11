@@ -30,7 +30,7 @@ use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
     ValueIndexer,
 };
-use crate::index::payload_config::IndexMutability;
+use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, MatchPhrase, MatchText, PayloadKeyType};
 
@@ -409,9 +409,17 @@ impl FullTextIndex {
 
     pub fn get_mutability_type(&self) -> IndexMutability {
         match self {
-            FullTextIndex::Mutable(index) => IndexMutability::Mutable(index.storage_type()),
-            FullTextIndex::Immutable(index) => IndexMutability::Immutable(index.storage_type()),
-            FullTextIndex::Mmap(index) => IndexMutability::Mmap {
+            FullTextIndex::Mutable(_) => IndexMutability::Mutable,
+            FullTextIndex::Immutable(_) => IndexMutability::Immutable,
+            FullTextIndex::Mmap(_) => IndexMutability::Both,
+        }
+    }
+
+    pub fn get_storage_type(&self) -> StorageType {
+        match self {
+            FullTextIndex::Mutable(index) => index.storage_type(),
+            FullTextIndex::Immutable(index) => index.storage_type(),
+            FullTextIndex::Mmap(index) => StorageType::Mmap {
                 is_on_disk: index.is_on_disk(),
             },
         }

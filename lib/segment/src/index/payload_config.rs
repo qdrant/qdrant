@@ -145,45 +145,39 @@ impl PayloadFieldSchemaWithIndexType {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum FullPayloadIndexType {
-    IntIndex(IndexMutability),
-    DatetimeIndex(IndexMutability),
-    IntMapIndex(IndexMutability),
-    KeywordIndex(IndexMutability),
-    FloatIndex(IndexMutability),
-    GeoIndex(IndexMutability),
-    FullTextIndex(IndexMutability),
-    BoolIndex(IndexMutability),
-    UuidIndex(IndexMutability),
-    UuidMapIndex(IndexMutability),
-    NullIndex(IndexMutability),
+pub enum PayloadIndexType {
+    IntIndex,
+    DatetimeIndex,
+    IntMapIndex,
+    KeywordIndex,
+    FloatIndex,
+    GeoIndex,
+    FullTextIndex,
+    BoolIndex,
+    UuidIndex,
+    UuidMapIndex,
+    NullIndex,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+pub struct FullPayloadIndexType {
+    pub index_type: PayloadIndexType,
+    pub mutability: IndexMutability,
+    pub storage_type: StorageType,
 }
 
 impl FullPayloadIndexType {
     pub fn mutability(&self) -> &IndexMutability {
-        match self {
-            FullPayloadIndexType::IntIndex(index_mutability)
-            | FullPayloadIndexType::DatetimeIndex(index_mutability)
-            | FullPayloadIndexType::IntMapIndex(index_mutability)
-            | FullPayloadIndexType::KeywordIndex(index_mutability)
-            | FullPayloadIndexType::FloatIndex(index_mutability)
-            | FullPayloadIndexType::GeoIndex(index_mutability)
-            | FullPayloadIndexType::FullTextIndex(index_mutability)
-            | FullPayloadIndexType::BoolIndex(index_mutability)
-            | FullPayloadIndexType::UuidIndex(index_mutability)
-            | FullPayloadIndexType::UuidMapIndex(index_mutability)
-            | FullPayloadIndexType::NullIndex(index_mutability) => index_mutability,
-        }
+        &self.mutability
     }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum IndexMutability {
-    Mutable(StorageType),
-    Immutable(StorageType),
-    Mmap { is_on_disk: bool },
+    Mutable,
+    Immutable,
+    Both,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]

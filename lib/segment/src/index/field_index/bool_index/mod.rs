@@ -9,7 +9,7 @@ use super::map_index::IdIter;
 use super::{PayloadFieldIndex, ValueIndexer};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
-use crate::index::payload_config::IndexMutability;
+use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 
 pub mod mmap_bool_index;
@@ -127,11 +127,17 @@ impl BoolIndex {
     pub fn get_mutability_type(&self) -> IndexMutability {
         match self {
             #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(_) => {
-                IndexMutability::Mutable(crate::index::payload_config::StorageType::RocksDb)
-            }
-            BoolIndex::Mmap(mmap_bool_index) => IndexMutability::Mmap {
-                is_on_disk: mmap_bool_index.is_on_disk(),
+            BoolIndex::Simple(_) => IndexMutability::Mutable,
+            BoolIndex::Mmap(_) => IndexMutability::Both,
+        }
+    }
+
+    pub fn get_storage_type(&self) -> StorageType {
+        match self {
+            #[cfg(feature = "rocksdb")]
+            BoolIndex::Simple(_) => crate::index::payload_config::StorageType::RocksDb,
+            BoolIndex::Mmap(index) => StorageType::Mmap {
+                is_on_disk: index.is_on_disk(),
             },
         }
     }

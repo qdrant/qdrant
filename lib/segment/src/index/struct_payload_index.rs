@@ -25,7 +25,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PrimaryCondition,
 };
-use crate::index::payload_config::{self, IndexMutability, PayloadConfig};
+use crate::index::payload_config::{self, PayloadConfig};
 use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
@@ -56,10 +56,8 @@ impl StorageType {
     #[cfg(feature = "rocksdb")]
     pub fn is_appendable(&self) -> bool {
         match self {
-            #[cfg(feature = "rocksdb")]
             StorageType::RocksDbAppendable(_) => true,
             StorageType::GridstoreAppendable => true,
-            #[cfg(feature = "rocksdb")]
             StorageType::RocksDbNonAppendable(_) => false,
             StorageType::GridstoreNonAppendable => false,
         }
@@ -600,46 +598,38 @@ impl StructPayloadIndex {
         &self,
         index_type: &FullPayloadIndexType,
     ) -> OperationResult<IndexSelector> {
-        let selector = match index_type.mutability() {
-            IndexMutability::Mutable(storage_type) | IndexMutability::Immutable(storage_type) => {
-                match storage_type {
-                    payload_config::StorageType::Gridstore => {
-                        IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
-                    }
-                    payload_config::StorageType::RocksDb => {
-                        #[cfg(feature = "rocksdb")]
-                        {
-                            let (StorageType::RocksDbAppendable(db)
-                            | StorageType::RocksDbNonAppendable(db)) = &self.storage_type
-                            else {
-                                return Err(OperationError::service_error(
-                                    "Loading payload index failed: Configured storage type and payload schema mismatch!",
-                                ));
-                            };
-
-                            return Ok(IndexSelector::RocksDb(IndexSelectorRocksDb {
-                                db,
-                                is_appendable: self.storage_type.is_appendable(),
-                            }));
-                        }
-
-                        #[cfg(not(feature = "rocksdb"))]
-                        return Err(OperationError::service_error(
-                            "Loading payload index failed: Index is rocksDB but RocksDB feature is disabled.",
-                        ));
-                    }
-                    payload_config::StorageType::Mmap { is_on_disk } => {
-                        IndexSelector::Mmap(IndexSelectorMmap {
-                            dir: &self.path,
-                            is_on_disk: *is_on_disk,
-                        })
-                    }
-                }
+        let selector = match index_type.storage_type {
+            payload_config::StorageType::Gridstore => {
+                IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
             }
-            IndexMutability::Mmap { is_on_disk } => IndexSelector::Mmap(IndexSelectorMmap {
-                dir: &self.path,
-                is_on_disk: *is_on_disk,
-            }),
+            payload_config::StorageType::RocksDb => {
+                #[cfg(feature = "rocksdb")]
+                {
+                    let (StorageType::RocksDbAppendable(db)
+                    | StorageType::RocksDbNonAppendable(db)) = &self.storage_type
+                    else {
+                        return Err(OperationError::service_error(
+                            "Loading payload index failed: Configured storage type and payload schema mismatch!",
+                        ));
+                    };
+
+                    return Ok(IndexSelector::RocksDb(IndexSelectorRocksDb {
+                        db,
+                        is_appendable: self.storage_type.is_appendable(),
+                    }));
+                }
+
+                #[cfg(not(feature = "rocksdb"))]
+                return Err(OperationError::service_error(
+                    "Loading payload index failed: Index is rocksDB but RocksDB feature is disabled.",
+                ));
+            }
+            payload_config::StorageType::Mmap { is_on_disk } => {
+                IndexSelector::Mmap(IndexSelectorMmap {
+                    dir: &self.path,
+                    is_on_disk,
+                })
+            }
         };
 
         Ok(selector)
@@ -1034,6 +1024,7 @@ mod tests {
     use super::*;
     use crate::data_types::vectors::only_default_vector;
     use crate::entry::SegmentEntry;
+    use crate::index::payload_config::{IndexMutability, PayloadIndexType};
     use crate::segment_constructor::load_segment;
     use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
     use crate::types::{Distance, PayloadSchemaType};
@@ -1078,14 +1069,10 @@ mod tests {
 
         let check_index_types = |index_types: &[FullPayloadIndexType]| -> bool {
             index_types.len() == 2
-                && matches!(
-                    index_types[0],
-                    FullPayloadIndexType::KeywordIndex(IndexMutability::Mutable(..))
-                )
-                && matches!(
-                    index_types[1],
-                    FullPayloadIndexType::NullIndex(IndexMutability::Mmap { is_on_disk: _ })
-                )
+                && index_types[0].index_type == PayloadIndexType::KeywordIndex
+                && index_types[0].mutability == IndexMutability::Mutable
+                && index_types[1].index_type == PayloadIndexType::NullIndex
+                && index_types[1].mutability == IndexMutability::Both
         };
 
         let payload_config_path = full_segment_path.join("payload_index/config.json");

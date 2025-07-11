@@ -23,7 +23,7 @@ use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::null_index::mmap_null_index::MmapNullIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
-use crate::index::payload_config::FullPayloadIndexType;
+use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
 use crate::json_path::JsonPath;
 use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 
@@ -68,8 +68,8 @@ impl IndexSelector<'_> {
         total_point_count: usize,
         create_if_missing: bool,
     ) -> OperationResult<Option<FieldIndex>> {
-        let index = match (index_type, payload_schema.expand().as_ref()) {
-            (FullPayloadIndexType::IntIndex(_), PayloadSchemaParams::Integer(params)) => {
+        let index = match (&index_type.index_type, payload_schema.expand().as_ref()) {
+            (PayloadIndexType::IntIndex, PayloadSchemaParams::Integer(params)) => {
                 // IntIndex only gets created if `range` is true. This will only throw an error if storage is corrupt.
                 //
                 // Note that `params.range == None` means the index was created without directly specifying these parameters.
@@ -82,7 +82,7 @@ impl IndexSelector<'_> {
 
                 FieldIndex::IntIndex(self.numeric_new(field, create_if_missing)?)
             }
-            (FullPayloadIndexType::IntMapIndex(_), PayloadSchemaParams::Integer(params)) => {
+            (PayloadIndexType::IntMapIndex, PayloadSchemaParams::Integer(params)) => {
                 // IntMapIndex only gets created if `lookup` is true. This will only throw an error if storage is corrupt.
                 //
                 // Note that `params.lookup == None` means the index was created without directly specifying these parameters.
@@ -95,23 +95,23 @@ impl IndexSelector<'_> {
 
                 FieldIndex::IntMapIndex(self.map_new(field, create_if_missing)?)
             }
-            (FullPayloadIndexType::DatetimeIndex(_), PayloadSchemaParams::Datetime(_)) => {
+            (PayloadIndexType::DatetimeIndex, PayloadSchemaParams::Datetime(_)) => {
                 FieldIndex::DatetimeIndex(self.numeric_new(field, create_if_missing)?)
             }
 
-            (FullPayloadIndexType::KeywordIndex(_), PayloadSchemaParams::Keyword(_)) => {
+            (PayloadIndexType::KeywordIndex, PayloadSchemaParams::Keyword(_)) => {
                 FieldIndex::KeywordIndex(self.map_new(field, create_if_missing)?)
             }
 
-            (FullPayloadIndexType::FloatIndex(_), PayloadSchemaParams::Float(_)) => {
+            (PayloadIndexType::FloatIndex, PayloadSchemaParams::Float(_)) => {
                 FieldIndex::FloatIndex(self.numeric_new(field, create_if_missing)?)
             }
 
-            (FullPayloadIndexType::GeoIndex(_), PayloadSchemaParams::Geo(_)) => {
+            (PayloadIndexType::GeoIndex, PayloadSchemaParams::Geo(_)) => {
                 FieldIndex::GeoIndex(self.geo_new(field, create_if_missing)?)
             }
 
-            (FullPayloadIndexType::FullTextIndex(_), PayloadSchemaParams::Text(params)) => {
+            (PayloadIndexType::FullTextIndex, PayloadSchemaParams::Text(params)) => {
                 FieldIndex::FullTextIndex(self.text_new(
                     field,
                     params.clone(),
@@ -119,19 +119,17 @@ impl IndexSelector<'_> {
                 )?)
             }
 
-            (FullPayloadIndexType::BoolIndex(_), PayloadSchemaParams::Bool(_)) => {
-                self.bool_new(field)?
-            }
+            (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => self.bool_new(field)?,
 
-            (FullPayloadIndexType::UuidIndex(_), PayloadSchemaParams::Uuid(_)) => {
+            (PayloadIndexType::UuidIndex, PayloadSchemaParams::Uuid(_)) => {
                 FieldIndex::UuidMapIndex(self.map_new(field, create_if_missing)?)
             }
 
-            (FullPayloadIndexType::UuidMapIndex(_), PayloadSchemaParams::Uuid(_)) => {
+            (PayloadIndexType::UuidMapIndex, PayloadSchemaParams::Uuid(_)) => {
                 FieldIndex::UuidMapIndex(self.map_new(field, create_if_missing)?)
             }
 
-            (FullPayloadIndexType::NullIndex(_), _) => {
+            (PayloadIndexType::NullIndex, _) => {
                 let Some(null_index) = MmapNullIndex::open_if_exists(path, total_point_count)?
                 else {
                     return Ok(None);
