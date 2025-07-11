@@ -21,6 +21,7 @@ pub struct PayloadConfig {
     /// This is required for migrating away from RocksDB in favor of the
     /// custom storage engine
     #[cfg(feature = "rocksdb")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub skip_rocksdb: Option<bool>,
 }
 
