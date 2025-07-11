@@ -119,7 +119,9 @@ impl IndexSelector<'_> {
                 )?)
             }
 
-            (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => self.bool_new(field)?,
+            (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => {
+                self.bool_new(field, create_if_missing)?
+            }
 
             (PayloadIndexType::UuidIndex, PayloadSchemaParams::Uuid(_)) => {
                 FieldIndex::UuidMapIndex(self.map_new(field, create_if_missing)?)
@@ -130,7 +132,8 @@ impl IndexSelector<'_> {
             }
 
             (PayloadIndexType::NullIndex, _) => {
-                let Some(null_index) = MmapNullIndex::open_if_exists(path, total_point_count)?
+                let Some(null_index) =
+                    MmapNullIndex::open_if_exists(path, total_point_count, create_if_missing)?
                 else {
                     return Ok(None);
                 };
@@ -198,7 +201,7 @@ impl IndexSelector<'_> {
                 )?)]
             }
             PayloadSchemaParams::Bool(_) => {
-                vec![self.bool_new(field)?]
+                vec![self.bool_new(field, create_if_missing)?]
             }
             PayloadSchemaParams::Datetime(_) => {
                 vec![FieldIndex::DatetimeIndex(
@@ -449,12 +452,15 @@ impl IndexSelector<'_> {
         dir: &Path,
         field: &JsonPath,
         total_point_count: usize,
+        create_if_missing: bool,
     ) -> OperationResult<Option<FieldIndex>> {
         // null index is always on disk and is appendable
-        Ok(
-            MmapNullIndex::open_if_exists(&null_dir(dir, field), total_point_count)?
-                .map(FieldIndex::NullIndex),
-        )
+        Ok(MmapNullIndex::open_if_exists(
+            &null_dir(dir, field),
+            total_point_count,
+            create_if_missing,
+        )?
+        .map(FieldIndex::NullIndex))
     }
 
     fn text_new(
@@ -536,7 +542,7 @@ impl IndexSelector<'_> {
         }
     }
 
-    fn bool_new(&self, field: &JsonPath) -> OperationResult<FieldIndex> {
+    fn bool_new(&self, field: &JsonPath, create_if_missing: bool) -> OperationResult<FieldIndex> {
         Ok(match self {
             #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb {
@@ -548,15 +554,20 @@ impl IndexSelector<'_> {
             ))),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 let dir = bool_dir(dir, field);
-                FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open_or_create(
+                FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open(
                     &dir,
                     *is_on_disk,
+                    create_if_missing,
                 )?))
             }
             // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 let dir = bool_dir(dir, field);
-                FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open_or_create(&dir, false)?))
+                FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open(
+                    &dir,
+                    false,
+                    create_if_missing,
+                )?))
             }
         })
     }

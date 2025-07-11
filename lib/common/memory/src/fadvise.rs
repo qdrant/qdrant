@@ -14,15 +14,23 @@ fn fadvise(f: &impl std::os::unix::io::AsRawFd, advise: PosixFadviseAdvice) -> i
 
 /// For given file path, clear disk cache with `posix_fadvise`
 ///
-/// If `posix_fadvise` is not supported, this function does nothing.
+/// Does nothing if:
+/// - the file does not exist
+/// - `posix_fadvise` is not supported on this platform
 pub fn clear_disk_cache(file_path: &Path) -> io::Result<()> {
     #[cfg(posix_fadvise_supported)]
-    fadvise(
-        &File::open(file_path)?,
-        PosixFadviseAdvice::POSIX_FADV_DONTNEED,
-    )?;
-    _ = file_path;
-    Ok(())
+    match File::open(file_path) {
+        Ok(file) => fadvise(&file, PosixFadviseAdvice::POSIX_FADV_DONTNEED),
+        // If file is not found, no need to clear cache
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+
+    #[cfg(not(posix_fadvise_supported))]
+    {
+        let _ = file_path;
+        Ok(())
+    }
 }
 
 /// A wrapper around [`File`] intended for one-time sequential read.

@@ -178,11 +178,14 @@ impl StructPayloadIndex {
             )?;
 
             // Special null index complements every index.
-            if let Some(null_index) =
-                IndexSelector::new_null_index(&self.path, field, total_point_count)?
-            {
-                // todo: This means that null index will not be built if it is not loaded here.
-                //       Maybe we should set `is_loaded` to false to trigger index building.
+            if let Some(null_index) = IndexSelector::new_null_index(
+                &self.path,
+                field,
+                total_point_count,
+                create_if_missing,
+            )? {
+                // TODO: This means that null index will not be built if it is not loaded here.
+                //       Maybe we should set `rebuild` to true to trigger index building.
                 indexes.push(null_index);
             }
 

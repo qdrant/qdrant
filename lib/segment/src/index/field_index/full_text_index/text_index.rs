@@ -535,7 +535,7 @@ impl PayloadFieldIndex for FullTextIndex {
         match self {
             Self::Mutable(index) => index.load(),
             Self::Immutable(index) => index.load(),
-            Self::Mmap(_index) => Ok(true), // mmap index is always loaded
+            Self::Mmap(index) => Ok(index.load()),
         }
     }
 
