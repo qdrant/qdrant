@@ -222,14 +222,14 @@ fn similarity_matrix(
     // Compute similarities only for upper triangle to optimize (i < j)
     // Since similarity is symmetric: sim(i,j) == sim(j,i), we can avoid duplicate computation
 
-    let mut scores = vec![0.0; num_vectors - 1];
+    let mut scores_buf = vec![0.0; num_vectors];
 
-    for (i, raw_scorer) in raw_scorers.iter().enumerate().take(num_vectors) {
+    for (i, raw_scorer) in raw_scorers.iter().enumerate() {
         // Only compute scores for the upper triangle
         let upper_offsets: Vec<u32> = ((i + 1)..num_vectors).map(|j| j as u32).collect();
 
         if !upper_offsets.is_empty() {
-            let scores = &mut scores[..upper_offsets.len()];
+            let scores = &mut scores_buf[..upper_offsets.len()];
             raw_scorer.score_points(&upper_offsets, scores);
 
             for (&vector_idx, similarity) in upper_offsets.iter().zip(scores) {
