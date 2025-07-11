@@ -5609,8 +5609,7 @@ pub struct Mmr {
     ///
     /// If not specified, the `limit` value is used.
     #[prost(uint32, optional, tag = "3")]
-    #[validate(range(max = 16_384))]
-    pub candidate_limit: ::core::option::Option<u32>,
+    pub candidates_limit: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

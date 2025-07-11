@@ -553,7 +553,7 @@ pub struct Mmr {
     ///
     /// If not specified, the `limit` value is used.
     #[validate(range(max = 16_384))] // artificial maximum, to avoid too expensive query.
-    pub candidate_limit: Option<usize>,
+    pub candidate_limits: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

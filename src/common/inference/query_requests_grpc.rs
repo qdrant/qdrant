@@ -300,11 +300,11 @@ fn convert_query_with_inferred(
             let mmr = mmr.ok_or_else(|| Status::invalid_argument("mmr is missing"))?;
             let grpc::Mmr {
                 diversity,
-                candidate_limit,
+                candidates_limit,
             } = mmr;
             let mmr = Mmr {
                 diversity,
-                candidate_limit: candidate_limit.map(|x| x as usize),
+                candidate_limit: candidates_limit.map(|x| x as usize),
             };
 
             Query::Vector(VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }))

@@ -664,7 +664,7 @@ message Mmr {
     // The maximum number of candidates to consider for re-ranking.
     //
     // If not specified, the `limit` value is used.
-    optional uint32 candidate_limit = 3;
+    optional uint32 candidates_limit = 3;
 }
 
 message Query {
