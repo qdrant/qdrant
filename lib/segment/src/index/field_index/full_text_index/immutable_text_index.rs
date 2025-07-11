@@ -19,6 +19,7 @@ use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_in
 use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 #[cfg(feature = "rocksdb")]
 use crate::index::field_index::full_text_index::mutable_text_index::{self, MutableFullTextIndex};
+use crate::index::payload_config::StorageType;
 
 pub struct ImmutableFullTextIndex {
     pub(super) inverted_index: ImmutableInvertedIndex,
@@ -218,6 +219,16 @@ impl ImmutableFullTextIndex {
             config,
             tokenizer,
             storage: Storage::RocksDb(db),
+        }
+    }
+
+    pub fn storage_type(&self) -> StorageType {
+        match &self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => StorageType::RocksDb,
+            Storage::Mmap(index) => StorageType::Mmap {
+                is_on_disk: index.is_on_disk(),
+            },
         }
     }
 }

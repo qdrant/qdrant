@@ -22,6 +22,7 @@ use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDelet
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::mmap_point_to_values::MmapValue;
+use crate::index::payload_config::StorageType;
 
 /// Default options for Gridstore storage
 const fn default_gridstore_options<T: Sized>() -> StorageOptions {
@@ -576,5 +577,13 @@ where
     #[inline]
     pub fn get_max_values_per_point(&self) -> usize {
         self.in_memory_index.get_max_values_per_point()
+    }
+
+    pub fn storage_type(&self) -> StorageType {
+        match &self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => StorageType::RocksDb,
+            Storage::Gridstore(_) => StorageType::Gridstore,
+        }
     }
 }

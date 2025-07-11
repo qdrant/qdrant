@@ -21,6 +21,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 #[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::index::payload_config::StorageType;
 
 /// Default options for Gridstore storage
 const fn default_gridstore_options(block_size: usize) -> StorageOptions {
@@ -431,5 +432,13 @@ where
 
     pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         Box::new(self.map.keys().map(|v| v.borrow()))
+    }
+
+    pub fn storage_type(&self) -> StorageType {
+        match &self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => StorageType::RocksDb,
+            Storage::Gridstore(_) => StorageType::Gridstore,
+        }
     }
 }
