@@ -5,7 +5,7 @@ from docker.types import Mount
 from typing import Literal
 
 from e2e_tests.client_utils import ClientUtils, VECTOR_SIZE
-from e2e_tests.conftest import QdrantContainerConfig
+from e2e_tests.models import QdrantContainerConfig
 
 
 class TestLowDisk:

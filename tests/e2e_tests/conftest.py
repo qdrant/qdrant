@@ -1,256 +1,15 @@
 import subprocess
-from typing import Optional, List, Dict, Any, Tuple, Union
-from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 import docker
-import docker.models.containers
-import docker.models.networks
-from docker.errors import ImageNotFound, NotFound
-from pathlib import Path
+from docker.errors import ImageNotFound
 
-from e2e_tests.utils import wait_for_qdrant_ready
-
-
-class QdrantContainer:
-    """Container info object for Qdrant containers."""
-    
-    def __init__(self, container: docker.models.containers.Container, host: str, name: str, 
-                 http_port: int, grpc_port: Optional[int], compose_project: Optional[str] = None) -> None:
-        self.container = container
-        self.host = host
-        self.name = name
-        self.http_port = http_port
-        self.grpc_port = grpc_port
-        self.compose_project = compose_project
-    
-    def __repr__(self) -> str:
-        return f"QdrantContainer(name='{self.name}', host='{self.host}', http_port={self.http_port}, grpc_port={self.grpc_port})"
-
-
-class QdrantCluster:
-    """Cluster info object for Qdrant clusters."""
-    
-    def __init__(self, leader: QdrantContainer, followers: List[QdrantContainer], 
-                 network: docker.models.networks.Network, network_name: str) -> None:
-        self.leader = leader
-        self.followers = followers
-        self.all_nodes = [leader] + followers
-        self.network = network
-        self.network_name = network_name
-    
-    def __repr__(self) -> str:
-        return f"QdrantCluster(leader={self.leader.name}, followers={len(self.followers)}, network='{self.network_name}')"
-
-
-@dataclass
-class QdrantContainerConfig:
-    """Configuration for creating Qdrant containers with proper typing and defaults."""
-    
-    # Container identification
-    name: Optional[str] = None
-    
-    # Resource limits
-    mem_limit: Optional[str] = None
-    cpu_limit: Optional[str] = None
-    
-    # Network configuration
-    network: Optional[str] = None
-    network_mode: Optional[str] = None
-    
-    # Storage configuration
-    volumes: Optional[Dict[str, Dict[str, str]]] = None
-    mounts: Optional[List[Any]] = None
-    
-    # Environment and command
-    environment: Optional[Dict[str, str]] = None
-    command: Optional[Union[str, List[str]]] = None
-    
-    # Container behavior
-    remove: bool = True
-    detach: bool = True
-    
-    # Qdrant-specific settings
-    exit_on_error: bool = True
-    
-    # Additional Docker parameters
-    additional_params: Optional[Dict[str, Any]] = field(default_factory=dict)
-    
-    def to_docker_config(self, qdrant_image: str) -> Dict[str, Any]:
-        """Convert this config to Docker container.run() parameters."""
-        config = {
-            "image": qdrant_image,
-            "detach": self.detach,
-            "remove": self.remove,
-        }
-        
-        # Add port bindings unless host network mode
-        if self.network_mode != 'host':
-            config["ports"] = {'6333/tcp': ('127.0.0.1', None), '6334/tcp': ('127.0.0.1', None)}
-        
-        # Add optional parameters
-        if self.name:
-            config["name"] = self.name
-        if self.mem_limit:
-            config["mem_limit"] = self.mem_limit
-        if self.cpu_limit:
-            config["cpu_limit"] = self.cpu_limit
-        if self.network:
-            config["network"] = self.network
-        if self.network_mode:
-            config["network_mode"] = self.network_mode
-        if self.volumes:
-            config["volumes"] = self.volumes
-        if self.mounts:
-            config["mounts"] = self.mounts
-        if self.environment:
-            config["environment"] = self.environment
-        if self.command:
-            config["command"] = self.command
-        
-        # Add any additional parameters
-        if self.additional_params:
-            config.update(self.additional_params)
-        
-        return config
-
-
-def _get_default_qdrant_config(qdrant_image: str) -> Dict[str, Any]:
-    """Get default configuration for Qdrant container.
-    
-    Args:
-        qdrant_image: The Qdrant Docker image to use
-        
-    Returns:
-        dict: Default container configuration with image, ports, detach, and remove settings
-    """
-    return {
-        "image": qdrant_image,
-        "ports": {'6333/tcp': ('127.0.0.1', None), '6334/tcp': ('127.0.0.1', None)},
-        "detach": True,
-        "remove": True,
-    }
-
-
-def _extract_container_ports(container: docker.models.containers.Container) -> Tuple[int, int]:
-    """Extract HTTP and gRPC ports from container.
-    For host network mode, returns standard Qdrant ports (6333, 6334).
-    For bridge/custom networks, extracts mapped ports from container attributes.
-    
-    Args:
-        container: Docker container object
-        
-    Returns:
-        tuple: (http_port, grpc_port) - extracted port numbers
-    """
-    container.reload()
-    
-    if container.attrs.get('HostConfig', {}).get('NetworkMode') == 'host':
-        # For host network mode, use standard Qdrant ports
-        return 6333, 6334
-    
-    # For bridge/custom networks, extract mapped ports
-    http_port = container.attrs['NetworkSettings']['Ports']['6333/tcp'][0]['HostPort']
-    grpc_port = container.attrs['NetworkSettings']['Ports']['6334/tcp'][0]['HostPort']
-    return int(http_port), int(grpc_port)
-
-
-def _create_container_info(container: docker.models.containers.Container, http_port: int, grpc_port: int) -> QdrantContainer:
-    """Create standardized container info object.
-    
-    Args:
-        container: Docker container object
-        http_port: HTTP API port number
-        grpc_port: gRPC API port number
-        
-    Returns:
-        QdrantContainer: Container info object with container, host, name, http_port, and grpc_port attributes
-    """
-    container.reload()
-    if container.attrs.get('HostConfig', {}).get('NetworkMode') == 'host':
-        host = "localhost"
-    else:
-        host = "127.0.0.1"
-    
-    return QdrantContainer(
-        container=container,
-        host=host,
-        name=container.name,
-        http_port=http_port,
-        grpc_port=grpc_port
-    )
-
-
-def _cleanup_container(container: docker.models.containers.Container) -> None:
-    """Clean up a Docker container.
-    Stops the container and removes it if AutoRemove is not enabled.
-    Handles NotFound exceptions gracefully.
-
-    Args:
-        container: Docker container object to clean up
-    """
-    try:
-        container.reload()
-        container.stop()
-        if not container.attrs.get('HostConfig', {}).get('AutoRemove', True):
-            container.remove(force=True)
-            print(f"Removed container: {container.name}")
-    except NotFound:
-        print("Container already removed. OK.")
-    except Exception as e:
-        print(f"Error stopping container {container.name if hasattr(container, 'name') else 'unknown'}: {e}")
-
-
-def _create_qdrant_container(docker_client: docker.DockerClient, qdrant_image: str, config: Optional[Union[Dict[str, Any], QdrantContainerConfig]] = None) -> QdrantContainer:
-    """Core function to create a Qdrant container with given configuration.
-    
-    Args:
-        docker_client: Docker client instance
-        qdrant_image: Qdrant Docker image to use
-        config: Optional configuration (dict or QdrantContainerConfig). Special parameters:
-            - exit_on_error (bool): If True (default), raises RuntimeError when Qdrant fails to start.
-                                   If False, returns container info even if Qdrant doesn't start.
-            All other parameters are passed to docker_client.containers.run()
-            
-    Returns:
-        QdrantContainer: Container info object (see _create_container_info)
-        
-    Raises:
-        RuntimeError: If Qdrant fails to start and exit_on_error=True
-    """
-    if config is None:
-        config = {}
-    
-    # Handle both dict and QdrantContainerConfig inputs
-    if isinstance(config, QdrantContainerConfig):
-        exit_on_error = config.exit_on_error
-        merged_config = config.to_docker_config(qdrant_image)
-    else:
-        config = dict(config)
-        
-        # Extract custom parameters
-        exit_on_error = config.pop("exit_on_error", True)
-        
-        default_config = _get_default_qdrant_config(qdrant_image)
-        merged_config = {**default_config, **config}
-        
-        # If using host network mode, remove port bindings
-        if merged_config.get('network_mode') == 'host':
-            merged_config.pop('ports', None)
-    
-    container = docker_client.containers.run(**merged_config)
-    
-    try:
-        http_port, grpc_port = _extract_container_ports(container)
-        
-        if not wait_for_qdrant_ready(port=http_port, timeout=30):
-            if exit_on_error:
-                raise RuntimeError("Qdrant failed to start within 30 seconds")
-        
-        return _create_container_info(container, http_port, grpc_port)
-    except Exception:
-        _cleanup_container(container)
-        raise
+from .models import QdrantContainerConfig
+from .utils import (
+    create_qdrant_container,
+    cleanup_container
+)
 
 
 @pytest.fixture(scope="session")
@@ -395,7 +154,7 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
         else:
             # Convert kwargs to QdrantContainerConfig for better type safety
             config = QdrantContainerConfig(**kwargs)
-        container_info = _create_qdrant_container(docker_client, qdrant_image, config)
+        container_info = create_qdrant_container(docker_client, qdrant_image, config)
         containers.append(container_info.container)
         return container_info
     
@@ -410,7 +169,7 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
         else:
             raise ValueError(f"Unsupported parameter type for qdrant_container_factory: {type(request.param)}")
         
-        container_info = _create_qdrant_container(docker_client, qdrant_image, config)
+        container_info = create_qdrant_container(docker_client, qdrant_image, config)
         containers.append(container_info.container)
         yield container_info
     else:
@@ -419,4 +178,4 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
     
     # Cleanup all containers
     for container in containers:
-        _cleanup_container(container)
+        cleanup_container(container)
