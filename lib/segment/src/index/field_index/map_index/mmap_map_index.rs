@@ -11,7 +11,7 @@ use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use memmap2::MmapMut;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::AdviceSetting;
@@ -372,9 +372,10 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         Box::new(storage.value_to_points.keys())
     }
 
-    pub fn iter_counts_per_value(&self) -> Box<dyn Iterator<Item = (&N, usize)> + '_> {
+    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
+    pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
         let Some(storage) = &self.storage else {
-            return Box::new(iter::empty());
+            return Either::Left(iter::empty());
         };
 
         let iter = storage.value_to_points.iter().map(|(k, v)| {
@@ -385,15 +386,16 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 .count();
             (k, count)
         });
-        Box::new(iter)
+        Either::Right(iter)
     }
 
+    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
     pub fn iter_values_map<'a>(
         &'a self,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = (&'a N, IdIter<'a>)> + 'a> {
+    ) -> impl Iterator<Item = (&'a N, IdIter<'a>)> + 'a {
         let Some(storage) = &self.storage else {
-            return Box::new(iter::empty());
+            return Either::Right(iter::empty());
         };
 
         let hw_counter = self.make_conditioned_counter(hw_counter);
@@ -417,7 +419,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 ) as IdIter,
             )
         });
-        Box::new(iter)
+        Either::Left(iter)
     }
 
     fn make_conditioned_counter<'a>(

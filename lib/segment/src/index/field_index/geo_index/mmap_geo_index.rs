@@ -5,6 +5,7 @@ use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
+use itertools::Either;
 use memmap2::MmapMut;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::AdviceSetting;
@@ -307,16 +308,17 @@ impl MmapGeoMapIndex {
             .unwrap_or(0)
     }
 
-    pub fn points_per_hash(&self) -> Box<dyn Iterator<Item = (GeoHash, usize)> + '_> {
+    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
+    pub fn points_per_hash(&self) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
         let Some(storage) = &self.storage else {
-            return Box::new(std::iter::empty());
+            return Either::Right(std::iter::empty());
         };
 
         let iter = storage
             .counts_per_hash
             .iter()
             .map(|counts| (counts.hash, counts.points as usize));
-        Box::new(iter)
+        Either::Left(iter)
     }
 
     pub fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
@@ -428,12 +430,13 @@ impl MmapGeoMapIndex {
 
     /// Returns an iterator over all point IDs which have the `geohash` prefix.
     /// Note. Point ID may be repeated multiple times in the iterator.
+    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
     pub fn stored_sub_regions<'a>(
         &'a self,
         geohash: GeoHash,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
         let Some(storage) = &self.storage else {
-            return Box::new(std::iter::empty());
+            return Either::Right(std::iter::empty());
         };
 
         let start_index = storage
@@ -454,7 +457,7 @@ impl MmapGeoMapIndex {
                 )
             })
             .flatten();
-        Box::new(iter)
+        Either::Left(iter)
     }
 
     pub fn points_count(&self) -> usize {

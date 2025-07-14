@@ -7,6 +7,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
+use itertools::Either;
 use memmap2::MmapMut;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::AdviceSetting;
@@ -306,14 +307,15 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             .map_or(0, |storage| storage.pairs.len())
     }
 
+    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
     pub(super) fn values_range<'a>(
         &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
         let Some(iter) = self.values_range_iterator(start_bound, end_bound) else {
-            return Box::new(std::iter::empty());
+            return Either::Right(std::iter::empty());
         };
 
         let hw_counter = self.make_conditioned_counter(hw_counter);
@@ -323,20 +325,21 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             .measure_hw_with_condition_cell(hw_counter, size_of::<Point<T>>(), |i| {
                 i.payload_index_io_read_counter()
             });
-        Box::new(iter)
+        Either::Left(iter)
     }
 
+    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
     pub(super) fn orderable_values_range(
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-    ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
+    ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
         let Some(iter) = self.values_range_iterator(start_bound, end_bound) else {
-            return Box::new(std::iter::empty());
+            return Either::Right(std::iter::empty());
         };
 
         let iter = iter.map(|Point { val, idx }| (val, idx));
-        Box::new(iter)
+        Either::Left(iter)
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) {
