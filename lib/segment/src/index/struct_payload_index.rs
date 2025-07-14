@@ -271,6 +271,10 @@ impl StructPayloadIndex {
                 &payload_schema.schema,
                 &HardwareCounterCell::disposable(), // Internal operation
             )?;
+
+            // Persist exact payload index types of newly built indices
+            is_dirty = true;
+            payload_schema.types = indexes.iter().map(|i| i.get_full_index_type()).collect();
         }
 
         Ok((indexes, is_dirty))
