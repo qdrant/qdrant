@@ -254,7 +254,7 @@ impl StructPayloadIndex {
             }
         }
 
-        // Load all indices, trigger rebuild if load is not succesful
+        // Load all indices, trigger rebuild if load is not successful
         if !rebuild {
             for ref mut index in indexes.iter_mut() {
                 if !index.load()? {
