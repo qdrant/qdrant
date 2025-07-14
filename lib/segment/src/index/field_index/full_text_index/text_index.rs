@@ -385,6 +385,15 @@ impl FullTextIndex {
         }
     }
 
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self {
+            FullTextIndex::Mutable(index) => index.is_rocksdb(),
+            FullTextIndex::Immutable(index) => index.is_rocksdb(),
+            FullTextIndex::Mmap(_) => false,
+        }
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
@@ -525,15 +534,15 @@ impl PayloadFieldIndex for FullTextIndex {
         match self {
             Self::Mutable(index) => index.load(),
             Self::Immutable(index) => index.load(),
-            Self::Mmap(_index) => Ok(true), // mmap index is always loaded
+            Self::Mmap(index) => Ok(index.load()),
         }
     }
 
     fn cleanup(self) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.clear(),
-            Self::Immutable(index) => index.clear(),
-            Self::Mmap(index) => index.clear(),
+            Self::Mutable(index) => index.wipe(),
+            Self::Immutable(index) => index.wipe(),
+            Self::Mmap(index) => index.wipe(),
         }
     }
 

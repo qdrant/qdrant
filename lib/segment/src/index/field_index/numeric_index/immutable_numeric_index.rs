@@ -289,11 +289,11 @@ where
     }
 
     #[inline]
-    pub(super) fn clear(self) -> OperationResult<()> {
+    pub(super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Mmap(index) => index.clear(),
+            Storage::Mmap(index) => index.wipe(),
         }
     }
 
@@ -468,6 +468,14 @@ where
             Storage::Mmap(index) => StorageType::Mmap {
                 is_on_disk: index.is_on_disk(),
             },
+        }
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Mmap(_) => false,
         }
     }
 }

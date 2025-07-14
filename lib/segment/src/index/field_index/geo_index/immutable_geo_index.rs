@@ -185,10 +185,15 @@ impl ImmutableGeoMapIndex {
             ));
         };
 
+        if !index.load()? {
+            return Ok(false);
+        }
+        let index_storage = index.storage.as_ref().unwrap();
+
         self.points_count = index.points_count();
         self.points_values_count = index.points_values_count();
         self.max_values_per_point = index.max_values_per_point();
-        self.counts_per_hash = index
+        self.counts_per_hash = index_storage
             .counts_per_hash
             .iter()
             .copied()
@@ -196,7 +201,7 @@ impl ImmutableGeoMapIndex {
             .collect();
 
         // Get points per geo hash and filter deleted points
-        self.points_map = index
+        self.points_map = index_storage
             .points_map
             .iter()
             .copied()
@@ -208,11 +213,11 @@ impl ImmutableGeoMapIndex {
                 } = item;
                 (
                     hash,
-                    index.points_map_ids[ids_start as usize..ids_end as usize]
+                    index_storage.points_map_ids[ids_start as usize..ids_end as usize]
                         .iter()
                         .copied()
                         // Filter deleted points
-                        .filter(|id| !index.deleted.get(*id as usize).unwrap_or_default())
+                        .filter(|id| !index_storage.deleted.get(*id as usize).unwrap_or_default())
                         .collect(),
                 )
             })
@@ -223,11 +228,11 @@ impl ImmutableGeoMapIndex {
         let mut deleted_points: Vec<(PointOffsetType, Vec<GeoPoint>)> =
             Vec::with_capacity(index.deleted_count);
         self.point_to_values = ImmutablePointToValues::new(
-            index
+            index_storage
                 .point_to_values
                 .iter()
                 .map(|(id, values)| {
-                    let is_deleted = index.deleted.get(id as usize).unwrap_or_default();
+                    let is_deleted = index_storage.deleted.get(id as usize).unwrap_or_default();
                     match (is_deleted, values) {
                         (false, Some(values)) => values.into_iter().collect(),
                         (false, None) => vec![],
@@ -309,11 +314,11 @@ impl ImmutableGeoMapIndex {
         }
     }
 
-    pub fn clear(self) -> OperationResult<()> {
+    pub fn wipe(self) -> OperationResult<()> {
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(ref db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Mmap(index) => index.clear(),
+            Storage::Mmap(index) => index.wipe(),
         }
     }
 
@@ -495,6 +500,14 @@ impl ImmutableGeoMapIndex {
             Storage::Mmap(index) => StorageType::Mmap {
                 is_on_disk: index.is_on_disk(),
             },
+        }
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Mmap(_) => false,
         }
     }
 }

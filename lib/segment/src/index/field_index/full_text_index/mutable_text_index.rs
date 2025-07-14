@@ -197,15 +197,21 @@ impl MutableFullTextIndex {
     }
 
     #[inline]
-    pub(super) fn clear(self) -> OperationResult<()> {
+    pub(super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Gridstore(Some(store)) => store.write().clear().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to clear mutable full text index: {err}",
-                ))
-            }),
+            Storage::Gridstore(mut store @ Some(_)) => {
+                let store = store.take().unwrap();
+                let store =
+                    Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
+
+                store.into_inner().wipe().map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to wipe mutable full text index: {err}",
+                    ))
+                })
+            }
             Storage::Gridstore(None) => Ok(()),
         }
     }
@@ -243,9 +249,18 @@ impl MutableFullTextIndex {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(Some(store)) => {
-                let store = store.clone();
+                let store = Arc::downgrade(store);
                 Box::new(move || {
-                    store.read().flush().map_err(|err| {
+                    store
+                        .upgrade()
+                        .ok_or_else(|| {
+                            OperationError::service_error(
+                                "Failed to flush mutable full text index, backing Gridstore storage is already dropped",
+                            )
+                        })?
+                        .read()
+                        .flush()
+                        .map_err(|err| {
                         OperationError::service_error(format!(
                             "Failed to flush mutable full text index gridstore: {err}"
                         ))
@@ -380,6 +395,14 @@ impl MutableFullTextIndex {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Gridstore(_) => StorageType::Gridstore,
+        }
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Gridstore(_) => false,
         }
     }
 }

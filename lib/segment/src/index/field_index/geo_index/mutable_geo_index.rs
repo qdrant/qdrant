@@ -263,6 +263,7 @@ impl MutableGeoMapIndex {
         Ok(true)
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), expect(dead_code))]
     #[inline]
     pub(super) fn clear(&self) -> OperationResult<()> {
         match &self.storage {
@@ -271,6 +272,26 @@ impl MutableGeoMapIndex {
             Storage::Gridstore(Some(store)) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!("Failed to clear mutable geo index: {err}",))
             }),
+            Storage::Gridstore(None) => Ok(()),
+        }
+    }
+
+    #[inline]
+    pub(super) fn wipe(self) -> OperationResult<()> {
+        match self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
+            Storage::Gridstore(mut store @ Some(_)) => {
+                let store = store.take().unwrap();
+                let store =
+                    Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
+
+                store.into_inner().wipe().map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to wipe mutable geo index: {err}",
+                    ))
+                })
+            }
             Storage::Gridstore(None) => Ok(()),
         }
     }
@@ -308,13 +329,22 @@ impl MutableGeoMapIndex {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(Some(store)) => {
-                let store = store.clone();
+                let store = Arc::downgrade(store);
                 Box::new(move || {
-                    store.read().flush().map_err(|err| {
-                        OperationError::service_error(format!(
-                            "Failed to flush mutable geo index gridstore: {err}"
-                        ))
-                    })
+                    store
+                        .upgrade()
+                        .ok_or_else(|| {
+                            OperationError::service_error(
+                                "Failed to flush mutable numeric index, backing Gridstore storage is already dropped",
+                            )
+                        })?
+                        .read()
+                        .flush()
+                        .map_err(|err| {
+                            OperationError::service_error(format!(
+                                "Failed to flush mutable geo index gridstore: {err}"
+                            ))
+                        })
                 })
             }
             Storage::Gridstore(None) => Box::new(|| Ok(())),
@@ -429,6 +459,14 @@ impl MutableGeoMapIndex {
             .point_to_values
             .get(idx as usize)
             .map(|v| v.iter())
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Gridstore(_) => false,
+        }
     }
 
     delegate! {
