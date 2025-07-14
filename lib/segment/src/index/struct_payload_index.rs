@@ -137,22 +137,19 @@ impl StructPayloadIndex {
         let mut field_indexes: IndexesMap = Default::default();
 
         let mut indices = std::mem::take(&mut self.config.indices);
-
-        // If there is any field without an explicit index type, we will assign it below and must
-        // save the configuration after
-        let had_index_without_type = indices.any_has_no_type();
+        let mut is_dirty = false;
 
         for (field, payload_schema) in indices.iter_mut() {
-            let field_index = self.load_from_db(field, payload_schema, create_if_missing)?;
+            let (field_index, dirty) =
+                self.load_from_db(field, payload_schema, create_if_missing)?;
             field_indexes.insert(field.clone(), field_index);
+            is_dirty |= dirty;
         }
 
         // Put updated payload schemas back into the config
         self.config.indices = indices;
 
-        // If any payload_schema didn't have an index type assigned, it has now
-        // and therefore we need to store it.
-        if had_index_without_type {
+        if is_dirty {
             self.save_config()?;
         }
 
@@ -167,8 +164,9 @@ impl StructPayloadIndex {
         // TODO: refactor this and remove the &mut reference.
         payload_schema: &mut PayloadFieldSchemaWithIndexType,
         create_if_missing: bool,
-    ) -> OperationResult<Vec<FieldIndex>> {
+    ) -> OperationResult<(Vec<FieldIndex>, bool)> {
         let total_point_count = self.id_tracker.borrow().total_point_count();
+        let mut is_dirty = false;
 
         let mut indexes = if payload_schema.types.is_empty() {
             let mut indexes = self.selector(&payload_schema.schema).new_index(
@@ -190,6 +188,7 @@ impl StructPayloadIndex {
             }
 
             // Persist exact payload index types
+            is_dirty = true;
             payload_schema.types = indexes.iter().map(|i| i.get_full_index_type()).collect();
 
             indexes
@@ -225,6 +224,7 @@ impl StructPayloadIndex {
             log::info!("Migrating away from RocksDB indices for field `{field}`");
 
             rebuild = true;
+            is_dirty = true;
 
             // Change storage type, set skip RocksDB flag and persist
             // Needed to not use RocksDB when rebuilding indices below
@@ -239,7 +239,6 @@ impl StructPayloadIndex {
                 StorageType::GridstoreNonAppendable => {}
             }
             self.config.skip_rocksdb.replace(true);
-            self.save_config()?;
 
             // Clean-up all existing indices
             for index in indexes.drain(..) {
@@ -274,7 +273,7 @@ impl StructPayloadIndex {
             )?;
         }
 
-        Ok(indexes)
+        Ok((indexes, is_dirty))
     }
 
     pub fn open(
