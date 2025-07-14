@@ -241,7 +241,7 @@ impl LocalShard {
     /// Recovers shard from disk.
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
-        id: ShardId,
+        _id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
         collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
@@ -316,38 +316,30 @@ impl LocalShard {
         for segment_path in segment_paths {
             let payload_index_schema = payload_index_schema.clone();
             // let semaphore_clone = semaphore.clone();
-            load_handlers.push(
-                thread::Builder::new()
-                    .name(format!("shard-load-{collection_id}-{id}"))
-                    .spawn(move || {
-                        // let _guard = semaphore_clone.lock();
-                        let mut res = load_segment(&segment_path, &AtomicBool::new(false))?;
-                        if let Some(segment) = &mut res {
-                            segment.check_consistency_and_repair()?;
-                            segment.update_all_field_indices(
-                                &payload_index_schema.read().schema.clone(),
-                            )?;
-                        } else {
-                            std::fs::remove_dir_all(&segment_path).map_err(|err| {
-                                CollectionError::service_error(format!(
-                                    "Can't remove leftover segment {}, due to {err}",
-                                    segment_path.to_str().unwrap(),
-                                ))
-                            })?;
-                        }
-                        Ok::<_, CollectionError>(res)
-                    })?,
-            );
+            load_handlers.push(tokio::task::spawn_blocking(move || {
+                // let _guard = semaphore_clone.lock();
+                let mut res = load_segment(&segment_path, &AtomicBool::new(false))?;
+                if let Some(segment) = &mut res {
+                    segment.check_consistency_and_repair()?;
+                    segment
+                        .update_all_field_indices(&payload_index_schema.read().schema.clone())?;
+                } else {
+                    std::fs::remove_dir_all(&segment_path).map_err(|err| {
+                        CollectionError::service_error(format!(
+                            "Can't remove leftover segment {}, due to {err}",
+                            segment_path.to_str().unwrap(),
+                        ))
+                    })?;
+                }
+                Ok::<_, CollectionError>(res)
+            }));
         }
 
         let mut segment_holder = SegmentHolder::default();
 
         for handler in load_handlers {
-            let segment = tokio::task::block_in_place(|| handler.join()).map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Can't join segment load thread: {:?}",
-                    err.type_id()
-                ))
+            let segment = handler.await.map_err(|err| {
+                CollectionError::service_error(format!("Can't join segment load thread: {err}"))
             })??;
 
             let Some(segment) = segment else {
