@@ -230,16 +230,9 @@ jobs:
         run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
 
       - uses: actions/checkout@v4
-        with:
-          lfs: true
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install and set up git-lfs
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git-lfs
-          git lfs install
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Install Poetry
@@ -250,8 +243,6 @@ jobs:
         run: |
           poetry -C tests check --lock
           poetry -C tests install --no-root
-      - name: Pull LFS files
-        run: git lfs pull
       - name: Build Qdrant Docker image
         uses: docker/build-push-action@v6
         with:
