@@ -218,7 +218,7 @@ indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.18.0", features = ["rayon"] }
 itertools = "0.14.0"
 log = "0.4.27"
-memmap2 = "0.9.5"
+memmap2 = "0.9.7"
 nix = { version = "0.29", features = ["fs"] }
 num-traits = "0.2.19"
 ordered-float = "5.0.0"
