@@ -5,6 +5,7 @@ use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
+use itertools::Either;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
@@ -154,14 +155,15 @@ impl MmapInvertedIndex {
         self.storage.is_some()
     }
 
-    pub(super) fn iter_vocab(&self) -> Box<dyn Iterator<Item = (&str, &TokenId)> + '_> {
+    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
+    pub(super) fn iter_vocab(&self) -> impl Iterator<Item = (&str, &TokenId)> + '_ {
         let Some(storage) = &self.storage else {
-            return Box::new(std::iter::empty());
+            return Either::Right(std::iter::empty());
         };
 
         // unwrap safety: we know that each token points to a token id.
         let iter = storage.vocab.iter().map(|(k, v)| (k, v.first().unwrap()));
-        Box::new(iter)
+        Either::Left(iter)
     }
 
     /// Returns whether the point id is valid and active.
@@ -447,10 +449,10 @@ impl InvertedIndex for MmapInvertedIndex {
             .posting_len(token_id, hw_counter)
     }
 
-    #[expect(refining_impl_trait_internal)]
-    fn vocab_with_postings_len_iter(&self) -> Box<dyn Iterator<Item = (&str, usize)> + '_> {
+    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
+    fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
         let Some(storage) = &self.storage else {
-            return Box::new(std::iter::empty());
+            return Either::Right(std::iter::empty());
         };
 
         let hw_counter = HardwareCounterCell::disposable(); // No propagation needed here because this function is only used for building HNSW index.
@@ -461,7 +463,7 @@ impl InvertedIndex for MmapInvertedIndex {
                 .posting_len(token_id, &hw_counter)
                 .map(|posting_len| (token, posting_len))
         });
-        Box::new(iter)
+        Either::Left(iter)
     }
 
     fn check_match(
