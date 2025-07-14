@@ -7,7 +7,6 @@ import uuid
 from typing import Optional, Dict, Any, List, Generator, Tuple
 
 from qdrant_client import QdrantClient, models
-from qdrant_client.http.exceptions import UnexpectedResponse
 
 VECTOR_SIZE = 4
 
