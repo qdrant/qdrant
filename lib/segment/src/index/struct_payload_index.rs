@@ -673,24 +673,23 @@ impl StructPayloadIndex {
             payload_config::StorageType::Gridstore => {
                 IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
             }
+            #[cfg(feature = "rocksdb")]
             payload_config::StorageType::RocksDb => {
-                #[cfg(feature = "rocksdb")]
-                {
-                    let (StorageType::RocksDbAppendable(db)
-                    | StorageType::RocksDbNonAppendable(db)) = storage_type
-                    else {
-                        return Err(OperationError::service_error(
-                            "Loading payload index failed: Configured storage type and payload schema mismatch!",
-                        ));
-                    };
+                let (StorageType::RocksDbAppendable(db) | StorageType::RocksDbNonAppendable(db)) =
+                    storage_type
+                else {
+                    return Err(OperationError::service_error(
+                        "Loading payload index failed: Configured storage type and payload schema mismatch!",
+                    ));
+                };
 
-                    return Ok(IndexSelector::RocksDb(IndexSelectorRocksDb {
-                        db,
-                        is_appendable: storage_type.is_appendable(),
-                    }));
-                }
-
-                #[cfg(not(feature = "rocksdb"))]
+                return Ok(IndexSelector::RocksDb(IndexSelectorRocksDb {
+                    db,
+                    is_appendable: storage_type.is_appendable(),
+                }));
+            }
+            #[cfg(not(feature = "rocksdb"))]
+            payload_config::StorageType::RocksDb => {
                 return Err(OperationError::service_error(
                     "Loading payload index failed: Index is rocksDB but RocksDB feature is disabled.",
                 ));

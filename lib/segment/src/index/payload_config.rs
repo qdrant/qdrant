@@ -168,8 +168,8 @@ pub struct FullPayloadIndexType {
 }
 
 impl FullPayloadIndexType {
-    pub fn mutability(&self) -> &IndexMutability {
-        &self.mutability
+    pub fn mutability(&self) -> IndexMutability {
+        self.mutability
     }
 }
 
