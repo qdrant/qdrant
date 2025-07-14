@@ -331,6 +331,26 @@ where
         }
     }
 
+    #[inline]
+    pub(super) fn wipe(self) -> OperationResult<()> {
+        match self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
+            Storage::Gridstore(mut store @ Some(_)) => {
+                let store = store.take().unwrap();
+                let store =
+                    Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
+
+                store.into_inner().clear().map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to wipe mutable map index: {err}",
+                    ))
+                })
+            }
+            Storage::Gridstore(None) => Ok(()),
+        }
+    }
+
     /// Clear cache
     ///
     /// Only clears cache of Gridstore storage if used. Does not clear in-memory representation of
@@ -364,13 +384,22 @@ where
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(Some(store)) => {
-                let store = store.clone();
+                let store = Arc::downgrade(store);
                 Box::new(move || {
-                    store.read().flush().map_err(|err| {
-                        OperationError::service_error(format!(
-                            "Failed to flush mutable map index gridstore: {err}"
-                        ))
-                    })
+                    store
+                        .upgrade()
+                        .ok_or_else(|| {
+                            OperationError::service_error(
+                                "Failed to flush mutable map index, backing Gridstore storage is already dropped",
+                            )
+                        })?
+                        .read()
+                        .flush()
+                        .map_err(|err| {
+                            OperationError::service_error(format!(
+                                "Failed to flush mutable map index gridstore: {err}"
+                            ))
+                        })
                 })
             }
             Storage::Gridstore(None) => Box::new(|| Ok(())),
@@ -439,6 +468,14 @@ where
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Gridstore(_) => StorageType::Gridstore,
+        }
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Gridstore(_) => false,
         }
     }
 }

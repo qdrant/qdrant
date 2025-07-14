@@ -119,7 +119,7 @@ where
 
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        let mmap_index = MmapMapIndex::load(path, is_on_disk)?;
+        let mmap_index = MmapMapIndex::open(path, is_on_disk)?;
         if is_on_disk {
             // Use on mmap directly
             Ok(MapIndex::Mmap(Box::new(mmap_index)))
@@ -162,8 +162,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.load(),
             MapIndex::Immutable(index) => index.load(),
-            // Mmap based index is always loaded
-            MapIndex::Mmap(_) => Ok(true),
+            MapIndex::Mmap(index) => index.load(),
         }
     }
 
@@ -331,11 +330,11 @@ where
         self.values_count(idx) == 0
     }
 
-    fn clear(self) -> OperationResult<()> {
+    fn wipe(self) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.clear(),
-            MapIndex::Immutable(index) => index.clear(),
-            MapIndex::Mmap(index) => index.clear(),
+            MapIndex::Mutable(index) => index.wipe(),
+            MapIndex::Immutable(index) => index.wipe(),
+            MapIndex::Mmap(index) => index.wipe(),
         }
     }
 
@@ -501,6 +500,15 @@ where
             MapIndex::Mutable(_) => false,
             MapIndex::Immutable(_) => false,
             MapIndex::Mmap(index) => index.is_on_disk(),
+        }
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self {
+            MapIndex::Mutable(index) => index.is_rocksdb(),
+            MapIndex::Immutable(index) => index.is_rocksdb(),
+            MapIndex::Mmap(_) => false,
         }
     }
 
@@ -716,7 +724,7 @@ impl PayloadFieldIndex for MapIndex<str> {
     }
 
     fn cleanup(self) -> OperationResult<()> {
-        self.clear()
+        self.wipe()
     }
 
     fn flusher(&self) -> Flusher {
@@ -870,7 +878,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
     }
 
     fn cleanup(self) -> OperationResult<()> {
-        self.clear()
+        self.wipe()
     }
 
     fn flusher(&self) -> Flusher {
@@ -1065,7 +1073,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 
     fn cleanup(self) -> OperationResult<()> {
-        self.clear()
+        self.wipe()
     }
 
     fn flusher(&self) -> Flusher {

@@ -191,13 +191,18 @@ where
             ));
         };
 
+        if !index.load()? {
+            return Ok(false);
+        }
+        let index_storage = index.storage.as_ref().unwrap();
+
         // Construct intermediate values to points map from backing storage
         let mapping = || {
-            index.value_to_points.iter().map(|(value, ids)| {
+            index_storage.value_to_points.iter().map(|(value, ids)| {
                 (
                     value,
                     ids.iter().copied().filter(|idx| {
-                        let is_deleted = index.deleted.get(*idx as usize).unwrap_or(false);
+                        let is_deleted = index_storage.deleted.get(*idx as usize).unwrap_or(false);
                         !is_deleted
                     }),
                 )
@@ -416,11 +421,11 @@ where
     }
 
     #[inline]
-    pub(super) fn clear(self) -> OperationResult<()> {
+    pub(super) fn wipe(self) -> OperationResult<()> {
         match self.storage {
             #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Mmap(index) => index.clear(),
+            Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
+            Storage::Mmap(index) => index.wipe(),
         }
     }
 
@@ -548,6 +553,14 @@ where
             Storage::Mmap(index) => StorageType::Mmap {
                 is_on_disk: index.is_on_disk(),
             },
+        }
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Mmap(_) => false,
         }
     }
 }

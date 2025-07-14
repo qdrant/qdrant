@@ -188,7 +188,7 @@ where
 
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        let mmap_index = MmapNumericIndex::load(path, is_on_disk)?;
+        let mmap_index = MmapNumericIndex::open(path, is_on_disk)?;
         if is_on_disk {
             // Use on mmap directly
             Ok(NumericIndexInner::Mmap(mmap_index))
@@ -210,8 +210,7 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.load(),
             NumericIndexInner::Immutable(index) => index.load(),
-            // Mmap based index is always loaded
-            NumericIndexInner::Mmap(_) => Ok(true),
+            NumericIndexInner::Mmap(index) => index.load(),
         }
     }
 
@@ -467,6 +466,15 @@ where
         }
     }
 
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self {
+            NumericIndexInner::Mutable(index) => index.is_rocksdb(),
+            NumericIndexInner::Immutable(index) => index.is_rocksdb(),
+            NumericIndexInner::Mmap(_) => false,
+        }
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
@@ -610,6 +618,13 @@ where
             pub fn is_on_disk(&self) -> bool;
             pub fn populate(&self) -> OperationResult<()>;
             pub fn clear_cache(&self) -> OperationResult<()>;
+        }
+    }
+
+    #[cfg(feature = "rocksdb")]
+    delegate! {
+        to self.inner {
+            pub fn is_rocksdb(&self) -> bool;
         }
     }
 }
@@ -842,9 +857,9 @@ where
 
     fn cleanup(self) -> OperationResult<()> {
         match self {
-            NumericIndexInner::Mutable(index) => index.clear(),
-            NumericIndexInner::Immutable(index) => index.clear(),
-            NumericIndexInner::Mmap(index) => index.clear(),
+            NumericIndexInner::Mutable(index) => index.wipe(),
+            NumericIndexInner::Immutable(index) => index.wipe(),
+            NumericIndexInner::Mmap(index) => index.wipe(),
         }
     }
 

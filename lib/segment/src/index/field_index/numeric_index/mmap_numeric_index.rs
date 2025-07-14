@@ -28,14 +28,18 @@ const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
 pub struct MmapNumericIndex<T: Encodable + Numericable + Default + MmapValue + 'static> {
     path: PathBuf,
-    deleted: MmapBitSliceBufferedUpdateWrapper,
-    // sorted pairs (id + value), sorted by value (by id if values are equal)
-    pairs: MmapSlice<Point<T>>,
+    pub(super) storage: Option<Storage<T>>,
     histogram: Histogram<T>,
     deleted_count: usize,
     max_values_per_point: usize,
-    pub(super) point_to_values: MmapPointToValues<T>,
     is_on_disk: bool,
+}
+
+pub(super) struct Storage<T: Encodable + Numericable + Default + MmapValue + 'static> {
+    deleted: MmapBitSliceBufferedUpdateWrapper,
+    // sorted pairs (id + value), sorted by value (by id if values are equal)
+    pairs: MmapSlice<Point<T>>,
+    pub(super) point_to_values: MmapPointToValues<T>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,13 +152,25 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             }
         }
 
-        Self::load(path, is_on_disk)
+        Self::open(path, is_on_disk)
     }
 
-    pub fn load(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
+    pub fn open(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         let pairs_path = path.join(PAIRS_PATH);
         let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
+
+        // If config doesn't exist, assume the index doesn't exist on disk
+        if !config_path.is_file() {
+            return Ok(Self {
+                path: path.to_path_buf(),
+                storage: None,
+                histogram: Histogram::default(),
+                deleted_count: 0,
+                max_values_per_point: 0,
+                is_on_disk,
+            });
+        }
 
         let histogram = Histogram::<T>::load(path)?;
         let config: MmapNumericIndexConfig = read_json(&config_path)?;
@@ -172,18 +188,25 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         let point_to_values = MmapPointToValues::open(path, do_populate)?;
 
         Ok(Self {
-            pairs: map,
-            deleted: MmapBitSliceBufferedUpdateWrapper::new(deleted),
             path: path.to_path_buf(),
+            storage: Some(Storage {
+                pairs: map,
+                deleted: MmapBitSliceBufferedUpdateWrapper::new(deleted),
+                point_to_values,
+            }),
             histogram,
             deleted_count,
             max_values_per_point: config.max_values_per_point,
-            point_to_values,
             is_on_disk,
         })
     }
 
-    pub fn clear(self) -> OperationResult<()> {
+    pub fn load(&self) -> OperationResult<bool> {
+        let is_loaded = self.storage.is_some();
+        Ok(is_loaded)
+    }
+
+    pub fn wipe(self) -> OperationResult<()> {
         let files = self.files();
         let Self { path, .. } = self;
         for file in files {
@@ -199,20 +222,28 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             self.path.join(DELETED_PATH),
             self.path.join(CONFIG_PATH),
         ];
-        files.extend(self.point_to_values.files());
+        if let Some(storage) = &self.storage {
+            files.extend(storage.point_to_values.files());
+        }
         files.extend(Histogram::<T>::files(&self.path));
         files
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
         let mut files = vec![self.path.join(PAIRS_PATH), self.path.join(CONFIG_PATH)];
-        files.extend(self.point_to_values.immutable_files());
+        if let Some(storage) = &self.storage {
+            files.extend(storage.point_to_values.immutable_files());
+        }
         files.extend(Histogram::<T>::immutable_files(&self.path));
         files
     }
 
     pub fn flusher(&self) -> Flusher {
-        self.deleted.flusher()
+        if let Some(storage) = &self.storage {
+            storage.deleted.flusher()
+        } else {
+            Box::new(|| Ok(()))
+        }
     }
 
     pub fn check_values_any(
@@ -221,10 +252,14 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
+        let Some(storage) = &self.storage else {
+            return false;
+        };
+
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
-        if self.deleted.get(idx as usize) == Some(false) {
-            self.point_to_values.check_values_any(
+        if storage.deleted.get(idx as usize) == Some(false) {
+            storage.point_to_values.check_values_any(
                 idx,
                 |v| check_fn(T::from_referenced(&v)),
                 &hw_counter,
@@ -235,9 +270,14 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
-        if self.deleted.get(idx as usize) == Some(false) {
+        let Some(storage) = &self.storage else {
+            return None;
+        };
+
+        if storage.deleted.get(idx as usize) == Some(false) {
             Some(Box::new(
-                self.point_to_values
+                storage
+                    .point_to_values
                     .get_values(idx)?
                     .map(|v| *T::from_referenced(&v)),
             ))
@@ -247,8 +287,12 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        if self.deleted.get(idx as usize) == Some(false) {
-            self.point_to_values.get_values_count(idx)
+        let Some(storage) = &self.storage else {
+            return None;
+        };
+
+        if storage.deleted.get(idx as usize) == Some(false) {
+            storage.point_to_values.get_values_count(idx)
         } else {
             None
         }
@@ -257,7 +301,9 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     /// Returns the number of key-value pairs in the index.
     /// Note that is doesn't count deleted pairs.
     pub(super) fn total_unique_values_count(&self) -> usize {
-        self.pairs.len()
+        self.storage
+            .as_ref()
+            .map_or(0, |storage| storage.pairs.len())
     }
 
     pub(super) fn values_range<'a>(
@@ -265,29 +311,42 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
         hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        let Some(iter) = self.values_range_iterator(start_bound, end_bound) else {
+            return Box::new(std::iter::empty());
+        };
+
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
-        self.values_range_iterator(start_bound, end_bound)
+        let iter = iter
             .map(|Point { idx, .. }| idx)
             .measure_hw_with_condition_cell(hw_counter, size_of::<Point<T>>(), |i| {
                 i.payload_index_io_read_counter()
-            })
+            });
+        Box::new(iter)
     }
 
     pub(super) fn orderable_values_range(
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-    ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
-        self.values_range_iterator(start_bound, end_bound)
-            .map(|Point { val, idx }| (val, idx))
+    ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
+        let Some(iter) = self.values_range_iterator(start_bound, end_bound) else {
+            return Box::new(std::iter::empty());
+        };
+
+        let iter = iter.map(|Point { val, idx }| (val, idx));
+        Box::new(iter)
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) {
+        let Some(storage) = &mut self.storage else {
+            return;
+        };
+
         let idx = idx as usize;
-        if idx < self.deleted.len() && !self.deleted.get(idx).unwrap_or(true) {
-            self.deleted.set(idx, true);
+        if idx < storage.deleted.len() && !storage.deleted.get(idx).unwrap_or(true) {
+            storage.deleted.set(idx, true);
             self.deleted_count += 1;
         }
     }
@@ -297,7 +356,9 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     }
 
     pub(super) fn get_points_count(&self) -> usize {
-        self.point_to_values.len() - self.deleted_count
+        self.storage.as_ref().map_or(0, |storage| {
+            storage.point_to_values.len() - self.deleted_count
+        })
     }
 
     pub(super) fn get_max_values_per_point(&self) -> usize {
@@ -309,8 +370,8 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
     ) -> usize {
-        let iterator = self.values_range_iterator(start_bound, end_bound);
-        iterator.end_index - iterator.start_index
+        self.values_range_iterator(start_bound, end_bound)
+            .map_or(0, |iter| iter.end_index - iter.start_index)
     }
 
     // get iterator
@@ -318,43 +379,50 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-    ) -> NumericIndexPairsIterator<'_, T> {
+    ) -> Option<NumericIndexPairsIterator<'_, T>> {
+        let Some(storage) = &self.storage else {
+            return None;
+        };
+
         let start_index = match start_bound {
-            Bound::Included(bound) => self.pairs.binary_search(&bound).unwrap_or_else(|idx| idx),
-            Bound::Excluded(bound) => match self.pairs.binary_search(&bound) {
+            Bound::Included(bound) => storage
+                .pairs
+                .binary_search(&bound)
+                .unwrap_or_else(|idx| idx),
+            Bound::Excluded(bound) => match storage.pairs.binary_search(&bound) {
                 Ok(idx) => idx + 1,
                 Err(idx) => idx,
             },
             Bound::Unbounded => 0,
         };
 
-        if start_index >= self.pairs.len() {
-            return NumericIndexPairsIterator {
-                pairs: &self.pairs,
-                deleted: &self.deleted,
-                start_index: self.pairs.len(),
-                end_index: self.pairs.len(),
-            };
+        if start_index >= storage.pairs.len() {
+            return Some(NumericIndexPairsIterator {
+                pairs: &storage.pairs,
+                deleted: &storage.deleted,
+                start_index: storage.pairs.len(),
+                end_index: storage.pairs.len(),
+            });
         }
 
         let end_index = match end_bound {
-            Bound::Included(bound) => match self.pairs[start_index..].binary_search(&bound) {
+            Bound::Included(bound) => match storage.pairs[start_index..].binary_search(&bound) {
                 Ok(idx) => idx + 1 + start_index,
                 Err(idx) => idx + start_index,
             },
             Bound::Excluded(bound) => {
-                let end_bound = self.pairs[start_index..].binary_search(&bound);
+                let end_bound = storage.pairs[start_index..].binary_search(&bound);
                 end_bound.unwrap_or_else(|idx| idx) + start_index
             }
-            Bound::Unbounded => self.pairs.len(),
+            Bound::Unbounded => storage.pairs.len(),
         };
 
-        NumericIndexPairsIterator {
-            pairs: &self.pairs,
-            deleted: &self.deleted,
+        Some(NumericIndexPairsIterator {
+            pairs: &storage.pairs,
+            deleted: &storage.deleted,
             start_index,
             end_index,
-        }
+        })
     }
 
     fn make_conditioned_counter<'a>(
@@ -371,8 +439,10 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
-        self.pairs.populate()?;
-        self.point_to_values.populate();
+        if let Some(storage) = &self.storage {
+            storage.pairs.populate()?;
+            storage.point_to_values.populate();
+        }
         Ok(())
     }
 
@@ -384,7 +454,9 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         clear_disk_cache(&pairs_path)?;
         clear_disk_cache(&deleted_path)?;
 
-        self.point_to_values.clear_cache()?;
+        if let Some(storage) = &self.storage {
+            storage.point_to_values.clear_cache()?;
+        }
 
         Ok(())
     }

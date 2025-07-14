@@ -160,8 +160,9 @@ impl StructPayloadIndex {
         Ok(())
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), allow(clippy::needless_pass_by_ref_mut))]
     fn load_from_db(
-        &self,
+        &mut self,
         field: PayloadKeyTypeRef,
         // TODO: refactor this and remove the &mut reference.
         payload_schema: &mut PayloadFieldSchemaWithIndexType,
@@ -177,11 +178,14 @@ impl StructPayloadIndex {
             )?;
 
             // Special null index complements every index.
-            if let Some(null_index) =
-                IndexSelector::new_null_index(&self.path, field, total_point_count)?
-            {
-                // todo: This means that null index will not be built if it is not loaded here.
-                //       Maybe we should set `is_loaded` to false to trigger index building.
+            if let Some(null_index) = IndexSelector::new_null_index(
+                &self.path,
+                field,
+                total_point_count,
+                create_if_missing,
+            )? {
+                // TODO: This means that null index will not be built if it is not loaded here.
+                //       Maybe we should set `rebuild` to true to trigger index building.
                 indexes.push(null_index);
             }
 
@@ -212,16 +216,57 @@ impl StructPayloadIndex {
                 .collect::<OperationResult<Vec<_>>>()?
         };
 
-        let mut is_loaded = true;
-        for ref mut index in indexes.iter_mut() {
-            if !index.load()? {
-                is_loaded = false;
-                break;
+        let mut rebuild = false;
+
+        // Actively migrate away from RocksDB indices
+        // Naively implemented by just rebuilding the indices from scratch
+        #[cfg(feature = "rocksdb")]
+        if common::flags::feature_flags().migrate_rocksdb_payload_indices
+            && indexes.iter().any(|index| index.is_rocksdb())
+        {
+            log::info!("Migrating away from RocksDB indices for field `{field}`");
+
+            rebuild = true;
+
+            // Change storage type, set skip RocksDB flag and persist, rebuilds index with Gridstore
+            match self.storage_type {
+                StorageType::RocksDbAppendable(_) => {
+                    self.storage_type = StorageType::GridstoreAppendable;
+                }
+                StorageType::GridstoreAppendable => {}
+                StorageType::RocksDbNonAppendable(_) => {
+                    self.storage_type = StorageType::GridstoreNonAppendable;
+                }
+                StorageType::GridstoreNonAppendable => {}
+            }
+            self.config.skip_rocksdb.replace(true);
+            self.save_config()?;
+
+            // Clean-up all existing indices
+            for index in indexes.drain(..) {
+                index.cleanup().map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to clean up payload index for field `{field}` before rebuild: {err}"
+                    ))
+                })?;
             }
         }
 
-        if !is_loaded {
-            log::debug!("Index for `{field}` was not loaded. Building...");
+        if !rebuild {
+            for ref mut index in indexes.iter_mut() {
+                if !index.load()? {
+                    rebuild = true;
+                    log::debug!(
+                        "Payload index for field `{field}` was not loaded, triggering rebuild",
+                    );
+                    break;
+                }
+            }
+        }
+
+        // If index is not properly loaded or when migrating, recreate it
+        if rebuild {
+            log::debug!("Rebuilding payload index for field `{field}`...");
             indexes = self.build_field_indexes(
                 field,
                 &payload_schema.schema,

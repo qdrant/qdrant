@@ -113,7 +113,12 @@ impl<T: Encodable + Numericable + Default + MmapValue> InMemoryNumericIndex<T> {
     ///
     /// Expensive because this reads the full mmap index.
     pub(super) fn from_mmap(mmap_index: &MmapNumericIndex<T>) -> Self {
-        (0..mmap_index.point_to_values.len() as PointOffsetType)
+        let point_count = mmap_index
+            .storage
+            .as_ref()
+            .map_or(0, |storage| storage.point_to_values.len());
+
+        (0..point_count as PointOffsetType)
             .filter_map(|idx| mmap_index.get_values(idx).map(|values| (idx, values)))
             .flat_map(|(idx, values)| values.into_iter().map(move |value| (idx, value)))
             .collect::<InMemoryNumericIndex<T>>()
@@ -401,6 +406,26 @@ where
         }
     }
 
+    #[inline]
+    pub(super) fn wipe(self) -> OperationResult<()> {
+        match self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
+            Storage::Gridstore(mut store @ Some(_)) => {
+                let store = store.take().unwrap();
+                let store =
+                    Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
+
+                store.into_inner().wipe().map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to wipe mutable numeric index: {err}",
+                    ))
+                })
+            }
+            Storage::Gridstore(None) => Ok(()),
+        }
+    }
+
     /// Clear cache
     ///
     /// Only clears cache of Gridstore storage if used. Does not clear in-memory representation of
@@ -434,13 +459,22 @@ where
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(Some(store)) => {
-                let store = store.clone();
+                let store = Arc::downgrade(store);
                 Box::new(move || {
-                    store.read().flush().map_err(|err| {
-                        OperationError::service_error(format!(
-                            "Failed to flush mutable numeric index gridstore: {err}"
-                        ))
-                    })
+                    store
+                        .upgrade()
+                        .ok_or_else(|| {
+                            OperationError::service_error(
+                                "Failed to flush mutable numeric index, backing Gridstore storage is already dropped",
+                            )
+                        })?
+                        .read()
+                        .flush()
+                        .map_err(|err| {
+                            OperationError::service_error(format!(
+                                "Failed to flush mutable numeric index gridstore: {err}"
+                            ))
+                        })
                 })
             }
             Storage::Gridstore(None) => Box::new(|| Ok(())),
@@ -584,6 +618,14 @@ where
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => StorageType::RocksDb,
             Storage::Gridstore(_) => StorageType::Gridstore,
+        }
+    }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self.storage {
+            Storage::RocksDb(_) => true,
+            Storage::Gridstore(_) => false,
         }
     }
 }
