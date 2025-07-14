@@ -343,7 +343,7 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::default();
 
         for handler in load_handlers {
-            let segment = handler.join().map_err(|err| {
+            let segment = tokio::task::block_in_place(|| handler.join()).map_err(|err| {
                 CollectionError::service_error(format!(
                     "Can't join segment load thread: {:?}",
                     err.type_id()
