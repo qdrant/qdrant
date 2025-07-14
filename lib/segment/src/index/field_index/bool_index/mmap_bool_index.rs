@@ -5,7 +5,7 @@ use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 
 use super::BoolIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -276,14 +276,15 @@ impl MmapBoolIndex {
         !storage.trues_slice.get(point_id as usize) && !storage.falses_slice.get(point_id as usize)
     }
 
+    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
     pub fn iter_values_map<'a>(
         &'a self,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = (bool, IdIter<'a>)> + 'a> {
+    ) -> impl Iterator<Item = (bool, IdIter<'a>)> + 'a {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         let Some(storage) = &self.storage else {
-            return Box::new(std::iter::empty());
+            return Either::Right(std::iter::empty());
         };
 
         let iter = [
@@ -294,12 +295,13 @@ impl MmapBoolIndex {
         .measure_hw_with_acc(hw_counter.new_accumulator(), u8::BITS as usize, |i| {
             i.payload_index_io_read_counter()
         });
-        Box::new(iter)
+        Either::Left(iter)
     }
 
-    pub fn iter_values(&self) -> Box<dyn Iterator<Item = bool> + '_> {
+    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
+    pub fn iter_values(&self) -> impl Iterator<Item = bool> + '_ {
         let Some(storage) = &self.storage else {
-            return Box::new(std::iter::empty());
+            return Either::Right(std::iter::empty());
         };
 
         let iter = [
@@ -308,12 +310,13 @@ impl MmapBoolIndex {
         ]
         .into_iter()
         .flatten();
-        Box::new(iter)
+        Either::Left(iter)
     }
 
-    pub fn iter_counts_per_value(&self) -> Box<dyn Iterator<Item = (bool, usize)> + '_> {
+    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
+    pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (bool, usize)> + '_ {
         let Some(storage) = &self.storage else {
-            return Box::new(std::iter::empty());
+            return Either::Right(std::iter::empty());
         };
 
         let iter = [
@@ -321,7 +324,7 @@ impl MmapBoolIndex {
             (true, storage.trues_slice.count_flags()),
         ]
         .into_iter();
-        Box::new(iter)
+        Either::Left(iter)
     }
 
     pub(crate) fn get_point_values(&self, point_id: u32) -> Vec<bool> {
