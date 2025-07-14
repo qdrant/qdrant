@@ -8,7 +8,6 @@ security:
 info:
   title: Qdrant API
   description: >
-
     API description for Qdrant vector search engine.
 
 
