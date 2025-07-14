@@ -230,7 +230,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     group.bench_function("binary u8 scalar query native", |b| {
         b.iter(|| {
             for &i in &permutation {
-                let vector = encoded_u128.get_quantized_vector(i);
+                let vector = encoded_u8.get_quantized_vector(i);
                 let s = native_scorer(query, vector);
                 black_box(s);
             }
