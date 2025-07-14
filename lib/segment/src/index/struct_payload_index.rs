@@ -80,7 +80,11 @@ pub struct StructPayloadIndex {
     path: PathBuf,
     /// Used to select unique point ids
     visited_pool: VisitedPool,
+    /// Desired storage type for payload indices, used in builder to pick correct type
     storage_type: StorageType,
+    /// RocksDB instance, if any index is using it
+    #[cfg(feature = "rocksdb")]
+    db: Option<Arc<parking_lot::RwLock<rocksdb::DB>>>,
 }
 
 impl StructPayloadIndex {
@@ -313,16 +317,19 @@ impl StructPayloadIndex {
             }
         };
 
+        #[cfg(feature = "rocksdb")]
+        let mut db = None;
         let storage_type = if is_appendable {
             #[cfg(feature = "rocksdb")]
             {
                 let skip_rocksdb = config.skip_rocksdb.unwrap_or(false);
                 if !skip_rocksdb {
-                    let db = crate::common::rocksdb_wrapper::open_db_with_existing_cf(path)
+                    let rocksdb = crate::common::rocksdb_wrapper::open_db_with_existing_cf(path)
                         .map_err(|err| {
                             OperationError::service_error(format!("RocksDB open error: {err}"))
                         })?;
-                    StorageType::RocksDbAppendable(db)
+                    db.replace(rocksdb.clone());
+                    StorageType::RocksDbAppendable(rocksdb)
                 } else {
                     StorageType::GridstoreAppendable
                 }
@@ -336,11 +343,12 @@ impl StructPayloadIndex {
             {
                 let skip_rocksdb = config.skip_rocksdb.unwrap_or(false);
                 if !skip_rocksdb {
-                    let db = crate::common::rocksdb_wrapper::open_db_with_existing_cf(path)
+                    let rocksdb = crate::common::rocksdb_wrapper::open_db_with_existing_cf(path)
                         .map_err(|err| {
                             OperationError::service_error(format!("RocksDB open error: {err}"))
                         })?;
-                    StorageType::RocksDbNonAppendable(db)
+                    db.replace(rocksdb.clone());
+                    StorageType::RocksDbNonAppendable(rocksdb)
                 } else {
                     StorageType::GridstoreNonAppendable
                 }
@@ -351,6 +359,17 @@ impl StructPayloadIndex {
             }
         };
 
+        // Also prematurely open RocksDB if any index is still using it
+        #[cfg(feature = "rocksdb")]
+        if db.is_none() && config.indices.any_is_rocksdb() {
+            log::debug!("Opening RocksDB to load old payload index");
+            let rocksdb =
+                crate::common::rocksdb_wrapper::open_db_with_existing_cf(path).map_err(|err| {
+                    OperationError::service_error(format!("RocksDB open error: {err}"))
+                })?;
+            db.replace(rocksdb);
+        }
+
         let mut index = StructPayloadIndex {
             payload,
             id_tracker,
@@ -360,6 +379,8 @@ impl StructPayloadIndex {
             path: path.to_owned(),
             visited_pool: Default::default(),
             storage_type,
+            #[cfg(feature = "rocksdb")]
+            db,
         };
 
         if !index.config_path().exists() {
@@ -653,12 +674,24 @@ impl StructPayloadIndex {
             payload_config::StorageType::RocksDb => {
                 #[cfg(feature = "rocksdb")]
                 {
-                    let (StorageType::RocksDbAppendable(db)
-                    | StorageType::RocksDbNonAppendable(db)) = &self.storage_type
-                    else {
-                        return Err(OperationError::service_error(
-                            "Loading payload index failed: Configured storage type and payload schema mismatch!",
-                        ));
+                    let db = match (&self.storage_type, &self.db) {
+                        (
+                            StorageType::RocksDbAppendable(db)
+                            | StorageType::RocksDbNonAppendable(db),
+                            _,
+                        ) => db,
+                        (
+                            StorageType::GridstoreAppendable | StorageType::GridstoreNonAppendable,
+                            Some(db),
+                        ) => db,
+                        (
+                            StorageType::GridstoreAppendable | StorageType::GridstoreNonAppendable,
+                            None,
+                        ) => {
+                            return Err(OperationError::service_error(
+                                "Loading payload index failed: Configured storage type and payload schema mismatch!",
+                            ));
+                        }
                     };
 
                     return Ok(IndexSelector::RocksDb(IndexSelectorRocksDb {
