@@ -84,7 +84,7 @@ sha2 = { workspace = true }
 bytes = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
-ringbuffer = "0.15.0"
+ringbuffer = "0.16.0"
 strum = { workspace = true }
 
 tracing = { workspace = true, optional = true }
