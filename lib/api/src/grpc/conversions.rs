@@ -1280,6 +1280,7 @@ impl TryFrom<BinaryQuantizationQueryEncoding> for segment::types::BinaryQuantiza
                     Setting::Scalar8Bits => {
                         segment::types::BinaryQuantizationQueryEncoding::Scalar8Bits
                     }
+                    Setting::Float32 => segment::types::BinaryQuantizationQueryEncoding::Float32,
                 }
             }
         };
@@ -1303,6 +1304,9 @@ impl From<segment::types::BinaryQuantizationQueryEncoding> for BinaryQuantizatio
             }
             segment::types::BinaryQuantizationQueryEncoding::Scalar8Bits => {
                 Variant::Setting(Setting::Scalar8Bits.into())
+            }
+            segment::types::BinaryQuantizationQueryEncoding::Float32 => {
+                Variant::Setting(Setting::Float32.into())
             }
         };
 

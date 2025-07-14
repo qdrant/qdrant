@@ -940,6 +940,9 @@ impl QuantizedVectors {
             Some(BinaryQuantizationQueryEncoding::Scalar8Bits) => {
                 quantization::encoded_vectors_binary::QueryEncoding::Scalar8bits
             }
+            Some(BinaryQuantizationQueryEncoding::Float32) => {
+                quantization::encoded_vectors_binary::QueryEncoding::Float32
+            }
             Some(BinaryQuantizationQueryEncoding::Binary) => {
                 quantization::encoded_vectors_binary::QueryEncoding::SameAsStorage
             }
@@ -1016,6 +1019,9 @@ impl QuantizedVectors {
             }
             Some(BinaryQuantizationQueryEncoding::Scalar8Bits) => {
                 quantization::encoded_vectors_binary::QueryEncoding::Scalar8bits
+            }
+            Some(BinaryQuantizationQueryEncoding::Float32) => {
+                quantization::encoded_vectors_binary::QueryEncoding::Float32
             }
             Some(BinaryQuantizationQueryEncoding::Binary) => {
                 quantization::encoded_vectors_binary::QueryEncoding::SameAsStorage

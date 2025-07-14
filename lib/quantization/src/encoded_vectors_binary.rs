@@ -42,6 +42,7 @@ pub enum QueryEncoding {
     SameAsStorage,
     Scalar4bits,
     Scalar8bits,
+    Float32,
 }
 
 impl QueryEncoding {
@@ -54,6 +55,7 @@ pub enum EncodedQueryBQ<TBitsStoreType: BitsStoreType> {
     Binary(EncodedBinVector<TBitsStoreType>),
     Scalar4bits(EncodedScalarVector<TBitsStoreType>),
     Scalar8bits(EncodedScalarVector<TBitsStoreType>),
+    Float32(Vec<f32>),
 }
 
 pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
@@ -589,6 +591,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             QueryEncoding::Scalar4bits => EncodedQueryBQ::Scalar4bits(
                 Self::encode_scalar_query_vector(query, encoding, (u8::BITS / 2) as usize),
             ),
+            QueryEncoding::Float32 => {
+                // For Float32 we just return the original query vector
+                EncodedQueryBQ::Float32(query.to_vec())
+            }
         }
     }
 
@@ -861,6 +867,19 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                 &encoded_vector.encoded_vector,
                 u8::BITS as usize / 2,
             ),
+            EncodedQueryBQ::Float32(orig_vector) => {
+                let mut sum = 0.0f32;
+                for (i, &f) in orig_vector.iter().enumerate() {
+                    let byte = vector_data_1[i / u8::BITS as usize];
+                    let bit = (byte >> (i % u8::BITS as usize)) & 1;
+                    if bit != 0 {
+                        sum += f;
+                    } else {
+                        sum -= f;
+                    }
+                }
+                sum
+            },
         }
     }
 
