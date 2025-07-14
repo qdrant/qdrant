@@ -189,10 +189,8 @@ impl StructPayloadIndex {
                 indexes.push(null_index);
             }
 
-            payload_schema.types = indexes
-                .iter()
-                .map(|i| i.get_full_index_type())
-                .collect::<Vec<_>>();
+            // Persist exact payload index types
+            payload_schema.types = indexes.iter().map(|i| i.get_full_index_type()).collect();
 
             indexes
         } else {
@@ -228,7 +226,8 @@ impl StructPayloadIndex {
 
             rebuild = true;
 
-            // Change storage type, set skip RocksDB flag and persist, rebuilds index with Gridstore
+            // Change storage type, set skip RocksDB flag and persist
+            // Needed to not use RocksDB when rebuilding indices below
             match self.storage_type {
                 StorageType::RocksDbAppendable(_) => {
                     self.storage_type = StorageType::GridstoreAppendable;
@@ -252,6 +251,7 @@ impl StructPayloadIndex {
             }
         }
 
+        // Load all indices, trigger rebuild if load is not succesful
         if !rebuild {
             for ref mut index in indexes.iter_mut() {
                 if !index.load()? {
@@ -264,7 +264,7 @@ impl StructPayloadIndex {
             }
         }
 
-        // If index is not properly loaded or when migrating, recreate it
+        // If index is not properly loaded or when migrating, rebuild indices
         if rebuild {
             log::debug!("Rebuilding payload index for field `{field}`...");
             indexes = self.build_field_indexes(
@@ -666,7 +666,7 @@ impl StructPayloadIndex {
 
                 #[cfg(not(feature = "rocksdb"))]
                 return Err(OperationError::service_error(
-                    "Loading payload index failed: Index is rocksDB but RocksDB feature is disabled.",
+                    "Loading payload index failed: Index is RocksDB but RocksDB feature is disabled.",
                 ));
             }
             payload_config::StorageType::Mmap { is_on_disk } => {
