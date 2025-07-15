@@ -879,7 +879,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                     }
                 }
                 sum
-            },
+            }
         }
     }
 
