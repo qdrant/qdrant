@@ -185,7 +185,7 @@ impl ProxySegment {
             }
 
             let (all_vectors, payload) = (
-                wrapped_segment_guard.all_vectors(point_id)?,
+                wrapped_segment_guard.all_vectors(point_id, hw_counter)?,
                 wrapped_segment_guard.payload(point_id, hw_counter)?,
             );
 
@@ -657,28 +657,33 @@ impl SegmentEntry for ProxySegment {
         &self,
         vector_name: &VectorName,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
         if self.deleted_points.read().contains_key(&point_id) {
             self.write_segment
                 .get()
                 .read()
-                .vector(vector_name, point_id)
+                .vector(vector_name, point_id, hw_counter)
         } else {
             {
                 let write_segment = self.write_segment.get();
                 let segment_guard = write_segment.read();
                 if segment_guard.has_point(point_id) {
-                    return segment_guard.vector(vector_name, point_id);
+                    return segment_guard.vector(vector_name, point_id, hw_counter);
                 }
             }
             self.wrapped_segment
                 .get()
                 .read()
-                .vector(vector_name, point_id)
+                .vector(vector_name, point_id, hw_counter)
         }
     }
 
-    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
+    fn all_vectors(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<NamedVectors> {
         let mut result = NamedVectors::default();
         for vector_name in self
             .wrapped_segment
@@ -688,7 +693,7 @@ impl SegmentEntry for ProxySegment {
             .vector_data
             .keys()
         {
-            if let Some(vector) = self.vector(vector_name, point_id)? {
+            if let Some(vector) = self.vector(vector_name, point_id, hw_counter)? {
                 result.insert(vector_name.clone(), vector);
             }
         }
@@ -700,7 +705,7 @@ impl SegmentEntry for ProxySegment {
             .sparse_vector_data
             .keys()
         {
-            if let Some(vector) = self.vector(vector_name, point_id)? {
+            if let Some(vector) = self.vector(vector_name, point_id, hw_counter)? {
                 result.insert(vector_name.clone(), vector);
             }
         }
