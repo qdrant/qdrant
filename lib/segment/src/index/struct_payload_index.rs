@@ -390,6 +390,43 @@ impl StructPayloadIndex {
 
         index.load_all_fields(create)?;
 
+        // If we have a RocksDB instance, but no more index using it, completely delete it here
+        #[cfg(feature = "rocksdb")]
+        if !index.config.indices.any_is_rocksdb()
+            && let Some(db) = index.db.take()
+        {
+            match Arc::try_unwrap(db) {
+                Ok(db) => {
+                    log::trace!(
+                        "Deleting RocksDB for payload indices, no payload index uses it anymore"
+                    );
+
+                    // Close RocksDB instance
+                    let db = db.into_inner();
+                    drop(db);
+
+                    // Destroy all RocksDB files
+                    let options = crate::common::rocksdb_wrapper::make_db_options();
+                    match rocksdb::DB::destroy(&options, &index.path) {
+                        Ok(_) => log::debug!("Deleted RocksDB for payload indices"),
+                        Err(err) => {
+                            log::warn!("Failed to delete RocksDB for payload indices: {err}")
+                        }
+                    }
+                }
+                // Here we don't have exclusive ownership of RocksDB, which prevents us from
+                // controlling and closing the instance. Because of it, we cannot destroy the
+                // RocksDB files, and leave them behind. We don't consider this a problem, because
+                // a future optimization run will get rid of these files.
+                Err(db) => {
+                    log::warn!(
+                        "RocksDB for payload indices could not be deleted, does not have exclusive ownership"
+                    );
+                    index.db.replace(db);
+                }
+            }
+        }
+
         Ok(index)
     }
 
