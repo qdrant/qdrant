@@ -412,6 +412,10 @@ impl StructPayloadIndex {
                         }
                     }
                 }
+                // Here we don't have exclusive ownership of RocksDB, which prevents us from
+                // controlling and closing the instance. Because of it, we cannot destroy the
+                // RocksDB files, and leave them behind. We don't consider this a problem, because
+                // a future optimization run will get rid of these files.
                 Err(db) => {
                     log::warn!(
                         "RocksDB for payload indices could not be deleted, does not have exclusive ownership"
