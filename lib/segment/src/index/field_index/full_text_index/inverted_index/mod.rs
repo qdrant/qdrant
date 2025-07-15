@@ -317,12 +317,7 @@ pub trait InvertedIndex {
             .filter_map(map_filter_condition)
     }
 
-    fn check_match(
-        &self,
-        parsed_query: &ParsedQuery,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> bool;
+    fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool;
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 
