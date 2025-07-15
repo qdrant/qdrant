@@ -56,6 +56,19 @@ impl PayloadIndices {
         self.fields.values().any(|index| index.types.is_empty())
     }
 
+    /// Check if any payload field used RocksDB
+    ///
+    /// Returns false if empty.
+    #[cfg(feature = "rocksdb")]
+    pub fn any_is_rocksdb(&self) -> bool {
+        self.fields.values().any(|index| {
+            index
+                .types
+                .iter()
+                .any(|t| t.storage_type == StorageType::RocksDb)
+        })
+    }
+
     pub fn to_schemas(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.fields
             .iter()
