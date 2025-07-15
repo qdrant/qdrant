@@ -226,12 +226,7 @@ impl InvertedIndex for MutableInvertedIndex {
         })
     }
 
-    fn check_match(
-        &self,
-        parsed_query: &ParsedQuery,
-        point_id: PointOffsetType,
-        _: &HardwareCounterCell,
-    ) -> bool {
+    fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
         match parsed_query {
             ParsedQuery::Tokens(query) => {
                 let Some(doc) = self.get_tokens(point_id) else {

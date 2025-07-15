@@ -268,7 +268,7 @@ fn get_match_text_checker<const IS_PHRASE: bool>(
             };
 
             Some(Box::new(move |point_id: PointOffsetType| {
-                full_text_index.check_match(&parsed_query, point_id, &hw_counter)
+                full_text_index.check_match(&parsed_query, point_id)
             }))
         }
         FieldIndex::BoolIndex(_)

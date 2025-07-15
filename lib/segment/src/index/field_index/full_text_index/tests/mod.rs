@@ -184,7 +184,7 @@ fn test_prefix_search() {
     let query = index.parse_text_query("ROBO", &hw_counter).unwrap();
 
     for idx in res.iter().copied() {
-        assert!(index.check_match(&query, idx, &hw_counter));
+        assert!(index.check_match(&query, idx));
     }
 
     assert_eq!(res.len(), 3);
@@ -247,9 +247,9 @@ fn test_phrase_matching() {
         let text_query = index
             .parse_text_query("quick brown fox", &hw_counter)
             .unwrap();
-        assert!(index.check_match(&text_query, 0, &hw_counter));
-        assert!(index.check_match(&text_query, 1, &hw_counter));
-        assert!(index.check_match(&text_query, 2, &hw_counter));
+        assert!(index.check_match(&text_query, 0));
+        assert!(index.check_match(&text_query, 1));
+        assert!(index.check_match(&text_query, 2));
 
         let text_results: Vec<_> = index.filter_query(text_query, &hw_counter).collect();
 
@@ -263,8 +263,8 @@ fn test_phrase_matching() {
         let phrase_query = index
             .parse_phrase_query("quick brown fox", &hw_counter)
             .unwrap();
-        assert!(index.check_match(&phrase_query, 0, &hw_counter));
-        assert!(index.check_match(&phrase_query, 2, &hw_counter));
+        assert!(index.check_match(&phrase_query, 0));
+        assert!(index.check_match(&phrase_query, 2));
 
         let phrase_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
 
@@ -287,7 +287,7 @@ fn test_phrase_matching() {
         let phrase_query = index
             .parse_phrase_query("brown brown fox", &hw_counter)
             .unwrap();
-        assert!(index.check_match(&phrase_query, 4, &hw_counter));
+        assert!(index.check_match(&phrase_query, 4));
 
         // Should only match document 4
         let filter_results: Vec<_> = index.filter_query(phrase_query, &hw_counter).collect();
