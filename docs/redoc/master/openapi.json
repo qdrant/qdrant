@@ -11518,42 +11518,42 @@
             "type": "boolean"
           },
           "payload_index_skip_rocksdb": {
-            "description": "Whether to skip usage of RocksDB in immutable payload indices.\n\nFirst implemented in Qdrant 1.13.5. Enabled by default in Qdrant 1.14.1",
+            "description": "Skip usage of RocksDB in new immutable payload indices.\n\nFirst implemented in Qdrant 1.13.5. Enabled by default in Qdrant 1.14.1",
             "default": true,
             "type": "boolean"
           },
           "payload_index_skip_mutable_rocksdb": {
-            "description": "Whether to skip usage of RocksDB in mutable payload indices.",
+            "description": "Skip usage of RocksDB in new mutable payload indices.",
             "default": false,
             "type": "boolean"
           },
           "payload_storage_skip_rocksdb": {
-            "description": "Whether to skip usage of RocksDB for new payload storages.\n\nNew on-disk payload storages were already using Gridstore. In-memory payload storages still choose RocksDB when this flag is not set.\n\nFirst implemented in Qdrant 1.15.0.",
+            "description": "Skip usage of RocksDB in new payload storages.\n\nOn-disk payload storages never use Gridstore.\n\nFirst implemented in Qdrant 1.15.0.",
             "default": false,
             "type": "boolean"
           },
           "incremental_hnsw_building": {
-            "description": "Whether to use incremental HNSW building.\n\nEnabled by default in Qdrant 1.14.1.",
+            "description": "Use incremental HNSW building.\n\nEnabled by default in Qdrant 1.14.1.",
             "default": true,
             "type": "boolean"
           },
           "migrate_rocksdb_id_tracker": {
-            "description": "Whether to actively migrate RocksDB based ID trackers into a new format.\n\nEnabled by default in Qdrant 1.15.0.",
+            "description": "Migrate RocksDB based ID trackers into file based ID tracker on start.\n\nEnabled by default in Qdrant 1.15.0.",
             "default": true,
             "type": "boolean"
           },
           "migrate_rocksdb_vector_storage": {
-            "description": "Whether to actively migrate RocksDB based vector storages into a new format.",
+            "description": "Migrate RocksDB based vector storages into new format on start.",
             "default": false,
             "type": "boolean"
           },
           "migrate_rocksdb_payload_storage": {
-            "description": "Whether to actively migrate RocksDB based payload storages into a new format.",
+            "description": "Migrate RocksDB based payload storages into new format on start.",
             "default": false,
             "type": "boolean"
           },
           "migrate_rocksdb_payload_indices": {
-            "description": "Migrate away from RocksDB based payload indices.\n\nTriggers a payload index rebuild if RocksDB is used.",
+            "description": "Migrate RocksDB based payload indices into new format on start.\n\nRebuilds a new payload index from scratch.",
             "default": false,
             "type": "boolean"
           }
