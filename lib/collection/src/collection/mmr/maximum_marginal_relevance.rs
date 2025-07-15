@@ -6,7 +6,6 @@ use common::types::ScoreType;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
-use segment::common::operation_error::OperationResult;
 use segment::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
 use segment::types::{ScoredPoint, VectorNameBuf};
 use segment::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
@@ -15,13 +14,10 @@ use segment::vector_storage::sparse::volatile_sparse_vector_storage::new_volatil
 use segment::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer};
 use tokio::runtime::Handle;
 
-use crate::common::symmetric_matrix::SymmetricMatrix;
+use crate::collection::mmr::lazy_matrix::LazyMatrix;
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
-
-/// (Symmetric) matrix of point similarities.
-type SimilarityMatrix = SymmetricMatrix<ScoreType>;
 
 /// Calculate the MMR (Maximal Marginal Relevance) score for a set of points with vectors.
 ///
@@ -50,7 +46,7 @@ pub async fn mmr_from_points_with_vector(
     search_runtime_handle: &Handle,
     timeout: Duration,
     hw_measurement_acc: HwMeasurementAcc,
-) -> Result<Vec<ScoredPoint>, CollectionError> {
+) -> CollectionResult<Vec<ScoredPoint>> {
     let (vectors, mut candidates): (Vec<_>, Vec<_>) = points_with_vector
         .into_iter()
         .unique_by(|p| p.id)
@@ -93,7 +89,7 @@ pub async fn mmr_from_points_with_vector(
         return Ok(candidates);
     }
 
-    let compute_similarities = move || {
+    let compute_mmr = move || {
         // get similarities against query
         let query_similarities = relevance_similarities(
             &volatile_storage,
@@ -104,24 +100,20 @@ pub async fn mmr_from_points_with_vector(
         // get similarity matrix between candidates
         let similarity_matrix = similarity_matrix(&volatile_storage, vectors, hw_measurement_acc)?;
 
-        CollectionResult::Ok((query_similarities, similarity_matrix))
+        // compute MMR
+        CollectionResult::Ok(maximal_marginal_relevance(
+            candidates,
+            query_similarities,
+            similarity_matrix,
+            score_threshold,
+            mmr.lambda,
+            limit,
+        ))
     };
 
-    let (query_similarities, similarity_matrix) = tokio::time::timeout(
-        timeout,
-        search_runtime_handle.spawn_blocking(compute_similarities),
-    )
-    .await
-    .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "mmr"))???;
-
-    Ok(maximal_marginal_relevance(
-        candidates,
-        query_similarities,
-        &similarity_matrix,
-        score_threshold,
-        mmr.lambda,
-        limit,
-    ))
+    tokio::time::timeout(timeout, search_runtime_handle.spawn_blocking(compute_mmr))
+        .await
+        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "mmr"))??
 }
 
 /// Creates a volatile (in-memory and not persistent) vector storage and inserts the vectors in the provided order.
@@ -188,7 +180,7 @@ fn similarity_matrix(
     volatile_storage: &VectorStorageEnum,
     vectors: Vec<VectorInternal>,
     hw_measurement_acc: HwMeasurementAcc,
-) -> CollectionResult<SimilarityMatrix> {
+) -> CollectionResult<LazyMatrix> {
     let num_vectors = vectors.len();
 
     // if we have less than 2 points, we can't build a matrix
@@ -202,45 +194,7 @@ fn similarity_matrix(
         ));
     }
 
-    // Initialize similarity matrix with zeros. We can unwrap here because ::new() only fails
-    // if `num_vectors < 2`, which we ensured is not the case above.
-    let mut similarity_matrix = SimilarityMatrix::new(num_vectors, 0.0).unwrap();
-
-    // Prepare all scorers
-    let raw_scorers = vectors
-        .into_iter()
-        .map(|vector| {
-            let query = QueryVector::Nearest(vector);
-            new_raw_scorer(
-                query,
-                volatile_storage,
-                hw_measurement_acc.get_counter_cell(),
-            )
-        })
-        .collect::<OperationResult<Vec<_>>>()?;
-
-    // Compute similarities only for upper triangle to optimize (i < j)
-    // Since similarity is symmetric: sim(i,j) == sim(j,i), we can avoid duplicate computation
-
-    let mut scores_buf = vec![0.0; num_vectors];
-
-    for (i, raw_scorer) in raw_scorers.iter().enumerate() {
-        // Only compute scores for the upper triangle
-        let upper_offsets: Vec<u32> = ((i + 1)..num_vectors).map(|j| j as u32).collect();
-
-        if !upper_offsets.is_empty() {
-            let scores = &mut scores_buf[..upper_offsets.len()];
-            raw_scorer.score_points(&upper_offsets, scores);
-
-            for (&vector_idx, similarity) in upper_offsets.iter().zip(scores) {
-                let j = vector_idx as usize;
-                similarity_matrix.set(i, j, *similarity);
-            }
-        }
-        // Diagonal elements remain 0.0 (self-similarity excluded)
-    }
-
-    Ok(similarity_matrix)
+    LazyMatrix::new(vectors, volatile_storage, hw_measurement_acc)
 }
 
 /// Maximal Marginal Relevance (MMR) algorithm
@@ -255,10 +209,10 @@ fn similarity_matrix(
 /// * `similarity_matrix` - full pairwise similarity matrix between candidates
 /// * `lambda` - the lambda parameter for the MMR algorithm (0.0 = max diversity, 1.0 = max relevance)
 /// * `limit` - the maximum number of points to select
-pub fn maximal_marginal_relevance(
+fn maximal_marginal_relevance(
     candidates: Vec<ScoredPoint>,
     query_similarities: Vec<ScoreType>,
-    similarity_matrix: &SimilarityMatrix,
+    mut similarity_matrix: LazyMatrix,
     score_threshold: Option<ScoreType>,
     lambda: f32,
     limit: usize,
@@ -302,7 +256,9 @@ pub fn maximal_marginal_relevance(
                 // Find maximum similarity to any already selected point
                 let max_similarity_to_selected = selected_indices
                     .iter()
-                    .map(|selected_idx| *similarity_matrix.get(candidate_idx, *selected_idx))
+                    .map(|selected_idx| {
+                        similarity_matrix.get_similarity(candidate_idx, *selected_idx)
+                    })
                     .max_by_key(|&sim| OrderedFloat(sim))
                     .unwrap_or(0.0);
 
