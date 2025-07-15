@@ -14,46 +14,45 @@ pub struct FeatureFlags {
     /// Note that this will only be applied to all flags when passed into [`init_feature_flags`].
     all: bool,
 
-    /// Whether to skip usage of RocksDB in immutable payload indices.
+    /// Skip usage of RocksDB in new immutable payload indices.
     ///
     /// First implemented in Qdrant 1.13.5.
     /// Enabled by default in Qdrant 1.14.1
     pub payload_index_skip_rocksdb: bool,
 
-    /// Whether to skip usage of RocksDB in mutable payload indices.
+    /// Skip usage of RocksDB in new mutable payload indices.
     // TODO(1.16.0): enable by default
     pub payload_index_skip_mutable_rocksdb: bool,
 
-    /// Whether to skip usage of RocksDB for new payload storages.
+    /// Skip usage of RocksDB in new payload storages.
     ///
-    /// New on-disk payload storages were already using Gridstore. In-memory payload storages still
-    /// choose RocksDB when this flag is not set.
+    /// On-disk payload storages never use Gridstore.
     ///
     /// First implemented in Qdrant 1.15.0.
     // TODO(1.16.0): enable by default
     pub payload_storage_skip_rocksdb: bool,
 
-    /// Whether to use incremental HNSW building.
+    /// Use incremental HNSW building.
     ///
     /// Enabled by default in Qdrant 1.14.1.
     pub incremental_hnsw_building: bool,
 
-    /// Whether to actively migrate RocksDB based ID trackers into a new format.
+    /// Migrate RocksDB based ID trackers into file based ID tracker on start.
     ///
     /// Enabled by default in Qdrant 1.15.0.
     pub migrate_rocksdb_id_tracker: bool,
 
-    /// Whether to actively migrate RocksDB based vector storages into a new format.
+    /// Migrate RocksDB based vector storages into new format on start.
     // TODO(1.16.1): enable by default
     pub migrate_rocksdb_vector_storage: bool,
 
-    /// Whether to actively migrate RocksDB based payload storages into a new format.
+    /// Migrate RocksDB based payload storages into new format on start.
     // TODO(1.16.1): enable by default
     pub migrate_rocksdb_payload_storage: bool,
 
-    /// Migrate away from RocksDB based payload indices.
+    /// Migrate RocksDB based payload indices into new format on start.
     ///
-    /// Triggers a payload index rebuild if RocksDB is used.
+    /// Rebuilds a new payload index from scratch.
     // TODO(1.16.1): enable by default
     pub migrate_rocksdb_payload_indices: bool,
 }
