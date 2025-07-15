@@ -357,16 +357,13 @@ impl Segment {
         &self,
         vector_name: &VectorName,
         point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let is_vector_deleted = vector_data
-            .vector_storage
-            .borrow()
-            .is_deleted_vector(point_offset);
+        let vector_storage = vector_data.vector_storage.borrow();
+        let is_vector_deleted = vector_storage.is_deleted_vector(point_offset);
         if !is_vector_deleted && !self.id_tracker.borrow().is_deleted_point(point_offset) {
-            let vector_storage = vector_data.vector_storage.borrow();
-
             if vector_storage.total_vector_count() <= point_offset as usize {
                 // Storage does not have vector with such offset.
                 // This is possible if the storage is inconsistent due to interrupted flush.
@@ -382,30 +379,31 @@ impl Segment {
                     ),
                 })
             } else {
-                Ok(Some(vector_storage.get_vector(point_offset).to_owned()))
+                let vector = vector_storage.get_vector(point_offset);
+                if vector_storage.is_on_disk() {
+                    hw_counter
+                        .vector_io_read()
+                        .incr_delta(vector.estimate_size_in_bytes());
+                }
+                Ok(Some(vector.to_owned()))
             }
         } else {
             Ok(None)
         }
     }
 
-    pub(super) fn all_vectors_by_offset(&self, point_offset: PointOffsetType) -> NamedVectors {
+    pub(super) fn all_vectors_by_offset(
+        &self,
+        point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<NamedVectors> {
         let mut vectors = NamedVectors::default();
-        for (vector_name, vector_data) in &self.vector_data {
-            let is_vector_deleted = vector_data
-                .vector_storage
-                .borrow()
-                .is_deleted_vector(point_offset);
-            if !is_vector_deleted {
-                let vector_storage = vector_data.vector_storage.borrow();
-                let vector = vector_storage
-                    .get_vector(point_offset)
-                    .as_vec_ref()
-                    .to_owned();
+        for vector_name in self.vector_data.keys() {
+            if let Some(vector) = self.vector_by_offset(vector_name, point_offset, hw_counter)? {
                 vectors.insert(vector_name.clone(), vector);
             }
         }
-        vectors
+        Ok(vectors)
     }
 
     /// Retrieve payload by internal ID

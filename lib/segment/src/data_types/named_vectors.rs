@@ -70,15 +70,6 @@ pub struct NamedVectors<'a> {
     map: TinyMap<'a>,
 }
 
-impl NamedVectors<'_> {
-    pub fn estimate_size_in_bytes(&self) -> usize {
-        self.map
-            .iter()
-            .map(|(_name, vector)| vector.estimate_size_in_bytes())
-            .sum()
-    }
-}
-
 impl<'a, TElement: PrimitiveVectorElement> CowMultiVector<'a, TElement> {
     pub fn to_owned(self) -> TypedMultiDenseVector<TElement> {
         match self {
