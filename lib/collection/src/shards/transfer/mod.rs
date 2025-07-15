@@ -12,6 +12,7 @@ use super::remote_shard::RemoteShard;
 use super::replica_set::ReplicaState;
 use super::resharding::ReshardKey;
 use super::shard::{PeerId, ShardId};
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 pub mod driver;
@@ -53,6 +54,23 @@ impl ShardTransfer {
             to_shard_id: self.to_shard_id,
             from: self.from,
             to: self.to,
+        }
+    }
+
+    /// Check if this transfer is related to a specific resharding operation
+    pub fn is_specific_resharding(&self, key: &ReshardKey) -> bool {
+        // Must be a resharding transfer
+        if !self.method.is_some_and(|method| method.is_resharding()) {
+            return false;
+        }
+
+        match key.direction {
+            // Resharding up: all related transfers target the resharding shard ID
+            ReshardingDirection::Up => self
+                .to_shard_id
+                .is_some_and(|to_shard_id| key.shard_id == to_shard_id),
+            // Resharding down: all related transfers are sourced from the resharding shard ID
+            ReshardingDirection::Down => self.shard_id == key.shard_id,
         }
     }
 }

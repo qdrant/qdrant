@@ -9,7 +9,7 @@ use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::resharding::{ReshardKey, ReshardState};
-use crate::shards::transfer::{ShardTransferConsensus, ShardTransferMethod};
+use crate::shards::transfer::ShardTransferConsensus;
 
 impl Collection {
     pub async fn resharding_state(&self) -> Option<ReshardState> {
@@ -214,14 +214,14 @@ impl Collection {
             },
         }
 
-        // We need to abort all resharding transfers
-        let resharding_transfers = shard_holder
-            .get_transfers(|t| t.method == Some(ShardTransferMethod::ReshardingStreamRecords));
+        // Abort all resharding transfer related to this specific resharding operation
+        let resharding_transfers =
+            shard_holder.get_transfers(|t| t.is_specific_resharding(&resharding_key));
         for transfer in resharding_transfers {
             let _is_resharding_transfer = self
                 .abort_shard_transfer_and_report_resharding(transfer.key(), &shard_holder)
                 .await?;
-            // We don't need to abort resharding again since we are already aborting it in next step
+            // We don't need to abort resharding again since we are already aborting it
         }
 
         drop(shard_holder); // drop the read lock before acquiring write lock
