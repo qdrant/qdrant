@@ -39,7 +39,8 @@ pub struct FeatureFlags {
     pub incremental_hnsw_building: bool,
 
     /// Whether to actively migrate RocksDB based ID trackers into a new format.
-    // TODO(1.15): enable by default
+    ///
+    /// Enabled by default in Qdrant 1.15.0.
     pub migrate_rocksdb_id_tracker: bool,
 
     /// Whether to actively migrate RocksDB based vector storages into a new format.
@@ -65,7 +66,7 @@ impl Default for FeatureFlags {
             payload_index_skip_mutable_rocksdb: false,
             payload_storage_skip_rocksdb: false,
             incremental_hnsw_building: true,
-            migrate_rocksdb_id_tracker: false,
+            migrate_rocksdb_id_tracker: true,
             migrate_rocksdb_vector_storage: false,
             migrate_rocksdb_payload_storage: false,
             migrate_rocksdb_payload_indices: false,
