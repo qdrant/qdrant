@@ -11538,8 +11538,8 @@
             "type": "boolean"
           },
           "migrate_rocksdb_id_tracker": {
-            "description": "Whether to actively migrate RocksDB based ID trackers into a new format.",
-            "default": false,
+            "description": "Whether to actively migrate RocksDB based ID trackers into a new format.\n\nEnabled by default in Qdrant 1.15.0.",
+            "default": true,
             "type": "boolean"
           },
           "migrate_rocksdb_vector_storage": {
