@@ -19,7 +19,7 @@ pub struct LazyMatrix<'storage> {
 impl<'storage> LazyMatrix<'storage> {
     /// Create a new lazy matrix from a list of vectors and a storage.
     ///
-    /// Returns None if there are less than two vectors.
+    /// Returns an error if there are less than two vectors.
     pub fn new(
         vectors: Vec<VectorInternal>,
         storage: &'storage VectorStorageEnum,
