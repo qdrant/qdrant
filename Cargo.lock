@@ -79,7 +79,7 @@ dependencies = [
  "foldhash",
  "futures-core",
  "h2 0.3.26",
- "http 0.2.9",
+ "http 0.2.12",
  "httparse",
  "httpdate",
  "itoa",
@@ -153,7 +153,7 @@ checksum = "13d324164c51f63867b57e73ba5936ea151b8a41a1d23d1031eeb9f70d0236f8"
 dependencies = [
  "bytestring",
  "cfg-if",
- "http 0.2.9",
+ "http 0.2.12",
  "regex",
  "regex-lite",
  "serde",
@@ -625,7 +625,7 @@ dependencies = [
  "bitflags 1.3.2",
  "bytes",
  "futures-util",
- "http 0.2.9",
+ "http 0.2.12",
  "http-body 0.4.5",
  "hyper 0.14.26",
  "itoa",
@@ -678,7 +678,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures-util",
- "http 0.2.9",
+ "http 0.2.12",
  "http-body 0.4.5",
  "mime",
  "rustversion",
@@ -2352,7 +2352,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "http 0.2.9",
+ "http 0.2.12",
  "indexmap 2.10.0",
  "slab",
  "tokio",
@@ -2507,9 +2507,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "http"
-version = "0.2.9"
+version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd6effc99afb63425aff9b05836f029929e345a6148a14b7ecd5ab67af944482"
+checksum = "601cbb57e577e2f5ef5be8e7b83f0f63994f25aa94d673e54a92d5c516d101f1"
 dependencies = [
  "bytes",
  "fnv",
@@ -2534,7 +2534,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d5f38f16d184e36f2408a55281cd658ecbd3ca05cce6d6510a176eca393e26d1"
 dependencies = [
  "bytes",
- "http 0.2.9",
+ "http 0.2.12",
  "pin-project-lite",
 ]
 
@@ -2606,7 +2606,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2 0.3.26",
- "http 0.2.9",
+ "http 0.2.12",
  "http-body 0.4.5",
  "httparse",
  "httpdate",
@@ -6140,7 +6140,7 @@ dependencies = [
  "dashmap",
  "env_logger",
  "futures",
- "http 0.2.9",
+ "http 1.3.1",
  "io",
  "issues",
  "itertools 0.14.0",
@@ -6658,7 +6658,7 @@ dependencies = [
  "bytes",
  "flate2",
  "h2 0.3.26",
- "http 0.2.9",
+ "http 0.2.12",
  "http-body 0.4.5",
  "hyper 0.14.26",
  "hyper-timeout 0.4.1",
