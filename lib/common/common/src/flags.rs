@@ -21,7 +21,7 @@ pub struct FeatureFlags {
     pub payload_index_skip_rocksdb: bool,
 
     /// Whether to skip usage of RocksDB in mutable payload indices.
-    // TODO(1.15): enable by default
+    // TODO(1.16.0): enable by default
     pub payload_index_skip_mutable_rocksdb: bool,
 
     /// Whether to skip usage of RocksDB for new payload storages.
@@ -30,7 +30,7 @@ pub struct FeatureFlags {
     /// choose RocksDB when this flag is not set.
     ///
     /// First implemented in Qdrant 1.15.0.
-    // TODO(1.15.1): enable by default
+    // TODO(1.16.0): enable by default
     pub payload_storage_skip_rocksdb: bool,
 
     /// Whether to use incremental HNSW building.
@@ -44,17 +44,17 @@ pub struct FeatureFlags {
     pub migrate_rocksdb_id_tracker: bool,
 
     /// Whether to actively migrate RocksDB based vector storages into a new format.
-    // TODO(1.15.1): enable by default
+    // TODO(1.16.1): enable by default
     pub migrate_rocksdb_vector_storage: bool,
 
     /// Whether to actively migrate RocksDB based payload storages into a new format.
-    // TODO(1.15): enable by default
+    // TODO(1.16.1): enable by default
     pub migrate_rocksdb_payload_storage: bool,
 
     /// Migrate away from RocksDB based payload indices.
     ///
     /// Triggers a payload index rebuild if RocksDB is used.
-    // TODO(1.15.1): enable by default
+    // TODO(1.16.1): enable by default
     pub migrate_rocksdb_payload_indices: bool,
 }
 
