@@ -240,7 +240,7 @@ impl Collection {
 
                 // ...and cancel transfer tasks and remove transfers from internal state
                 for transfer in transfers {
-                    self.abort_shard_transfer(transfer.key(), Some(&shard_holder))
+                    self.abort_shard_transfer_and_resharding(transfer.key(), Some(&shard_holder))
                         .await?;
                 }
             }

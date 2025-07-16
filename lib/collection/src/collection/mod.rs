@@ -477,7 +477,8 @@ impl Collection {
 
             // Terminate transfer if source or target replicas are now dead
             for transfer in related_transfers {
-                self.abort_shard_transfer(transfer.key(), None).await?;
+                self.abort_shard_transfer_and_resharding(transfer.key(), None)
+                    .await?;
             }
 
             // Propagate resharding errors now
@@ -582,7 +583,8 @@ impl Collection {
         }
 
         for transfer in self.get_related_transfers(peer_id).await {
-            self.abort_shard_transfer(transfer.key(), None).await?;
+            self.abort_shard_transfer_and_resharding(transfer.key(), None)
+                .await?;
         }
 
         self.shards_holder
