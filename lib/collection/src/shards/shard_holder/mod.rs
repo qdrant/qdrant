@@ -14,7 +14,8 @@ use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::data_types::segment_manifest::SegmentManifests;
-use segment::types::{ShardKey, SnapshotFormat};
+use segment::json_path::JsonPath;
+use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
 use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
@@ -1031,6 +1032,16 @@ impl ShardHolder {
             )));
         }
 
+        if recovery_type.is_partial() {
+            if let Some(collection_schema) = self.collection_payload_index_schema() {
+                let schema = self.common_payload_index_schema().await?;
+
+                collection_schema.write(|collection_schema| {
+                    *collection_schema = PayloadIndexSchema { schema };
+                })?;
+            }
+        }
+
         Ok(())
     }
 
@@ -1059,6 +1070,57 @@ impl ShardHolder {
             .await?;
 
         Ok(res)
+    }
+
+    pub fn collection_payload_index_schema(&self) -> Option<Arc<SaveOnDisk<PayloadIndexSchema>>> {
+        self.all_shards()
+            .next()
+            .map(|shard| shard.payload_index_schema())
+    }
+
+    pub async fn common_payload_index_schema(
+        &self,
+    ) -> CollectionResult<HashMap<JsonPath, PayloadFieldSchema>> {
+        let mut schema = HashMap::new();
+
+        for shard in self.all_shards() {
+            let shard_schema: HashMap<_, _> = shard
+                .info(true)
+                .await?
+                .payload_schema
+                .into_iter()
+                .filter_map(|(field, info)| {
+                    let schema = match PayloadFieldSchema::try_from(info) {
+                        Ok(schema) => schema,
+                        Err(err) => {
+                            log::warn!(
+                                "Failed to extract payload index schema from payload index info: \
+                                 {err}"
+                            );
+
+                            return None;
+                        }
+                    };
+
+                    Some((field, schema))
+                })
+                .collect();
+
+            if schema.is_empty() {
+                schema = shard_schema;
+                continue;
+            }
+
+            schema.retain(|field, schema| {
+                let Some(shard_schema) = shard_schema.get(field) else {
+                    return false;
+                };
+
+                schema == shard_schema
+            });
+        }
+
+        Ok(schema)
     }
 
     pub fn try_take_partial_snapshot_recovery_lock(

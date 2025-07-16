@@ -1180,6 +1180,10 @@ impl ShardReplicaSet {
             })
             .unwrap_or_default()
     }
+
+    pub(crate) fn payload_index_schema(&self) -> Arc<SaveOnDisk<PayloadIndexSchema>> {
+        self.payload_index_schema.clone()
+    }
 }
 
 /// Represents a replica set state
