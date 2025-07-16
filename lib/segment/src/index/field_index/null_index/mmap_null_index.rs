@@ -184,7 +184,7 @@ impl MmapNullIndex {
             .is_null_slice
             .set_with_resize(id, is_null, hw_counter_ref)?;
 
-        // Update total_points to track the highest point offset seen
+        // Bump total points
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         Ok(())
@@ -204,6 +204,14 @@ impl MmapNullIndex {
         storage
             .is_null_slice
             .set_with_resize(id, false, disposed_hw)?;
+
+        // Bump total points
+        // We MUST bump the total point count when removing a point too
+        // On upsert without this respective field, remove point is called rather than add point
+        // Bumping the total point count ensures we correctly iterate over all empty points
+        // Bug: <https://github.com/qdrant/qdrant/issues/6880>
+        self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
+
         Ok(())
     }
 
