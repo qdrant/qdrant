@@ -57,8 +57,12 @@ impl ShardTransfer {
         }
     }
 
+    pub fn is_resharding(&self) -> bool {
+        self.method.is_some_and(|method| method.is_resharding())
+    }
+
     /// Check if this transfer is related to a specific resharding operation
-    pub fn is_specific_resharding(&self, key: &ReshardKey) -> bool {
+    pub fn is_related_to_resharding(&self, key: &ReshardKey) -> bool {
         // Must be a resharding transfer
         if !self.method.is_some_and(|method| method.is_resharding()) {
             return false;
