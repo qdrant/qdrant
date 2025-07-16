@@ -145,7 +145,7 @@ def test_incompatible_snapshot_recovery(tmp_path: pathlib.Path, wait: bool):
     write_peer = bootstrap_write_peer(tmp_path, 10_000)
 
     res = try_recover_partial_snapshot_from(read_peer, write_peer, wait=wait)
-    assert res.json()["status"] == "error" # This should throw error in both wait=True/False
+    assert res.json()["status"] == {'error': 'Wrong input: Vectors configuration is not compatible: origin vector  size: 1000, while other vector size: 4'}
 
 def test_partial_snapshot_empty(tmp_path: pathlib.Path):
     assert_project_root()
