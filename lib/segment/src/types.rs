@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::cmp::{self, Ordering};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
-use std::hash::Hash;
+use std::hash::{self, Hash};
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -1879,7 +1879,7 @@ impl Validate for PayloadSchemaParams {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
@@ -1895,6 +1895,15 @@ impl cmp::PartialEq for PayloadFieldSchema {
             (Self::FieldParams(this), Self::FieldParams(other)) => this == other,
             (Self::FieldType(this), Self::FieldParams(other)) => &this.expand() == other,
             (Self::FieldParams(this), Self::FieldType(other)) => this == &other.expand(),
+        }
+    }
+}
+
+impl hash::Hash for PayloadFieldSchema {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        match self {
+            PayloadFieldSchema::FieldType(default) => default.expand().hash(state),
+            PayloadFieldSchema::FieldParams(params) => params.hash(state),
         }
     }
 }
