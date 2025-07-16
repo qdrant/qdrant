@@ -392,7 +392,7 @@ impl StructPayloadIndex {
 
         // If we have a RocksDB instance, but no more index using it, completely delete it here
         #[cfg(feature = "rocksdb")]
-        if !index.config.indices.any_is_rocksdb()
+        if !index.config.indices.any_could_be_rocksdb()
             && let Some(db) = index.db.take()
         {
             match Arc::try_unwrap(db) {

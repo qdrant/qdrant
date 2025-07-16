@@ -69,6 +69,19 @@ impl PayloadIndices {
         })
     }
 
+    /// Check if any payload field used RocksDB or could be using rocksDB.
+    /// This means that if we have no data about an indexes' type, we still return `true`.
+    #[cfg(feature = "rocksdb")]
+    pub fn any_could_be_rocksdb(&self) -> bool {
+        self.fields.values().any(|index| {
+            index
+                .types
+                .iter()
+                .any(|t| t.storage_type == StorageType::RocksDb)
+                || index.types.is_empty()
+        }) || self.fields.is_empty()
+    }
+
     pub fn to_schemas(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.fields
             .iter()
