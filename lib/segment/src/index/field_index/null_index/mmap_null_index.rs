@@ -209,7 +209,7 @@ impl MmapNullIndex {
         // We MUST bump the total point count when removing a point too
         // On upsert without this respective field, remove point is called rather than add point
         // Bumping the total point count ensures we correctly iterate over all empty points
-        // Bug: <https://github.com/qdrant/qdrant/issues/6880>
+        // Bug: <https://github.com/qdrant/qdrant/pull/6882>
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         Ok(())

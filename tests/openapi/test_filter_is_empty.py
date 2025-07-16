@@ -73,7 +73,7 @@ def create_collection(collection_name):
 
 def test_filter_is_empty(collection_name):
     """
-    Bug: <https://github.com/qdrant/qdrant/issues/6880>
+    Bug: <https://github.com/qdrant/qdrant/pull/6882>
     """
 
     response = request_with_validation(
