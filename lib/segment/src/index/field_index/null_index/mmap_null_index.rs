@@ -93,6 +93,12 @@ impl MmapNullIndex {
         })
     }
 
+    /// Open a null index at the given path, only if it exists.
+    ///
+    /// # Arguments
+    /// - `path` - The directory where the index files should live, must be exclusive to this index.
+    /// - `total_point_count` - Total number of points in the segment.
+    /// - `create_if_missing` - If true, creates the index if it doesn't exist.
     pub fn open_if_exists(
         path: &Path,
         total_point_count: usize,
