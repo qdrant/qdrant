@@ -2023,14 +2023,18 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
             params,
             points: _,
         } = index_info;
+
         match params {
-            Some(params) if params.kind() == data_type => {
+            None => Ok(PayloadFieldSchema::FieldType(data_type)),
+
+            Some(params) if data_type == params.kind() => {
                 Ok(PayloadFieldSchema::FieldParams(params))
             }
-            Some(_) => Err(format!(
-                "Payload field with type {data_type:?} has unexpected params"
+
+            Some(params) => Err(format!(
+                "payload field with type {data_type:?} has parameters of type {:?}",
+                params.kind(),
             )),
-            None => Ok(PayloadFieldSchema::FieldType(data_type)),
         }
     }
 }
