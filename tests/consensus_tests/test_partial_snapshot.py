@@ -131,7 +131,7 @@ def test_incompatible_snapshot_recovery_with_last_active_replica(tmp_path: pathl
     assert_project_root()
 
     # setup read and write clusters with different configs so partial snapshot fails (different vector size):
-    read_peer = bootstrap_peer(tmp_path / "read", 6333, "read_", 3)
+    read_peer = bootstrap_peer(tmp_path / "read", 63333, "read_", 3)
     create_collection(read_peer, shard_number = 1, replication_factor = 3, indexing_threshold = 1000000, sparse_vectors = False, vector_size=1000)
     wait_collection_exists_and_active_on_all_peers(COLLECTION, [read_peer])
     write_peer = bootstrap_write_peer(tmp_path, 1000)
