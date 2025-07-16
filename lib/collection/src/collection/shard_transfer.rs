@@ -299,19 +299,14 @@ impl Collection {
         Ok(())
     }
 
-    /// Handles abort of the transfer
-    ///
-    /// 1. Unregister the transfer
-    /// 2. Stop transfer task
-    /// 3. Unwrap the proxy
-    /// 4. Remove temp shard, or mark it as dead
+    /// Return if it was a resharding transfer so it can be handled correctly (aborted or ignored)
     pub async fn abort_shard_transfer(
         &self,
-        transfer_key: ShardTransferKey,
-        shard_holder: Option<&ShardHolder>,
+        transfer: ShardTransfer,
+        shard_holder: &ShardHolder,
     ) -> CollectionResult<()> {
         // TODO: Ensure cancel safety!
-
+        let transfer_key = transfer.key();
         log::debug!("Aborting shard transfer {transfer_key:?}");
 
         let _transfer_result = self
@@ -321,18 +316,7 @@ impl Collection {
             .stop_task(&transfer_key)
             .await;
 
-        let mut shard_holder_guard = None;
-
-        let shard_holder = match shard_holder {
-            Some(shard_holder) => shard_holder,
-            None => shard_holder_guard.insert(self.shards_holder.read().await),
-        };
-
-        let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
-            return Ok(());
-        };
-
-        let is_resharding_transfer = transfer.method.is_some_and(|method| method.is_resharding());
+        let is_resharding_transfer = transfer.is_resharding();
 
         let shard_id = transfer_key.to_shard_id.unwrap_or(transfer_key.shard_id);
 
@@ -372,6 +356,34 @@ impl Collection {
         }
 
         shard_holder.register_abort_transfer(&transfer_key)?;
+
+        Ok(())
+    }
+
+    /// Handles abort of the transfer and also aborts resharding if the transfer was related to resharding
+    ///
+    /// 1. Unregister the transfer
+    /// 2. Stop transfer task
+    /// 3. Unwrap the proxy
+    /// 4. Remove temp shard, or mark it as dead
+    pub async fn abort_shard_transfer_and_resharding(
+        &self,
+        transfer_key: ShardTransferKey,
+        shard_holder: Option<&ShardHolder>,
+    ) -> CollectionResult<()> {
+        let mut shard_holder_guard = None;
+
+        let shard_holder = match shard_holder {
+            Some(shard_holder) => shard_holder,
+            None => shard_holder_guard.insert(self.shards_holder.read().await),
+        };
+
+        let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
+            return Ok(());
+        };
+
+        let is_resharding_transfer = transfer.is_resharding();
+        self.abort_shard_transfer(transfer, shard_holder).await?;
 
         if is_resharding_transfer {
             let resharding_state = shard_holder.resharding_state.read().clone();

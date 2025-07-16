@@ -222,7 +222,7 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn check_abort_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+    pub fn check_abort_resharding(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let state = self.resharding_state.read();
 
         // - do not abort if no resharding operation is ongoing
@@ -269,41 +269,8 @@ impl ShardHolder {
             ref shard_key,
         } = resharding_key;
 
-        let is_in_progress = match self.resharding_state.read().deref() {
-            Some(state) if state.matches(&resharding_key) => {
-                if !force && state.stage >= ReshardStage::ReadHashRingCommitted {
-                    return Err(CollectionError::bad_request(format!(
-                        "can't abort resharding {resharding_key}, \
-                         because read hash ring has been committed already, \
-                         resharding must be completed",
-                    )));
-                }
-
-                true
-            }
-
-            Some(state) => {
-                log::warn!(
-                    "aborting resharding {resharding_key}, \
-                     but another resharding is in progress:\n\
-                     {state:#?}"
-                );
-
-                false
-            }
-
-            None => {
-                log::warn!(
-                    "aborting resharding {resharding_key}, \
-                     but resharding is not in progress"
-                );
-
-                false
-            }
-        };
-
         // Cleanup existing shards if resharding down
-        if is_in_progress && direction == ReshardingDirection::Down {
+        if direction == ReshardingDirection::Down {
             for (&id, shard) in self.shards.iter() {
                 // Skip shards that does not belong to resharding shard key
                 if self.shard_id_to_key_mapping.get(&id) != shard_key.as_ref() {
@@ -348,7 +315,7 @@ impl ShardHolder {
         }
 
         // Remove new shard if resharding up
-        if is_in_progress && direction == ReshardingDirection::Up {
+        if direction == ReshardingDirection::Up {
             if let Some(shard) = self.get_shard(shard_id) {
                 // Remove all replicas from shard
                 for (peer_id, replica_state) in shard.peers() {
@@ -389,18 +356,16 @@ impl ShardHolder {
             }
         }
 
-        if is_in_progress {
-            self.resharding_state.write(|state| {
-                debug_assert!(
-                    state
-                        .as_ref()
-                        .is_some_and(|state| state.matches(&resharding_key)),
-                    "resharding {resharding_key} is not in progress:\n{state:#?}"
-                );
+        self.resharding_state.write(|state| {
+            debug_assert!(
+                state
+                    .as_ref()
+                    .is_some_and(|state| state.matches(&resharding_key)),
+                "resharding {resharding_key} is not in progress:\n{state:#?}"
+            );
 
-                state.take();
-            })?;
-        }
+            state.take();
+        })?;
 
         Ok(())
     }
