@@ -161,12 +161,8 @@ impl<'a, V: PostingValue> PostingVisitor<'a, V> {
                     .or_else(|| self.list.get_remainder(0).map(|e| e.value))
             };
 
-            let value = V::Handler::get_value(
-                sized_value,
-                next_sized_value,
-                self.list.var_size_data,
-                &self.list.hw_counter,
-            );
+            let value =
+                V::Handler::get_value(sized_value, next_sized_value, self.list.var_size_data);
 
             return Some(PostingElement { id, value });
         }
@@ -175,12 +171,7 @@ impl<'a, V: PostingValue> PostingVisitor<'a, V> {
         self.list.get_remainder(local_offset).map(|e| {
             let id = e.id;
             let next_sized_value = || self.list.get_remainder(local_offset + 1).map(|r| r.value);
-            let value = V::Handler::get_value(
-                e.value,
-                next_sized_value,
-                self.list.var_size_data,
-                &self.list.hw_counter,
-            );
+            let value = V::Handler::get_value(e.value, next_sized_value, self.list.var_size_data);
 
             PostingElement {
                 id: id.get(),
