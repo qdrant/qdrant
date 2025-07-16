@@ -1196,9 +1196,7 @@ impl LocalShardClocks {
     // Load clock maps from disk
     pub fn load(shard_path: &Path) -> CollectionResult<Self> {
         let newest_clocks = ClockMap::load_or_default(&Self::newest_clocks_path(shard_path))?;
-
         let oldest_clocks = ClockMap::load_or_default(&Self::oldest_clocks_path(shard_path))?;
-
         Ok(Self::new(newest_clocks, oldest_clocks))
     }
 
