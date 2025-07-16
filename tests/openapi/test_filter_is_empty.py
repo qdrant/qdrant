@@ -1,8 +1,7 @@
 import pytest
 
-from .helpers.collection_setup import multivec_collection_setup, drop_collection
+from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
-
 
 @pytest.fixture(autouse=True, scope="module")
 def setup(collection_name):
