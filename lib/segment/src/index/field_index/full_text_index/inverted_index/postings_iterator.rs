@@ -1,4 +1,5 @@
 use common::types::PointOffsetType;
+use itertools::Either;
 use posting_list::{PostingIterator, PostingListView, PostingValue};
 
 use super::posting_list::PostingList;
@@ -9,7 +10,7 @@ use crate::index::field_index::full_text_index::inverted_index::{Document, Token
 
 pub fn intersect_postings_iterator<'a>(
     mut postings: Vec<&'a PostingList>,
-) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+) -> impl Iterator<Item = PointOffsetType> + 'a {
     let smallest_posting_idx = postings
         .iter()
         .enumerate()
@@ -18,17 +19,15 @@ pub fn intersect_postings_iterator<'a>(
         .unwrap();
     let smallest_posting = postings.remove(smallest_posting_idx);
 
-    let and_iter = smallest_posting
+    smallest_posting
         .iter()
-        .filter(move |doc_id| postings.iter().all(|posting| posting.contains(*doc_id)));
-
-    Box::new(and_iter)
+        .filter(move |doc_id| postings.iter().all(|posting| posting.contains(*doc_id)))
 }
 
 pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
     mut postings: Vec<PostingListView<'a, V>>,
     is_active: impl Fn(PointOffsetType) -> bool + 'a,
-) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+) -> impl Iterator<Item = PointOffsetType> + 'a {
     let smallest_posting_idx = postings
         .iter()
         .enumerate()
@@ -43,7 +42,7 @@ pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
         .map(PostingListView::into_iter)
         .collect::<Vec<_>>();
 
-    let and_iter = smallest_posting_iterator
+    smallest_posting_iterator
         .map(|elem| elem.id)
         .filter(move |id| {
             is_active(*id)
@@ -56,9 +55,7 @@ pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
                         .advance_until_greater_or_equal(*id)
                         .is_some_and(|elem| elem.id == *id)
                 })
-        });
-
-    Box::new(and_iter)
+        })
 }
 
 /// Returns an iterator over the points that match the given phrase query.
@@ -66,10 +63,10 @@ pub fn intersect_compressed_postings_phrase_iterator<'a>(
     phrase: Document,
     token_to_posting: impl Fn(&TokenId) -> Option<PostingListView<'a, Positions>>,
     is_active: impl Fn(PointOffsetType) -> bool + 'a,
-) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+) -> impl Iterator<Item = PointOffsetType> + 'a {
     if phrase.is_empty() {
         // Empty request -> no matches
-        return Box::new(std::iter::empty());
+        return Either::Left(std::iter::empty());
     }
 
     let postings_opt: Option<Vec<_>> = phrase
@@ -81,7 +78,7 @@ pub fn intersect_compressed_postings_phrase_iterator<'a>(
 
     let Some(mut postings) = postings_opt else {
         // There are unseen tokens -> no matches
-        return Box::new(std::iter::empty());
+        return Either::Left(std::iter::empty());
     };
 
     let smallest_posting_idx = postings
@@ -115,7 +112,7 @@ pub fn intersect_compressed_postings_phrase_iterator<'a>(
         })
         .map(|elem| elem.id);
 
-    Box::new(has_phrase_iter)
+    Either::Right(has_phrase_iter)
 }
 
 /// Reconstructs a partial document from the posting lists (which contain positions)

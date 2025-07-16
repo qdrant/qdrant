@@ -214,7 +214,10 @@ impl MmapInvertedIndex {
                 return Box::new(std::iter::empty());
             }
 
-            intersect_compressed_postings_iterator(posting_readers, filter)
+            Box::new(intersect_compressed_postings_iterator(
+                posting_readers,
+                filter,
+            ))
         }
 
         match &storage.postings {
@@ -273,9 +276,9 @@ impl MmapInvertedIndex {
         &'a self,
         phrase: Document,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
         let Some(storage) = &self.storage else {
-            return Box::new(std::iter::empty());
+            return Either::Left(std::iter::empty());
         };
 
         // in case of mmap immutable index, deleted points are still in the postings
@@ -283,14 +286,14 @@ impl MmapInvertedIndex {
 
         match &storage.postings {
             MmapPostingsEnum::WithPositions(postings) => {
-                intersect_compressed_postings_phrase_iterator(
+                Either::Right(intersect_compressed_postings_phrase_iterator(
                     phrase,
                     |token_id| postings.get(*token_id, hw_counter),
                     is_active,
-                )
+                ))
             }
             // cannot do phrase matching if there's no positional information
-            MmapPostingsEnum::Ids(_postings) => Box::new(std::iter::empty()),
+            MmapPostingsEnum::Ids(_postings) => Either::Left(std::iter::empty()),
         }
     }
 
@@ -429,7 +432,7 @@ impl InvertedIndex for MmapInvertedIndex {
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match query {
             ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens, hw_counter),
-            ParsedQuery::Phrase(phrase) => self.filter_has_phrase(phrase, hw_counter),
+            ParsedQuery::Phrase(phrase) => Box::new(self.filter_has_phrase(phrase, hw_counter)),
         }
     }
 
