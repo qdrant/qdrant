@@ -300,6 +300,7 @@ impl ShardReplicaSet {
                     effective_optimizers_config.clone(),
                     shared_storage_config.clone(),
                     payload_index_schema.clone(),
+                    true,
                     update_runtime.clone(),
                     search_runtime.clone(),
                     optimizer_resource_budget.clone(),

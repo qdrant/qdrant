@@ -248,6 +248,7 @@ impl LocalShard {
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
+        rebuild_payload_index: bool,
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
@@ -333,7 +334,11 @@ impl LocalShard {
                 };
 
                 segment.check_consistency_and_repair()?;
-                segment.update_all_field_indices(&payload_index_schema.read().schema.clone())?;
+
+                if rebuild_payload_index {
+                    segment
+                        .update_all_field_indices(&payload_index_schema.read().schema.clone())?;
+                }
 
                 CollectionResult::Ok(Some(segment))
             }));
