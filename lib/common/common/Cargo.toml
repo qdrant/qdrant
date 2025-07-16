@@ -50,7 +50,7 @@ serde_json = { workspace = true }
 tango-bench = "0.6.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-thread-priority = "1.2"
+thread-priority = "2.1.0"
 
 [[bench]]
 name = "bitpacking"
