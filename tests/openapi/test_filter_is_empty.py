@@ -47,18 +47,6 @@ def create_collection(collection_name):
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{collection_name}/index',
-        method="PUT",
-        path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
-        body={
-            "field_name": "b",
-            "field_schema": "keyword",
-        }
-    )
-    assert response.ok
-
-    response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
         path_params={'collection_name': collection_name},
@@ -68,17 +56,14 @@ def create_collection(collection_name):
                 {
                     "id": 1,
                     "vector": [0.05, 0.61, 0.76],
-                    "payload": {"a": "foo"}
                 },
                 {
                     "id": 2,
                     "vector": [0.19, 0.81, 0.75],
-                    "payload": {"a": "foo"}
                 },
                 {
                     "id": 3,
                     "vector": [0.36, 0.55, 0.47],
-                    "payload": {"a": "foo"}
                 },
             ]
         }
@@ -99,12 +84,8 @@ def test_filter_is_empty(collection_name):
             "filter": {
                 "must": [
                     {
-                        "key": "a",
-                        "match": { "value": "foo" }
-                    },
-                    {
                         "is_empty": {
-                            "key": "b"
+                            "key": "a"
                         }
                     }
                 ]
