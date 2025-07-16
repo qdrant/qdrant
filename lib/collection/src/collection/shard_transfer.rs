@@ -300,12 +300,13 @@ impl Collection {
     }
 
     /// Return if it was a resharding transfer so it can be handled correctly (aborted or ignored)
-    pub async fn abort_shard_transfer_and_report_resharding(
+    pub async fn abort_shard_transfer(
         &self,
-        transfer_key: ShardTransferKey,
+        transfer: ShardTransfer,
         shard_holder: &ShardHolder,
-    ) -> CollectionResult<bool> {
+    ) -> CollectionResult<()> {
         // TODO: Ensure cancel safety!
+        let transfer_key = transfer.key();
         log::debug!("Aborting shard transfer {transfer_key:?}");
 
         let _transfer_result = self
@@ -315,11 +316,7 @@ impl Collection {
             .stop_task(&transfer_key)
             .await;
 
-        let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
-            return Ok(false);
-        };
-
-        let is_resharding_transfer = transfer.method.is_some_and(|method| method.is_resharding());
+        let is_resharding_transfer = transfer.is_resharding();
 
         let shard_id = transfer_key.to_shard_id.unwrap_or(transfer_key.shard_id);
 
@@ -360,16 +357,16 @@ impl Collection {
 
         shard_holder.register_abort_transfer(&transfer_key)?;
 
-        Ok(is_resharding_transfer)
+        Ok(())
     }
 
-    /// Handles abort of the transfer
+    /// Handles abort of the transfer and also aborts resharding if the transfer was related to resharding
     ///
     /// 1. Unregister the transfer
     /// 2. Stop transfer task
     /// 3. Unwrap the proxy
     /// 4. Remove temp shard, or mark it as dead
-    pub async fn abort_shard_transfer(
+    pub async fn abort_shard_transfer_and_resharding(
         &self,
         transfer_key: ShardTransferKey,
         shard_holder: Option<&ShardHolder>,
@@ -381,9 +378,12 @@ impl Collection {
             None => shard_holder_guard.insert(self.shards_holder.read().await),
         };
 
-        let is_resharding_transfer = self
-            .abort_shard_transfer_and_report_resharding(transfer_key, shard_holder)
-            .await?;
+        let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
+            return Ok(());
+        };
+
+        let is_resharding_transfer = transfer.is_resharding();
+        self.abort_shard_transfer(transfer, shard_holder).await?;
 
         if is_resharding_transfer {
             let resharding_state = shard_holder.resharding_state.read().clone();

@@ -216,12 +216,9 @@ impl Collection {
 
         // Abort all resharding transfer related to this specific resharding operation
         let resharding_transfers =
-            shard_holder.get_transfers(|t| t.is_specific_resharding(&resharding_key));
+            shard_holder.get_transfers(|t| t.is_related_to_resharding(&resharding_key));
         for transfer in resharding_transfers {
-            let _is_resharding_transfer = self
-                .abort_shard_transfer_and_report_resharding(transfer.key(), &shard_holder)
-                .await?;
-            // We don't need to abort resharding again since we are already aborting it
+            self.abort_shard_transfer(transfer, &shard_holder).await?;
         }
 
         drop(shard_holder); // drop the read lock before acquiring write lock
