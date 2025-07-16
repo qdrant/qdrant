@@ -318,20 +318,24 @@ impl LocalShard {
             // let semaphore_clone = semaphore.clone();
             load_handlers.push(tokio::task::spawn_blocking(move || {
                 // let _guard = semaphore_clone.lock();
-                let mut res = load_segment(&segment_path, &AtomicBool::new(false))?;
-                if let Some(segment) = &mut res {
-                    segment.check_consistency_and_repair()?;
-                    segment
-                        .update_all_field_indices(&payload_index_schema.read().schema.clone())?;
-                } else {
+
+                let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
+
+                let Some(mut segment) = segment else {
                     std::fs::remove_dir_all(&segment_path).map_err(|err| {
                         CollectionError::service_error(format!(
-                            "Can't remove leftover segment {}, due to {err}",
-                            segment_path.to_str().unwrap(),
+                            "failed to remove leftover segment {}: {err}",
+                            segment_path.display(),
                         ))
                     })?;
-                }
-                Ok::<_, CollectionError>(res)
+
+                    return Ok(None);
+                };
+
+                segment.check_consistency_and_repair()?;
+                segment.update_all_field_indices(&payload_index_schema.read().schema.clone())?;
+
+                CollectionResult::Ok(Some(segment))
             }));
         }
 
