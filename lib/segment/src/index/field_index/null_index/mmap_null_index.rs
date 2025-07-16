@@ -93,6 +93,12 @@ impl MmapNullIndex {
         })
     }
 
+    /// Open a null index at the given path, only if it exists.
+    ///
+    /// # Arguments
+    /// - `path` - The directory where the index files should live, must be exclusive to this index.
+    /// - `total_point_count` - Total number of points in the segment.
+    /// - `create_if_missing` - If true, creates the index if it doesn't exist.
     pub fn open_if_exists(
         path: &Path,
         total_point_count: usize,
@@ -178,7 +184,7 @@ impl MmapNullIndex {
             .is_null_slice
             .set_with_resize(id, is_null, hw_counter_ref)?;
 
-        // Update total_points to track the highest point offset seen
+        // Bump total points
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         Ok(())
@@ -198,6 +204,14 @@ impl MmapNullIndex {
         storage
             .is_null_slice
             .set_with_resize(id, false, disposed_hw)?;
+
+        // Bump total points
+        // We MUST bump the total point count when removing a point too
+        // On upsert without this respective field, remove point is called rather than add point
+        // Bumping the total point count ensures we correctly iterate over all empty points
+        // Bug: <https://github.com/qdrant/qdrant/pull/6882>
+        self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
+
         Ok(())
     }
 

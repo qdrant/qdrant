@@ -132,8 +132,11 @@ impl IndexSelector<'_> {
             }
 
             (PayloadIndexType::NullIndex, _) => {
-                let Some(null_index) =
-                    MmapNullIndex::open_if_exists(path, total_point_count, create_if_missing)?
+                let Some(null_index) = MmapNullIndex::open_if_exists(
+                    &null_dir(path, field),
+                    total_point_count,
+                    create_if_missing,
+                )?
                 else {
                     return Ok(None);
                 };

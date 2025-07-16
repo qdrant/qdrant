@@ -179,7 +179,14 @@ impl StructPayloadIndex {
                 create_if_missing,
             )?;
 
-            // Special null index complements every index.
+            debug_assert!(
+                !indexes
+                    .iter()
+                    .any(|index| matches!(index, FieldIndex::NullIndex(_))),
+                "index selector is not expected to provide null index",
+            );
+
+            // Special null index complements every index
             if let Some(null_index) = IndexSelector::new_null_index(
                 &self.path,
                 field,
