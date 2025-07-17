@@ -34,6 +34,21 @@ impl VectorInternal {
             VectorInternal::MultiDense(multivec) => multivec.vectors_count(),
         }
     }
+
+    /// Preprocess the vector
+    ///
+    /// For a sparse vector, indices will be sorted.
+    pub fn preprocess(&mut self) {
+        match self {
+            VectorInternal::Dense(_) => {}
+            VectorInternal::Sparse(sparse) => {
+                if !sparse.is_sorted() {
+                    sparse.sort_by_indices();
+                }
+            }
+            VectorInternal::MultiDense(_) => {}
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
