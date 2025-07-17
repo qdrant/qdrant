@@ -120,14 +120,6 @@ storage:
     # If not set, will be automatically selected considering the number of available CPUs.
     max_segment_size_kb: null
 
-    # Maximum size (in KiloBytes) of vectors to store in-memory per segment.
-    # Segments larger than this threshold will be stored as read-only memmapped file.
-    # To enable memmap storage, lower the threshold
-    # Note: 1Kb = 1 vector of size 256
-    # To explicitly disable mmap optimization, set to `0`.
-    # If not set, will be disabled by default.
-    memmap_threshold_kb: null
-
     # Maximum size (in KiloBytes) of vectors allowed for plain index.
     # Default value based on experiments and observations.
     # Note: 1Kb = 1 vector of size 256
@@ -151,7 +143,6 @@ storage:
   #  vacuum_min_vector_number: 1000
   #  default_segment_number: 0
   #  max_segment_size_kb: null
-  #  memmap_threshold_kb: null
   #  indexing_threshold_kb: 10000
   #  flush_interval_sec: 5
   #  max_optimization_threads: null

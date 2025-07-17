@@ -61,6 +61,7 @@ pub struct OptimizersConfig {
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "memmap_threshold_kb")]
     #[serde(default)]
+    #[deprecated(since = "1.15.0", note = "Use `on_disk` flags instead")]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
     ///
@@ -118,6 +119,7 @@ impl OptimizersConfig {
             Some(custom) => custom,
         };
 
+        #[expect(deprecated)]
         let memmap_threshold_kb = match self.memmap_threshold {
             None | Some(0) => usize::MAX, // default | disable memmap
             Some(custom) => custom,
