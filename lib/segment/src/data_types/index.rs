@@ -238,6 +238,7 @@ pub enum StemmingAlgorithm {
 
 /// Languages supported by snowball stemmer.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum SnowballLanguage {
     #[serde(alias = "ar")]
     Arabic,
