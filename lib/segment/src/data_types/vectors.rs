@@ -37,7 +37,7 @@ impl VectorInternal {
 
     /// Preprocess the vector
     ///
-    /// For a sparce vector, indices will be sorted.
+    /// For a sparse vector, indices will be sorted.
     pub fn preprocess(&mut self) {
         match self {
             VectorInternal::Dense(_) => {}
