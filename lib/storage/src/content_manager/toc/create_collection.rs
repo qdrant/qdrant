@@ -42,6 +42,7 @@ impl TableOfContent {
             optimizers_config: optimizers_config_diff,
             replication_factor,
             write_consistency_factor,
+            #[expect(deprecated)]
             init_from,
             quantization_config,
             sparse_vectors,

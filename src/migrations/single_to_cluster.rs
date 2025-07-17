@@ -60,10 +60,11 @@ pub async fn handle_existing_collections(
                 hnsw_config: Some(collection_state.config.hnsw_config.into()),
                 wal_config: Some(collection_state.config.wal_config.into()),
                 optimizers_config: Some(collection_state.config.optimizer_config.into()),
-                init_from: None,
                 quantization_config: collection_state.config.quantization_config,
                 strict_mode_config: collection_state.config.strict_mode_config,
                 uuid: collection_state.config.uuid,
+                #[expect(deprecated)]
+                init_from: None,
             },
         )
         .expect("Failed to create collection operation");

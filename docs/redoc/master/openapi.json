@@ -9642,8 +9642,9 @@
             ]
           },
           "init_from": {
-            "description": "Specify other collection to copy data from.",
+            "description": "Specify other collection to copy data from.\n\nDeprecated since Qdrant 1.15.0.",
             "default": null,
+            "deprecated": true,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/InitFrom"

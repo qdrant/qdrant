@@ -700,7 +700,7 @@
 | vectors_config | [VectorsConfig](#qdrant-VectorsConfig) | optional | Configuration for vectors |
 | replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard that network tries to maintain, default = 1 |
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful, default = 1 |
-| init_from_collection | [string](#string) | optional | Specify name of the other collection to copy data from |
+| init_from_collection | [string](#string) | optional | Deprecated: specify name of the other collection to copy data from |
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Quantization configuration of vector |
 | sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
 | sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | Configuration for sparse vectors |
