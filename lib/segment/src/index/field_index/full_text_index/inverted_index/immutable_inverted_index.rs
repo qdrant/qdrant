@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
 use super::immutable_postings_enum::ImmutablePostings;
@@ -47,10 +48,10 @@ impl ImmutableInvertedIndex {
     }
 
     /// Iterate over point ids whose documents contain all given tokens
-    fn filter_has_subset(
-        &self,
+    fn filter_has_subset<'a>(
+        &'a self,
         tokens: TokenSet,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
         // in case of immutable index, deleted documents are still in the postings
         let filter = move |idx| {
             self.point_to_tokens_count
@@ -62,7 +63,7 @@ impl ImmutableInvertedIndex {
             postings: &'a [PostingList<V>],
             tokens: TokenSet,
             filter: impl Fn(PointOffsetType) -> bool + 'a,
-        ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        ) -> impl Iterator<Item = PointOffsetType> + 'a {
             let postings_opt: Option<Vec<_>> = tokens
                 .tokens()
                 .iter()
@@ -71,20 +72,24 @@ impl ImmutableInvertedIndex {
 
             // All tokens must have postings
             let Some(postings) = postings_opt else {
-                return Box::new(std::iter::empty());
+                return Either::Left(std::iter::empty());
             };
 
             // Query must not be empty
             if postings.is_empty() {
-                return Box::new(std::iter::empty());
+                return Either::Left(std::iter::empty());
             };
 
-            intersect_compressed_postings_iterator(postings, filter)
+            Either::Right(intersect_compressed_postings_iterator(postings, filter))
         }
 
         match &self.postings {
-            ImmutablePostings::Ids(postings) => intersection(postings, tokens, filter),
-            ImmutablePostings::WithPositions(postings) => intersection(postings, tokens, filter),
+            ImmutablePostings::Ids(postings) => {
+                Either::Left(intersection(postings, tokens, filter))
+            }
+            ImmutablePostings::WithPositions(postings) => {
+                Either::Right(intersection(postings, tokens, filter))
+            }
         }
     }
 
@@ -122,7 +127,7 @@ impl ImmutableInvertedIndex {
     pub fn filter_has_phrase<'a>(
         &'a self,
         phrase: Document,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
         // in case of mmap immutable index, deleted points are still in the postings
         let is_active = move |idx| {
             self.point_to_tokens_count
@@ -132,14 +137,14 @@ impl ImmutableInvertedIndex {
 
         match &self.postings {
             ImmutablePostings::WithPositions(postings) => {
-                intersect_compressed_postings_phrase_iterator(
+                Either::Right(intersect_compressed_postings_phrase_iterator(
                     phrase,
                     |token_id| postings.get(*token_id as usize).map(PostingList::view),
                     is_active,
-                )
+                ))
             }
             // cannot do phrase matching if there's no positional information
-            ImmutablePostings::Ids(_postings) => Box::new(std::iter::empty()),
+            ImmutablePostings::Ids(_postings) => Either::Left(std::iter::empty()),
         }
     }
 
@@ -208,8 +213,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
         _hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match query {
-            ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens),
-            ParsedQuery::Phrase(tokens) => self.filter_has_phrase(tokens),
+            ParsedQuery::Tokens(tokens) => Box::new(self.filter_has_subset(tokens)),
+            ParsedQuery::Phrase(tokens) => Box::new(self.filter_has_phrase(tokens)),
         }
     }
 

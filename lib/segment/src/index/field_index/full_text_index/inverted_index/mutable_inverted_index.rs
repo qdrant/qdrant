@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use itertools::Either;
 
 use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator;
@@ -54,10 +55,7 @@ impl MutableInvertedIndex {
     }
 
     /// Iterate over point ids whose documents contain all given tokens
-    fn filter_has_subset(
-        &self,
-        tokens: TokenSet,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn filter_has_subset(&self, tokens: TokenSet) -> impl Iterator<Item = PointOffsetType> + '_ {
         let postings_opt: Option<Vec<_>> = tokens
             .tokens()
             .iter()
@@ -68,15 +66,17 @@ impl MutableInvertedIndex {
                 self.postings.get(token_id as usize)
             })
             .collect();
+
         let Some(postings) = postings_opt else {
             // There are unseen tokens -> no matches
-            return Box::new(std::iter::empty());
+            return Either::Left(std::iter::empty());
         };
         if postings.is_empty() {
             // Empty request -> no matches
-            return Box::new(std::iter::empty());
+            return Either::Left(std::iter::empty());
         }
-        intersect_postings_iterator(postings)
+
+        Either::Right(intersect_postings_iterator(postings))
     }
 
     pub fn filter_has_phrase(
@@ -209,7 +209,7 @@ impl InvertedIndex for MutableInvertedIndex {
         _hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         match query {
-            ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens),
+            ParsedQuery::Tokens(tokens) => Box::new(self.filter_has_subset(tokens)),
             ParsedQuery::Phrase(phrase) => self.filter_has_phrase(phrase),
         }
     }

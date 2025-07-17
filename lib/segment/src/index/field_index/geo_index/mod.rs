@@ -339,7 +339,7 @@ impl GeoMapIndex {
     }
 
     /// Get iterator over smallest geo-hash regions larger than `threshold` points
-    fn large_hashes(&self, threshold: usize) -> Box<dyn Iterator<Item = (GeoHash, usize)> + '_> {
+    fn large_hashes(&self, threshold: usize) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
         let filter_condition =
             |(hash, size): &(GeoHash, usize)| *size > threshold && !hash.is_empty();
         let mut large_regions = match self {
@@ -373,7 +373,7 @@ impl GeoMapIndex {
             }
         }
 
-        Box::new(edge_region.into_iter())
+        edge_region.into_iter()
     }
 
     pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
