@@ -99,13 +99,14 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 on_disk_payload,
                 replication_factor,
                 write_consistency_factor,
-                init_from: init_from_collection.map(|v| InitFrom { collection: v }),
                 quantization_config: quantization_config.map(TryInto::try_into).transpose()?,
                 sharding_method: sharding_method
                     .map(sharding_method_from_proto)
                     .transpose()?,
                 strict_mode_config: strict_mode_config.map(strict_mode_from_api),
                 uuid: None,
+                #[expect(deprecated)]
+                init_from: init_from_collection.map(|v| InitFrom { collection: v }),
             },
         )?;
         Ok(CollectionMetaOperations::CreateCollection(op))

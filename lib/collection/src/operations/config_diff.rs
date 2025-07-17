@@ -1,3 +1,5 @@
+#![allow(deprecated)] // hack to remove warning for memmap_threshold deprecation below
+
 use std::num::NonZeroU32;
 
 use api::rest::MaxOptimizationThreads;
@@ -148,7 +150,10 @@ pub struct OptimizersConfigDiff {
     /// To disable memmap storage, set this to `0`.
     ///
     /// Note: 1Kb = 1 vector of size 256
+    ///
+    /// Deprecated since Qdrant 1.15.0
     #[serde(alias = "memmap_threshold_kb")]
+    #[deprecated(since = "1.15.0", note = "Use `on_disk` flags instead")]
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
     ///
@@ -175,6 +180,7 @@ impl std::hash::Hash for OptimizersConfigDiff {
             vacuum_min_vector_number,
             default_segment_number,
             max_segment_size,
+            #[expect(deprecated)]
             memmap_threshold,
             indexing_threshold,
             flush_interval_sec,
@@ -194,12 +200,14 @@ impl std::hash::Hash for OptimizersConfigDiff {
 
 impl PartialEq for OptimizersConfigDiff {
     fn eq(&self, other: &Self) -> bool {
+        #[expect(deprecated)]
+        let eq_memmap_threshold = self.memmap_threshold == other.memmap_threshold;
         self.deleted_threshold.map(f64::to_le_bytes)
             == other.deleted_threshold.map(f64::to_le_bytes)
             && self.vacuum_min_vector_number == other.vacuum_min_vector_number
             && self.default_segment_number == other.default_segment_number
             && self.max_segment_size == other.max_segment_size
-            && self.memmap_threshold == other.memmap_threshold
+            && eq_memmap_threshold
             && self.indexing_threshold == other.indexing_threshold
             && self.flush_interval_sec == other.flush_interval_sec
             && self.max_optimization_threads == other.max_optimization_threads
@@ -222,6 +230,7 @@ impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {
             vacuum_min_vector_number,
             default_segment_number,
             max_segment_size,
+            #[expect(deprecated)]
             memmap_threshold,
             indexing_threshold,
             flush_interval_sec,
@@ -234,6 +243,7 @@ impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {
                 .unwrap_or(config.vacuum_min_vector_number),
             default_segment_number: default_segment_number.unwrap_or(config.default_segment_number),
             max_segment_size: max_segment_size.or(config.max_segment_size),
+            #[expect(deprecated)]
             memmap_threshold: memmap_threshold.or(config.memmap_threshold),
             indexing_threshold: indexing_threshold.or(config.indexing_threshold),
             flush_interval_sec: flush_interval_sec.unwrap_or(config.flush_interval_sec),

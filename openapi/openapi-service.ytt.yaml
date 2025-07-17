@@ -82,6 +82,7 @@ paths:
       operationId: post_locks
       tags:
         - Service
+      deprecated: true #! Deprecated since Qdrant 1.15.0
       requestBody:
         description: Lock options and optional error message
         content:
@@ -96,6 +97,7 @@ paths:
       operationId: get_locks
       tags:
         - Service
+      deprecated: true #! Deprecated since Qdrant 1.15.0
       responses: #@ response(reference("LocksOption"))
 
   /healthz:

@@ -81,6 +81,7 @@ mod tests {
             access: Access::Collection(CollectionAccessList(vec![CollectionAccess {
                 collection: "collection".to_string(),
                 access: CollectionAccessMode::ReadWrite,
+                #[expect(deprecated)]
                 payload: Some(PayloadConstraint(
                     vec![
                         (
