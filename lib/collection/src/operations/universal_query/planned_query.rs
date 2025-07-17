@@ -383,7 +383,7 @@ fn leaf_source_from_scoring_query(
             let core_search = CoreSearchRequest {
                 query,
                 filter,
-                score_threshold,
+                score_threshold: None,
                 with_vector: Some(WithVector::from(false)),
                 with_payload: Some(WithPayloadInterface::from(false)),
                 offset: 0,

@@ -86,9 +86,17 @@ pub async fn mmr_from_points_with_vector(
             hw_measurement_acc.get_counter_cell(),
         )?;
 
-        for (p, score) in candidates.iter_mut().zip(scores) {
-            p.score = score;
-        }
+        candidates = candidates
+            .into_iter()
+            .zip(scores)
+            .filter_map(|(mut p, score)| {
+                if score_threshold.is_some_and(|threshold| score < threshold) {
+                    return None;
+                }
+                p.score = score;
+                Some(p)
+            })
+            .collect();
 
         return Ok(candidates);
     }
@@ -163,6 +171,8 @@ fn create_volatile_storage(
 }
 
 /// Compute the "relevance" similarity between a query vector and all vectors in the storage.
+///
+/// This is the non-postprocessed score where Euclidean is negative.
 fn relevance_similarities(
     volatile_storage: &VectorStorageEnum,
     query_vector: VectorInternal,
@@ -277,6 +287,11 @@ pub fn maximal_marginal_relevance(
         .max_by_key(|&candidate_idx| OrderedFloat(query_similarities[*candidate_idx]))
         .copied()
     {
+        // Exclude all results if relevance is too low
+        if score_threshold.is_some_and(|threshold| query_similarities[best_idx] < threshold) {
+            return Vec::new();
+        }
+
         selected_indices.push(best_idx);
         remaining_indices.swap_remove(&best_idx);
     }
