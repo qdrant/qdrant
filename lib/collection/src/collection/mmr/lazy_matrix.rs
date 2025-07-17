@@ -1,19 +1,22 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{PointOffsetType, ScoreType};
 use segment::data_types::vectors::{QueryVector, VectorInternal};
-use segment::vector_storage::{RawScorer, VectorStorageEnum, new_raw_scorer};
+use segment::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer};
 
-use crate::common::symmetric_matrix::SymmetricMatrix;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::CollectionResult;
 
 /// Compute the similarity matrix lazily.
 ///
 /// Uses a symmetric matrix as a cache layer to compute similarities only once,
 /// but only those which are requested.
 pub struct LazyMatrix<'storage> {
+    /// Vec of scorers for each vector. position is parallel to the vectors in the referenced storage.
     scorers: Vec<Box<dyn RawScorer + 'storage>>,
-    // perf: can this Option<ScoreType> be smaller? SymmetricMatrix allocates nearly m*m/2 values
-    matrix: SymmetricMatrix<Option<ScoreType>>,
+
+    // perf: can this Option<ScoreType> be smaller?
+    //       this allocates m*m values. For 1000x1000 it takes 8MB.
+    /// similarity matrix with possibly unallocated values.
+    matrix: Vec<Vec<Option<ScoreType>>>,
 }
 
 impl<'storage> LazyMatrix<'storage> {
@@ -25,11 +28,15 @@ impl<'storage> LazyMatrix<'storage> {
         storage: &'storage VectorStorageEnum,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Self> {
-        let matrix = SymmetricMatrix::new(vectors.len(), None).ok_or_else(|| {
-            CollectionError::service_error(
-                "There are less than 2 points for building a similarity matrix",
-            )
-        })?;
+        #[cfg(debug_assertions)]
+        {
+            for (i, vector) in vectors.iter().enumerate() {
+                let stored_vector = storage.get_vector(i as u32);
+                assert_eq!(stored_vector.to_owned(), *vector);
+            }
+        }
+
+        let matrix = vec![vec![None; vectors.len()]; vectors.len()];
 
         // Prepare all scorers
         let scorers = vectors
@@ -43,15 +50,16 @@ impl<'storage> LazyMatrix<'storage> {
                 )?)
             })
             .collect::<CollectionResult<Vec<_>>>()?;
+
         Ok(Self { scorers, matrix })
     }
 
     pub fn get_similarity(&mut self, i: usize, j: usize) -> ScoreType {
-        if let Some(similarity) = self.matrix.get(i, j) {
-            return *similarity;
+        if let Some(similarity) = self.matrix[i][j] {
+            return similarity;
         }
         let similarity = self.compute_similarity(i, j);
-        self.matrix.set(i, j, Some(similarity));
+        self.matrix[i][j] = Some(similarity);
         similarity
     }
 
