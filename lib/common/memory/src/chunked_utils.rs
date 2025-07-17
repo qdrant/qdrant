@@ -44,7 +44,7 @@ impl<T: Sized + 'static> UniversalMmapChunk<T> {
     }
 
     pub fn populate(&self) -> io::Result<()> {
-        self.mmap.populate()
+        self.mmap_seq.populate()
     }
 }
 
