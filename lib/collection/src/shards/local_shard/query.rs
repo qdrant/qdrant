@@ -387,7 +387,6 @@ impl LocalShard {
                 self.mmr_rescore(
                     sources,
                     mmr,
-                    score_threshold,
                     limit,
                     search_runtime_handle,
                     timeout,
@@ -425,12 +424,10 @@ impl LocalShard {
     }
 
     /// Maximal Marginal Relevance rescoring
-    #[expect(clippy::too_many_arguments)]
     async fn mmr_rescore(
         &self,
         sources: Vec<Vec<ScoredPoint>>,
         mmr: MmrInternal,
-        score_threshold: Option<f32>,
         limit: usize,
         search_runtime_handle: &Handle,
         timeout: Duration,
@@ -460,7 +457,6 @@ impl LocalShard {
             points_with_vector,
             mmr,
             limit,
-            score_threshold,
             search_runtime_handle,
             timeout,
             hw_measurement_acc,

@@ -383,7 +383,6 @@ impl Collection {
                     points_with_vector,
                     mmr.clone(),
                     *limit,
-                    *score_threshold,
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
