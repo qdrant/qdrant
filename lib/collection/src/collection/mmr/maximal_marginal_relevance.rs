@@ -274,8 +274,7 @@ fn maximal_marginal_relevance(
     selected_indices
         .into_iter()
         .map(|idx| {
-            let mut selected = candidates[idx].clone();
-            // Use query similarity as score, without post-processing.
+            // Use original score, already postprocessed.
             //
             // We prefer this over MMR score because:
             // - We already selected the top candidates based on MMR score.
@@ -285,8 +284,7 @@ fn maximal_marginal_relevance(
             //    - It makes more sense to compare by query score.
             //    - If this isn't the last rescore before sending to collection,
             //        we are only interested in the selection of points, not the score itself.
-            selected.score = query_similarities[idx];
-            selected
+            candidates[idx].clone()
         })
         .collect()
 }
