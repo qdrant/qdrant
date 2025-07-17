@@ -45,7 +45,7 @@ pub async fn mmr_from_points_with_vector(
     timeout: Duration,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<ScoredPoint>> {
-    let (vectors, mut candidates): (Vec<_>, Vec<_>) = points_with_vector
+    let (vectors, candidates): (Vec<_>, Vec<_>) = points_with_vector
         .into_iter()
         .unique_by(|p| p.id)
         .filter_map(|p| {
@@ -73,17 +73,7 @@ pub async fn mmr_from_points_with_vector(
     )?;
 
     if candidates.len() < 2 {
-        // can't compute MMR for less than 2 points, return with relevance score
-        let scores = relevance_similarities(
-            &volatile_storage,
-            mmr.vector,
-            hw_measurement_acc.get_counter_cell(),
-        )?;
-
-        for (p, score) in candidates.iter_mut().zip(scores) {
-            p.score = score;
-        }
-
+        // can't compute MMR for less than 2 points, return with original score
         return Ok(candidates);
     }
 
