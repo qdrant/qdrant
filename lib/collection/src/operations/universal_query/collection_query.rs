@@ -114,6 +114,7 @@ impl Query {
                 vector_query
                     // Homogenize the input into raw vectors
                     .ids_into_vectors(ids_to_vectors, lookup_vector_name, lookup_collection)?
+                    .preprocess_vectors()
                     // Turn into QueryEnum
                     .into_scoring_query(using, request_limit)?
             }
@@ -345,6 +346,43 @@ fn vector_not_found_error(vector_name: &VectorName) -> CollectionError {
 }
 
 impl VectorQuery<VectorInternal> {
+    fn preprocess_vectors(mut self) -> Self {
+        match &mut self {
+            VectorQuery::Nearest(vector) => {
+                vector.preprocess();
+            }
+            VectorQuery::RecommendAverageVector(reco) => {
+                reco.positives.iter_mut().for_each(|v| v.preprocess());
+                reco.negatives.iter_mut().for_each(|v| v.preprocess());
+            }
+            VectorQuery::RecommendBestScore(reco) => {
+                reco.positives.iter_mut().for_each(|v| v.preprocess());
+                reco.negatives.iter_mut().for_each(|v| v.preprocess());
+            }
+            VectorQuery::RecommendSumScores(reco) => {
+                reco.positives.iter_mut().for_each(|v| v.preprocess());
+                reco.negatives.iter_mut().for_each(|v| v.preprocess());
+            }
+            VectorQuery::Discover(discover) => {
+                discover.target.preprocess();
+                discover.pairs.iter_mut().for_each(|pair| {
+                    pair.positive.preprocess();
+                    pair.negative.preprocess();
+                });
+            }
+            VectorQuery::Context(context) => {
+                context.pairs.iter_mut().for_each(|pair| {
+                    pair.positive.preprocess();
+                    pair.negative.preprocess();
+                });
+            }
+            VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr: _ }) => {
+                nearest.preprocess();
+            }
+        }
+        self
+    }
+
     fn into_scoring_query(
         self,
         using: VectorNameBuf,
