@@ -164,7 +164,10 @@ pub struct CreateCollection {
     #[validate(nested)]
     pub optimizers_config: Option<OptimizersConfigDiff>,
     /// Specify other collection to copy data from.
+    ///
+    /// Deprecated since Qdrant 1.15.0.
     #[serde(default)]
+    #[deprecated(since = "1.15.0")]
     pub init_from: Option<InitFrom>,
     /// Quantization parameters. If none - quantization is disabled.
     #[serde(default, alias = "quantization")]
@@ -446,11 +449,12 @@ impl From<CollectionConfigInternal> for CreateCollection {
             hnsw_config: Some(hnsw_config.into()),
             wal_config: Some(wal_config.into()),
             optimizers_config: Some(optimizer_config.into()),
-            init_from: None,
             quantization_config,
             sparse_vectors,
             strict_mode_config,
             uuid,
+            #[expect(deprecated)]
+            init_from: None,
         }
     }
 }

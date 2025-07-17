@@ -351,6 +351,7 @@
         "tags": [
           "Service"
         ],
+        "deprecated": true,
         "requestBody": {
           "description": "Lock options and optional error message",
           "content": {
@@ -427,6 +428,7 @@
         "tags": [
           "Service"
         ],
+        "deprecated": true,
         "responses": {
           "default": {
             "description": "error",
@@ -7241,6 +7243,7 @@
           "memmap_threshold": {
             "description": "Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmapped file.\n\nMemmap storage is disabled by default, to enable it, set this threshold to a reasonable value.\n\nTo disable memmap storage, set this to `0`. Internally it will use the largest threshold possible.\n\nNote: 1Kb = 1 vector of size 256",
             "default": null,
+            "deprecated": true,
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -9642,8 +9645,9 @@
             ]
           },
           "init_from": {
-            "description": "Specify other collection to copy data from.",
+            "description": "Specify other collection to copy data from.\n\nDeprecated since Qdrant 1.15.0.",
             "default": null,
+            "deprecated": true,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/InitFrom"
@@ -9736,7 +9740,8 @@
             "nullable": true
           },
           "memmap_threshold": {
-            "description": "Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmapped file.\n\nMemmap storage is disabled by default, to enable it, set this threshold to a reasonable value.\n\nTo disable memmap storage, set this to `0`.\n\nNote: 1Kb = 1 vector of size 256",
+            "description": "Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmapped file.\n\nMemmap storage is disabled by default, to enable it, set this threshold to a reasonable value.\n\nTo disable memmap storage, set this to `0`.\n\nNote: 1Kb = 1 vector of size 256\n\nDeprecated since Qdrant 1.15.0",
+            "deprecated": true,
             "type": "integer",
             "format": "uint",
             "minimum": 0,

@@ -357,6 +357,8 @@ pub struct OptimizersConfigDiff {
     /// so that each segment would be handled evenly by one of the threads.
     #[prost(uint64, optional, tag = "3")]
     pub default_segment_number: ::core::option::Option<u64>,
+    /// Deprecated:
+    ///
     /// Do not create segments larger this size (in kilobytes).
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
@@ -683,7 +685,7 @@ pub struct CreateCollection {
     #[prost(uint32, optional, tag = "12")]
     #[validate(range(min = 1))]
     pub write_consistency_factor: ::core::option::Option<u32>,
-    /// Specify name of the other collection to copy data from
+    /// Deprecated: specify name of the other collection to copy data from
     #[prost(string, optional, tag = "13")]
     pub init_from_collection: ::core::option::Option<::prost::alloc::string::String>,
     /// Quantization configuration of vector

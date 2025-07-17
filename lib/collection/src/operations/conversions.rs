@@ -346,6 +346,7 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
             vacuum_min_vector_number: vacuum_min_vector_number.map(|v| v as usize),
             default_segment_number: default_segment_number.map(|v| v as usize),
             max_segment_size: max_segment_size.map(|v| v as usize),
+            #[expect(deprecated)]
             memmap_threshold: memmap_threshold.map(|v| v as usize),
             indexing_threshold: indexing_threshold.map(|v| v as usize),
             flush_interval_sec,
@@ -405,6 +406,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             vacuum_min_vector_number,
             default_segment_number,
             max_segment_size,
+            #[expect(deprecated)]
             memmap_threshold,
             indexing_threshold,
             flush_interval_sec,
@@ -606,6 +608,7 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             vacuum_min_vector_number: vacuum_min_vector_number.unwrap_or_default() as usize,
             default_segment_number: default_segment_number.unwrap_or_default() as usize,
             max_segment_size: max_segment_size.map(|x| x as usize),
+            #[expect(deprecated)]
             memmap_threshold: memmap_threshold.map(|x| x as usize),
             indexing_threshold: indexing_threshold.map(|x| x as usize),
             flush_interval_sec: flush_interval_sec.unwrap_or_default(),
