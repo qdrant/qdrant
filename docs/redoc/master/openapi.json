@@ -351,6 +351,7 @@
         "tags": [
           "Service"
         ],
+        "deprecated": true,
         "requestBody": {
           "description": "Lock options and optional error message",
           "content": {
@@ -427,6 +428,7 @@
         "tags": [
           "Service"
         ],
+        "deprecated": true,
         "responses": {
           "default": {
             "description": "error",
