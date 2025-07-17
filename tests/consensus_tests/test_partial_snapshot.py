@@ -104,7 +104,7 @@ def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
     write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000)
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 3)
-    futures = [executor.submit(try_recover_partial_snapshot_from, read_peer, write_peer, wait) for _ in range(3)]
+    futures = [executor.submit(try_recover_partial_snapshot_from, read_peer, write_peer, wait = wait) for _ in range(3)]
     responses = [future.result() for future in concurrent.futures.as_completed(futures)]
 
     # Single partial snapshot recovery request allowed at the same time
