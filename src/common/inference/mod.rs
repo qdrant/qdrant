@@ -14,15 +14,16 @@ pub mod query_requests_rest;
 pub mod service;
 pub mod update_requests;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct InferenceToken(pub Option<String>);
 
 impl InferenceToken {
     pub fn new(key: String) -> Self {
-        InferenceToken(Option::from(key))
+        InferenceToken(Some(key))
     }
-    pub fn as_str(&self) -> &Option<String> {
-        &self.0
+
+    pub fn as_str(&self) -> Option<&str> {
+        self.0.as_deref()
     }
 }
 
@@ -35,7 +36,7 @@ impl FromRequest for InferenceToken {
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
         let api_key = req.extensions().get::<InferenceToken>().cloned();
-        ready(Ok(api_key.unwrap_or(InferenceToken(None))))
+        ready(Ok(api_key.unwrap_or_default()))
     }
 }
 
