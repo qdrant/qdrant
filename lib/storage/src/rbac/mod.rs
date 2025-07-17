@@ -39,6 +39,7 @@ pub struct CollectionAccess {
     /// Payload constraints.
     /// An object where each key is a JSON path, and each value is JSON value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.15.0")]
     pub payload: Option<PayloadConstraint>,
 }
 
@@ -47,6 +48,7 @@ impl CollectionAccess {
         CollectionAccessView {
             collection: &self.collection,
             access: self.access,
+            #[expect(deprecated)]
             payload: &self.payload,
         }
     }
