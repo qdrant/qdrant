@@ -400,18 +400,16 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
             };
         };
 
-        let hw_counter = HardwareCounterCell::disposable();
-
         let postings = match &index_storage.postings {
             MmapPostingsEnum::Ids(postings) => ImmutablePostings::Ids(
                 postings
-                    .iter_postings(&hw_counter)
+                    .iter_postings()
                     .map(PostingListView::to_owned)
                     .collect(),
             ),
             MmapPostingsEnum::WithPositions(postings) => ImmutablePostings::WithPositions(
                 postings
-                    .iter_postings(&hw_counter)
+                    .iter_postings()
                     .map(PostingListView::to_owned)
                     .collect(),
             ),

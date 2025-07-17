@@ -482,7 +482,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .postings
-                .iter_ids(token_id, &hw_counter)
+                .iter_ids(token_id)
                 .unwrap()
                 .collect();
             assert_eq!(mutable_ids, mmap_ids);

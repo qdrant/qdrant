@@ -183,7 +183,6 @@ impl MmapInvertedIndex {
     pub fn filter_has_subset<'a>(
         &'a self,
         tokens: TokenSet,
-        hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let Some(storage) = &self.storage else {
             return Box::new(std::iter::empty());
@@ -196,12 +195,11 @@ impl MmapInvertedIndex {
             postings: &'a MmapPostings<V>,
             tokens: TokenSet,
             filter: impl Fn(u32) -> bool + 'a,
-            hw_counter: &'a HardwareCounterCell,
         ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
             let postings_opt: Option<Vec<_>> = tokens
                 .tokens()
                 .iter()
-                .map(|&token_id| postings.get(token_id, hw_counter))
+                .map(|&token_id| postings.get(token_id))
                 .collect();
 
             let Some(posting_readers) = postings_opt else {
@@ -218,10 +216,8 @@ impl MmapInvertedIndex {
         }
 
         match &storage.postings {
-            MmapPostingsEnum::Ids(postings) => intersection(postings, tokens, filter, hw_counter),
-            MmapPostingsEnum::WithPositions(postings) => {
-                intersection(postings, tokens, filter, hw_counter)
-            }
+            MmapPostingsEnum::Ids(postings) => intersection(postings, tokens, filter),
+            MmapPostingsEnum::WithPositions(postings) => intersection(postings, tokens, filter),
         }
     }
 
@@ -245,14 +241,10 @@ impl MmapInvertedIndex {
             tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> bool {
-            // Do not track the HW counter for reading the query posting list because:
-            // - it is repeated many times (once per matched point_id)
-            // - it is most likely mmap cached after the first call
-            let disposable = HardwareCounterCell::disposable();
             // Check that all tokens are in document
             tokens.tokens().iter().all(|query_token| {
                 postings
-                    .get(*query_token, &disposable)
+                    .get(*query_token)
                     // unwrap safety: all tokens exist in the vocabulary, otherwise there'd be no query tokens
                     .unwrap()
                     .visitor()
@@ -272,7 +264,6 @@ impl MmapInvertedIndex {
     pub fn filter_has_phrase<'a>(
         &'a self,
         phrase: Document,
-        hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let Some(storage) = &self.storage else {
             return Box::new(std::iter::empty());
@@ -285,7 +276,7 @@ impl MmapInvertedIndex {
             MmapPostingsEnum::WithPositions(postings) => {
                 intersect_compressed_postings_phrase_iterator(
                     phrase,
-                    |token_id| postings.get(*token_id, hw_counter),
+                    |token_id| postings.get(*token_id),
                     is_active,
                 )
             }
@@ -306,12 +297,8 @@ impl MmapInvertedIndex {
 
         match &storage.postings {
             MmapPostingsEnum::WithPositions(postings) => {
-                // Do not track the HW counter for reading the phrase posting lists because:
-                // - it is repeated many times (once per matched point_id)
-                // - it is most likely mmap cached after the first call
-                let disposable = HardwareCounterCell::disposable();
                 check_compressed_postings_phrase(phrase, point_id, |token_id| {
-                    postings.get(*token_id, &disposable)
+                    postings.get(*token_id)
                 })
             }
             // cannot do phrase matching if there's no positional information
@@ -425,23 +412,20 @@ impl InvertedIndex for MmapInvertedIndex {
     fn filter<'a>(
         &'a self,
         query: ParsedQuery,
-        hw_counter: &'a HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match query {
-            ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens, hw_counter),
-            ParsedQuery::Phrase(phrase) => self.filter_has_phrase(phrase, hw_counter),
+            ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens),
+            ParsedQuery::Phrase(phrase) => self.filter_has_phrase(phrase),
         }
     }
 
     fn get_posting_len(
         &self,
         token_id: TokenId,
-        hw_counter: &HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
-        self.storage
-            .as_ref()?
-            .postings
-            .posting_len(token_id, hw_counter)
+        self.storage.as_ref()?.postings.posting_len(token_id)
     }
 
     // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
@@ -450,12 +434,10 @@ impl InvertedIndex for MmapInvertedIndex {
             return Either::Right(std::iter::empty());
         };
 
-        let hw_counter = HardwareCounterCell::disposable(); // No propagation needed here because this function is only used for building HNSW index.
-
         let iter = self.iter_vocab().filter_map(move |(token, &token_id)| {
             storage
                 .postings
-                .posting_len(token_id, &hw_counter)
+                .posting_len(token_id)
                 .map(|posting_len| (token, posting_len))
         });
         Either::Left(iter)
