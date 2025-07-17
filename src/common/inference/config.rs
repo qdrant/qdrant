@@ -1,11 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+use super::bm25::Bm25Config;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InferenceConfig {
     pub address: Option<String>,
     #[serde(default = "default_inference_timeout")]
     pub timeout: u64,
     pub token: Option<String>,
+    #[serde(default)]
+    pub bm25: Option<Bm25Config>,
 }
 
 fn default_inference_timeout() -> u64 {
@@ -18,6 +22,7 @@ impl InferenceConfig {
             address,
             timeout: default_inference_timeout(),
             token: None,
+            bm25: None,
         }
     }
 }
