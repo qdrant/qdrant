@@ -740,6 +740,7 @@ mod tests {
         vacuum_min_vector_number: 1000,
         default_segment_number: 2,
         max_segment_size: None,
+        #[expect(deprecated)]
         memmap_threshold: None,
         indexing_threshold: Some(50_000),
         flush_interval_sec: 30,

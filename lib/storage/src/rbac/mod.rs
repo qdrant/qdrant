@@ -379,6 +379,7 @@ impl AccessCollectionBuilder {
             } else {
                 CollectionAccessMode::Read
             },
+            #[expect(deprecated)]
             payload: (!whole).then(|| PayloadConstraint::new_test(name)),
         });
         self

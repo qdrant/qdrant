@@ -91,6 +91,7 @@ impl OptimizersConfig {
             vacuum_min_vector_number: 1000,
             default_segment_number: 0,
             max_segment_size: None,
+            #[expect(deprecated)]
             memmap_threshold: None,
             indexing_threshold: Some(100_000),
             flush_interval_sec: 60,

@@ -42,6 +42,7 @@ fn test_alias_operation() {
             vacuum_min_vector_number: 100,
             default_segment_number: 2,
             max_segment_size: None,
+            #[expect(deprecated)]
             memmap_threshold: Some(100),
             indexing_threshold: Some(100),
             flush_interval_sec: 2,
@@ -114,6 +115,7 @@ fn test_alias_operation() {
                             on_disk_payload: None,
                             replication_factor: None,
                             write_consistency_factor: None,
+                            #[expect(deprecated)]
                             init_from: None,
                             quantization_config: None,
                             sharding_method: None,

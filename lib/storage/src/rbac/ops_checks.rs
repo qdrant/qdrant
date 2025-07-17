@@ -615,6 +615,7 @@ mod tests {
         let list = CollectionAccessList(vec![CollectionAccess {
             collection: "col".to_string(),
             access: CollectionAccessMode::Read,
+            #[expect(deprecated)]
             payload: Some(PayloadConstraint(HashMap::from([(
                 "field".parse().unwrap(),
                 ValueVariants::Integer(42),
