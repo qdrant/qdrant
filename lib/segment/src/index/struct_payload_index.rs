@@ -62,6 +62,16 @@ impl StorageType {
             StorageType::GridstoreNonAppendable => false,
         }
     }
+
+    #[cfg(feature = "rocksdb")]
+    pub fn is_rocksdb(&self) -> bool {
+        match self {
+            StorageType::RocksDbAppendable(_) => true,
+            StorageType::RocksDbNonAppendable(_) => true,
+            StorageType::GridstoreAppendable => false,
+            StorageType::GridstoreNonAppendable => false,
+        }
+    }
 }
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
@@ -397,9 +407,10 @@ impl StructPayloadIndex {
 
         index.load_all_fields(create)?;
 
-        // If we have a RocksDB instance, but no more index using it, completely delete it here
+        // If we have a RocksDB instance, but no index using it, completely delete it here
         #[cfg(feature = "rocksdb")]
-        if !index.config.indices.any_is_rocksdb()
+        if !index.storage_type.is_rocksdb()
+            && !index.config.indices.any_is_rocksdb()
             && let Some(db) = index.db.take()
         {
             match Arc::try_unwrap(db) {
