@@ -1083,7 +1083,7 @@ impl ShardHolder {
     ) -> CollectionResult<HashMap<JsonPath, PayloadFieldSchema>> {
         let mut schema = HashMap::new();
 
-        for shard in self.all_shards() {
+        for (shard_idx, shard) in self.all_shards().enumerate() {
             let shard_schema: HashMap<_, _> = shard
                 .info(true)
                 .await?
@@ -1106,18 +1106,21 @@ impl ShardHolder {
                 })
                 .collect();
 
-            if schema.is_empty() {
+            if shard_idx == 0 {
                 schema = shard_schema;
-                continue;
+            } else {
+                schema.retain(|field, schema| {
+                    let Some(shard_schema) = shard_schema.get(field) else {
+                        return false;
+                    };
+
+                    schema == shard_schema
+                });
             }
 
-            schema.retain(|field, schema| {
-                let Some(shard_schema) = shard_schema.get(field) else {
-                    return false;
-                };
-
-                schema == shard_schema
-            });
+            if schema.is_empty() {
+                break;
+            }
         }
 
         Ok(schema)
