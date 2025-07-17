@@ -1,8 +1,10 @@
 use std::borrow::Cow;
+pub mod config;
 mod japanese;
 mod multilingual;
 mod stemmer;
 
+pub use config::TokenizerConfig;
 use multilingual::MultilingualTokenizer;
 use stemmer::Stemmer;
 
@@ -71,10 +73,11 @@ impl PrefixTokenizer {
     fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
         text: &'a str,
         config: &TokenizerConfig,
-        min_ngram: usize,
-        max_ngram: usize,
         mut callback: C,
     ) {
+        let min_ngram = config.min_token_len.unwrap_or(1);
+        let max_ngram = config.max_token_len.unwrap_or(usize::MAX);
+
         text.split(|c| !char::is_alphanumeric(c))
             .filter(|token| !token.is_empty())
             .for_each(|word| {
@@ -122,9 +125,10 @@ impl PrefixTokenizer {
     fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(
         text: &'a str,
         config: &TokenizerConfig,
-        max_ngram: usize,
         mut callback: C,
     ) {
+        let max_ngram = config.max_token_len.unwrap_or(usize::MAX);
+
         text.split(|c| !char::is_alphanumeric(c))
             .filter(|token| !token.is_empty())
             .for_each(|word| {
@@ -170,13 +174,11 @@ fn truncate_cow_ref<'a>(inp: &Cow<'a, str>, len: usize) -> Cow<'a, str> {
 #[derive(Debug, Clone)]
 pub struct Tokenizer {
     tokenizer_type: TokenizerType,
-    min_token_len: Option<usize>,
-    max_token_len: Option<usize>,
     config: TokenizerConfig,
 }
 
 impl Tokenizer {
-    pub fn new(params: &TextIndexParams) -> Self {
+    pub fn new_from_text_index_params(params: &TextIndexParams) -> Self {
         let TextIndexParams {
             r#type: _,
             tokenizer,
@@ -196,12 +198,16 @@ impl Tokenizer {
             lowercase,
             stopwords_filter,
             stemmer: stemmer.as_ref().map(Stemmer::from_algorithm),
-        };
-
-        Self {
-            tokenizer_type: *tokenizer,
             min_token_len: *min_token_len,
             max_token_len: *max_token_len,
+        };
+
+        Self::new(*tokenizer, config)
+    }
+
+    pub fn new(tokenizer_type: TokenizerType, config: TokenizerConfig) -> Self {
+        Self {
+            tokenizer_type,
             config,
         }
     }
@@ -212,6 +218,7 @@ impl Tokenizer {
     ) -> impl FnMut(Cow<'b, str>) + 'a {
         move |token: Cow<'b, str>| {
             if self
+                .config
                 .min_token_len
                 .map(|min_len| token.len() < min_len && token.chars().count() < min_len)
                 .unwrap_or(false)
@@ -219,6 +226,7 @@ impl Tokenizer {
                 return;
             }
             if self
+                .config
                 .max_token_len
                 .map(|max_len| token.len() > max_len && token.chars().count() > max_len)
                 .unwrap_or(false)
@@ -240,13 +248,7 @@ impl Tokenizer {
             TokenizerType::Multilingual => {
                 MultilingualTokenizer::tokenize(text, &self.config, token_filter)
             }
-            TokenizerType::Prefix => PrefixTokenizer::tokenize(
-                text,
-                &self.config,
-                self.min_token_len.unwrap_or(1),
-                self.max_token_len.unwrap_or(usize::MAX),
-                token_filter,
-            ),
+            TokenizerType::Prefix => PrefixTokenizer::tokenize(text, &self.config, token_filter),
         }
     }
 
@@ -260,33 +262,10 @@ impl Tokenizer {
             TokenizerType::Multilingual => {
                 MultilingualTokenizer::tokenize(text, &self.config, token_filter)
             }
-            TokenizerType::Prefix => PrefixTokenizer::tokenize_query(
-                text,
-                &self.config,
-                self.max_token_len.unwrap_or(usize::MAX),
-                token_filter,
-            ),
+            TokenizerType::Prefix => {
+                PrefixTokenizer::tokenize_query(text, &self.config, token_filter)
+            }
         }
-    }
-}
-
-// TODO(rocksdb): Remove `Clone` once rocksdb has been removed!
-#[derive(Debug, Clone, Default)]
-pub struct TokenizerConfig {
-    pub(crate) lowercase: bool,
-    pub(crate) stopwords_filter: StopwordsFilter,
-    pub(crate) stemmer: Option<Stemmer>,
-}
-
-impl TokenizerConfig {
-    /// Applies stemming if enabled and applies the configured stemming algorithm. Does nothing if
-    /// stemming is disabled.
-    pub fn stem_if_enabled<'a>(&self, input: Cow<'a, str>) -> Cow<'a, str> {
-        let Some(stemmer) = self.stemmer.as_ref() else {
-            return input;
-        };
-
-        stemmer.stem(input)
     }
 }
 
@@ -343,9 +322,14 @@ mod tests {
     #[test]
     fn test_prefix_tokenizer() {
         let text = "hello, мир!";
-        let config = TokenizerConfig::default();
+        let config = TokenizerConfig {
+            min_token_len: Some(1),
+            max_token_len: Some(4),
+            ..Default::default()
+        };
+
         let mut tokens = Vec::new();
-        PrefixTokenizer::tokenize(text, &config, 1, 4, |token| tokens.push(token));
+        PrefixTokenizer::tokenize(text, &config, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 7);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("h")));
@@ -360,9 +344,12 @@ mod tests {
     #[test]
     fn test_prefix_query_tokenizer() {
         let text = "hello, мир!";
-        let config = TokenizerConfig::default();
+        let config = TokenizerConfig {
+            max_token_len: Some(4),
+            ..Default::default()
+        };
         let mut tokens = Vec::new();
-        PrefixTokenizer::tokenize_query(text, &config, 4, |token| tokens.push(token));
+        PrefixTokenizer::tokenize_query(text, &config, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("hell")));
@@ -466,7 +453,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -497,7 +484,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -539,7 +526,7 @@ mod tests {
                 stemmer: None,
             };
 
-            let tokenizer = Tokenizer::new(&params);
+            let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
             tokenizer.tokenize_doc(text, |token| tokens.push(token));
 
@@ -574,7 +561,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
 
@@ -609,7 +596,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -647,7 +634,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -685,7 +672,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -726,7 +713,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -750,7 +737,7 @@ mod tests {
     #[test]
     fn test_stemming_snowball() {
         let input = "interestingly proceeding living";
-        let config = TokenizerConfig {
+        let mut config = TokenizerConfig {
             stemmer: Some(make_stemmer(SnowballLanguage::English)),
             ..Default::default()
         };
@@ -764,11 +751,13 @@ mod tests {
         assert_eq!(out, vec!["interest", "proceed", "live"]);
 
         out.clear();
-        PrefixTokenizer::tokenize(input, &config, 3, 4, |i| out.push(i.to_string()));
-        assert_eq!(out, vec!["int", "inte", "pro", "proc", "liv", "live"]);
-
-        out.clear();
         MultilingualTokenizer::tokenize(input, &config, |i| out.push(i.to_string()));
         assert_eq!(out, vec!["interest", "proceed", "live"]);
+
+        out.clear();
+        config.min_token_len = Some(3);
+        config.max_token_len = Some(4);
+        PrefixTokenizer::tokenize(input, &config, |i| out.push(i.to_string()));
+        assert_eq!(out, vec!["int", "inte", "pro", "proc", "liv", "live"]);
     }
 }

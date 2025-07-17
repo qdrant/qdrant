@@ -45,7 +45,7 @@ impl ImmutableFullTextIndex {
         db_wrapper: DatabaseColumnScheduledDeleteWrapper,
         config: TextIndexParams,
     ) -> Self {
-        let tokenizer = Tokenizer::new(&config);
+        let tokenizer = Tokenizer::new_from_text_index_params(&config);
         Self {
             inverted_index: ImmutableInvertedIndex::ids_empty(),
             config,
