@@ -160,6 +160,23 @@ impl Segment {
             .into_iter()
             .map(|file| (file, FileVersion::from(self.version_tracker.get_payload())));
 
+        let payload_index_files = self
+            .payload_index
+            .borrow()
+            .immutable_files()
+            .into_iter()
+            .map(|(field, file)| {
+                let version = FileVersion::from(
+                    self.version_tracker
+                        .get_payload_index(&field)
+                        .or(self.initial_version)
+                        .or(self.version)
+                        .unwrap_or(0),
+                );
+
+                (file, version)
+            });
+
         let immutable_files = self.immutable_files().into_iter().map(|path| {
             let version = FileVersion::from(self.initial_version.or(self.version).unwrap_or(0));
             (path, version)
@@ -170,7 +187,8 @@ impl Segment {
         let files = files
             .chain(vector_storage_files)
             .chain(payload_storage_files)
-            .chain(immutable_files);
+            .chain(immutable_files)
+            .chain(payload_index_files);
 
         for (path, version) in files {
             // All segment files should be contained within segment directory
@@ -231,7 +249,6 @@ impl Segment {
             }
         }
 
-        files.extend(self.payload_index.borrow().immutable_files());
         files.extend(self.payload_storage.borrow().immutable_files());
 
         files.extend(self.id_tracker.borrow().immutable_files());
