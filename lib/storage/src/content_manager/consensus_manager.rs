@@ -226,6 +226,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn cluster_status(&self) -> ClusterStatus {
         let persistent = self.persistent.read();
         let hard_state = &persistent.state.hard_state;
+        let metadata = persistent.peer_metadata_by_id();
         let peers = persistent
             .peer_address_by_id()
             .into_iter()
@@ -234,6 +235,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     peer_id,
                     PeerInfo {
                         uri: uri.to_string(),
+                        metadata: metadata.get(&peer_id).cloned(),
                     },
                 )
             })
