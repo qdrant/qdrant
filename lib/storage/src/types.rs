@@ -150,6 +150,10 @@ pub struct PeerInfo {
     pub uri: String,
     // ToDo: How long ago was the last communication? In milliseconds
     // pub last_responded_millis: usize
+    #[anonymize(false)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub metadata: Option<PeerMetadata>,
 }
 
 /// Summary information about the current raft state
