@@ -44,6 +44,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         quantization_config: Default::default(),
         strict_mode_config: Default::default(),
         uuid: None,
+        properties: None,
     };
 
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
