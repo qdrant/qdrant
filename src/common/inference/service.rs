@@ -132,7 +132,18 @@ pub struct InferenceService {
 static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(None);
 
 impl InferenceService {
-    pub fn new(config: InferenceConfig) -> Self {
+    pub fn new(mut config: InferenceConfig) -> Self {
+        if let Some(custom_models) = &config.custom_models {
+            let duplicate_model_names = custom_models.duplicate_model_names();
+            if !duplicate_model_names.is_empty() {
+                // Disable custom models in case of duplicate entries.
+                config.custom_models = None;
+                log::error!(
+                    "Did not load custom models due to duplicate `model_name` values: {duplicate_model_names:?}. Check your config and make sure each model is configured with a unique value for `model_name`!"
+                );
+            }
+        }
+
         let timeout = Duration::from_secs(config.timeout);
         Self {
             config,
