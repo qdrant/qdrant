@@ -100,7 +100,7 @@ def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
 
     # Validate shard keys on all peers
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
-    validate_shard_keys(peer_api_uris, SHARD_KEYS)
+    wait_for_shard_keys(peer_api_uris, "test_collection", SHARD_KEYS)
 
     # Repeatedly drop, re-create other collection to accumulate Raft log entries
     for i in range(0, 5):
@@ -121,11 +121,15 @@ def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
     peer_api_uris.append(new_url)
     wait_all_peers_up([new_url])
 
+    # New node might need time to catch up with consensus state
+    # So we await for the collection to be ready on all peers
+    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
+
     # Validate shard keys on all peers
     # Failed before where the numeric ID would become a string, fixed in:
     # - <https://github.com/qdrant/qdrant/pull/6209>
     # - <https://github.com/qdrant/qdrant/pull/6212>
-    validate_shard_keys(peer_api_uris, SHARD_KEYS)
+    wait_for_shard_keys(peer_api_uris, "test_collection", SHARD_KEYS)
 
 
 def put_metadata_key(peer_uris: list[str], key: str, value: Any):
@@ -142,11 +146,25 @@ def get_metadata_key(peer_uris: list[str], key: str, expected_value: Any):
         assert resp.json()['result'] == expected_value
 
 
-def validate_shard_keys(peer_uris: list[str], shard_keys: dict[int, Any]):
-    for peer_uri in peer_uris:
-        info = get_collection_cluster_info(peer_uri, "test_collection")
-        replicas = info['local_shards'] + info['remote_shards']
+def check_shard_keys(peer_uris: list[str], collection_name: str, shard_keys: dict[int, Any]):
+        for peer_uri in peer_uris:
+            print(f"Checking shard keys on {peer_uri} for collection {collection_name}")
+            info = get_collection_cluster_info(peer_uri, collection_name)
+            replicas = info['local_shards'] + info['remote_shards']
 
-        assert len(replicas) == (len(shard_keys) * N_SHARDS), "incorrect number of replicas"
-        for replica_info in replicas:
-            assert shard_keys[replica_info['shard_id']] == replica_info['shard_key'], "shard key does not match"
+            if len(replicas) != (len(shard_keys) * N_SHARDS):
+                return False
+
+            for replica_info in replicas:
+                if shard_keys[replica_info['shard_id']] != replica_info['shard_key']:
+                    return False
+
+        return True
+
+
+def wait_for_shard_keys(peer_uris: List[str], collection_name: str, shard_keys: dict[int, Any]):
+    try:
+        wait_for(check_shard_keys, peer_uris=peer_uris, collection_name=collection_name, shard_keys=shard_keys)
+    except Exception as e:
+        print_collection_cluster_info(peer_uris, collection_name)
+        raise e
