@@ -7,13 +7,16 @@ use std::time::Duration;
 use api::rest::models::InferenceUsage;
 use api::rest::{Document, Image, InferenceObject};
 use collection::operations::point_ops::VectorPersisted;
+use itertools::{Either, Itertools};
 use parking_lot::RwLock;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use storage::content_manager::errors::StorageError;
+use validator::Validate;
 
 use crate::common::inference::InferenceToken;
+use crate::common::inference::bm25::Bm25;
 use crate::common::inference::config::InferenceConfig;
 
 const DOCUMENT_DATA_TYPE: &str = "text";
@@ -134,12 +137,18 @@ static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(No
 impl InferenceService {
     pub fn new(mut config: InferenceConfig) -> Self {
         if let Some(custom_models) = &config.custom_models {
-            let duplicate_model_names = custom_models.duplicate_model_names();
-            if !duplicate_model_names.is_empty() {
-                // Disable custom models in case of duplicate entries.
+            if let Err(validation_err) = custom_models.validate() {
+                // Disable custom models in case validation fails.
+                // This is required because if validation of settings fails, we only show a warning.
                 config.custom_models = None;
-                log::error!(
-                    "Did not load custom models due to duplicate `model_name` values: {duplicate_model_names:?}. Check your config and make sure each model is configured with a unique value for `model_name`!"
+                log::log!(
+                    log::Level::Error,
+                    "Did not load customm models due to validation error: {:?}",
+                    validation_err
+                        .into_errors()
+                        .iter()
+                        .map(|i| i.1)
+                        .collect::<Vec<_>>()
                 );
             }
         }
@@ -195,19 +204,57 @@ impl InferenceService {
         // - User doesn't have access to generating random JWT tokens (like in serverless)
         // - Inference server checks validity of the tokens.
 
-        let token = inference_token.0.or_else(|| self.config.token.clone());
+        let (bm25_inputs, inference_inputs): (Vec<_>, Vec<_>) = inference_inputs
+            .into_iter()
+            // Keep track of the inputs items positions so we can properly merge them back again.
+            .enumerate()
+            .partition_map(|(pos, input)| {
+                // Check if input is targeting a bm25 model or the configured remote server.
+                if let Some(bm25_model) = self.config.resolve_bm25_model(&input.model) {
+                    Either::Left(PositionItem::new((input, bm25_model), pos))
+                } else {
+                    Either::Right(PositionItem::new(input, pos))
+                }
+            });
 
-        let request = InferenceRequest {
-            inputs: inference_inputs,
-            inference: Some(inference_type),
-            token,
-        };
+        let bm25_result: Vec<_> = bm25_inputs
+            .into_iter()
+            .map(|item| -> Result<_, StorageError> {
+                let (input, bm25_config) = item.item;
+                let input_str = input.data.as_str().ok_or_else(|| {
+                    StorageError::service_error("Only strings supported in BM25 inference!")
+                })?;
+                let embed = Bm25::new(bm25_config).embed(input_str);
+                Ok(PositionItem::new(embed, item.position))
+            })
+            .collect::<Result<_, _>>()?;
+
+        // Early return with bm25 results only if no other inference_inputs were passed.
+        if inference_inputs.is_empty() {
+            return Ok(InferenceResponse {
+                embeddings: bm25_result.into_iter().map(|i| i.item).collect(),
+                usage: None,
+            });
+        }
+
+        let token = inference_token.0.or_else(|| self.config.token.clone());
 
         let url = self.config.address.as_ref().ok_or_else(|| {
             StorageError::service_error(
                 "InferenceService URL not configured - please provide valid address in config",
             )
         })?;
+
+        let (positions, inference_inputs): (Vec<_>, Vec<_>) = inference_inputs
+            .into_iter()
+            .map(|i| (i.position, i.item))
+            .unzip();
+
+        let request = InferenceRequest {
+            inputs: inference_inputs,
+            inference: Some(inference_type),
+            token,
+        };
 
         let response = self.client.post(url).json(&request).send().await;
 
@@ -233,7 +280,29 @@ impl InferenceService {
                 }
             }
         };
-        Self::handle_inference_response(status, &response_body)
+
+        let (remote_res, remote_pos) =
+            Self::handle_inference_response(status, &response_body).map(|i| (i, positions))?;
+
+        // Skip merging with bm25 if missing.
+        if bm25_result.is_empty() {
+            return Ok(remote_res);
+        }
+
+        let remote_items = remote_res
+            .embeddings
+            .into_iter()
+            .zip(remote_pos)
+            .map(|(item, pos)| PositionItem::new(item, pos))
+            .collect::<Vec<_>>();
+
+        let merged = merge_position_items(bm25_result, remote_items)
+            .expect("Expected both (bm25 and remote) items without items left out.");
+
+        Ok(InferenceResponse {
+            embeddings: merged,
+            usage: remote_res.usage,
+        })
     }
 
     pub(crate) fn handle_inference_response(
@@ -291,5 +360,61 @@ impl InferenceService {
                 }
             },
         }
+    }
+}
+
+/// Any kind of value that has an index assigned.
+struct PositionItem<I> {
+    item: I,
+    position: usize,
+}
+
+impl<I> PositionItem<I> {
+    pub fn new(item: I, position: usize) -> Self {
+        Self { item, position }
+    }
+}
+
+/// 2-way merge of lists with `PositionItems`. Also checks for skipped items and returns `None` in case an item is left out.
+fn merge_position_items<I>(
+    left: Vec<PositionItem<I>>,
+    right: Vec<PositionItem<I>>,
+) -> Option<Vec<I>> {
+    let mut i = 0; // Check that we cover all items and don't miss any.
+    left.into_iter()
+        .merge_by(right.into_iter(), |l, r| l.position < r.position)
+        .map(|item| {
+            if item.position == i {
+                i += 1;
+                Some(item.item)
+            } else {
+                None
+            }
+        })
+        .collect::<Option<Vec<_>>>()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_merge_position_items() {
+        let (left, right): (Vec<_>, Vec<_>) = (0..1000)
+            .map(|i| PositionItem::new(i, i))
+            .partition(|i| i.item % 7 == 0);
+        let merged = merge_position_items(left, right);
+        assert_eq!(merged, Some((0..1000).collect::<Vec<_>>()));
+    }
+
+    #[test]
+    fn test_merge_position_items_fail() {
+        let (left, mut right): (Vec<_>, Vec<_>) = (0..1000)
+            .map(|i| PositionItem::new(i, i))
+            .partition(|i| i.item % 7 == 0);
+        right.remove(5);
+        let merged = merge_position_items(left, right);
+        // We were missing an item and therefore expect `None`.
+        assert_eq!(merged, None);
     }
 }

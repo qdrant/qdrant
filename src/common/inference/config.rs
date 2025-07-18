@@ -6,26 +6,36 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::bm25::Bm25Config;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct InferenceConfig {
     pub address: Option<String>,
     #[serde(default = "default_inference_timeout")]
     pub timeout: u64,
     pub token: Option<String>,
+    #[validate(nested)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_models: Option<CustomModels>,
 }
 
-impl Validate for InferenceConfig {
+impl Validate for CustomModels {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        println!("Validation");
         let mut errors = ValidationErrors::new();
 
-        if let Some(custom_models) = &self.custom_models {
-            for duplicate_field in custom_models.duplicate_model_names() {
-                let error = ValidationError::new("duplicate_model_name_error")
-                        .with_message(Cow::Owned(format!("Duplicate custom model name {duplicate_field:?}. Make sure each configured custom model has a unique `model_name` value, and that the `model_name` option is specified for every model.")));
-                errors.add("custom_models", error);
+        for duplicate_field in self.duplicate_model_names() {
+            let error = ValidationError::new("duplicate_model_name_error")
+                            .with_message(Cow::Owned(format!("Duplicate custom model name {duplicate_field:?}. Make sure each configured custom model has a unique `model_name` value, and that the `model_name` option is specified for every model.")));
+            errors.add("custom_models", error);
+        }
+
+        for bm_25_model in self.bm25.iter() {
+            if bm_25_model.model_name.contains('/') {
+                errors.add(
+                    "model_name",
+                    ValidationError::new("invalid_model_name").with_message(Cow::Owned(format!(
+                        "Invalid model name {:?}. Model names must not contain '/'.",
+                        bm_25_model.model_name
+                    ))),
+                );
             }
         }
 
@@ -64,6 +74,17 @@ impl CustomModels {
 
         duplicates
     }
+
+    /// Returns the real model name, without the custom-model prefix.
+    ///
+    /// Example: If model_prefix is 'custom', this function returns "bm25" for "custom/bm25" as model_name.
+    pub fn strip_custom_model_prefix<'a>(&self, model_name: &'a str) -> Option<&'a str> {
+        let model_name_without_prefix = model_name.strip_prefix(&self.model_prefix)?;
+        if model_name_without_prefix.starts_with('/') {
+            return Some(&model_name_without_prefix[1..]);
+        }
+        None
+    }
 }
 
 fn default_custom_model_prefix() -> String {
@@ -82,5 +103,16 @@ impl InferenceConfig {
             token: None,
             custom_models: None,
         }
+    }
+
+    /// Returns the `Bm25Config` for the given model_name, if there is a custom bm25 model with that name.
+    /// The model_name must be in the form of `<CustomModelPrefix>/<ModelName>`. Otherwise this function returns `None`.
+    pub fn resolve_bm25_model(&self, model_name: &str) -> Option<&Bm25Config> {
+        let custom_models = self.custom_models.as_ref()?;
+        let model_name = custom_models.strip_custom_model_prefix(model_name)?;
+        custom_models
+            .bm25
+            .iter()
+            .find(|i| i.model_name == model_name)
     }
 }

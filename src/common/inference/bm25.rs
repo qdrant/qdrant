@@ -1,3 +1,5 @@
+use ::sparse::common::sparse_vector::SparseVector;
+use collection::operations::point_ops::VectorPersisted;
 use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
 use serde::{Deserialize, Serialize};
 
@@ -62,12 +64,19 @@ impl Default for Bm25Config {
     }
 }
 
-pub struct Bm25 {
-    config: Bm25Config,
+pub struct Bm25<'a> {
+    config: &'a Bm25Config,
 }
 
-impl Bm25 {
-    pub fn new(config: Bm25Config) -> Self {
+impl<'a> Bm25<'a> {
+    pub fn new(config: &'a Bm25Config) -> Self {
         Self { config }
+    }
+
+    pub fn embed(&self, _input: &str) -> VectorPersisted {
+        VectorPersisted::Sparse(SparseVector {
+            indices: vec![],
+            values: vec![],
+        })
     }
 }
