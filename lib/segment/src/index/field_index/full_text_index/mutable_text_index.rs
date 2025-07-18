@@ -52,7 +52,7 @@ impl MutableFullTextIndex {
         config: TextIndexParams,
     ) -> Self {
         let with_positions = config.phrase_matching == Some(true);
-        let tokenizer = Tokenizer::new(&config);
+        let tokenizer = Tokenizer::new_from_text_index_params(&config);
         Self {
             inverted_index: MutableInvertedIndex::new(with_positions),
             config,
@@ -94,7 +94,7 @@ impl MutableFullTextIndex {
         };
 
         let phrase_matching = config.phrase_matching.unwrap_or_default();
-        let tokenizer = Tokenizer::new(&config);
+        let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
         Ok(Self {
             inverted_index: MutableInvertedIndex::new(phrase_matching),
