@@ -146,13 +146,15 @@ impl InferenceService {
     pub fn init_global(config: InferenceConfig) -> Result<(), StorageError> {
         let mut inference_service = INFERENCE_SERVICE.write();
 
-        if config.address.is_none() || config.address.as_ref().unwrap().is_empty() {
+        let service = Self::new(config);
+
+        if !service.is_address_valid() {
             return Err(StorageError::service_error(
                 "Cannot initialize InferenceService: address is required but not provided or empty in config",
             ));
         }
 
-        *inference_service = Some(Arc::new(Self::new(config)));
+        *inference_service = Some(Arc::new(service));
         Ok(())
     }
 
@@ -161,12 +163,7 @@ impl InferenceService {
     }
 
     pub(crate) fn validate(&self) -> Result<(), StorageError> {
-        if self
-            .config
-            .address
-            .as_ref()
-            .is_none_or(|url| url.is_empty())
-        {
+        if !self.is_address_valid() {
             return Err(StorageError::service_error(
                 "InferenceService configuration error: address is missing or empty",
             ));
@@ -192,11 +189,11 @@ impl InferenceService {
             token,
         };
 
-        let url = self.config.address.as_ref().ok_or_else(|| {
-            StorageError::service_error(
+        let Some(url) = self.config.address.as_ref() else {
+            return Err(StorageError::service_error(
                 "InferenceService URL not configured - please provide valid address in config",
-            )
-        })?;
+            ));
+        };
 
         let response = self.client.post(url).json(&request).send().await;
 
@@ -280,5 +277,9 @@ impl InferenceService {
                 }
             },
         }
+    }
+
+    fn is_address_valid(&self) -> bool {
+        !self.config.address.as_ref().is_none_or(|i| i.is_empty())
     }
 }
