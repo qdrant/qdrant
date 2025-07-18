@@ -15,9 +15,17 @@ pub struct InferenceConfig {
 /// Config for custom 'models', like bm25.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomModels {
+    /// Prefix to identify custom models. For example "custom" to reference models like "custom/bm25". Default is "custom".
+    #[serde(default = "default_custom_model_prefix")]
+    pub model_prefix: String,
+
     /// Bm25 vectorization configs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bm25: Vec<Bm25Config>,
+}
+
+fn default_custom_model_prefix() -> String {
+    "custom".to_string()
 }
 
 fn default_inference_timeout() -> u64 {

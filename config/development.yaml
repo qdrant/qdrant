@@ -7,17 +7,21 @@ inference:
   address: "http://localhost:2114/api/v1/infer"
   timeout: 10
   token: "98eb568c-dea5-4347-a3a5-583478983bb9"
+  # Define custom models/vectorizer, which get handled directly in Qdrant. These do not require an `address` to be configured.
   custom_models:
+    # Prefix to identify custom models. For example "custom" to reference models like "custom/bm25".
+    model_prefix: "custom"
+    # BM25 vectorizer configs.
     bm25:
-        # The name of the model. Must be unique.
+        # Specify the name of the vectorizer to be used with this configuration. It must be unique.
       - model_name: "bm25"
-        # Hyperparameters for bm25
+        # Hyperparameters for bm25 itself.
         k: 1.2
         b: 0.75
         avg_len: 256.0
-        # Tokenizer to use. Can be one of prefix, whitespace, word, multilingual. Default is word.
+        # The tokenizer to use. Can be one of prefix, whitespace, word, multilingual. Default is word.
         tokenizer: word
-        # Configurations of the tokenizer.
+        # Configurations for the tokenizer.
         tokenizer_config:
           # Whether to convert all tokens to lowercase.
           lowercase: false
@@ -26,11 +30,11 @@ inference:
           # Add custom words to the stopword filter.
           custom_stopwords:
             - hello
-          # Enable stemming with the english ruleset and snowball as stemming algoritm.
+          # Enables stemming using the English ruleset and the Snowball stemming algorithm.
           stemmer:
             type: snowball
             language: english
-          # Specify min and max token length used in some tokenizers.
+          # Specify the minimum and maximum token lengths used by certain tokenizers.
           min_token_len: null
           max_token_len: null
 
