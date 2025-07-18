@@ -217,6 +217,7 @@ pub struct Settings {
     /// We therefore need to log these messages later, after the logger is ready.
     #[serde(default, skip)]
     pub load_errors: Vec<LogMsg>,
+    #[validate(nested)]
     #[serde(default)]
     pub inference: Option<InferenceConfig>,
     #[serde(default)]
