@@ -118,6 +118,8 @@ collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
 gpu = { path = "lib/gpu" }
+# TODO: Remove this dependecy. Only needed to create sparse vectors.
+sparse = { path = "lib/sparse" }
 
 actix-multipart = "0.7.2"
 constant_time_eq = "0.4.2"

@@ -4723,6 +4723,7 @@ dependencies = [
  "serde_urlencoded",
  "slog",
  "slog-stdlog",
+ "sparse",
  "storage",
  "sys-info",
  "tempfile",
