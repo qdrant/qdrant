@@ -1,9 +1,11 @@
 use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
 use serde::{Deserialize, Serialize};
 
-/// Configuration of the local bm25 'model'.
+/// Configuration of the local bm25 models.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Bm25Config {
+    #[serde(default)]
+    pub model_name: Option<String>,
     #[serde(default = "default_k")]
     pub k: f64,
     #[serde(default = "default_b")]
@@ -16,14 +18,16 @@ pub struct Bm25Config {
     pub tokenizer_config: Option<TokenizerConfig>,
 }
 
+/// Bm25 tokenizer configurations.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TokenizerConfig {
     #[serde(default)]
     pub lowercase: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopwords_filter: Option<StopwordsInterface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_stopwords: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stemmer: Option<StemmingAlgorithm>,
     pub min_token_len: Option<usize>,
     pub max_token_len: Option<usize>,
@@ -44,6 +48,7 @@ const fn default_avg_len() -> f64 {
 impl Default for Bm25Config {
     fn default() -> Self {
         Self {
+            model_name: Some("bm25".to_string()),
             k: default_k(),
             b: default_b(),
             avg_len: default_avg_len(),

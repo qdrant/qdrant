@@ -8,8 +8,16 @@ pub struct InferenceConfig {
     #[serde(default = "default_inference_timeout")]
     pub timeout: u64,
     pub token: Option<String>,
-    #[serde(default)]
-    pub bm25: Option<Bm25Config>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_models: Option<CustomModels>,
+}
+
+/// Config for custom 'models', like bm25.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomModels {
+    /// Bm25 vectorization configs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bm25: Vec<Bm25Config>,
 }
 
 fn default_inference_timeout() -> u64 {
@@ -22,7 +30,7 @@ impl InferenceConfig {
             address,
             timeout: default_inference_timeout(),
             token: None,
-            bm25: None,
+            custom_models: None,
         }
     }
 }
