@@ -2,8 +2,7 @@ use api::conversions::json::json_path_from_proto;
 use api::grpc::qdrant::RecommendInput;
 use api::grpc::qdrant::query::Variant;
 use api::grpc::{InferenceUsage, qdrant as grpc};
-use api::rest;
-use api::rest::RecommendStrategy;
+use api::rest::{self, LookupLocation, RecommendStrategy};
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Mmr, NearestWithMmr,
     Query, VectorInputInternal, VectorQuery,
@@ -11,7 +10,8 @@ use collection::operations::universal_query::collection_query::{
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
+use segment::types::{Filter, PointIdType, SearchParams};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
 
@@ -207,13 +207,13 @@ fn convert_prefetch_with_inferred(
         prefetch: nested_prefetches,
         query,
         using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned()),
-        filter: filter.map(TryFrom::try_from).transpose()?,
+        filter: filter.map(Filter::try_from).transpose()?,
         score_threshold,
         limit: limit
             .map(|l| l as usize)
             .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
-        params: params.map(From::from),
-        lookup_from: lookup_from.map(From::from),
+        params: params.map(SearchParams::from),
+        lookup_from: lookup_from.map(LookupLocation::from),
     })
 }
 
@@ -325,7 +325,7 @@ fn convert_vector_input_with_inferred(
         .ok_or_else(|| Status::invalid_argument("VectorInput variant is missing"))?;
 
     match variant {
-        Variant::Id(id) => Ok(VectorInputInternal::Id(TryFrom::try_from(id)?)),
+        Variant::Id(id) => Ok(VectorInputInternal::Id(PointIdType::try_from(id)?)),
         Variant::Dense(dense) => Ok(VectorInputInternal::Vector(VectorInternal::Dense(
             From::from(dense),
         ))),
@@ -333,7 +333,7 @@ fn convert_vector_input_with_inferred(
             From::from(sparse),
         ))),
         Variant::MultiDense(multi_dense) => Ok(VectorInputInternal::Vector(
-            VectorInternal::MultiDense(From::from(multi_dense)),
+            VectorInternal::MultiDense(MultiDenseVectorInternal::from(multi_dense)),
         )),
         Variant::Document(doc) => {
             let doc: rest::Document = doc
