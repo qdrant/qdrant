@@ -113,7 +113,8 @@ fn get_filesystem_type(path: impl AsRef<Path>) -> Result<FsType, String> {
     {
         let f_type = stat.filesystem_type().0;
 
-        let fs_type = FsType::from_magic(f_type);
+        // Convert into correct number type as MUSL expects i64, not u64
+        let fs_type = FsType::from_magic(f_type as _);
         Ok(fs_type)
     }
 }
