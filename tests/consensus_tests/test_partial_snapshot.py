@@ -170,7 +170,7 @@ def test_partial_snapshot_recreate_payload_field_index(tmp_path: pathlib.Path):
         }
     })
 
-    # Create field index *with range filters desabled* on write peer
+    # Create field index *with range filters disabled* on write peer
     create_field_index(write_peer, "magic", {
         "type": "integer",
         "range": False,
