@@ -88,6 +88,7 @@ async fn test_fix_payload_indices() {
         config.optimizer_config.clone(),
         Arc::new(Default::default()),
         payload_index_schema,
+        true,
         current_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),

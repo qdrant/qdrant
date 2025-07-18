@@ -248,6 +248,7 @@ impl LocalShard {
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
+        rebuild_payload_index: bool,
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
@@ -318,20 +319,28 @@ impl LocalShard {
             // let semaphore_clone = semaphore.clone();
             load_handlers.push(tokio::task::spawn_blocking(move || {
                 // let _guard = semaphore_clone.lock();
-                let mut res = load_segment(&segment_path, &AtomicBool::new(false))?;
-                if let Some(segment) = &mut res {
-                    segment.check_consistency_and_repair()?;
-                    segment
-                        .update_all_field_indices(&payload_index_schema.read().schema.clone())?;
-                } else {
+
+                let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
+
+                let Some(mut segment) = segment else {
                     std::fs::remove_dir_all(&segment_path).map_err(|err| {
                         CollectionError::service_error(format!(
-                            "Can't remove leftover segment {}, due to {err}",
-                            segment_path.to_str().unwrap(),
+                            "failed to remove leftover segment {}: {err}",
+                            segment_path.display(),
                         ))
                     })?;
+
+                    return Ok(None);
+                };
+
+                segment.check_consistency_and_repair()?;
+
+                if rebuild_payload_index {
+                    segment
+                        .update_all_field_indices(&payload_index_schema.read().schema.clone())?;
                 }
-                Ok::<_, CollectionError>(res)
+
+                CollectionResult::Ok(Some(segment))
             }));
         }
 
@@ -1187,9 +1196,7 @@ impl LocalShardClocks {
     // Load clock maps from disk
     pub fn load(shard_path: &Path) -> CollectionResult<Self> {
         let newest_clocks = ClockMap::load_or_default(&Self::newest_clocks_path(shard_path))?;
-
         let oldest_clocks = ClockMap::load_or_default(&Self::oldest_clocks_path(shard_path))?;
-
         Ok(Self::new(newest_clocks, oldest_clocks))
     }
 
