@@ -1347,6 +1347,7 @@ impl ValueIndexer for MapIndex<UuidIntType> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::hint::black_box;
     use std::path::Path;
 
     use rstest::rstest;
@@ -1490,7 +1491,7 @@ mod tests {
         let index = builder.finalize().unwrap();
 
         for block in index.payload_blocks(50, PayloadKeyType::new("test_uuid")) {
-            eprintln!("block = {:#?}", block);
+            black_box(block);
         }
     }
 
