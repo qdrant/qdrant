@@ -336,6 +336,11 @@ impl HardwareTelemetry {
 
 impl MetricsProvider for HardwareTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+        // MetricType::COUNTER requires non-empty collection data.
+        if self.collection_data.is_empty() {
+            return;
+        }
+
         // Keep a dummy type decomposition of HwUsage here to enforce coverage of new fields in metrics.
         // This gets optimized away by the compiler: https://godbolt.org/z/9cMTzcYr4
         let HardwareUsage {
