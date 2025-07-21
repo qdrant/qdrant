@@ -1033,13 +1033,11 @@ impl ShardHolder {
         }
 
         if recovery_type.is_partial() {
-            if let Some(collection_schema) = self.collection_payload_index_schema() {
-                let schema = self.common_payload_index_schema().await?;
-
-                collection_schema.write(|collection_schema| {
-                    *collection_schema = PayloadIndexSchema { schema };
-                })?;
-            }
+            self.update_payload_index_schema().await.map_err(|err| {
+                CollectionError::service_error(format!(
+                    "failed to update payload index schema after recovering partial snapshot: {err}"
+                ))
+            })?;
         }
 
         Ok(())
@@ -1072,13 +1070,27 @@ impl ShardHolder {
         Ok(res)
     }
 
-    pub fn collection_payload_index_schema(&self) -> Option<Arc<SaveOnDisk<PayloadIndexSchema>>> {
-        self.all_shards()
+    pub async fn update_payload_index_schema(&self) -> CollectionResult<()> {
+        let payload_index_schema = self
+            .all_shards()
             .next()
-            .map(|shard| shard.payload_index_schema())
+            .map(|shard| shard.payload_index_schema());
+
+        let Some(payload_index_schema) = payload_index_schema else {
+            // Shard holder contains no shards
+            return Ok(());
+        };
+
+        let schema = self.common_payload_index_schema().await?;
+
+        payload_index_schema.write(|payload_index_schema| {
+            *payload_index_schema = PayloadIndexSchema { schema };
+        })?;
+
+        Ok(())
     }
 
-    pub async fn common_payload_index_schema(
+    async fn common_payload_index_schema(
         &self,
     ) -> CollectionResult<HashMap<JsonPath, PayloadFieldSchema>> {
         let mut schema = HashMap::new();
