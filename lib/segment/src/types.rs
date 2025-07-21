@@ -18,6 +18,7 @@ use itertools::Itertools;
 use merge::Merge;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
+use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 use strum::{EnumIter, EnumString};
@@ -81,14 +82,27 @@ impl<'de> Deserialize<'de> for DateTimePayloadType {
     where
         D: Deserializer<'de>,
     {
-        let str_datetime = <&str>::deserialize(deserializer)?;
-        let parse_result = DateTimePayloadType::from_str(str_datetime).ok();
-        match parse_result {
-            Some(datetime) => Ok(datetime),
-            None => Err(serde::de::Error::custom(format!(
-                "'{str_datetime}' is not in a supported date/time format, please use RFC 3339"
-            ))),
+        struct DateTimeVisitor;
+
+        impl<'de> Visitor<'de> for DateTimeVisitor {
+            type Value = DateTimePayloadType;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string in RFC 3339 format")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                DateTimePayloadType::from_str(value).map_err(|_e| {
+                    de::Error::custom(format!(
+                        "'{value}' is not in a supported date/time format, please use RFC 3339"
+                    ))
+                })
+            }
         }
+        deserializer.deserialize_str(DateTimeVisitor)
     }
 }
 
@@ -2279,11 +2293,140 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum RangeInterface {
     Float(Range<FloatPayloadType>),
     DateTime(Range<DateTimePayloadType>),
+}
+
+impl<'de> Deserialize<'de> for RangeInterface {
+    fn deserialize<D>(deserializer: D) -> Result<RangeInterface, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let range = Range::<FloatOrDateTimePayload>::deserialize(deserializer)?;
+        let Range { lt, gt, gte, lte } = &range;
+
+        // turn fields into an array for easier processing
+        let parameters = [lt, gt, gte, lte];
+
+        // check types
+        let any_floats = parameters
+            .iter()
+            .any(|x| matches!(x, Some(FloatOrDateTimePayload::Float(_))));
+        let any_datetimes = parameters
+            .iter()
+            .any(|x| matches!(x, Some(FloatOrDateTimePayload::DateTime(_))));
+
+        if any_floats && any_datetimes {
+            return Err(de::Error::custom(
+                "mixing float and datetime ranges is not supported",
+            ));
+        }
+
+        // save to use unwrap here, as we verify that the types are the same above
+        if any_floats {
+            Ok(RangeInterface::Float(Range {
+                lt: range
+                    .lt
+                    .map(FloatOrDateTimePayload::try_into_float)
+                    .map(Option::unwrap),
+                gt: range
+                    .gt
+                    .map(FloatOrDateTimePayload::try_into_float)
+                    .map(Option::unwrap),
+                gte: range
+                    .gte
+                    .map(FloatOrDateTimePayload::try_into_float)
+                    .map(Option::unwrap),
+                lte: range
+                    .lte
+                    .map(FloatOrDateTimePayload::try_into_float)
+                    .map(Option::unwrap),
+            }))
+        } else {
+            Ok(RangeInterface::DateTime(Range {
+                lt: range
+                    .lt
+                    .map(FloatOrDateTimePayload::try_into_datetime)
+                    .map(Option::unwrap),
+                gt: range
+                    .gt
+                    .map(FloatOrDateTimePayload::try_into_datetime)
+                    .map(Option::unwrap),
+                gte: range
+                    .gte
+                    .map(FloatOrDateTimePayload::try_into_datetime)
+                    .map(Option::unwrap),
+                lte: range
+                    .lte
+                    .map(FloatOrDateTimePayload::try_into_datetime)
+                    .map(Option::unwrap),
+            }))
+        }
+    }
+}
+
+enum FloatOrDateTimePayload {
+    Float(FloatPayloadType),
+    DateTime(DateTimePayloadType),
+}
+
+impl FloatOrDateTimePayload {
+    fn try_into_float(self) -> Option<FloatPayloadType> {
+        match self {
+            FloatOrDateTimePayload::Float(float) => Some(float),
+            FloatOrDateTimePayload::DateTime(_) => None,
+        }
+    }
+
+    fn try_into_datetime(self) -> Option<DateTimePayloadType> {
+        match self {
+            FloatOrDateTimePayload::Float(_) => None,
+            FloatOrDateTimePayload::DateTime(datetime) => Some(datetime),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for FloatOrDateTimePayload {
+    fn deserialize<D>(deserializer: D) -> Result<FloatOrDateTimePayload, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct FloatOrDateTimeVisitor;
+
+        impl<'de> Visitor<'de> for FloatOrDateTimeVisitor {
+            type Value = FloatOrDateTimePayload;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("Float or DateTime")
+            }
+
+            fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(FloatOrDateTimePayload::Float(value))
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(FloatOrDateTimePayload::Float(value as f64))
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                DateTimePayloadType::deserialize(de::value::StrDeserializer::new(v))
+                    .map(FloatOrDateTimePayload::DateTime)
+            }
+        }
+        deserializer.deserialize_any(FloatOrDateTimeVisitor)
+    }
 }
 
 /// Range filter request
@@ -3435,7 +3578,7 @@ mod tests {
     use itertools::Itertools;
     use rstest::rstest;
     use serde::de::DeserializeOwned;
-    use serde_json;
+    use serde_json::{self, json};
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
@@ -3487,6 +3630,70 @@ mod tests {
 
         // Having or not the Z at the end of the string both mean UTC time
         assert_eq!(datetime.timestamp(), datetime_no_z.timestamp());
+    }
+
+    #[rstest]
+    #[case::valid_float(json!({ "gt": 10.5, "lte": 20.0 }), Ok(RangeInterface::Float(Range {
+        gt: Some(10.5),
+        lte: Some(20.0),
+        ..Default::default()
+    })))]
+    #[case::valid_rfc_3339_datetime(json!({ "gt": "2023-01-01T00:00:00Z", "lte": "2023-12-31T23:59:59Z" }), Ok(RangeInterface::DateTime(Range {
+        gt: Some(DateTimePayloadType::from_str("2023-01-01T00:00:00Z").unwrap()),
+        lte: Some(DateTimePayloadType::from_str("2023-12-31T23:59:59Z").unwrap()),
+        gte: None,
+        lt: None,
+    })))]
+    #[case::other_datetime_format(json!({ "gt": "2023-01-01 00:00:00", "lte": "2023-12-31 23:59:59" }), Ok(RangeInterface::DateTime(Range {
+        gt: Some(DateTimePayloadType::from_str("2023-01-01 00:00:00").unwrap()),
+        lte: Some(DateTimePayloadType::from_str("2023-12-31 23:59:59").unwrap()),
+        gte: None,
+        lt: None,
+    })))]
+    #[case::mixed_datetime(json!({ "gt": "2023-01-01T00:00:00Z", "lte": "2023-12-31 23:59:59" }), Ok(RangeInterface::DateTime(Range {
+        gt: Some(DateTimePayloadType::from_str("2023-01-01T00:00:00Z").unwrap()),
+        lte: Some(DateTimePayloadType::from_str("2023-12-31 23:59:59").unwrap()),
+        gte: None,
+        lt: None,
+    })))]
+    #[case::invalid_datetime_format(json!({ "gt": "2023-01-01T00" }), Err("'2023-01-01T00' is not in a supported date/time format, please use RFC 3339"))]
+    #[case::extra_data(json!({ "gt": "2023-01-01T00:00:00Z", "2023-12-31T00": "data" }), Ok(RangeInterface::DateTime(Range {
+        gt: Some(DateTimePayloadType::from_str("2023-01-01T00:00:00Z").unwrap()),
+        lte: None,
+        gte: None,
+        lt: None,
+    })))]
+    #[case::mixed_datetime_and_float(json!({ "gt": 10.5, "lte": "2023-12-31 23:59:59" }), Err("mixing float and datetime ranges is not supported"))]
+    fn test_range_interface_deserialization(
+        #[case] input_json: serde_json::Value,
+        #[case] expected_result: Result<RangeInterface, &str>,
+    ) {
+        fn try_deserialize(json: serde_json::Value) -> Result<RangeInterface, String> {
+            serde_json::from_value(json).map_err(|e| e.to_string())
+        }
+
+        let result = try_deserialize(input_json);
+        assert_eq!(result, expected_result.map_err(String::from));
+    }
+
+    #[rstest]
+    #[case::valid_float(RangeInterface::Float(Range {
+        gt: Some(10.5),
+        lte: Some(20.0),
+        ..Default::default()
+    }), r#"{"lt":null,"gt":10.5,"gte":null,"lte":20.0}"#)]
+    #[case::valid_rfc_3339_datetime(RangeInterface::DateTime(Range {
+        gt: Some(DateTimePayloadType::from_str("2023-01-01T00:00:00Z").unwrap()),
+        lte: Some(DateTimePayloadType::from_str("2023-12-31T23:59:59Z").unwrap()),
+        gte: None,
+        lt: None,
+    }), r#"{"lt":null,"gt":"2023-01-01T00:00:00Z","gte":null,"lte":"2023-12-31T23:59:59Z"}"#)]
+    fn test_range_interface_serialization(
+        #[case] input: RangeInterface,
+        #[case] expected_result: &str,
+    ) {
+        let result = serde_json::to_string(&input).expect("serialization works");
+        assert_eq!(result, expected_result);
     }
 
     #[test]
