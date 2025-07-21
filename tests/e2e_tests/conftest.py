@@ -1,5 +1,7 @@
+import shutil
 import subprocess
 from pathlib import Path
+from typing import Generator
 
 import pytest
 import docker
@@ -8,7 +10,7 @@ from docker.errors import ImageNotFound
 from .models import QdrantContainerConfig
 from .utils import (
     create_qdrant_container,
-    cleanup_container
+    cleanup_container, extract_archive
 )
 
 
@@ -179,3 +181,69 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
     # Cleanup all containers
     for container in containers:
         cleanup_container(container)
+
+
+@pytest.fixture(scope="function")
+def temp_storage_dir(request) -> Generator[Path, None, None]:
+    """
+    Create a temporary storage directory and ensure its removal after test.
+
+    The entire test directory (including the storage subdirectory) is removed after the test.
+
+    Usage:
+        def test_something(temp_storage_dir):
+            # Returns Path to a "storage" directory that will be cleaned up
+
+    Returns:
+        Path: Path to a temporary "storage" directory within a test-specific folder.
+              The directory structure is: ./{test_name}/storage/
+    """
+    # Use test name as folder name
+    folder_name = request.node.name
+    test_dir = Path(__file__).parent / folder_name
+    storage_path = test_dir / "storage"
+
+    try:
+        storage_path.mkdir(parents=True, exist_ok=True)
+        yield storage_path
+    finally:
+        if test_dir.exists():
+            try:
+                shutil.rmtree(test_dir)
+                print(f"Cleaned up temp storage directory: {test_dir}")
+            except Exception as e:
+                print(f"Warning: Failed to remove temp storage directory {test_dir}: {e}")
+
+
+@pytest.fixture(scope="function")
+def storage_from_archive(request, test_data_dir: Path, temp_storage_dir: Path) -> Path:
+    """
+    Extract an archive from test_data directory into the storage directory.
+
+    - The archive should contain a "storage" directory that will be extracted
+    - Uses temp_storage_dir fixture internally for cleanup
+    - Falls back to subprocess tar command if Python extraction fails
+
+    Usage with parametrization:
+        @pytest.mark.parametrize("storage_from_archive", ["storage.tar.xz"], indirect=True)
+        def test_something(storage_from_archive):
+            # Archive will be extracted into the storage directory
+
+    Parameters (via indirect parametrization):
+        Archive filename (str): Name of archive file in test_data directory
+                               Supported formats: .tar.xz, .tar.gz, .tar.bz2, .tgz, .tbz2, .tar, .zip
+
+    Returns:
+        Path: Path to the temp_storage_dir where archive was extracted
+    """
+    if hasattr(request, "param"):
+        archive_name = request.param
+    else:
+        raise ValueError("storage_with_archive fixture requires archive name via parametrization")
+
+    archive_file = test_data_dir / archive_name
+    extract_to = temp_storage_dir.parent
+
+    extract_archive(archive_file, extract_to)
+
+    return temp_storage_dir
