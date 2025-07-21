@@ -20,21 +20,11 @@ impl WhiteSpaceTokenizer {
         mut callback: C,
     ) {
         for token in text.split_whitespace() {
-            if token.is_empty() {
+            let Some(token_cow) = config.process_token(token) else {
                 continue;
-            }
-
-            let token_cow = if config.lowercase {
-                Cow::Owned(token.to_lowercase())
-            } else {
-                Cow::Borrowed(token)
             };
 
-            if config.stopwords_filter.is_stopword(&token_cow) {
-                continue;
-            }
-
-            callback(config.stem_if_enabled(token_cow));
+            callback(token_cow);
         }
     }
 }
@@ -48,21 +38,11 @@ impl WordTokenizer {
         mut callback: C,
     ) {
         for token in text.split(|c| !char::is_alphanumeric(c)) {
-            if token.is_empty() {
+            let Some(token_cow) = config.process_token(token) else {
                 continue;
-            }
-
-            let token_cow = if config.lowercase {
-                Cow::Owned(token.to_lowercase())
-            } else {
-                Cow::Borrowed(token)
             };
 
-            if config.stopwords_filter.is_stopword(&token_cow) {
-                continue;
-            }
-
-            callback(config.stem_if_enabled(token_cow));
+            callback(token_cow);
         }
     }
 }
@@ -78,32 +58,22 @@ impl PrefixTokenizer {
         let min_ngram = config.min_token_len.unwrap_or(1);
         let max_ngram = config.max_token_len.unwrap_or(usize::MAX);
 
-        text.split(|c| !char::is_alphanumeric(c))
-            .filter(|token| !token.is_empty())
-            .for_each(|word| {
-                let word_cow = if config.lowercase {
-                    Cow::Owned(word.to_lowercase())
-                } else {
-                    Cow::Borrowed(word)
-                };
+        text.split(|c| !char::is_alphanumeric(c)).for_each(|word| {
+            let Some(word_cow) = config.process_token(word) else {
+                return;
+            };
 
-                if config.stopwords_filter.is_stopword(&word_cow) {
-                    return;
-                }
-
-                let word_cow = config.stem_if_enabled(word_cow);
-
-                for n in min_ngram..=max_ngram {
-                    let ngram = word_cow.as_ref().char_indices().map(|(i, _)| i).nth(n);
-                    match ngram {
-                        Some(end) => callback(truncate_cow_ref(&word_cow, end)),
-                        None => {
-                            callback(word_cow);
-                            break;
-                        }
+            for n in min_ngram..=max_ngram {
+                let ngram = word_cow.as_ref().char_indices().map(|(i, _)| i).nth(n);
+                match ngram {
+                    Some(end) => callback(truncate_cow_ref(&word_cow, end)),
+                    None => {
+                        callback(word_cow);
+                        break;
                     }
                 }
-            });
+            }
+        });
     }
 
     /// For querying prefixes, it makes sense to use a maximal ngram only.
@@ -139,6 +109,14 @@ impl PrefixTokenizer {
                 };
 
                 let word_cow = config.stem_if_enabled(word_cow);
+
+                if config
+                    .min_token_len
+                    .is_some_and(|min_len| word_cow.chars().count() < min_len)
+                {
+                    // Tokens shorter than min_token_len don't exist in the index
+                    return;
+                }
 
                 let ngram = word_cow.char_indices().map(|(i, _)| i).nth(max_ngram);
                 match ngram {
@@ -212,59 +190,29 @@ impl Tokenizer {
         }
     }
 
-    fn doc_token_filter<'a, 'b, C: FnMut(Cow<'b, str>) + 'a>(
-        &'a self,
-        mut callback: C,
-    ) -> impl FnMut(Cow<'b, str>) + 'a {
-        move |token: Cow<'b, str>| {
-            if self
-                .config
-                .min_token_len
-                .map(|min_len| token.len() < min_len && token.chars().count() < min_len)
-                .unwrap_or(false)
-            {
-                return;
+    pub fn tokenize_doc<'a, C: FnMut(Cow<'a, str>)>(&self, text: &'a str, callback: C) {
+        match self.tokenizer_type {
+            TokenizerType::Whitespace => {
+                WhiteSpaceTokenizer::tokenize(text, &self.config, callback)
             }
-            if self
-                .config
-                .max_token_len
-                .map(|max_len| token.len() > max_len && token.chars().count() > max_len)
-                .unwrap_or(false)
-            {
-                return;
+            TokenizerType::Word => WordTokenizer::tokenize(text, &self.config, callback),
+            TokenizerType::Multilingual => {
+                MultilingualTokenizer::tokenize(text, &self.config, callback)
             }
-
-            callback(token);
+            TokenizerType::Prefix => PrefixTokenizer::tokenize(text, &self.config, callback),
         }
     }
 
-    pub fn tokenize_doc<'a, C: FnMut(Cow<'a, str>)>(&self, text: &'a str, mut callback: C) {
-        let token_filter = self.doc_token_filter(&mut callback);
+    pub fn tokenize_query<C: FnMut(Cow<str>)>(&self, text: &str, callback: C) {
         match self.tokenizer_type {
             TokenizerType::Whitespace => {
-                WhiteSpaceTokenizer::tokenize(text, &self.config, token_filter)
+                WhiteSpaceTokenizer::tokenize(text, &self.config, callback)
             }
-            TokenizerType::Word => WordTokenizer::tokenize(text, &self.config, token_filter),
+            TokenizerType::Word => WordTokenizer::tokenize(text, &self.config, callback),
             TokenizerType::Multilingual => {
-                MultilingualTokenizer::tokenize(text, &self.config, token_filter)
+                MultilingualTokenizer::tokenize(text, &self.config, callback)
             }
-            TokenizerType::Prefix => PrefixTokenizer::tokenize(text, &self.config, token_filter),
-        }
-    }
-
-    pub fn tokenize_query<C: FnMut(Cow<str>)>(&self, text: &str, mut callback: C) {
-        let token_filter = self.doc_token_filter(&mut callback);
-        match self.tokenizer_type {
-            TokenizerType::Whitespace => {
-                WhiteSpaceTokenizer::tokenize(text, &self.config, token_filter)
-            }
-            TokenizerType::Word => WordTokenizer::tokenize(text, &self.config, token_filter),
-            TokenizerType::Multilingual => {
-                MultilingualTokenizer::tokenize(text, &self.config, token_filter)
-            }
-            TokenizerType::Prefix => {
-                PrefixTokenizer::tokenize_query(text, &self.config, token_filter)
-            }
+            TokenizerType::Prefix => PrefixTokenizer::tokenize_query(text, &self.config, callback),
         }
     }
 }
