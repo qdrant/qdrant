@@ -760,6 +760,7 @@ impl SegmentEntry for Segment {
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
             segment.payload_index.borrow_mut().drop_index(key)?;
+            segment.version_tracker.set_payload_index(key, None);
             Ok(true)
         })
     }
@@ -771,10 +772,15 @@ impl SegmentEntry for Segment {
         field_schema: &PayloadFieldSchema,
     ) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
-            segment
+            let is_incompatible = segment
                 .payload_index
                 .borrow_mut()
                 .drop_index_if_incompatible(key, field_schema)?;
+
+            if is_incompatible {
+                segment.version_tracker.set_payload_index(key, None);
+            }
+
             Ok(true)
         })
     }
@@ -823,7 +829,12 @@ impl SegmentEntry for Segment {
             segment
                 .payload_index
                 .borrow_mut()
-                .apply_index(key, schema, field_index)?;
+                .apply_index(key.clone(), schema, field_index)?;
+
+            segment
+                .version_tracker
+                .set_payload_index(&key, Some(op_num));
+
             Ok(true)
         })
     }
