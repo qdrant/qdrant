@@ -25,9 +25,9 @@ type ValuesLen = u32;
 ///
 /// The layout of the memory-mapped file is as follows:
 ///
-/// | header     | phf | padding       | buckets | entries   |
-/// |------------|-----|---------------|---------|-----------|
-/// | [`Header`] |     | `u8[0..4095]` | `u32[]` | See below |
+/// | header     | phf | padding       | alignment | buckets | entries   |
+/// |------------|-----|---------------|-----------|---------|-----------|
+/// | [`Header`] |     | `u8[0..4095]` |  `u8[]`   | `u32[]` | See below |
 ///
 /// ## Entry format for the `str` key
 ///
@@ -98,8 +98,12 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
         file_size += padding_len;
 
         // 4. Buckets
+        let buckets_size = keys_count * size_of::<BucketOffset>();
+        let bucket_align = buckets_size % K::ALIGN;
+        file_size += bucket_align;
+        // Important: Bucket Position points after the alignment for backward compatibility.
         let buckets_pos = file_size;
-        file_size += keys_count * size_of::<BucketOffset>();
+        file_size += buckets_size;
 
         // 5. Data
         let mut buckets = vec![0 as BucketOffset; keys_count];
@@ -134,6 +138,10 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
         bufw.write_zeros(padding_len)?;
 
         // 4. Buckets
+        let bucket_bytes = buckets.as_bytes();
+        let buckets_len = bucket_bytes.len();
+        // Align the buckets to `K::ALIGN`, to make sure Entry.key is aligned.
+        bufw.write_zeros(buckets_len % K::ALIGN)?;
         bufw.write_all(buckets.as_bytes())?;
 
         // 5. Data
