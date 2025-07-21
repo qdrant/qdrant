@@ -1,5 +1,4 @@
 import pytest
-import requests
 import uuid
 
 from e2e_tests.client_utils import ClientUtils
@@ -63,9 +62,10 @@ class TestLowRam:
         assert recovery_msg in logs, f"'{recovery_msg}' log message not found in container logs"
         
         # Check that collection info returns 500 (dummy shard)
-        response = requests.get(f"http://localhost:{api_port}/collections/low-ram")
-        assert response.status_code == 500, f"Expected status 500, got {response.status_code}"
-        
-        response_text = response.text
-        expected_error = "Out-of-Memory"
-        assert expected_error in response_text, f"'{expected_error}' not found in response"
+        try:
+            client.get_collection_info_dict("low-ram")
+            assert False, "Expected collection info to fail with Out-of-Memory error"
+        except Exception as e:
+            error_text = str(e)
+            expected_error = "Out-of-Memory"
+            assert expected_error in error_text, f"'{expected_error}' not found in error: {error_text}"

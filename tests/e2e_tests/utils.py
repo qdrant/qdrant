@@ -194,8 +194,8 @@ def extract_archive(archive_file: Path, extract_to: Path, cleanup_archive: bool 
         if file_name.endswith('.gz') and not file_name.endswith(('.tar.gz', '.tgz')):
             # Handle standalone gzip files (like snapshots)
             output_file = extract_to / archive_file.stem
-            with gzip.open(archive_file, 'rb') as gz_file:
-                with open(output_file, 'wb') as out_file:
+            with gzip.open(archive_file, 'rb') as gz_file, \
+                open(output_file, 'wb') as out_file:
                     shutil.copyfileobj(gz_file, out_file)
             print(f"Extracted {archive_file} to {output_file}")
 
