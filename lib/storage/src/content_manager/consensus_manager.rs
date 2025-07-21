@@ -223,7 +223,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     /// Report aggregated information about the cluster.
     /// Useful for API reporting.
-    pub fn cluster_status(&self) -> ClusterStatus {
+    pub fn cluster_status(&self, peer_metadata: bool) -> ClusterStatus {
         let persistent = self.persistent.read();
         let hard_state = &persistent.state.hard_state;
         let metadata = persistent.peer_metadata_by_id();
@@ -235,7 +235,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     peer_id,
                     PeerInfo {
                         uri: uri.to_string(),
-                        metadata: metadata.get(&peer_id).cloned(),
+                        metadata: if peer_metadata {
+                            metadata.get(&peer_id).cloned()
+                        } else {
+                            None
+                        },
                     },
                 )
             })
