@@ -550,6 +550,9 @@ mod tests {
             assert_eq!(map.get(&from_ref(k)).unwrap(), &v);
         }
 
+        let keys: Vec<_> = mmap.keys().collect();
+        assert_eq!(keys.len(), map.len());
+
         // Existing keys should return the correct values
         for (k, v) in map {
             assert_eq!(
@@ -593,20 +596,23 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
 
-        let mut map: HashMap<u128, BTreeSet<u64>> = Default::default();
+        let mut map: HashMap<u128, BTreeSet<u32>> = Default::default();
 
         map.insert(
             9812384971724u128,
             (0..100).map(|_| rng.random_range(0..=1000)).collect(),
         );
 
-        MmapHashMap::<u128, u64>::create(
+        MmapHashMap::<u128, u32>::create(
             &tmpdir.path().join("map"),
             map.iter().map(|(k, v)| (k, v.iter().copied())),
         )
         .unwrap();
 
-        let mmap = MmapHashMap::<u128, u64>::open(&tmpdir.path().join("map"), true).unwrap();
+        let mmap = MmapHashMap::<u128, u32>::open(&tmpdir.path().join("map"), true).unwrap();
+
+        let keys: Vec<_> = mmap.keys().collect();
+        assert_eq!(keys.len(), map.len());
 
         for (k, v) in map {
             assert_eq!(
@@ -614,7 +620,6 @@ mod tests {
                 &v.into_iter().collect::<Vec<_>>()
             );
         }
-
         assert!(mmap.get(&100).unwrap().is_none())
     }
 }
