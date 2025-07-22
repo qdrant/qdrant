@@ -1347,6 +1347,7 @@ impl ValueIndexer for MapIndex<UuidIntType> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::hint::black_box;
     use std::path::Path;
 
     use rstest::rstest;
@@ -1467,6 +1468,31 @@ mod tests {
         }
 
         index
+    }
+
+    #[test]
+    fn test_uuid_payload_index() {
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        let mut builder = MapIndex::<UuidIntType>::builder_mmap(temp_dir.path(), false);
+
+        builder.init().unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
+
+        // Single UUID value
+        let uuid: Value = Value::String("baa56dfc-e746-4ec1-bf50-94822535a46c".to_string());
+
+        for idx in 0..100 {
+            builder
+                .add_point(idx as PointOffsetType, &[&uuid], &hw_counter)
+                .unwrap();
+        }
+
+        let index = builder.finalize().unwrap();
+
+        for block in index.payload_blocks(50, PayloadKeyType::new("test_uuid")) {
+            black_box(block);
+        }
     }
 
     #[test]
