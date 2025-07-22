@@ -99,7 +99,7 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
 
         // 4. Buckets
         let buckets_size = keys_count * size_of::<BucketOffset>();
-        let bucket_align = buckets_size % K::ALIGN;
+        let bucket_align = buckets_size.next_multiple_of(K::ALIGN) - buckets_size;
         file_size += bucket_align;
         // Important: Bucket Position points after the alignment for backward compatibility.
         let buckets_pos = file_size;
@@ -138,10 +138,8 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
         bufw.write_zeros(padding_len)?;
 
         // 4. Buckets
-        let bucket_bytes = buckets.as_bytes();
-        let buckets_len = bucket_bytes.len();
         // Align the buckets to `K::ALIGN`, to make sure Entry.key is aligned.
-        bufw.write_zeros(buckets_len % K::ALIGN)?;
+        bufw.write_zeros(bucket_align)?;
         bufw.write_all(buckets.as_bytes())?;
 
         // 5. Data
@@ -449,7 +447,7 @@ impl Key for i64 {
 }
 
 impl Key for u128 {
-    const ALIGN: usize = align_of::<u128>();
+    const ALIGN: usize = size_of::<u128>();
 
     const NAME: [u8; 8] = *b"u128\0\0\0\0";
 
