@@ -1,7 +1,9 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{PointOffsetType, ScoreType};
 use segment::data_types::vectors::{QueryVector, VectorInternal};
-use segment::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer};
+#[cfg(debug_assertions)]
+use segment::vector_storage::VectorStorage;
+use segment::vector_storage::{RawScorer, VectorStorageEnum, new_raw_scorer};
 
 use crate::operations::types::CollectionResult;
 
