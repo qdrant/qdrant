@@ -245,7 +245,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     }
 
     pub fn populate(&self) -> OperationResult<()> {
-        self.mmap.populate();
+        self.mmap_sequential.populate();
         Ok(())
     }
 }

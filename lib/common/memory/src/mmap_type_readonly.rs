@@ -27,6 +27,7 @@ use std::{fmt, mem, slice};
 
 use memmap2::Mmap;
 
+use crate::madvise::Madviseable;
 use crate::mmap_type::Error;
 
 /// Result for mmap errors.
@@ -144,6 +145,11 @@ where
         let r#type = unsafe { mmap_to_slice_unbounded(&mmap_with_slice, 0)? };
         let mmap = Arc::new(mmap_with_slice);
         Ok(Self { r#type, mmap })
+    }
+
+    pub fn populate(&self) -> std::io::Result<()> {
+        self.mmap.populate();
+        Ok(())
     }
 }
 
@@ -329,6 +335,13 @@ impl<T> MmapSliceReadOnly<T> {
     pub unsafe fn try_from(mmap_with_slice: Mmap) -> Result<Self> {
         let r#type = unsafe { MmapTypeReadOnly::try_slice_from(mmap_with_slice) };
         r#type.map(|mmap| Self { mmap })
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> std::io::Result<()> {
+        self.mmap.populate()?;
+        Ok(())
     }
 }
 

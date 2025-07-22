@@ -150,7 +150,7 @@ impl Page {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) {
-        self.mmap.populate();
+        self.mmap_seq.populate();
     }
 
     /// Drop disk cache.
