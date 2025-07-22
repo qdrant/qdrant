@@ -7,7 +7,7 @@ use common::tar_ext::BuilderExt;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
-use segment::data_types::segment_manifest::SegmentManifests;
+use segment::data_types::manifest::SnapshotManifest;
 use segment::types::SnapshotFormat;
 use tokio::sync::OwnedRwLockReadGuard;
 
@@ -281,7 +281,7 @@ impl Collection {
     pub async fn stream_shard_snapshot(
         &self,
         shard_id: ShardId,
-        manifest: Option<SegmentManifests>,
+        manifest: Option<SnapshotManifest>,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotStream> {
         let shard = OwnedRwLockReadGuard::try_map(
@@ -351,7 +351,7 @@ impl Collection {
     pub async fn get_partial_snapshot_manifest(
         &self,
         shard_id: ShardId,
-    ) -> CollectionResult<SegmentManifests> {
+    ) -> CollectionResult<SnapshotManifest> {
         self.shards_holder
             .read()
             .await

@@ -16,7 +16,7 @@ use collection::shards::shard::ShardId;
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
-use segment::data_types::segment_manifest::SegmentManifests;
+use segment::data_types::manifest::SnapshotManifest;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
@@ -570,7 +570,7 @@ async fn delete_shard_snapshot(
 async fn create_partial_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId)>,
-    manifest: web::Json<SegmentManifests>,
+    manifest: web::Json<SnapshotManifest>,
     ActixAccess(access): ActixAccess,
 ) -> Result<SnapshotStream, HttpError> {
     let (collection, shard) = path.into_inner();

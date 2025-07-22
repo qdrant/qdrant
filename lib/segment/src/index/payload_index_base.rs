@@ -11,9 +11,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
-use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-};
+use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
 
 pub enum BuildIndexResult {
     /// Index was built

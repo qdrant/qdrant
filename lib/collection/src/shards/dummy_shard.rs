@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::manifest::SnapshotManifest;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
@@ -42,13 +42,13 @@ impl DummyShard {
         _temp_path: &Path,
         _tar: &tar_ext::BuilderExt,
         _format: SnapshotFormat,
-        _manifest: Option<SegmentManifests>,
+        _manifest: Option<SnapshotManifest>,
         _save_wal: bool,
     ) -> CollectionResult<()> {
         self.dummy()
     }
 
-    pub fn segment_manifests(&self) -> CollectionResult<SegmentManifests> {
+    pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         self.dummy()
     }
 

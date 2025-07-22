@@ -8,8 +8,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::manifest::SnapshotManifest;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
@@ -318,7 +318,7 @@ impl ForwardProxyShard {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
-        manifest: Option<SegmentManifests>,
+        manifest: Option<SnapshotManifest>,
         save_wal: bool,
     ) -> CollectionResult<()> {
         self.wrapped_shard
@@ -326,8 +326,8 @@ impl ForwardProxyShard {
             .await
     }
 
-    pub fn segment_manifests(&self) -> CollectionResult<SegmentManifests> {
-        self.wrapped_shard.segment_manifests()
+    pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
+        self.wrapped_shard.snapshot_manifest()
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {

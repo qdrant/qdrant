@@ -6,13 +6,13 @@ use crate::types::SeqNumberType;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
-pub struct SegmentManifests {
-    manifests: HashMap<String, SegmentManifest>,
+pub struct SnapshotManifest {
+    segments: HashMap<String, SegmentManifest>,
 }
 
-impl SegmentManifests {
+impl SnapshotManifest {
     pub fn validate(&self) -> OperationResult<()> {
-        for (segment_id, manifest) in &self.manifests {
+        for (segment_id, manifest) in &self.segments {
             for (file, version) in &manifest.file_versions {
                 if version.or_segment_version(manifest.segment_version) > manifest.segment_version {
                     return Err(OperationError::validation_error(format!(
@@ -29,14 +29,14 @@ impl SegmentManifests {
     }
 
     pub fn version(&self, segment_id: &str) -> Option<SeqNumberType> {
-        self.manifests
+        self.segments
             .get(segment_id)
             .map(|manifest| manifest.segment_version)
     }
 
     pub fn add(&mut self, new_manifest: SegmentManifest) -> bool {
-        let Some(current_manifest) = self.manifests.get_mut(&new_manifest.segment_id) else {
-            self.manifests
+        let Some(current_manifest) = self.segments.get_mut(&new_manifest.segment_id) else {
+            self.segments
                 .insert(new_manifest.segment_id.clone(), new_manifest);
 
             return true;
@@ -53,19 +53,19 @@ impl SegmentManifests {
     }
 
     pub fn get(&self, segment_id: &str) -> Option<&SegmentManifest> {
-        self.manifests.get(segment_id)
+        self.segments.get(segment_id)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&String, &SegmentManifest)> {
-        self.manifests.iter()
+        self.segments.iter()
     }
 
     pub fn len(&self) -> usize {
-        self.manifests.len()
+        self.segments.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.manifests.is_empty()
+        self.segments.is_empty()
     }
 }
 
