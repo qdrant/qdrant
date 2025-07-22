@@ -166,10 +166,6 @@ pub trait IdTracker: fmt::Debug {
     fn immutable_files(&self) -> Vec<PathBuf> {
         Vec::new()
     }
-
-    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
-        Vec::new()
-    }
 }
 
 pub type IdTrackerSS = dyn IdTracker + Sync + Send;

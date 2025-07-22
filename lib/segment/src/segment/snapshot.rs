@@ -238,27 +238,6 @@ impl Segment {
 
         files
     }
-
-    #[allow(dead_code)]
-    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
-        let mut files = Vec::new();
-
-        for vector_data in self.vector_data.values() {
-            files.extend(vector_data.vector_index.borrow().versioned_files());
-            files.extend(vector_data.vector_storage.borrow().versioned_files());
-
-            if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().deref() {
-                files.extend(quantized_vectors.versioned_files());
-            }
-        }
-
-        files.extend(self.payload_index.borrow().versioned_files());
-        files.extend(self.payload_storage.borrow().versioned_files());
-
-        files.extend(self.id_tracker.borrow().versioned_files());
-
-        files
-    }
 }
 
 pub fn snapshot_files(
