@@ -13,7 +13,7 @@ use common::tar_ext::BuilderExt;
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
-use segment::data_types::segment_manifest::SegmentManifests;
+use segment::data_types::manifest::SnapshotManifest;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
 use shard_mapping::ShardKeyMapping;
@@ -888,7 +888,7 @@ impl ShardHolder {
         shard: OwnedRwLockReadGuard<ShardHolder, ShardReplicaSet>,
         collection_name: &str,
         shard_id: ShardId,
-        manifest: Option<SegmentManifests>,
+        manifest: Option<SnapshotManifest>,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotStream> {
         // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
