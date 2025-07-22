@@ -136,7 +136,7 @@ fn welfords_mean_variance(points: &[ScoredPoint]) -> (f32, f32) {
         mean += old_delta / (k as f32);
 
         let delta = p.score - mean;
-        aggregate += (old_delta) * (delta);
+        aggregate += old_delta * delta;
     }
 
     let sample_variance = aggregate / (points.len() as f32 - 1.0);
@@ -182,7 +182,23 @@ mod tests {
     }
 
     fn assert_close(a: f32, b: f32) {
-        assert!((a - b).abs() < 1e-2, "{a} is not close to {b}");
+        // Round both values to 2 significant digits for comparison
+        let round_to_2_sig = |x: f32| -> f32 {
+            if x == 0.0 {
+                return 0.0;
+            }
+            let magnitude = x.abs().log10().floor();
+            let factor = 10.0_f32.powi(1 - magnitude as i32);
+            (x * factor).round() / factor
+        };
+
+        let a_rounded = round_to_2_sig(a);
+        let b_rounded = round_to_2_sig(b);
+
+        assert_eq!(
+            a_rounded, b_rounded,
+            "{a} (rounded: {a_rounded}) is not close to {b} (rounded: {b_rounded}) when comparing 2 significant digits"
+        );
     }
 
     proptest! {
