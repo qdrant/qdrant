@@ -182,22 +182,17 @@ mod tests {
     }
 
     fn assert_close(a: f32, b: f32) {
-        // Round both values to 2 significant digits for comparison
-        let round_to_2_sig = |x: f32| -> f32 {
-            if x == 0.0 {
-                return 0.0;
-            }
-            let magnitude = x.abs().log10().floor();
-            let factor = 10.0_f32.powi(1 - magnitude as i32);
-            (x * factor).round() / factor
-        };
+        // Choose the more relaxed tolerance, absolute or relative based on the values.
+        let abs_tolerance = 1e-5f32;
+        let rel_tolerance = 1e-4f32;
 
-        let a_rounded = round_to_2_sig(a);
-        let b_rounded = round_to_2_sig(b);
+        let diff = (a - b).abs();
+        let max_val = a.abs().max(b.abs());
+        let tolerance = abs_tolerance.max(rel_tolerance * max_val);
 
-        assert_eq!(
-            a_rounded, b_rounded,
-            "{a} (rounded: {a_rounded}) is not close to {b} (rounded: {b_rounded}) when comparing 2 significant digits"
+        assert!(
+            diff <= tolerance,
+            "{a} is not close to {b}: difference {diff} exceeds tolerance {tolerance}"
         );
     }
 
