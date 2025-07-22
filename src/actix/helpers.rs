@@ -235,6 +235,7 @@ impl HttpError {
             StorageError::PreconditionFailed { .. } => {}
             StorageError::InferenceError { .. } => {}
             StorageError::ShardUnavailable { .. } => {}
+            StorageError::EmptyPartialSnapshot { .. } => {}
         }
         headers
     }
@@ -256,6 +257,7 @@ impl ResponseError for HttpError {
             StorageError::InferenceError { .. } => http::StatusCode::BAD_REQUEST,
             StorageError::RateLimitExceeded { .. } => http::StatusCode::TOO_MANY_REQUESTS,
             StorageError::ShardUnavailable { .. } => http::StatusCode::SERVICE_UNAVAILABLE,
+            StorageError::EmptyPartialSnapshot { .. } => http::StatusCode::NOT_MODIFIED,
         }
     }
 }

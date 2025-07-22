@@ -3,6 +3,7 @@ use std::io::Error as IoError;
 use std::time::Duration;
 
 use collection::operations::types::CollectionError;
+use collection::shards::shard::ShardId;
 use io::file_operations::FileStorageError;
 use tempfile::PersistError;
 use thiserror::Error;
@@ -44,6 +45,8 @@ pub enum StorageError {
     },
     #[error("Shard temporarily unavailable: {description}")]
     ShardUnavailable { description: String },
+    #[error("Partial snapshot for shard {shard_id} contains no changes")]
+    EmptyPartialSnapshot { shard_id: ShardId },
 }
 
 impl StorageError {

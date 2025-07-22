@@ -997,7 +997,7 @@ impl SegmentHolder {
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        mut f: F,
+        mut operation: F,
     ) -> OperationResult<()>
     where
         F: FnMut(Arc<RwLock<dyn SegmentEntry>>) -> OperationResult<()>,
@@ -1034,7 +1034,7 @@ impl SegmentHolder {
             };
 
             // Call provided function on segment
-            if let Err(err) = f(segment) {
+            if let Err(err) = operation(segment) {
                 result = Err(OperationError::service_error(format!(
                     "Applying function to a proxied shard segment {proxy_id} failed: {err}"
                 )));
