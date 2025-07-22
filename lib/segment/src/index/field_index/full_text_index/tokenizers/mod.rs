@@ -20,7 +20,7 @@ impl WhiteSpaceTokenizer {
         mut callback: C,
     ) {
         for token in text.split_whitespace() {
-            let Some(token_cow) = config.process_token(token) else {
+            let Some(token_cow) = config.process_token(token, true) else {
                 continue;
             };
 
@@ -38,7 +38,7 @@ impl WordTokenizer {
         mut callback: C,
     ) {
         for token in text.split(|c| !char::is_alphanumeric(c)) {
-            let Some(token_cow) = config.process_token(token) else {
+            let Some(token_cow) = config.process_token(token, true) else {
                 continue;
             };
 
@@ -59,7 +59,7 @@ impl PrefixTokenizer {
         let max_ngram = config.max_token_len.unwrap_or(usize::MAX);
 
         text.split(|c| !char::is_alphanumeric(c)).for_each(|word| {
-            let Some(word_cow) = config.process_token(word) else {
+            let Some(word_cow) = config.process_token(word, false) else {
                 return;
             };
 

@@ -29,8 +29,8 @@ impl TokenizerConfig {
     /// Returns `None` if:
     /// - The token is empty.
     /// - The token is a stopword.
-    /// - The token's chars length is outside of the `min_token_len` and `max_token_len` range.
-    pub fn process_token<'a>(&self, token: &'a str) -> Option<Cow<'a, str>> {
+    /// - The token's chars length is outside of the `min_token_len` and (optionally) `max_token_len` range.
+    pub fn process_token<'a>(&self, token: &'a str, check_max_len: bool) -> Option<Cow<'a, str>> {
         let Self {
             lowercase,
             stopwords_filter,
@@ -62,7 +62,8 @@ impl TokenizerConfig {
 
         // Handle token length
         if min_token_len.is_some_and(|min_len| token_cow.chars().count() < min_len)
-            || max_token_len.is_some_and(|max_len| token_cow.chars().count() > max_len)
+            || (check_max_len
+                && max_token_len.is_some_and(|max_len| token_cow.chars().count() > max_len))
         {
             return None;
         }
