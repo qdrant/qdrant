@@ -279,10 +279,6 @@ impl QuantizedVectors {
         self.files() // quantized vectors are always immutable
     }
 
-    pub fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
-        Vec::new() // TODO
-    }
-
     pub fn create(
         vector_storage: &VectorStorageEnum,
         quantization_config: &QuantizationConfig,

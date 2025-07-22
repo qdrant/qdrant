@@ -29,7 +29,7 @@ use crate::data_types::vectors::{
     MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte,
     VectorElementTypeHalf, VectorInternal, VectorRef,
 };
-use crate::types::{Distance, MultiVectorConfig, SeqNumberType, VectorStorageDatatype};
+use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
@@ -97,10 +97,6 @@ pub trait VectorStorage {
     fn files(&self) -> Vec<PathBuf>;
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        Vec::new()
-    }
-
-    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
         Vec::new()
     }
 
