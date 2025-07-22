@@ -231,7 +231,7 @@ prost = "0.12.6"
 prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
 prost-wkt-types = "0.5"
 prost-for-raft = { package = "prost", version = "=0.11.9" } # version of prost used by raft
-rand = "0.9.1"
+rand = "0.9.2"
 reqwest = { version = "0.12.22", default-features = false, features = [
     "json",
     "http2",
