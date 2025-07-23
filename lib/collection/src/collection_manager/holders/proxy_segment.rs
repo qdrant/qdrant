@@ -11,6 +11,7 @@ use common::tar_ext;
 use common::types::{PointOffsetType, TelemetryDetail};
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use rand::Rng;
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::facets::{FacetParams, FacetValue};
@@ -195,7 +196,13 @@ impl ProxySegment {
 
                 write_segment.upsert_point(op_num, point_id, all_vectors, hw_counter)?;
                 if !payload.is_empty() {
+                    log::info!(
+                        "move point point_id:{point_id} set_full_payload payload:{payload:?}"
+                    );
                     write_segment.set_full_payload(op_num, point_id, &payload, hw_counter)?;
+                    if rand::rng().random_bool(0.001) {
+                        panic!("Crashing the party from inside!");
+                    }
                 }
             }
 
@@ -602,6 +609,7 @@ impl SegmentEntry for ProxySegment {
         full_payload: &Payload,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
+        log::info!("set_full_payload proxy point_id:{point_id}");
         self.move_if_exists(op_num, point_id, hw_counter)?;
         self.write_segment.get().write().set_full_payload(
             op_num,
@@ -619,6 +627,7 @@ impl SegmentEntry for ProxySegment {
         key: &Option<JsonPath>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
+        log::info!("set_payload proxy point_id:{point_id}");
         self.move_if_exists(op_num, point_id, hw_counter)?;
         self.write_segment
             .get()
@@ -633,6 +642,7 @@ impl SegmentEntry for ProxySegment {
         key: PayloadKeyTypeRef,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
+        log::info!("delete_payload proxy point_id:{point_id}");
         self.move_if_exists(op_num, point_id, hw_counter)?;
         self.write_segment
             .get()
@@ -1097,6 +1107,7 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn flush(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
+        log::info!("flush proxy");
         let changed_indexes_guard = self.changed_indexes.read();
         let deleted_points_guard = self.deleted_points.read();
 
