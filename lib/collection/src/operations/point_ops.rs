@@ -926,9 +926,81 @@ impl SplitByShard for PointOperations {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use api::rest::{Batch, BatchVectorStruct, PointInsertOperations, PointsBatch};
+    use segment::types::ExtendedPointId;
 
     use super::*;
+
+    #[test]
+    fn split_point_operations() {
+        let id1 = ExtendedPointId::from_str("4072cda9-8ac6-46fa-9367-7372bc5e4798").unwrap();
+        let id2 = ExtendedPointId::from(321);
+        let id3 = ExtendedPointId::from_str("fe23809b-dcc9-40ba-8255-a45dce6f10be").unwrap();
+        let id4 = ExtendedPointId::from_str("a307aa98-d5b5-4b0c-aec9-f963171acb74").unwrap();
+        let id5 = ExtendedPointId::from_str("aaf3bb55-dc48-418c-ba76-18badc0d7fc5").unwrap();
+        let id6 = ExtendedPointId::from_str("63000b52-641b-45cf-bc15-14de3944b9dd").unwrap();
+        let id7 = ExtendedPointId::from_str("aab5ef35-83ad-49ea-a629-508e308872f7").unwrap();
+        let id8 = ExtendedPointId::from(0);
+        let id9 = ExtendedPointId::from(100500);
+
+        let all_ids = vec![id1, id2, id3, id4, id5, id6, id7, id8, id9];
+
+        let points: Vec<_> = all_ids
+            .iter()
+            .map(|id| PointStructPersisted {
+                id: id.clone(),
+                vector: VectorStructPersisted::from(vec![0.1, 0.2, 0.3]),
+                payload: None,
+            })
+            .collect();
+
+        let mut hash_ring = HashRingRouter::single();
+        hash_ring.add(0);
+        hash_ring.add(1);
+        hash_ring.add(2);
+
+        let operation_to_shard = points.split_by_shard(&hash_ring);
+
+        match operation_to_shard {
+            OperationToShard::ByShard(by_shard) => {
+                for (shard_id, points) in by_shard {
+                    for point in points {
+                        // Important: This mapping should not change with new updates!
+                        if point.id == id1 {
+                            assert_eq!(shard_id, 2);
+                        }
+                        if point.id == id2 {
+                            assert_eq!(shard_id, 1);
+                        }
+                        if point.id == id3 {
+                            assert_eq!(shard_id, 2);
+                        }
+                        if point.id == id4 {
+                            assert_eq!(shard_id, 2);
+                        }
+                        if point.id == id5 {
+                            assert_eq!(shard_id, 0);
+                        }
+                        if point.id == id6 {
+                            assert_eq!(shard_id, 0);
+                        }
+                        if point.id == id7 {
+                            assert_eq!(shard_id, 0);
+                        }
+                        if point.id == id8 {
+                            assert_eq!(shard_id, 2);
+                        }
+                        if point.id == id9 {
+                            assert_eq!(shard_id, 1);
+                        }
+                    }
+                }
+            }
+            OperationToShard::ToAll(_) => panic!("expected ByShard"),
+        }
+    }
 
     #[test]
     fn validate_batch() {
