@@ -54,7 +54,12 @@ impl CustomModels {
         let mut duplicates = vec![];
         let mut seen_model_names = HashSet::new();
 
-        for i in self.bm25.iter() {
+        let CustomModels {
+            model_prefix: _,
+            bm25,
+        } = &self;
+
+        for i in bm25.iter() {
             if seen_model_names.contains(&i.model_name) {
                 duplicates.push(format!("bm25.{}", i.model_name));
             }

@@ -26,10 +26,11 @@ inference:
           # Whether to convert all tokens to lowercase.
           lowercase: false
           # Use predefined set of stopwords for english.
-          stopwords_filter: english
-          # Add custom words to the stopword filter.
-          custom_stopwords:
-            - hello
+          stopwords_filter: 
+            languages: 
+              - english
+            custom:
+              - hello
           # Enables stemming using the English ruleset and the Snowball stemming algorithm.
           stemmer:
             type: snowball

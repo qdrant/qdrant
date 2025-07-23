@@ -25,8 +25,6 @@ pub struct TokenizerConfig {
     pub lowercase: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopwords_filter: Option<StopwordsInterface>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub custom_stopwords: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stemmer: Option<StemmingAlgorithm>,
     pub min_token_len: Option<usize>,
