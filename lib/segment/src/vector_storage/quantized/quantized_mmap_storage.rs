@@ -75,10 +75,10 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
 impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
     type Storage = QuantizedMmapStorage;
 
-    fn build(self) -> QuantizedMmapStorage {
-        self.mmap.flush().unwrap();
-        let mmap = self.mmap.make_read_only().unwrap(); // TODO: remove unwrap
-        QuantizedMmapStorage { mmap }
+    fn build(self) -> std::io::Result<QuantizedMmapStorage> {
+        self.mmap.flush()?;
+        let mmap = self.mmap.make_read_only()?;
+        Ok(QuantizedMmapStorage { mmap })
     }
 
     fn push_vector_data(&mut self, other: &[u8]) {

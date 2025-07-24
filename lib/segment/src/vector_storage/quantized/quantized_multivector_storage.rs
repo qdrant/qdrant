@@ -229,10 +229,23 @@ where
         vector_parameters: &VectorParameters,
         multi_vector_config: &MultiVectorConfig,
     ) -> OperationResult<Self> {
+        let offsets = TMultivectorOffsetsStorage::load(offsets_path)?;
+        // TODO: find a better way to get inner vectors count
+        let inner_vectors_count = if offsets.len() == 0 {
+            0
+        } else {
+            let offset = offsets.get_offset(offsets.len() as PointOffsetType - 1);
+            offset.start as usize + offset.count as usize
+        };
         Ok(Self {
             dim: vector_parameters.dim,
-            quantized_storage: QuantizedStorage::load(data_path, meta_path, vector_parameters)?,
-            offsets: TMultivectorOffsetsStorage::load(offsets_path)?,
+            quantized_storage: QuantizedStorage::load(
+                data_path,
+                meta_path,
+                vector_parameters,
+                inner_vectors_count,
+            )?,
+            offsets,
             multi_vector_config: *multi_vector_config,
         })
     }
@@ -323,6 +336,7 @@ where
         _data_path: &Path,
         _meta_path: &Path,
         _vector_parameters: &quantization::VectorParameters,
+        _vectors_count: usize,
     ) -> std::io::Result<Self> {
         unreachable!(
             "multivector quantized storage should be loaded using `self.load_multi` method"

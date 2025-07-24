@@ -404,6 +404,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
+        _count: usize,
         encoding: Encoding,
         query_encoding: QueryEncoding,
         stopped: &AtomicBool,
@@ -439,7 +440,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         }
 
         Ok(Self {
-            encoded_vectors: storage_builder.build(),
+            encoded_vectors: storage_builder.build().map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to build storage: {e}",))
+            })?,
             metadata: Metadata {
                 vector_parameters: vector_parameters.clone(),
                 encoding,
@@ -769,7 +772,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     }
 
     pub fn vectors_count(&self) -> usize {
-        self.metadata.vector_parameters.count
+        todo!()
     }
 
     pub fn encode_internal_query(&self, point_id: u32) -> EncodedQueryBQ<TBitsStoreType> {
@@ -802,13 +805,13 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         data_path: &Path,
         meta_path: &Path,
         vector_parameters: &VectorParameters,
+        vectors_count: usize,
     ) -> std::io::Result<Self> {
         let contents = std::fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
         let quantized_vector_size =
             Self::get_quantized_vector_size_from_params(vector_parameters.dim, metadata.encoding);
-        let encoded_vectors =
-            TStorage::from_file(data_path, quantized_vector_size, vector_parameters.count)?;
+        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size, vectors_count)?;
 
         let result = Self {
             metadata,

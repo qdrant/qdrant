@@ -33,7 +33,7 @@ pub trait EncodedStorage {
 pub trait EncodedStorageBuilder {
     type Storage: EncodedStorage;
 
-    fn build(self) -> Self::Storage;
+    fn build(self) -> std::io::Result<Self::Storage>;
 
     fn push_vector_data(&mut self, other: &[u8]);
 }
@@ -48,7 +48,7 @@ impl EncodedStorage for Vec<u8> {
         vector: &[u8],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        // TODO: checked extend
+        self.try_reserve(vector.len())?;
         self.extend_from_slice(vector);
         hw_counter
             .vector_io_write_counter()
@@ -95,8 +95,8 @@ impl EncodedStorage for Vec<u8> {
 impl EncodedStorageBuilder for Vec<u8> {
     type Storage = Vec<u8>;
 
-    fn build(self) -> Vec<u8> {
-        self
+    fn build(self) -> std::io::Result<Vec<u8>> {
+        Ok(self)
     }
 
     fn push_vector_data(&mut self, other: &[u8]) {

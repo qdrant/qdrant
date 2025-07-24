@@ -60,6 +60,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage> + Send,
         vector_parameters: &VectorParameters,
+        count: usize,
         chunk_size: usize,
         max_kmeans_threads: usize,
         stopped: &AtomicBool,
@@ -74,6 +75,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
             data.clone(),
             &vector_division,
             vector_parameters,
+            count,
             CENTROIDS_COUNT,
             max_kmeans_threads,
             stopped,
@@ -89,7 +91,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
             stopped,
         )?;
 
-        let storage = storage_builder.build();
+        let storage = storage_builder
+            .build()
+            .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
 
         if !stopped.load(Ordering::Relaxed) {
             Ok(Self {
@@ -278,25 +282,26 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         vector_division: &[Range<usize>],
         vector_parameters: &VectorParameters,
+        count: usize,
         centroids_count: usize,
         max_kmeans_threads: usize,
         stopped: &AtomicBool,
     ) -> Result<Vec<Vec<f32>>, EncodingError> {
-        let sample_size = KMEANS_SAMPLE_SIZE.min(vector_parameters.count);
+        let sample_size = KMEANS_SAMPLE_SIZE.min(count);
         let mut result = vec![vec![]; centroids_count];
 
         // if there are not enough vectors, set centroids as point positions
-        if vector_parameters.count <= centroids_count {
+        if count <= centroids_count {
             for (i, vector_data) in data.into_iter().enumerate() {
                 result[i] = vector_data.as_ref().to_vec();
             }
             // fill empty centroids just with zeros
-            result[vector_parameters.count..centroids_count].fill(vec![0.0; vector_parameters.dim]);
+            result[count..centroids_count].fill(vec![0.0; vector_parameters.dim]);
             return Ok(result);
         }
 
         // find random subset of data as random non-intersected indexes
-        let permutor = permutation_iterator::Permutor::new(vector_parameters.count as u64);
+        let permutor = permutation_iterator::Permutor::new(count as u64);
         let mut selected_vectors: Vec<usize> =
             permutor.map(|i| i as usize).take(sample_size).collect();
         if stopped.load(Ordering::Relaxed) {
@@ -445,7 +450,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     }
 
     pub fn vectors_count(&self) -> usize {
-        self.metadata.vector_parameters.count
+        todo!()
     }
 }
 
@@ -464,13 +469,13 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     fn load(
         data_path: &Path,
         meta_path: &Path,
-        vector_parameters: &VectorParameters,
+        _vector_parameters: &VectorParameters,
+        vectors_count: usize,
     ) -> std::io::Result<Self> {
         let contents = std::fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
         let quantized_vector_size = metadata.vector_division.len();
-        let encoded_vectors =
-            TStorage::from_file(data_path, quantized_vector_size, vector_parameters.count)?;
+        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size, vectors_count)?;
         let result = Self {
             encoded_vectors,
             metadata,

@@ -16,7 +16,8 @@ pub enum DistanceType {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct VectorParameters {
     pub dim: usize,
-    pub count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deprecated_count: Option<usize>,
     pub distance_type: DistanceType,
     pub invert: bool,
 }
@@ -30,6 +31,7 @@ pub trait EncodedVectors: Sized {
         data_path: &Path,
         meta_path: &Path,
         vector_parameters: &VectorParameters,
+        vectors_count: usize,
     ) -> std::io::Result<Self>;
 
     fn is_on_disk(&self) -> bool;
@@ -77,7 +79,6 @@ pub(crate) fn validate_vector_parameters<'a>(
     data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
     vector_parameters: &VectorParameters,
 ) -> Result<(), EncodingError> {
-    let mut count = 0;
     for vector in data {
         let vector = vector.as_ref();
         if vector.len() != vector_parameters.dim {
@@ -87,13 +88,6 @@ pub(crate) fn validate_vector_parameters<'a>(
                 vector_parameters.dim
             )));
         }
-        count += 1;
-    }
-    if count != vector_parameters.count {
-        return Err(EncodingError::ArgumentsError(format!(
-            "Vector count {} does not match vector parameters count {}",
-            count, vector_parameters.count
-        )));
     }
     Ok(())
 }
