@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use memory::mmap_type::MmapFlusher;
@@ -29,14 +29,6 @@ pub struct VectorParameters {
 pub trait EncodedVectors: Sized {
     type EncodedQuery;
 
-    fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()>;
-
-    fn load(
-        data_path: &Path,
-        meta_path: &Path,
-        vector_parameters: &VectorParameters,
-    ) -> std::io::Result<Self>;
-
     fn is_on_disk(&self) -> bool;
 
     fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
@@ -66,6 +58,10 @@ pub trait EncodedVectors: Sized {
     fn vectors_count(&self) -> usize;
 
     fn flusher(&self) -> MmapFlusher;
+
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf>;
 }
 
 pub trait EncodedVectorsBytes: EncodedVectors {

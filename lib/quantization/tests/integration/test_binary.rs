@@ -45,7 +45,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -54,6 +54,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -93,7 +94,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -102,6 +103,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -141,7 +143,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -150,6 +152,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -186,7 +189,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -195,6 +198,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -230,7 +234,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -239,6 +243,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -293,7 +298,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -302,6 +307,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -356,7 +362,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -365,6 +371,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -416,7 +423,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -425,6 +432,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -476,7 +484,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -485,6 +493,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -539,7 +548,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -548,6 +557,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -602,7 +612,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -611,6 +621,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -662,7 +673,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -671,6 +682,7 @@ mod tests {
             },
             Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
