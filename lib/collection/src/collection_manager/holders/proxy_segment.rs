@@ -200,9 +200,10 @@ impl ProxySegment {
                         "move point point_id:{point_id} set_full_payload payload:{payload:?}"
                     );
                     write_segment.set_full_payload(op_num, point_id, &payload, hw_counter)?;
-                    if rand::rng().random_bool(0.001) {
-                        panic!("Crashing the party from inside!");
-                    }
+                    // uncomment for inner crash
+                    // if rand::rng().random_bool(0.001) {
+                    //     panic!("Crashing the party from inside!");
+                    // }
                 }
             }
 

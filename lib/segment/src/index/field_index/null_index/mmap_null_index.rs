@@ -208,8 +208,11 @@ impl MmapNullIndex {
             return Ok(());
         };
 
-        log::info!("null_index remove_point point_offset:{id} path:{:?}", self.base_dir);
-        
+        log::info!(
+            "null_index remove_point point_offset:{id} path:{:?}",
+            self.base_dir
+        );
+
         let disposed_hw = HardwareCounterCell::disposable(); // Deleting is unmeasured OP.
         let disposed_hw = disposed_hw.ref_payload_index_io_write_counter();
 

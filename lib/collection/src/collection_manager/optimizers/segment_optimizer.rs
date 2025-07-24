@@ -565,7 +565,9 @@ pub trait SegmentOptimizer {
         }
 
         for (point_id, versions) in deleted_points_snapshot {
-            log::info!("Optimizer build_new_segment delete point_id:{point_id} versions:{versions:?}");
+            log::info!(
+                "Optimizer build_new_segment delete point_id:{point_id} versions:{versions:?}"
+            );
             optimized_segment
                 .delete_point(versions.operation_version, point_id, hw_counter)
                 .unwrap();
@@ -774,7 +776,10 @@ pub trait SegmentOptimizer {
         RwLockWriteGuard<'a, parking_lot::RawRwLock, SegmentHolder>,
     )> {
         check_process_stopped(stopped)?;
-        log::info!("optimize_segment_propagate_changes deleted_points:{}", proxy_deleted_points.read().len());
+        log::info!(
+            "optimize_segment_propagate_changes deleted_points:{}",
+            proxy_deleted_points.read().len()
+        );
 
         // ---- SLOW PART -----
 
