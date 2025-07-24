@@ -85,6 +85,8 @@ ARG LINKER=mold
 ARG GPU
 
 # Download and extract web UI
+COPY tools/ tools/
+COPY docs/ docs/
 RUN mkdir /static && STATIC_DIR=/static ./tools/sync-web-ui.sh
 
 COPY --from=planner /qdrant/recipe.json recipe.json
