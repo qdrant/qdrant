@@ -5,7 +5,7 @@ use std::arch::aarch64::*;
 use std::arch::x86_64::*;
 use std::iter::repeat_with;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -30,6 +30,7 @@ pub const CENTROIDS_COUNT: usize = 256;
 pub struct EncodedVectorsPQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
+    metadata_path: Option<PathBuf>,
 }
 
 /// PQ lookup table
@@ -60,6 +61,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     /// * `chunk_size` - Max size of f32 chunk that replaced by centroid index (in original vector dimension)
     /// * `max_threads` - Max allowed threads for kmeans and encodind process
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
+    #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage> + Send,
@@ -67,6 +69,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         count: usize,
         chunk_size: usize,
         max_kmeans_threads: usize,
+        meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
@@ -95,22 +98,52 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
             stopped,
         )?;
 
-        let storage = storage_builder
+        let encoded_vectors = storage_builder
             .build()
             .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
 
+        let metadata = Metadata {
+            centroids,
+            vector_division,
+            vector_parameters: vector_parameters.clone(),
+        };
+        if let Some(meta_path) = meta_path {
+            if let Some(dir) = meta_path.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| {
+                    EncodingError::EncodingError(format!(
+                        "Failed to create metadata parent dir: {e}"
+                    ))
+                })?;
+            }
+            atomic_save_json(meta_path, &metadata).map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
+            })?;
+        }
+
         if !stopped.load(Ordering::Relaxed) {
             Ok(Self {
-                encoded_vectors: storage,
-                metadata: Metadata {
-                    centroids,
-                    vector_division,
-                    vector_parameters: vector_parameters.clone(),
-                },
+                encoded_vectors,
+                metadata,
+                metadata_path: meta_path.map(PathBuf::from),
             })
         } else {
             Err(EncodingError::Stopped)
         }
+    }
+
+    pub fn load(meta_path: &Path, encoded_vectors: TStorage) -> std::io::Result<Self> {
+        let contents = std::fs::read_to_string(meta_path)?;
+        let metadata: Metadata = serde_json::from_str(&contents).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Invalid quantization metadata JSON: {e}"),
+            )
+        })?;
+        Ok(Self {
+            encoded_vectors,
+            metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
+        })
     }
 
     pub fn get_quantized_vector_size(
@@ -436,8 +469,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     }
 
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
-        self.encoded_vectors
-            .get_vector_data(i, self.metadata.vector_division.len())
+        self.encoded_vectors.get_vector_data(i)
     }
 
     pub fn layout(&self) -> Layout {
@@ -451,31 +483,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     type EncodedQuery = EncodedQueryPQ;
-
-    fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
-        meta_path.parent().map(std::fs::create_dir_all);
-        atomic_save_json(meta_path, &self.metadata)?;
-
-        data_path.parent().map(std::fs::create_dir_all);
-        self.encoded_vectors.save_to_file(data_path)?;
-        Ok(())
-    }
-
-    fn load(
-        data_path: &Path,
-        meta_path: &Path,
-        _vector_parameters: &VectorParameters,
-    ) -> std::io::Result<Self> {
-        let contents = std::fs::read_to_string(meta_path)?;
-        let metadata: Metadata = serde_json::from_str(&contents)?;
-        let quantized_vector_size = metadata.vector_division.len();
-        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size)?;
-        let result = Self {
-            encoded_vectors,
-            metadata,
-        };
-        Ok(result)
-    }
 
     fn is_on_disk(&self) -> bool {
         self.encoded_vectors.is_on_disk()
@@ -511,9 +518,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let centroids = self
-            .encoded_vectors
-            .get_vector_data(i, self.metadata.vector_division.len());
+        let centroids = self.encoded_vectors.get_vector_data(i);
 
         self.score_point_vs_bytes(query, centroids, hw_counter)
     }
@@ -527,12 +532,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         j: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let centroids_i = self
-            .encoded_vectors
-            .get_vector_data(i, self.metadata.vector_division.len());
-        let centroids_j = self
-            .encoded_vectors
-            .get_vector_data(j, self.metadata.vector_division.len());
+        let centroids_i = self.encoded_vectors.get_vector_data(i);
+        let centroids_j = self.encoded_vectors.get_vector_data(j);
 
         hw_counter
             .vector_io_read()
@@ -593,13 +594,27 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     }
 
     fn vectors_count(&self) -> usize {
-        // `vector_division` size is equal to quantized vector size because each chunk is replaced by one `u8` centroid index.
-        self.encoded_vectors
-            .vectors_count(self.metadata.vector_division.len())
+        self.encoded_vectors.vectors_count()
     }
 
     fn flusher(&self) -> MmapFlusher {
         self.encoded_vectors.flusher()
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = self.encoded_vectors.files();
+        if let Some(meta_path) = &self.metadata_path {
+            files.push(meta_path.clone());
+        }
+        files
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = self.encoded_vectors.immutable_files();
+        if let Some(meta_path) = &self.metadata_path {
+            files.push(meta_path.clone());
+        }
+        files
     }
 }
 

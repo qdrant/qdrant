@@ -1,6 +1,6 @@
 use std::alloc::Layout;
 use std::marker::PhantomData;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -21,6 +21,7 @@ use crate::{
 pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
+    metadata_path: Option<PathBuf>,
     bits_store_type: PhantomData<TBitsStoreType>,
 }
 
@@ -407,17 +408,24 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         vector_parameters: VectorParameters,
         encoding: Encoding,
         query_encoding: QueryEncoding,
-    ) -> Self {
-        Self {
-            encoded_vectors,
-            metadata: Metadata {
-                vector_parameters,
-                encoding,
-                query_encoding,
-                vector_stats: None,
-            },
-            bits_store_type: PhantomData,
+        meta_path: &Path,
+    ) -> std::io::Result<Self> {
+        let metadata = Metadata {
+            vector_parameters,
+            encoding,
+            query_encoding,
+            vector_stats: None,
+        };
+        if let Some(meta_path_directory) = meta_path.parent() {
+            std::fs::create_dir_all(meta_path_directory)?;
         }
+        atomic_save_json(meta_path, &metadata)?;
+        Ok(Self {
+            encoded_vectors,
+            metadata,
+            bits_store_type: PhantomData,
+            metadata_path: Some(meta_path.to_path_buf()),
+        })
     }
 
     pub fn encode<'a>(
@@ -426,6 +434,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         vector_parameters: &VectorParameters,
         encoding: Encoding,
         query_encoding: QueryEncoding,
+        meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
@@ -458,16 +467,49 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             storage_builder.push_vector_data(bytes);
         }
 
+        let encoded_vectors = storage_builder
+            .build()
+            .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
+
+        let metadata = Metadata {
+            vector_parameters: vector_parameters.clone(),
+            encoding,
+            query_encoding,
+            vector_stats,
+        };
+        if let Some(meta_path) = meta_path {
+            if let Some(dir) = meta_path.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| {
+                    EncodingError::EncodingError(format!(
+                        "Failed to create metadata parent dir: {e}"
+                    ))
+                })?;
+            }
+            atomic_save_json(meta_path, &metadata).map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
+            })?;
+        }
+
         Ok(Self {
-            encoded_vectors: storage_builder.build().map_err(|e| {
-                EncodingError::EncodingError(format!("Failed to build storage: {e}",))
-            })?,
-            metadata: Metadata {
-                vector_parameters: vector_parameters.clone(),
-                encoding,
-                query_encoding,
-                vector_stats,
-            },
+            encoded_vectors,
+            metadata,
+            metadata_path: meta_path.map(PathBuf::from),
+            bits_store_type: PhantomData,
+        })
+    }
+
+    pub fn load(meta_path: &Path, encoded_vectors: TStorage) -> std::io::Result<Self> {
+        let contents = std::fs::read_to_string(meta_path)?;
+        let metadata: Metadata = serde_json::from_str(&contents).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Invalid quantization metadata JSON: {e}"),
+            )
+        })?;
+        Ok(Self {
+            metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
+            encoded_vectors,
             bits_store_type: PhantomData,
         })
     }
@@ -760,8 +802,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     }
 
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
-        self.encoded_vectors
-            .get_vector_data(i as _, self.get_quantized_vector_size())
+        self.encoded_vectors.get_vector_data(i)
     }
 
     pub fn layout(&self) -> Layout {
@@ -792,35 +833,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 {
     type EncodedQuery = EncodedQueryBQ<TBitsStoreType>;
 
-    fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
-        meta_path.parent().map(std::fs::create_dir_all);
-        atomic_save_json(meta_path, &self.metadata)?;
-
-        data_path.parent().map(std::fs::create_dir_all);
-        self.encoded_vectors.save_to_file(data_path)?;
-
-        Ok(())
-    }
-
-    fn load(
-        data_path: &Path,
-        meta_path: &Path,
-        vector_parameters: &VectorParameters,
-    ) -> std::io::Result<Self> {
-        let contents = std::fs::read_to_string(meta_path)?;
-        let metadata: Metadata = serde_json::from_str(&contents)?;
-        let quantized_vector_size =
-            Self::get_quantized_vector_size_from_params(vector_parameters.dim, metadata.encoding);
-        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size)?;
-
-        let result = Self {
-            metadata,
-            encoded_vectors,
-            bits_store_type: PhantomData,
-        };
-        Ok(result)
-    }
-
     fn is_on_disk(&self) -> bool {
         self.encoded_vectors.is_on_disk()
     }
@@ -841,25 +853,14 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let vector_data = self
-            .encoded_vectors
-            .get_vector_data(i, self.get_quantized_vector_size());
+        let vector_data = self.encoded_vectors.get_vector_data(i);
 
         self.score_point_vs_bytes(query, vector_data, hw_counter)
     }
 
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        let vector_data_1 = self
-            .encoded_vectors
-            .get_vector_data(i, self.get_quantized_vector_size());
-        let vector_data_2 = self
-            .encoded_vectors
-            .get_vector_data(j, self.get_quantized_vector_size());
+    fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
+        let vector_data_1 = self.encoded_vectors.get_vector_data(i);
+        let vector_data_2 = self.encoded_vectors.get_vector_data(j);
 
         hw_counter
             .vector_io_read()
@@ -884,11 +885,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         id: PointOffsetType,
     ) -> Option<EncodedQueryBQ<TBitsStoreType>> {
         Some(EncodedQueryBQ::Binary(EncodedBinVector {
-            encoded_vector: transmute_from_u8_to_slice(
-                self.encoded_vectors
-                    .get_vector_data(id, self.get_quantized_vector_size()),
-            )
-            .to_vec(),
+            encoded_vector: transmute_from_u8_to_slice(self.encoded_vectors.get_vector_data(id))
+                .to_vec(),
         }))
     }
 
@@ -905,12 +903,27 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     }
 
     fn vectors_count(&self) -> usize {
-        self.encoded_vectors
-            .vectors_count(self.get_quantized_vector_size())
+        self.encoded_vectors.vectors_count()
     }
 
     fn flusher(&self) -> MmapFlusher {
         self.encoded_vectors.flusher()
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = self.encoded_vectors.files();
+        if let Some(meta_path) = &self.metadata_path {
+            files.push(meta_path.clone());
+        }
+        files
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = self.encoded_vectors.immutable_files();
+        if let Some(meta_path) = &self.metadata_path {
+            files.push(meta_path.clone());
+        }
+        files
     }
 }
 
