@@ -30,6 +30,7 @@ segment = { path = "../segment", default-features = false, features = ["testing"
 pprof = { workspace = true }
 
 [dependencies]
+bytemuck = { workspace = true }
 parking_lot = { workspace = true }
 ahash = { workspace = true }
 rand = { workspace = true }

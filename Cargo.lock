@@ -1168,6 +1168,7 @@ dependencies = [
  "async-trait",
  "atomicwrites",
  "bitvec",
+ "bytemuck",
  "bytes",
  "cancel",
  "chrono",

@@ -9,6 +9,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use ahash::AHashSet;
+use common::stable_hash::StableHash;
 use common::types::ScoreType;
 use ecow::EcoString;
 use fnv::FnvBuildHasher;
@@ -146,7 +147,7 @@ fn id_uuid_example() -> String {
 }
 
 /// Type, used for specifying point ID in user interface
-#[derive(Debug, Serialize, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, JsonSchema)]
+#[derive(Debug, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema)]
 #[serde(untagged)]
 pub enum ExtendedPointId {
     #[schemars(example = "id_num_example")]
@@ -155,16 +156,19 @@ pub enum ExtendedPointId {
     Uuid(Uuid),
 }
 
-impl Hash for ExtendedPointId {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // WARN: Changing this implementation might break backward compatibility
-        // Of hash-ring and shard routing
-        let __self_discr = std::mem::discriminant(self);
-        Hash::hash(&__self_discr, state);
-
+impl StableHash for ExtendedPointId {
+    fn stable_hash<W: FnMut(&[u8])>(&self, write: &mut W) {
         match self {
-            ExtendedPointId::NumId(num) => Hash::hash(num, state),
-            ExtendedPointId::Uuid(uuid) => Hash::hash(uuid.as_bytes(), state),
+            ExtendedPointId::NumId(num) => {
+                0u64.stable_hash(write); // discriminant for NumId
+                num.stable_hash(write);
+            }
+            ExtendedPointId::Uuid(uuid) => {
+                1u64.stable_hash(write); // discriminant for Uuid
+
+                uuid.as_bytes().len().stable_hash(write); // compatibility with uuid <= v1.16.0
+                write(uuid.as_bytes());
+            }
         }
     }
 }
