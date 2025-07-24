@@ -18,25 +18,8 @@ pub struct QuantizedRamStorage {
     path: PathBuf,
 }
 
-impl quantization::EncodedStorage for QuantizedRamStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
-        self.vectors.get(index as VectorOffsetType)
-    }
-
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        // Skip hardware counter increment because it's a RAM storage.
-        self.vectors
-            .insert(id as usize, vector)
-            .map_err(|err| std::io::Error::other(err.to_string()))?;
-        Ok(())
-    }
-
-    fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
+impl QuantizedRamStorage {
+    pub fn load(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
         let mut vectors = ChunkedVectors::<u8>::new(quantized_vector_size);
         let file = OneshotFile::open(path)?;
         let mut reader = BufReader::new(file);
@@ -54,6 +37,25 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
             vectors,
             path: path.to_path_buf(),
         })
+    }
+}
+
+impl quantization::EncodedStorage for QuantizedRamStorage {
+    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
+        self.vectors.get(index as VectorOffsetType)
+    }
+
+    fn upsert_vector(
+        &mut self,
+        id: PointOffsetType,
+        vector: &[u8],
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        // Skip hardware counter increment because it's a RAM storage.
+        self.vectors
+            .insert(id as usize, vector)
+            .map_err(|err| std::io::Error::other(err.to_string()))?;
+        Ok(())
     }
 
     fn is_on_disk(&self) -> bool {

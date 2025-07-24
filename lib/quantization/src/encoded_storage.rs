@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 #[cfg(feature = "testing")]
 use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -14,10 +14,6 @@ use memory::mmap_type::MmapFlusher;
 
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> &[u8];
-
-    fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self>
-    where
-        Self: Sized;
 
     fn is_on_disk(&self) -> bool;
 
@@ -92,7 +88,37 @@ impl EncodedStorage for TestEncodedStorage {
         Ok(())
     }
 
-    fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
+    fn is_on_disk(&self) -> bool {
+        false
+    }
+
+    fn vectors_count(&self) -> usize {
+        self.data.len() / self.quantized_vector_size.get()
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        if let Some(ref path) = self.path {
+            vec![path.clone()]
+        } else {
+            vec![]
+        }
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.files()
+    }
+}
+
+#[cfg(feature = "testing")]
+impl TestEncodedStorage {
+    pub fn load(
+        path: &std::path::Path,
+        quantized_vector_size: usize,
+    ) -> std::io::Result<TestEncodedStorage> {
         let mut file = OneshotFile::open(path)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
@@ -118,30 +144,6 @@ impl EncodedStorage for TestEncodedStorage {
             quantized_vector_size,
             path: Some(path.to_path_buf()),
         })
-    }
-
-    fn is_on_disk(&self) -> bool {
-        false
-    }
-
-    fn vectors_count(&self) -> usize {
-        self.data.len() / self.quantized_vector_size.get()
-    }
-
-    fn flusher(&self) -> MmapFlusher {
-        Box::new(|| Ok(()))
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        if let Some(ref path) = self.path {
-            vec![path.clone()]
-        } else {
-            vec![]
-        }
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        self.files()
     }
 }
 

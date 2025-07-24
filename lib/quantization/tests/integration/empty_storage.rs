@@ -4,7 +4,7 @@ mod tests {
 
     use quantization::EncodedVectorsPQ;
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
-    use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
+    use quantization::encoded_vectors::{DistanceType, VectorParameters};
     use quantization::encoded_vectors_binary::{EncodedVectorsBin, QueryEncoding};
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
     use tempfile::Builder;
@@ -39,9 +39,8 @@ mod tests {
         .unwrap();
 
         EncodedVectorsU8::<TestEncodedStorage>::load(
-            data_path.as_path(),
             meta_path.as_path(),
-            &vector_parameters,
+            TestEncodedStorage::load(data_path.as_path(), quantized_vector_size).unwrap(),
         )
         .unwrap();
     }
@@ -80,9 +79,8 @@ mod tests {
         .unwrap();
 
         EncodedVectorsPQ::<TestEncodedStorage>::load(
-            data_path.as_path(),
             meta_path.as_path(),
-            &vector_parameters,
+            TestEncodedStorage::load(data_path.as_path(), quantized_vector_size).unwrap(),
         )
         .unwrap();
     }
@@ -119,9 +117,8 @@ mod tests {
         .unwrap();
 
         EncodedVectorsBin::<u8, TestEncodedStorage>::load(
-            data_path.as_path(),
             meta_path.as_path(),
-            &vector_parameters,
+            TestEncodedStorage::load(data_path.as_path(), quantized_vector_size).unwrap(),
         )
         .unwrap();
     }
