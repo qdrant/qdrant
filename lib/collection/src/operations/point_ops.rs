@@ -950,7 +950,7 @@ mod tests {
         let points: Vec<_> = all_ids
             .iter()
             .map(|id| PointStructPersisted {
-                id: id.clone(),
+                id: *id,
                 vector: VectorStructPersisted::from(vec![0.1, 0.2, 0.3]),
                 payload: None,
             })
