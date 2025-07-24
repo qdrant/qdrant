@@ -33,7 +33,7 @@ use crate::vector_storage::quantized::quantized_query_scorer::{
     InternalScorerUnsupported, QuantizedQueryScorer,
 };
 use crate::vector_storage::quantized::quantized_ram_storage::{
-    QuantizedRamStorage, QuantizedRamStorageBuilder,
+    QuantizedChunkedVectorsBuilder, QuantizedRamStorage,
 };
 use crate::vector_storage::query_scorer::QueryScorerBytes;
 use crate::vector_storage::{
