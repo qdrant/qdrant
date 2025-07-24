@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
@@ -13,7 +13,7 @@ use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 #[derive(Debug)]
 pub struct DynamicMmapFlagsBufferedUpdateWrapper {
     flags: Arc<RwLock<DynamicMmapFlags>>,
-    pending_updates: Arc<Mutex<AHashMap<u32, bool>>>,
+    pending_updates: Arc<RwLock<AHashMap<u32, bool>>>,
     /// Cached length to avoid repeated calculation for iter_trues
     cached_len: usize,
 }
@@ -23,7 +23,7 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
         let initial_len = flags.len();
         Self {
             flags: Arc::new(RwLock::new(flags)),
-            pending_updates: Arc::new(Mutex::new(AHashMap::new())),
+            pending_updates: Arc::new(RwLock::new(AHashMap::new())),
             cached_len: initial_len,
         }
     }
@@ -33,7 +33,7 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
     /// Returns the previous value of the flag (considering pending updates).
     pub fn set(&mut self, key: u32, value: bool, hw_counter_ref: HwMetricRefCounter) -> bool {
         let previous_value = self.get(key);
-        self.pending_updates.lock().insert(key, value);
+        self.pending_updates.write().insert(key, value);
 
         // Update cached length if this key extends beyond current length
         if value {
@@ -50,7 +50,7 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
     /// Gets the value of the flag at `key`, considering pending updates.
     pub fn get(&self, key: u32) -> bool {
         // Check pending updates first
-        if let Some(value) = self.pending_updates.lock().get(&key) {
+        if let Some(value) = self.pending_updates.read().get(&key) {
             return *value;
         }
 
@@ -92,42 +92,54 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
     }
 
     /// Iterate over all "true" flags, considering pending updates.
-    /// Uses cached length for efficient 0..len iteration.
     pub fn iter_trues(&self) -> impl Iterator<Item = u32> {
         let len = self.len();
         let flags = self.flags.read();
-        let pending = self.pending_updates.lock();
+        let pending = self.pending_updates.read();
 
-        (0..len).filter_map(move |i| {
-            let i_u32 = i as u32;
-            let is_true = if let Some(&pending_value) = pending.get(&i_u32) {
-                // Check pending updates first
-                pending_value
-            } else if i < flags.len() {
-                // Check underlying flags
-                flags.get(i)
-            } else {
-                // Beyond underlying flags length, not set
-                false
+        let is_true = move |i| {
+            if let Some(value) = pending.get(&i) {
+                return *value;
             };
 
-            if is_true { Some(i_u32) } else { None }
-        })
+            // Fall back to the underlying flags
+            flags.get(i)
+        };
+
+        (0..len as u32).filter_map(move |i| is_true(i).then_some(i))
+    }
+
+    /// Iterate over all "false" flags, considering pending updates.
+    pub fn iter_falses(&self) -> impl Iterator<Item = u32> {
+        let len = self.len();
+        let flags = self.flags.read();
+        let pending = self.pending_updates.read();
+
+        let is_false = move |i| {
+            if let Some(value) = pending.get(&i) {
+                return !*value;
+            };
+
+            // Fall back to the underlying flags
+            !flags.get(i)
+        };
+
+        (0..len as u32).filter_map(move |i| is_false(i).then_some(i))
     }
 
     /// Removes from `pending_updates` all results that are flushed.
     /// If values in `pending_updates` are changed, do not remove them.
     fn clear_flushed_updates(
         flushed: AHashMap<u32, bool>,
-        pending_updates: Arc<Mutex<AHashMap<u32, bool>>>,
+        pending_updates: Arc<RwLock<AHashMap<u32, bool>>>,
     ) {
         pending_updates
-            .lock()
+            .write()
             .retain(|point_id, a| flushed.get(point_id).is_none_or(|b| a != b));
     }
 
     pub fn flusher(&self) -> Flusher {
-        let pending_updates_clone = self.pending_updates.lock().clone();
+        let pending_updates_clone = self.pending_updates.read().clone();
         let flags = self.flags.clone();
         let pending_updates_arc = self.pending_updates.clone();
         let cached_len = self.cached_len;

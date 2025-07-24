@@ -387,9 +387,11 @@ impl PayloadFieldIndex for MmapNullIndex {
 
             if *is_empty {
                 // Iterate over all tracked values, but filter out those which have a value
-                let iter = (0..self.total_point_count as PointOffsetType)
-                    .filter(move |&id| !storage.has_values_slice.get(id))
-                    .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
+                let iter = storage.has_values_slice.iter_falses().measure_hw_with_cell(
+                    hw_counter,
+                    1,
+                    |i| i.payload_index_io_read_counter(),
+                );
                 Some(Box::new(iter))
             } else {
                 // Non-empty values are registered in the index explicitly
@@ -415,9 +417,11 @@ impl PayloadFieldIndex for MmapNullIndex {
                 Some(Box::new(iter))
             } else {
                 // Iterate over all tracked values, but filter out those which are null
-                let iter = (0..self.total_point_count as PointOffsetType)
-                    .filter(move |&id| !storage.is_null_slice.get(id))
-                    .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
+                let iter =
+                    storage
+                        .is_null_slice
+                        .iter_falses()
+                        .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
             }
         } else {
