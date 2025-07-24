@@ -6,6 +6,7 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::Flusher;
+use crate::common::dynamic_mmap_flags_buffered_update_wrapper::DynamicMmapFlagsBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
@@ -31,9 +32,9 @@ pub struct MmapNullIndex {
 
 struct Storage {
     /// If true, payload field has some values.
-    has_values_slice: DynamicMmapFlags,
+    has_values_slice: DynamicMmapFlagsBufferedUpdateWrapper,
     /// If true, then payload field contains null value.
-    is_null_slice: DynamicMmapFlags,
+    is_null_slice: DynamicMmapFlagsBufferedUpdateWrapper,
 }
 
 /// Don't populate null index as it is not essential
@@ -78,10 +79,11 @@ impl MmapNullIndex {
         })?;
 
         let has_values_path = path.join(HAS_VALUES_DIRNAME);
-        let has_values_slice = DynamicMmapFlags::open(&has_values_path, POPULATE_NULL_INDEX)?;
+        let has_values_slice =
+            DynamicMmapFlags::open(&has_values_path, POPULATE_NULL_INDEX)?.into();
 
         let is_null_path = path.join(IS_NULL_DIRNAME);
-        let is_null_slice = DynamicMmapFlags::open(&is_null_path, POPULATE_NULL_INDEX)?;
+        let is_null_slice = DynamicMmapFlags::open(&is_null_path, POPULATE_NULL_INDEX)?.into();
 
         Ok(Self {
             base_dir: path.to_path_buf(),
@@ -115,8 +117,9 @@ impl MmapNullIndex {
         let is_null_path = path.join(IS_NULL_DIRNAME);
 
         if has_values_path.exists() && is_null_path.exists() {
-            let has_values_slice = DynamicMmapFlags::open(&has_values_path, POPULATE_NULL_INDEX)?;
-            let is_null_slice = DynamicMmapFlags::open(&is_null_path, POPULATE_NULL_INDEX)?;
+            let has_values_slice =
+                DynamicMmapFlags::open(&has_values_path, POPULATE_NULL_INDEX)?.into();
+            let is_null_slice = DynamicMmapFlags::open(&is_null_path, POPULATE_NULL_INDEX)?.into();
             Ok(Some(Self {
                 base_dir: path.to_path_buf(),
                 storage: Some(Storage {
@@ -177,12 +180,8 @@ impl MmapNullIndex {
 
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
-        storage
-            .has_values_slice
-            .set_with_resize(id, has_values, hw_counter_ref)?;
-        storage
-            .is_null_slice
-            .set_with_resize(id, is_null, hw_counter_ref)?;
+        storage.has_values_slice.set(id, has_values, hw_counter_ref);
+        storage.is_null_slice.set(id, is_null, hw_counter_ref);
 
         // Bump total points
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
@@ -198,12 +197,8 @@ impl MmapNullIndex {
         let disposed_hw = HardwareCounterCell::disposable(); // Deleting is unmeasured OP.
         let disposed_hw = disposed_hw.ref_payload_index_io_write_counter();
 
-        storage
-            .has_values_slice
-            .set_with_resize(id, false, disposed_hw)?;
-        storage
-            .is_null_slice
-            .set_with_resize(id, false, disposed_hw)?;
+        storage.has_values_slice.set(id, false, disposed_hw);
+        storage.is_null_slice.set(id, false, disposed_hw);
 
         // Bump total points
         // We MUST bump the total point count when removing a point too
@@ -255,8 +250,16 @@ impl MmapNullIndex {
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
         if let Some(storage) = &self.storage {
-            storage.is_null_slice.populate()?;
-            storage.has_values_slice.populate()?;
+            storage
+                .has_values_slice
+                .get_underlying_flags()
+                .read()
+                .populate()?;
+            storage
+                .is_null_slice
+                .get_underlying_flags()
+                .read()
+                .populate()?;
         }
         Ok(())
     }
@@ -264,10 +267,17 @@ impl MmapNullIndex {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         if let Some(storage) = &self.storage {
-            storage.is_null_slice.clear_cache()?;
-            storage.has_values_slice.clear_cache()?;
+            storage
+                .has_values_slice
+                .get_underlying_flags()
+                .read()
+                .clear_cache()?;
+            storage
+                .is_null_slice
+                .get_underlying_flags()
+                .read()
+                .clear_cache()?;
         }
-
         Ok(())
     }
 
@@ -340,8 +350,8 @@ impl PayloadFieldIndex for MmapNullIndex {
             is_null_slice,
         } = storage;
 
-        let mut files = has_values_slice.files();
-        files.extend(is_null_slice.files());
+        let mut files = has_values_slice.get_underlying_flags().read().files();
+        files.extend(is_null_slice.get_underlying_flags().read().files());
         files
     }
 
