@@ -5,7 +5,6 @@ use common::counter::referenced_counter::HwMetricRefCounter;
 use parking_lot::RwLock;
 
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 
 /// A wrapper around `DynamicMmapFlags` that delays writing changes to the underlying file until they get
@@ -14,7 +13,7 @@ use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 pub struct DynamicMmapFlagsBufferedUpdateWrapper {
     flags: Arc<RwLock<DynamicMmapFlags>>,
     pending_updates: Arc<RwLock<AHashMap<u32, bool>>>,
-    /// Cached length to avoid repeated calculation for iter_trues
+    /// Cached length of the flags. Flags will be extended to this length when flushed.
     cached_len: usize,
 }
 
@@ -36,12 +35,9 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
         self.pending_updates.write().insert(key, value);
 
         // Update cached length if this key extends beyond current length
-        if value {
-            let new_required_len = key as usize + 1;
-            if new_required_len > self.cached_len {
-                self.cached_len = new_required_len;
-            }
-        }
+        // even if it is setting the flag to `false`
+        let new_required_len = key as usize + 1;
+        self.cached_len = self.cached_len.max(new_required_len);
 
         hw_counter_ref.incr_delta(size_of::<bool>());
         previous_value
@@ -69,26 +65,6 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
     /// Count number of set flags, considering pending updates.
     pub fn count_flags(&self) -> usize {
         self.iter_trues().count()
-    }
-
-    /// Set the length of the flags, buffered.
-    /// This will be applied during flush.
-    pub fn set_len(&mut self, new_len: usize) -> OperationResult<()> {
-        // For simplicity, we'll handle resizing during flush
-        // For now, just ensure we don't shrink below pending updates
-        let current_len = self.flags.read().len();
-        if new_len < current_len {
-            return Err(
-                crate::common::operation_error::OperationError::service_error(format!(
-                    "Cannot shrink the buffered mmap flags from {current_len} to {new_len}",
-                )),
-            );
-        }
-
-        // Update cached length
-        self.cached_len = new_len.max(self.cached_len);
-
-        Ok(())
     }
 
     /// Iterate over all "true" flags, considering pending updates.
@@ -148,11 +124,9 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
             let mut flags_write = flags.write();
 
             // First, determine if we need to resize
-            if flags_write.len() < cached_len {
-                let required_len = cached_len as usize;
-                if required_len > flags_write.len() {
-                    flags_write.set_len(required_len)?;
-                }
+            let required_len = cached_len as usize;
+            if required_len > flags_write.len() {
+                flags_write.set_len(required_len)?;
             }
 
             // Apply all pending updates
