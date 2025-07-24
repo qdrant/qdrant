@@ -146,13 +146,27 @@ fn id_uuid_example() -> String {
 }
 
 /// Type, used for specifying point ID in user interface
-#[derive(Debug, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema)]
+#[derive(Debug, Serialize, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, JsonSchema)]
 #[serde(untagged)]
 pub enum ExtendedPointId {
     #[schemars(example = "id_num_example")]
     NumId(u64),
     #[schemars(example = "id_uuid_example")]
     Uuid(Uuid),
+}
+
+impl Hash for ExtendedPointId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // WARN: Changing this implementation might break backward compatibility
+        // Of hash-ring and shard routing
+        let __self_discr = std::mem::discriminant(self);
+        Hash::hash(&__self_discr, state);
+
+        match self {
+            ExtendedPointId::NumId(num) => Hash::hash(num, state),
+            ExtendedPointId::Uuid(uuid) => Hash::hash(uuid.as_bytes(), state),
+        }
+    }
 }
 
 impl ExtendedPointId {
