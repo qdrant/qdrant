@@ -42,14 +42,17 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
+        count: usize,
         quantile: Option<f32>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
         let actual_dim = Self::get_actual_dim(vector_parameters);
 
-        if vector_parameters.count == 0 {
+        if count == 0 {
             return Ok(EncodedVectorsU8 {
-                encoded_vectors: storage_builder.build(),
+                encoded_vectors: storage_builder.build().map_err(|e| {
+                    EncodingError::EncodingError(format!("Failed to build storage: {e}",))
+                })?,
                 metadata: Metadata {
                     actual_dim,
                     alpha: 0.0,
@@ -63,12 +66,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
         let (alpha, offset) = Self::find_alpha_offset_size_dim(orig_data.clone());
         let (alpha, offset) = if let Some(quantile) = quantile {
-            if let Some((min, max)) = find_quantile_interval(
-                orig_data.clone(),
-                vector_parameters.dim,
-                vector_parameters.count,
-                quantile,
-            ) {
+            if let Some((min, max)) =
+                find_quantile_interval(orig_data.clone(), vector_parameters.dim, count, quantile)
+            {
                 Self::alpha_offset_from_min_max(min, max)
             } else {
                 (alpha, offset)
@@ -135,7 +135,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         };
 
         Ok(EncodedVectorsU8 {
-            encoded_vectors: storage_builder.build(),
+            encoded_vectors: storage_builder.build().map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to build storage: {e}",))
+            })?,
             metadata: Metadata {
                 actual_dim,
                 alpha,
@@ -291,10 +293,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     pub fn get_actual_dim(vector_parameters: &VectorParameters) -> usize {
         vector_parameters.dim + (ALIGNMENT - vector_parameters.dim % ALIGNMENT) % ALIGNMENT
     }
-
-    pub fn vectors_count(&self) -> usize {
-        self.metadata.vector_parameters.count
-    }
 }
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
@@ -313,12 +311,12 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         data_path: &Path,
         meta_path: &Path,
         vector_parameters: &VectorParameters,
+        vectors_count: usize,
     ) -> std::io::Result<Self> {
         let contents = std::fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
         let quantized_vector_size = Self::get_quantized_vector_size(vector_parameters);
-        let encoded_vectors =
-            TStorage::from_file(data_path, quantized_vector_size, vector_parameters.count)?;
+        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size, vectors_count)?;
         let result = Self {
             encoded_vectors,
             metadata,
@@ -489,6 +487,25 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
                 std::slice::from_raw_parts(q_ptr, self.metadata.actual_dim).to_vec()
             },
         })
+    }
+
+    fn push_vector(
+        &mut self,
+        _vector: &[f32],
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        debug_assert!(false, "SQ does not support push_vector",);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "SQ does not support push_vector",
+        ))
+    }
+
+    fn vectors_count(&self) -> usize {
+        self.encoded_vectors
+            .vectors_count(Self::get_quantized_vector_size(
+                &self.metadata.vector_parameters,
+            ))
     }
 }
 

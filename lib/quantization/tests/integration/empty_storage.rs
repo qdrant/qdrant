@@ -16,7 +16,7 @@ mod tests {
         let vector_dim = 256;
         let vector_parameters = VectorParameters {
             dim: vector_dim,
-            count: vectors_count,
+            count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         };
@@ -26,6 +26,7 @@ mod tests {
             vector_data.iter(),
             Vec::<u8>::new(),
             &vector_parameters,
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -41,6 +42,7 @@ mod tests {
             data_path.as_path(),
             meta_path.as_path(),
             &vector_parameters,
+            vectors_count,
         )
         .unwrap();
     }
@@ -53,7 +55,7 @@ mod tests {
         let vector_dim = 8;
         let vector_parameters = VectorParameters {
             dim: vector_dim,
-            count: vectors_count,
+            count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         };
@@ -63,6 +65,7 @@ mod tests {
             vector_data.iter(),
             Vec::<u8>::new(),
             &vector_parameters,
+            vectors_count,
             2,
             1,
             &AtomicBool::new(false),
@@ -79,6 +82,7 @@ mod tests {
             data_path.as_path(),
             meta_path.as_path(),
             &vector_parameters,
+            vectors_count,
         )
         .unwrap();
     }
@@ -91,7 +95,7 @@ mod tests {
         let vector_dim = 8;
         let vector_parameters = VectorParameters {
             dim: vector_dim,
-            count: vectors_count,
+            count: None,
             distance_type: DistanceType::Dot,
             invert: true,
         };
@@ -101,6 +105,7 @@ mod tests {
             vector_data.iter(),
             Vec::<u8>::new(),
             &vector_parameters,
+            vectors_count,
             quantization::encoded_vectors_binary::Encoding::OneBit,
             QueryEncoding::SameAsStorage,
             &AtomicBool::new(false),
@@ -117,6 +122,7 @@ mod tests {
             data_path.as_path(),
             meta_path.as_path(),
             &vector_parameters,
+            vectors_count,
         )
         .unwrap();
     }

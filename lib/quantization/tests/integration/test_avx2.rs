@@ -28,10 +28,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                count: None,
                 distance_type: DistanceType::Dot,
                 invert: false,
             },
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -64,10 +65,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                count: None,
                 distance_type: DistanceType::L2,
                 invert: false,
             },
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -104,10 +106,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                count: None,
                 distance_type: DistanceType::L1,
                 invert: false,
             },
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
