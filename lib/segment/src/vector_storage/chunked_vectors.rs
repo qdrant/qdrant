@@ -5,7 +5,9 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::mem;
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use memory::fadvise::OneshotFile;
+use memory::mmap_type::MmapFlusher;
 
 use crate::common::vector_utils::{TrySetCapacity, TrySetCapacityExact};
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
@@ -174,6 +176,25 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
 impl quantization::EncodedStorage for ChunkedVectors<u8> {
     fn get_vector_data(&self, index: usize, _vector_size: usize) -> &[u8] {
         self.get(index)
+    }
+
+    fn push_vector(
+        &mut self,
+        vector: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        // Memory for ChunkedVectors are already pre-allocated,
+        // so we do not expect any errors here.
+        self.push(vector)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::OutOfMemory, err.to_string()))?;
+        hw_counter
+            .vector_io_write_counter()
+            .incr_delta(size_of_val(vector));
+        Ok(())
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
     }
 
     fn from_file(

@@ -2,10 +2,20 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use memory::fadvise::OneshotFile;
+use memory::mmap_type::MmapFlusher;
 
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8];
+
+    fn push_vector(
+        &mut self,
+        vector: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()>;
+
+    fn flusher(&self) -> MmapFlusher;
 
     fn from_file(
         path: &Path,
@@ -31,6 +41,23 @@ pub trait EncodedStorageBuilder {
 impl EncodedStorage for Vec<u8> {
     fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8] {
         &self[vector_size * index..vector_size * (index + 1)]
+    }
+
+    fn push_vector(
+        &mut self,
+        vector: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        // TODO: checked extend
+        self.extend_from_slice(vector);
+        hw_counter
+            .vector_io_write_counter()
+            .incr_delta(std::mem::size_of_val(vector));
+        Ok(())
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
     }
 
     fn from_file(

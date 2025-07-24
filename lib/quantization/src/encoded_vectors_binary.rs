@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use common::counter::hardware_counter::HardwareCounterCell;
 use io::file_operations::atomic_save_json;
 use memory::mmap_ops::{transmute_from_u8_to_slice, transmute_to_u8_slice};
+use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
@@ -896,6 +897,26 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
             )
             .to_vec(),
         }))
+    }
+
+    fn push_vector(
+        &mut self,
+        vector: &[f32],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        let encoded_vector = Self::encode_vector(vector, &None, self.metadata.encoding);
+        self.encoded_vectors.push_vector(
+            bytemuck::cast_slice(encoded_vector.encoded_vector.as_slice()),
+            hw_counter,
+        )
+    }
+
+    fn vectors_count(&self) -> usize {
+        todo!()
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        self.encoded_vectors.flusher()
     }
 }
 

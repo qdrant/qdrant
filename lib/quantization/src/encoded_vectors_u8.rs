@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use io::file_operations::atomic_save_json;
+use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
@@ -533,6 +534,26 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
                 std::slice::from_raw_parts(q_ptr, self.metadata.actual_dim).to_vec()
             },
         })
+    }
+
+    fn push_vector(
+        &mut self,
+        _vector: &[f32],
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        debug_assert!(false, "SQ does not support push_vector",);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "SQ does not support push_vector",
+        ))
+    }
+
+    fn vectors_count(&self) -> usize {
+        todo!()
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
     }
 }
 

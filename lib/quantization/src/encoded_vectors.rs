@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
@@ -50,6 +51,16 @@ pub trait EncodedVectors: Sized {
     /// Construct a query from stored vector, so it can be used for scoring.
     /// Some implementations may not support this, in which case they should return `None`.
     fn encode_internal_vector(&self, id: u32) -> Option<Self::EncodedQuery>;
+
+    fn push_vector(
+        &mut self,
+        vector: &[f32],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()>;
+
+    fn vectors_count(&self) -> usize;
+
+    fn flusher(&self) -> MmapFlusher;
 }
 
 impl DistanceType {

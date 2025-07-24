@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use io::file_operations::atomic_save_json;
+use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
@@ -578,5 +579,25 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     fn encode_internal_vector(&self, _id: u32) -> Option<EncodedQueryPQ> {
         // We cannot create query in PQ from quantized vector without LUT accuracy loss
         None
+    }
+
+    fn push_vector(
+        &mut self,
+        _vector: &[f32],
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        debug_assert!(false, "PQ does not support push_vector",);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "PQ does not support push_vector",
+        ))
+    }
+
+    fn vectors_count(&self) -> usize {
+        todo!()
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
     }
 }
