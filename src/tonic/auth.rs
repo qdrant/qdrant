@@ -19,6 +19,19 @@ pub struct AuthMiddleware<S> {
 }
 
 async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, Status> {
+    // Allow health check endpoints to bypass authentication
+    let path = req.uri().path();
+    if path == "/qdrant.Qdrant/HealthCheck" || path == "/grpc.health.v1.Health/Check" {
+        // Set default full access for health check endpoints
+        let access = Access::full("Health check endpoints have full access without authentication");
+        let inference_token = crate::common::inference::InferenceToken(None);
+
+        req.extensions_mut().insert::<Access>(access);
+        req.extensions_mut().insert(inference_token);
+
+        return Ok(req);
+    }
+
     let (access, inference_token) = auth_keys
         .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
         .await
