@@ -1,0 +1,52 @@
+name: 'Cancel Other Running Jobs'
+description: 'Cancels all other running jobs in the current workflow run'
+inputs:
+  github-token:
+    description: 'GitHub token with actions:write permission'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Cancel other running jobs
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const { owner, repo } = context.repo;
+          const run_id = context.runId;
+          
+          console.log(`Checking jobs for workflow run ${run_id}...`);
+          
+          // Get all jobs for this workflow run
+          const { data: { jobs } } = await github.rest.actions.listJobsForWorkflowRun({
+            owner,
+            repo,
+            run_id
+          });
+          
+          // Check if there are other running jobs
+          const otherRunningJobs = jobs.filter(job => 
+            job.status === 'in_progress' && job.id !== context.job
+          );
+          
+          console.log(`Found ${otherRunningJobs.length} other running jobs`);
+          
+          if (otherRunningJobs.length > 0) {
+            console.log('Cancelling workflow run to stop all running jobs...');
+            
+            try {
+              await github.rest.actions.cancelWorkflowRun({
+                owner,
+                repo,
+                run_id: run_id
+              });
+              console.log('Successfully initiated workflow cancellation');
+            } catch (error) {
+              console.error(`Failed to cancel workflow: ${error.message}`);
+              throw error;
+            }
+          } else {
+            console.log('No other running jobs found - skipping cancellation');
+          }
