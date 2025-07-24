@@ -114,7 +114,7 @@ jobs:
 #            PROFILE=ci
 #      - name: Cancel other jobs if Docker build failed
 #        if: failure() && steps.docker-build.outcome == 'failure'
-#        uses: ./.github/actions/cancel-other-running-jobs
+#        uses: ./.github/actions/cancel-workflow-run
 #      - name: Run integration tests - multiple peers - compose
 #        run: poetry run bash ./test_restart.sh
 #        working-directory: ./tests/consensus_tests
@@ -149,7 +149,7 @@ jobs:
 #            PROFILE=ci
 #      - name: Cancel other jobs if Docker build failed
 #        if: failure() && steps.docker-build.outcome == 'failure'
-#        uses: ./.github/actions/cancel-other-running-jobs
+#        uses: ./.github/actions/cancel-workflow-run
 #      - name: Install Protoc
 #        uses: arduino/setup-protoc@v3
 #        with:
@@ -271,7 +271,7 @@ jobs:
           exit 1
       - name: Cancel other jobs if Docker build failed
         if: failure() && steps.docker-build.outcome == 'failure'
-        uses: ./.github/actions/cancel-other-running-jobs
+        uses: ./.github/actions/cancel-workflow-run
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify Docker image
