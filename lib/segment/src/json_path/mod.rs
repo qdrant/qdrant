@@ -38,7 +38,6 @@ impl JsonPath {
     /// # Panics
     ///
     /// Panics if the string is not a valid path. Thus, this function should only be used in tests.
-    #[cfg(feature = "testing")]
     pub fn new(p: &str) -> Self {
         p.parse().unwrap()
     }

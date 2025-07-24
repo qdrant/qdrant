@@ -71,6 +71,7 @@ impl MmapNullIndex {
     }
 
     fn open_or_create(path: &Path, total_point_count: usize) -> OperationResult<Self> {
+        log::info!("open_or_create null_index path:{path:?} total_point_count:{total_point_count}");
         std::fs::create_dir_all(path).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create null-index directory: {err}, path: {path:?}"
@@ -82,7 +83,11 @@ impl MmapNullIndex {
 
         let is_null_path = path.join(IS_NULL_DIRNAME);
         let is_null_slice = DynamicMmapFlags::open(&is_null_path, POPULATE_NULL_INDEX)?;
-
+        log::info!(
+            "has_values set:{} is_null set:{}",
+            has_values_slice.count_flags(),
+            is_null_slice.count_flags()
+        );
         Ok(Self {
             base_dir: path.to_path_buf(),
             storage: Some(Storage {
@@ -104,8 +109,10 @@ impl MmapNullIndex {
         total_point_count: usize,
         create_if_missing: bool,
     ) -> OperationResult<Option<Self>> {
+        log::info!("open null_index path:{path:?}");
         if !path.is_dir() {
             if create_if_missing {
+                log::info!("open null_index must be created path:{path:?}");
                 return Ok(Some(Self::open_or_create(path, total_point_count)?));
             }
             return Ok(None);
@@ -117,6 +124,11 @@ impl MmapNullIndex {
         if has_values_path.exists() && is_null_path.exists() {
             let has_values_slice = DynamicMmapFlags::open(&has_values_path, POPULATE_NULL_INDEX)?;
             let is_null_slice = DynamicMmapFlags::open(&is_null_path, POPULATE_NULL_INDEX)?;
+            log::info!(
+                "has_values set:{} is_null set:{}",
+                has_values_slice.count_flags(),
+                is_null_slice.count_flags()
+            );
             Ok(Some(Self {
                 base_dir: path.to_path_buf(),
                 storage: Some(Storage {
@@ -126,6 +138,7 @@ impl MmapNullIndex {
                 total_point_count,
             }))
         } else {
+            log::info!("index corrupted??");
             Ok(None)
         }
     }
@@ -141,7 +154,7 @@ impl MmapNullIndex {
                 "MmapNullIndex storage is not initialized".to_string(),
             ));
         };
-
+        //log::info!("null_index add_point point_offset:{id} payload:{payload:?} path:{:?}", self.base_dir);
         let mut is_null = false;
         let mut has_values = false;
         for value in payload {
@@ -195,6 +208,8 @@ impl MmapNullIndex {
             return Ok(());
         };
 
+        log::info!("null_index remove_point point_offset:{id} path:{:?}", self.base_dir);
+        
         let disposed_hw = HardwareCounterCell::disposable(); // Deleting is unmeasured OP.
         let disposed_hw = disposed_hw.ref_payload_index_io_write_counter();
 
@@ -317,8 +332,9 @@ impl PayloadFieldIndex for MmapNullIndex {
 
         let is_empty_flusher = has_values_slice.flusher();
         let is_null_flusher = is_null_slice.flusher();
-
+        let path = self.base_dir.clone();
         Box::new(move || {
+            log::info!("flushing null_index path:{path:?}");
             is_empty_flusher()?;
             is_null_flusher()?;
             Ok(())

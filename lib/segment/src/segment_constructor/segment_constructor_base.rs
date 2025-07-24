@@ -439,6 +439,7 @@ fn create_segment(
     stopped: &AtomicBool,
     create: bool,
 ) -> OperationResult<Segment> {
+    log::info!("create segment at path:{segment_path:?}");
     #[cfg(feature = "rocksdb")]
     let mut db_builder = RocksDbBuilder::new(segment_path, config)?;
 
@@ -682,6 +683,7 @@ fn create_segment_id_tracker(
 }
 
 pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option<Segment>> {
+    log::info!("load segment {path:?}");
     if path
         .extension()
         .and_then(|ext| ext.to_str())

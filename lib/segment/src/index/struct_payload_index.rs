@@ -166,7 +166,7 @@ impl StructPayloadIndex {
         if is_dirty {
             self.save_config()?;
         }
-
+        log::info!("loaded {} field indexes", field_indexes.len());
         self.field_indexes = field_indexes;
         Ok(())
     }
@@ -309,6 +309,7 @@ impl StructPayloadIndex {
         is_appendable: bool,
         create: bool,
     ) -> OperationResult<Self> {
+        log::info!("open payload index path:{path:?}");
         create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
         let config = if config_path.exists() {
@@ -595,6 +596,7 @@ impl StructPayloadIndex {
     }
 
     fn clear_index_for_point(&mut self, point_id: PointOffsetType) -> OperationResult<()> {
+        log::info!("clear_index_for_point point_offset:{point_id}");
         for (_, field_indexes) in self.field_indexes.iter_mut() {
             for index in field_indexes {
                 index.remove_point(point_id)?;
@@ -994,6 +996,12 @@ impl PayloadIndex for StructPayloadIndex {
         payload: &Payload,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        let prev_payload = self.payload.borrow().get(point_id, hw_counter).unwrap();
+        log::info!(
+            "payload_index overwrite point_offset:{point_id} prev_payload_len:{} payload_len:{:}",
+            prev_payload.len(),
+            payload.len()
+        );
         self.payload
             .borrow_mut()
             .overwrite(point_id, payload, hw_counter)?;
@@ -1002,10 +1010,21 @@ impl PayloadIndex for StructPayloadIndex {
             let field_value = payload.get_value(field);
             if !field_value.is_empty() {
                 for index in field_index {
+                    if field.to_string().contains("missing") {
+                        log::info!(
+                            "payload_index overwrite add point_offset:{point_id} field:{field:?} field_value:{field_value:?} index_type:{:?}",
+                            index.get_full_index_type().index_type
+                        );
+                    }
                     index.add_point(point_id, &field_value, hw_counter)?;
                 }
             } else {
                 for index in field_index {
+                    if field.to_string().contains("missing") {
+                        log::info!(
+                            "payload_index overwrite removing point_offset:{point_id} field:{field:?}"
+                        );
+                    }
                     index.remove_point(point_id)?;
                 }
             }
@@ -1020,6 +1039,7 @@ impl PayloadIndex for StructPayloadIndex {
         key: &Option<JsonPath>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        let prev_payload = self.payload.borrow().get(point_id, hw_counter).unwrap();
         if let Some(key) = key {
             self.payload
                 .borrow_mut()
@@ -1031,8 +1051,28 @@ impl PayloadIndex for StructPayloadIndex {
         };
 
         let updated_payload = self.get_payload(point_id, hw_counter)?;
+        log::info!(
+            "payload_index set point_offset:{point_id} prev_payload:{} new_payload_len:{} updated_payload_len:{}",
+            prev_payload.len(),
+            payload.len(),
+            updated_payload.len(),
+        );
         for (field, field_index) in &mut self.field_indexes {
             if !field.is_affected_by_value_set(&payload.0, key.as_ref()) {
+                if field.to_string().contains("missing") {
+                    log::info!(
+                        "Skipping payload index {field:?} point_offset:{point_id} NOT is_affected_by_value_set"
+                    );
+                    for index in field_index {
+                        let count = index.values_count(point_id);
+                        let is_empty = index.values_is_empty(point_id);
+                        log::info!(
+                            "value_count:{count} is_empty:{is_empty} index_type:{:?} path:{:?}",
+                            index.get_full_index_type().index_type,
+                            self.path,
+                        );
+                    }
+                }
                 continue;
             }
             let field_value = updated_payload.get_value(field);
@@ -1042,6 +1082,7 @@ impl PayloadIndex for StructPayloadIndex {
                 }
             } else {
                 for index in field_index {
+                    log::info!("payload_index set removing point_offset:{point_id} field:{field}");
                     index.remove_point(point_id)?;
                 }
             }
@@ -1071,6 +1112,7 @@ impl PayloadIndex for StructPayloadIndex {
         key: PayloadKeyTypeRef,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
+        log::info!("payload_index delete point_offset:{point_id}");
         if let Some(indexes) = self.field_indexes.get_mut(key) {
             for index in indexes {
                 index.remove_point(point_id)?;
@@ -1084,6 +1126,7 @@ impl PayloadIndex for StructPayloadIndex {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>> {
+        log::info!("clear_payload point_offset:{point_id}");
         self.clear_index_for_point(point_id)?;
         self.payload.borrow_mut().clear(point_id, hw_counter)
     }

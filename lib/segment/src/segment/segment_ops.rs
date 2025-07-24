@@ -482,6 +482,7 @@ impl Segment {
             );
 
             for internal_id in &internal_ids_to_delete {
+                log::info!("check_consistency_and_repair delete point_offset:{internal_id}");
                 // Drop removed points from payload index
                 self.payload_index
                     .borrow_mut()

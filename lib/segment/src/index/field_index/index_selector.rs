@@ -138,6 +138,10 @@ impl IndexSelector<'_> {
                     create_if_missing,
                 )?
                 else {
+                    log::info!(
+                        "no null_index found at path:{:?} on load",
+                        &null_dir(path, field)
+                    );
                     return Ok(None);
                 };
                 FieldIndex::NullIndex(null_index)

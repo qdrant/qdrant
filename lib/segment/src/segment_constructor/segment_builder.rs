@@ -463,6 +463,7 @@ impl SegmentBuilder {
         rng: &mut R,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Segment, OperationError> {
+        log::info!("build segment from builder");
         let (temp_dir, destination_path) = {
             let SegmentBuilder {
                 version,
@@ -671,6 +672,7 @@ impl SegmentBuilder {
 
             // After version is saved, segment can be loaded on restart
             SegmentVersion::save(temp_dir.path())?;
+            log::info!("building segment path:{:?}", temp_dir.path());
             // All temp data is evicted from RAM
             (temp_dir, destination_path)
         };

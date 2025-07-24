@@ -196,7 +196,7 @@ pub(crate) fn set_payload(
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
     let mut total_updated_points = 0;
-
+    log::info!("set_payload chunk {points:?} payload_len:{}", payload.len());
     for chunk in points.chunks(PAYLOAD_OP_BATCH_SIZE) {
         let updated_points = segments.apply_points_with_conditional_move(
             op_num,

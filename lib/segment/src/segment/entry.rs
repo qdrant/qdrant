@@ -136,6 +136,7 @@ impl SegmentEntry for Segment {
             // Point does already not exist anymore
             None => Ok(false),
             Some(internal_id) => {
+                log::info!("delete_point segment point_id:{point_id} point_offset:{internal_id}");
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
                     // Mark point as deleted, drop mapping
                     segment
@@ -231,6 +232,7 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
+                log::info!("set_full_payload segment point_id:{point_id} point_offset:{internal_id} full_payload:{full_payload:?}");
                 segment.payload_index.borrow_mut().overwrite_payload(
                     internal_id,
                     full_payload,
@@ -257,6 +259,7 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
+                log::info!("set_payload point_id:{point_id} point_offset:{internal_id}");
                 segment.payload_index.borrow_mut().set_payload(
                     internal_id,
                     payload,
@@ -306,6 +309,7 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
+                log::info!("clear_payload point_id:{point_id} point_offset:{internal_id}");
                 segment
                     .payload_index
                     .borrow_mut()
@@ -615,6 +619,7 @@ impl SegmentEntry for Segment {
     }
 
     fn flush(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
+        log::info!("flush segment");
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
         if !sync && self.is_background_flushing() {
             return Ok(current_persisted_version.unwrap_or(0));
@@ -699,11 +704,13 @@ impl SegmentEntry for Segment {
             id_tracker_mapping_flusher().map_err(|err| {
                 OperationError::service_error(format!("Failed to flush id_tracker mapping: {err}"))
             })?;
+            log::info!("flush payload storage");
             for vector_storage_flusher in vector_storage_flushers {
                 vector_storage_flusher().map_err(|err| {
                     OperationError::service_error(format!("Failed to flush vector_storage: {err}"))
                 })?;
             }
+            log::info!("flush payload index");
             payload_index_flusher().map_err(|err| {
                 OperationError::service_error(format!("Failed to flush payload_index: {err}"))
             })?;

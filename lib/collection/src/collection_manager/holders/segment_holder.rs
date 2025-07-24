@@ -761,12 +761,18 @@ impl SegmentHolder {
             |point_id, _idx, write_segment, &update_nonappendable| {
                 if let Some(point_version) = write_segment.point_version(point_id) {
                     if point_version >= op_num {
+                        log::info!("apply_points skipped point_id:{point_id} version:{point_version} op_num:{op_num}");
                         applied_points.insert(point_id);
                         return Ok(false);
                     }
                 }
 
                 let is_applied = if update_nonappendable || write_segment.is_appendable() {
+                    log::info!(
+                        "apply_points_conditional point_id:{point_id} {}||{}",
+                        update_nonappendable,
+                        write_segment.is_appendable()
+                    );
                     point_operation(point_id, write_segment)?
                 } else {
                     self.aloha_random_write(
@@ -784,6 +790,9 @@ impl SegmentHolder {
                                 all_vectors,
                                 hw_counter,
                             )?;
+                            log::info!(
+                                "aloha_random_write point_id:{point_id} payload:{payload:?}"
+                            );
                             appendable_write_segment
                                 .set_full_payload(op_num, point_id, &payload, hw_counter)?;
 
