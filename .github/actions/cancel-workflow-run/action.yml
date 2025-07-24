@@ -5,6 +5,10 @@ inputs:
     description: 'GitHub token with actions:write permission'
     required: false
     default: ${{ github.token }}
+  reason:
+    description: 'Reason for cancelling the workflow'
+    required: false
+    default: 'A critical job failed'
 
 runs:
   using: 'composite'
@@ -16,6 +20,7 @@ runs:
         script: |
           const { owner, repo } = context.repo;
           const run_id = context.runId;
+          const currentJob = process.env.GITHUB_JOB;
           
           console.log(`Checking jobs for workflow run ${run_id}...`);
           
@@ -26,15 +31,21 @@ runs:
             run_id
           });
           
+          // Find current job details
+          const currentJobDetails = jobs.find(job => job.name === currentJob);
+          
           // Check if there are other running jobs
           const otherRunningJobs = jobs.filter(job => 
-            job.status === 'in_progress' && job.id !== context.job
+            job.status === 'in_progress' && job.id !== currentJobDetails?.id
           );
           
           console.log(`Found ${otherRunningJobs.length} other running jobs`);
           
           if (otherRunningJobs.length > 0) {
-            console.log('Cancelling workflow run to stop all running jobs...');
+            // Create an error annotation to make it clear why the workflow was cancelled
+            core.error(`Cancelling workflow run due to failure in job '${currentJob}': ${{ inputs.reason }}`);
+            
+            console.log('Cancelling workflow run to stop all other running jobs...');
             
             try {
               await github.rest.actions.cancelWorkflowRun({
@@ -43,6 +54,15 @@ runs:
                 run_id: run_id
               });
               console.log('Successfully initiated workflow cancellation');
+              
+              // Add a summary to the workflow
+              await core.summary
+                .addHeading('Workflow Cancelled', 2)
+                .addRaw(`This workflow was cancelled because job <strong>${currentJob}</strong> failed.`)
+                .addBreak()
+                .addRaw(`<strong>Reason:</strong> ${{ inputs.reason }}`)
+                .write();
+              
             } catch (error) {
               console.error(`Failed to cancel workflow: ${error.message}`);
               throw error;
