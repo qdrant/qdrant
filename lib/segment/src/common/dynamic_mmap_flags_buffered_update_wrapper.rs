@@ -86,9 +86,7 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
         }
 
         // Update cached length
-        if new_len > self.cached_len {
-            self.cached_len = new_len;
-        }
+        self.cached_len = new_len.max(self.cached_len);
 
         Ok(())
     }
@@ -132,13 +130,14 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
         let pending_updates_clone = self.pending_updates.lock().clone();
         let flags = self.flags.clone();
         let pending_updates_arc = self.pending_updates.clone();
+        let cached_len = self.cached_len;
 
         Box::new(move || {
             let mut flags_write = flags.write();
 
             // First, determine if we need to resize
-            if let Some(max_key) = pending_updates_clone.keys().max() {
-                let required_len = *max_key as usize + 1;
+            if flags_write.len() < cached_len {
+                let required_len = cached_len as usize;
                 if required_len > flags_write.len() {
                     flags_write.set_len(required_len)?;
                 }
