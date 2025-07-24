@@ -508,9 +508,7 @@ impl quantization::EncodedStorage for ChunkedMmapVectors<u8> {
 
     fn save_to_file(&self, _path: &Path) -> std::io::Result<()> {
         self.flusher()().map_err(|err| {
-            std::io::Error::other(
-                format!("Failed to save quantized vectors to file: {err}"),
-            )
+            std::io::Error::other(format!("Failed to save quantized vectors to file: {err}"))
         })?;
         Ok(())
     }

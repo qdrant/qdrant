@@ -107,9 +107,7 @@ impl MultivectorOffsetsStorage for ChunkedMmapVectors<MultivectorOffset> {
         let flusher = ChunkedMmapVectors::flusher(self);
         Box::new(move || {
             flusher().map_err(|e| {
-                std::io::Error::other(
-                    format!("Failed to flush multivector offsets storage: {e}"),
-                )
+                std::io::Error::other(format!("Failed to flush multivector offsets storage: {e}"))
             })?;
             Ok(())
         })
@@ -121,9 +119,9 @@ impl MultivectorOffsetsStorage for ChunkedMmapVectors<MultivectorOffset> {
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         ChunkedMmapVectors::push(self, &[offset], hw_counter).map_err(|e| {
-            std::io::Error::other(
-                format!("Failed to push offset to multivector offsets storage: {e}"),
-            )
+            std::io::Error::other(format!(
+                "Failed to push offset to multivector offsets storage: {e}"
+            ))
         })?;
         Ok(())
     }
