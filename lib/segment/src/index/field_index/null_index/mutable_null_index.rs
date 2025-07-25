@@ -254,6 +254,9 @@ impl MutableNullIndex {
         }
     }
 
+    pub fn populate(&self) -> OperationResult<()> {
+        Ok(())
+    }
     pub fn is_on_disk(&self) -> bool {
         false
     }
@@ -385,26 +388,24 @@ impl PayloadFieldIndex for MutableNullIndex {
         if let Some(is_empty) = is_empty {
             if *is_empty {
                 // Return points that don't have values
-                let iter = (0..self.total_point_count as u32).filter(|&id| !self.has_values_bitmap.contains(id));
+                let iter = (0..self.total_point_count as u32)
+                    .filter(|&id| !self.has_values_bitmap.contains(id));
 
                 Some(Box::new(iter))
             } else {
                 // Return points that have values
-                let iter = self
-                    .has_values_bitmap
-                    .iter();
+                let iter = self.has_values_bitmap.iter();
                 Some(Box::new(iter))
             }
         } else if let Some(is_null) = is_null {
             if *is_null {
                 // Return points that have null values
-                let iter = self
-                    .is_null_bitmap
-                    .iter();
+                let iter = self.is_null_bitmap.iter();
                 Some(Box::new(iter))
             } else {
                 // Return points that don't have null values
-                let iter = (0..self.total_point_count as u32).filter(|&id| !self.is_null_bitmap.contains(id));
+                let iter = (0..self.total_point_count as u32)
+                    .filter(|&id| !self.is_null_bitmap.contains(id));
                 Some(Box::new(iter))
             }
         } else {
