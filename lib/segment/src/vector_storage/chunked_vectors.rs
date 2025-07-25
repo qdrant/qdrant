@@ -248,6 +248,10 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
     fn is_on_disk(&self) -> bool {
         false
     }
+
+    fn vectors_count(&self, _quantized_vector_size: usize) -> usize {
+        self.len()
+    }
 }
 
 impl<T: Clone> TrySetCapacityExact for ChunkedVectors<T> {

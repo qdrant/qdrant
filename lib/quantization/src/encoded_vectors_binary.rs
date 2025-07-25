@@ -915,7 +915,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     }
 
     fn vectors_count(&self) -> usize {
-        todo!()
+        self.encoded_vectors
+            .vectors_count(self.get_quantized_vector_size())
     }
 
     fn flusher(&self) -> MmapFlusher {

@@ -404,13 +404,14 @@ where
             flattened_vectors: vector,
         };
 
+        let old_vectors_count = self.quantized_storage.vectors_count();
         for inner_vector in multi_vector.multi_vectors() {
             self.quantized_storage
                 .push_vector(inner_vector, hw_counter)?;
         }
 
         let offset: MultivectorOffset = MultivectorOffset {
-            start: self.quantized_storage.vectors_count() as PointOffsetType,
+            start: old_vectors_count as PointOffsetType,
             count: multi_vector.vectors_count() as PointOffsetType,
         };
         self.offsets.push_offset(offset, hw_counter)?;

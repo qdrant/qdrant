@@ -599,7 +599,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     }
 
     fn vectors_count(&self) -> usize {
-        todo!()
+        self.encoded_vectors
+            .vectors_count(self.metadata.vector_division.len())
     }
 
     fn flusher(&self) -> MmapFlusher {

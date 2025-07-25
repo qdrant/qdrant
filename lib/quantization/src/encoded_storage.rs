@@ -28,6 +28,8 @@ pub trait EncodedStorage {
     fn save_to_file(&self, path: &Path) -> std::io::Result<()>;
 
     fn is_on_disk(&self) -> bool;
+
+    fn vectors_count(&self, quantized_vector_size: usize) -> usize;
 }
 
 pub trait EncodedStorageBuilder {
@@ -89,6 +91,10 @@ impl EncodedStorage for Vec<u8> {
 
     fn is_on_disk(&self) -> bool {
         false
+    }
+
+    fn vectors_count(&self, quantized_vector_size: usize) -> usize {
+        self.len() / quantized_vector_size
     }
 }
 

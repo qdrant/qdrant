@@ -551,7 +551,10 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     }
 
     fn vectors_count(&self) -> usize {
-        todo!()
+        self.encoded_vectors
+            .vectors_count(Self::get_quantized_vector_size(
+                &self.metadata.vector_parameters,
+            ))
     }
 
     fn flusher(&self) -> MmapFlusher {

@@ -70,6 +70,10 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
     fn is_on_disk(&self) -> bool {
         true
     }
+
+    fn vectors_count(&self, quantized_vector_size: usize) -> usize {
+        self.mmap.len() / quantized_vector_size
+    }
 }
 
 impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {

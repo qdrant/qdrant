@@ -516,6 +516,10 @@ impl quantization::EncodedStorage for ChunkedMmapVectors<u8> {
     fn is_on_disk(&self) -> bool {
         true
     }
+
+    fn vectors_count(&self, _quantized_vector_size: usize) -> usize {
+        self.len()
+    }
 }
 
 #[cfg(test)]
