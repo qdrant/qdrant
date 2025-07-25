@@ -136,7 +136,7 @@ fn welfords_mean_variance(points: &[ScoredPoint]) -> (f32, f32) {
         mean += old_delta / (k as f32);
 
         let delta = p.score - mean;
-        aggregate += (old_delta) * (delta);
+        aggregate += old_delta * delta;
     }
 
     let sample_variance = aggregate / (points.len() as f32 - 1.0);
@@ -182,7 +182,18 @@ mod tests {
     }
 
     fn assert_close(a: f32, b: f32) {
-        assert!((a - b).abs() < 1e-2, "{a} is not close to {b}");
+        // Choose the more relaxed tolerance, absolute or relative based on the values.
+        let abs_tolerance = 1e-5f32;
+        let rel_tolerance = 1e-4f32;
+
+        let diff = (a - b).abs();
+        let max_val = a.abs().max(b.abs());
+        let tolerance = abs_tolerance.max(rel_tolerance * max_val);
+
+        assert!(
+            diff <= tolerance,
+            "{a} is not close to {b}: difference {diff} exceeds tolerance {tolerance}"
+        );
     }
 
     proptest! {
