@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fmt;
-use std::hash::Hash;
+use std::hash::{BuildHasherDefault, Hash};
 
 use bytemuck::TransparentWrapper as _;
 use common::stable_hash::{StableHash, StableHashed};
@@ -184,6 +184,8 @@ impl<T: Eq + StableHash + Hash> HashRingRouter<T> {
     }
 }
 
+type StableHashBuilder = BuildHasherDefault<siphasher::sip::SipHasher24>;
+
 /// List type for shard IDs
 ///
 /// Uses a `SmallVec` putting two IDs on the stack. That's the maximum number of shards we expect
@@ -194,12 +196,12 @@ pub type ShardIds<T = ShardId> = SmallVec<[T; 2]>;
 pub enum HashRing<T: Eq + StableHash + Hash> {
     Raw {
         nodes: HashSet<T>,
-        ring: hashring::HashRing<StableHashed<T>>,
+        ring: hashring::HashRing<StableHashed<T>, StableHashBuilder>,
     },
 
     Fair {
         nodes: HashSet<T>,
-        ring: hashring::HashRing<StableHashed<(T, u32)>>,
+        ring: hashring::HashRing<StableHashed<(T, u32)>, StableHashBuilder>,
         scale: u32,
     },
 }
@@ -208,7 +210,7 @@ impl<T: Copy + Eq + StableHash + Hash> HashRing<T> {
     pub fn raw() -> Self {
         Self::Raw {
             nodes: HashSet::new(),
-            ring: hashring::HashRing::new(),
+            ring: hashring::HashRing::with_hasher(StableHashBuilder::new()),
         }
     }
 
@@ -218,7 +220,7 @@ impl<T: Copy + Eq + StableHash + Hash> HashRing<T> {
     pub fn fair(scale: u32) -> Self {
         Self::Fair {
             nodes: HashSet::new(),
-            ring: hashring::HashRing::new(),
+            ring: hashring::HashRing::with_hasher(StableHashBuilder::new()),
             scale,
         }
     }
