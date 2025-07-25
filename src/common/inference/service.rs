@@ -228,7 +228,11 @@ impl InferenceService {
                         "Only strings supported as text type in BM25 inference!",
                     )
                 })?;
-                let embedding = Bm25::new(bm25_config).embed(input_str);
+                let bm25 = Bm25::new(bm25_config);
+                let embedding = match inference_type {
+                    InferenceType::Update => bm25.doc_embed(input_str),
+                    InferenceType::Search => bm25.search_embed(input_str),
+                };
                 Ok(PositionItem::new(embedding, item.position))
             })
             .collect::<Result<_, _>>()?;
@@ -524,7 +528,7 @@ mod test {
                 let bm25_config = input.try_parse_bm25_config().unwrap().unwrap();
 
                 // Re-run bm25 and check that response is correct.
-                let bm25 = Bm25::new(bm25_config).embed(input.data.as_str().unwrap());
+                let bm25 = Bm25::new(bm25_config).doc_embed(input.data.as_str().unwrap());
                 assert_eq!(response, bm25);
             } else {
                 let expected_vector = VectorPersisted::Dense(vec![0.0; idx]);

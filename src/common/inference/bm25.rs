@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use collection::operations::point_ops::VectorPersisted;
+use itertools::Itertools;
 use murmur3::murmur3_32_of_slice;
 use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
 use segment::index::field_index::full_text_index::stop_words::StopwordsFilter;
@@ -86,7 +87,25 @@ impl Bm25 {
     }
 
     /// Embedds the given input using the Bm25 algorithm and configured options/hyperparameters.
-    pub fn embed(&self, input: &str) -> VectorPersisted {
+    pub fn search_embed(&self, input: &str) -> VectorPersisted {
+        let tokens = self.tokenize(input);
+
+        if tokens.is_empty() {
+            return VectorPersisted::empty_sparse();
+        }
+
+        let indices: Vec<u32> = tokens
+            .into_iter()
+            .map(|token| Self::compute_token_id(&token))
+            .unique()
+            .collect();
+
+        let values: Vec<f32> = vec![1.0; indices.len()];
+        VectorPersisted::new_sparse(indices, values)
+    }
+
+    /// Embedds the given input using the Bm25 algorithm and configured options/hyperparameters.
+    pub fn doc_embed(&self, input: &str) -> VectorPersisted {
         let tokens = self.tokenize(input);
 
         if tokens.is_empty() {
