@@ -14,8 +14,6 @@ use serde::{Deserialize, Serialize};
 /// Configuration of the local bm25 models.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Bm25Config {
-    #[serde(default = "default_model_name")]
-    pub model_name: String,
     #[serde(default = "default_k")]
     pub k: f64,
     #[serde(default = "default_b")]
@@ -41,10 +39,6 @@ pub struct InferenceTokenizerConfig {
     pub max_token_len: Option<usize>,
 }
 
-fn default_model_name() -> String {
-    "bm25".to_string()
-}
-
 const fn default_k() -> f64 {
     1.2
 }
@@ -60,7 +54,6 @@ const fn default_avg_len() -> f64 {
 impl Default for Bm25Config {
     fn default() -> Self {
         Self {
-            model_name: default_model_name(),
             k: default_k(),
             b: default_b(),
             avg_len: default_avg_len(),
