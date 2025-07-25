@@ -126,6 +126,15 @@ def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
 
     assert is_search_rejected, "Search requests have to be rejected during partial snapshot recovery"
 
+def test_partial_snapshot_not_modified(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    peer = bootstrap_peer(tmp_path, 6331)
+    bootstrap_collection(peer, 1_000)
+
+    resp = create_partial_snapshot(peer, get_snapshot_manifest(peer))
+    assert resp.status_code == 304
+
 
 def bootstrap_peers(tmp: pathlib.Path, bootstrap_points = 0, recover_read = False):
     write_peer = bootstrap_write_peer(tmp, bootstrap_points)
@@ -148,7 +157,7 @@ def bootstrap_read_peer(tmp: pathlib.Path, recover_from_url: str | None = None):
     return read_peer
 
 def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = ""):
-    path.mkdir()
+    path.mkdir(exist_ok = True)
 
     config = {
         "QDRANT__LOG_LEVEL": "debug,collection::common::file_utils=trace",
@@ -207,6 +216,14 @@ def try_recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, wait
     resp = requests.post(
         f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/recover_from?wait={'true' if wait else 'false'}",
         json = { "peer_url": recover_peer_url },
+    )
+
+    return resp
+
+def create_partial_snapshot(peer_url: str, manifest = Any):
+    resp = requests.post(
+        f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/create",
+        json = manifest,
     )
 
     return resp
