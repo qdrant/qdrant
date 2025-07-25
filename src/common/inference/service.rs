@@ -7,12 +7,15 @@ use std::time::Duration;
 use api::rest::models::InferenceUsage;
 use api::rest::{Document, Image, InferenceObject};
 use collection::operations::point_ops::VectorPersisted;
+use itertools::{Either, Itertools};
 use parking_lot::RwLock;
 use reqwest::Client;
+use serde::de::IntoDeserializer;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use storage::content_manager::errors::StorageError;
 
+use super::bm25::{Bm25, Bm25Config};
 use crate::common::inference::InferenceToken;
 use crate::common::inference::config::InferenceConfig;
 
@@ -42,7 +45,7 @@ pub struct InferenceRequest {
     pub(crate) token: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct InferenceInput {
     data: Value,
     data_type: String,
@@ -50,7 +53,29 @@ pub struct InferenceInput {
     options: Option<HashMap<String, Value>>,
 }
 
+impl InferenceInput {
+    /// Tries to parse the input's options into BM25 config and returns Ok(Some(..)) if found and Ok(None) if not.
+    ///
+    /// Returns an error if bm25 has been explicitly enabled but the options could not be deserialized properly into bm25 config.
+    pub fn try_parse_bm25_config(&self) -> Result<Option<Bm25Config>, StorageError> {
+        let Some(options) = self.options.as_ref() else {
+            return Ok(None);
+        };
+
+        if options.get("use_bm25") != Some(&Value::Bool(true))
+            && options.get("use_bm25") != Some(&Value::String("true".to_string()))
+        {
+            return Ok(None);
+        }
+
+        Bm25Config::deserialize(options.clone().into_deserializer())
+            .map_err(|err| StorageError::bad_input(format!("Invalid BM25 config: {err:#?}")))
+            .map(Some)
+    }
+}
+
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub struct InferenceResponse {
     pub embeddings: Vec<VectorPersisted>,
     pub usage: Option<InferenceUsage>,
@@ -180,23 +205,71 @@ impl InferenceService {
         inference_type: InferenceType,
         inference_token: InferenceToken,
     ) -> Result<InferenceResponse, StorageError> {
+        let (bm25_inference_inputs, inference_inputs): (Vec<_>, Vec<_>) = inference_inputs
+            .into_iter()
+            // Keep track of the input's positions so we can properly merge them together later.
+            .enumerate()
+            .partition_map(|(pos, input)| {
+                // Check if input is targeting a bm25 model or the configured remote server.
+                if let Some(bm_25_config) = input.try_parse_bm25_config().transpose() {
+                    Either::Left(PositionItem::new((input, bm_25_config), pos))
+                } else {
+                    Either::Right(PositionItem::new(input, pos))
+                }
+            });
+
+        let bm25_results: Vec<_> = bm25_inference_inputs
+            .into_iter()
+            .map(|item| -> Result<_, StorageError> {
+                let (input, bm25_config) = item.item;
+                let bm25_config = bm25_config?;
+                let input_str = input.data.as_str().ok_or_else(|| {
+                    StorageError::service_error(
+                        "Only strings supported as text type in BM25 inference!",
+                    )
+                })?;
+                let bm25 = Bm25::new(bm25_config);
+                let embedding = match inference_type {
+                    InferenceType::Update => bm25.doc_embed(input_str),
+                    InferenceType::Search => bm25.search_embed(input_str),
+                };
+                Ok(PositionItem::new(embedding, item.position))
+            })
+            .collect::<Result<_, _>>()?;
+
+        // Early return with bm25 results if no other inference_inputs were passed.
+        // If Bm25 is also empty, we automatically return an empty response here.
+        if inference_inputs.is_empty() {
+            let embeddings = bm25_results.into_iter().map(|i| i.item).collect();
+
+            return Ok(InferenceResponse {
+                embeddings,
+                usage: None, // No usage since everything was processed locally.
+            });
+        }
+
         // Assume that either:
         // - User doesn't have access to generating random JWT tokens (like in serverless)
         // - Inference server checks validity of the tokens.
 
         let token = inference_token.0.or_else(|| self.config.token.clone());
 
-        let request = InferenceRequest {
-            inputs: inference_inputs,
-            inference: Some(inference_type),
-            token,
-        };
-
         let url = self.config.address.as_ref().ok_or_else(|| {
             StorageError::service_error(
                 "InferenceService URL not configured - please provide valid address in config",
             )
         })?;
+
+        let (remote_pos, inference_inputs): (Vec<_>, Vec<_>) = inference_inputs
+            .into_iter()
+            .map(|i| (i.position, i.item))
+            .unzip();
+
+        let request = InferenceRequest {
+            inputs: inference_inputs,
+            inference: Some(inference_type),
+            token,
+        };
 
         let response = self.client.post(url).json(&request).send().await;
 
@@ -222,7 +295,40 @@ impl InferenceService {
                 }
             }
         };
-        Self::handle_inference_response(status, &response_body)
+
+        let remote_res = Self::handle_inference_response(status, &response_body)?;
+        Ok(Self::merge_bm25_and_remote_result(
+            bm25_results,
+            remote_res,
+            remote_pos,
+        ))
+    }
+
+    fn merge_bm25_and_remote_result(
+        bm25_results: Vec<PositionItem<VectorPersisted>>,
+        remote_res: InferenceResponse,
+        remote_pos: Vec<usize>,
+    ) -> InferenceResponse {
+        // Skip merging with bm25 if we only have inference results from remote.
+        if bm25_results.is_empty() {
+            return remote_res;
+        }
+
+        // Wrap remote items in `PositionItem`s because they need to be merged with bm25 results in the same order they have initially been passed.
+        let remote_items_iter = remote_res
+            .embeddings
+            .into_iter()
+            .zip(remote_pos)
+            .map(|(item, pos)| PositionItem::new(item, pos));
+
+        // Merge remote results and local (bm25) results together in the exact same order they have been passed.
+        let merged = merge_position_items(bm25_results, remote_items_iter)
+            .expect("Expected bm25 and remote items being continguous. This is an internal bug");
+
+        InferenceResponse {
+            embeddings: merged,
+            usage: remote_res.usage, // Only account for usage of remote since BM25 is processed locally and doesn't need to be measured.
+        }
     }
 
     pub(crate) fn handle_inference_response(
@@ -280,5 +386,220 @@ impl InferenceService {
                 }
             },
         }
+    }
+}
+
+/// Any kind of value that has an index assigned.
+struct PositionItem<I> {
+    item: I,
+    position: usize,
+}
+
+impl<I> PositionItem<I> {
+    pub fn new(item: I, position: usize) -> Self {
+        Self { item, position }
+    }
+}
+
+/// 2-way merge of lists with `PositionItems`. Also checks for skipped items and returns `None` in case an item is left out.
+fn merge_position_items<I>(
+    left: Vec<PositionItem<I>>,
+    right: impl IntoIterator<Item = PositionItem<I>>,
+) -> Option<Vec<I>> {
+    let mut i = 0; // Check that we cover all items and don't skip any.
+    left.into_iter()
+        .merge_by(right, |l, r| l.position < r.position)
+        .map(|item| {
+            if item.position == i {
+                i += 1;
+                Some(item.item)
+            } else {
+                None
+            }
+        })
+        .collect::<Option<Vec<_>>>()
+}
+
+#[cfg(test)]
+mod test {
+    use rand::rngs::StdRng;
+    use rand::seq::SliceRandom;
+    use rand::{Rng, SeedableRng};
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn test_merge_position_items() {
+        let (left, right): (Vec<_>, Vec<_>) = (0..1000)
+            .map(|i| PositionItem::new(i, i))
+            .partition(|i| i.item % 7 == 0);
+        let merged = merge_position_items(left, right);
+        assert_eq!(merged, Some((0..1000).collect::<Vec<_>>()));
+    }
+
+    #[test]
+    fn test_merge_position_items_fail() {
+        let (left, mut right): (Vec<_>, Vec<_>) = (0..1000)
+            .map(|i| PositionItem::new(i, i))
+            .partition(|i| i.item % 7 == 0);
+        right.remove(5);
+        let merged = merge_position_items(left, right);
+        // We were missing an item and therefore expect `None`.
+        assert_eq!(merged, None);
+    }
+
+    #[tokio::test]
+    async fn test_bm25_end_to_end() {
+        let mut rng = StdRng::seed_from_u64(42);
+
+        // Test without any BM25
+        let only_inference_inputs: Vec<_> = (0..rng.random_range(30..100))
+            .map(|_| make_normal_inference_input("this is some input", &mut rng))
+            .collect();
+        let res = run_inference_with_mocked_remote(only_inference_inputs.clone()).await;
+        check_inference_response(only_inference_inputs, res);
+
+        // Test with only BM25
+        let only_bm25_inputs: Vec<_> = (0..rng.random_range(30..100))
+            .map(|_| make_bm25_inference_input("this is some input"))
+            .collect();
+        let res = run_inference_with_mocked_remote(only_bm25_inputs.clone()).await;
+        check_inference_response(only_bm25_inputs, res);
+
+        // Test BM25 and inference mixed.
+        let mut inputs: Vec<InferenceInput> = vec![];
+        inputs.extend(
+            (0..rng.random_range(30..100)).map(|_| make_bm25_inference_input("this is some input")),
+        );
+        inputs.extend(
+            (0..rng.random_range(30..100))
+                .map(|_| make_normal_inference_input("this is some input", &mut rng)),
+        );
+        inputs.shuffle(&mut rng);
+        let res = run_inference_with_mocked_remote(inputs.clone()).await;
+        check_inference_response(inputs, res);
+    }
+
+    fn make_normal_inference_input(input: &str, rand: &mut StdRng) -> InferenceInput {
+        let options = if rand.random_bool(0.3) {
+            let mut opts = HashMap::default();
+            let value = rand.random_iter::<char>().take(10).collect::<String>(); // Test utf8
+            opts.insert("some-key".to_string(), Value::String(value));
+            Some(opts)
+        } else {
+            None
+        };
+
+        InferenceInput {
+            data: Value::String(input.to_string()),
+            data_type: "".to_string(),
+            model: "anyModel".to_string(),
+            options,
+        }
+    }
+
+    fn make_bm25_inference_input(input: &str) -> InferenceInput {
+        let bm25_config = Bm25Config::default();
+
+        let mut options: HashMap<String, Value> =
+            serde_json::from_str(&serde_json::to_string(&bm25_config).unwrap()).unwrap();
+
+        options.insert("use_bm25".to_string(), Value::Bool(true));
+
+        InferenceInput {
+            data: Value::String(input.to_string()),
+            data_type: "".to_string(),
+            model: "bm25".to_string(),
+            options: Some(options),
+        }
+    }
+
+    fn check_inference_response(inputs: Vec<InferenceInput>, response: InferenceResponse) {
+        assert_eq!(inputs.len(), response.embeddings.len());
+
+        for (idx, (input, response)) in inputs.into_iter().zip(response.embeddings).enumerate() {
+            let is_bm25 = input.try_parse_bm25_config().ok().flatten().is_some();
+
+            if is_bm25 {
+                // In our test-setup, only BM25 returns sparse vectors. Normal inference is mocked
+                // and always returns dense vectors.
+                assert!(matches!(response, VectorPersisted::Sparse(..)));
+                let bm25_config = input.try_parse_bm25_config().unwrap().unwrap();
+
+                // Re-run bm25 and check that response is correct.
+                let bm25 = Bm25::new(bm25_config).doc_embed(input.data.as_str().unwrap());
+                assert_eq!(response, bm25);
+            } else {
+                let expected_vector = VectorPersisted::Dense(vec![0.0; idx]);
+                assert_eq!(response, expected_vector);
+            }
+        }
+    }
+
+    async fn run_inference_with_mocked_remote(
+        inference_inputs: Vec<InferenceInput>,
+    ) -> InferenceResponse {
+        // Request a new server from the pool
+        let mut server = mockito::Server::new_async().await;
+
+        // Create dummy dense vectors for non-bm25 inputs with the length of the index.
+        // The dummy dense vector have the dimension of the position they appeared in `inference_inputs`,
+        // so we can easily check for correct ordering later, although it is a bit hacky.
+        let expected_embeddings: Vec<_> = inference_inputs
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.try_parse_bm25_config().ok().flatten().is_none())
+            .map(|(index, _)| {
+                let values = vec![0.0; index];
+                VectorPersisted::Dense(values)
+            })
+            .collect();
+
+        // Create an HTTP mock
+        let mock = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "text/json")
+            .with_body(
+                json!(InferenceResponse {
+                    embeddings: expected_embeddings,
+                    usage: None,
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let config = InferenceConfig {
+            address: Some(server.url()), // Use mock's URL as address when doing inference.
+            timeout: 5,                  // Mock should answer fast enough.
+            token: Some(String::default()),
+        };
+
+        let service = InferenceService::new(config);
+
+        let has_remote_inference_items = inference_inputs
+            .iter()
+            .any(|i| i.try_parse_bm25_config().ok().flatten().is_none());
+
+        let res = service
+            .infer(
+                inference_inputs,
+                InferenceType::Update,
+                InferenceToken::new("key".to_string()),
+            )
+            .await
+            .expect("Failed to do inference");
+
+        // We expect exactly 1 request if there is any inference (non-bm25) request
+        // and 0 if all inputs are bm25.
+        if has_remote_inference_items {
+            mock.expect(1).assert_async().await;
+        } else {
+            mock.expect(0).assert_async().await;
+        }
+
+        res
     }
 }

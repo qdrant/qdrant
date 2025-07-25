@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use super::stemmer::Stemmer;
 use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
@@ -7,7 +8,7 @@ use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
 #[derive(Debug, Clone, Default)]
 pub struct TokenizerConfig {
     pub lowercase: bool,
-    pub stopwords_filter: StopwordsFilter,
+    pub stopwords_filter: Arc<StopwordsFilter>, // TDOO(rocksdb): Remove once rocksdb has been removed!
     pub stemmer: Option<Stemmer>,
     pub min_token_len: Option<usize>,
     pub max_token_len: Option<usize>,
