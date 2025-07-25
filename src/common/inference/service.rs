@@ -15,10 +15,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use storage::content_manager::errors::StorageError;
 
+use super::bm25::{Bm25, Bm25Config};
 use crate::common::inference::InferenceToken;
 use crate::common::inference::config::InferenceConfig;
-
-use super::bm25::{Bm25, Bm25Config};
 
 const DOCUMENT_DATA_TYPE: &str = "text";
 const IMAGE_DATA_TYPE: &str = "image";
