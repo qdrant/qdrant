@@ -7,6 +7,7 @@ use std::time::Duration;
 use api::rest::models::InferenceUsage;
 use api::rest::{Document, Image, InferenceObject};
 use collection::operations::point_ops::VectorPersisted;
+use itertools::{Either, Itertools};
 use parking_lot::RwLock;
 use reqwest::Client;
 use serde::de::IntoDeserializer;
@@ -17,7 +18,7 @@ use storage::content_manager::errors::StorageError;
 use crate::common::inference::InferenceToken;
 use crate::common::inference::config::InferenceConfig;
 
-use super::bm25::Bm25Config;
+use super::bm25::{Bm25, Bm25Config};
 
 const DOCUMENT_DATA_TYPE: &str = "text";
 const IMAGE_DATA_TYPE: &str = "image";
@@ -204,23 +205,67 @@ impl InferenceService {
         inference_type: InferenceType,
         inference_token: InferenceToken,
     ) -> Result<InferenceResponse, StorageError> {
+        let (bm25_inference_inputs, inference_inputs): (Vec<_>, Vec<_>) = inference_inputs
+            .into_iter()
+            // Keep track of the input's positions so we can properly merge them together later.
+            .enumerate()
+            .partition_map(|(pos, input)| {
+                // Check if input is targeting a bm25 model or the configured remote server.
+                if let Some(bm_25_config) = input.try_parse_bm25_config().transpose() {
+                    Either::Left(PositionItem::new((input, bm_25_config), pos))
+                } else {
+                    Either::Right(PositionItem::new(input, pos))
+                }
+            });
+
+        let bm25_results: Vec<_> = bm25_inference_inputs
+            .into_iter()
+            .map(|item| -> Result<_, StorageError> {
+                let (input, bm25_config) = item.item;
+                let bm25_config = bm25_config?;
+                let input_str = input.data.as_str().ok_or_else(|| {
+                    StorageError::service_error(
+                        "Only strings supported as text type in BM25 inference!",
+                    )
+                })?;
+                let embedding = Bm25::new(bm25_config).embed(input_str);
+                Ok(PositionItem::new(embedding, item.position))
+            })
+            .collect::<Result<_, _>>()?;
+
+        // Early return with bm25 results if no other inference_inputs were passed.
+        // If Bm25 is also empty, we automatically return an empty response here.
+        if inference_inputs.is_empty() {
+            let embeddings = bm25_results.into_iter().map(|i| i.item).collect();
+
+            return Ok(InferenceResponse {
+                embeddings,
+                usage: None, // No usage since everything was processed locally.
+            });
+        }
+
         // Assume that either:
         // - User doesn't have access to generating random JWT tokens (like in serverless)
         // - Inference server checks validity of the tokens.
 
         let token = inference_token.0.or_else(|| self.config.token.clone());
 
-        let request = InferenceRequest {
-            inputs: inference_inputs,
-            inference: Some(inference_type),
-            token,
-        };
-
         let url = self.config.address.as_ref().ok_or_else(|| {
             StorageError::service_error(
                 "InferenceService URL not configured - please provide valid address in config",
             )
         })?;
+
+        let (remote_pos, inference_inputs): (Vec<_>, Vec<_>) = inference_inputs
+            .into_iter()
+            .map(|i| (i.position, i.item))
+            .unzip();
+
+        let request = InferenceRequest {
+            inputs: inference_inputs,
+            inference: Some(inference_type),
+            token,
+        };
 
         let response = self.client.post(url).json(&request).send().await;
 
@@ -246,7 +291,36 @@ impl InferenceService {
                 }
             }
         };
-        Self::handle_inference_response(status, &response_body)
+
+        let remote_res = Self::handle_inference_response(status, &response_body)?;
+        Self::merge_bm25_and_remote_result(bm25_results, remote_res, remote_pos)
+    }
+
+    fn merge_bm25_and_remote_result(
+        bm25_results: Vec<PositionItem<VectorPersisted>>,
+        remote_res: InferenceResponse,
+        remote_pos: Vec<usize>,
+    ) -> Result<InferenceResponse, StorageError> {
+        // Skip merging with bm25 if we only have inference results from remote.
+        if bm25_results.is_empty() {
+            return Ok(remote_res);
+        }
+
+        // Wrap remote items in `PositionItem`s because they need to be merged with bm25 results in the same order they have initially been passed.
+        let remote_items_iter = remote_res
+            .embeddings
+            .into_iter()
+            .zip(remote_pos)
+            .map(|(item, pos)| PositionItem::new(item, pos));
+
+        // Merge remote results and local (bm25) results together in the exact same order they have been passed.
+        let merged = merge_position_items(bm25_results, remote_items_iter)
+            .expect("Expected bm25 and remote items being continguous. This is an internal bug");
+
+        Ok(InferenceResponse {
+            embeddings: merged,
+            usage: remote_res.usage, // Only account for usage of remote since BM25 is processed locally and doesn't need to be measured.
+        })
     }
 
     pub(crate) fn handle_inference_response(
@@ -304,5 +378,61 @@ impl InferenceService {
                 }
             },
         }
+    }
+}
+
+/// Any kind of value that has an index assigned.
+struct PositionItem<I> {
+    item: I,
+    position: usize,
+}
+
+impl<I> PositionItem<I> {
+    pub fn new(item: I, position: usize) -> Self {
+        Self { item, position }
+    }
+}
+
+/// 2-way merge of lists with `PositionItems`. Also checks for skipped items and returns `None` in case an item is left out.
+fn merge_position_items<I>(
+    left: Vec<PositionItem<I>>,
+    right: impl IntoIterator<Item = PositionItem<I>>,
+) -> Option<Vec<I>> {
+    let mut i = 0; // Check that we cover all items and don't skip any.
+    left.into_iter()
+        .merge_by(right, |l, r| l.position < r.position)
+        .map(|item| {
+            if item.position == i {
+                i += 1;
+                Some(item.item)
+            } else {
+                None
+            }
+        })
+        .collect::<Option<Vec<_>>>()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_merge_position_items() {
+        let (left, right): (Vec<_>, Vec<_>) = (0..1000)
+            .map(|i| PositionItem::new(i, i))
+            .partition(|i| i.item % 7 == 0);
+        let merged = merge_position_items(left, right);
+        assert_eq!(merged, Some((0..1000).collect::<Vec<_>>()));
+    }
+
+    #[test]
+    fn test_merge_position_items_fail() {
+        let (left, mut right): (Vec<_>, Vec<_>) = (0..1000)
+            .map(|i| PositionItem::new(i, i))
+            .partition(|i| i.item % 7 == 0);
+        right.remove(5);
+        let merged = merge_position_items(left, right);
+        // We were missing an item and therefore expect `None`.
+        assert_eq!(merged, None);
     }
 }
