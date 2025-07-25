@@ -1,4 +1,5 @@
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
+use std::sync::Arc;
 
 use super::stemmer::Stemmer;
 use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
