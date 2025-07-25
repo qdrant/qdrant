@@ -23,7 +23,8 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::geo_index::GeoMapIndex;
-use crate::index::field_index::null_index::mmap_null_index::{MmapNullIndex, MmapNullIndexBuilder};
+use crate::index::field_index::null_index::MutableNullIndex;
+use crate::index::field_index::null_index::mutable_null_index::MutableNullIndexBuilder;
 use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::{
@@ -141,7 +142,7 @@ pub enum FieldIndex {
     BoolIndex(BoolIndex),
     UuidIndex(NumericIndex<UuidIntType, UuidPayloadType>),
     UuidMapIndex(MapIndex<UuidIntType>),
-    NullIndex(MmapNullIndex),
+    NullIndex(MutableNullIndex),
 }
 
 impl std::fmt::Debug for FieldIndex {
@@ -617,7 +618,7 @@ pub enum FieldIndexBuilder {
     UuidIndex(MapIndexBuilder<UuidIntType>),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
     UuidGridstoreIndex(MapIndexGridstoreBuilder<UuidIntType>),
-    NullIndex(MmapNullIndexBuilder),
+    NullIndex(MutableNullIndexBuilder),
 }
 
 impl FieldIndexBuilderTrait for FieldIndexBuilder {
