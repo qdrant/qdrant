@@ -586,7 +586,7 @@ mod test {
         let res = service
             .infer(
                 inference_inputs,
-                InferenceType::Search,
+                InferenceType::Update,
                 InferenceToken::new("key".to_string()),
             )
             .await
