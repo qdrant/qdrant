@@ -15,11 +15,12 @@ type PayloadStorage = Gridstore<Payload>;
 
 fn default_opts(workload: &mut Workload) -> &mut Workload {
     let seed = [42; 32];
-    workload.initial_capacity_log2(21).seed(seed)
+    workload.initial_capacity_log2(23).seed(seed)
 }
 
 fn main() {
-    for num_threads in [1, 2] {
+    #[allow(clippy::single_element_loop)]
+    for num_threads in [1] {
         println!("------------ {num_threads} thread(s) -------------");
         // Read heavy
         println!("**read_heavy** with prefill_fraction 0.95");
