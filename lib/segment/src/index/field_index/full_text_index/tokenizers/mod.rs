@@ -6,7 +6,7 @@ mod stemmer;
 
 pub use config::TokenizerConfig;
 use multilingual::MultilingualTokenizer;
-use stemmer::Stemmer;
+pub use stemmer::Stemmer;
 
 use crate::data_types::index::{TextIndexParams, TokenizerType};
 use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
@@ -203,7 +203,7 @@ impl Tokenizer {
         }
     }
 
-    pub fn tokenize_query<C: FnMut(Cow<str>)>(&self, text: &str, callback: C) {
+    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&self, text: &'a str, callback: C) {
         match self.tokenizer_type {
             TokenizerType::Whitespace => {
                 WhiteSpaceTokenizer::tokenize(text, &self.config, callback)
