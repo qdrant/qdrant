@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 pub mod config;
 mod japanese;
 mod multilingual;
@@ -170,7 +171,7 @@ impl Tokenizer {
         } = params;
 
         let lowercase = lowercase.unwrap_or(true);
-        let stopwords_filter = StopwordsFilter::new(stopwords, lowercase);
+        let stopwords_filter = Arc::new(StopwordsFilter::new(stopwords, lowercase));
 
         let config = TokenizerConfig {
             lowercase,
@@ -322,7 +323,7 @@ mod tests {
         // Test stopwords getting applied
         let filter =
             StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["の", "は"])), false);
-        config.stopwords_filter = filter;
+        config.stopwords_filter = Arc::new(filter);
         MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
@@ -347,7 +348,7 @@ mod tests {
 
         // Test stopwords getting applied
         let filter = StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["是"])), false);
-        config.stopwords_filter = filter;
+        config.stopwords_filter = Arc::new(filter);
         MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 3);

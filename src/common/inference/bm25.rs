@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use collection::operations::point_ops::VectorPersisted;
 use murmur3::murmur3_32_of_slice;
@@ -77,9 +78,9 @@ pub struct Bm25 {
 }
 
 impl Bm25 {
-    pub fn new(config: Bm25Config) -> Self {
-        let tokenizer_config =
-            TokenizerConfig::from(config.tokenizer_config.clone().unwrap_or_default());
+    pub fn new(mut config: Bm25Config) -> Self {
+        let tokenizer_conf = std::mem::take(&mut config.tokenizer_config);
+        let tokenizer_config = TokenizerConfig::from(tokenizer_conf.unwrap_or_default());
         let tokenizer = Tokenizer::new(config.tokenizer, tokenizer_config);
         Self { config, tokenizer }
     }
@@ -138,7 +139,10 @@ impl From<InferenceTokenizerConfig> for TokenizerConfig {
     fn from(value: InferenceTokenizerConfig) -> Self {
         Self {
             lowercase: value.lowercase,
-            stopwords_filter: StopwordsFilter::new(&value.stopwords_filter, value.lowercase),
+            stopwords_filter: Arc::new(StopwordsFilter::new(
+                &value.stopwords_filter,
+                value.lowercase,
+            )),
             stemmer: value.stemmer.map(|i| Stemmer::from_algorithm(&i)),
             min_token_len: value.min_token_len,
             max_token_len: value.max_token_len,
