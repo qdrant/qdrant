@@ -9,12 +9,15 @@ use api::rest::{Document, Image, InferenceObject};
 use collection::operations::point_ops::VectorPersisted;
 use parking_lot::RwLock;
 use reqwest::Client;
+use serde::de::IntoDeserializer;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use storage::content_manager::errors::StorageError;
 
 use crate::common::inference::InferenceToken;
 use crate::common::inference::config::InferenceConfig;
+
+use super::bm25::Bm25Config;
 
 const DOCUMENT_DATA_TYPE: &str = "text";
 const IMAGE_DATA_TYPE: &str = "image";
@@ -48,6 +51,27 @@ pub struct InferenceInput {
     data_type: String,
     model: String,
     options: Option<HashMap<String, Value>>,
+}
+
+impl InferenceInput {
+    /// Tries to parse the input's options for BM25 config and returns Ok(Some(..)) if found and Ok(None) if not.
+    ///
+    /// Returns an error if bm25 has been explicitly enabled but config could not be deserialized properly.
+    pub fn try_parse_bm25_config(&self) -> Result<Option<Bm25Config>, StorageError> {
+        let Some(options) = self.options.as_ref() else {
+            return Ok(None);
+        };
+
+        if options.get("use_bm25") != Some(&Value::Bool(true))
+            && options.get("use_bm25") != Some(&Value::String("true".to_string()))
+        {
+            return Ok(None);
+        }
+
+        Bm25Config::deserialize(options.clone().into_deserializer())
+            .map_err(|err| StorageError::bad_input(format!("Invalid BM25 config: {err:#?}")))
+            .map(Some)
+    }
 }
 
 #[derive(Debug, Deserialize)]

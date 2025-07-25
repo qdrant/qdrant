@@ -58,6 +58,16 @@ pub enum VectorPersisted {
     MultiDense(MultiDenseVector),
 }
 
+impl VectorPersisted {
+    pub fn new_sparse(indices: Vec<u32>, values: Vec<f32>) -> Self {
+        Self::Sparse(sparse::common::sparse_vector::SparseVector { indices, values })
+    }
+
+    pub fn empty_sparse() -> Self {
+        Self::new_sparse(vec![], vec![])
+    }
+}
+
 impl Debug for VectorPersisted {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

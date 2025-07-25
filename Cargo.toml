@@ -93,6 +93,8 @@ prometheus = { version = "0.14.0", default-features = false }
 validator = { workspace = true }
 jsonwebtoken = "9.3.1"
 
+murmur3 = { git = "https://github.com/stusmall/murmur3", rev = "2c39087" }
+
 tempfile = { workspace = true }
 
 # Consensus related crates

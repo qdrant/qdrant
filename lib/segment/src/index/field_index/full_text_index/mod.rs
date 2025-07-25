@@ -4,7 +4,7 @@ pub mod mmap_text_index;
 mod mutable_text_index;
 pub mod stop_words;
 pub mod text_index;
-mod tokenizers;
+pub mod tokenizers;
 
 #[cfg(test)]
 mod tests;
