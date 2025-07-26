@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 use std::fmt;
-use std::hash::Hash;
+use std::hash::{BuildHasherDefault, Hash};
 
+use bytemuck::TransparentWrapper as _;
+use common::stable_hash::{StableHash, StableHashed};
 use itertools::Itertools as _;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{CustomIdCheckerCondition, PointIdType};
@@ -13,7 +15,7 @@ use crate::shards::shard::ShardId;
 pub const HASH_RING_SHARD_SCALE: u32 = 100;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum HashRingRouter<T: Eq + Hash = ShardId> {
+pub enum HashRingRouter<T: Eq + StableHash + Hash = ShardId> {
     /// Single hashring
     Single(HashRing<T>),
 
@@ -22,7 +24,7 @@ pub enum HashRingRouter<T: Eq + Hash = ShardId> {
     Resharding { old: HashRing<T>, new: HashRing<T> },
 }
 
-impl<T: Copy + Eq + Hash> HashRingRouter<T> {
+impl<T: Copy + Eq + StableHash + Hash> HashRingRouter<T> {
     /// Create a new single hashring.
     ///
     /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
@@ -135,7 +137,7 @@ impl<T: Copy + Eq + Hash> HashRingRouter<T> {
         }
     }
 
-    pub fn get<U: Hash>(&self, key: &U) -> ShardIds<T> {
+    pub fn get<U: StableHash>(&self, key: &U) -> ShardIds<T> {
         match self {
             Self::Single(ring) => ring.get(key).into_iter().copied().collect(),
             Self::Resharding { old, new } => old
@@ -151,7 +153,7 @@ impl<T: Copy + Eq + Hash> HashRingRouter<T> {
     /// Check whether the given point is in the given shard
     ///
     /// In case of resharding, the new hashring is checked.
-    pub fn is_in_shard<U: Hash>(&self, key: &U, shard: T) -> bool {
+    pub fn is_in_shard<U: StableHash>(&self, key: &U, shard: T) -> bool {
         let ring = match self {
             Self::Resharding { new, .. } => new,
             Self::Single(ring) => ring,
@@ -161,7 +163,7 @@ impl<T: Copy + Eq + Hash> HashRingRouter<T> {
     }
 }
 
-impl<T: Eq + Hash> HashRingRouter<T> {
+impl<T: Eq + StableHash + Hash> HashRingRouter<T> {
     pub fn is_resharding(&self) -> bool {
         matches!(self, Self::Resharding { .. })
     }
@@ -182,6 +184,8 @@ impl<T: Eq + Hash> HashRingRouter<T> {
     }
 }
 
+type StableHashBuilder = BuildHasherDefault<siphasher::sip::SipHasher24>;
+
 /// List type for shard IDs
 ///
 /// Uses a `SmallVec` putting two IDs on the stack. That's the maximum number of shards we expect
@@ -189,24 +193,24 @@ impl<T: Eq + Hash> HashRingRouter<T> {
 pub type ShardIds<T = ShardId> = SmallVec<[T; 2]>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum HashRing<T: Eq + Hash> {
+pub enum HashRing<T: Eq + StableHash + Hash> {
     Raw {
         nodes: HashSet<T>,
-        ring: hashring::HashRing<T>,
+        ring: hashring::HashRing<StableHashed<T>, StableHashBuilder>,
     },
 
     Fair {
         nodes: HashSet<T>,
-        ring: hashring::HashRing<(T, u32)>,
+        ring: hashring::HashRing<StableHashed<(T, u32)>, StableHashBuilder>,
         scale: u32,
     },
 }
 
-impl<T: Copy + Eq + Hash> HashRing<T> {
+impl<T: Copy + Eq + StableHash + Hash> HashRing<T> {
     pub fn raw() -> Self {
         Self::Raw {
             nodes: HashSet::new(),
-            ring: hashring::HashRing::new(),
+            ring: hashring::HashRing::with_hasher(StableHashBuilder::new()),
         }
     }
 
@@ -216,7 +220,7 @@ impl<T: Copy + Eq + Hash> HashRing<T> {
     pub fn fair(scale: u32) -> Self {
         Self::Fair {
             nodes: HashSet::new(),
-            ring: hashring::HashRing::new(),
+            ring: hashring::HashRing::with_hasher(StableHashBuilder::new()),
             scale,
         }
     }
@@ -228,12 +232,12 @@ impl<T: Copy + Eq + Hash> HashRing<T> {
 
         match self {
             HashRing::Raw { ring, .. } => {
-                ring.add(shard);
+                ring.add(StableHashed(shard));
             }
 
             HashRing::Fair { ring, scale, .. } => {
                 for idx in 0..*scale {
-                    ring.add((shard, idx));
+                    ring.add(StableHashed((shard, idx)));
                 }
             }
         }
@@ -248,12 +252,12 @@ impl<T: Copy + Eq + Hash> HashRing<T> {
 
         match self {
             HashRing::Raw { ring, .. } => {
-                ring.remove(shard);
+                ring.remove(&StableHashed(*shard));
             }
 
             HashRing::Fair { ring, scale, .. } => {
                 for idx in 0..*scale {
-                    ring.remove(&(*shard, idx));
+                    ring.remove(&StableHashed((*shard, idx)));
                 }
             }
         }
@@ -262,11 +266,12 @@ impl<T: Copy + Eq + Hash> HashRing<T> {
     }
 }
 
-impl<T: Eq + Hash> HashRing<T> {
-    pub fn get<U: Hash>(&self, key: &U) -> Option<&T> {
+impl<T: Eq + StableHash + Hash> HashRing<T> {
+    pub fn get<U: StableHash>(&self, key: &U) -> Option<&T> {
+        let key = StableHashed::wrap_ref(key);
         match self {
-            HashRing::Raw { ring, .. } => ring.get(key),
-            HashRing::Fair { ring, .. } => ring.get(key).map(|(shard, _)| shard),
+            HashRing::Raw { ring, .. } => ring.get(key).map(|StableHashed(shard)| shard),
+            HashRing::Fair { ring, .. } => ring.get(key).map(|StableHashed((shard, _))| shard),
         }
     }
 
