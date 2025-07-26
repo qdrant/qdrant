@@ -28,10 +28,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: false,
             },
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -64,10 +65,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                deprecated_count: None,
                 distance_type: DistanceType::L2,
                 invert: false,
             },
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -104,10 +106,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                deprecated_count: None,
                 distance_type: DistanceType::L1,
                 invert: false,
             },
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -140,10 +143,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: true,
             },
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -176,10 +180,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                deprecated_count: None,
                 distance_type: DistanceType::L2,
                 invert: true,
             },
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -216,10 +221,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                deprecated_count: None,
                 distance_type: DistanceType::L1,
                 invert: true,
             },
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -251,10 +257,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: false,
             },
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -286,10 +293,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: true,
             },
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -322,10 +330,11 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: vectors_count,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: false,
             },
+            vectors_count,
             Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
             &AtomicBool::new(false),
         )
@@ -360,10 +369,11 @@ mod tests {
                 Vec::<u8>::new(),
                 &VectorParameters {
                     dim: vector_dim,
-                    count: vectors_count,
+                    deprecated_count: None,
                     distance_type,
                     invert: false,
                 },
+                vectors_count,
                 Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
                 &AtomicBool::new(false),
             )

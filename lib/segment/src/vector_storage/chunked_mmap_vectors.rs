@@ -12,7 +12,7 @@ use memory::chunked_utils::{UniversalMmapChunk, chunk_name, create_chunk, read_m
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::MmapType;
+use memory::mmap_type::{MmapFlusher, MmapType};
 use num_traits::AsPrimitive;
 use serde::{Deserialize, Serialize};
 
@@ -457,6 +457,68 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
             clear_disk_cache(&file_path)?;
         }
         Ok(())
+    }
+}
+
+impl quantization::EncodedStorage for ChunkedMmapVectors<u8> {
+    fn get_vector_data(&self, index: usize, _vector_size: usize) -> &[u8] {
+        ChunkedMmapVectors::get(self, index, false).unwrap_or_default()
+    }
+
+    fn push_vector(
+        &mut self,
+        vector: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        // Memory for ChunkedVectors are already pre-allocated,
+        // so we do not expect any errors here.
+        self.push(vector, hw_counter)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::OutOfMemory, err.to_string()))?;
+        Ok(())
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new({
+            let status_flusher = self.status.flusher();
+            let chunks_flushers: Vec<_> = self.chunks.iter().map(|chunk| chunk.flusher()).collect();
+            move || {
+                for flusher in chunks_flushers {
+                    flusher()?;
+                }
+                status_flusher()?;
+                Ok(())
+            }
+        })
+    }
+
+    fn from_file(
+        _path: &Path,
+        _quantized_vector_size: usize,
+        _vectors_count: usize,
+    ) -> std::io::Result<Self> {
+        debug_assert!(
+            false,
+            "ChunkedMmapVectors cannot be loaded from file as a quantized storage"
+        );
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "ChunkedMmapVectors cannot be loaded from file as a quantized storage",
+        ))
+    }
+
+    fn save_to_file(&self, _path: &Path) -> std::io::Result<()> {
+        self.flusher()().map_err(|err| {
+            std::io::Error::other(format!("Failed to save quantized vectors to file: {err}"))
+        })?;
+        Ok(())
+    }
+
+    fn is_on_disk(&self) -> bool {
+        true
+    }
+
+    fn vectors_count(&self, _quantized_vector_size: usize) -> usize {
+        self.len()
     }
 }
 

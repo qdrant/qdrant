@@ -74,10 +74,6 @@ impl VectorStats {
             }
         }
 
-        debug_assert_eq!(
-            count, vector_params.count,
-            "Count of vectors processed does not match the expected count in vector parameters"
-        );
         for ((element_stats, means), m2) in stats
             .elements_stats
             .iter_mut()

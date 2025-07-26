@@ -5,13 +5,15 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use memmap2::MmapMut;
-use memory::mmap_type::MmapSlice;
+use memory::mmap_type::{MmapFlusher, MmapSlice};
 use quantization::{EncodedVectors, VectorParameters};
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
+use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
+use crate::vector_storage::chunked_vector_storage::ChunkedVectorStorage;
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct MultivectorOffset {
@@ -23,6 +25,7 @@ pub trait MultivectorOffsets {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
 }
 
+#[allow(clippy::len_without_is_empty)]
 pub trait MultivectorOffsetsStorage: Sized {
     fn load(path: &Path) -> OperationResult<Self>;
 
@@ -32,9 +35,13 @@ pub trait MultivectorOffsetsStorage: Sized {
 
     fn len(&self) -> usize;
 
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
+    fn flusher(&self) -> MmapFlusher;
+
+    fn push_offset(
+        &mut self,
+        offset: MultivectorOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()>;
 }
 
 impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
@@ -59,6 +66,64 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
 
     fn len(&self) -> usize {
         self.len()
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
+    }
+
+    fn push_offset(
+        &mut self,
+        offset: MultivectorOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        hw_counter
+            .vector_io_write_counter()
+            .incr_delta(std::mem::size_of_val(&offset));
+        self.push(offset);
+        Ok(())
+    }
+}
+
+impl MultivectorOffsetsStorage for ChunkedMmapVectors<MultivectorOffset> {
+    fn load(_path: &Path) -> OperationResult<Self> {
+        unreachable!("");
+    }
+
+    fn save(&self, _path: &Path) -> OperationResult<()> {
+        unreachable!("");
+    }
+
+    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
+        ChunkedVectorStorage::get_many(self, idx as usize, 1)
+            .expect("Failed to get multivector offset from chunked storage")[0]
+    }
+
+    fn len(&self) -> usize {
+        ChunkedVectorStorage::len(self)
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        let flusher = ChunkedMmapVectors::flusher(self);
+        Box::new(move || {
+            flusher().map_err(|e| {
+                std::io::Error::other(format!("Failed to flush multivector offsets storage: {e}"))
+            })?;
+            Ok(())
+        })
+    }
+
+    fn push_offset(
+        &mut self,
+        offset: MultivectorOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        ChunkedMmapVectors::push(self, &[offset], hw_counter).map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to push offset to multivector offsets storage: {e}"
+            ))
+        })?;
+        Ok(())
     }
 }
 
@@ -97,6 +162,18 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
 
     fn len(&self) -> usize {
         self.offsets.len()
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
+    }
+
+    fn push_offset(
+        &mut self,
+        _offset: MultivectorOffset,
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        unreachable!("Cannot push offset to mmap storage");
     }
 }
 
@@ -152,10 +229,23 @@ where
         vector_parameters: &VectorParameters,
         multi_vector_config: &MultiVectorConfig,
     ) -> OperationResult<Self> {
+        let offsets = TMultivectorOffsetsStorage::load(offsets_path)?;
+        // TODO: find a better way to get inner vectors count
+        let inner_vectors_count = if offsets.len() == 0 {
+            0
+        } else {
+            let offset = offsets.get_offset(offsets.len() as PointOffsetType - 1);
+            offset.start as usize + offset.count as usize
+        };
         Ok(Self {
             dim: vector_parameters.dim,
-            quantized_storage: QuantizedStorage::load(data_path, meta_path, vector_parameters)?,
-            offsets: TMultivectorOffsetsStorage::load(offsets_path)?,
+            quantized_storage: QuantizedStorage::load(
+                data_path,
+                meta_path,
+                vector_parameters,
+                inner_vectors_count,
+            )?,
+            offsets,
             multi_vector_config: *multi_vector_config,
         })
     }
@@ -246,6 +336,7 @@ where
         _data_path: &Path,
         _meta_path: &Path,
         _vector_parameters: &quantization::VectorParameters,
+        _vectors_count: usize,
     ) -> std::io::Result<Self> {
         unreachable!(
             "multivector quantized storage should be loaded using `self.load_multi` method"
@@ -301,6 +392,44 @@ where
             query.push(self.quantized_storage.encode_internal_vector(internal_id)?)
         }
         Some(query)
+    }
+
+    fn push_vector(
+        &mut self,
+        vector: &[f32],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        let multi_vector = TypedMultiDenseVectorRef {
+            dim: self.dim,
+            flattened_vectors: vector,
+        };
+
+        let old_vectors_count = self.quantized_storage.vectors_count();
+        for inner_vector in multi_vector.multi_vectors() {
+            self.quantized_storage
+                .push_vector(inner_vector, hw_counter)?;
+        }
+
+        let offset: MultivectorOffset = MultivectorOffset {
+            start: old_vectors_count as PointOffsetType,
+            count: multi_vector.vectors_count() as PointOffsetType,
+        };
+        self.offsets.push_offset(offset, hw_counter)?;
+        Ok(())
+    }
+
+    fn vectors_count(&self) -> usize {
+        self.offsets.len()
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        let quantized_storage_flusher = self.quantized_storage.flusher();
+        let offsets_flusher = self.offsets.flusher();
+        Box::new(move || {
+            quantized_storage_flusher()?;
+            offsets_flusher()?;
+            Ok(())
+        })
     }
 }
 

@@ -5,7 +5,9 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::mem;
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use memory::fadvise::OneshotFile;
+use memory::mmap_type::MmapFlusher;
 
 use crate::common::vector_utils::{TrySetCapacity, TrySetCapacityExact};
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
@@ -176,6 +178,25 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
         self.get(index)
     }
 
+    fn push_vector(
+        &mut self,
+        vector: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        // Memory for ChunkedVectors are already pre-allocated,
+        // so we do not expect any errors here.
+        self.push(vector)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::OutOfMemory, err.to_string()))?;
+        hw_counter
+            .vector_io_write_counter()
+            .incr_delta(size_of_val(vector));
+        Ok(())
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
+    }
+
     fn from_file(
         path: &Path,
         quantized_vector_size: usize,
@@ -227,6 +248,10 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
     fn is_on_disk(&self) -> bool {
         false
     }
+
+    fn vectors_count(&self, _quantized_vector_size: usize) -> usize {
+        self.len()
+    }
 }
 
 impl<T: Clone> TrySetCapacityExact for ChunkedVectors<T> {
@@ -251,8 +276,8 @@ impl<T: Clone> TrySetCapacityExact for ChunkedVectors<T> {
 impl quantization::EncodedStorageBuilder for ChunkedVectors<u8> {
     type Storage = ChunkedVectors<u8>;
 
-    fn build(self) -> ChunkedVectors<u8> {
-        self
+    fn build(self) -> std::io::Result<ChunkedVectors<u8>> {
+        Ok(self)
     }
 
     fn push_vector_data(&mut self, other: &[u8]) {
