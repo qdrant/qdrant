@@ -322,11 +322,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         }
     }
 
-    pub fn get_iterator(
-        &self,
-        value: &N,
-        hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = &PointOffsetType> + '_> {
+    pub fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
         let Some(storage) = &self.storage else {
             return Box::new(iter::empty());
         };
@@ -343,7 +339,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 Box::new(
                     slice
                         .iter()
-                        .filter(|idx| !storage.deleted.get(**idx as usize).unwrap_or(false)),
+                        .filter(|idx| !storage.deleted.get(**idx as usize).unwrap_or(false))
+                        .copied(),
                 )
             }
             Ok(None) => {

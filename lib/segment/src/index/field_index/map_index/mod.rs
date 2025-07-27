@@ -234,7 +234,7 @@ where
         }
     }
 
-    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdRefIter<'_> {
+    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
         match self {
             MapIndex::Mutable(index) => index.get_iterator(value),
             MapIndex::Immutable(index) => index.get_iterator(value),
@@ -490,7 +490,7 @@ where
         Box::new(
             self.iter_values()
                 .filter(|key| !excluded.contains((*key).borrow()))
-                .flat_map(move |key| self.get_iterator(key.borrow(), hw_counter).copied())
+                .flat_map(move |key| self.get_iterator(key.borrow(), hw_counter))
                 .unique(),
         )
     }
@@ -746,9 +746,9 @@ impl PayloadFieldIndex for MapIndex<str> {
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
-                ValueVariants::String(keyword) => Some(Box::new(
-                    self.get_iterator(keyword.as_str(), hw_counter).copied(),
-                )),
+                ValueVariants::String(keyword) => {
+                    Some(Box::new(self.get_iterator(keyword.as_str(), hw_counter)))
+                }
                 ValueVariants::Integer(_) => None,
                 ValueVariants::Bool(_) => None,
             },
@@ -756,9 +756,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                 AnyVariants::Strings(keywords) => Some(Box::new(
                     keywords
                         .iter()
-                        .flat_map(move |keyword| {
-                            self.get_iterator(keyword.as_str(), hw_counter).copied()
-                        })
+                        .flat_map(move |keyword| self.get_iterator(keyword.as_str(), hw_counter))
                         .unique(),
                 )),
                 AnyVariants::Integers(integers) => {
@@ -902,9 +900,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(uuid_string) => {
                     let uuid = Uuid::from_str(uuid_string).ok()?;
-                    Some(Box::new(
-                        self.get_iterator(&uuid.as_u128(), hw_counter).copied(),
-                    ))
+                    Some(Box::new(self.get_iterator(&uuid.as_u128(), hw_counter)))
                 }
                 ValueVariants::Integer(_) => None,
                 ValueVariants::Bool(_) => None,
@@ -921,7 +917,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                     Some(Box::new(
                         uuids
                             .into_iter()
-                            .flat_map(move |uuid| self.get_iterator(&uuid, hw_counter).copied())
+                            .flat_map(move |uuid| self.get_iterator(&uuid, hw_counter))
                             .unique(),
                     ))
                 }
@@ -944,7 +940,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                     let exclude_iter = self
                         .iter_values()
                         .filter(move |key| !excluded_uuids.contains(*key))
-                        .flat_map(move |key| self.get_iterator(key, hw_counter).copied())
+                        .flat_map(move |key| self.get_iterator(key, hw_counter))
                         .unique();
                     Some(Box::new(exclude_iter))
                 }
@@ -1097,7 +1093,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(_) => None,
                 ValueVariants::Integer(integer) => {
-                    Some(Box::new(self.get_iterator(integer, hw_counter).copied()))
+                    Some(Box::new(self.get_iterator(integer, hw_counter)))
                 }
                 ValueVariants::Bool(_) => None,
             },
@@ -1112,7 +1108,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 AnyVariants::Integers(integers) => Some(Box::new(
                     integers
                         .iter()
-                        .flat_map(move |integer| self.get_iterator(integer, hw_counter).copied())
+                        .flat_map(move |integer| self.get_iterator(integer, hw_counter))
                         .unique(),
                 )),
             },

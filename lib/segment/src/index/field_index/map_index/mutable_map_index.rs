@@ -1,5 +1,5 @@
 use std::borrow::Borrow;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::iter;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,12 +9,13 @@ use common::types::PointOffsetType;
 use gridstore::config::StorageOptions;
 use gridstore::{Blob, Gridstore};
 use parking_lot::RwLock;
+use roaring::RoaringBitmap;
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 
 #[cfg(feature = "rocksdb")]
 use super::MapIndex;
-use super::{IdIter, IdRefIter, MapIndexKey};
+use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 #[cfg(feature = "rocksdb")]
@@ -38,7 +39,7 @@ pub struct MutableMapIndex<N: MapIndexKey + ?Sized>
 where
     Vec<N::Owned>: Blob + Send + Sync,
 {
-    pub(super) map: HashMap<N::Owned, BTreeSet<PointOffsetType>>,
+    pub(super) map: HashMap<N::Owned, RoaringBitmap>,
     pub(super) point_to_values: Vec<Vec<N::Owned>>,
     /// Amount of point which have at least one indexed payload value
     pub(super) indexed_points: usize,
@@ -294,7 +295,7 @@ where
 
         for value in &removed_values {
             if let Some(vals) = self.map.get_mut(value.borrow()) {
-                vals.remove(&idx);
+                vals.remove(idx);
             }
         }
 
@@ -439,24 +440,24 @@ where
     }
 
     pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
-        self.map.get(value).map(|p| p.len())
+        self.map.get(value).map(|p| p.len() as usize)
     }
 
     pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
-        self.map.iter().map(|(k, v)| (k.borrow(), v.len()))
+        self.map.iter().map(|(k, v)| (k.borrow(), v.len() as usize))
     }
 
     pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter)> {
         self.map
             .iter()
-            .map(move |(k, v)| (k.borrow(), Box::new(v.iter().copied()) as IdIter))
+            .map(move |(k, v)| (k.borrow(), Box::new(v.iter()) as IdIter))
     }
 
-    pub fn get_iterator(&self, value: &N) -> IdRefIter<'_> {
+    pub fn get_iterator(&self, value: &N) -> IdIter<'_> {
         self.map
             .get(value)
-            .map(|ids| Box::new(ids.iter()) as Box<dyn Iterator<Item = &PointOffsetType>>)
-            .unwrap_or_else(|| Box::new(iter::empty::<&PointOffsetType>()))
+            .map(|ids| Box::new(ids.iter()) as IdIter)
+            .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
 
     pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
