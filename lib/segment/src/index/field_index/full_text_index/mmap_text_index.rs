@@ -31,7 +31,7 @@ impl MmapFullTextIndex {
         let populate = !is_on_disk;
 
         let has_positions = config.phrase_matching == Some(true);
-        let tokenizer = Tokenizer::new(&config);
+        let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
         let inverted_index = MmapInvertedIndex::open(path, populate, has_positions)?;
         Ok(Self {
@@ -105,7 +105,7 @@ pub struct FullTextMmapIndexBuilder {
 impl FullTextMmapIndexBuilder {
     pub fn new(path: PathBuf, config: TextIndexParams, is_on_disk: bool) -> Self {
         let with_positions = config.phrase_matching.unwrap_or_default();
-        let tokenizer = Tokenizer::new(&config);
+        let tokenizer = Tokenizer::new_from_text_index_params(&config);
         Self {
             path,
             mutable_index: MutableInvertedIndex::new(with_positions),
