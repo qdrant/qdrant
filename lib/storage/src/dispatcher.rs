@@ -248,9 +248,9 @@ impl Dispatcher {
         }
     }
 
-    pub fn cluster_status(&self) -> ClusterStatus {
+    pub fn cluster_status(&self, peer_metadata: bool) -> ClusterStatus {
         match self.consensus_state.as_ref() {
-            Some(state) => state.cluster_status(),
+            Some(state) => state.cluster_status(peer_metadata),
             None => ClusterStatus::Disabled,
         }
     }

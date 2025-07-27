@@ -36,7 +36,7 @@ fn cluster_status(
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
         access.check_global_access(AccessRequirements::new())?;
-        Ok(dispatcher.cluster_status())
+        Ok(dispatcher.cluster_status(false))
     })
 }
 

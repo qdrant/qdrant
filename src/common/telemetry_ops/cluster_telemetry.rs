@@ -93,7 +93,7 @@ impl ClusterTelemetry {
         Some(ClusterTelemetry {
             enabled: settings.cluster.enabled,
             status: (detail.level >= DetailsLevel::Level1)
-                .then(|| match dispatcher.cluster_status() {
+                .then(|| match dispatcher.cluster_status(false) {
                     ClusterStatus::Disabled => None,
                     ClusterStatus::Enabled(cluster_info) => Some(ClusterStatusTelemetry {
                         number_of_peers: cluster_info.peers.len(),
@@ -110,7 +110,7 @@ impl ClusterTelemetry {
             config: (detail.level >= DetailsLevel::Level2)
                 .then(|| ClusterConfigTelemetry::from(settings)),
             peers: (detail.level >= DetailsLevel::Level2)
-                .then(|| match dispatcher.cluster_status() {
+                .then(|| match dispatcher.cluster_status(true) {
                     ClusterStatus::Disabled => None,
                     ClusterStatus::Enabled(cluster_info) => Some(cluster_info.peers),
                 })
