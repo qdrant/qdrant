@@ -749,6 +749,10 @@ async fn recover_partial_snapshot_from(
                 .await?
                 .error_for_status()?;
 
+            if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+                return Err(StorageError::EmptyPartialSnapshot { shard_id });
+            }
+
             let mut partial_snapshot_file =
                 tokio::io::BufWriter::new(tokio::fs::File::from_std(partial_snapshot_file));
 
@@ -760,15 +764,17 @@ async fn recover_partial_snapshot_from(
 
             partial_snapshot_file.flush().await?;
 
-            // TODO: Check partial snapshot checksum!?
-            //
-            // E.g., we can return snapshot checksum as HTTP header in `create_partial_snapshot` response
-
             StorageResult::Ok((collection, partial_snapshot_temp_path))
         };
 
-        let (collection, partial_snapshot_temp_path) =
-            cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
+        let create_partial_snapshot_result =
+            cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await?;
+
+        let (collection, partial_snapshot_temp_path) = match create_partial_snapshot_result {
+            Ok(output) => output,
+            Err(StorageError::EmptyPartialSnapshot { .. }) => return Ok(false),
+            Err(err) => return Err(err),
+        };
 
         common::snapshots::recover_shard_snapshot_impl(
             dispatcher.toc(&access, &pass),

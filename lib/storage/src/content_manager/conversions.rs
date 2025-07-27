@@ -46,6 +46,7 @@ impl From<StorageError> for Status {
                 tonic::Code::ResourceExhausted
             }
             StorageError::ShardUnavailable { .. } => tonic::Code::Unavailable,
+            StorageError::EmptyPartialSnapshot { .. } => tonic::Code::FailedPrecondition,
         };
         let mut status = Status::new(error_code, format!("{error}"));
         // add metadata headers

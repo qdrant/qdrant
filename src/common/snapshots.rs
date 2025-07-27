@@ -57,6 +57,23 @@ pub async fn stream_shard_snapshot(
         AccessRequirements::new().write().whole().extras(),
     )?;
 
+    let collection = toc.get_collection(&collection_pass).await?;
+
+    if let Some(old_manifest) = &manifest {
+        let current_manifest = collection.get_partial_snapshot_manifest(shard_id).await?;
+
+        // If `old_manifest` is *exactly* the same, as `current_manifest`, return specialized error
+        // instead of creating partial snapshot.
+        //
+        // Snapshot manifest format is flexible, so it *might* be possible that manifests are *not*
+        // exactly the same, but resulting partial snapshot will still be "empty", but:
+        // - it should *not* happen in practice currently
+        // - we intentionally use exact equality as the most "conservative" comparison, just in case
+        if old_manifest == &current_manifest {
+            return Err(StorageError::EmptyPartialSnapshot { shard_id });
+        }
+    }
+
     let snapshot_stream = toc
         .get_collection(&collection_pass)
         .await?
