@@ -8,7 +8,6 @@ from .fixtures import *
 from .utils import *
 
 COLLECTION = "test_collection"
-SHARD = 0
 
 @pytest.mark.parametrize(
     # bootstrap_points - upsert points when creating collection on write peer
@@ -80,7 +79,11 @@ def test_partial_snapshot(
 ):
     assert_project_root()
 
-    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points, recover_read)
+    write_peer, read_peer = bootstrap_peers(
+        tmp_path,
+        bootstrap_points = bootstrap_points,
+        recover_read = recover_read,
+    )
 
     if append_points > 0:
         upsert(write_peer, append_points, offset = bootstrap_points)
@@ -98,10 +101,10 @@ def test_partial_snapshot(
 def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
     assert_project_root()
 
-    write_peer, read_peer = bootstrap_peers(tmp_path, 100_000)
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000)
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 3)
-    futures = [executor.submit(try_recover_partial_snapshot_from, read_peer, write_peer, wait) for _ in range(3)]
+    futures = [executor.submit(try_recover_partial_snapshot_from, read_peer, write_peer, wait = wait) for _ in range(3)]
     responses = [future.result() for future in concurrent.futures.as_completed(futures)]
 
     # Single partial snapshot recovery request allowed at the same time
@@ -110,7 +113,7 @@ def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
 def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
     assert_project_root()
 
-    write_peer, read_peer = bootstrap_peers(tmp_path, 100_000)
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000)
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 1)
     recover_future = executor.submit(recover_partial_snapshot_from, read_peer, write_peer)
@@ -126,22 +129,44 @@ def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
 
     assert is_search_rejected, "Search requests have to be rejected during partial snapshot recovery"
 
+def test_partial_snapshot_payload_index_schema(tmp_path: pathlib.Path):
+    assert_project_root()
 
-def bootstrap_peers(tmp: pathlib.Path, bootstrap_points = 0, recover_read = False):
-    write_peer = bootstrap_write_peer(tmp, bootstrap_points)
-    read_peer = bootstrap_read_peer(tmp, write_peer if recover_read else None)
+    write_peer, read_peer = bootstrap_peers(tmp_path, shards = 2, bootstrap_points = 10_000)
+
+    create_field_index(write_peer, "city", "keyword")
+
+    update_collection_parameters(read_peer, {
+        "strict_mode_config": {
+            "enabled": True,
+            "unindexed_filtering_retrieve": False,
+        }
+    })
+
+    recover_partial_snapshot_from(read_peer, write_peer, shard = 0)
+    resp = try_query_by_field(read_peer, "city", "London")
+    assert resp.status_code == 400
+
+    recover_partial_snapshot_from(read_peer, write_peer, shard = 1)
+    resp = try_query_by_field(read_peer, "city", "London")
+    assert_http_ok(resp)
+
+
+def bootstrap_peers(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, recover_read = False):
+    write_peer = bootstrap_write_peer(tmp, shards, bootstrap_points)
+    read_peer = bootstrap_read_peer(tmp, shards, write_peer if recover_read else None)
     return write_peer, read_peer
 
-def bootstrap_write_peer(tmp: pathlib.Path, bootstrap_points = 0):
+def bootstrap_write_peer(tmp: pathlib.Path, shards = 1, bootstrap_points = 0):
     write_peer = bootstrap_peer(tmp / "write", 6331, "write_")
-    bootstrap_collection(write_peer, bootstrap_points)
+    bootstrap_collection(write_peer, shards, bootstrap_points)
     return write_peer
 
-def bootstrap_read_peer(tmp: pathlib.Path, recover_from_url: str | None = None):
+def bootstrap_read_peer(tmp: pathlib.Path, shards = 1, recover_from_url: str | None = None):
     read_peer = bootstrap_peer(tmp / "read", 63331, "read_")
 
     if recover_from_url is None:
-        bootstrap_collection(read_peer)
+        bootstrap_collection(read_peer, shards)
     else:
         recover_collection(read_peer, recover_from_url)
 
@@ -159,10 +184,10 @@ def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = ""):
 
     return uris[0]
 
-def bootstrap_collection(peer_url, bootstrap_points = 0):
+def bootstrap_collection(peer_url, shards = 1, bootstrap_points = 0):
     create_collection(
         peer_url,
-        shard_number = 1,
+        shard_number = shards,
         replication_factor = 1,
         default_segment_number = 1,
         indexing_threshold = 1,
@@ -197,35 +222,36 @@ def recover_collection_snapshot(peer_url: str, snapshot_url: str):
 
     return resp.json()["result"]
 
-def recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, wait = True):
-    resp = try_recover_partial_snapshot_from(peer_url, recover_peer_url)
+def recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, shard = 0, wait = True):
+    resp = try_recover_partial_snapshot_from(peer_url, recover_peer_url, shard, wait)
     assert_http_ok(resp)
 
     return resp.json()["result"]
 
-def try_recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, wait = True):
+def try_recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, shard = 0, wait = True):
     resp = requests.post(
-        f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/recover_from?wait={'true' if wait else 'false'}",
+        f"{peer_url}/collections/{COLLECTION}/shards/{shard}/snapshot/partial/recover_from?wait={'true' if wait else 'false'}",
         json = { "peer_url": recover_peer_url },
     )
 
     return resp
 
-def get_snapshot_manifest(peer_url: str):
-    resp = requests.get(f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/manifest")
+def get_snapshot_manifest(peer_url: str, shard = 0):
+    resp = requests.get(f"{peer_url}/collections/{COLLECTION}/shards/{shard}/snapshot/partial/manifest")
     assert_http_ok(resp)
 
     return resp.json()["result"]
 
-def try_search_random(peer_url: str):
-    resp = requests.post(f"{peer_url}/collections/{COLLECTION}/points/search", json = {
-        "vector": random_dense_vector(),
-        "limit": 10,
-        "with_vectors": True,
-        "with_payload": True,
+def create_field_index(peer_url: str, key: str, schema: str):
+    resp = requests.put(f"{peer_url}/collections/{COLLECTION}/index?wait=true", json = {
+        "field_name": key,
+        "field_schema": schema,
     })
+    assert_http_ok(resp)
 
-    return resp
+def update_collection_parameters(peer_url: str, parameters: Any):
+    resp = requests.patch(f"{peer_url}/collections/{COLLECTION}", json = parameters)
+    assert_http_ok(resp)
 
 
 def assert_consistency(write_peer: str, read_peer: str):
@@ -266,3 +292,27 @@ def delete(peer_url: str, until_id: int, from_id = 0):
         "points": list(range(from_id, until_id)),
     })
     assert_http_ok(resp)
+
+def try_search_random(peer_url: str):
+    resp = requests.post(f"{peer_url}/collections/{COLLECTION}/points/search", json = {
+        "vector": random_dense_vector(),
+        "limit": 10,
+        "with_vectors": True,
+        "with_payload": True,
+    })
+
+    return resp
+
+def try_query_by_field(peer_url: str, key: str, value: Any):
+    resp = requests.post(f"{peer_url}/collections/{COLLECTION}/points/query", json = {
+        "filter": {
+            "must": {
+                "key": key,
+                "match": {
+                    "value": value,
+                }
+            }
+        }
+    })
+
+    return resp

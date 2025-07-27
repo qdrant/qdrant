@@ -14,7 +14,8 @@ use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::data_types::segment_manifest::SegmentManifests;
-use segment::types::{ShardKey, SnapshotFormat};
+use segment::json_path::JsonPath;
+use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
 use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
@@ -1031,6 +1032,14 @@ impl ShardHolder {
             )));
         }
 
+        if recovery_type.is_partial() {
+            self.update_payload_index_schema().await.map_err(|err| {
+                CollectionError::service_error(format!(
+                    "failed to update payload index schema after recovering partial snapshot: {err}"
+                ))
+            })?;
+        }
+
         Ok(())
     }
 
@@ -1059,6 +1068,74 @@ impl ShardHolder {
             .await?;
 
         Ok(res)
+    }
+
+    pub async fn update_payload_index_schema(&self) -> CollectionResult<()> {
+        let payload_index_schema = self
+            .all_shards()
+            .next()
+            .map(|shard| shard.payload_index_schema());
+
+        let Some(payload_index_schema) = payload_index_schema else {
+            // Shard holder contains no shards
+            return Ok(());
+        };
+
+        let schema = self.common_payload_index_schema().await?;
+
+        payload_index_schema.write(|payload_index_schema| {
+            *payload_index_schema = PayloadIndexSchema { schema };
+        })?;
+
+        Ok(())
+    }
+
+    async fn common_payload_index_schema(
+        &self,
+    ) -> CollectionResult<HashMap<JsonPath, PayloadFieldSchema>> {
+        let mut schema = HashMap::new();
+
+        for (shard_idx, shard) in self.all_shards().enumerate() {
+            let shard_schema: HashMap<_, _> = shard
+                .info(true)
+                .await?
+                .payload_schema
+                .into_iter()
+                .filter_map(|(field, info)| {
+                    let schema = match PayloadFieldSchema::try_from(info) {
+                        Ok(schema) => schema,
+                        Err(err) => {
+                            log::warn!(
+                                "Failed to extract payload index schema from payload index info: \
+                                 {err}"
+                            );
+
+                            return None;
+                        }
+                    };
+
+                    Some((field, schema))
+                })
+                .collect();
+
+            if shard_idx == 0 {
+                schema = shard_schema;
+            } else {
+                schema.retain(|field, schema| {
+                    let Some(shard_schema) = shard_schema.get(field) else {
+                        return false;
+                    };
+
+                    schema == shard_schema
+                });
+            }
+
+            if schema.is_empty() {
+                break;
+            }
+        }
+
+        Ok(schema)
     }
 
     pub fn try_take_partial_snapshot_recovery_lock(
