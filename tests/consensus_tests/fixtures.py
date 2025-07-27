@@ -139,13 +139,14 @@ def create_collection(
     sharding_method=None,
     indexing_threshold=20000,
     headers={},
+    vector_size=DENSE_VECTOR_SIZE,
     strict_mode=None,
     sparse_vectors=True,
     default_segment_number=None,
     on_disk_payload=None,
 ):
     payload = {
-        "vectors": {"size": DENSE_VECTOR_SIZE, "distance": "Dot"},
+        "vectors": {"size": vector_size, "distance": "Dot"},
         "shard_number": shard_number,
         "replication_factor": replication_factor,
         "write_consistency_factor": write_consistency_factor,
