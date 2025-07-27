@@ -1,4 +1,5 @@
 pub mod anonymize;
+pub mod dynamic_mmap_flags_buffered_update_wrapper;
 pub mod error_logging;
 pub mod macros;
 pub mod mmap_bitslice_buffered_update_wrapper;

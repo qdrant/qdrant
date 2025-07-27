@@ -209,6 +209,10 @@ name = "mmap_bitslice_buffered_update_wrapper"
 harness = false
 
 [[bench]]
+name = "mmap_null_index_buffered"
+harness = false
+
+[[bench]]
 name = "scorer_mmap"
 harness = false
 
