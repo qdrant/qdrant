@@ -127,6 +127,32 @@ def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
     assert is_search_rejected, "Search requests have to be rejected during partial snapshot recovery"
 
 
+def test_incompatible_snapshot_recovery_with_last_active_replica(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    # setup read and write clusters with different configs so partial snapshot fails (different vector size):
+    read_peer = bootstrap_peer(tmp_path / "read", 63333, "read_", 3)
+    create_collection(read_peer, shard_number = 1, replication_factor = 3, indexing_threshold = 1000000, sparse_vectors = False, vector_size=1000)
+    wait_collection_exists_and_active_on_all_peers(COLLECTION, [read_peer])
+    write_peer = bootstrap_write_peer(tmp_path, 1000)
+
+    read_peer_port = int(read_peer.split(":")[-1])
+
+    r0 = "http://127.0.0.1:" + str(read_peer_port)
+    r1 = "http://127.0.0.1:" + str(read_peer_port + 100)
+    r2 = "http://127.0.0.1:" + str(read_peer_port + 200)
+
+    try_recover_partial_snapshot_from(r0, write_peer, wait=False) # marked as dummy and dead
+    try_recover_partial_snapshot_from(r1, write_peer, wait=False) # marked as dummy and dead
+    try_recover_partial_snapshot_from(r2, write_peer, wait=False) # marked as dummy but not dead (last active replica)
+
+    time.sleep(5) # wait for transfers to be retried and aborted (tries to un-proxify dummy shard which fails)
+
+    # consensus should continue working on r2:
+    res = requests.get(f"{r2}/cluster").json()
+    assert res["result"]["consensus_thread_status"]["consensus_thread_status"] == "working"
+
+
 def bootstrap_peers(tmp: pathlib.Path, bootstrap_points = 0, recover_read = False):
     write_peer = bootstrap_write_peer(tmp, bootstrap_points)
     read_peer = bootstrap_read_peer(tmp, write_peer if recover_read else None)
@@ -147,7 +173,7 @@ def bootstrap_read_peer(tmp: pathlib.Path, recover_from_url: str | None = None):
 
     return read_peer
 
-def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = ""):
+def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = "", num_peers: int = 1):
     path.mkdir()
 
     config = {
@@ -155,7 +181,7 @@ def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = ""):
         "QDRANT__FEATURE_FLAGS__USE_MUTABLE_ID_TRACKER_WITHOUT_ROCKSDB": "true",
     }
 
-    uris, _, _ = start_cluster(path, 1, port_seed = port, extra_env = config, log_file_prefix = log_file_prefix)
+    uris, _, _ = start_cluster(path, num_peers, port_seed = port, extra_env = config, log_file_prefix = log_file_prefix)
 
     return uris[0]
 
@@ -198,7 +224,7 @@ def recover_collection_snapshot(peer_url: str, snapshot_url: str):
     return resp.json()["result"]
 
 def recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, wait = True):
-    resp = try_recover_partial_snapshot_from(peer_url, recover_peer_url)
+    resp = try_recover_partial_snapshot_from(peer_url, recover_peer_url, wait)
     assert_http_ok(resp)
 
     return resp.json()["result"]
