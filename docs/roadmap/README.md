@@ -36,12 +36,13 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 
 * 🔭 Search and Discovery
   * [ ] Diversity Sampling
-  * [ ] Server-side embedding inference
+  * [x] Server-side embedding inference
   * [x] Built-in score boosting
   * [ ] Advanced text filtering
-    * [ ] Phrase queries
+    * [x] Phrase queries
     * [ ] Logical operators
-    * [ ] Stemmers
+    * [x] Stemmers
+    * [x] Stopwords
 
 ---
 
@@ -55,6 +56,6 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 ---
 
 * ⚙️ Performance
-  * [ ] Incremental HNSW indexing
+  * [x] Incremental HNSW indexing
   * [ ] Built-in TTL support
 
