@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::cmp::{self, Ordering};
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
 use std::hash::{self, Hash};
@@ -1897,16 +1897,14 @@ impl Validate for PayloadSchemaParams {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Clone, Debug, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
 }
 
-impl cmp::Eq for PayloadFieldSchema {}
-
-impl cmp::PartialEq for PayloadFieldSchema {
+impl PartialEq for PayloadFieldSchema {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::FieldType(this), Self::FieldType(other)) => this == other,
