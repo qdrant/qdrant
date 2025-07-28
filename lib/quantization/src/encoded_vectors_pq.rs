@@ -13,7 +13,9 @@ use io::file_operations::atomic_save_json;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
-use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
+use crate::encoded_vectors::{
+    EncodedVectors, EncodedVectorsBytes, VectorParameters, validate_vector_parameters,
+};
 use crate::kmeans::kmeans;
 use crate::{ConditionalVariable, EncodingError};
 
@@ -341,11 +343,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse4.1")]
-    unsafe fn score_point_sse(&self, query: &EncodedQueryPQ, i: u32) -> f32 {
+    unsafe fn score_point_sse(&self, query: &EncodedQueryPQ, centroids: &[u8]) -> f32 {
         unsafe {
-            let centroids = self
-                .encoded_vectors
-                .get_vector_data(i as usize, self.metadata.vector_division.len());
             let len = centroids.len();
             let centroids_count = self.metadata.centroids.len();
 
@@ -379,11 +378,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     }
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    unsafe fn score_point_neon(&self, query: &EncodedQueryPQ, i: u32) -> f32 {
+    unsafe fn score_point_neon(&self, query: &EncodedQueryPQ, centroids: &[u8]) -> f32 {
         unsafe {
-            let centroids = self
-                .encoded_vectors
-                .get_vector_data(i as usize, self.metadata.vector_division.len());
             let len = centroids.len();
             let centroids_count = self.metadata.centroids.len();
 
@@ -414,10 +410,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         }
     }
 
-    fn score_point_simple(&self, query: &EncodedQueryPQ, i: u32) -> f32 {
-        let centroids = self
-            .encoded_vectors
-            .get_vector_data(i as usize, self.metadata.vector_division.len());
+    fn score_point_simple(&self, query: &EncodedQueryPQ, centroids: &[u8]) -> f32 {
         let len = centroids.len();
         let centroids_count = self.metadata.centroids.len();
 
@@ -506,21 +499,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     }
 
     fn score_point(&self, query: &EncodedQueryPQ, i: u32, hw_counter: &HardwareCounterCell) -> f32 {
-        hw_counter
-            .cpu_counter()
-            .incr_delta(self.metadata.vector_division.len());
+        let centroids = self
+            .encoded_vectors
+            .get_vector_data(i as usize, self.metadata.vector_division.len());
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("sse4.1") {
-            return unsafe { self.score_point_sse(query, i) };
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        if std::arch::is_aarch64_feature_detected!("neon") {
-            return unsafe { self.score_point_neon(query, i) };
-        }
-
-        self.score_point_simple(query, i)
+        self.score_point_vs_bytes(query, centroids, hw_counter)
     }
 
     /// Score two points inside endoded data by their indexes
@@ -578,5 +561,30 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     fn encode_internal_vector(&self, _id: u32) -> Option<EncodedQueryPQ> {
         // We cannot create query in PQ from quantized vector without LUT accuracy loss
         None
+    }
+}
+
+impl<TStorage: EncodedStorage> EncodedVectorsBytes for EncodedVectorsPQ<TStorage> {
+    fn score_point_vs_bytes(
+        &self,
+        query: &Self::EncodedQuery,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        hw_counter
+            .cpu_counter()
+            .incr_delta(self.metadata.vector_division.len());
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if is_x86_feature_detected!("sse4.1") {
+            return unsafe { self.score_point_sse(query, bytes) };
+        }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            return unsafe { self.score_point_neon(query, bytes) };
+        }
+
+        self.score_point_simple(query, bytes)
     }
 }
