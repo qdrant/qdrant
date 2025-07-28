@@ -15,9 +15,9 @@ fi
 
 export COVERAGE=1
 
-poetry -C tests run ./tests/integration-tests.sh # generates qdrant-openapi-*.profraw files
-poetry -C tests run ./tests/integration-tests.sh distributed # generates qdrant-openapi-*.profraw files
-poetry -C tests run pytest tests/consensus_tests --durations=10 # generates qdrant-consensus-tests-*.profraw files
+poetry --project tests run bash ./tests/integration-tests.sh # generates qdrant-openapi-*.profraw files
+poetry --project tests run bash ./tests/integration-tests.sh distributed # generates qdrant-openapi-*.profraw files
+poetry --project tests run pytest tests/consensus_tests --durations=10 # generates qdrant-consensus-tests-*.profraw files
 
 # Merges all the .profraw files into a single .profdata file and generates the lcov report
 cargo llvm-cov report --lcov --output-path integration-test-coverage.lcov
