@@ -81,11 +81,13 @@ impl ExpressionInternal {
                 ParsedExpression::new_geo_distance(origin, to)
             }
             ExpressionInternal::Datetime(dt_str) => {
-                ParsedExpression::Datetime(DatetimeExpression::Constant(
-                    dt_str
-                        .parse()
-                        .map_err(|err: chrono::ParseError| err.to_string())?,
-                ))
+                ParsedExpression::Datetime(DatetimeExpression::Constant(dt_str.parse().map_err(
+                    |err: chrono::ParseError| {
+                        CollectionError::bad_input(format!(
+                            "failed to parse date-time {dt_str:?}: {err}"
+                        ))
+                    },
+                )?))
             }
             ExpressionInternal::DatetimeKey(json_path) => {
                 payload_vars.insert(json_path.clone());
