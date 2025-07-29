@@ -82,7 +82,7 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
             flags.get(i)
         };
 
-        (0..len as u32).filter_map(move |i| is_true(i).then_some(i))
+        (0..len as u32).filter(move |i| is_true(*i))
     }
 
     /// Iterate over all "false" flags, considering pending updates.
@@ -100,7 +100,7 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
             !flags.get(i)
         };
 
-        (0..len as u32).filter_map(move |i| is_false(i).then_some(i))
+        (0..len as u32).filter(move |i| is_false(*i))
     }
 
     /// Removes from `pending_updates` all results that are flushed.
@@ -124,7 +124,7 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
             let mut flags_write = flags.write();
 
             // First, determine if we need to resize
-            let required_len = cached_len as usize;
+            let required_len = cached_len;
             if required_len > flags_write.len() {
                 flags_write.set_len(required_len)?;
             }
