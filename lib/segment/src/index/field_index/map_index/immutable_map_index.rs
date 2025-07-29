@@ -18,7 +18,7 @@ use rocksdb::DB;
 #[cfg(feature = "rocksdb")]
 use super::MapIndex;
 use super::mmap_map_index::MmapMapIndex;
-use super::{IdIter, IdRefIter, MapIndexKey};
+use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 #[cfg(feature = "rocksdb")]
@@ -514,12 +514,12 @@ where
         self.value_to_points.keys().map(move |k| {
             (
                 k.borrow(),
-                Box::new(self.get_iterator(k.borrow()).copied()) as IdIter,
+                Box::new(self.get_iterator(k.borrow())) as IdIter,
             )
         })
     }
 
-    pub fn get_iterator(&self, value: &N) -> IdRefIter<'_> {
+    pub fn get_iterator(&self, value: &N) -> IdIter<'_> {
         if let Some(entry) = self.value_to_points.get(value) {
             let range = entry.range.start as usize..entry.range.end as usize;
 
@@ -534,11 +534,11 @@ where
                 .iter()
                 .zip(deleted_flags)
                 .filter(|(_, is_deleted)| !is_deleted)
-                .map(|(idx, _)| idx);
+                .map(|(idx, _)| *idx);
 
             Box::new(values)
         } else {
-            Box::new(iter::empty::<&PointOffsetType>())
+            Box::new(iter::empty::<PointOffsetType>())
         }
     }
 
