@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
-use std::hash::Hash;
+use std::hash::{self, Hash};
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -1897,11 +1897,31 @@ impl Validate for PayloadSchemaParams {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(Clone, Debug, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
+}
+
+impl PartialEq for PayloadFieldSchema {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::FieldType(this), Self::FieldType(other)) => this == other,
+            (Self::FieldParams(this), Self::FieldParams(other)) => this == other,
+            (Self::FieldType(this), Self::FieldParams(other)) => &this.expand() == other,
+            (Self::FieldParams(this), Self::FieldType(other)) => this == &other.expand(),
+        }
+    }
+}
+
+impl hash::Hash for PayloadFieldSchema {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        match self {
+            PayloadFieldSchema::FieldType(default) => default.expand().hash(state),
+            PayloadFieldSchema::FieldParams(params) => params.hash(state),
+        }
+    }
 }
 
 impl Validate for PayloadFieldSchema {
@@ -2028,14 +2048,18 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
             params,
             points: _,
         } = index_info;
+
         match params {
-            Some(params) if params.kind() == data_type => {
+            None => Ok(PayloadFieldSchema::FieldType(data_type)),
+
+            Some(params) if data_type == params.kind() => {
                 Ok(PayloadFieldSchema::FieldParams(params))
             }
-            Some(_) => Err(format!(
-                "Payload field with type {data_type:?} has unexpected params"
+
+            Some(params) => Err(format!(
+                "payload field with type {data_type:?} has parameters of type {:?}",
+                params.kind(),
             )),
-            None => Ok(PayloadFieldSchema::FieldType(data_type)),
         }
     }
 }
