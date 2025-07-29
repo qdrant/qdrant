@@ -96,6 +96,12 @@ where
         self.quantized_data
             .score_internal(point_a, point_b, &self.hardware_counter)
     }
+
+    type SupportsBytes = TEncodedVectors::SupportsBytes;
+    fn score_bytes(&self, enabled: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
+        self.quantized_data
+            .score_bytes(enabled, &self.query, bytes, &self.hardware_counter)
+    }
 }
 
 impl<TEncodedVectors> QueryScorerBytes for QuantizedQueryScorer<'_, TEncodedVectors>

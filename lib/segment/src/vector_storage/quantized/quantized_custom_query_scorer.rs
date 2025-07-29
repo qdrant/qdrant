@@ -108,6 +108,14 @@ where
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer compares against multiple vectors, not just one")
     }
+
+    type SupportsBytes = TEncodedVectors::SupportsBytes;
+    fn score_bytes(&self, enabled: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
+        self.query.score_by(|this| {
+            self.quantized_storage
+                .score_bytes(enabled, this, bytes, &self.hardware_counter)
+        })
+    }
 }
 
 impl<TElement, TMetric, TEncodedVectors, TQuery> QueryScorerBytes

@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 
 use super::score_multi;
@@ -137,5 +138,10 @@ impl<
             .incr_delta(v1.vectors_count() + v2.vectors_count());
 
         self.score_multi(v1, v2)
+    }
+
+    type SupportsBytes = False;
+    fn score_bytes(&self, enabled: Self::SupportsBytes, _: &[u8]) -> ScoreType {
+        match enabled {}
     }
 }

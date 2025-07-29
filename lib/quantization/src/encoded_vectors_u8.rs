@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::True;
 use common::types::PointOffsetType;
 use io::file_operations::atomic_save_json;
 use memory::mmap_type::MmapFlusher;
@@ -561,6 +562,81 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
 
     fn flusher(&self) -> MmapFlusher {
         self.encoded_vectors.flusher()
+    }
+
+    type SupportsBytes = True;
+    fn score_bytes(
+        &self,
+        _: Self::SupportsBytes,
+        query: &Self::EncodedQuery,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        hw_counter
+            .cpu_counter()
+            .incr_delta(self.metadata.vector_parameters.dim);
+
+        debug_assert!(bytes.len() >= std::mem::size_of::<f32>() + self.metadata.actual_dim);
+
+        let (vector_offset, v_ptr) = Self::parse_vec_data(bytes);
+        let q_ptr = query.encoded_query.as_ptr();
+
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            unsafe {
+                let score = match self.metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::L2 => {
+                        impl_score_dot_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                    DistanceType::L1 => {
+                        impl_score_l1_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                };
+
+                return self.metadata.multiplier * score + query.offset + vector_offset;
+            }
+        }
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if is_x86_feature_detected!("sse4.1") {
+            unsafe {
+                let score = match self.metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::L2 => {
+                        impl_score_dot_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                    DistanceType::L1 => {
+                        impl_score_l1_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                };
+
+                return self.metadata.multiplier * score + query.offset + vector_offset;
+            }
+        }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            unsafe {
+                let score = match self.metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::L2 => {
+                        impl_score_dot_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                    DistanceType::L1 => {
+                        impl_score_l1_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                };
+
+                return self.metadata.multiplier * score + query.offset + vector_offset;
+            }
+        }
+
+        let score = match self.metadata.vector_parameters.distance_type {
+            DistanceType::Dot | DistanceType::L2 => {
+                impl_score_dot(q_ptr, v_ptr, self.metadata.actual_dim)
+            }
+            DistanceType::L1 => impl_score_l1(q_ptr, v_ptr, self.metadata.actual_dim),
+        };
+
+        self.metadata.multiplier * score as f32 + query.offset + vector_offset
     }
 }
 

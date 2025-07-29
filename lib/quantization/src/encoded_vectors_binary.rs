@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::True;
 use common::types::PointOffsetType;
 use io::file_operations::atomic_save_json;
 use memory::mmap_ops::{transmute_from_u8_to_slice, transmute_to_u8_slice};
@@ -937,6 +938,35 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
     fn flusher(&self) -> MmapFlusher {
         self.encoded_vectors.flusher()
+    }
+
+    type SupportsBytes = True;
+    fn score_bytes(
+        &self,
+        _: Self::SupportsBytes,
+        query: &Self::EncodedQuery,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        let vector_data_usize = transmute_from_u8_to_slice(bytes);
+
+        hw_counter.cpu_counter().incr_delta(bytes.len());
+
+        match query {
+            EncodedQueryBQ::Binary(encoded_vector) => {
+                self.calculate_metric(vector_data_usize, &encoded_vector.encoded_vector, 1)
+            }
+            EncodedQueryBQ::Scalar8bits(encoded_vector) => self.calculate_metric(
+                vector_data_usize,
+                &encoded_vector.encoded_vector,
+                u8::BITS as usize,
+            ),
+            EncodedQueryBQ::Scalar4bits(encoded_vector) => self.calculate_metric(
+                vector_data_usize,
+                &encoded_vector.encoded_vector,
+                u8::BITS as usize / 2,
+            ),
+        }
     }
 }
 
