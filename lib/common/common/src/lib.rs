@@ -24,6 +24,7 @@ pub mod stable_hash;
 pub mod tar_ext;
 pub mod tempfile_ext;
 pub mod top_k;
+pub mod typelevel;
 pub mod types;
 pub mod validation;
 pub mod zeros;
