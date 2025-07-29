@@ -12,6 +12,7 @@ use super::query::{
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::query_scorer::multi_custom_query_scorer::MultiCustomQueryScorer;
 use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
+use super::query_scorer::{QueryScorerBytes, QueryScorerBytesImpl};
 use super::{DenseVectorStorage, MultiVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -40,6 +41,9 @@ pub trait RawScorer {
     ///
     /// Panics if any id is out of range
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
+
+    /// Return [`QueryScorerBytes`] if the underlying scorer supports it
+    fn scorer_bytes(&self) -> Option<&dyn QueryScorerBytes>;
 }
 
 pub struct RawScorerImpl<TQueryScorer: QueryScorer> {
@@ -432,6 +436,10 @@ impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.query_scorer.score_internal(point_a, point_b)
+    }
+
+    fn scorer_bytes(&self) -> Option<&dyn QueryScorerBytes> {
+        QueryScorerBytesImpl::new(&self.query_scorer).map(|s| s as _)
     }
 }
 
