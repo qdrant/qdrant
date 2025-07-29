@@ -99,6 +99,8 @@ impl FromStr for DateTimePayloadType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Attempt to parse the input string in RFC 3339 format
         if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(s)
+            // Attempt to parse default to-string format
+            .or_else(|_| chrono::DateTime::from_str(s))
             // Attempt to parse the input string in the specified formats:
             // - YYYY-MM-DD'T'HH:MM:SS-HHMM (timezone without colon)
             // - YYYY-MM-DD HH:MM:SS-HHMM (timezone without colon)
@@ -3529,6 +3531,13 @@ mod tests {
 
         // Having or not the Z at the end of the string both mean UTC time
         assert_eq!(datetime.timestamp(), datetime_no_z.timestamp());
+    }
+
+    #[test]
+    fn test_datetime_wrapper_transcoding() {
+        let expected = DateTimeWrapper(chrono::Utc::now());
+        let transcoded = DateTimeWrapper::from_str(&expected.to_string()).unwrap();
+        assert_eq!(expected, transcoded);
     }
 
     #[test]
