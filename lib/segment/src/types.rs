@@ -3510,6 +3510,13 @@ mod tests {
     }
 
     #[test]
+    fn test_datetime_wrapper_transcoding() {
+        let expected = DateTimeWrapper(chrono::Utc::now());
+        let transcoded = DateTimeWrapper::from_str(&expected.to_string()).unwrap();
+        assert_eq!(expected, transcoded);
+    }
+
+    #[test]
     fn test_timezone_ordering() {
         let datetimes = [
             "2000-06-08 00:18:53+0900",
