@@ -133,7 +133,7 @@ def test_partial_snapshot_not_modified(tmp_path: pathlib.Path):
     assert_project_root()
 
     peer = bootstrap_peer(tmp_path, 6331)
-    bootstrap_collection(peer, 1_000)
+    bootstrap_collection(peer, bootstrap_points = 1_000)
 
     resp = create_partial_snapshot(peer, manifest = get_snapshot_manifest(peer))
     assert resp.status_code == 304
