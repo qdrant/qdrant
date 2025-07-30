@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::sync::Arc;
@@ -10,18 +9,13 @@ use collection::operations::point_ops::VectorPersisted;
 use itertools::{Either, Itertools};
 use parking_lot::RwLock;
 use reqwest::Client;
-use serde::de::IntoDeserializer;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use storage::content_manager::errors::StorageError;
 
-use super::bm25::{Bm25, Bm25Config};
+pub use super::inference_input::InferenceInput;
+use super::local_model;
 use crate::common::inference::InferenceToken;
 use crate::common::inference::config::InferenceConfig;
-
-const DOCUMENT_DATA_TYPE: &str = "text";
-const IMAGE_DATA_TYPE: &str = "image";
-const OBJECT_DATA_TYPE: &str = "object";
 
 #[derive(Debug, Serialize, Default, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
@@ -43,35 +37,6 @@ pub struct InferenceRequest {
     pub(crate) inference: Option<InferenceType>,
     #[serde(default)]
     pub(crate) token: Option<String>,
-}
-
-#[derive(Debug, Serialize, Clone)]
-pub struct InferenceInput {
-    data: Value,
-    data_type: String,
-    model: String,
-    options: Option<HashMap<String, Value>>,
-}
-
-impl InferenceInput {
-    /// Tries to parse the input's options into BM25 config and returns Ok(Some(..)) if found and Ok(None) if not.
-    ///
-    /// Returns an error if bm25 has been explicitly enabled but the options could not be deserialized properly into bm25 config.
-    pub fn try_parse_bm25_config(&self) -> Result<Option<Bm25Config>, StorageError> {
-        let Some(options) = self.options.as_ref() else {
-            return Ok(None);
-        };
-
-        if options.get("use_bm25") != Some(&Value::Bool(true))
-            && options.get("use_bm25") != Some(&Value::String("true".to_string()))
-        {
-            return Ok(None);
-        }
-
-        Bm25Config::deserialize(options.clone().into_deserializer())
-            .map_err(|err| StorageError::bad_input(format!("Invalid BM25 config: {err:#?}")))
-            .map(Some)
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,52 +64,6 @@ impl InferenceData {
             InferenceData::Document(_) => "document",
             InferenceData::Image(_) => "image",
             InferenceData::Object(_) => "object",
-        }
-    }
-}
-
-impl From<InferenceData> for InferenceInput {
-    fn from(value: InferenceData) -> Self {
-        match value {
-            InferenceData::Document(doc) => {
-                let Document {
-                    text,
-                    model,
-                    options,
-                } = doc;
-                InferenceInput {
-                    data: Value::String(text),
-                    data_type: DOCUMENT_DATA_TYPE.to_string(),
-                    model: model.to_string(),
-                    options: options.options,
-                }
-            }
-            InferenceData::Image(img) => {
-                let Image {
-                    image,
-                    model,
-                    options,
-                } = img;
-                InferenceInput {
-                    data: image,
-                    data_type: IMAGE_DATA_TYPE.to_string(),
-                    model: model.to_string(),
-                    options: options.options,
-                }
-            }
-            InferenceData::Object(obj) => {
-                let InferenceObject {
-                    object,
-                    model,
-                    options,
-                } = obj;
-                InferenceInput {
-                    data: object,
-                    data_type: OBJECT_DATA_TYPE.to_string(),
-                    model: model.to_string(),
-                    options: options.options,
-                }
-            }
         }
     }
 }
@@ -205,42 +124,28 @@ impl InferenceService {
         inference_type: InferenceType,
         inference_token: InferenceToken,
     ) -> Result<InferenceResponse, StorageError> {
-        let (bm25_inference_inputs, inference_inputs): (Vec<_>, Vec<_>) = inference_inputs
+        let (local_inference_inputs, (remote_inference_inputs, remote_inference_positions)): (
+            Vec<_>,
+            (Vec<_>, Vec<_>),
+        ) = inference_inputs
             .into_iter()
             // Keep track of the input's positions so we can properly merge them together later.
             .enumerate()
             .partition_map(|(pos, input)| {
-                // Check if input is targeting a bm25 model or the configured remote server.
-                if let Some(bm_25_config) = input.try_parse_bm25_config().transpose() {
-                    Either::Left(PositionItem::new((input, bm_25_config), pos))
+                // Check if input is targeting a local model or the configured remote server.
+                if let Some(local_model) = input.try_parse_local_model_input().transpose() {
+                    Either::Left(PositionItem::new((input, local_model), pos))
                 } else {
-                    Either::Right(PositionItem::new(input, pos))
+                    Either::Right((input, pos))
                 }
             });
 
-        let bm25_results: Vec<_> = bm25_inference_inputs
-            .into_iter()
-            .map(|item| -> Result<_, StorageError> {
-                let (input, bm25_config) = item.item;
-                let bm25_config = bm25_config?;
-                let input_str = input.data.as_str().ok_or_else(|| {
-                    StorageError::service_error(
-                        "Only strings supported as text type in BM25 inference!",
-                    )
-                })?;
-                let bm25 = Bm25::new(bm25_config);
-                let embedding = match inference_type {
-                    InferenceType::Update => bm25.doc_embed(input_str),
-                    InferenceType::Search => bm25.search_embed(input_str),
-                };
-                Ok(PositionItem::new(embedding, item.position))
-            })
-            .collect::<Result<_, _>>()?;
+        let local_model_results = local_model::embed_many(local_inference_inputs, inference_type)?;
 
-        // Early return with bm25 results if no other inference_inputs were passed.
-        // If Bm25 is also empty, we automatically return an empty response here.
-        if inference_inputs.is_empty() {
-            let embeddings = bm25_results.into_iter().map(|i| i.item).collect();
+        // Early return with the local model's results if no other inference_inputs were passed.
+        // If local models is also empty, we automatically return an empty response here.
+        if remote_inference_inputs.is_empty() {
+            let embeddings = local_model_results.into_iter().map(|i| i.item).collect();
 
             return Ok(InferenceResponse {
                 embeddings,
@@ -260,13 +165,8 @@ impl InferenceService {
             )
         })?;
 
-        let (remote_pos, inference_inputs): (Vec<_>, Vec<_>) = inference_inputs
-            .into_iter()
-            .map(|i| (i.position, i.item))
-            .unzip();
-
         let request = InferenceRequest {
-            inputs: inference_inputs,
+            inputs: remote_inference_inputs,
             inference: Some(inference_type),
             token,
         };
@@ -297,37 +197,39 @@ impl InferenceService {
         };
 
         let remote_res = Self::handle_inference_response(status, &response_body)?;
-        Ok(Self::merge_bm25_and_remote_result(
-            bm25_results,
+
+        Ok(Self::merge_local_and_remote_result(
+            local_model_results,
             remote_res,
-            remote_pos,
+            remote_inference_positions,
         ))
     }
 
-    fn merge_bm25_and_remote_result(
-        bm25_results: Vec<PositionItem<VectorPersisted>>,
+    fn merge_local_and_remote_result(
+        local_results: Vec<PositionItem<VectorPersisted>>,
         remote_res: InferenceResponse,
         remote_pos: Vec<usize>,
     ) -> InferenceResponse {
-        // Skip merging with bm25 if we only have inference results from remote.
-        if bm25_results.is_empty() {
+        // Skip merging with local results if we only have inference results from remote.
+        if local_results.is_empty() {
             return remote_res;
         }
 
-        // Wrap remote items in `PositionItem`s because they need to be merged with bm25 results in the same order they have initially been passed.
+        // Wrap remote items in `PositionItem`s because they need to be merged with local results in the same order they have initially been passed.
         let remote_items_iter = remote_res
             .embeddings
             .into_iter()
             .zip(remote_pos)
             .map(|(item, pos)| PositionItem::new(item, pos));
 
-        // Merge remote results and local (bm25) results together in the exact same order they have been passed.
-        let merged = merge_position_items(bm25_results, remote_items_iter)
-            .expect("Expected bm25 and remote items being continguous. This is an internal bug");
+        // Merge remote results and local results together in the exact same order they have been passed.
+        let merged = merge_position_items(local_results, remote_items_iter).expect(
+            "Expected local results and remote items being contiguous. This is an internal bug!",
+        );
 
         InferenceResponse {
             embeddings: merged,
-            usage: remote_res.usage, // Only account for usage of remote since BM25 is processed locally and doesn't need to be measured.
+            usage: remote_res.usage, // Only account for usage of remote.
         }
     }
 
@@ -390,9 +292,9 @@ impl InferenceService {
 }
 
 /// Any kind of value that has an index assigned.
-struct PositionItem<I> {
-    item: I,
-    position: usize,
+pub(super) struct PositionItem<I> {
+    pub item: I,
+    pub position: usize,
 }
 
 impl<I> PositionItem<I> {
@@ -422,12 +324,15 @@ fn merge_position_items<I>(
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
     use rand::{Rng, SeedableRng};
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use super::*;
+    use crate::common::inference::bm25::{Bm25, Bm25Config};
 
     #[test]
     fn test_merge_position_items() {
@@ -519,13 +424,22 @@ mod test {
         assert_eq!(inputs.len(), response.embeddings.len());
 
         for (idx, (input, response)) in inputs.into_iter().zip(response.embeddings).enumerate() {
-            let is_bm25 = input.try_parse_bm25_config().ok().flatten().is_some();
+            let is_bm25 = input
+                .try_parse_local_model_input()
+                .ok()
+                .flatten()
+                .is_some_and(|i| i.is_bm25());
 
             if is_bm25 {
                 // In our test-setup, only BM25 returns sparse vectors. Normal inference is mocked
                 // and always returns dense vectors.
                 assert!(matches!(response, VectorPersisted::Sparse(..)));
-                let bm25_config = input.try_parse_bm25_config().unwrap().unwrap();
+                let bm25_config = input
+                    .try_parse_local_model_input()
+                    .ok()
+                    .flatten()
+                    .and_then(|i| i.as_bm25().cloned())
+                    .unwrap();
 
                 // Re-run bm25 and check that response is correct.
                 let bm25 = Bm25::new(bm25_config).doc_embed(input.data.as_str().unwrap());
@@ -549,7 +463,7 @@ mod test {
         let expected_embeddings: Vec<_> = inference_inputs
             .iter()
             .enumerate()
-            .filter(|(_, item)| item.try_parse_bm25_config().ok().flatten().is_none())
+            .filter(|(_, item)| item.try_parse_local_model_input().ok().flatten().is_none())
             .map(|(index, _)| {
                 let values = vec![0.0; index];
                 VectorPersisted::Dense(values)
@@ -581,7 +495,7 @@ mod test {
 
         let has_remote_inference_items = inference_inputs
             .iter()
-            .any(|i| i.try_parse_bm25_config().ok().flatten().is_none());
+            .any(|i| i.try_parse_local_model_input().ok().flatten().is_none());
 
         let res = service
             .infer(

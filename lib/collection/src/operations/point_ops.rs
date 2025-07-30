@@ -17,6 +17,7 @@ use segment::data_types::vectors::{
 };
 use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
+use sparse::common::types::{DimId, DimWeight};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::{Validate, ValidationErrors};
 
@@ -59,7 +60,7 @@ pub enum VectorPersisted {
 }
 
 impl VectorPersisted {
-    pub fn new_sparse(indices: Vec<u32>, values: Vec<f32>) -> Self {
+    pub fn new_sparse(indices: Vec<DimId>, values: Vec<DimWeight>) -> Self {
         Self::Sparse(sparse::common::sparse_vector::SparseVector { indices, values })
     }
 

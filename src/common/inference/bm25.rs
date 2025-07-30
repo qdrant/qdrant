@@ -23,13 +23,13 @@ pub struct Bm25Config {
     pub avg_len: f64,
     #[serde(default)]
     pub tokenizer: TokenizerType,
-    #[serde(default)]
-    pub tokenizer_config: Option<InferenceTokenizerConfig>,
+    #[serde(default, flatten)]
+    pub text_preprocessing_config: Option<TextPreprocessingConfig>,
 }
 
 /// Bm25 tokenizer configurations.
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct InferenceTokenizerConfig {
+pub struct TextPreprocessingConfig {
     #[serde(default)]
     pub lowercase: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -59,7 +59,7 @@ impl Default for Bm25Config {
             b: default_b(),
             avg_len: default_avg_len(),
             tokenizer: Default::default(),
-            tokenizer_config: Default::default(),
+            text_preprocessing_config: Default::default(),
         }
     }
 }
@@ -73,7 +73,7 @@ pub struct Bm25 {
 
 impl Bm25 {
     pub fn new(mut config: Bm25Config) -> Self {
-        let tokenizer_conf = std::mem::take(&mut config.tokenizer_config);
+        let tokenizer_conf = std::mem::take(&mut config.text_preprocessing_config);
         let tokenizer_config = TokenizerConfig::from(tokenizer_conf.unwrap_or_default());
         let tokenizer = Tokenizer::new(config.tokenizer, tokenizer_config);
         Self { config, tokenizer }
@@ -147,8 +147,8 @@ impl Bm25 {
     }
 }
 
-impl From<InferenceTokenizerConfig> for TokenizerConfig {
-    fn from(value: InferenceTokenizerConfig) -> Self {
+impl From<TextPreprocessingConfig> for TokenizerConfig {
+    fn from(value: TextPreprocessingConfig) -> Self {
         Self {
             lowercase: value.lowercase,
             stopwords_filter: Arc::new(StopwordsFilter::new(
