@@ -2565,7 +2565,7 @@ The JSON representation for `Value` is a JSON value.
 | x | [Expression](#qdrant-Expression) |  | The variable to decay |
 | target | [Expression](#qdrant-Expression) | optional | The target value to start decaying from. Defaults to 0. |
 | scale | [float](#float) | optional | The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number. |
-| midpoint | [float](#float) | optional | The midpoint of the decay. Defaults to 0.5. Output will be this value when `|x - target| == scale`. |
+| midpoint | [float](#float) | optional | The midpoint of the decay. Should be between 0 and 1. Defaults to 0.5. Output will be this value when `|x - target| == scale`. |
 
 
 

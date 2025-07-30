@@ -823,7 +823,7 @@ pub struct DecayParamsExpression {
     pub target: Option<Box<Expression>>,
     /// The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
     pub scale: Option<f32>,
-    /// The midpoint of the decay. Defaults to 0.5. Output will be this value when `|x - target| == scale`.
+    /// The midpoint of the decay. Should be between 0 and 1.Defaults to 0.5. Output will be this value when `|x - target| == scale`.
     pub midpoint: Option<f32>,
 }
 

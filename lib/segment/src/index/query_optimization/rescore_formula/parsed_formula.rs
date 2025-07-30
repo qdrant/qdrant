@@ -170,10 +170,21 @@ impl ParsedExpression {
         let midpoint = PreciseScore::from(midpoint.unwrap_or(DEFAULT_DECAY_MIDPOINT));
         let scale = PreciseScore::from(scale.unwrap_or(DEFAULT_DECAY_SCALE));
 
-        if midpoint <= 0.0 || midpoint >= 1.0 {
-            return Err(OperationError::validation_error(format!(
-                "Decay midpoint should be between 0.0 and 1.0 (exclusive), got {midpoint}."
-            )));
+        match kind {
+            DecayKind::Lin => {
+                if midpoint < 0.0 || midpoint > 1.0 {
+                    return Err(OperationError::validation_error(format!(
+                        "Decay midpoint should be between 0.0 (inclusive) and 1.0 (exclusive), got {midpoint}."
+                    )));
+                }
+            }
+            DecayKind::Gauss | DecayKind::Exp => {
+                if midpoint <= 0.0 || midpoint >= 1.0 {
+                    return Err(OperationError::validation_error(format!(
+                        "Decay midpoint should be between 0.0 and 1.0 (exclusive), got {midpoint}."
+                    )));
+                }
+            }
         }
 
         if scale <= 0.0 {
