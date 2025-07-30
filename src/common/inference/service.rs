@@ -124,35 +124,52 @@ impl InferenceService {
         inference_type: InferenceType,
         inference_token: InferenceToken,
     ) -> Result<InferenceResponse, StorageError> {
-        let (local_inference_inputs, (remote_inference_inputs, remote_inference_positions)): (
-            Vec<_>,
-            (Vec<_>, Vec<_>),
-        ) = inference_inputs
+        let (
+            (local_inference_inputs, local_inference_positions),
+            (remote_inference_inputs, remote_inference_positions),
+        ): ((Vec<_>, Vec<_>), (Vec<_>, Vec<_>)) = inference_inputs
             .into_iter()
             // Keep track of the input's positions so we can properly merge them together later.
             .enumerate()
             .partition_map(|(pos, input)| {
                 // Check if input is targeting a local model or the configured remote server.
-                if let Some(local_model) = input.try_parse_local_model_input().transpose() {
-                    Either::Left(PositionItem::new((input, local_model), pos))
+                if local_model::is_local_model(&input.model) {
+                    Either::Left((input, pos))
                 } else {
                     Either::Right((input, pos))
                 }
             });
 
-        let local_model_results = local_model::embed_many(local_inference_inputs, inference_type)?;
+        // Run inference on local models
+        let local_model_results = local_model::infer_local(local_inference_inputs, inference_type)?;
 
         // Early return with the local model's results if no other inference_inputs were passed.
         // If local models is also empty, we automatically return an empty response here.
         if remote_inference_inputs.is_empty() {
-            let embeddings = local_model_results.into_iter().map(|i| i.item).collect();
-
             return Ok(InferenceResponse {
-                embeddings,
+                embeddings: local_model_results,
                 usage: None, // No usage since everything was processed locally.
             });
         }
 
+        let remote_result = self
+            .infer_remote(remote_inference_inputs, inference_type, inference_token)
+            .await?;
+
+        Ok(Self::merge_local_and_remote_result(
+            local_model_results,
+            local_inference_positions,
+            remote_result,
+            remote_inference_positions,
+        ))
+    }
+
+    async fn infer_remote(
+        &self,
+        inference_inputs: Vec<InferenceInput>,
+        inference_type: InferenceType,
+        inference_token: InferenceToken,
+    ) -> Result<InferenceResponse, StorageError> {
         // Assume that either:
         // - User doesn't have access to generating random JWT tokens (like in serverless)
         // - Inference server checks validity of the tokens.
@@ -166,7 +183,7 @@ impl InferenceService {
         })?;
 
         let request = InferenceRequest {
-            inputs: remote_inference_inputs,
+            inputs: inference_inputs,
             inference: Some(inference_type),
             token,
         };
@@ -196,17 +213,12 @@ impl InferenceService {
             }
         };
 
-        let remote_res = Self::handle_inference_response(status, &response_body)?;
-
-        Ok(Self::merge_local_and_remote_result(
-            local_model_results,
-            remote_res,
-            remote_inference_positions,
-        ))
+        Self::handle_inference_response(status, &response_body)
     }
 
     fn merge_local_and_remote_result(
-        local_results: Vec<PositionItem<VectorPersisted>>,
+        local_results: Vec<VectorPersisted>,
+        local_pos: Vec<usize>,
         remote_res: InferenceResponse,
         remote_pos: Vec<usize>,
     ) -> InferenceResponse {
@@ -215,15 +227,14 @@ impl InferenceService {
             return remote_res;
         }
 
-        // Wrap remote items in `PositionItem`s because they need to be merged with local results in the same order they have initially been passed.
-        let remote_items_iter = remote_res
-            .embeddings
-            .into_iter()
-            .zip(remote_pos)
-            .map(|(item, pos)| PositionItem::new(item, pos));
-
         // Merge remote results and local results together in the exact same order they have been passed.
-        let merged = merge_position_items(local_results, remote_items_iter).expect(
+        let merged = merge_position_items(
+            local_results,
+            local_pos,
+            remote_res.embeddings,
+            remote_pos,
+        )
+        .expect(
             "Expected local results and remote items being contiguous. This is an internal bug!",
         );
 
@@ -291,30 +302,23 @@ impl InferenceService {
     }
 }
 
-/// Any kind of value that has an index assigned.
-pub(super) struct PositionItem<I> {
-    pub item: I,
-    pub position: usize,
-}
-
-impl<I> PositionItem<I> {
-    pub fn new(item: I, position: usize) -> Self {
-        Self { item, position }
-    }
-}
-
 /// 2-way merge of lists with `PositionItems`. Also checks for skipped items and returns `None` in case an item is left out.
 fn merge_position_items<I>(
-    left: Vec<PositionItem<I>>,
-    right: impl IntoIterator<Item = PositionItem<I>>,
+    left: impl IntoIterator<Item = I>,
+    left_pos: Vec<usize>,
+    right: impl IntoIterator<Item = I>,
+    right_pos: Vec<usize>,
 ) -> Option<Vec<I>> {
+    let left_iter = left.into_iter().zip(left_pos);
+    let right_iter = right.into_iter().zip(right_pos);
+
     let mut i = 0; // Check that we cover all items and don't skip any.
-    left.into_iter()
-        .merge_by(right, |l, r| l.position < r.position)
+    left_iter
+        .merge_by(right_iter, |l: &(I, usize), r: &(I, usize)| l.1 < r.1)
         .map(|item| {
-            if item.position == i {
+            if item.1 == i {
                 i += 1;
-                Some(item.item)
+                Some(item.0)
             } else {
                 None
             }
@@ -333,23 +337,26 @@ mod test {
 
     use super::*;
     use crate::common::inference::bm25::{Bm25, Bm25Config};
+    use crate::common::inference::local_model::BM25_LOCAL_MODEL_NAME;
 
     #[test]
     fn test_merge_position_items() {
-        let (left, right): (Vec<_>, Vec<_>) = (0..1000)
-            .map(|i| PositionItem::new(i, i))
-            .partition(|i| i.item % 7 == 0);
-        let merged = merge_position_items(left, right);
+        let (left, right): ((Vec<_>, Vec<_>), (Vec<_>, Vec<_>)) =
+            (0..1000).map(|i| (i, i)).partition(|i| i.0 % 7 == 0);
+        let merged = merge_position_items(left.0, left.1, right.0, right.1);
         assert_eq!(merged, Some((0..1000).collect::<Vec<_>>()));
     }
 
     #[test]
     fn test_merge_position_items_fail() {
-        let (left, mut right): (Vec<_>, Vec<_>) = (0..1000)
-            .map(|i| PositionItem::new(i, i))
-            .partition(|i| i.item % 7 == 0);
-        right.remove(5);
-        let merged = merge_position_items(left, right);
+        let (left, mut right): ((Vec<_>, Vec<_>), (Vec<_>, Vec<_>)) =
+            (0..1000).map(|i| (i, i)).partition(|i| i.0 % 7 == 0);
+
+        right.0.remove(5);
+        right.1.remove(5);
+
+        let merged = merge_position_items(left.0, left.1, right.0, right.1);
+
         // We were missing an item and therefore expect `None`.
         assert_eq!(merged, None);
     }
@@ -407,15 +414,13 @@ mod test {
     fn make_bm25_inference_input(input: &str) -> InferenceInput {
         let bm25_config = Bm25Config::default();
 
-        let mut options: HashMap<String, Value> =
+        let options: HashMap<String, Value> =
             serde_json::from_str(&serde_json::to_string(&bm25_config).unwrap()).unwrap();
-
-        options.insert("use_bm25".to_string(), Value::Bool(true));
 
         InferenceInput {
             data: Value::String(input.to_string()),
             data_type: "".to_string(),
-            model: "bm25".to_string(),
+            model: BM25_LOCAL_MODEL_NAME.to_string(),
             options: Some(options),
         }
     }
@@ -424,22 +429,11 @@ mod test {
         assert_eq!(inputs.len(), response.embeddings.len());
 
         for (idx, (input, response)) in inputs.into_iter().zip(response.embeddings).enumerate() {
-            let is_bm25 = input
-                .try_parse_local_model_input()
-                .ok()
-                .flatten()
-                .is_some_and(|i| i.is_bm25());
-
-            if is_bm25 {
+            if input.model == BM25_LOCAL_MODEL_NAME {
                 // In our test-setup, only BM25 returns sparse vectors. Normal inference is mocked
                 // and always returns dense vectors.
                 assert!(matches!(response, VectorPersisted::Sparse(..)));
-                let bm25_config = input
-                    .try_parse_local_model_input()
-                    .ok()
-                    .flatten()
-                    .and_then(|i| i.as_bm25().cloned())
-                    .unwrap();
+                let bm25_config = input.parse_bm25_config().unwrap();
 
                 // Re-run bm25 and check that response is correct.
                 let bm25 = Bm25::new(bm25_config).doc_embed(input.data.as_str().unwrap());
@@ -463,7 +457,7 @@ mod test {
         let expected_embeddings: Vec<_> = inference_inputs
             .iter()
             .enumerate()
-            .filter(|(_, item)| item.try_parse_local_model_input().ok().flatten().is_none())
+            .filter(|(_, item)| item.model != BM25_LOCAL_MODEL_NAME)
             .map(|(index, _)| {
                 let values = vec![0.0; index];
                 VectorPersisted::Dense(values)
@@ -495,7 +489,7 @@ mod test {
 
         let has_remote_inference_items = inference_inputs
             .iter()
-            .any(|i| i.try_parse_local_model_input().ok().flatten().is_none());
+            .any(|i| i.model != BM25_LOCAL_MODEL_NAME);
 
         let res = service
             .infer(
