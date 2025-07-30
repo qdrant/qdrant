@@ -1,5 +1,6 @@
 mod resharding;
 pub(crate) mod shard_mapping;
+pub mod snapshot;
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -24,6 +25,7 @@ use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
+use self::snapshot::extract_segment_config;
 use super::replica_set::snapshots::RecoveryType;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardStage, ReshardState};
@@ -957,7 +959,22 @@ impl ShardHolder {
     pub async fn validate_shard_snapshot(&self, snapshot_path: &Path) -> CollectionResult<()> {
         validate_snapshot_archive(snapshot_path)?;
 
-        // TODO: Validate that shard/partial snapshot is compatible with collection config!
+        let _segment_config = match extract_segment_config(snapshot_path) {
+            Ok(segment_config) => segment_config,
+            Err(err) => {
+                log::error!(
+                    "Failed to extract segment config from shard snapshot archive {}: {err}",
+                    snapshot_path.display(),
+                );
+
+                return Err(CollectionError::bad_input(format!(
+                    "failed to read shard snapshot {}",
+                    snapshot_path.display(),
+                )));
+            }
+        };
+
+        // TODO: Validate segment config (extracted from snapshot) is compatible with collection config!
 
         Ok(())
     }
