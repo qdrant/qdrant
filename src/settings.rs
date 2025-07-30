@@ -226,13 +226,24 @@ pub struct Settings {
     pub feature_flags: FeatureFlags,
 }
 
+/// Custom default configuration path which is set at compile time and becomes part of the binary.
+/// If the environment variable is not set, Qdrant will fall back to reading the configuration from `./config/`, as usual.
+///
+/// This allows setting different default configuration paths, such as /etc/qdrant/config.yaml on debian.
+const CUSTOM_CONFIG_PATH_OVERWRITE: Option<&'static str> =
+    option_env!("QDRANT_CONFIG_DEFAULT_PATH_OVERWRITE");
+
 impl Settings {
     pub fn new(custom_config_path: Option<String>) -> Result<Self, ConfigError> {
+        let custom_config_path = custom_config_path
+            .as_deref()
+            .or(CUSTOM_CONFIG_PATH_OVERWRITE);
+
         let mut load_errors = vec![];
         let config_exists = |path| File::with_name(path).collect().is_ok();
 
         // Check if custom config file exists, report error if not
-        if let Some(ref path) = custom_config_path {
+        if let Some(path) = custom_config_path {
             if !config_exists(path) {
                 load_errors.push(LogMsg::Error(format!(
                     "Config file via --config-path is not found: {path}"
@@ -272,7 +283,7 @@ impl Settings {
 
         // Merge user provided config with --config-path
         if let Some(path) = custom_config_path {
-            config = config.add_source(File::with_name(&path).required(false));
+            config = config.add_source(File::with_name(path).required(false));
         }
 
         // Merge environment settings
