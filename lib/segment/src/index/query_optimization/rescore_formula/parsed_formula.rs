@@ -172,7 +172,7 @@ impl ParsedExpression {
 
         match kind {
             DecayKind::Lin => {
-                if midpoint < 0.0 || midpoint > 1.0 {
+                if !(0.0..=1.0).contains(&midpoint) {
                     return Err(OperationError::validation_error(format!(
                         "Decay midpoint should be between 0.0 (inclusive) and 1.0 (exclusive), got {midpoint}."
                     )));
