@@ -386,14 +386,14 @@ mod tests {
         create_graph_layer_builder_fixture, create_graph_layer_fixture,
     };
     use crate::spaces::metric::Metric;
-    use crate::spaces::simple::{CosineMetric, DotProductMetric};
+    use crate::spaces::simple::CosineMetric;
     use crate::types::Distance;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
 
     fn search_in_graph(
         query: &[VectorElementType],
         top: usize,
-        vector_storage: &TestRawScorerProducer<CosineMetric>,
+        vector_storage: &TestRawScorerProducer,
         graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
         let scorer = vector_storage.get_scorer(query.to_owned());
@@ -417,12 +417,7 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(
-            dim,
-            Distance::Dot,
-            num_vectors,
-            &mut rng,
-        );
+        let vector_holder = TestRawScorerProducer::new(dim, Distance::Dot, num_vectors, &mut rng);
 
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
@@ -470,6 +465,7 @@ mod tests {
     #[case::compressed((GraphLinksFormat::Compressed, false))]
     #[case::recompressed((GraphLinksFormat::Compressed, true))]
     fn test_save_and_load(#[case] (initial_format, compress): (GraphLinksFormat, bool)) {
+        let distance = Distance::Cosine;
         let num_vectors = 100;
         let dim = 8;
         let top = 5;
@@ -481,7 +477,7 @@ mod tests {
         let query = random_vector(&mut rng, dim);
 
         let (vector_holder, graph_layers_builder) =
-            create_graph_layer_builder_fixture(num_vectors, M, dim, false, &mut rng);
+            create_graph_layer_builder_fixture(num_vectors, M, dim, false, distance, &mut rng);
         let graph1 = graph_layers_builder
             .into_graph_layers(dir.path(), initial_format, true)
             .unwrap();
@@ -504,15 +500,15 @@ mod tests {
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
     fn test_add_points(#[case] format: GraphLinksFormat) {
+        type M = CosineMetric;
+        let distance = <M as Metric<VectorElementType>>::distance();
         let num_vectors = 1000;
         let dim = 8;
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        type M = CosineMetric;
-
         let (vector_holder, graph_layers) =
-            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, format, false, &mut rng);
+            create_graph_layer_fixture(num_vectors, M, dim, format, false, distance, &mut rng);
 
         let main_entry = graph_layers
             .entry_points
@@ -538,7 +534,7 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
+        let processed_query = distance.preprocess_vector::<VectorElementType>(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.total_vector_count() as PointOffsetType {
             let vec = &vector_holder.get_vector(idx);

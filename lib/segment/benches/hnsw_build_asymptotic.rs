@@ -85,8 +85,7 @@ fn scoring_vectors(c: &mut Criterion) {
     let base_num_vectors = 10_000;
 
     let num_vectors = base_num_vectors;
-    let vector_holder =
-        TestRawScorerProducer::<DotProductMetric>::new(DIM, Distance::Dot, num_vectors, &mut rng);
+    let vector_holder = TestRawScorerProducer::new(DIM, Distance::Dot, num_vectors, &mut rng);
 
     group.bench_function("score-point", |b| {
         b.iter(|| {
@@ -103,8 +102,7 @@ fn scoring_vectors(c: &mut Criterion) {
     });
 
     let num_vectors = base_num_vectors * 10;
-    let vector_holder =
-        TestRawScorerProducer::<DotProductMetric>::new(DIM, Distance::Dot, num_vectors, &mut rng);
+    let vector_holder = TestRawScorerProducer::new(DIM, Distance::Dot, num_vectors, &mut rng);
 
     group.bench_function("score-point-10x", |b| {
         b.iter(|| {
@@ -121,8 +119,7 @@ fn scoring_vectors(c: &mut Criterion) {
     });
 
     let num_vectors = base_num_vectors * 50;
-    let vector_holder =
-        TestRawScorerProducer::<DotProductMetric>::new(DIM, Distance::Dot, num_vectors, &mut rng);
+    let vector_holder = TestRawScorerProducer::new(DIM, Distance::Dot, num_vectors, &mut rng);
 
     group.bench_function("score-point-50x", |b| {
         b.iter(|| {

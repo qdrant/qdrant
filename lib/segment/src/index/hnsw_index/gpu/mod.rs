@@ -106,14 +106,13 @@ mod tests {
     use crate::index::hnsw_index::graph_layers::GraphLayers;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::graph_links::GraphLinksFormat;
-    use crate::spaces::simple::CosineMetric;
     use crate::types::Distance;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 
     pub struct GpuGraphTestData {
         pub vector_storage: VectorStorageEnum,
-        pub vector_holder: TestRawScorerProducer<CosineMetric>,
+        pub vector_holder: TestRawScorerProducer,
         pub graph_layers_builder: GraphLayersBuilder,
         pub search_vectors: Vec<DenseVector>,
     }
@@ -127,12 +126,8 @@ mod tests {
     ) -> GpuGraphTestData {
         // Generate random vectors
         let mut rng = StdRng::seed_from_u64(42);
-        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(
-            dim,
-            Distance::Cosine,
-            num_vectors,
-            &mut rng,
-        );
+        let vector_holder =
+            TestRawScorerProducer::new(dim, Distance::Cosine, num_vectors, &mut rng);
 
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Cosine);

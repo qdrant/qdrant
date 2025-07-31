@@ -490,7 +490,6 @@ mod tests {
     use crate::index::hnsw_index::graph_layers::GraphLayersBase;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::links_container::LinksContainer;
-    use crate::spaces::simple::DotProductMetric;
     use crate::types::Distance;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
@@ -507,7 +506,7 @@ mod tests {
         m: usize,
         ef: usize,
         gpu_vector_storage: GpuVectorStorage,
-        vector_holder: TestRawScorerProducer<DotProductMetric>,
+        vector_holder: TestRawScorerProducer,
         graph_layers_builder: GraphLayersBuilder,
     }
 
@@ -520,12 +519,8 @@ mod tests {
     ) -> TestData {
         // Generate random vectors
         let mut rng = StdRng::seed_from_u64(42);
-        let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(
-            dim,
-            Distance::Dot,
-            num_vectors + groups_count,
-            &mut rng,
-        );
+        let vector_holder =
+            TestRawScorerProducer::new(dim, Distance::Dot, num_vectors + groups_count, &mut rng);
 
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Dot);

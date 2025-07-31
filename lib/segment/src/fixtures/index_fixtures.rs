@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::marker::PhantomData;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -12,9 +11,8 @@ use rand::Rng;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
+use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, VectorRef};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::spaces::metric::Metric;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -23,13 +21,12 @@ pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVect
     (0..size).map(|_| rnd_gen.random_range(-1.0..1.0)).collect()
 }
 
-pub struct TestRawScorerProducer<TMetric: Metric<VectorElementType>> {
+pub struct TestRawScorerProducer {
     storage: VectorStorageEnum,
     deleted_points: BitVec,
-    metric: PhantomData<TMetric>,
 }
 
-impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer<TMetric> {
+impl VectorStorage for TestRawScorerProducer {
     fn distance(&self) -> Distance {
         self.storage.distance()
     }
@@ -100,10 +97,7 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
     }
 }
 
-impl<TMetric> TestRawScorerProducer<TMetric>
-where
-    TMetric: Metric<VectorElementType>,
-{
+impl TestRawScorerProducer {
     pub fn new<R>(dim: usize, distance: Distance, num_vectors: usize, rng: &mut R) -> Self
     where
         R: Rng + ?Sized,
@@ -112,7 +106,7 @@ where
         let hw_counter = HardwareCounterCell::new();
         for offset in 0..num_vectors as PointOffsetType {
             let rnd_vec = random_vector(rng, dim);
-            let rnd_vec = TMetric::preprocess(rnd_vec);
+            let rnd_vec = distance.preprocess_vector::<VectorElementType>(rnd_vec);
             storage
                 .insert_vector(offset, VectorRef::from(&rnd_vec), &hw_counter)
                 .unwrap();
@@ -121,7 +115,6 @@ where
         TestRawScorerProducer {
             storage,
             deleted_points: BitVec::repeat(false, num_vectors),
-            metric: PhantomData,
         }
     }
 
@@ -132,8 +125,7 @@ where
         }
     }
 
-    pub fn get_scorer(&self, query: DenseVector) -> FilteredScorer<'_> {
-        let query = TMetric::preprocess(query).into();
-        FilteredScorer::new_for_test(query, &self.storage, &self.deleted_points)
+    pub fn get_scorer(&self, query: impl Into<QueryVector>) -> FilteredScorer<'_> {
+        FilteredScorer::new_for_test(query.into(), &self.storage, &self.deleted_points)
     }
 }

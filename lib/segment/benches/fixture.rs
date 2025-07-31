@@ -25,7 +25,7 @@ pub fn make_cached_graph<METRIC>(
     m: usize,
     ef_construct: usize,
     use_heuristic: bool,
-) -> (TestRawScorerProducer<METRIC>, GraphLayers)
+) -> (TestRawScorerProducer, GraphLayers)
 where
     METRIC: Metric<f32> + Sync + Send,
 {
@@ -40,7 +40,7 @@ where
         ));
 
     // Note: make sure that vector generation is deterministic.
-    let vector_holder = TestRawScorerProducer::<METRIC>::new(
+    let vector_holder = TestRawScorerProducer::new(
         dim,
         METRIC::distance(),
         num_vectors,

@@ -12,7 +12,7 @@ use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_links::GraphLinksFormat;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::tests::create_graph_layer_builder_fixture;
-use crate::spaces::simple::CosineMetric;
+use crate::types::Distance;
 use crate::vector_storage::DEFAULT_STOPPED;
 
 fn search_in_builder(
@@ -65,7 +65,7 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
     let mut rng = StdRng::seed_from_u64(42);
 
     let (vector_holder, graph_layers_builder) =
-        create_graph_layer_builder_fixture::<CosineMetric, _>(num_vectors, m, dim, false, &mut rng);
+        create_graph_layer_builder_fixture(num_vectors, m, dim, false, Distance::Cosine, &mut rng);
 
     let queries = (0..num_queries)
         .map(|_| random_vector(&mut rng, dim))
