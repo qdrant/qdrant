@@ -103,21 +103,10 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
         (0..len as u32).filter(move |i| is_false(*i))
     }
 
-    /// Removes from `pending_updates` all results that are flushed.
-    /// If values in `pending_updates` are changed, do not remove them.
-    fn clear_flushed_updates(
-        flushed: AHashMap<u32, bool>,
-        pending_updates: Arc<RwLock<AHashMap<u32, bool>>>,
-    ) {
-        pending_updates
-            .write()
-            .retain(|point_id, a| flushed.get(point_id).is_none_or(|b| a != b));
-    }
-
     pub fn flusher(&self) -> Flusher {
-        let pending_updates_clone = self.pending_updates.read().clone();
+        let updates_to_flush = self.pending_updates.read().clone();
         let flags = self.flags.clone();
-        let pending_updates_arc = self.pending_updates.clone();
+        let pending_updates = self.pending_updates.clone();
         let cached_len = self.cached_len;
 
         Box::new(move || {
@@ -130,15 +119,17 @@ impl DynamicMmapFlagsBufferedUpdateWrapper {
             }
 
             // Apply all pending updates
-            for (index, value) in pending_updates_clone.iter() {
+            for (index, value) in updates_to_flush.iter() {
                 flags_write.set(*index as usize, *value);
             }
 
             // Flush the underlying flags
             flags_write.flusher()()?;
 
-            // Clear the flushed updates
-            Self::clear_flushed_updates(pending_updates_clone, pending_updates_arc);
+            // Only keep pending updates we didn't just flush
+            pending_updates
+                .write()
+                .retain(|point_id, a| updates_to_flush.get(point_id).is_none_or(|b| a != b));
 
             Ok(())
         })
