@@ -375,8 +375,13 @@ assets = [
         "644",
     ],
     [
-        "static/*/*",
-        "etc/qdrant/static",
+        "static/*",
+        "var/lib/qdrant/static/",
+        "644",
+    ],
+    [
+        "static/assets/*",
+        "var/lib/qdrant/static/assets/",
         "644",
     ],
     [
