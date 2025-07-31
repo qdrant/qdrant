@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::types::PointOffsetType;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use roaring::RoaringBitmap;
 
 use crate::common::Flusher;
@@ -23,7 +23,7 @@ pub struct BufferedDynamicFlags {
     storage: Arc<Mutex<DynamicMmapFlags>>,
 
     /// Pending changes to the storage flags.
-    buffer: AHashMap<PointOffsetType, bool>,
+    buffer: Arc<RwLock<AHashMap<PointOffsetType, bool>>>,
 
     /// In-memory bitmap of true flags.
     // Potential optimization: add a secondary bitmap for false values for faster iter_falses implementation.
@@ -39,7 +39,7 @@ impl BufferedDynamicFlags {
         let bitmap = RoaringBitmap::from_sorted_iter(mmap_flags.iter_trues())
             .expect("iter_trues iterates in sorted order");
 
-        let buffer = AHashMap::new();
+        let buffer = Arc::new(RwLock::new(AHashMap::new()));
 
         Self {
             cached_len: mmap_flags.len(),
@@ -63,7 +63,7 @@ impl BufferedDynamicFlags {
 
     #[cfg(test)]
     pub fn buffer_is_empty(&self) -> bool {
-        self.buffer.is_empty()
+        self.buffer.read().is_empty()
     }
 
     pub fn iter_trues(&self) -> impl Iterator<Item = PointOffsetType> {
@@ -87,7 +87,7 @@ impl BufferedDynamicFlags {
 
     pub fn set(&mut self, index: PointOffsetType, value: bool) {
         // queue write in buffer
-        self.buffer.insert(index, value);
+        self.buffer.write().insert(index, value);
 
         // update cached length if needed
         let index_usize = index as usize;
@@ -113,29 +113,31 @@ impl BufferedDynamicFlags {
     }
 
     pub fn flusher(&self) -> Flusher {
-        // copy pending changes
-        let updates = self.buffer.clone();
-        let flags = self.storage.clone();
-        let cached_len = self.cached_len;
+        // take pending changes
+        let buffer_arc = self.buffer.clone();
+        let flags_arc = self.storage.clone();
 
         Box::new(move || {
+            // take all updates from buffer.
+            let updates = std::mem::take(&mut *buffer_arc.write());
+
             // lock for the entire flushing process
-            let mut flags = flags.lock();
+            let mut flags_guard = flags_arc.lock();
 
             // Calculate required length based on updates
             let max_index = updates.keys().map(|&k| k as usize).max().unwrap_or(0);
-            let required_len = std::cmp::max(cached_len, max_index + 1);
+            let required_len = max_index + 1;
 
             // resize if needed
-            if required_len > flags.len() {
-                flags.set_len(required_len)?;
+            if required_len > flags_guard.len() {
+                flags_guard.set_len(required_len)?;
             }
 
             for (index, value) in updates {
-                flags.set(index as usize, value);
+                flags_guard.set(index as usize, value);
             }
 
-            flags.flusher()()?;
+            flags_guard.flusher()()?;
 
             Ok(())
         })
