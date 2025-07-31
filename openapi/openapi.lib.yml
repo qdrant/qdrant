@@ -21,7 +21,7 @@ default:
           usage:
             default: null
             anyOf:
-              - $ref: '#/components/schemas/HardwareUsage'
+              - $ref: '#/components/schemas/Usage'
               - nullable: true
           time:
             type: number
