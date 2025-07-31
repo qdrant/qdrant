@@ -127,7 +127,7 @@ mod tests {
         // Generate random vectors
         let mut rng = StdRng::seed_from_u64(42);
         let vector_holder =
-            TestRawScorerProducer::new(dim, Distance::Cosine, num_vectors, &mut rng);
+            TestRawScorerProducer::new(dim, Distance::Cosine, num_vectors, false, &mut rng);
 
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Cosine);

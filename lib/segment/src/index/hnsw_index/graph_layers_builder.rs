@@ -627,7 +627,7 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
 
-        let vector_holder = TestRawScorerProducer::new(dim, distance, num_vectors, rng);
+        let vector_holder = TestRawScorerProducer::new(dim, distance, num_vectors, false, rng);
 
         let mut graph_layers = GraphLayersBuilder::new(
             num_vectors,
@@ -667,7 +667,7 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
 
-        let vector_holder = TestRawScorerProducer::new(dim, distance, num_vectors, rng);
+        let vector_holder = TestRawScorerProducer::new(dim, distance, num_vectors, false, rng);
 
         let mut graph_layers = GraphLayersBuilder::new(
             num_vectors,
@@ -857,7 +857,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         let vector_holder =
-            TestRawScorerProducer::new(DIM, Distance::Cosine, NUM_VECTORS, &mut rng);
+            TestRawScorerProducer::new(DIM, Distance::Cosine, NUM_VECTORS, false, &mut rng);
         let mut graph_layers_builder =
             GraphLayersBuilder::new(NUM_VECTORS, HnswM::new2(M), EF_CONSTRUCT, 10, USE_HEURISTIC);
         for idx in 0..(NUM_VECTORS as PointOffsetType) {

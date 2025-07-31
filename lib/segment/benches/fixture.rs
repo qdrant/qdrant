@@ -44,6 +44,7 @@ where
         dim,
         METRIC::distance(),
         num_vectors,
+        false,
         &mut StdRng::seed_from_u64(42),
     );
 

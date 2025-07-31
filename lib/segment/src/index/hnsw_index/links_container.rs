@@ -273,7 +273,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         let vector_holder =
-            TestRawScorerProducer::new(DIM, Distance::Euclid, NUM_VECTORS, &mut rng);
+            TestRawScorerProducer::new(DIM, Distance::Euclid, NUM_VECTORS, false, &mut rng);
 
         let mut candidates: FixedLengthPriorityQueue<ScoredPointOffset> =
             FixedLengthPriorityQueue::new(NUM_VECTORS);
@@ -400,7 +400,7 @@ mod tests {
 
         for _ in 0..1000 {
             let vector_holder =
-                TestRawScorerProducer::new(DIM, Distance::Euclid, NUM_VECTORS, &mut rng);
+                TestRawScorerProducer::new(DIM, Distance::Euclid, NUM_VECTORS, false, &mut rng);
             let scorer = vector_holder.scorer(random_vector(&mut rng, DIM));
 
             let mut candidate_indices: Vec<_> = (0..NUM_VECTORS as u32).collect();

@@ -25,7 +25,7 @@ where
     let ef_construct = 16;
     let entry_points_num = 10;
 
-    let vector_holder = TestRawScorerProducer::new(dim, distance, num_vectors, rng);
+    let vector_holder = TestRawScorerProducer::new(dim, distance, num_vectors, false, rng);
 
     let mut graph_layers_builder = GraphLayersBuilder::new(
         num_vectors,
