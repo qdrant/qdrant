@@ -9,8 +9,6 @@ use zerocopy::IntoBytes;
 use super::named_vectors::CowMultiVector;
 use super::vectors::TypedMultiDenseVector;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
-use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 
 pub trait PrimitiveVectorElement:
@@ -167,17 +165,7 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
                 .iter()
                 .map(|&x| VectorElementType::from(x))
                 .collect_vec();
-            let preprocessed_vector = match distance {
-                Distance::Cosine => <CosineMetric as Metric<VectorElementType>>::preprocess(vector),
-                Distance::Euclid => <EuclidMetric as Metric<VectorElementType>>::preprocess(vector),
-                Distance::Dot => {
-                    <DotProductMetric as Metric<VectorElementType>>::preprocess(vector)
-                }
-                Distance::Manhattan => {
-                    <ManhattanMetric as Metric<VectorElementType>>::preprocess(vector)
-                }
-            };
-            Cow::from(preprocessed_vector)
+            Cow::from(distance.preprocess_vector::<VectorElementType>(vector))
         }
     }
 
