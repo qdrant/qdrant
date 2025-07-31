@@ -47,7 +47,7 @@ pub struct GraphLayers {
 pub trait GraphLayersBase {
     fn get_visited_list_from_pool(&self) -> VisitedListHandle<'_>;
 
-    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, f: F)
+    fn for_each_link<F>(&self, point_id: PointOffsetType, level: usize, f: F)
     where
         F: FnMut(PointOffsetType);
 
@@ -74,7 +74,7 @@ pub trait GraphLayersBase {
             }
 
             points_ids.clear();
-            self.links_map(candidate.idx, level, |link| {
+            self.for_each_link(candidate.idx, level, |link| {
                 if !visited_list.check(link) {
                     points_ids.push(link);
                 }
@@ -140,7 +140,7 @@ pub trait GraphLayersBase {
                 changed = false;
 
                 links.clear();
-                self.links_map(current_point.idx, level, |link| {
+                self.for_each_link(current_point.idx, level, |link| {
                     links.push(link);
                 });
 
@@ -177,7 +177,7 @@ pub trait GraphLayersBase {
             changed = false;
 
             links.clear();
-            self.links_map(current_point.idx, level, |link| {
+            self.for_each_link(current_point.idx, level, |link| {
                 links.push(link);
             });
 
@@ -199,7 +199,7 @@ impl GraphLayersBase for GraphLayers {
         self.visited_pool.get(self.links.num_points())
     }
 
-    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, f: F)
+    fn for_each_link<F>(&self, point_id: PointOffsetType, level: usize, f: F)
     where
         F: FnMut(PointOffsetType),
     {

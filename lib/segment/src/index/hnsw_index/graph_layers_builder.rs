@@ -51,7 +51,7 @@ impl GraphLayersBase for GraphLayersBuilder {
         self.visited_pool.get(self.num_points())
     }
 
-    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
+    fn for_each_link<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
     where
         F: FnMut(PointOffsetType),
     {
