@@ -20,8 +20,6 @@ use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::spaces::metric::Metric;
-use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, MultiVectorConfig,
     PayloadSchemaType, SeqNumberType,
@@ -68,20 +66,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rng, dim);
-        let preprocessed_vector = match distance {
-            Distance::Cosine => {
-                <CosineMetric as Metric<VectorElementType>>::preprocess(vector.clone())
-            }
-            Distance::Euclid => {
-                <EuclidMetric as Metric<VectorElementType>>::preprocess(vector.clone())
-            }
-            Distance::Dot => {
-                <DotProductMetric as Metric<VectorElementType>>::preprocess(vector.clone())
-            }
-            Distance::Manhattan => {
-                <ManhattanMetric as Metric<VectorElementType>>::preprocess(vector.clone())
-            }
-        };
+        let preprocessed_vector = distance.preprocess_vector::<VectorElementType>(vector.clone());
         let vector_multi = MultiDenseVectorInternal::new(preprocessed_vector, vector.len());
 
         let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);

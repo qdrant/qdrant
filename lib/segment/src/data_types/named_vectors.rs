@@ -10,9 +10,7 @@ use super::vectors::{
     VectorElementType, VectorElementTypeByte, VectorElementTypeHalf, VectorInternal, VectorRef,
 };
 use crate::common::operation_error::OperationError;
-use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-use crate::types::{Distance, VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype};
+use crate::types::{VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype};
 
 type CowKey<'a> = Cow<'a, VectorName>;
 
@@ -348,48 +346,15 @@ impl<'a> NamedVectors<'a> {
         config: &VectorDataConfig,
     ) -> DenseVector {
         match config.datatype {
-            Some(VectorStorageDatatype::Float32) | None => match config.distance {
-                Distance::Cosine => {
-                    <CosineMetric as Metric<VectorElementType>>::preprocess(dense_vector)
-                }
-                Distance::Euclid => {
-                    <EuclidMetric as Metric<VectorElementType>>::preprocess(dense_vector)
-                }
-                Distance::Dot => {
-                    <DotProductMetric as Metric<VectorElementType>>::preprocess(dense_vector)
-                }
-                Distance::Manhattan => {
-                    <ManhattanMetric as Metric<VectorElementType>>::preprocess(dense_vector)
-                }
-            },
-            Some(VectorStorageDatatype::Uint8) => match config.distance {
-                Distance::Cosine => {
-                    <CosineMetric as Metric<VectorElementTypeByte>>::preprocess(dense_vector)
-                }
-                Distance::Euclid => {
-                    <EuclidMetric as Metric<VectorElementTypeByte>>::preprocess(dense_vector)
-                }
-                Distance::Dot => {
-                    <DotProductMetric as Metric<VectorElementTypeByte>>::preprocess(dense_vector)
-                }
-                Distance::Manhattan => {
-                    <ManhattanMetric as Metric<VectorElementTypeByte>>::preprocess(dense_vector)
-                }
-            },
-            Some(VectorStorageDatatype::Float16) => match config.distance {
-                Distance::Cosine => {
-                    <CosineMetric as Metric<VectorElementTypeHalf>>::preprocess(dense_vector)
-                }
-                Distance::Euclid => {
-                    <EuclidMetric as Metric<VectorElementTypeHalf>>::preprocess(dense_vector)
-                }
-                Distance::Dot => {
-                    <DotProductMetric as Metric<VectorElementTypeHalf>>::preprocess(dense_vector)
-                }
-                Distance::Manhattan => {
-                    <ManhattanMetric as Metric<VectorElementTypeHalf>>::preprocess(dense_vector)
-                }
-            },
+            Some(VectorStorageDatatype::Float32) | None => config
+                .distance
+                .preprocess_vector::<VectorElementType>(dense_vector),
+            Some(VectorStorageDatatype::Uint8) => config
+                .distance
+                .preprocess_vector::<VectorElementTypeByte>(dense_vector),
+            Some(VectorStorageDatatype::Float16) => config
+                .distance
+                .preprocess_vector::<VectorElementTypeHalf>(dense_vector),
         }
     }
 }

@@ -15,8 +15,6 @@ use crate::data_types::vectors::{MultiDenseVectorInternal, QueryVector, VectorRe
 use crate::fixtures::index_fixtures::random_vector;
 use crate::fixtures::payload_fixtures::random_dense_byte_vector;
 use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilder;
-use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance,
     ProductQuantization, ProductQuantizationConfig, QuantizationConfig, ScalarQuantization,
@@ -563,12 +561,7 @@ fn create_vector_storage_f32(
             .unwrap();
     for i in 0..num_vectors {
         let vec = random_vector(&mut rnd, dim);
-        let vec = match distance {
-            Distance::Cosine => <CosineMetric as Metric<VectorElementType>>::preprocess(vec),
-            Distance::Euclid => <EuclidMetric as Metric<VectorElementType>>::preprocess(vec),
-            Distance::Dot => <DotProductMetric as Metric<VectorElementType>>::preprocess(vec),
-            Distance::Manhattan => <ManhattanMetric as Metric<VectorElementType>>::preprocess(vec),
-        };
+        let vec = distance.preprocess_vector::<VectorElementType>(vec);
         let vec_ref = VectorRef::from(&vec);
         vector_storage
             .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
@@ -589,14 +582,7 @@ fn create_vector_storage_f16(
             .unwrap();
     for i in 0..num_vectors {
         let vec = random_vector(&mut rnd, dim);
-        let vec = match distance {
-            Distance::Cosine => <CosineMetric as Metric<VectorElementTypeHalf>>::preprocess(vec),
-            Distance::Euclid => <EuclidMetric as Metric<VectorElementTypeHalf>>::preprocess(vec),
-            Distance::Dot => <DotProductMetric as Metric<VectorElementTypeHalf>>::preprocess(vec),
-            Distance::Manhattan => {
-                <ManhattanMetric as Metric<VectorElementTypeHalf>>::preprocess(vec)
-            }
-        };
+        let vec = distance.preprocess_vector::<VectorElementTypeHalf>(vec);
         let vec_ref = VectorRef::from(&vec);
         vector_storage
             .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
@@ -617,14 +603,7 @@ fn create_vector_storage_u8(
             .unwrap();
     for i in 0..num_vectors {
         let vec = random_dense_byte_vector(&mut rnd, dim);
-        let vec = match distance {
-            Distance::Cosine => <CosineMetric as Metric<VectorElementTypeByte>>::preprocess(vec),
-            Distance::Euclid => <EuclidMetric as Metric<VectorElementTypeByte>>::preprocess(vec),
-            Distance::Dot => <DotProductMetric as Metric<VectorElementTypeByte>>::preprocess(vec),
-            Distance::Manhattan => {
-                <ManhattanMetric as Metric<VectorElementTypeByte>>::preprocess(vec)
-            }
-        };
+        let vec = distance.preprocess_vector::<VectorElementTypeByte>(vec);
         let vec_ref = VectorRef::from(&vec);
         vector_storage
             .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
@@ -655,14 +634,7 @@ fn create_vector_storage_f32_multi(
         let num_vectors_per_points = 1 + rnd.random::<u8>() % 3;
         for _ in 0..num_vectors_per_points {
             let vec = random_vector(&mut rnd, dim);
-            let vec = match distance {
-                Distance::Cosine => <CosineMetric as Metric<VectorElementType>>::preprocess(vec),
-                Distance::Euclid => <EuclidMetric as Metric<VectorElementType>>::preprocess(vec),
-                Distance::Dot => <DotProductMetric as Metric<VectorElementType>>::preprocess(vec),
-                Distance::Manhattan => {
-                    <ManhattanMetric as Metric<VectorElementType>>::preprocess(vec)
-                }
-            };
+            let vec = distance.preprocess_vector::<VectorElementType>(vec);
             vectors.extend(vec);
         }
         let multivector = MultiDenseVectorInternal::new(vectors, dim);
@@ -696,20 +668,7 @@ fn create_vector_storage_f16_multi(
         let num_vectors_per_points = 1 + rnd.random::<u8>() % 3;
         for _ in 0..num_vectors_per_points {
             let vec = random_vector(&mut rnd, dim);
-            let vec = match distance {
-                Distance::Cosine => {
-                    <CosineMetric as Metric<VectorElementTypeHalf>>::preprocess(vec)
-                }
-                Distance::Euclid => {
-                    <EuclidMetric as Metric<VectorElementTypeHalf>>::preprocess(vec)
-                }
-                Distance::Dot => {
-                    <DotProductMetric as Metric<VectorElementTypeHalf>>::preprocess(vec)
-                }
-                Distance::Manhattan => {
-                    <ManhattanMetric as Metric<VectorElementTypeHalf>>::preprocess(vec)
-                }
-            };
+            let vec = distance.preprocess_vector::<VectorElementTypeHalf>(vec);
             vectors.extend(vec);
         }
         let multivector = MultiDenseVectorInternal::new(vectors, dim);
@@ -743,20 +702,7 @@ fn create_vector_storage_u8_multi(
         let num_vectors_per_points = 1 + rnd.random::<u8>() % 3;
         for _ in 0..num_vectors_per_points {
             let vec = random_dense_byte_vector(&mut rnd, dim);
-            let vec = match distance {
-                Distance::Cosine => {
-                    <CosineMetric as Metric<VectorElementTypeByte>>::preprocess(vec)
-                }
-                Distance::Euclid => {
-                    <EuclidMetric as Metric<VectorElementTypeByte>>::preprocess(vec)
-                }
-                Distance::Dot => {
-                    <DotProductMetric as Metric<VectorElementTypeByte>>::preprocess(vec)
-                }
-                Distance::Manhattan => {
-                    <ManhattanMetric as Metric<VectorElementTypeByte>>::preprocess(vec)
-                }
-            };
+            let vec = distance.preprocess_vector::<VectorElementTypeByte>(vec);
             vectors.extend(vec);
         }
         let multivector = MultiDenseVectorInternal::new(vectors, dim);
