@@ -10,7 +10,7 @@ use memmap2::MmapMut;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{self, AdviceSetting, Madviseable as _};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
+use memory::mmap_type::{MmapBitSlice, MmapType};
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
