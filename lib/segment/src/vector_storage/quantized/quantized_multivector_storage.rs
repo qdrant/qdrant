@@ -189,11 +189,17 @@ where
             0
         };
         log::info!(
-            "Loading quantized vectors with {} inner vectors of dimension {}",
+            "Loading quantized vectors with {} inner vectors of dimension {}, offsets count {}",
             inner_vectors_count,
-            vector_parameters.dim
+            vector_parameters.dim,
+            offsets.len(),
         );
-        log::info!("offsets {:?}", offsets);
+        let mut s = String::new();
+        for i in 0..offsets.len() {
+            let offset = offsets.get_offset(i as PointOffsetType);
+            s.push_str(&format!("({}: {}, {}), ", i, offset.start, offset.count));
+        }
+        log::info!("Offsets: {}", s);
         Ok(Self {
             dim: vector_parameters.dim,
             quantized_storage: QuantizedStorage::load(
