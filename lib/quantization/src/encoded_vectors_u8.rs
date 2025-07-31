@@ -311,12 +311,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         data_path: &Path,
         meta_path: &Path,
         vector_parameters: &VectorParameters,
-        vectors_count: usize,
     ) -> std::io::Result<Self> {
         let contents = std::fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
         let quantized_vector_size = Self::get_quantized_vector_size(vector_parameters);
-        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size, vectors_count)?;
+        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size)?;
         let result = Self {
             encoded_vectors,
             metadata,

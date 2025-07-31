@@ -42,7 +42,6 @@ mod tests {
             data_path.as_path(),
             meta_path.as_path(),
             &vector_parameters,
-            vectors_count,
         )
         .unwrap();
     }
@@ -82,7 +81,6 @@ mod tests {
             data_path.as_path(),
             meta_path.as_path(),
             &vector_parameters,
-            vectors_count,
         )
         .unwrap();
     }
@@ -122,7 +120,6 @@ mod tests {
             data_path.as_path(),
             meta_path.as_path(),
             &vector_parameters,
-            vectors_count,
         )
         .unwrap();
     }

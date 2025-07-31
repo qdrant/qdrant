@@ -174,40 +174,10 @@ where
         multi_vector_config: &MultiVectorConfig,
     ) -> OperationResult<Self> {
         let offsets = TMultivectorOffsetsStorage::load(offsets_path)?;
-
-        // Dirty way to get inner vectors count from offsets.
-        // We expect that offsets have increasing order because they are written/pushed in order of vectors.
-        // And get the last offset to determine the inner vectors count.
-        //
-        // This is needed to load quantized storage with correct vectors count.
-        // There is no another way to get inner vectors count.
-        // We cannot rely on `MultiVectorStorage` here because dense inner vectors count may differs from quantized inner vectors count.
-        let inner_vectors_count = if offsets.len() > 0 {
-            let offset = offsets.get_offset(offsets.len() as PointOffsetType - 1);
-            offset.start as usize + offset.count as usize
-        } else {
-            0
-        };
-        log::info!(
-            "Loading quantized vectors with {} inner vectors of dimension {}, offsets count {}",
-            inner_vectors_count,
-            vector_parameters.dim,
-            offsets.len(),
-        );
-        let mut s = String::new();
-        for i in 0..offsets.len() {
-            let offset = offsets.get_offset(i as PointOffsetType);
-            s.push_str(&format!("({}: {}, {}), ", i, offset.start, offset.count));
-        }
-        log::info!("Offsets: {}", s);
+        let quantized_storage = QuantizedStorage::load(data_path, meta_path, vector_parameters)?;
         Ok(Self {
             dim: vector_parameters.dim,
-            quantized_storage: QuantizedStorage::load(
-                data_path,
-                meta_path,
-                vector_parameters,
-                inner_vectors_count,
-            )?,
+            quantized_storage,
             offsets,
             multi_vector_config: *multi_vector_config,
         })
@@ -299,7 +269,6 @@ where
         _data_path: &Path,
         _meta_path: &Path,
         _vector_parameters: &quantization::VectorParameters,
-        _vectors_count: usize,
     ) -> std::io::Result<Self> {
         unreachable!(
             "multivector quantized storage should be loaded using `self.load_multi` method"

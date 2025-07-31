@@ -39,22 +39,12 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
 
     fn from_file(
         path: &Path,
-        quantized_vector_size: usize,
-        vectors_count: usize,
+        _quantized_vector_size: usize,
     ) -> std::io::Result<QuantizedMmapStorage> {
         let file = std::fs::OpenOptions::new().read(true).open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
         madvise::madvise(&mmap, madvise::get_global())?;
-
-        let expected_size = quantized_vector_size * vectors_count;
-        if mmap.len() == expected_size {
-            Ok(Self { mmap })
-        } else {
-            Err(std::io::Error::other(format!(
-                "Loaded storage size {} is not equal to expected size {expected_size}",
-                mmap.len()
-            )))
-        }
+        Ok(Self { mmap })
     }
 
     fn save_to_file(&self, _path: &Path) -> std::io::Result<()> {

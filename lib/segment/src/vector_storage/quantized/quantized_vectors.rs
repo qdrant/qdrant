@@ -505,12 +505,6 @@ impl QuantizedVectors {
         });
         let inner_vectors_count = vectors.clone().count();
         let vectors_count = vector_storage.total_vector_count();
-        log::info!(
-            "Creating quantized vectors for {} vectors with {} inner vectors of dimension {}",
-            vectors_count,
-            inner_vectors_count,
-            dim
-        );
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
         let vector_parameters =
@@ -599,12 +593,6 @@ impl QuantizedVectors {
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
-        let vectors_count = vector_storage.total_vector_count();
-        log::info!(
-            "Loading quantized vectors from {:?} with {} vectors",
-            path,
-            vectors_count
-        );
 
         let data_path = path.join(QUANTIZED_DATA_PATH);
         let meta_path = path.join(QUANTIZED_META_PATH);
@@ -691,14 +679,12 @@ impl QuantizedVectors {
                             &data_path,
                             &meta_path,
                             &config.vector_parameters,
-                            vectors_count,
                         )?)
                     } else {
                         QuantizedVectorStorage::ScalarMmap(EncodedVectorsU8::load(
                             &data_path,
                             &meta_path,
                             &config.vector_parameters,
-                            vectors_count,
                         )?)
                     }
                 }
@@ -708,14 +694,12 @@ impl QuantizedVectors {
                             &data_path,
                             &meta_path,
                             &config.vector_parameters,
-                            vectors_count,
                         )?)
                     } else {
                         QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::load(
                             &data_path,
                             &meta_path,
                             &config.vector_parameters,
-                            vectors_count,
                         )?)
                     }
                 }
@@ -725,14 +709,12 @@ impl QuantizedVectors {
                             &data_path,
                             &meta_path,
                             &config.vector_parameters,
-                            vectors_count,
                         )?)
                     } else {
                         QuantizedVectorStorage::BinaryMmap(EncodedVectorsBin::load(
                             &data_path,
                             &meta_path,
                             &config.vector_parameters,
-                            vectors_count,
                         )?)
                     }
                 }

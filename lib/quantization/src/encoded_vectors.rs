@@ -32,7 +32,6 @@ pub trait EncodedVectors: Sized {
         data_path: &Path,
         meta_path: &Path,
         vector_parameters: &VectorParameters,
-        vectors_count: usize,
     ) -> std::io::Result<Self>;
 
     fn is_on_disk(&self) -> bool;

@@ -8,11 +8,7 @@ use memory::fadvise::OneshotFile;
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8];
 
-    fn from_file(
-        path: &Path,
-        quantized_vector_size: usize,
-        vectors_count: usize,
-    ) -> std::io::Result<Self>
+    fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self>
     where
         Self: Sized;
 
@@ -53,24 +49,12 @@ impl EncodedStorage for Vec<u8> {
         Ok(())
     }
 
-    fn from_file(
-        path: &Path,
-        quantized_vector_size: usize,
-        vectors_count: usize,
-    ) -> std::io::Result<Self> {
+    fn from_file(path: &Path, _quantized_vector_size: usize) -> std::io::Result<Self> {
         let mut file = OneshotFile::open(path)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
         file.drop_cache()?;
-        let expected_size = quantized_vector_size * vectors_count;
-        if buffer.len() == expected_size {
-            Ok(buffer)
-        } else {
-            Err(std::io::Error::other(format!(
-                "Loaded storage size {} is not equal to expected size {expected_size}",
-                buffer.len()
-            )))
-        }
+        Ok(buffer)
     }
 
     fn save_to_file(&self, path: &Path) -> std::io::Result<()> {

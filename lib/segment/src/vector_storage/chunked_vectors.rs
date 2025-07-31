@@ -188,20 +188,8 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
         Ok(())
     }
 
-    fn from_file(
-        path: &Path,
-        quantized_vector_size: usize,
-        vectors_count: usize,
-    ) -> std::io::Result<Self> {
+    fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
         let mut vectors = Self::new(quantized_vector_size);
-        vectors
-            .try_set_capacity_exact(vectors_count)
-            .map_err(|err| {
-                std::io::Error::new(
-                    std::io::ErrorKind::OutOfMemory,
-                    format!("Failed to load quantized vectors from file: {err}"),
-                )
-            })?;
         let file = OneshotFile::open(path)?;
         let mut reader = BufReader::new(file);
         let mut buffer = vec![0u8; quantized_vector_size];
@@ -214,14 +202,7 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
             })?;
         }
         reader.into_inner().drop_cache()?;
-        if vectors.len() == vectors_count {
-            Ok(vectors)
-        } else {
-            Err(std::io::Error::other(format!(
-                "Loaded vectors count {} is not equal to expected count {vectors_count}",
-                vectors.len(),
-            )))
-        }
+        Ok(vectors)
     }
 
     fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
