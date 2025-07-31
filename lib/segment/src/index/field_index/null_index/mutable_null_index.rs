@@ -1,13 +1,11 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
 
-use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use roaring::RoaringBitmap;
 use serde_json::Value;
 
 use crate::common::Flusher;
+use crate::common::buffered_dynamic_flags::BufferedDynamicFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
@@ -25,28 +23,11 @@ const IS_NULL_DIRNAME: &str = "is_null";
 /// and buffers updates before persisting them to DynamicMmapFlags.
 pub struct MutableNullIndex {
     base_dir: PathBuf,
-    /// Persistent storage (DynamicMmapFlags only)
-    storage: Option<Arc<Mutex<Storage>>>,
-    /// In-memory roaring bitmap tracking which points have values
-    has_values_bitmap: RoaringBitmap,
-    /// In-memory roaring bitmap tracking which points have null values
-    is_null_bitmap: RoaringBitmap,
+    /// Points which have at least one value
+    has_values_flags: Option<BufferedDynamicFlags>,
+    /// Points which have null values
+    is_null_flags: Option<BufferedDynamicFlags>,
     total_point_count: usize,
-    /// Buffer for pending updates to avoid frequent disk writes
-    update_buffer: Arc<RwLock<AHashMap<PointOffsetType, Update>>>,
-}
-
-struct Storage {
-    /// Persistent storage for has_values
-    has_values_mmap: DynamicMmapFlags,
-    /// Persistent storage for is_null
-    is_null_mmap: DynamicMmapFlags,
-}
-
-#[derive(Clone, Copy)]
-struct Update {
-    has_values: bool,
-    is_null: bool,
 }
 
 impl MutableNullIndex {
@@ -71,11 +52,9 @@ impl MutableNullIndex {
         if !has_values_dir.is_dir() && !create_if_missing {
             return Ok(Self {
                 base_dir: path.to_path_buf(),
-                storage: None,
-                has_values_bitmap: RoaringBitmap::new(),
-                is_null_bitmap: RoaringBitmap::new(),
+                has_values_flags: None,
+                is_null_flags: None,
                 total_point_count,
-                update_buffer: Arc::new(RwLock::new(AHashMap::default())),
             });
         }
 
@@ -91,33 +70,42 @@ impl MutableNullIndex {
 
         let has_values_path = path.join(HAS_VALUES_DIRNAME);
         let has_values_mmap = DynamicMmapFlags::open(&has_values_path, false)?;
+        let has_values_flags = BufferedDynamicFlags::new(has_values_mmap);
 
         let is_null_path = path.join(IS_NULL_DIRNAME);
         let is_null_mmap = DynamicMmapFlags::open(&is_null_path, false)?;
-
-        // Initialize roaring bitmaps from mmap data
-        let mut has_values_bitmap = RoaringBitmap::new();
-        let mut is_null_bitmap = RoaringBitmap::new();
-
-        // Load existing data from mmap into bitmaps
-        for id in has_values_mmap.iter_trues() {
-            has_values_bitmap.insert(id);
-        }
-        for id in is_null_mmap.iter_trues() {
-            is_null_bitmap.insert(id);
-        }
+        let is_null_flags = BufferedDynamicFlags::new(is_null_mmap);
 
         Ok(Self {
             base_dir: path.to_path_buf(),
-            storage: Some(Arc::new(Mutex::new(Storage {
-                has_values_mmap,
-                is_null_mmap,
-            }))),
-            has_values_bitmap,
-            is_null_bitmap,
+            has_values_flags: Some(has_values_flags),
+            is_null_flags: Some(is_null_flags),
             total_point_count,
-            update_buffer: Arc::new(RwLock::new(AHashMap::default())),
         })
+    }
+
+    fn has_values_flags(&self) -> OperationResult<&BufferedDynamicFlags> {
+        self.has_values_flags
+            .as_ref()
+            .ok_or_else(|| OperationError::service_error("Null index is not initialized"))
+    }
+
+    fn is_null_flags(&self) -> OperationResult<&BufferedDynamicFlags> {
+        self.is_null_flags
+            .as_ref()
+            .ok_or_else(|| OperationError::service_error("Null index is not initialized"))
+    }
+
+    fn has_values_flags_mut(&mut self) -> OperationResult<&mut BufferedDynamicFlags> {
+        self.has_values_flags
+            .as_mut()
+            .ok_or_else(|| OperationError::service_error("Null index is not initialized"))
+    }
+
+    fn is_null_flags_mut(&mut self) -> OperationResult<&mut BufferedDynamicFlags> {
+        self.is_null_flags
+            .as_mut()
+            .ok_or_else(|| OperationError::service_error("Null index is not initialized"))
     }
 
     pub fn add_point(
@@ -160,90 +148,41 @@ impl MutableNullIndex {
             }
         }
 
-        // Update bitmaps immediately for consistent reads
-        if has_values {
-            self.has_values_bitmap.insert(id);
-        } else {
-            self.has_values_bitmap.remove(id);
-        }
-
-        if is_null {
-            self.is_null_bitmap.insert(id);
-        } else {
-            self.is_null_bitmap.remove(id);
-        }
+        self.has_values_flags_mut()?.set(id, has_values);
+        self.is_null_flags_mut()?.set(id, is_null);
 
         // Account for I/O cost as if we were writing to disk now
-        // Each update touches 2 bits (has_values and is_null), but we count as 1 byte minimum
-        hw_counter.payload_index_io_write_counter().incr_delta(1);
-
-        // Also buffer the updates for persistence
-        {
-            let mut buffer = self.update_buffer.write().map_err(|e| {
-                OperationError::service_error(format!(
-                    "Failed to acquire write lock on update buffer: {e}"
-                ))
-            })?;
-            buffer.insert(
-                id,
-                Update {
-                    has_values,
-                    is_null,
-                },
-            );
-        }
-
-        // Bump total points
-        self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
+        hw_counter.payload_index_io_write_counter().incr_delta(2);
 
         Ok(())
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         // Update bitmaps immediately
-        self.has_values_bitmap.remove(id);
-        self.is_null_bitmap.remove(id);
+        self.has_values_flags_mut()?.set(id, false);
+        self.is_null_flags_mut()?.set(id, false);
 
         // Account for I/O cost as if we were writing to disk now
         let hw_counter = HardwareCounterCell::disposable();
-        hw_counter.payload_index_io_write_counter().incr_delta(1);
-
-        // Also buffer the removal for persistence
-        {
-            let mut buffer = self.update_buffer.write().map_err(|e| {
-                OperationError::service_error(format!(
-                    "Failed to acquire write lock on update buffer: {e}"
-                ))
-            })?;
-            buffer.insert(
-                id,
-                Update {
-                    has_values: false,
-                    is_null: false,
-                },
-            );
-        }
-
-        // Bump total points (same as in mmap implementation)
-        self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
+        hw_counter.payload_index_io_write_counter().incr_delta(2);
 
         Ok(())
     }
 
     pub fn values_count(&self, id: PointOffsetType) -> usize {
-        usize::from(self.has_values_bitmap.contains(id))
+        usize::from(self.has_values_flags().is_ok_and(|flags| flags.get(id)))
     }
 
     pub fn values_is_empty(&self, id: PointOffsetType) -> bool {
-        !self.has_values_bitmap.contains(id)
+        !self.has_values_flags().is_ok_and(|flags| flags.get(id))
     }
 
     pub fn values_is_null(&self, id: PointOffsetType) -> bool {
-        self.is_null_bitmap.contains(id)
+        self.is_null_flags().is_ok_and(|flags| flags.get(id))
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        let points_count = self.has_values_bitmap.len() as usize;
+        let points_count = self.has_values_flags().map_or(0, |flags| flags.len());
 
         PayloadIndexTelemetry {
             field_name: None,
@@ -263,13 +202,8 @@ impl MutableNullIndex {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        if let Some(storage) = &self.storage {
-            let guard = storage.lock().map_err(|e| {
-                OperationError::service_error(format!("Failed to acquire mutex: {e}"))
-            })?;
-            guard.is_null_mmap.clear_cache()?;
-            guard.has_values_mmap.clear_cache()?;
-        }
+        self.is_null_flags()?.clear_cache()?;
+        self.has_values_flags()?.clear_cache()?;
 
         Ok(())
     }
@@ -287,11 +221,14 @@ impl MutableNullIndex {
 
 impl PayloadFieldIndex for MutableNullIndex {
     fn count_indexed_points(&self) -> usize {
-        self.has_values_bitmap.len() as usize
+        self.has_values_flags()
+            .map(|flags| flags.len())
+            .unwrap_or(0)
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        let is_loaded = self.storage.is_some();
+        // todo: should this load and potentially create new files?
+        let is_loaded = self.has_values_flags.is_some() && self.is_null_flags.is_some();
         Ok(is_loaded)
     }
 
@@ -301,66 +238,31 @@ impl PayloadFieldIndex for MutableNullIndex {
     }
 
     fn flusher(&self) -> Flusher {
-        let Some(storage) = &self.storage else {
+        let (Ok(has_values_flags), Ok(is_null_flags)) =
+            (self.has_values_flags(), self.is_null_flags())
+        else {
             return Box::new(|| Ok(()));
         };
 
-        // Clone Arc references for the closure
-        let storage = Arc::clone(storage);
-        let update_buffer = Arc::clone(&self.update_buffer);
+        let flush_has_values = has_values_flags.flusher();
+        let flush_is_null = is_null_flags.flusher();
 
         Box::new(move || {
-            // Flush buffer to storage
-            let updates = {
-                let mut buffer = update_buffer.write().map_err(|e| {
-                    OperationError::service_error(format!("Failed to acquire write lock: {e}"))
-                })?;
-
-                std::mem::take(&mut *buffer)
-            };
-
-            let Some(max_id) = updates.iter().map(|(&id, _)| id).max() else {
-                // No max id means there are no updates
-                debug_assert!(updates.is_empty());
-                return Ok(());
-            };
-
-            let mut storage_guard = storage.lock().map_err(|e| {
-                OperationError::service_error(format!("Failed to acquire mutex: {e}"))
-            })?;
-
-            // Resize once if needed
-            if storage_guard.has_values_mmap.len() <= max_id as usize {
-                storage_guard
-                    .has_values_mmap
-                    .set_len((max_id + 1) as usize)?;
-            }
-            if storage_guard.is_null_mmap.len() <= max_id as usize {
-                storage_guard.is_null_mmap.set_len((max_id + 1) as usize)?;
-            }
-
-            // Persist buffered updates to mmap
-            for (&id, &update) in &updates {
-                storage_guard.has_values_mmap.set(id, update.has_values);
-                storage_guard.is_null_mmap.set(id, update.is_null);
-            }
-
-            // Then flush mmap data
-            storage_guard.has_values_mmap.flusher()()?;
-            storage_guard.is_null_mmap.flusher()()?;
+            flush_has_values()?;
+            flush_is_null()?;
             Ok(())
         })
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        let Some(storage) = &self.storage else {
-            return vec![];
+        let (Ok(has_values_flags), Ok(is_null_flags)) =
+            (self.has_values_flags(), self.is_null_flags())
+        else {
+            return Vec::new();
         };
 
-        let storage = storage.lock().expect("Should acquire mutex"); // todo: propagate error
-
-        let mut files = storage.has_values_mmap.files();
-        files.extend(storage.is_null_mmap.files());
+        let mut files = has_values_flags.files();
+        files.extend(is_null_flags.files());
         files
     }
 
@@ -388,24 +290,21 @@ impl PayloadFieldIndex for MutableNullIndex {
         if let Some(is_empty) = is_empty {
             if *is_empty {
                 // Return points that don't have values
-                let iter = (0..self.total_point_count as u32)
-                    .filter(|&id| !self.has_values_bitmap.contains(id));
-
+                let iter = self.has_values_flags().ok()?.iter_falses();
                 Some(Box::new(iter))
             } else {
                 // Return points that have values
-                let iter = self.has_values_bitmap.iter();
+                let iter = self.has_values_flags().ok()?.iter_trues();
                 Some(Box::new(iter))
             }
         } else if let Some(is_null) = is_null {
             if *is_null {
                 // Return points that have null values
-                let iter = self.is_null_bitmap.iter();
+                let iter = self.is_null_flags().ok()?.iter_trues();
                 Some(Box::new(iter))
             } else {
                 // Return points that don't have null values
-                let iter = (0..self.total_point_count as u32)
-                    .filter(|&id| !self.is_null_bitmap.contains(id));
+                let iter = self.is_null_flags().ok()?.iter_falses();
                 Some(Box::new(iter))
             }
         } else {
@@ -432,7 +331,7 @@ impl PayloadFieldIndex for MutableNullIndex {
 
         if let Some(is_empty) = is_empty {
             if *is_empty {
-                let has_values_count = self.has_values_bitmap.len() as usize;
+                let has_values_count = self.has_values_flags().ok()?.count_trues();
                 let estimated = self.total_point_count.saturating_sub(has_values_count);
 
                 Some(CardinalityEstimation {
@@ -445,19 +344,19 @@ impl PayloadFieldIndex for MutableNullIndex {
                     ))],
                 })
             } else {
-                let count = self.has_values_bitmap.len() as usize;
+                let count = self.has_values_flags().ok()?.count_trues();
                 Some(CardinalityEstimation::exact(count).with_primary_clause(
                     PrimaryCondition::from(FieldCondition::new_is_empty(key.clone(), false)),
                 ))
             }
         } else if let Some(is_null) = is_null {
             if *is_null {
-                let count = self.is_null_bitmap.len() as usize;
+                let count = self.is_null_flags().ok()?.count_trues();
                 Some(CardinalityEstimation::exact(count).with_primary_clause(
                     PrimaryCondition::from(FieldCondition::new_is_null(key.clone(), true)),
                 ))
             } else {
-                let is_null_count = self.is_null_bitmap.len() as usize;
+                let is_null_count = self.is_null_flags().ok()?.count_trues();
                 let estimated = self.total_point_count.saturating_sub(is_null_count);
 
                 Some(CardinalityEstimation {
@@ -647,14 +546,8 @@ mod tests {
                 .unwrap();
         }
 
-        // Buffer should still contain all updates
-        assert_eq!(index.update_buffer.read().unwrap().len(), 10);
-
         // Manually flush via flusher
         index.flusher()().unwrap();
-
-        // Buffer should be empty now
-        assert_eq!(index.update_buffer.read().unwrap().len(), 0);
 
         // Verify data is in bitmaps
         for i in 0..10 {
