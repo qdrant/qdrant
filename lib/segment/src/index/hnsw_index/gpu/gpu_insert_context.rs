@@ -485,13 +485,13 @@ mod tests {
     use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
     use super::*;
+    use crate::data_types::vectors::VectorRef;
     use crate::fixtures::index_fixtures::TestRawScorerProducer;
     use crate::index::hnsw_index::graph_layers::GraphLayersBase;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::links_container::LinksContainer;
     use crate::spaces::simple::DotProductMetric;
     use crate::types::Distance;
-    use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
 
@@ -533,7 +533,7 @@ mod tests {
             storage
                 .insert_vector(
                     idx as PointOffsetType,
-                    v.as_vec_ref(),
+                    VectorRef::from(v.as_ref()),
                     &HardwareCounterCell::new(),
                 )
                 .unwrap();
@@ -547,7 +547,7 @@ mod tests {
             graph_layers_builder.set_levels(idx, level);
         }
         for idx in 0..(num_vectors as PointOffsetType) {
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+            let added_vector = vector_holder.get_vector(idx).to_vec();
             let scorer = vector_holder.get_scorer(added_vector.clone());
             graph_layers_builder.link_new_point(idx, scorer);
         }
@@ -753,7 +753,10 @@ mod tests {
 
         // Check response
         for i in 0..groups_count {
-            let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
+            let added_vector = test
+                .vector_holder
+                .get_vector((num_vectors + i) as PointOffsetType)
+                .to_vec();
             let mut scorer = test.vector_holder.get_scorer(added_vector.clone());
             let entry = ScoredPointOffset {
                 idx: 0,
@@ -808,7 +811,10 @@ mod tests {
 
         // Check response
         for (i, &gpu_search_result) in gpu_responses.iter().enumerate() {
-            let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
+            let added_vector = test
+                .vector_holder
+                .get_vector((num_vectors + i) as PointOffsetType)
+                .to_vec();
             let mut scorer = test.vector_holder.get_scorer(added_vector.clone());
             let search_result = test
                 .graph_layers_builder
@@ -971,7 +977,10 @@ mod tests {
 
         // Check response
         for (i, gpu_group_result) in gpu_responses.iter().enumerate() {
-            let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
+            let added_vector = test
+                .vector_holder
+                .get_vector((num_vectors + i) as PointOffsetType)
+                .to_vec();
             let mut scorer = test.vector_holder.get_scorer(added_vector.clone());
             let entry = ScoredPointOffset {
                 idx: 0,

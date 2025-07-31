@@ -387,8 +387,7 @@ mod tests {
     };
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric};
-    use crate::vector_storage::DEFAULT_STOPPED;
-    use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
 
     fn search_in_graph(
         query: &[VectorElementType],
@@ -433,10 +432,7 @@ mod tests {
 
         let linking_idx: PointOffsetType = 7;
 
-        let added_vector = vector_holder
-            .vectors
-            .get(linking_idx as VectorOffsetType)
-            .to_vec();
+        let added_vector = vector_holder.get_vector(linking_idx).to_vec();
         let mut scorer = vector_holder.get_scorer(added_vector);
 
         let nearest_on_level = graph_layers
@@ -539,8 +535,8 @@ mod tests {
         let query = random_vector(&mut rng, dim);
         let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
-        for idx in 0..vector_holder.vectors.len() as PointOffsetType {
-            let vec = &vector_holder.vectors.get(idx as VectorOffsetType);
+        for idx in 0..vector_holder.total_vector_count() as PointOffsetType {
+            let vec = &vector_holder.get_vector(idx);
             reference_top.push(ScoredPointOffset {
                 idx,
                 score: M::similarity(vec, &processed_query),

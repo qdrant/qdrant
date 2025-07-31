@@ -99,7 +99,7 @@ mod tests {
     use rand::rngs::StdRng;
 
     use super::batched_points::BatchedPoints;
-    use crate::data_types::vectors::DenseVector;
+    use crate::data_types::vectors::{DenseVector, VectorRef};
     use crate::fixtures::index_fixtures::TestRawScorerProducer;
     use crate::fixtures::payload_fixtures::random_vector;
     use crate::index::hnsw_index::HnswM;
@@ -108,7 +108,6 @@ mod tests {
     use crate::index::hnsw_index::graph_links::GraphLinksFormat;
     use crate::spaces::simple::CosineMetric;
     use crate::types::Distance;
-    use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 
@@ -137,7 +136,7 @@ mod tests {
             storage
                 .insert_vector(
                     idx as PointOffsetType,
-                    v.as_vec_ref(),
+                    VectorRef::from(v.as_ref()),
                     &HardwareCounterCell::new(),
                 )
                 .unwrap();
@@ -157,7 +156,7 @@ mod tests {
         );
 
         for &idx in &ids {
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+            let added_vector = vector_holder.get_vector(idx).to_vec();
             let scorer = vector_holder.get_scorer(added_vector);
             graph_layers_builder.link_new_point(idx, scorer);
         }

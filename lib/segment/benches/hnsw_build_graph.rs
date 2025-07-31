@@ -9,7 +9,6 @@ use segment::fixtures::index_fixtures::TestRawScorerProducer;
 use segment::index::hnsw_index::HnswM;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::spaces::simple::CosineMetric;
-use segment::vector_storage::chunked_vector_storage::VectorOffsetType;
 
 const NUM_VECTORS: usize = 10000;
 const DIM: usize = 32;
@@ -33,7 +32,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
                 USE_HEURISTIC,
             );
             for idx in 0..(NUM_VECTORS as PointOffsetType) {
-                let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+                let added_vector = vector_holder.get_vector(idx).to_vec();
                 let scorer = vector_holder.get_scorer(added_vector);
                 let level = graph_layers_builder.get_random_layer(&mut rng);
                 graph_layers_builder.set_levels(idx, level);

@@ -604,8 +604,7 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::CosineMetric;
-    use crate::vector_storage::DEFAULT_STOPPED;
-    use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage as _};
 
     const M: usize = 8;
 
@@ -647,7 +646,7 @@ mod tests {
             (0..(num_vectors as PointOffsetType))
                 .into_par_iter()
                 .for_each(|idx| {
-                    let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+                    let added_vector = vector_holder.get_vector(idx).to_vec();
                     let scorer = vector_holder.get_scorer(added_vector);
                     graph_layers.link_new_point(idx, scorer);
                 });
@@ -685,7 +684,7 @@ mod tests {
         }
 
         for idx in 0..(num_vectors as PointOffsetType) {
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+            let added_vector = vector_holder.get_vector(idx).to_vec();
             let scorer = vector_holder.get_scorer(added_vector);
             graph_layers.link_new_point(idx, scorer);
         }
@@ -743,8 +742,8 @@ mod tests {
         let query = random_vector(&mut rng, dim);
         let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
-        for idx in 0..vector_holder.vectors.len() as PointOffsetType {
-            let vec = &vector_holder.vectors.get(idx as VectorOffsetType);
+        for idx in 0..vector_holder.total_vector_count() as PointOffsetType {
+            let vec = &vector_holder.get_vector(idx);
             reference_top.push(ScoredPointOffset {
                 idx,
                 score: M::similarity(vec, &processed_query),
@@ -836,8 +835,8 @@ mod tests {
         let query = random_vector(&mut rng, dim);
         let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
-        for idx in 0..vector_holder.vectors.len() as PointOffsetType {
-            let vec = &vector_holder.vectors.get(idx as VectorOffsetType);
+        for idx in 0..vector_holder.total_vector_count() as PointOffsetType {
+            let vec = &vector_holder.get_vector(idx);
             reference_top.push(ScoredPointOffset {
                 idx,
                 score: M::similarity(vec, &processed_query),
@@ -870,7 +869,7 @@ mod tests {
         let mut graph_layers_builder =
             GraphLayersBuilder::new(NUM_VECTORS, HnswM::new2(M), EF_CONSTRUCT, 10, USE_HEURISTIC);
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+            let added_vector = vector_holder.get_vector(idx).to_vec();
             let scorer = vector_holder.get_scorer(added_vector);
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx, level);

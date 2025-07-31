@@ -111,7 +111,6 @@ mod tests {
         GpuGraphTestData, check_graph_layers_builders_quality, compare_graph_layers_builders,
         create_gpu_graph_test_data,
     };
-    use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 
     fn build_gpu_graph(
         test: &GpuGraphTestData,
@@ -155,12 +154,8 @@ mod tests {
                     cpu_linked_points_count,
                     ids.clone(),
                     |point_id| {
-                        let added_vector = test
-                            .vector_holder
-                            .vectors
-                            .get(point_id as VectorOffsetType)
-                            .to_vec();
-                        Ok(test.vector_holder.get_scorer(added_vector.clone()))
+                        let added_vector = test.vector_holder.get_vector(point_id);
+                        Ok(test.vector_holder.get_scorer(added_vector.to_vec()))
                     },
                     &false.into(),
                 )

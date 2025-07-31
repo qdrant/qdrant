@@ -11,7 +11,6 @@ use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::spaces::metric::Metric;
-use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 
 pub(crate) fn create_graph_layer_builder_fixture<TMetric: Metric<VectorElementType>, R>(
     num_vectors: usize,
@@ -37,7 +36,7 @@ where
     );
 
     for idx in 0..(num_vectors as PointOffsetType) {
-        let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+        let added_vector = vector_holder.get_vector(idx).to_vec();
         let scorer = vector_holder.get_scorer(added_vector);
 
         let level = graph_layers_builder.get_random_layer(rng);
