@@ -13,8 +13,9 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
+use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::AccessRequirements;
+use storage::rbac::{Access, AccessRequirements};
 use tokio::sync::Mutex;
 
 use crate::actix::auth::ActixAccess;
@@ -30,6 +31,21 @@ use crate::tracing;
 pub struct TelemetryParam {
     pub anonymize: Option<bool>,
     pub details_level: Option<usize>,
+}
+
+// Actix specific code
+async fn do_put_locks(
+    toc: &TableOfContent,
+    access: Access,
+    locks_option: LocksOption,
+) -> Result<LocksOption, StorageError> {
+    access.check_global_access(AccessRequirements::new().manage())?;
+    let result = LocksOption {
+        write: toc.is_write_locked(),
+        error_message: toc.get_lock_error_message(),
+    };
+    toc.set_locks(locks_option.write, locks_option.error_message.clone());
+    Ok(result)
 }
 
 #[get("/telemetry")]
@@ -96,24 +112,20 @@ async fn metrics(
 }
 
 #[post("/locks")]
-fn put_locks(
+async fn put_locks(
     dispatcher: web::Data<Dispatcher>,
     locks_option: Json<LocksOption>,
     ActixAccess(access): ActixAccess,
-) -> impl Future<Output = HttpResponse> {
+) -> HttpResponse {
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
 
-    helpers::time(async move {
-        let toc = dispatcher.toc(&access, &pass);
-        access.check_global_access(AccessRequirements::new().manage())?;
-        let result = LocksOption {
-            write: toc.is_write_locked(),
-            error_message: toc.get_lock_error_message(),
-        };
-        toc.set_locks(locks_option.write, locks_option.error_message.clone());
-        Ok(result)
-    })
+    helpers::time(do_put_locks(
+        dispatcher.toc(&access, &pass),
+        access,
+        locks_option.into_inner(),
+    ))
+    .await
 }
 
 #[get("/locks")]
