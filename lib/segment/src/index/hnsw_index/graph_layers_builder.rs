@@ -13,7 +13,7 @@ use rand::distr::Uniform;
 
 use super::HnswM;
 use super::graph_layers::GraphLayerData;
-use super::graph_links::{GraphLinks, GraphLinksFormat};
+use super::graph_links::{GraphLinks, GraphLinksFormatParam};
 use super::links_container::{ItemsBuffer, LinksContainer};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
@@ -184,16 +184,17 @@ impl GraphLayersBuilder {
     pub fn into_graph_layers(
         self,
         path: &Path,
-        format: GraphLinksFormat,
+        format_param: GraphLinksFormatParam,
         on_disk: bool,
     ) -> OperationResult<GraphLayers> {
-        let links_path = GraphLayers::get_links_path(path, format);
+        let links_path = GraphLayers::get_links_path(path, format_param.as_format());
 
-        let serializer = Self::links_layers_to_serializer(self.links_layers, format, self.hnsw_m)?;
+        let serializer =
+            Self::links_layers_to_serializer(self.links_layers, format_param, self.hnsw_m)?;
         serializer.save_as(&links_path)?;
 
         let links = if on_disk {
-            GraphLinks::load_from_file(&links_path, true, format)?
+            GraphLinks::load_from_file(&links_path, true, format_param.as_format())?
         } else {
             serializer.to_graph_links_ram()
         };
@@ -217,10 +218,10 @@ impl GraphLayersBuilder {
     }
 
     #[cfg(feature = "testing")]
-    pub fn into_graph_layers_ram(self, format: GraphLinksFormat) -> GraphLayers {
+    pub fn into_graph_layers_ram(self, format_param: GraphLinksFormatParam<'_>) -> GraphLayers {
         GraphLayers {
             hnsw_m: self.hnsw_m,
-            links: Self::links_layers_to_serializer(self.links_layers, format, self.hnsw_m)
+            links: Self::links_layers_to_serializer(self.links_layers, format_param, self.hnsw_m)
                 .unwrap()
                 .to_graph_links_ram(),
             entry_points: self.entry_points.into_inner(),
@@ -230,14 +231,14 @@ impl GraphLayersBuilder {
 
     fn links_layers_to_serializer(
         link_layers: Vec<LockedLayersContainer>,
-        format: GraphLinksFormat,
+        format_param: GraphLinksFormatParam,
         hnsw_m: HnswM,
     ) -> OperationResult<GraphLinksSerializer> {
         let edges = link_layers
             .into_iter()
             .map(|l| l.into_iter().map(|l| l.into_inner().into_vec()).collect())
             .collect();
-        GraphLinksSerializer::new(edges, format, hnsw_m)
+        GraphLinksSerializer::new(edges, format_param, hnsw_m)
     }
 
     #[cfg(feature = "gpu")]
@@ -600,7 +601,7 @@ mod tests {
 
     use super::*;
     use crate::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
-    use crate::index::hnsw_index::graph_links::normalize_links;
+    use crate::index::hnsw_index::graph_links::{GraphLinksFormat, normalize_links};
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::types::Distance;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage as _};
@@ -612,6 +613,7 @@ mod tests {
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,
+        use_quantization: bool,
         distance: Distance,
         rng: &mut R,
     ) -> (TestRawScorerProducer, GraphLayersBuilder)
@@ -628,7 +630,8 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
 
-        let vector_holder = TestRawScorerProducer::new(dim, distance, num_vectors, false, rng);
+        let vector_holder =
+            TestRawScorerProducer::new(dim, distance, num_vectors, use_quantization, rng);
 
         let mut graph_layers = GraphLayersBuilder::new(
             num_vectors,
@@ -658,6 +661,7 @@ mod tests {
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,
+        use_quantization: bool,
         distance: Distance,
         rng: &mut R,
     ) -> (TestRawScorerProducer, GraphLayersBuilder)
@@ -668,7 +672,8 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
 
-        let vector_holder = TestRawScorerProducer::new(dim, distance, num_vectors, false, rng);
+        let vector_holder =
+            TestRawScorerProducer::new(dim, distance, num_vectors, use_quantization, rng);
 
         let mut graph_layers = GraphLayersBuilder::new(
             num_vectors,
@@ -695,6 +700,7 @@ mod tests {
     #[rstest]
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
+    #[case::compressed_with_vectors(GraphLinksFormat::CompressedWithVectors)]
     fn test_parallel_graph_build(#[case] format: GraphLinksFormat) {
         let distance = Distance::Cosine;
         let num_vectors = 1000;
@@ -705,8 +711,14 @@ mod tests {
         // let (vector_holder, graph_layers_builder) =
         //     create_graph_layer::<M, _>(num_vectors, dim, false, &mut rng);
 
-        let (vector_holder, graph_layers_builder) =
-            parallel_graph_build(num_vectors, dim, false, distance, &mut rng);
+        let (vector_holder, graph_layers_builder) = parallel_graph_build(
+            num_vectors,
+            dim,
+            false,
+            format.is_with_vectors(),
+            distance,
+            &mut rng,
+        );
 
         let main_entry = graph_layers_builder
             .entry_points
@@ -746,7 +758,8 @@ mod tests {
             reference_top.push(ScoredPointOffset { idx, score });
         }
 
-        let graph = graph_layers_builder.into_graph_layers_ram(format);
+        let graph = graph_layers_builder
+            .into_graph_layers_ram(format.with_param_for_tests(vector_holder.quantized_vectors()));
 
         let scorer = vector_holder.scorer(query);
         let ef = 16;
@@ -760,6 +773,7 @@ mod tests {
     #[rstest]
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
+    #[case::compressed_with_vectors(GraphLinksFormat::CompressedWithVectors)]
     fn test_add_points(#[case] format: GraphLinksFormat) {
         let distance = Distance::Cosine;
         let num_vectors = 1000;
@@ -768,11 +782,25 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let mut rng2 = StdRng::seed_from_u64(42);
 
-        let (vector_holder, graph_layers_builder) =
-            create_graph_layer(num_vectors, dim, false, distance, &mut rng);
+        let (vector_holder, graph_layers_builder) = create_graph_layer(
+            num_vectors,
+            dim,
+            false,
+            format.is_with_vectors(),
+            distance,
+            &mut rng,
+        );
 
-        let (_vector_holder_orig, graph_layers_orig) =
-            create_graph_layer_fixture(num_vectors, M, dim, format, false, distance, &mut rng2);
+        let (_vector_holder_orig, graph_layers_orig) = create_graph_layer_fixture(
+            num_vectors,
+            M,
+            dim,
+            format,
+            false,
+            format.is_with_vectors(),
+            distance,
+            &mut rng2,
+        );
 
         // check is graph_layers_builder links are equal to graph_layers_orig
         let orig_len = graph_layers_orig.links.num_points();
@@ -789,7 +817,7 @@ mod tests {
             let link_container_from_builder = links_builder.links().to_vec();
             let m = match format {
                 GraphLinksFormat::Plain => 0,
-                GraphLinksFormat::Compressed => M * 2,
+                GraphLinksFormat::Compressed | GraphLinksFormat::CompressedWithVectors => M * 2,
             };
             assert_eq!(
                 normalize_links(m, links_orig.clone()),
@@ -835,7 +863,8 @@ mod tests {
             reference_top.push(ScoredPointOffset { idx, score });
         }
 
-        let graph = graph_layers_builder.into_graph_layers_ram(format);
+        let graph = graph_layers_builder
+            .into_graph_layers_ram(format.with_param_for_tests(vector_holder.quantized_vectors()));
 
         let scorer = vector_holder.scorer(query);
         let ef = 16;
@@ -848,6 +877,7 @@ mod tests {
     #[rstest]
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
+    #[case::compressed_with_vectors(GraphLinksFormat::CompressedWithVectors)]
     fn test_hnsw_graph_properties(#[case] format: GraphLinksFormat) {
         const NUM_VECTORS: usize = 5_000;
         const DIM: usize = 16;
@@ -857,8 +887,13 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let vector_holder =
-            TestRawScorerProducer::new(DIM, Distance::Cosine, NUM_VECTORS, false, &mut rng);
+        let vector_holder = TestRawScorerProducer::new(
+            DIM,
+            Distance::Cosine,
+            NUM_VECTORS,
+            format.is_with_vectors(),
+            &mut rng,
+        );
         let mut graph_layers_builder =
             GraphLayersBuilder::new(NUM_VECTORS, HnswM::new2(M), EF_CONSTRUCT, 10, USE_HEURISTIC);
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
@@ -867,7 +902,8 @@ mod tests {
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);
         }
-        let graph_layers = graph_layers_builder.into_graph_layers_ram(format);
+        let graph_layers = graph_layers_builder
+            .into_graph_layers_ram(format.with_param_for_tests(vector_holder.quantized_vectors()));
 
         let num_points = graph_layers.links.num_points();
         eprintln!("number_points = {num_points:#?}");

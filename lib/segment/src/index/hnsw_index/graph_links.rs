@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -7,6 +8,7 @@ use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops::open_read_mmap;
 
 use crate::common::operation_error::OperationResult;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 mod header;
 mod serializer;
@@ -14,7 +16,7 @@ mod view;
 
 pub use serializer::GraphLinksSerializer;
 pub use view::LinksIterator;
-use view::{CompressionInfo, GraphLinksView};
+use view::{CompressionInfo, GraphLinksView, LinksWithVectorsIterator};
 
 /*
 Links data for whole graph layers.
@@ -52,6 +54,106 @@ links offset = level_offsets[level] + offsets[reindex[point_id]]
 pub enum GraphLinksFormat {
     Plain,
     Compressed,
+    CompressedWithVectors,
+}
+
+/// Similar to [`GraphLinksFormat`], won't let you use `CompressedWithVectors`
+/// without providing the vectors.
+#[derive(Clone, Copy)]
+pub enum GraphLinksFormatParam<'a> {
+    Plain,
+    Compressed,
+    CompressedWithVectors(&'a dyn GraphLinksVectors),
+}
+
+pub trait GraphLinksVectors {
+    fn get_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]>;
+
+    fn vector_layout(&self) -> OperationResult<Layout>;
+}
+
+impl GraphLinksVectors for QuantizedVectors {
+    fn get_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
+        Ok(self.get_quantized_vector(point_id))
+    }
+
+    fn vector_layout(&self) -> OperationResult<Layout> {
+        self.get_quantized_vector_layout()
+    }
+}
+
+#[cfg(test)]
+impl GraphLinksVectors for Vec<Vec<u8>> {
+    fn get_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
+        Ok(&self[point_id as usize])
+    }
+
+    fn vector_layout(&self) -> OperationResult<Layout> {
+        const ALIGNMENT: usize = 8; // Some hard-coded alignment for test purposes.
+        Ok(
+            Layout::from_size_align(self.first().map_or(ALIGNMENT, |v| v.len()), ALIGNMENT)
+                .unwrap(),
+        )
+    }
+}
+
+impl GraphLinksFormat {
+    /// Create the corresponding [`GraphLinksFormatParam`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `CompressedWithVectors` is selected, but `vectors` is `None`.
+    #[cfg(test)]
+    pub fn with_param_for_tests<'a, Q: GraphLinksVectors>(
+        &self,
+        vectors: Option<&'a Q>,
+    ) -> GraphLinksFormatParam<'a> {
+        match self {
+            GraphLinksFormat::Plain => GraphLinksFormatParam::Plain,
+            GraphLinksFormat::Compressed => GraphLinksFormatParam::Compressed,
+            GraphLinksFormat::CompressedWithVectors => match vectors {
+                Some(v) => GraphLinksFormatParam::CompressedWithVectors(v),
+                None => panic!(),
+            },
+        }
+    }
+
+    /// Create the corresponding [`GraphLinksFormatParam`].
+    ///
+    /// When vectors are not available, `CompressedWithVectors` is downgraded to
+    /// `Compressed`.
+    pub fn with_param<'a, V: GraphLinksVectors>(
+        &self,
+        vectors: Option<&'a V>,
+    ) -> GraphLinksFormatParam<'a> {
+        match self {
+            GraphLinksFormat::Plain => GraphLinksFormatParam::Plain,
+            GraphLinksFormat::Compressed => GraphLinksFormatParam::Compressed,
+            GraphLinksFormat::CompressedWithVectors => match vectors {
+                Some(v) => GraphLinksFormatParam::CompressedWithVectors(v),
+                None => GraphLinksFormatParam::Compressed,
+            },
+        }
+    }
+
+    pub fn is_with_vectors(&self) -> bool {
+        match self {
+            GraphLinksFormat::Plain | GraphLinksFormat::Compressed => false,
+            GraphLinksFormat::CompressedWithVectors => true,
+        }
+    }
+}
+
+impl GraphLinksFormatParam<'_> {
+    pub fn as_format(&self) -> GraphLinksFormat {
+        match self {
+            GraphLinksFormatParam::Plain => GraphLinksFormat::Plain,
+            GraphLinksFormatParam::Compressed => GraphLinksFormat::Compressed,
+            GraphLinksFormatParam::CompressedWithVectors(_) => {
+                GraphLinksFormat::CompressedWithVectors
+            }
+        }
+    }
 }
 
 self_cell::self_cell! {
@@ -101,6 +203,9 @@ impl GraphLinks {
         match self.view().compression {
             CompressionInfo::Uncompressed { .. } => GraphLinksFormat::Plain,
             CompressionInfo::Compressed { .. } => GraphLinksFormat::Compressed,
+            CompressionInfo::CompressedWithVectors { .. } => {
+                GraphLinksFormat::CompressedWithVectors
+            }
         }
     }
 
@@ -124,6 +229,16 @@ impl GraphLinks {
     #[inline]
     pub fn links(&self, point_id: PointOffsetType, level: usize) -> LinksIterator<'_> {
         self.view().links(point_id, level)
+    }
+
+    #[inline]
+    pub fn links_with_vectors(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> LinksWithVectorsIterator<'_> {
+        let (links, vectors) = self.view().links_with_vectors(point_id, level);
+        links.zip(vectors)
     }
 
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
@@ -203,8 +318,29 @@ mod tests {
             .collect()
     }
 
-    fn check_links(mut left: Vec<Vec<Vec<PointOffsetType>>>, right: &GraphLinks) {
-        let mut right_links = right.to_edges();
+    fn random_vectors(points_count: usize, bytes_size: usize) -> Vec<Vec<u8>> {
+        let mut rng = rand::rng();
+        (0..points_count)
+            .map(|_| (0..bytes_size).map(|_| rng.random()).collect())
+            .collect()
+    }
+
+    fn check_links(
+        mut left: Vec<Vec<Vec<PointOffsetType>>>,
+        right: &GraphLinks,
+        vectors: &Option<Vec<Vec<u8>>>,
+    ) {
+        let mut right_links = right.to_edges_impl(|point_id, level| {
+            if let Some(vectors) = vectors {
+                right
+                    .links_with_vectors(point_id, level)
+                    .inspect(|&(link, bytes)| assert_eq!(bytes, vectors[link as usize]))
+                    .map(|(link, _bytes)| link)
+                    .collect()
+            } else {
+                right.links(point_id, level).collect()
+            }
+        });
         for links in [&mut left, &mut right_links].iter_mut() {
             links.iter_mut().for_each(|levels| {
                 levels
@@ -228,6 +364,8 @@ mod tests {
     #[case(GraphLinksFormat::Plain, false)]
     #[case(GraphLinksFormat::Compressed, true)]
     #[case(GraphLinksFormat::Compressed, false)]
+    #[case(GraphLinksFormat::CompressedWithVectors, true)]
+    #[case(GraphLinksFormat::CompressedWithVectors, false)]
     fn test_save_load(#[case] format: GraphLinksFormat, #[case] on_disk: bool) {
         let points_count = 1000;
         let max_levels_count = 10;
@@ -236,25 +374,41 @@ mod tests {
         let path = Builder::new().prefix("graph_dir").tempdir().unwrap();
         let links_file = path.path().join("links.bin");
         let links = random_links(points_count, max_levels_count, &hnsw_m);
-        GraphLinksSerializer::new(links.clone(), format, hnsw_m)
-            .unwrap()
-            .save_as(&links_file)
-            .unwrap();
+
+        let vectors = format
+            .is_with_vectors()
+            .then(|| random_vectors(points_count, 8));
+
+        GraphLinksSerializer::new(
+            links.clone(),
+            format.with_param_for_tests(vectors.as_ref()),
+            hnsw_m,
+        )
+        .unwrap()
+        .save_as(&links_file)
+        .unwrap();
         let cmp_links = GraphLinks::load_from_file(&links_file, on_disk, format).unwrap();
-        check_links(links, &cmp_links);
+        check_links(links, &cmp_links, &vectors);
     }
 
     #[rstest]
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
+    #[case::compressed_with_vectors(GraphLinksFormat::CompressedWithVectors)]
     fn test_graph_links_construction(#[case] format: GraphLinksFormat) {
         let hnsw_m = HnswM::new2(8);
 
+        let vectors = format.is_with_vectors().then(|| random_vectors(100, 16));
+
         let check = |links: Vec<Vec<Vec<PointOffsetType>>>| {
-            let cmp_links = GraphLinksSerializer::new(links.clone(), format, hnsw_m)
-                .unwrap()
-                .to_graph_links_ram();
-            check_links(links, &cmp_links);
+            let cmp_links = GraphLinksSerializer::new(
+                links.clone(),
+                format.with_param_for_tests(vectors.as_ref()),
+                hnsw_m,
+            )
+            .unwrap()
+            .to_graph_links_ram();
+            check_links(links, &cmp_links, &vectors);
         };
 
         // no points

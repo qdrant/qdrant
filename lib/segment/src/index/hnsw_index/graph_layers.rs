@@ -16,6 +16,7 @@ use crate::common::operation_error::{
     CancellableResult, OperationError, OperationResult, check_process_stopped,
 };
 use crate::common::utils::rev_range;
+use crate::index::hnsw_index::graph_links::GraphLinksFormatParam;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
@@ -24,8 +25,10 @@ pub type LinkContainer = Vec<PointOffsetType>;
 pub type LayersContainer = Vec<LinkContainer>;
 
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
+
 pub const HNSW_LINKS_FILE: &str = "links.bin";
 pub const COMPRESSED_HNSW_LINKS_FILE: &str = "links_compressed.bin";
+pub const COMPRESSED_WITH_VECTORS_HNSW_LINKS_FILE: &str = "links_comp_vec.bin";
 
 /// Contents of the `graph.bin` file.
 #[derive(Deserialize, Serialize, Debug)]
@@ -281,6 +284,9 @@ impl GraphLayers {
         match format {
             GraphLinksFormat::Plain => path.join(HNSW_LINKS_FILE),
             GraphLinksFormat::Compressed => path.join(COMPRESSED_HNSW_LINKS_FILE),
+            GraphLinksFormat::CompressedWithVectors => {
+                path.join(COMPRESSED_WITH_VECTORS_HNSW_LINKS_FILE)
+            }
         }
     }
 
@@ -313,7 +319,11 @@ impl GraphLayers {
     }
 
     fn load_links(dir: &Path, on_disk: bool) -> OperationResult<GraphLinks> {
-        for format in [GraphLinksFormat::Compressed, GraphLinksFormat::Plain] {
+        for format in [
+            GraphLinksFormat::CompressedWithVectors,
+            GraphLinksFormat::Compressed,
+            GraphLinksFormat::Plain,
+        ] {
             let path = GraphLayers::get_links_path(dir, format);
             if path.exists() {
                 return GraphLinks::load_from_file(&path, on_disk, format);
@@ -322,11 +332,18 @@ impl GraphLayers {
         Err(OperationError::service_error("No links file found"))
     }
 
+    /// Convert the "plain" format into the "compressed" format.
+    /// Note: conversion into the "compressed with vectors" format is not
+    /// supported at the moment, though it is possible to implement.
+    /// As far as [`super::hnsw::LINK_COMPRESSION_CONVERT_EXISTING`] is false,
+    /// this code is not used in production.
     fn convert_to_compressed(dir: &Path, hnsw_m: HnswM) -> OperationResult<()> {
         let plain_path = Self::get_links_path(dir, GraphLinksFormat::Plain);
         let compressed_path = Self::get_links_path(dir, GraphLinksFormat::Compressed);
+        let compressed_with_vectors_path =
+            Self::get_links_path(dir, GraphLinksFormat::CompressedWithVectors);
 
-        if compressed_path.exists() {
+        if compressed_path.exists() || compressed_with_vectors_path.exists() {
             return Ok(());
         }
 
@@ -334,7 +351,7 @@ impl GraphLayers {
 
         let links = GraphLinks::load_from_file(&plain_path, true, GraphLinksFormat::Plain)?;
         let original_size = plain_path.metadata()?.len();
-        GraphLinksSerializer::new(links.to_edges(), GraphLinksFormat::Compressed, hnsw_m)?
+        GraphLinksSerializer::new(links.to_edges(), GraphLinksFormatParam::Compressed, hnsw_m)?
             .save_as(&compressed_path)?;
         let new_size = compressed_path.metadata()?.len();
 
@@ -357,14 +374,17 @@ impl GraphLayers {
         use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
         assert_eq!(self.links.format(), GraphLinksFormat::Plain);
         let dummy =
-            GraphLinksSerializer::new(Vec::new(), GraphLinksFormat::Plain, HnswM::new(0, 0))
+            GraphLinksSerializer::new(Vec::new(), GraphLinksFormatParam::Plain, HnswM::new(0, 0))
                 .unwrap()
                 .to_graph_links_ram();
         let links = std::mem::replace(&mut self.links, dummy);
-        self.links =
-            GraphLinksSerializer::new(links.to_edges(), GraphLinksFormat::Compressed, self.hnsw_m)
-                .unwrap()
-                .to_graph_links_ram();
+        self.links = GraphLinksSerializer::new(
+            links.to_edges(),
+            GraphLinksFormatParam::Compressed,
+            self.hnsw_m,
+        )
+        .unwrap()
+        .to_graph_links_ram();
     }
 
     pub fn populate(&self) -> OperationResult<()> {
@@ -411,6 +431,7 @@ mod tests {
     #[rstest]
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
+    #[case::compressed_with_vectors(GraphLinksFormat::CompressedWithVectors)]
     fn test_search_on_level(#[case] format: GraphLinksFormat) {
         let dim = 8;
         let hnsw_m = HnswM::new2(8);
@@ -419,17 +440,26 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let vector_holder =
-            TestRawScorerProducer::new(dim, Distance::Dot, num_vectors, false, &mut rng);
+        let vector_holder = TestRawScorerProducer::new(
+            dim,
+            Distance::Dot,
+            num_vectors,
+            format.is_with_vectors(),
+            &mut rng,
+        );
 
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
 
         let graph_layers = GraphLayers {
             hnsw_m,
-            links: GraphLinksSerializer::new(graph_links.clone(), format, hnsw_m)
-                .unwrap()
-                .to_graph_links_ram(),
+            links: GraphLinksSerializer::new(
+                graph_links.clone(),
+                format.with_param_for_tests(vector_holder.quantized_vectors()),
+                hnsw_m,
+            )
+            .unwrap()
+            .to_graph_links_ram(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
         };
@@ -467,6 +497,7 @@ mod tests {
     #[case::converted((GraphLinksFormat::Plain, true))]
     #[case::compressed((GraphLinksFormat::Compressed, false))]
     #[case::recompressed((GraphLinksFormat::Compressed, true))]
+    #[case::compressed_with_vectors((GraphLinksFormat::CompressedWithVectors, false))]
     fn test_save_and_load(#[case] (initial_format, compress): (GraphLinksFormat, bool)) {
         let distance = Distance::Cosine;
         let num_vectors = 100;
@@ -479,10 +510,21 @@ mod tests {
 
         let query = random_vector(&mut rng, dim);
 
-        let (vector_holder, graph_layers_builder) =
-            create_graph_layer_builder_fixture(num_vectors, M, dim, false, distance, &mut rng);
+        let (vector_holder, graph_layers_builder) = create_graph_layer_builder_fixture(
+            num_vectors,
+            M,
+            dim,
+            false,
+            initial_format.is_with_vectors(),
+            distance,
+            &mut rng,
+        );
         let graph1 = graph_layers_builder
-            .into_graph_layers(dir.path(), initial_format, true)
+            .into_graph_layers(
+                dir.path(),
+                initial_format.with_param_for_tests(vector_holder.quantized_vectors()),
+                true,
+            )
             .unwrap();
         assert_eq!(graph1.links.format(), initial_format);
         let res1 = search_in_graph(&query, top, &vector_holder, &graph1);
@@ -502,6 +544,7 @@ mod tests {
     #[rstest]
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
+    #[case::compressed_with_vectors(GraphLinksFormat::CompressedWithVectors)]
     fn test_add_points(#[case] format: GraphLinksFormat) {
         type M = CosineMetric;
         let distance = <M as Metric<VectorElementType>>::distance();
@@ -510,8 +553,16 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let (vector_holder, graph_layers) =
-            create_graph_layer_fixture(num_vectors, M, dim, format, false, distance, &mut rng);
+        let (vector_holder, graph_layers) = create_graph_layer_fixture(
+            num_vectors,
+            M,
+            dim,
+            format,
+            false,
+            format.is_with_vectors(),
+            distance,
+            &mut rng,
+        );
 
         let main_entry = graph_layers
             .entry_points

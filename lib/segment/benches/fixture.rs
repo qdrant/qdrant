@@ -9,7 +9,7 @@ use segment::fixtures::index_fixtures::TestRawScorerProducer;
 use segment::index::hnsw_index::HnswM;
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use segment::index::hnsw_index::graph_links::GraphLinksFormat;
+use segment::index::hnsw_index::graph_links::GraphLinksFormatParam;
 use segment::index::hnsw_index::hnsw::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use segment::spaces::metric::Metric;
 
@@ -79,7 +79,7 @@ where
 
         std::fs::create_dir_all(&path).unwrap();
         graph_layers_builder
-            .into_graph_layers(&path, GraphLinksFormat::Plain, false)
+            .into_graph_layers(&path, GraphLinksFormatParam::Plain, false)
             .unwrap()
     };
 
