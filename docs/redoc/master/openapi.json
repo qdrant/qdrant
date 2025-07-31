@@ -68,7 +68,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -164,7 +164,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -278,7 +278,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -394,7 +394,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -461,7 +461,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -655,7 +655,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -722,7 +722,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -810,7 +810,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -878,7 +878,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -957,7 +957,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -1052,7 +1052,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -1147,7 +1147,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -1232,7 +1232,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -1319,7 +1319,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -1426,7 +1426,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -1505,7 +1505,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -1611,7 +1611,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -1690,7 +1690,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -1784,7 +1784,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -1863,7 +1863,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -1931,7 +1931,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -2248,7 +2248,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -2581,7 +2581,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -3163,7 +3163,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -3552,7 +3552,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -3660,7 +3660,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -3768,7 +3768,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -3875,7 +3875,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -3982,7 +3982,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -4089,7 +4089,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -4196,7 +4196,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -4301,7 +4301,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -4408,7 +4408,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -4515,7 +4515,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -4622,7 +4622,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -4733,7 +4733,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -4842,7 +4842,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -4954,7 +4954,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -5069,7 +5069,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -5178,7 +5178,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -5290,7 +5290,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -5405,7 +5405,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -5514,7 +5514,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -5626,7 +5626,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -5731,7 +5731,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -5839,7 +5839,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -5947,7 +5947,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -6055,7 +6055,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -6166,7 +6166,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -6274,7 +6274,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
@@ -6382,7 +6382,7 @@
                       "default": null,
                       "anyOf": [
                         {
-                          "$ref": "#/components/schemas/HardwareUsage"
+                          "$ref": "#/components/schemas/Usage"
                         },
                         {
                           "nullable": true
