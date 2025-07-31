@@ -197,6 +197,15 @@ pub trait GraphLayersBase {
     }
 }
 
+pub trait GraphLayersWithVectors {
+    /// # Panics
+    ///
+    /// Panics when using a format that does not support vectors.
+    fn for_each_link_with_vector<F>(&self, point_id: PointOffsetType, level: usize, f: F)
+    where
+        F: FnMut(PointOffsetType, &[u8]);
+}
+
 impl GraphLayersBase for GraphLayers {
     fn get_visited_list_from_pool(&self) -> VisitedListHandle<'_> {
         self.visited_pool.get(self.links.num_points())
@@ -211,6 +220,17 @@ impl GraphLayersBase for GraphLayers {
 
     fn get_m(&self, level: usize) -> usize {
         self.hnsw_m.level_m(level)
+    }
+}
+
+impl GraphLayersWithVectors for GraphLayers {
+    fn for_each_link_with_vector<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
+    where
+        F: FnMut(PointOffsetType, &[u8]),
+    {
+        self.links
+            .links_with_vectors(point_id, level)
+            .for_each(|(point_id, vector)| f(point_id, vector));
     }
 }
 
