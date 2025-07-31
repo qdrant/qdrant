@@ -188,6 +188,11 @@ where
         } else {
             0
         };
+        log::info!(
+            "Loading quantized vectors with {} inner vectors of dimension {}",
+            inner_vectors_count,
+            vector_parameters.dim
+        );
         Ok(Self {
             dim: vector_parameters.dim,
             quantized_storage: QuantizedStorage::load(
