@@ -599,7 +599,7 @@ async fn recover_partial_snapshot(
     MultipartForm(form): MultipartForm<SnapshottingForm>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let (collection, shard) = path.into_inner();
+    let (collection, shard_id) = path.into_inner();
 
     let SnapshotUploadingParam {
         wait,
@@ -607,14 +607,53 @@ async fn recover_partial_snapshot(
         checksum,
     } = query.into_inner();
 
-    // nothing to verify.
-    let pass = new_unchecked_verification_pass();
+    let validate = async {
+        // nothing to verify.
+        let pass = new_unchecked_verification_pass();
 
-    let try_take_recovery_lock_future =
-        try_take_partial_snapshot_recovery_lock(&dispatcher, &collection, shard, &access, &pass);
+        // TODO: Run this check before the multipart blob is uploaded
+        let collection_pass = access
+            .check_global_access(AccessRequirements::new().manage())?
+            .issue_pass(&collection)
+            .into_static();
 
-    let recovery_lock = match try_take_recovery_lock_future.await {
-        Ok(recovery_lock) => recovery_lock,
+        let recovery_lock = try_take_partial_snapshot_recovery_lock(
+            &dispatcher,
+            &collection,
+            shard_id,
+            &access,
+            &pass,
+        )
+        .await?;
+
+        let collection = dispatcher
+            .toc(&access, &pass)
+            .get_collection_owned(&collection_pass)
+            .await?;
+
+        collection.assert_shard_exists(shard_id).await?;
+
+        let recover_snapshot = common::snapshots::recover_shard_snapshot_wip(
+            dispatcher.toc(&access, &pass).clone(),
+            collection,
+            shard_id,
+            form.snapshot.file.into_temp_path().into(),
+            checksum,
+            RecoveryType::Partial,
+            priority.unwrap_or_default(),
+        )
+        .await?;
+
+        let recover_snapshot_with_recovery_lock = async move {
+            let _recovery_lock = recovery_lock;
+            recover_snapshot.await
+        };
+
+        Ok(recover_snapshot_with_recovery_lock)
+    };
+
+    let recover_snapshot = match validate.await {
+        Ok(recover_snapshot) => recover_snapshot,
 
         Err(StorageError::ShardUnavailable { .. }) => {
             return helpers::already_in_progress_response();
@@ -625,50 +664,7 @@ async fn recover_partial_snapshot(
         }
     };
 
-    let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
-        let _recovery_lock = recovery_lock;
-
-        // TODO: Run this check before the multipart blob is uploaded
-        let collection_pass = access
-            .check_global_access(AccessRequirements::new().manage())?
-            .issue_pass(&collection);
-
-        let cancel_safe = async {
-            if let Some(checksum) = checksum {
-                let snapshot_checksum = sha_256::hash_file(form.snapshot.file.path()).await?;
-                if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
-                    return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
-                }
-            }
-
-            let collection = dispatcher
-                .toc(&access, &pass)
-                .get_collection(&collection_pass)
-                .await?;
-            collection.assert_shard_exists(shard).await?;
-
-            Ok(collection)
-        };
-
-        let collection = cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
-
-        // `recover_shard_snapshot_impl` is *not* cancel safe
-        common::snapshots::recover_shard_snapshot_impl(
-            dispatcher.toc(&access, &pass),
-            &collection,
-            shard,
-            form.snapshot.file.into_temp_path().into(),
-            priority.unwrap_or_default(),
-            RecoveryType::Partial,
-            cancel,
-        )
-        .await?;
-
-        Ok(())
-    })
-    .map(|res| res.map_err(Into::into).and_then(|res| res));
-
-    helpers::time_or_accept(future, wait.unwrap_or(true)).await
+    helpers::time_or_accept(recover_snapshot, wait.unwrap_or(true)).await
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
