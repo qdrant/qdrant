@@ -264,12 +264,11 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         Self::parse_vec_data(data)
     }
 
-    pub fn get_quantized_vector(&self, i: u32) -> (f32, &[u8]) {
+    pub fn get_quantized_vector_offset_and_code(&self, i: u32) -> (f32, &[u8]) {
         let (offset, v_ptr) = self.get_vec_ptr(i);
         let vector_data_size = self.metadata.actual_dim;
-        (offset, unsafe {
-            std::slice::from_raw_parts(v_ptr, vector_data_size)
-        })
+        let code = unsafe { std::slice::from_raw_parts(v_ptr, vector_data_size) };
+        (offset, code)
     }
 
     pub fn get_quantized_vector_size(vector_parameters: &VectorParameters) -> usize {
