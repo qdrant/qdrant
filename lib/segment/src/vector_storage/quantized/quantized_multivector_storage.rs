@@ -193,6 +193,7 @@ where
             inner_vectors_count,
             vector_parameters.dim
         );
+        log::info!("offsets {:?}", offsets);
         Ok(Self {
             dim: vector_parameters.dim,
             quantized_storage: QuantizedStorage::load(
