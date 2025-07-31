@@ -9,7 +9,7 @@ use crate::data_types::vectors::{DenseVector, TypedDenseVector};
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::query::{Query, TransformInto};
-use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::query_scorer::{QueryScorer, QueryScorerBytes};
 
 pub struct QuantizedCustomQueryScorer<'a, TElement, TMetric, TEncodedVectors, TQuery>
 where
@@ -107,5 +107,21 @@ where
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer compares against multiple vectors, not just one")
+    }
+}
+
+impl<TElement, TMetric, TEncodedVectors, TQuery> QueryScorerBytes
+    for QuantizedCustomQueryScorer<'_, TElement, TMetric, TEncodedVectors, TQuery>
+where
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement>,
+    TEncodedVectors: quantization::EncodedVectorsBytes,
+    TQuery: Query<TEncodedVectors::EncodedQuery>,
+{
+    fn score_bytes(&self, bytes: &[u8]) -> ScoreType {
+        self.query.score_by(|this| {
+            self.quantized_storage
+                .score_point_vs_bytes(this, bytes, &self.hardware_counter)
+        })
     }
 }

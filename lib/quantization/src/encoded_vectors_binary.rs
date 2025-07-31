@@ -8,7 +8,7 @@ use memory::mmap_ops::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
-use crate::encoded_vectors::validate_vector_parameters;
+use crate::encoded_vectors::{EncodedVectorsBytes, validate_vector_parameters};
 use crate::vector_stats::VectorStats;
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedVectors, EncodingError,
@@ -837,29 +837,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         i: u32,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let vector_data_1 = self
+        let vector_data = self
             .encoded_vectors
             .get_vector_data(i as _, self.get_quantized_vector_size());
 
-        let vector_data_usize_1 = transmute_from_u8_to_slice(vector_data_1);
-
-        hw_counter.cpu_counter().incr_delta(vector_data_1.len());
-
-        match query {
-            EncodedQueryBQ::Binary(encoded_vector) => {
-                self.calculate_metric(vector_data_usize_1, &encoded_vector.encoded_vector, 1)
-            }
-            EncodedQueryBQ::Scalar8bits(encoded_vector) => self.calculate_metric(
-                vector_data_usize_1,
-                &encoded_vector.encoded_vector,
-                u8::BITS as usize,
-            ),
-            EncodedQueryBQ::Scalar4bits(encoded_vector) => self.calculate_metric(
-                vector_data_usize_1,
-                &encoded_vector.encoded_vector,
-                u8::BITS as usize / 2,
-            ),
-        }
+        self.score_point_vs_bytes(query, vector_data, hw_counter)
     }
 
     fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
@@ -896,6 +878,37 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
             )
             .to_vec(),
         }))
+    }
+}
+
+impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectorsBytes
+    for EncodedVectorsBin<TBitsStoreType, TStorage>
+{
+    fn score_point_vs_bytes(
+        &self,
+        query: &Self::EncodedQuery,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        let vector_data_usize = transmute_from_u8_to_slice(bytes);
+
+        hw_counter.cpu_counter().incr_delta(bytes.len());
+
+        match query {
+            EncodedQueryBQ::Binary(encoded_vector) => {
+                self.calculate_metric(vector_data_usize, &encoded_vector.encoded_vector, 1)
+            }
+            EncodedQueryBQ::Scalar8bits(encoded_vector) => self.calculate_metric(
+                vector_data_usize,
+                &encoded_vector.encoded_vector,
+                u8::BITS as usize,
+            ),
+            EncodedQueryBQ::Scalar4bits(encoded_vector) => self.calculate_metric(
+                vector_data_usize,
+                &encoded_vector.encoded_vector,
+                u8::BITS as usize / 2,
+            ),
+        }
     }
 }
 
