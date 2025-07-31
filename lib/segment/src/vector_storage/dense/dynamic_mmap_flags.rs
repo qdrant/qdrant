@@ -103,7 +103,7 @@ impl DynamicMmapFlags {
         }
 
         // Open first mmap
-        let (flags, _) = Self::open_mmap(status.len, directory, populate)?;
+        let flags = Self::open_mmap(status.len, directory, populate)?;
         Ok(Self {
             flags,
             status,
@@ -115,7 +115,7 @@ impl DynamicMmapFlags {
         num_flags: usize,
         directory: &Path,
         populate: bool,
-    ) -> OperationResult<(MmapBitSlice, MmapFlusher)> {
+    ) -> OperationResult<MmapBitSlice> {
         let capacity_bytes = mmap_capacity_bytes(num_flags);
 
         let file = OpenOptions::new()
@@ -141,8 +141,7 @@ impl DynamicMmapFlags {
         }
 
         let flags = MmapBitSlice::try_from(flags_mmap, 0)?;
-        let flusher = flags.flusher();
-        Ok((flags, flusher))
+        Ok(flags)
     }
 
     /// Set the length of the vector to the given value.
@@ -173,7 +172,7 @@ impl DynamicMmapFlags {
 
             // Don't read the whole file on resize
             let populate = false;
-            let (flags, _) = Self::open_mmap(new_len, &self.directory, populate)?;
+            let flags = Self::open_mmap(new_len, &self.directory, populate)?;
 
             // Swap operation. It is important this section is not interrupted by errors.
             self.flags = flags;
