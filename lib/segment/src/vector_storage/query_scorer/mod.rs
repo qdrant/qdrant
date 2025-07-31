@@ -37,6 +37,10 @@ pub trait QueryScorer {
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 }
 
+pub trait QueryScorerBytes {
+    fn score_bytes(&self, bytes: &[u8]) -> ScoreType;
+}
+
 /// Colbert MaxSim metric, metric for multi-dense vectors
 /// <https://arxiv.org/pdf/2112.01488.pdf>, figure 1
 /// This metric is also implemented in `QuantizedMultivectorStorage` structure for quantized data.

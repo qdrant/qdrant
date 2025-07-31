@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{
-    DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
+    DistanceType, EncodedVectors, EncodedVectorsBytes, VectorParameters, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
 
@@ -244,16 +244,22 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 
     #[inline]
-    fn get_vec_ptr(&self, i: u32) -> (f32, *const u8) {
+    fn parse_vec_data(data: &[u8]) -> (f32, *const u8) {
+        debug_assert!(data.len() >= std::mem::size_of::<f32>());
         unsafe {
-            let vector_data_size = self.quantized_vector_size();
-            let v_ptr = self
-                .encoded_vectors
-                .get_vector_data(i as usize, vector_data_size)
-                .as_ptr();
-            let vector_offset = *v_ptr.cast::<f32>();
-            (vector_offset, v_ptr.add(std::mem::size_of::<f32>()))
+            let offset = data.as_ptr().cast::<f32>().read_unaligned();
+            let v_ptr = data.as_ptr().add(std::mem::size_of::<f32>());
+            (offset, v_ptr)
         }
+    }
+
+    #[inline]
+    fn get_vec_ptr(&self, i: u32) -> (f32, *const u8) {
+        let vector_data_size = self.quantized_vector_size();
+        let data = self
+            .encoded_vectors
+            .get_vector_data(i as usize, vector_data_size);
+        Self::parse_vec_data(data)
     }
 
     pub fn get_quantized_vector(&self, i: u32) -> (f32, &[u8]) {
@@ -369,62 +375,12 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     }
 
     fn score_point(&self, query: &EncodedQueryU8, i: u32, hw_counter: &HardwareCounterCell) -> f32 {
-        hw_counter
-            .cpu_counter()
-            .incr_delta(self.metadata.vector_parameters.dim);
+        let vector_data_size = self.metadata.actual_dim + std::mem::size_of::<f32>();
+        let bytes = self
+            .encoded_vectors
+            .get_vector_data(i as usize, vector_data_size);
 
-        let q_ptr = query.encoded_query.as_ptr();
-        let (vector_offset, v_ptr) = self.get_vec_ptr(i);
-
-        #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + query.offset + vector_offset;
-            }
-        }
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("sse4.1") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + query.offset + vector_offset;
-            }
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        if std::arch::is_aarch64_feature_detected!("neon") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + query.offset + vector_offset;
-            }
-        }
-
-        self.score_point_simple(query, i)
+        self.score_point_vs_bytes(query, bytes, hw_counter)
     }
 
     fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
@@ -533,6 +489,81 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
                 std::slice::from_raw_parts(q_ptr, self.metadata.actual_dim).to_vec()
             },
         })
+    }
+}
+
+impl<TStorage: EncodedStorage> EncodedVectorsBytes for EncodedVectorsU8<TStorage> {
+    fn score_point_vs_bytes(
+        &self,
+        query: &Self::EncodedQuery,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        hw_counter
+            .cpu_counter()
+            .incr_delta(self.metadata.vector_parameters.dim);
+
+        debug_assert!(bytes.len() >= std::mem::size_of::<f32>() + self.metadata.actual_dim);
+
+        let (vector_offset, v_ptr) = Self::parse_vec_data(bytes);
+        let q_ptr = query.encoded_query.as_ptr();
+
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            unsafe {
+                let score = match self.metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::L2 => {
+                        impl_score_dot_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                    DistanceType::L1 => {
+                        impl_score_l1_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                };
+
+                return self.metadata.multiplier * score + query.offset + vector_offset;
+            }
+        }
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if is_x86_feature_detected!("sse4.1") {
+            unsafe {
+                let score = match self.metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::L2 => {
+                        impl_score_dot_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                    DistanceType::L1 => {
+                        impl_score_l1_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                };
+
+                return self.metadata.multiplier * score + query.offset + vector_offset;
+            }
+        }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            unsafe {
+                let score = match self.metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::L2 => {
+                        impl_score_dot_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                    DistanceType::L1 => {
+                        impl_score_l1_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                };
+
+                return self.metadata.multiplier * score + query.offset + vector_offset;
+            }
+        }
+
+        let score = match self.metadata.vector_parameters.distance_type {
+            DistanceType::Dot | DistanceType::L2 => {
+                impl_score_dot(q_ptr, v_ptr, self.metadata.actual_dim)
+            }
+            DistanceType::L1 => impl_score_l1(q_ptr, v_ptr, self.metadata.actual_dim),
+        };
+
+        self.metadata.multiplier * score as f32 + query.offset + vector_offset
     }
 }
 
