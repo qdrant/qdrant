@@ -168,6 +168,9 @@ impl DynamicMmapFlags {
         let current_capacity = mmap_max_current_size(self.status.len);
 
         if new_len > current_capacity {
+            // Explicitly flush so we don't lose dirty pages
+            self.flusher()()?;
+
             // Don't read the whole file on resize
             let populate = false;
             let (flags, _) = Self::open_mmap(new_len, &self.directory, populate)?;
