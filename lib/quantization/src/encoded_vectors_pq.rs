@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use std::arch::aarch64::*;
 #[cfg(target_arch = "x86_64")]
@@ -435,6 +436,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
         self.encoded_vectors
             .get_vector_data(i as _, self.metadata.vector_division.len())
+    }
+
+    pub fn layout(&self) -> Layout {
+        Layout::from_size_align(self.metadata.vector_division.len(), align_of::<u8>()).unwrap()
     }
 
     pub fn get_metadata(&self) -> &Metadata {

@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -781,6 +782,14 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
         self.encoded_vectors
             .get_vector_data(i as _, self.get_quantized_vector_size())
+    }
+
+    pub fn layout(&self) -> Layout {
+        Layout::from_size_align(
+            self.get_quantized_vector_size(),
+            align_of::<TBitsStoreType>(),
+        )
+        .unwrap()
     }
 
     pub fn get_vector_parameters(&self) -> &VectorParameters {

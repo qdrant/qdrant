@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -262,6 +263,15 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             .encoded_vectors
             .get_vector_data(i as usize, vector_data_size);
         Self::parse_vec_data(data)
+    }
+
+    pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
+        self.encoded_vectors
+            .get_vector_data(i as usize, self.quantized_vector_size())
+    }
+
+    pub fn layout(&self) -> Layout {
+        Layout::from_size_align(self.quantized_vector_size(), align_of::<u8>()).unwrap()
     }
 
     pub fn get_quantized_vector_offset_and_code(&self, i: u32) -> (f32, &[u8]) {
