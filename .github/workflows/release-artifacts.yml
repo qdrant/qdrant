@@ -49,8 +49,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build Debian Package
         if: matrix.target == 'x86_64-unknown-linux-musl'
-        env:
-          QDRANT_CONFIG_DEFAULT_PATH_OVERWRITE: "/etc/qdrant/config.yaml"
         run: |
           bash -x tools/sync-web-ui.sh
           cargo install cargo-deb
