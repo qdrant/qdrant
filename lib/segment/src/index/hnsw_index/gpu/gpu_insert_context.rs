@@ -522,6 +522,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(
             dim,
+            Distance::Dot,
             num_vectors + groups_count,
             &mut rng,
         );

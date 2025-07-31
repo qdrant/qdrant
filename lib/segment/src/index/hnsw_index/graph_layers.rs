@@ -387,6 +387,7 @@ mod tests {
     };
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric};
+    use crate::types::Distance;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
 
     fn search_in_graph(
@@ -416,8 +417,12 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let vector_holder =
-            TestRawScorerProducer::<DotProductMetric>::new(dim, num_vectors, &mut rng);
+        let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(
+            dim,
+            Distance::Dot,
+            num_vectors,
+            &mut rng,
+        );
 
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];

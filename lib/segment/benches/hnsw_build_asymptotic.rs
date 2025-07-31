@@ -10,6 +10,7 @@ use rand::{Rng, rng};
 use segment::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric};
+use segment::types::Distance;
 use segment::vector_storage::DEFAULT_STOPPED;
 
 const DIM: usize = 16;
@@ -84,7 +85,8 @@ fn scoring_vectors(c: &mut Criterion) {
     let base_num_vectors = 10_000;
 
     let num_vectors = base_num_vectors;
-    let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(DIM, num_vectors, &mut rng);
+    let vector_holder =
+        TestRawScorerProducer::<DotProductMetric>::new(DIM, Distance::Dot, num_vectors, &mut rng);
 
     group.bench_function("score-point", |b| {
         b.iter(|| {
@@ -101,7 +103,8 @@ fn scoring_vectors(c: &mut Criterion) {
     });
 
     let num_vectors = base_num_vectors * 10;
-    let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(DIM, num_vectors, &mut rng);
+    let vector_holder =
+        TestRawScorerProducer::<DotProductMetric>::new(DIM, Distance::Dot, num_vectors, &mut rng);
 
     group.bench_function("score-point-10x", |b| {
         b.iter(|| {
@@ -118,7 +121,8 @@ fn scoring_vectors(c: &mut Criterion) {
     });
 
     let num_vectors = base_num_vectors * 50;
-    let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(DIM, num_vectors, &mut rng);
+    let vector_holder =
+        TestRawScorerProducer::<DotProductMetric>::new(DIM, Distance::Dot, num_vectors, &mut rng);
 
     group.bench_function("score-point-50x", |b| {
         b.iter(|| {

@@ -604,6 +604,7 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::CosineMetric;
+    use crate::types::Distance;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage as _};
 
     const M: usize = 8;
@@ -628,7 +629,8 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
 
-        let vector_holder = TestRawScorerProducer::<TMetric>::new(dim, num_vectors, rng);
+        let vector_holder =
+            TestRawScorerProducer::<TMetric>::new(dim, TMetric::distance(), num_vectors, rng);
 
         let mut graph_layers = GraphLayersBuilder::new(
             num_vectors,
@@ -668,7 +670,8 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
 
-        let vector_holder = TestRawScorerProducer::<TMetric>::new(dim, num_vectors, rng);
+        let vector_holder =
+            TestRawScorerProducer::<TMetric>::new(dim, TMetric::distance(), num_vectors, rng);
 
         let mut graph_layers = GraphLayersBuilder::new(
             num_vectors,
@@ -865,7 +868,12 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(DIM, NUM_VECTORS, &mut rng);
+        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(
+            DIM,
+            Distance::Cosine,
+            NUM_VECTORS,
+            &mut rng,
+        );
         let mut graph_layers_builder =
             GraphLayersBuilder::new(NUM_VECTORS, HnswM::new2(M), EF_CONSTRUCT, 10, USE_HEURISTIC);
         for idx in 0..(NUM_VECTORS as PointOffsetType) {

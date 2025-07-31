@@ -262,6 +262,7 @@ mod tests {
     use crate::data_types::vectors::DenseVector;
     use crate::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
     use crate::spaces::simple::EuclidMetric;
+    use crate::types::Distance;
 
     #[test]
     #[ignore]
@@ -272,7 +273,12 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let vector_holder = TestRawScorerProducer::<EuclidMetric>::new(DIM, NUM_VECTORS, &mut rng);
+        let vector_holder = TestRawScorerProducer::<EuclidMetric>::new(
+            DIM,
+            Distance::Euclid,
+            NUM_VECTORS,
+            &mut rng,
+        );
 
         let mut candidates: FixedLengthPriorityQueue<ScoredPointOffset> =
             FixedLengthPriorityQueue::new(NUM_VECTORS);
@@ -398,8 +404,12 @@ mod tests {
         const M: usize = 5;
 
         for _ in 0..1000 {
-            let vector_holder =
-                TestRawScorerProducer::<EuclidMetric>::new(DIM, NUM_VECTORS, &mut rng);
+            let vector_holder = TestRawScorerProducer::<EuclidMetric>::new(
+                DIM,
+                Distance::Euclid,
+                NUM_VECTORS,
+                &mut rng,
+            );
             let scorer = vector_holder.get_scorer(random_vector(&mut rng, DIM));
 
             let mut candidate_indices: Vec<_> = (0..NUM_VECTORS as u32).collect();

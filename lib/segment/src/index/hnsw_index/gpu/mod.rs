@@ -127,7 +127,12 @@ mod tests {
     ) -> GpuGraphTestData {
         // Generate random vectors
         let mut rng = StdRng::seed_from_u64(42);
-        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
+        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(
+            dim,
+            Distance::Cosine,
+            num_vectors,
+            &mut rng,
+        );
 
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Cosine);

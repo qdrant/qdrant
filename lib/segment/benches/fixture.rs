@@ -40,8 +40,12 @@ where
         ));
 
     // Note: make sure that vector generation is deterministic.
-    let vector_holder =
-        TestRawScorerProducer::<METRIC>::new(dim, num_vectors, &mut StdRng::seed_from_u64(42));
+    let vector_holder = TestRawScorerProducer::<METRIC>::new(
+        dim,
+        METRIC::distance(),
+        num_vectors,
+        &mut StdRng::seed_from_u64(42),
+    );
 
     let graph_layers_path = GraphLayers::get_path(&path);
     let graph_layers = if graph_layers_path.exists() {

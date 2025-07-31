@@ -104,11 +104,11 @@ impl<TMetric> TestRawScorerProducer<TMetric>
 where
     TMetric: Metric<VectorElementType>,
 {
-    pub fn new<R>(dim: usize, num_vectors: usize, rng: &mut R) -> Self
+    pub fn new<R>(dim: usize, distance: Distance, num_vectors: usize, rng: &mut R) -> Self
     where
         R: Rng + ?Sized,
     {
-        let mut storage = new_volatile_dense_vector_storage(dim, TMetric::distance());
+        let mut storage = new_volatile_dense_vector_storage(dim, distance);
         let hw_counter = HardwareCounterCell::new();
         for offset in 0..num_vectors as PointOffsetType {
             let rnd_vec = random_vector(rng, dim);
