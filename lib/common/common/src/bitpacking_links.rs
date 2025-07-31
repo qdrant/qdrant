@@ -18,9 +18,11 @@ const HEADER_BITS: u8 = 5;
 /// - `bits_per_unsorted` should be enough to store the maximum point ID
 ///   (it should be the same for all nodes/links within a segment).
 /// - `sorted_count` is `m` (or `m0`) for this layer.
+/// - `raw_links` is in/out parameter. Input: links to pack, output: same links,
+///   but re-ordered.
 pub fn pack_links(
     links: &mut Vec<u8>,
-    mut raw_links: Vec<u32>,
+    raw_links: &mut [u32],
     bits_per_unsorted: u8,
     sorted_count: usize,
 ) {
@@ -56,6 +58,11 @@ pub fn pack_links(
     }
 
     w.finish();
+
+    // Undo delta-encoding.
+    for i in 1..sorted_count {
+        raw_links[i] += raw_links[i - 1];
+    }
 }
 
 /// Returns an iterator over packed links.
@@ -229,11 +236,12 @@ mod tests {
 
             let bits_per_unsorted = rng.random_range(MIN_BITS_PER_VALUE..=32);
 
-            let mut raw_links = gen_unique_values(&mut rng, total_count, bits_per_unsorted);
+            let mut raw_links_orig = gen_unique_values(&mut rng, total_count, bits_per_unsorted);
+            let mut raw_links_updated = raw_links_orig.clone();
             let mut links = Vec::new();
             pack_links(
                 &mut links,
-                raw_links.clone(),
+                &mut raw_links_updated,
                 bits_per_unsorted,
                 sorted_count,
             );
@@ -242,8 +250,9 @@ mod tests {
             let iter = iterate_packed_links(&links, bits_per_unsorted, sorted_count);
             iter.for_each(|value| unpacked.push(value));
 
-            raw_links[..sorted_count.min(total_count)].sort_unstable();
-            assert_eq!(raw_links, unpacked);
+            raw_links_orig[..sorted_count.min(total_count)].sort_unstable();
+            assert_eq!(raw_links_orig, unpacked);
+            assert_eq!(raw_links_updated, unpacked);
 
             check_iterator_fold(|| iterate_packed_links(&links, bits_per_unsorted, sorted_count));
             check_exact_size_iterator_len(iterate_packed_links(

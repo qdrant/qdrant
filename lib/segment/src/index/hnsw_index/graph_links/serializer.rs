@@ -85,10 +85,10 @@ impl GraphLinksSerializer {
                 _ => (hnsw_m.m, Either::Right(back_index[..count].iter().copied())),
             };
             iter.for_each(|id| {
-                let raw_links = take(&mut edges[id][level]);
+                let mut raw_links = take(&mut edges[id][level]);
                 match format {
                     GraphLinksFormat::Compressed => {
-                        pack_links(&mut links, raw_links, bits_per_unsorted, sorted_count);
+                        pack_links(&mut links, &mut raw_links, bits_per_unsorted, sorted_count);
                         offsets.push(links.len() as u64);
                     }
                     GraphLinksFormat::Plain => {
