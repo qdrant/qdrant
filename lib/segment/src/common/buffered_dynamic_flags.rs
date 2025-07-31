@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
@@ -6,6 +7,7 @@ use parking_lot::Mutex;
 use roaring::RoaringBitmap;
 
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing and fast in-memory reads.
@@ -56,7 +58,7 @@ impl BufferedDynamicFlags {
     }
 
     pub fn get(&self, index: PointOffsetType) -> bool {
-        self.bitmap.contains(index as u32)
+        self.bitmap.contains(index)
     }
 
     #[cfg(test)]
@@ -65,14 +67,14 @@ impl BufferedDynamicFlags {
     }
 
     pub fn iter_trues(&self) -> impl Iterator<Item = PointOffsetType> {
-        self.bitmap.iter().map(PointOffsetType::from)
+        self.bitmap.iter()
     }
 
     pub fn iter_falses(&self) -> impl Iterator<Item = PointOffsetType> {
         // potential optimization:
         //      Create custom iterator which leverages bitmap's iterator for knowing ranges where the flags are false.
         //      This will help by not checking the bitmap for indices that are already known to be false.
-        (0..self.cached_len as PointOffsetType).filter(|&i| !self.bitmap.contains(i as u32))
+        (0..self.cached_len as PointOffsetType).filter(|&i| !self.bitmap.contains(i))
     }
 
     pub fn count_trues(&self) -> usize {
@@ -95,10 +97,19 @@ impl BufferedDynamicFlags {
 
         // update bitmap
         if value {
-            self.bitmap.insert(index as u32);
+            self.bitmap.insert(index);
         } else {
-            self.bitmap.remove(index as u32);
+            self.bitmap.remove(index);
         }
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.lock().clear_cache()?;
+        Ok(())
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.storage.lock().files()
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -275,7 +286,7 @@ mod tests {
             for i in (0..num_flags).step_by(100) {
                 let expected = expected_state[i];
                 let actual = buffered_flags.get(i as PointOffsetType);
-                assert_eq!(actual, expected, "Mismatch at index {}", i);
+                assert_eq!(actual, expected, "Mismatch at index {i}");
             }
         }
     }
@@ -299,7 +310,7 @@ mod tests {
             vec![(0, false), (2, true), (5, true)],
         ];
 
-        let mut expected_state = vec![false; 6];
+        let mut expected_state = [false; 6];
 
         for (cycle_num, updates) in cycles.iter().enumerate() {
             // Apply updates and flush
@@ -327,8 +338,7 @@ mod tests {
                     let actual = buffered_flags.get(i as PointOffsetType);
                     assert_eq!(
                         actual, expected,
-                        "Cycle {}, index {}: expected {}, got {}",
-                        cycle_num, i, expected, actual
+                        "Cycle {cycle_num}, index {i}: expected {expected}, got {actual}"
                     );
                 }
 
@@ -549,7 +559,7 @@ mod tests {
             assert_eq!(buffered_flags.count_falses(), 10);
 
             for i in 0..10 {
-                assert!(!buffered_flags.get(i), "Index {} should be false", i);
+                assert!(!buffered_flags.get(i), "Index {i} should be false");
             }
 
             let trues: Vec<_> = buffered_flags.iter_trues().collect();
