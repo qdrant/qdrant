@@ -536,7 +536,7 @@ mod tests {
         let query = random_vector(&mut rng, dim);
         let processed_query = distance.preprocess_vector::<VectorElementType>(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
-        for idx in 0..vector_holder.total_vector_count() as PointOffsetType {
+        for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
             let vec = &vector_holder.get_vector(idx);
             reference_top.push(ScoredPointOffset {
                 idx,
