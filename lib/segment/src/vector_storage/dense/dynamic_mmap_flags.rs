@@ -1,7 +1,6 @@
 use std::cmp::max;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::{fmt, fs};
 
 use bitvec::prelude::BitSlice;
@@ -12,7 +11,6 @@ use memory::fadvise::clear_disk_cache;
 use memory::madvise::{self, AdviceSetting, Madviseable as _};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
-use parking_lot::Mutex;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -53,8 +51,6 @@ fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
 pub struct DynamicMmapFlags {
     /// Current mmap'ed BitSlice for flags
     flags: MmapBitSlice,
-    /// Flusher to flush current flags mmap
-    flags_flusher: Arc<Mutex<Option<MmapFlusher>>>,
     status: MmapType<DynamicMmapStatus>,
     directory: PathBuf,
 }
@@ -107,10 +103,9 @@ impl DynamicMmapFlags {
         }
 
         // Open first mmap
-        let (flags, flags_flusher) = Self::open_mmap(status.len, directory, populate)?;
+        let (flags, _) = Self::open_mmap(status.len, directory, populate)?;
         Ok(Self {
             flags,
-            flags_flusher: Arc::new(Mutex::new(Some(flags_flusher))),
             status,
             directory: directory.to_owned(),
         })
@@ -175,14 +170,10 @@ impl DynamicMmapFlags {
         if new_len > current_capacity {
             // Don't read the whole file on resize
             let populate = false;
-            let (flags, flags_flusher) = Self::open_mmap(new_len, &self.directory, populate)?;
+            let (flags, _) = Self::open_mmap(new_len, &self.directory, populate)?;
 
             // Swap operation. It is important this section is not interrupted by errors.
-            {
-                let mut flags_flusher_lock = self.flags_flusher.lock();
-                self.flags = flags;
-                flags_flusher_lock.replace(flags_flusher);
-            }
+            self.flags = flags;
         }
 
         self.status.len = new_len;
@@ -257,13 +248,10 @@ impl DynamicMmapFlags {
 
     pub fn flusher(&self) -> Flusher {
         Box::new({
-            let flags_flusher = self.flags_flusher.clone();
+            let flags_flusher = self.flags.flusher();
             let status_flusher = self.status.flusher();
             move || {
-                // Maybe we shouldn't take flusher here: FnOnce() -> Fn()
-                if let Some(flags_flusher) = flags_flusher.lock().take() {
-                    flags_flusher()?;
-                }
+                flags_flusher()?;
                 status_flusher()?;
                 Ok(())
             }
