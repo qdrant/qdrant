@@ -174,14 +174,14 @@ impl ParsedExpression {
             DecayKind::Lin => {
                 if !(0.0..=1.0).contains(&midpoint) {
                     return Err(OperationError::validation_error(format!(
-                        "Decay midpoint should be between 0.0 (inclusive) and 1.0 (exclusive), got {midpoint}."
+                        "Linear decay midpoint should be in the range [0.0, 1.0], got {midpoint}."
                     )));
                 }
             }
             DecayKind::Gauss | DecayKind::Exp => {
                 if midpoint <= 0.0 || midpoint >= 1.0 {
                     return Err(OperationError::validation_error(format!(
-                        "Decay midpoint should be between 0.0 and 1.0 (exclusive), got {midpoint}."
+                        "Decay midpoint should be in the range (0.0, 1.0), got {midpoint}."
                     )));
                 }
             }
