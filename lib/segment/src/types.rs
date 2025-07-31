@@ -34,11 +34,12 @@ use crate::data_types::index::{
     KeywordIndexParams, TextIndexParams, UuidIndexParams,
 };
 use crate::data_types::order_by::OrderValue;
-use crate::data_types::vectors::VectorStructInternal;
+use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::{DenseVector, VectorStructInternal};
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::json_path::JsonPath;
-use crate::spaces::metric::MetricPostProcessing;
+use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::utils::maybe_arc::MaybeArc;
 
@@ -303,6 +304,21 @@ impl Distance {
             Distance::Euclid => EuclidMetric::postprocess(score),
             Distance::Dot => DotProductMetric::postprocess(score),
             Distance::Manhattan => ManhattanMetric::postprocess(score),
+        }
+    }
+
+    pub fn preprocess_vector<T: PrimitiveVectorElement>(&self, vector: DenseVector) -> DenseVector
+    where
+        CosineMetric: Metric<T>,
+        EuclidMetric: Metric<T>,
+        DotProductMetric: Metric<T>,
+        ManhattanMetric: Metric<T>,
+    {
+        match self {
+            Distance::Cosine => CosineMetric::preprocess(vector),
+            Distance::Euclid => EuclidMetric::preprocess(vector),
+            Distance::Dot => DotProductMetric::preprocess(vector),
+            Distance::Manhattan => ManhattanMetric::preprocess(vector),
         }
     }
 
