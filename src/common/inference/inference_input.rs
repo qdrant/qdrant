@@ -19,8 +19,10 @@ pub struct InferenceInput {
 
 impl InferenceInput {
     /// Attempts to parse the input's options into a local model config.
-    pub fn parse_bm25_config(&self) -> Result<Bm25Config, StorageError> {
-        let options = self.options.clone().unwrap_or_default();
+    pub fn parse_bm25_config(
+        options: Option<HashMap<String, Value>>,
+    ) -> Result<Bm25Config, StorageError> {
+        let options = options.unwrap_or_default();
         Bm25Config::deserialize(options.into_deserializer())
             .map_err(|err| StorageError::bad_input(format!("Invalid BM25 config: {err:#?}")))
     }

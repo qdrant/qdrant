@@ -435,7 +435,7 @@ mod test {
                 // In our test-setup, only BM25 returns sparse vectors. Normal inference is mocked
                 // and always returns dense vectors.
                 assert!(matches!(response, VectorPersisted::Sparse(..)));
-                let bm25_config = input.parse_bm25_config().unwrap();
+                let bm25_config = InferenceInput::parse_bm25_config(input.options).unwrap();
 
                 // Re-run bm25 and check that response is correct.
                 let bm25 = Bm25::new(bm25_config).doc_embed(input.data.as_str().unwrap());

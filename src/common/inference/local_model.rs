@@ -3,6 +3,7 @@ use storage::content_manager::errors::StorageError;
 
 use super::bm25::Bm25;
 use super::service::{InferenceInput, InferenceType};
+use crate::common::inference::inference_input::InferenceDataType;
 
 enum LocalModelName {
     Bm25,
@@ -29,24 +30,42 @@ pub fn infer_local(
     let mut out = Vec::with_capacity(inference_inputs.len());
 
     for input in inference_inputs {
-        let model_name = LocalModelName::from_str(&input.model);
+        let InferenceInput {
+            data,
+            data_type,
+            model,
+            options,
+        } = input;
 
-        let input_str = input.data.as_str().ok_or_else(|| {
-            StorageError::bad_input(format!("Only text input is supported for {}.", input.model))
+        let Some(model_name) = LocalModelName::from_str(&model) else {
+            unreachable!(
+                "Non local model has been passed to infer_local(). This can happen if a newly added model wasn't added to infer_local()"
+            )
+        };
+
+        // Validate it is text
+        match data_type {
+            InferenceDataType::Text => {}
+            InferenceDataType::Image | InferenceDataType::Object => {
+                return Err(StorageError::bad_input(format!(
+                    "Only text input is supported for {model}."
+                )));
+            }
+        };
+
+        let input_str = data.as_str().ok_or_else(|| {
+            StorageError::bad_input(format!("Only text input is supported for {model}."))
         })?;
 
         let embedding = match model_name {
-            Some(LocalModelName::Bm25) => {
-                let bm25 = Bm25::new(input.parse_bm25_config()?);
+            LocalModelName::Bm25 => {
+                let bm25 = Bm25::new(InferenceInput::parse_bm25_config(options)?);
 
                 match inference_type {
                     InferenceType::Update => bm25.doc_embed(input_str),
                     InferenceType::Search => bm25.search_embed(input_str),
                 }
             }
-            None => unreachable!(
-                "Non local model has been passed to infer_local(). This can happen if a newly added model wasn't added to infer_local()"
-            ),
         };
 
         out.push(embedding);
