@@ -28,7 +28,7 @@ mod tests {
             vec![],
             &VectorParameters {
                 dim: VECTOR_DIM,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: false,
             },
@@ -62,7 +62,7 @@ mod tests {
             vec![],
             &VectorParameters {
                 dim: VECTOR_DIM,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L2,
                 invert: false,
             },
@@ -96,7 +96,7 @@ mod tests {
             vec![],
             &VectorParameters {
                 dim: VECTOR_DIM,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L1,
                 invert: false,
             },
@@ -130,7 +130,7 @@ mod tests {
             vec![],
             &VectorParameters {
                 dim: VECTOR_DIM,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: true,
             },
@@ -164,7 +164,7 @@ mod tests {
             vec![],
             &VectorParameters {
                 dim: VECTOR_DIM,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L2,
                 invert: true,
             },
@@ -198,7 +198,7 @@ mod tests {
             vec![],
             &VectorParameters {
                 dim: VECTOR_DIM,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L1,
                 invert: true,
             },
@@ -231,7 +231,7 @@ mod tests {
             vec![],
             &VectorParameters {
                 dim: VECTOR_DIM,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: false,
             },
@@ -263,7 +263,7 @@ mod tests {
             vec![],
             &VectorParameters {
                 dim: VECTOR_DIM,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: true,
             },
@@ -315,7 +315,7 @@ mod tests {
                     vec![],
                     &VectorParameters {
                         dim: VECTOR_DIM,
-                        count: None,
+                        deprecated_count: None,
                         distance_type: DistanceType::Dot,
                         invert: false,
                     },

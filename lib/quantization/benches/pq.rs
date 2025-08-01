@@ -23,7 +23,7 @@ fn encode_bench(c: &mut Criterion) {
         Vec::<u8>::new(),
         &VectorParameters {
             dim: vector_dim,
-            count: None,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         },

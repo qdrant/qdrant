@@ -22,7 +22,7 @@ mod tests {
         let vector_dim = 8;
         let vector_parameters = VectorParameters {
             dim: vector_dim,
-            count: None,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         };
@@ -59,7 +59,7 @@ mod tests {
         let vector_dim = 8;
         let vector_parameters = VectorParameters {
             dim: vector_dim,
-            count: None,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         };

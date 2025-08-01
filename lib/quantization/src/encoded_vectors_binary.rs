@@ -399,6 +399,24 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         &self.encoded_vectors
     }
 
+    pub fn new_empty_appendable(
+        encoded_vectors: TStorage,
+        vector_parameters: VectorParameters,
+        encoding: Encoding,
+        query_encoding: QueryEncoding,
+    ) -> Self {
+        Self {
+            encoded_vectors,
+            metadata: Metadata {
+                vector_parameters: vector_parameters.clone(),
+                encoding,
+                query_encoding,
+                vector_stats: None,
+            },
+            bits_store_type: PhantomData,
+        }
+    }
+
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,

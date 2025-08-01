@@ -47,7 +47,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: false,
             },
@@ -96,7 +96,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: true,
             },
@@ -145,7 +145,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: false,
             },
@@ -191,7 +191,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::Dot,
                 invert: true,
             },
@@ -236,7 +236,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L1,
                 invert: false,
             },
@@ -300,7 +300,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L1,
                 invert: true,
             },
@@ -364,7 +364,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L1,
                 invert: false,
             },
@@ -425,7 +425,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L1,
                 invert: true,
             },
@@ -486,7 +486,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L2,
                 invert: false,
             },
@@ -550,7 +550,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L2,
                 invert: true,
             },
@@ -614,7 +614,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L2,
                 invert: false,
             },
@@ -675,7 +675,7 @@ mod tests {
             Vec::<u8>::new(),
             &VectorParameters {
                 dim: vector_dim,
-                count: None,
+                deprecated_count: None,
                 distance_type: DistanceType::L2,
                 invert: true,
             },

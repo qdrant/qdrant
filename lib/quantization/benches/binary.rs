@@ -38,7 +38,7 @@ fn binary_bench(c: &mut Criterion) {
         Vec::<u8>::new(),
         &VectorParameters {
             dim: vector_dim,
-            count: None,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         },
@@ -80,7 +80,7 @@ fn binary_bench(c: &mut Criterion) {
         Vec::<u8>::new(),
         &VectorParameters {
             dim: vector_dim,
-            count: None,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         },
@@ -135,7 +135,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
         Vec::<u8>::new(),
         &VectorParameters {
             dim: vector_dim,
-            count: None,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         },
@@ -193,7 +193,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
         Vec::<u8>::new(),
         &VectorParameters {
             dim: vector_dim,
-            count: None,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         },
