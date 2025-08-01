@@ -5,7 +5,7 @@ use std::path::Path;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
-use segment::data_types::segment_manifest::SegmentManifests;
+use segment::data_types::manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{Filter, SizeStats, SnapshotFormat};
 
@@ -113,7 +113,7 @@ impl Shard {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
-        manifest: Option<SegmentManifests>,
+        manifest: Option<SnapshotManifest>,
         save_wal: bool,
     ) -> CollectionResult<()> {
         match self {
@@ -145,13 +145,13 @@ impl Shard {
         }
     }
 
-    pub fn segment_manifests(&self) -> CollectionResult<SegmentManifests> {
+    pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         match self {
-            Shard::Local(local_shard) => local_shard.segment_manifests(),
-            Shard::Proxy(proxy_shard) => proxy_shard.segment_manifests(),
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.segment_manifests(),
-            Shard::QueueProxy(proxy_shard) => proxy_shard.segment_manifests(),
-            Shard::Dummy(dummy_shard) => dummy_shard.segment_manifests(),
+            Shard::Local(local_shard) => local_shard.snapshot_manifest(),
+            Shard::Proxy(proxy_shard) => proxy_shard.snapshot_manifest(),
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.snapshot_manifest(),
+            Shard::QueueProxy(proxy_shard) => proxy_shard.snapshot_manifest(),
+            Shard::Dummy(dummy_shard) => dummy_shard.snapshot_manifest(),
         }
     }
 

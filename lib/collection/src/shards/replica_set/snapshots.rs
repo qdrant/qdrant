@@ -3,7 +3,7 @@ use std::path::Path;
 use std::{fs, io};
 
 use common::tar_ext;
-use segment::data_types::segment_manifest::{SegmentManifest, SegmentManifests};
+use segment::data_types::manifest::{SegmentManifest, SnapshotManifest};
 use segment::types::SnapshotFormat;
 
 use super::{REPLICA_STATE_FILE, ReplicaSetState, ReplicaState, ShardReplicaSet};
@@ -37,7 +37,7 @@ impl ShardReplicaSet {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
-        manifest: Option<SegmentManifests>,
+        manifest: Option<SnapshotManifest>,
         save_wal: bool,
     ) -> CollectionResult<()> {
         let local_read = self.local.read().await;
@@ -127,7 +127,7 @@ impl ShardReplicaSet {
         let segments_path = LocalShard::segments_path(replica_path);
 
         let mut snapshot_segments = HashSet::new();
-        let mut snapshot_manifests = SegmentManifests::default();
+        let mut snapshot_manifest = SnapshotManifest::default();
 
         for segment_entry in segments_path.read_dir()? {
             let segment_path = segment_entry?.path();
@@ -194,11 +194,11 @@ impl ShardReplicaSet {
                 )));
             }
 
-            let added = snapshot_manifests.add(manifest);
+            let added = snapshot_manifest.add(manifest);
             debug_assert!(added);
         }
 
-        snapshot_manifests.validate().map_err(|err| {
+        snapshot_manifest.validate().map_err(|err| {
             CollectionError::bad_request(format!("invalid partial snapshot: {err}"))
         })?;
 
@@ -227,24 +227,24 @@ impl ShardReplicaSet {
             return Err(cancel::Error::Cancelled.into());
         }
 
-        let local_manifests = match local.take() {
-            _ if snapshot_manifests.is_empty() => None,
+        let local_manifest = match local.take() {
+            _ if snapshot_manifest.is_empty() => None,
 
             Some(shard) => {
-                let local_manifests = shard.segment_manifests();
+                let local_manifest = shard.snapshot_manifest();
 
-                match local_manifests {
-                    Ok(local_manifests) => {
-                        local_manifests.validate().map_err(|err| {
+                match local_manifest {
+                    Ok(local_manifest) => {
+                        local_manifest.validate().map_err(|err| {
                             CollectionError::service_error(format!(
                                 "failed to restore partial shard snapshot for shard {}:{}: \
-                                 local shard produces invalid segment manifests: \
+                                 local shard produces invalid snapshot manifest: \
                                  {err}",
                                 self.collection_id, self.shard_id,
                             ))
                         })?;
 
-                        Some(local_manifests)
+                        Some(local_manifest)
                     }
 
                     Err(err) => {
@@ -252,7 +252,7 @@ impl ShardReplicaSet {
 
                         return Err(CollectionError::service_error(format!(
                             "failed to restore partial shard snapshot for shard {}:{}: \
-                             failed to collect segment manifests: \
+                             failed to collect snapshot manifest: \
                              {err}",
                             self.collection_id, self.shard_id,
                         )));
@@ -273,16 +273,16 @@ impl ShardReplicaSet {
 
         // Try to restore local replica from specified shard snapshot directory
         let restore = async {
-            if let Some(local_manifests) = local_manifests {
+            if let Some(local_manifest) = local_manifest {
                 let segments_path = LocalShard::segments_path(&self.shard_path);
 
-                for (segment_id, local_manifest) in local_manifests.iter() {
+                for (segment_id, local_manifest) in local_manifest.iter() {
                     let segment_path = segments_path.join(segment_id);
 
                     log::debug!("Cleaning up segment {}", segment_path.display());
 
                     // Delete local segment, if it's not present in partial snapshot
-                    let Some(snapshot_manifest) = snapshot_manifests.get(segment_id) else {
+                    let Some(snapshot_manifest) = snapshot_manifest.get(segment_id) else {
                         log::debug!("Removing outdated segment {}", segment_path.display());
 
                         tokio::fs::remove_dir_all(&segment_path)
@@ -446,7 +446,7 @@ impl ShardReplicaSet {
         }
     }
 
-    pub async fn get_partial_snapshot_manifest(&self) -> CollectionResult<SegmentManifests> {
+    pub async fn get_partial_snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         self.local
             .read()
             .await
@@ -459,6 +459,6 @@ impl ShardReplicaSet {
                     self.this_peer_id(),
                 ))
             })?
-            .segment_manifests()
+            .snapshot_manifest()
     }
 }

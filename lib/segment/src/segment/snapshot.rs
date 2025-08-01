@@ -9,7 +9,7 @@ use io::storage_version::VERSION_FILE;
 use uuid::Uuid;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::segment_manifest::{FileVersion, SegmentManifest, SegmentManifests};
+use crate::data_types::manifest::{FileVersion, SegmentManifest, SnapshotManifest};
 use crate::entry::SegmentEntry as _;
 use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::index::{PayloadIndex, VectorIndex};
@@ -28,7 +28,7 @@ impl SnapshotEntry for Segment {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
-        manifest: Option<&SegmentManifests>,
+        manifest: Option<&SnapshotManifest>,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
         let segment_id = self.segment_id()?;
@@ -103,8 +103,8 @@ impl SnapshotEntry for Segment {
         Ok(())
     }
 
-    fn collect_segment_manifests(&self, manifests: &mut SegmentManifests) -> OperationResult<()> {
-        manifests.add(self.get_segment_manifest()?);
+    fn collect_snapshot_manifest(&self, manifest: &mut SnapshotManifest) -> OperationResult<()> {
+        manifest.add(self.get_segment_manifest()?);
         Ok(())
     }
 }
@@ -235,27 +235,6 @@ impl Segment {
         files.extend(self.payload_storage.borrow().immutable_files());
 
         files.extend(self.id_tracker.borrow().immutable_files());
-
-        files
-    }
-
-    #[allow(dead_code)]
-    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
-        let mut files = Vec::new();
-
-        for vector_data in self.vector_data.values() {
-            files.extend(vector_data.vector_index.borrow().versioned_files());
-            files.extend(vector_data.vector_storage.borrow().versioned_files());
-
-            if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().deref() {
-                files.extend(quantized_vectors.versioned_files());
-            }
-        }
-
-        files.extend(self.payload_index.borrow().versioned_files());
-        files.extend(self.payload_storage.borrow().versioned_files());
-
-        files.extend(self.id_tracker.borrow().versioned_files());
 
         files
     }
