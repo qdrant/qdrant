@@ -99,7 +99,7 @@ mod tests {
     use rand::rngs::StdRng;
 
     use super::batched_points::BatchedPoints;
-    use crate::data_types::vectors::{DenseVector, VectorRef};
+    use crate::data_types::vectors::DenseVector;
     use crate::fixtures::index_fixtures::TestRawScorerProducer;
     use crate::fixtures::payload_fixtures::random_vector;
     use crate::index::hnsw_index::HnswM;
@@ -131,14 +131,10 @@ mod tests {
 
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Cosine);
-        for idx in 0..num_vectors {
-            let v = vector_holder.get_vector(idx as PointOffsetType);
+        for idx in 0..num_vectors as PointOffsetType {
+            let v = vector_holder.storage().get_vector(idx);
             storage
-                .insert_vector(
-                    idx as PointOffsetType,
-                    VectorRef::from(v.as_ref()),
-                    &HardwareCounterCell::new(),
-                )
+                .insert_vector(idx, v.as_vec_ref(), &HardwareCounterCell::new())
                 .unwrap();
         }
 

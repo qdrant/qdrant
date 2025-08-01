@@ -1,11 +1,8 @@
-use std::borrow::Cow;
-
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::Rng;
 
-use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, VectorRef};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::Distance;
@@ -46,13 +43,6 @@ impl TestRawScorerProducer {
         &self.storage
     }
 
-    pub fn get_vector(&self, key: PointOffsetType) -> Cow<[VectorElementType]> {
-        match self.storage.get_vector(key) {
-            CowVector::Dense(cow) => cow,
-            _ => unreachable!("Expected vector storage to be dense"),
-        }
-    }
-
     pub fn get_scorer(&self, query: impl Into<QueryVector>) -> FilteredScorer<'_> {
         FilteredScorer::new_for_test(query.into(), &self.storage, &self.deleted_points)
     }
@@ -60,7 +50,7 @@ impl TestRawScorerProducer {
     pub fn internal_scorer(&self, point_id: PointOffsetType) -> FilteredScorer<'_> {
         FilteredScorer::new_internal(
             point_id,
-            &self.vector_storage,
+            &self.storage,
             None,
             None,
             &self.deleted_points,

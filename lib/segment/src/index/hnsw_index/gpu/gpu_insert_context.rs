@@ -485,7 +485,6 @@ mod tests {
     use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
     use super::*;
-    use crate::data_types::vectors::VectorRef;
     use crate::fixtures::index_fixtures::TestRawScorerProducer;
     use crate::index::hnsw_index::graph_layers::GraphLayersBase;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -524,14 +523,10 @@ mod tests {
 
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Dot);
-        for idx in 0..(num_vectors + groups_count) {
-            let v = vector_holder.get_vector(idx as PointOffsetType);
+        for idx in 0..(num_vectors + groups_count) as PointOffsetType {
+            let v = vector_holder.storage().get_vector(idx);
             storage
-                .insert_vector(
-                    idx as PointOffsetType,
-                    VectorRef::from(v.as_ref()),
-                    &HardwareCounterCell::new(),
-                )
+                .insert_vector(idx, v.as_vec_ref(), &HardwareCounterCell::new())
                 .unwrap();
         }
 

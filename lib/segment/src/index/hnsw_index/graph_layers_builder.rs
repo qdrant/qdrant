@@ -598,12 +598,9 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::data_types::vectors::VectorElementType;
     use crate::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
     use crate::index::hnsw_index::graph_links::normalize_links;
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
-    use crate::spaces::metric::Metric;
-    use crate::spaces::simple::CosineMetric;
     use crate::types::Distance;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage as _};
 
@@ -741,14 +738,11 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let processed_query = distance.preprocess_vector::<VectorElementType>(query.clone());
+        let scorer = vector_holder.get_scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
-            let vec = &vector_holder.get_vector(idx);
-            reference_top.push(ScoredPointOffset {
-                idx,
-                score: CosineMetric::similarity(vec, &processed_query),
-            });
+            let score = scorer.score_point(idx);
+            reference_top.push(ScoredPointOffset { idx, score });
         }
 
         let graph = graph_layers_builder.into_graph_layers_ram(format);
@@ -833,14 +827,11 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let processed_query = distance.preprocess_vector::<VectorElementType>(query.clone());
+        let scorer = vector_holder.get_scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
-            let vec = &vector_holder.get_vector(idx);
-            reference_top.push(ScoredPointOffset {
-                idx,
-                score: CosineMetric::similarity(vec, &processed_query),
-            });
+            let score = scorer.score_point(idx);
+            reference_top.push(ScoredPointOffset { idx, score });
         }
 
         let graph = graph_layers_builder.into_graph_layers_ram(format);
