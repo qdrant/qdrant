@@ -421,7 +421,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
-        _count: usize,
         encoding: Encoding,
         query_encoding: QueryEncoding,
         stopped: &AtomicBool,

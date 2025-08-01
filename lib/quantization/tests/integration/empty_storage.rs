@@ -89,7 +89,6 @@ mod tests {
     fn empty_data_bq() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-        let vectors_count = 0;
         let vector_dim = 8;
         let vector_parameters = VectorParameters {
             dim: vector_dim,
@@ -103,7 +102,6 @@ mod tests {
             vector_data.iter(),
             Vec::<u8>::new(),
             &vector_parameters,
-            vectors_count,
             quantization::encoded_vectors_binary::Encoding::OneBit,
             QueryEncoding::SameAsStorage,
             &AtomicBool::new(false),
