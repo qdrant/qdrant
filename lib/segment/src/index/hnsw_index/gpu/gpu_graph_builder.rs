@@ -153,10 +153,7 @@ mod tests {
                     1,
                     cpu_linked_points_count,
                     ids.clone(),
-                    |point_id| {
-                        let added_vector = test.vector_holder.get_vector(point_id);
-                        Ok(test.vector_holder.get_scorer(added_vector.to_vec()))
-                    },
+                    |point_id| Ok(test.vector_holder.internal_scorer(point_id)),
                     &false.into(),
                 )
                 .unwrap()

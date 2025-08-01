@@ -432,8 +432,7 @@ mod tests {
 
         let linking_idx: PointOffsetType = 7;
 
-        let added_vector = vector_holder.get_vector(linking_idx).to_vec();
-        let mut scorer = vector_holder.get_scorer(added_vector);
+        let mut scorer = vector_holder.internal_scorer(linking_idx);
 
         let nearest_on_level = graph_layers
             .search_on_level(

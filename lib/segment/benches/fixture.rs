@@ -64,8 +64,7 @@ where
         }
 
         let add_point = |idx| {
-            let added_vector = vector_holder.get_vector(idx as PointOffsetType).to_vec();
-            let scorer = vector_holder.get_scorer(added_vector);
+            let scorer = vector_holder.internal_scorer(idx as PointOffsetType);
             graph_layers_builder.link_new_point(idx as PointOffsetType, scorer);
         };
 

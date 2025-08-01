@@ -648,8 +648,7 @@ mod tests {
             (0..(num_vectors as PointOffsetType))
                 .into_par_iter()
                 .for_each(|idx| {
-                    let added_vector = vector_holder.get_vector(idx).to_vec();
-                    let scorer = vector_holder.get_scorer(added_vector);
+                    let scorer = vector_holder.internal_scorer(idx);
                     graph_layers.link_new_point(idx, scorer);
                 });
         });
@@ -687,8 +686,7 @@ mod tests {
         }
 
         for idx in 0..(num_vectors as PointOffsetType) {
-            let added_vector = vector_holder.get_vector(idx).to_vec();
-            let scorer = vector_holder.get_scorer(added_vector);
+            let scorer = vector_holder.internal_scorer(idx);
             graph_layers.link_new_point(idx, scorer);
         }
 
@@ -872,8 +870,7 @@ mod tests {
         let mut graph_layers_builder =
             GraphLayersBuilder::new(NUM_VECTORS, HnswM::new2(M), EF_CONSTRUCT, 10, USE_HEURISTIC);
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
-            let added_vector = vector_holder.get_vector(idx).to_vec();
-            let scorer = vector_holder.get_scorer(added_vector);
+            let scorer = vector_holder.internal_scorer(idx);
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);

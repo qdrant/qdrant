@@ -36,12 +36,9 @@ where
     );
 
     for idx in 0..(num_vectors as PointOffsetType) {
-        let added_vector = vector_holder.get_vector(idx).to_vec();
-        let scorer = vector_holder.get_scorer(added_vector);
-
         let level = graph_layers_builder.get_random_layer(rng);
         graph_layers_builder.set_levels(idx, level);
-        graph_layers_builder.link_new_point(idx, scorer);
+        graph_layers_builder.link_new_point(idx, vector_holder.internal_scorer(idx));
     }
     (vector_holder, graph_layers_builder)
 }

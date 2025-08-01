@@ -56,4 +56,16 @@ impl TestRawScorerProducer {
     pub fn get_scorer(&self, query: impl Into<QueryVector>) -> FilteredScorer<'_> {
         FilteredScorer::new_for_test(query.into(), &self.storage, &self.deleted_points)
     }
+
+    pub fn internal_scorer(&self, point_id: PointOffsetType) -> FilteredScorer<'_> {
+        FilteredScorer::new_internal(
+            point_id,
+            &self.vector_storage,
+            None,
+            None,
+            &self.deleted_points,
+            HardwareCounterCell::new(),
+        )
+        .unwrap()
+    }
 }

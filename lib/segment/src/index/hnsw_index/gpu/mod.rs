@@ -156,8 +156,7 @@ mod tests {
         );
 
         for &idx in &ids {
-            let added_vector = vector_holder.get_vector(idx).to_vec();
-            let scorer = vector_holder.get_scorer(added_vector);
+            let scorer = vector_holder.internal_scorer(idx);
             graph_layers_builder.link_new_point(idx, scorer);
         }
 

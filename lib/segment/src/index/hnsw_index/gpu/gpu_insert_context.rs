@@ -543,9 +543,7 @@ mod tests {
             graph_layers_builder.set_levels(idx, level);
         }
         for idx in 0..(num_vectors as PointOffsetType) {
-            let added_vector = vector_holder.get_vector(idx).to_vec();
-            let scorer = vector_holder.get_scorer(added_vector.clone());
-            graph_layers_builder.link_new_point(idx, scorer);
+            graph_layers_builder.link_new_point(idx, vector_holder.internal_scorer(idx));
         }
 
         // Create GPU search context
@@ -749,11 +747,9 @@ mod tests {
 
         // Check response
         for i in 0..groups_count {
-            let added_vector = test
+            let mut scorer = test
                 .vector_holder
-                .get_vector((num_vectors + i) as PointOffsetType)
-                .to_vec();
-            let mut scorer = test.vector_holder.get_scorer(added_vector.clone());
+                .internal_scorer((num_vectors + i) as PointOffsetType);
             let entry = ScoredPointOffset {
                 idx: 0,
                 score: scorer.score_point(0),
@@ -807,11 +803,9 @@ mod tests {
 
         // Check response
         for (i, &gpu_search_result) in gpu_responses.iter().enumerate() {
-            let added_vector = test
+            let mut scorer = test
                 .vector_holder
-                .get_vector((num_vectors + i) as PointOffsetType)
-                .to_vec();
-            let mut scorer = test.vector_holder.get_scorer(added_vector.clone());
+                .internal_scorer((num_vectors + i) as PointOffsetType);
             let search_result = test
                 .graph_layers_builder
                 .search_entry_on_level(0, 0, &mut scorer);
@@ -973,11 +967,9 @@ mod tests {
 
         // Check response
         for (i, gpu_group_result) in gpu_responses.iter().enumerate() {
-            let added_vector = test
+            let mut scorer = test
                 .vector_holder
-                .get_vector((num_vectors + i) as PointOffsetType)
-                .to_vec();
-            let mut scorer = test.vector_holder.get_scorer(added_vector.clone());
+                .internal_scorer((num_vectors + i) as PointOffsetType);
             let entry = ScoredPointOffset {
                 idx: 0,
                 score: scorer.score_point(0),
