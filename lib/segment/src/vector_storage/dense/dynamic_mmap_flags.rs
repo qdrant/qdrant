@@ -177,9 +177,10 @@ impl DynamicMmapFlags {
             let populate = false;
             let (flags, flags_flusher) = Self::open_mmap(new_len, &self.directory, populate)?;
 
-            // Swap operation. It is important this section is not interrupted by errors.
             {
                 let mut flags_flusher_lock = self.flags_flusher.lock();
+                flags_flusher_lock()?;
+                // Swap operation. It is important this section is not interrupted by errors.
                 self.flags = flags;
                 *flags_flusher_lock = flags_flusher;
             }
