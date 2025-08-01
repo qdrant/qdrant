@@ -5571,7 +5571,7 @@ pub struct DecayParamsExpression {
     /// The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
     #[prost(float, optional, tag = "3")]
     pub scale: ::core::option::Option<f32>,
-    /// The midpoint of the decay. Defaults to 0.5. Output will be this value when `|x - target| == scale`.
+    /// The midpoint of the decay. Should be between 0 and 1. Defaults to 0.5. Output will be this value when `|x - target| == scale`.
     #[prost(float, optional, tag = "4")]
     pub midpoint: ::core::option::Option<f32>,
 }
