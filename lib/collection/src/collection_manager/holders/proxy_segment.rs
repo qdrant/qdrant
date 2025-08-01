@@ -14,10 +14,10 @@ use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::facets::{FacetParams, FacetValue};
+use segment::data_types::manifest::SnapshotManifest;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
-use segment::data_types::segment_manifest::SegmentManifests;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::entry::snapshot_entry::SnapshotEntry;
@@ -1351,7 +1351,7 @@ impl SnapshotEntry for ProxySegment {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
-        manifest: Option<&SegmentManifests>,
+        manifest: Option<&SnapshotManifest>,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
         log::info!("Taking a snapshot of a proxy segment");
@@ -1377,16 +1377,16 @@ impl SnapshotEntry for ProxySegment {
         Ok(())
     }
 
-    fn collect_segment_manifests(&self, manifests: &mut SegmentManifests) -> OperationResult<()> {
+    fn collect_snapshot_manifest(&self, manifest: &mut SnapshotManifest) -> OperationResult<()> {
         self.wrapped_segment
             .get()
             .read()
-            .collect_segment_manifests(manifests)?;
+            .collect_snapshot_manifest(manifest)?;
 
         self.write_segment
             .get()
             .read()
-            .collect_segment_manifests(manifests)?;
+            .collect_snapshot_manifest(manifest)?;
 
         Ok(())
     }

@@ -19,7 +19,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{Filter, SearchParams, SeqNumberType};
+use crate::types::{Filter, SearchParams};
 
 /// Trait for vector searching
 pub trait VectorIndex {
@@ -38,10 +38,6 @@ pub trait VectorIndex {
     fn files(&self) -> Vec<PathBuf>;
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        Vec::new()
-    }
-
-    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
         Vec::new()
     }
 

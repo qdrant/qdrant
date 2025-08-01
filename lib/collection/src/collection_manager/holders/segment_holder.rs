@@ -17,8 +17,8 @@ use io::storage_version::StorageVersion;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::data_types::manifest::SnapshotManifest;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::segment_manifest::SegmentManifests;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
@@ -171,17 +171,17 @@ pub struct SegmentHolder {
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
 impl SegmentHolder {
-    pub fn segment_manifests(&self) -> OperationResult<SegmentManifests> {
-        let mut manifests = SegmentManifests::default();
+    pub fn snapshot_manifest(&self) -> OperationResult<SnapshotManifest> {
+        let mut manifest = SnapshotManifest::default();
 
         for (_, segment) in self.iter() {
             segment
                 .get()
                 .read()
-                .collect_segment_manifests(&mut manifests)?;
+                .collect_snapshot_manifest(&mut manifest)?;
         }
 
-        Ok(manifests)
+        Ok(manifest)
     }
 
     /// Iterate over all segments with their IDs
@@ -1373,7 +1373,7 @@ impl SegmentHolder {
         temp_dir: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
-        manifest: Option<&SegmentManifests>,
+        manifest: Option<&SnapshotManifest>,
     ) -> OperationResult<()> {
         // Snapshotting may take long-running read locks on segments blocking incoming writes, do
         // this through proxied segments to allow writes to continue.

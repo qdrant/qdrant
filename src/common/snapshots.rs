@@ -10,7 +10,7 @@ use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
-use segment::data_types::segment_manifest::SegmentManifests;
+use segment::data_types::manifest::SnapshotManifest;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
@@ -50,7 +50,7 @@ pub async fn stream_shard_snapshot(
     access: Access,
     collection_name: String,
     shard_id: ShardId,
-    manifest: Option<SegmentManifests>,
+    manifest: Option<SnapshotManifest>,
 ) -> Result<SnapshotStream, StorageError> {
     let collection_pass = access.check_collection_access(
         &collection_name,

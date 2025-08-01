@@ -11,9 +11,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
-use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, SeqNumberType,
-};
+use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
 
 pub enum BuildIndexResult {
     /// Index was built
@@ -161,10 +159,6 @@ pub trait PayloadIndex {
     fn files(&self) -> Vec<PathBuf>;
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        Vec::new()
-    }
-
-    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
         Vec::new()
     }
 }
