@@ -175,15 +175,17 @@ impl DynamicMmapFlags {
         if new_len > current_capacity {
             // Don't read the whole file on resize
             let populate = false;
+
+            // Flush before reopening
+            let mut flags_flusher_lock = self.flags_flusher.lock();
+            flags_flusher_lock()?;
+
+            // Open resized mmap
             let (flags, flags_flusher) = Self::open_mmap(new_len, &self.directory, populate)?;
 
-            {
-                let mut flags_flusher_lock = self.flags_flusher.lock();
-                flags_flusher_lock()?;
-                // Swap operation. It is important this section is not interrupted by errors.
-                self.flags = flags;
-                *flags_flusher_lock = flags_flusher;
-            }
+            // Swap operation. It is important this section is not interrupted by errors.
+            self.flags = flags;
+            *flags_flusher_lock = flags_flusher;
         }
 
         self.status.len = new_len;
