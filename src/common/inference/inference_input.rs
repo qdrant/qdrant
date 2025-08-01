@@ -12,7 +12,7 @@ use super::service::InferenceData;
 #[derive(Debug, Serialize, Clone)]
 pub struct InferenceInput {
     pub data: Value,
-    pub data_type: String,
+    pub data_type: InferenceDataType,
     pub model: String,
     pub options: Option<HashMap<String, Value>>,
 }
@@ -26,9 +26,13 @@ impl InferenceInput {
     }
 }
 
-const DOCUMENT_DATA_TYPE: &str = "text";
-const IMAGE_DATA_TYPE: &str = "image";
-const OBJECT_DATA_TYPE: &str = "object";
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum InferenceDataType {
+    Text,
+    Image,
+    Object,
+}
 
 impl From<InferenceData> for InferenceInput {
     fn from(value: InferenceData) -> Self {
@@ -41,7 +45,7 @@ impl From<InferenceData> for InferenceInput {
                 } = doc;
                 InferenceInput {
                     data: Value::String(text),
-                    data_type: DOCUMENT_DATA_TYPE.to_string(),
+                    data_type: InferenceDataType::Text,
                     model: model.to_string(),
                     options: options.options,
                 }
@@ -54,7 +58,7 @@ impl From<InferenceData> for InferenceInput {
                 } = img;
                 InferenceInput {
                     data: image,
-                    data_type: IMAGE_DATA_TYPE.to_string(),
+                    data_type: InferenceDataType::Image,
                     model: model.to_string(),
                     options: options.options,
                 }
@@ -67,7 +71,7 @@ impl From<InferenceData> for InferenceInput {
                 } = obj;
                 InferenceInput {
                     data: object,
-                    data_type: OBJECT_DATA_TYPE.to_string(),
+                    data_type: InferenceDataType::Object,
                     model: model.to_string(),
                     options: options.options,
                 }

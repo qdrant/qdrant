@@ -337,6 +337,7 @@ mod test {
 
     use super::*;
     use crate::common::inference::bm25::{Bm25, Bm25Config};
+    use crate::common::inference::inference_input::InferenceDataType;
 
     const BM25_LOCAL_MODEL_NAME: &str = "bm25";
 
@@ -406,7 +407,7 @@ mod test {
 
         InferenceInput {
             data: Value::String(input.to_string()),
-            data_type: "".to_string(),
+            data_type: InferenceDataType::Text,
             model: "anyModel".to_string(),
             options,
         }
@@ -420,7 +421,7 @@ mod test {
 
         InferenceInput {
             data: Value::String(input.to_string()),
-            data_type: "".to_string(),
+            data_type: InferenceDataType::Text,
             model: BM25_LOCAL_MODEL_NAME.to_string(),
             options: Some(options),
         }
