@@ -54,7 +54,7 @@ pub struct DynamicMmapFlags {
     /// Current mmap'ed BitSlice for flags
     flags: MmapBitSlice,
     /// Flusher to flush current flags mmap
-    flags_flusher: Arc<Mutex<Option<MmapFlusher>>>,
+    flags_flusher: Arc<Mutex<MmapFlusher>>,
     status: MmapType<DynamicMmapStatus>,
     directory: PathBuf,
 }
@@ -110,7 +110,7 @@ impl DynamicMmapFlags {
         let (flags, flags_flusher) = Self::open_mmap(status.len, directory, populate)?;
         Ok(Self {
             flags,
-            flags_flusher: Arc::new(Mutex::new(Some(flags_flusher))),
+            flags_flusher: Arc::new(Mutex::new(flags_flusher)),
             status,
             directory: directory.to_owned(),
         })
@@ -181,7 +181,7 @@ impl DynamicMmapFlags {
             {
                 let mut flags_flusher_lock = self.flags_flusher.lock();
                 self.flags = flags;
-                flags_flusher_lock.replace(flags_flusher);
+                *flags_flusher_lock = flags_flusher;
             }
         }
 
@@ -260,10 +260,8 @@ impl DynamicMmapFlags {
             let flags_flusher = self.flags_flusher.clone();
             let status_flusher = self.status.flusher();
             move || {
-                // Maybe we shouldn't take flusher here: FnOnce() -> Fn()
-                if let Some(flags_flusher) = flags_flusher.lock().take() {
-                    flags_flusher()?;
-                }
+                let flags_flush_lock = flags_flusher.lock();
+                flags_flush_lock()?;
                 status_flusher()?;
                 Ok(())
             }

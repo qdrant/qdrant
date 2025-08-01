@@ -36,7 +36,7 @@ use crate::mmap_ops;
 /// Result for mmap errors.
 type Result<T> = std::result::Result<T, Error>;
 
-pub type MmapFlusher = Box<dyn FnOnce() -> Result<()> + Send>;
+pub type MmapFlusher = Box<dyn Fn() -> Result<()> + Send>;
 
 /// Type `T` on a memory mapped file
 ///
