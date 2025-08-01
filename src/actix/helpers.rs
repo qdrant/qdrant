@@ -145,21 +145,19 @@ where
     T: serde::Serialize + Send + 'static,
 {
     let future = async move {
-        let handle = tokio::task::spawn(async move {
-            let result = future.await;
-
-            if !wait {
-                if let Err(err) = &result {
-                    log_service_error(err);
-                }
-            }
-
-            result
-        });
-
         if wait {
-            handle.await?.map(Some)
+            let output = future.await?;
+
+            Ok(Some(output))
         } else {
+            let _handle = tokio::task::spawn(async move {
+                let result = future.await;
+
+                if let Err(err) = result {
+                    log_service_error(&err);
+                }
+            });
+
             Ok(None)
         }
     };
@@ -176,6 +174,7 @@ where
     T: serde::Serialize,
 {
     let instant = Instant::now();
+
     match future.await.transpose() {
         Some(res) => process_response(res, instant, None),
         None => accepted_response(instant, None, None),
