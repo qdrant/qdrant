@@ -337,7 +337,8 @@ mod test {
 
     use super::*;
     use crate::common::inference::bm25::{Bm25, Bm25Config};
-    use crate::common::inference::local_model::BM25_LOCAL_MODEL_NAME;
+
+    const BM25_LOCAL_MODEL_NAME: &str = "bm25";
 
     #[test]
     fn test_merge_position_items() {

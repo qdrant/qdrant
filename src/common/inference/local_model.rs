@@ -4,8 +4,19 @@ use storage::content_manager::errors::StorageError;
 use super::bm25::Bm25;
 use super::service::{InferenceInput, InferenceType};
 
-/// Model name for BM25 that should be processed by Qdrant itself.
-pub const BM25_LOCAL_MODEL_NAME: &str = "qdrant/bm25";
+enum LocalModelName {
+    Bm25,
+}
+
+impl LocalModelName {
+    fn from_str(model_name: &str) -> Option<Self> {
+        match model_name.to_lowercase().as_str() {
+            "qdrant/bm25" => Some(LocalModelName::Bm25),
+            "bm25" => Some(LocalModelName::Bm25),
+            _ => None,
+        }
+    }
+}
 
 /// Run inference with only local models.
 ///
@@ -18,12 +29,14 @@ pub fn infer_local(
     let mut out = Vec::with_capacity(inference_inputs.len());
 
     for input in inference_inputs {
+        let model_name = LocalModelName::from_str(&input.model);
+
         let input_str = input.data.as_str().ok_or_else(|| {
-            StorageError::service_error("Only strings supported for local models!")
+            StorageError::bad_input(format!("Only text input is supported for {}.", input.model))
         })?;
 
-        let embedding = match input.model.to_lowercase().as_str() {
-            BM25_LOCAL_MODEL_NAME => {
+        let embedding = match model_name {
+            Some(LocalModelName::Bm25) => {
                 let bm25 = Bm25::new(input.parse_bm25_config()?);
 
                 match inference_type {
@@ -31,7 +44,7 @@ pub fn infer_local(
                     InferenceType::Search => bm25.search_embed(input_str),
                 }
             }
-            _ => unreachable!(
+            None => unreachable!(
                 "Non local model has been passed to infer_local(). This can happen if a newly added model wasn't added to infer_local()"
             ),
         };
@@ -45,9 +58,6 @@ pub fn infer_local(
 /// Returns `true` if the provided `model_name` targets a local model. Local models
 /// are models that are handled by Qdrant and are not forwarded to a remote inference service.
 pub fn is_local_model(model_name: &str) -> bool {
-    #[allow(clippy::match_like_matches_macro)]
-    match model_name {
-        BM25_LOCAL_MODEL_NAME => true,
-        _ => false,
-    }
+    let model_name = LocalModelName::from_str(model_name);
+    model_name.is_some()
 }
