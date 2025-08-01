@@ -74,7 +74,7 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
     let reference_results = queries
         .iter()
         .map(|query| {
-            let scorer = vector_holder.get_scorer(query.clone());
+            let scorer = vector_holder.scorer(query.clone());
             search_in_builder(&graph_layers_builder, top, ef, scorer)
         })
         .collect_vec();
@@ -84,7 +84,7 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
     let results = queries
         .iter()
         .map(|query| {
-            let scorer = vector_holder.get_scorer(query.clone());
+            let scorer = vector_holder.scorer(query.clone());
             graph_layers
                 .search(top, ef, scorer, None, &DEFAULT_STOPPED)
                 .unwrap()

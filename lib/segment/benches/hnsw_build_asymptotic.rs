@@ -36,7 +36,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
         let (vector_holder, graph_layers) = &*setup_5k;
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let scorer = vector_holder.get_scorer(query);
+            let scorer = vector_holder.scorer(query);
             graph_layers
                 .search(TOP, EF, scorer, None, &DEFAULT_STOPPED)
                 .unwrap();
@@ -55,7 +55,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
         let (vector_holder, graph_layers) = &*setup_1m;
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let scorer = vector_holder.get_scorer(query);
+            let scorer = vector_holder.scorer(query);
             graph_layers
                 .search(TOP, EF, scorer, None, &DEFAULT_STOPPED)
                 .unwrap();
@@ -66,7 +66,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
         let (vector_holder, _graph_layers) = &*setup_1m;
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let mut scorer = vector_holder.get_scorer(query);
+            let mut scorer = vector_holder.scorer(query);
 
             let mut points_to_score = (0..1500)
                 .map(|_| rng.random_range(0..NUM_VECTORS) as u32)
@@ -90,7 +90,7 @@ fn scoring_vectors(c: &mut Criterion) {
     group.bench_function("score-point", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let mut scorer = vector_holder.get_scorer(query);
+            let mut scorer = vector_holder.scorer(query);
 
             let mut points_to_score = (0..points_per_cycle)
                 .map(|_| rng.random_range(0..num_vectors) as u32)
@@ -107,7 +107,7 @@ fn scoring_vectors(c: &mut Criterion) {
     group.bench_function("score-point-10x", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let mut scorer = vector_holder.get_scorer(query);
+            let mut scorer = vector_holder.scorer(query);
 
             let mut points_to_score = (0..points_per_cycle)
                 .map(|_| rng.random_range(0..num_vectors) as u32)
@@ -124,7 +124,7 @@ fn scoring_vectors(c: &mut Criterion) {
     group.bench_function("score-point-50x", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let mut scorer = vector_holder.get_scorer(query);
+            let mut scorer = vector_holder.scorer(query);
 
             let mut points_to_score = (0..points_per_cycle)
                 .map(|_| rng.random_range(0..num_vectors) as u32)

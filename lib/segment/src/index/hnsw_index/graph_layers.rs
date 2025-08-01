@@ -396,7 +396,7 @@ mod tests {
         vector_storage: &TestRawScorerProducer,
         graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
-        let scorer = vector_storage.get_scorer(query.to_owned());
+        let scorer = vector_storage.scorer(query.to_owned());
 
         let ef = 16;
         graph
@@ -534,7 +534,7 @@ mod tests {
         let top = 5;
         let query = random_vector(&mut rng, dim);
         let processed_query = distance.preprocess_vector::<VectorElementType>(query.clone());
-        let scorer = vector_holder.get_scorer(processed_query);
+        let scorer = vector_holder.scorer(processed_query);
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
             let score = scorer.score_point(idx);

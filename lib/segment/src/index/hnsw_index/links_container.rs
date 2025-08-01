@@ -280,7 +280,7 @@ mod tests {
 
         let new_vector_to_insert = random_vector(&mut rng, DIM);
 
-        let scorer = vector_holder.get_scorer(new_vector_to_insert);
+        let scorer = vector_holder.scorer(new_vector_to_insert);
 
         for i in 0..NUM_VECTORS {
             candidates.push(ScoredPointOffset {
@@ -401,7 +401,7 @@ mod tests {
         for _ in 0..1000 {
             let vector_holder =
                 TestRawScorerProducer::new(DIM, Distance::Euclid, NUM_VECTORS, &mut rng);
-            let scorer = vector_holder.get_scorer(random_vector(&mut rng, DIM));
+            let scorer = vector_holder.scorer(random_vector(&mut rng, DIM));
 
             let mut candidate_indices: Vec<_> = (0..NUM_VECTORS as u32).collect();
             candidate_indices.shuffle(&mut rng);

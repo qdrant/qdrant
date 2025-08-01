@@ -43,7 +43,7 @@ impl TestRawScorerProducer {
         &self.storage
     }
 
-    pub fn get_scorer(&self, query: impl Into<QueryVector>) -> FilteredScorer<'_> {
+    pub fn scorer(&self, query: impl Into<QueryVector>) -> FilteredScorer<'_> {
         FilteredScorer::new_for_test(query.into(), &self.storage, &self.deleted_points)
     }
 

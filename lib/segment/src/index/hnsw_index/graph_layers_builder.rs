@@ -738,7 +738,7 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let scorer = vector_holder.get_scorer(query.clone());
+        let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
             let score = scorer.score_point(idx);
@@ -747,7 +747,7 @@ mod tests {
 
         let graph = graph_layers_builder.into_graph_layers_ram(format);
 
-        let scorer = vector_holder.get_scorer(query);
+        let scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
             .search(top, ef, scorer, None, &DEFAULT_STOPPED)
@@ -827,7 +827,7 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let scorer = vector_holder.get_scorer(query.clone());
+        let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
             let score = scorer.score_point(idx);
@@ -836,7 +836,7 @@ mod tests {
 
         let graph = graph_layers_builder.into_graph_layers_ram(format);
 
-        let scorer = vector_holder.get_scorer(query);
+        let scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
             .search(top, ef, scorer, None, &DEFAULT_STOPPED)
