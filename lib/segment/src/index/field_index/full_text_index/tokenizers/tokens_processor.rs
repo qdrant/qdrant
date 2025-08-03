@@ -102,43 +102,6 @@ impl TokensProcessor {
     /// - The token is a stopword.
     /// - The token's chars length is outside of the `min_token_len` and (optionally) `max_token_len` range.
     pub fn process_token<'a>(&self, token: &'a str, check_max_len: bool) -> Option<Cow<'a, str>> {
-        let Self {
-            lowercase,
-            stopwords_filter,
-            stemmer,
-            min_token_len,
-            max_token_len,
-        } = self;
-
-        if token.is_empty() {
-            return None;
-        }
-
-        // Handle lowercase
-        let mut token_cow = if *lowercase {
-            Cow::Owned(token.to_lowercase())
-        } else {
-            Cow::Borrowed(token)
-        };
-
-        // Handle stopwords
-        if stopwords_filter.is_stopword(&token_cow) {
-            return None;
-        }
-
-        // Handle stemming
-        if let Some(stemmer) = stemmer.as_ref() {
-            token_cow = stemmer.stem(token_cow);
-        };
-
-        // Handle token length
-        if min_token_len.is_some_and(|min_len| token_cow.chars().count() < min_len)
-            || (check_max_len
-                && max_token_len.is_some_and(|max_len| token_cow.chars().count() > max_len))
-        {
-            return None;
-        }
-
-        Some(token_cow)
+        self.process_token_cow(Cow::Borrowed(token), check_max_len)
     }
 }
