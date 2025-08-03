@@ -86,7 +86,7 @@ impl Bm25 {
         out
     }
 
-    /// Embedds the given input using the Bm25 algorithm and configured options/hyperparameters.
+    /// Embeds the given input using the Bm25 algorithm and configured options/hyperparameters.
     pub fn search_embed(&self, input: &str) -> VectorPersisted {
         let tokens = self.tokenize(input);
 
@@ -104,7 +104,7 @@ impl Bm25 {
         VectorPersisted::new_sparse(indices, values)
     }
 
-    /// Embedds the given input using the Bm25 algorithm and configured options/hyperparameters.
+    /// Embeds the given input using the Bm25 algorithm and configured options/hyperparameters.
     pub fn doc_embed(&self, input: &str) -> VectorPersisted {
         let tokens = self.tokenize(input);
 
