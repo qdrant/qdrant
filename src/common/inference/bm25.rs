@@ -8,7 +8,7 @@ use murmur3::murmur3_32_of_slice;
 use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
 use segment::index::field_index::full_text_index::stop_words::StopwordsFilter;
 use segment::index::field_index::full_text_index::tokenizers::{
-    Stemmer, Tokenizer, TokenizerConfig,
+    Stemmer, Tokenizer, TokensProcessor,
 };
 use serde::{Deserialize, Serialize};
 
@@ -74,13 +74,13 @@ pub struct Bm25 {
 impl Bm25 {
     pub fn new(mut config: Bm25Config) -> Self {
         let tokenizer_conf = std::mem::take(&mut config.text_preprocessing_config);
-        let tokenizer_config = TokenizerConfig::from(tokenizer_conf.unwrap_or_default());
-        let tokenizer = Tokenizer::new(config.tokenizer, tokenizer_config);
+        let tokens_processor = TokensProcessor::from(tokenizer_conf.unwrap_or_default());
+        let tokenizer = Tokenizer::new(config.tokenizer, tokens_processor);
         Self { config, tokenizer }
     }
 
     /// Tokenizes the `input` with the configured tokenizer options.
-    fn tokenize<'b>(&self, input: &'b str) -> Vec<Cow<'b, str>> {
+    fn tokenize<'b>(&'b self, input: &'b str) -> Vec<Cow<'b, str>> {
         let mut out = vec![];
         self.tokenizer.tokenize_query(input, |i| out.push(i));
         out
@@ -147,17 +147,17 @@ impl Bm25 {
     }
 }
 
-impl From<TextPreprocessingConfig> for TokenizerConfig {
+impl From<TextPreprocessingConfig> for TokensProcessor {
     fn from(value: TextPreprocessingConfig) -> Self {
-        Self {
-            lowercase: value.lowercase,
-            stopwords_filter: Arc::new(StopwordsFilter::new(
+        TokensProcessor::new(
+            value.lowercase,
+            Arc::new(StopwordsFilter::new(
                 &value.stopwords_filter,
                 value.lowercase,
             )),
-            stemmer: value.stemmer.map(|i| Stemmer::from_algorithm(&i)),
-            min_token_len: value.min_token_len,
-            max_token_len: value.max_token_len,
-        }
+            value.stemmer.map(|i| Stemmer::from_algorithm(&i)),
+            value.min_token_len,
+            value.max_token_len,
+        )
     }
 }

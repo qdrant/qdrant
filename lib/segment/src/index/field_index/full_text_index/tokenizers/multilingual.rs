@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use charabia::normalizer::{ClassifierOption, NormalizedTokenIter, NormalizerOption};
 use charabia::{Language, Script, Segment, StrDetection};
 
-use super::{TokenizerConfig, japanese};
+use super::{TokensProcessor, japanese};
 
 /// Default normalizer options from charabia(https://github.com/meilisearch/charabia/blob/main/charabia/src/normalizer/mod.rs#L82) used
 /// in `str::tokenize()`.
@@ -19,7 +19,7 @@ const DEFAULT_NORMALIZER: NormalizerOption = NormalizerOption {
 pub struct MultilingualTokenizer;
 
 impl MultilingualTokenizer {
-    pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(input: &'a str, config: &TokenizerConfig, cb: C) {
+    pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(input: &'a str, config: &'a TokensProcessor, cb: C) {
         let script = detect_script_of_language(input);
 
         // If the script of the input is latin and we don't need to stem early, tokenize as-is.
@@ -39,30 +39,22 @@ impl MultilingualTokenizer {
     }
 
     // Tokenize input using charabia. Automatically applies stemming and filters stopwords if configured.
-    fn tokenize_charabia<'a, C>(input: &'a str, config: &TokenizerConfig, mut cb: C)
+    fn tokenize_charabia<'a, C>(input: &'a str, tokens_processor: &'a TokensProcessor, mut cb: C)
     where
         C: FnMut(Cow<'a, str>),
     {
         for token in charabia_token_iter(input) {
-            let cased_token = apply_casing(token.lemma, config.lowercase);
+            let lemma = token.lemma;
 
-            if config.stopwords_filter.is_stopword(&cased_token)
-                || cased_token.chars().all(|char| !char.is_alphabetic())
-            {
+            if lemma.chars().all(|char| !char.is_alphabetic()) {
+                // Skip tokens that are not alphanumeric.
                 continue;
             }
 
-            cb(config.stem_if_enabled(cased_token))
+            if let Some(processed_token) = tokens_processor.process_token_cow(lemma, true) {
+                cb(processed_token);
+            }
         }
-    }
-}
-
-/// Applies `lowercase` to the given input, returning a cow.
-fn apply_casing<'a>(input: Cow<'a, str>, lowercase: bool) -> Cow<'a, str> {
-    if lowercase {
-        Cow::Owned(input.to_lowercase())
-    } else {
-        input
     }
 }
 
@@ -154,10 +146,10 @@ mod test {
     }
 
     fn assert_tokenization(inp: &str, expected: &str) {
-        let config = TokenizerConfig::default();
+        let tokens_processor = TokensProcessor::default();
 
         let mut out = vec![];
-        MultilingualTokenizer::tokenize(inp, &config, |i| out.push(i.to_string()));
+        MultilingualTokenizer::tokenize(inp, &tokens_processor, |i| out.push(i.to_string()));
         let expected: Vec<_> = expected.split('|').collect();
         for i in out.iter().zip(expected.iter()) {
             assert_eq!(i.0, i.1);
@@ -183,19 +175,22 @@ mod test {
 
     #[test]
     fn test_multilingual_stemming() {
-        let config = TokenizerConfig {
-            stemmer: Some(Stemmer::from_algorithm(&StemmingAlgorithm::Snowball(
+        let tokens_processor = TokensProcessor::new(
+            true,
+            Default::default(),
+            Some(Stemmer::from_algorithm(&StemmingAlgorithm::Snowball(
                 SnowballParams {
                     r#type: Default::default(),
                     language: SnowballLanguage::English,
                 },
             ))),
-            ..Default::default()
-        };
+            None,
+            None,
+        );
 
         let input = "Testing this";
         let mut out = vec![];
-        MultilingualTokenizer::tokenize(input, &config, |i| out.push(i.to_string()));
+        MultilingualTokenizer::tokenize(input, &tokens_processor, |i| out.push(i.to_string()));
         assert_eq!(out, vec!["test", "this"]);
     }
 }
