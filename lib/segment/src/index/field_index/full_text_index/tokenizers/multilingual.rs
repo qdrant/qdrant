@@ -19,7 +19,11 @@ const DEFAULT_NORMALIZER: NormalizerOption = NormalizerOption {
 pub struct MultilingualTokenizer;
 
 impl MultilingualTokenizer {
-    pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(input: &'a str, config: &'a TokensProcessor, cb: C) {
+    pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
+        input: &'a str,
+        config: &'a TokensProcessor,
+        cb: C,
+    ) {
         let script = detect_script_of_language(input);
 
         // If the script of the input is latin and we don't need to stem early, tokenize as-is.

@@ -50,8 +50,11 @@ impl TokensProcessor {
         self.stopwords_filter.is_stopword(token)
     }
 
-
-    pub fn process_token_cow<'a>(&self, token: Cow<'a, str>, check_max_len: bool) -> Option<Cow<'a, str>> {
+    pub fn process_token_cow<'a>(
+        &self,
+        token: Cow<'a, str>,
+        check_max_len: bool,
+    ) -> Option<Cow<'a, str>> {
         let Self {
             lowercase,
             stopwords_filter,
@@ -84,7 +87,7 @@ impl TokensProcessor {
         // Handle token length
         if min_token_len.is_some_and(|min_len| token_cow.chars().count() < min_len)
             || (check_max_len
-            && max_token_len.is_some_and(|max_len| token_cow.chars().count() > max_len))
+                && max_token_len.is_some_and(|max_len| token_cow.chars().count() > max_len))
         {
             return None;
         }

@@ -324,13 +324,7 @@ mod tests {
         // Test stopwords getting applied
         let filter =
             StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["の", "は"])), false);
-        let tokens_processor = TokensProcessor::new(
-            true,
-            Arc::new(filter),
-            None,
-            None,
-            None,
-        );
+        let tokens_processor = TokensProcessor::new(true, Arc::new(filter), None, None, None);
         MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
@@ -355,13 +349,7 @@ mod tests {
 
         // Test stopwords getting applied
         let filter = StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["是"])), false);
-        let tokens_processor = TokensProcessor::new(
-            true,
-            Arc::new(filter),
-            None,
-            None,
-            None,
-        );
+        let tokens_processor = TokensProcessor::new(true, Arc::new(filter), None, None, None);
         MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 3);
