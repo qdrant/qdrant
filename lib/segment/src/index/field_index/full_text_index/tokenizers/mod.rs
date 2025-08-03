@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 pub mod config;
 mod japanese;
 mod multilingual;
@@ -6,7 +7,7 @@ mod stemmer;
 
 pub use config::TokenizerConfig;
 use multilingual::MultilingualTokenizer;
-use stemmer::Stemmer;
+pub use stemmer::Stemmer;
 
 use crate::data_types::index::{TextIndexParams, TokenizerType};
 use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
@@ -170,7 +171,7 @@ impl Tokenizer {
         } = params;
 
         let lowercase = lowercase.unwrap_or(true);
-        let stopwords_filter = StopwordsFilter::new(stopwords, lowercase);
+        let stopwords_filter = Arc::new(StopwordsFilter::new(stopwords, lowercase));
 
         let config = TokenizerConfig {
             lowercase,
@@ -203,7 +204,7 @@ impl Tokenizer {
         }
     }
 
-    pub fn tokenize_query<C: FnMut(Cow<str>)>(&self, text: &str, callback: C) {
+    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&self, text: &'a str, callback: C) {
         match self.tokenizer_type {
             TokenizerType::Whitespace => {
                 WhiteSpaceTokenizer::tokenize(text, &self.config, callback)
@@ -322,7 +323,7 @@ mod tests {
         // Test stopwords getting applied
         let filter =
             StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["の", "は"])), false);
-        config.stopwords_filter = filter;
+        config.stopwords_filter = Arc::new(filter);
         MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
@@ -347,7 +348,7 @@ mod tests {
 
         // Test stopwords getting applied
         let filter = StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["是"])), false);
-        config.stopwords_filter = filter;
+        config.stopwords_filter = Arc::new(filter);
         MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 3);
