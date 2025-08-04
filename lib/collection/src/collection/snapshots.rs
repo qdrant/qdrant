@@ -295,7 +295,7 @@ impl Collection {
 
     /// # Cancel safety
     ///
-    /// This method is *not* cancel safe.
+    /// This method is cancel safe.
     #[expect(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
         &self,
@@ -306,28 +306,50 @@ impl Collection {
         is_distributed: bool,
         temp_dir: &Path,
         cancel: cancel::CancellationToken,
-    ) -> CollectionResult<()> {
-        // TODO:
-        //   Check that shard snapshot is compatible with the collection
-        //   (see `VectorsConfig::check_compatible_with_segment_config`)
+    ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + 'static> {
+        // `ShardHolder::validate_shard_snapshot` is cancel safe, so we explicitly cancel it
+        // when token is triggered
+        let shard_holder = cancel::future::cancel_on_token(cancel.clone(), async {
+            let shard_holder = self.shards_holder.clone().read_owned().await;
 
-        // `ShardHolder::restore_shard_snapshot` is *not* cancel safe
-        // (see `ShardReplicaSet::restore_local_replica_from`)
-        self.shards_holder
-            .read()
-            .await
-            .restore_shard_snapshot(
-                snapshot_path,
-                recovery_type,
-                &self.path,
-                &self.name(),
-                shard_id,
-                this_peer_id,
-                is_distributed,
-                temp_dir,
-                cancel,
-            )
-            .await
+            shard_holder.validate_shard_snapshot(&snapshot_path).await?;
+
+            CollectionResult::Ok(shard_holder)
+        })
+        .await??;
+
+        let snapshot_path = snapshot_path.to_path_buf();
+
+        let collection_path = self.path.clone();
+        let collection_name = self.name();
+
+        let temp_dir = temp_dir.to_path_buf();
+
+        // `ShardHolder::restore_shard_snapshot` is *not* cancel safe, so we spawn it onto runtime,
+        // so that it won't be cancelled if current future is dropped
+        let restore = tokio::spawn(async move {
+            shard_holder
+                .restore_shard_snapshot(
+                    &snapshot_path,
+                    recovery_type,
+                    &collection_path,
+                    &collection_name,
+                    shard_id,
+                    this_peer_id,
+                    is_distributed,
+                    &temp_dir,
+                    cancel,
+                )
+                .await
+        });
+
+        // Flatten nested `Result<Result<()>>` into `Result<()>`
+        let restore = async move {
+            restore.await.map_err(CollectionError::from)??;
+            Ok(())
+        };
+
+        Ok(restore)
     }
 
     pub async fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {

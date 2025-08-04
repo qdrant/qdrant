@@ -1,51 +1,61 @@
-use std::fs::File;
 use std::path::Path;
-
-use tar::Archive;
+use std::{fs, io};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 
-pub fn open_snapshot_archive_with_validation(path: &Path) -> OperationResult<Archive<File>> {
-    {
-        let archive_file = File::open(path).map_err(|err| {
+pub fn open_snapshot_archive_with_validation(
+    path: &Path,
+) -> OperationResult<tar::Archive<impl io::Read + io::Seek>> {
+    validate_snapshot_archive(path)?;
+    open_snapshot_archive(path)
+}
+
+pub fn validate_snapshot_archive(path: &Path) -> OperationResult<()> {
+    let mut ar = open_snapshot_archive(path)?;
+
+    let entries = ar.entries_with_seek().map_err(|err| {
+        OperationError::service_error(format!(
+            "failed to read snapshot archive {}: {err}",
+            path.display()
+        ))
+    })?;
+
+    for entry in entries {
+        let entry = entry.map_err(|err| {
+            log::error!("Failed to read snapshot archive {}: {err}", path.display());
+
+            // Deliberately mask underlying error from API users, because it can expose arbitrary file contents
             OperationError::service_error(format!(
-                "failed to open segment snapshot archive {path:?}: {err}"
+                "failed to read snapshot archive {}",
+                path.display(),
             ))
         })?;
-        let mut ar = Archive::new(archive_file);
 
-        for entry in ar.entries_with_seek()? {
-            // Read next archive entry type
-            // Deliberately mask real error here for API users, it can expose arbitrary file contents
-            let entry_type = match entry {
-                Ok(entry) => entry.header().entry_type(),
-                Err(err) => {
-                    log::warn!("Error while reading snapshot archive, malformed entry: {err}");
-                    return Err(OperationError::service_error(
-                        "Failed to open snapshot archive, malformed format",
-                    ));
-                }
-            };
-            if !matches!(
-                entry_type,
-                tar::EntryType::Regular | tar::EntryType::Directory | tar::EntryType::GNUSparse
-            ) {
-                return Err(OperationError::ValidationError {
-                    description: format!(
-                        "Malformed snapshot, tar archive contains {entry_type:?} entry",
-                    ),
-                });
+        match entry.header().entry_type() {
+            tar::EntryType::Directory | tar::EntryType::Regular | tar::EntryType::GNUSparse => (),
+            entry_type => {
+                return Err(OperationError::validation_error(format!(
+                    "malformed snapshot archive {}: archive contains {entry_type:?} entry",
+                    path.display(),
+                )));
             }
         }
     }
 
-    let archive_file = File::open(path).map_err(|err| {
+    Ok(())
+}
+
+pub fn open_snapshot_archive(
+    path: &Path,
+) -> OperationResult<tar::Archive<impl io::Read + io::Seek>> {
+    let file = fs::File::open(path).map_err(|err| {
         OperationError::service_error(format!(
-            "failed to open segment snapshot archive {path:?}: {err}"
+            "failed to open snapshot archive {}: {err}",
+            path.display()
         ))
     })?;
 
-    let mut ar = Archive::new(archive_file);
+    let mut ar = tar::Archive::new(io::BufReader::new(file));
     ar.set_overwrite(false);
     ar.set_sync(true);
 
