@@ -223,13 +223,16 @@ mod tests {
 
     /// Test that random links can be saved by [`GraphLinksSerializer`] and
     /// loaded correctly by a [`GraphLinks`] impl.
-    fn test_save_load(
-        points_count: usize,
-        max_levels_count: usize,
-        on_disk: bool,
-        format: GraphLinksFormat,
-        hnsw_m: HnswM,
-    ) {
+    #[rstest]
+    #[case(GraphLinksFormat::Plain, true)]
+    #[case(GraphLinksFormat::Plain, false)]
+    #[case(GraphLinksFormat::Compressed, true)]
+    #[case(GraphLinksFormat::Compressed, false)]
+    fn test_save_load(#[case] format: GraphLinksFormat, #[case] on_disk: bool) {
+        let points_count = 1000;
+        let max_levels_count = 10;
+        let hnsw_m = HnswM::new2(8);
+
         let path = Builder::new().prefix("graph_dir").tempdir().unwrap();
         let links_file = path.path().join("links.bin");
         let links = random_links(points_count, max_levels_count, &hnsw_m);
@@ -286,14 +289,5 @@ mod tests {
 
         // fully random links
         check(random_links(100, 10, &hnsw_m));
-    }
-
-    #[test]
-    fn test_graph_links_mmap_ram_compatibility() {
-        let hnsw_m = HnswM::new2(8);
-        test_save_load(1000, 10, true, GraphLinksFormat::Compressed, hnsw_m);
-        test_save_load(1000, 10, false, GraphLinksFormat::Compressed, hnsw_m);
-        test_save_load(1000, 10, true, GraphLinksFormat::Plain, hnsw_m);
-        test_save_load(1000, 10, false, GraphLinksFormat::Plain, hnsw_m);
     }
 }
