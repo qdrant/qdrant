@@ -151,6 +151,9 @@ impl MutableNullIndex {
         self.has_values_flags_mut()?.set(id, has_values);
         self.is_null_flags_mut()?.set(id, is_null);
 
+        // Bump total points
+        self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
+
         // Account for I/O cost as if we were writing to disk now
         hw_counter.payload_index_io_write_counter().incr_delta(2);
 
@@ -161,6 +164,13 @@ impl MutableNullIndex {
         // Update bitmaps immediately
         self.has_values_flags_mut()?.set(id, false);
         self.is_null_flags_mut()?.set(id, false);
+
+        // Bump total points
+        // We MUST bump the total point count when removing a point too
+        // On upsert without this respective field, remove point is called rather than add point
+        // Bumping the total point count ensures we correctly estimate the number of points
+        // Bug: <https://github.com/qdrant/qdrant/pull/6882>
+        self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         // Account for I/O cost as if we were writing to disk now
         let hw_counter = HardwareCounterCell::disposable();
@@ -227,7 +237,6 @@ impl PayloadFieldIndex for MutableNullIndex {
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        // todo: should this load and potentially create new files?
         let is_loaded = self.has_values_flags.is_some() && self.is_null_flags.is_some();
         Ok(is_loaded)
     }
