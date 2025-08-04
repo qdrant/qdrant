@@ -180,14 +180,16 @@ mod tests {
             // Set flags beyond current length - this should grow the cached length
             buffered_flags.set(5, true);
             buffered_flags.set(7, true);
+            buffered_flags.set(8, false); // Also grows on false flag.
             buffered_flags.set(1, true); // Update existing
 
             // For this test, we need to simulate growth by setting flags beyond current length
             // The flusher will handle the growth when it's called
 
             // Verify in-memory state
+            assert_eq!(buffered_flags.len(), 9);
             assert_eq!(buffered_flags.count_trues(), 5); // 0, 1, 2, 5, 7
-            assert_eq!(buffered_flags.count_falses(), 3); // 3, 4, 6
+            assert_eq!(buffered_flags.count_falses(), 4); // 3, 4, 6, 8
 
             // Flush changes
             let flusher = buffered_flags.flusher();
@@ -197,7 +199,7 @@ mod tests {
         // Verify growth persisted
         {
             let mmap_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
-            assert_eq!(mmap_flags.len(), 8);
+            assert_eq!(mmap_flags.len(), 9);
 
             let buffered_flags = BufferedDynamicFlags::new(mmap_flags);
 
@@ -206,7 +208,7 @@ mod tests {
             assert_eq!(actual_trues, expected_trues);
 
             assert_eq!(buffered_flags.count_trues(), 5);
-            assert_eq!(buffered_flags.count_falses(), 3);
+            assert_eq!(buffered_flags.count_falses(), 4);
         }
     }
 
