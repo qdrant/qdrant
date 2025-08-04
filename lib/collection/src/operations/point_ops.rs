@@ -17,6 +17,7 @@ use segment::data_types::vectors::{
 };
 use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
+use sparse::common::types::{DimId, DimWeight};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::{Validate, ValidationErrors};
 
@@ -56,6 +57,16 @@ pub enum VectorPersisted {
     Dense(DenseVector),
     Sparse(sparse::common::sparse_vector::SparseVector),
     MultiDense(MultiDenseVector),
+}
+
+impl VectorPersisted {
+    pub fn new_sparse(indices: Vec<DimId>, values: Vec<DimWeight>) -> Self {
+        Self::Sparse(sparse::common::sparse_vector::SparseVector { indices, values })
+    }
+
+    pub fn empty_sparse() -> Self {
+        Self::new_sparse(vec![], vec![])
+    }
 }
 
 impl Debug for VectorPersisted {

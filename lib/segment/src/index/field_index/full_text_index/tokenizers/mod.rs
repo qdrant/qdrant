@@ -1,10 +1,13 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 mod japanese;
 mod multilingual;
 mod stemmer;
+pub mod tokens_processor;
 
 use multilingual::MultilingualTokenizer;
-use stemmer::Stemmer;
+pub use stemmer::Stemmer;
+pub use tokens_processor::TokensProcessor;
 
 use crate::data_types::index::{TextIndexParams, TokenizerType};
 use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
@@ -14,25 +17,15 @@ struct WhiteSpaceTokenizer;
 impl WhiteSpaceTokenizer {
     fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
         text: &'a str,
-        config: &TokenizerConfig,
+        tokens_processor: &TokensProcessor,
         mut callback: C,
     ) {
         for token in text.split_whitespace() {
-            if token.is_empty() {
+            let Some(token_cow) = tokens_processor.process_token(token, true) else {
                 continue;
-            }
-
-            let token_cow = if config.lowercase {
-                Cow::Owned(token.to_lowercase())
-            } else {
-                Cow::Borrowed(token)
             };
 
-            if config.stopwords_filter.is_stopword(&token_cow) {
-                continue;
-            }
-
-            callback(config.stem_if_enabled(token_cow));
+            callback(token_cow);
         }
     }
 }
@@ -42,25 +35,15 @@ struct WordTokenizer;
 impl WordTokenizer {
     fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
         text: &'a str,
-        config: &TokenizerConfig,
+        tokens_processor: &TokensProcessor,
         mut callback: C,
     ) {
         for token in text.split(|c| !char::is_alphanumeric(c)) {
-            if token.is_empty() {
+            let Some(token_cow) = tokens_processor.process_token(token, true) else {
                 continue;
-            }
-
-            let token_cow = if config.lowercase {
-                Cow::Owned(token.to_lowercase())
-            } else {
-                Cow::Borrowed(token)
             };
 
-            if config.stopwords_filter.is_stopword(&token_cow) {
-                continue;
-            }
-
-            callback(config.stem_if_enabled(token_cow));
+            callback(token_cow);
         }
     }
 }
@@ -70,37 +53,28 @@ struct PrefixTokenizer;
 impl PrefixTokenizer {
     fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
         text: &'a str,
-        config: &TokenizerConfig,
-        min_ngram: usize,
-        max_ngram: usize,
+        tokens_processor: &TokensProcessor,
         mut callback: C,
     ) {
-        text.split(|c| !char::is_alphanumeric(c))
-            .filter(|token| !token.is_empty())
-            .for_each(|word| {
-                let word_cow = if config.lowercase {
-                    Cow::Owned(word.to_lowercase())
-                } else {
-                    Cow::Borrowed(word)
-                };
+        let min_ngram = tokens_processor.min_token_len.unwrap_or(1);
+        let max_ngram = tokens_processor.max_token_len.unwrap_or(usize::MAX);
 
-                if config.stopwords_filter.is_stopword(&word_cow) {
-                    return;
-                }
+        text.split(|c| !char::is_alphanumeric(c)).for_each(|word| {
+            let Some(word_cow) = tokens_processor.process_token(word, false) else {
+                return;
+            };
 
-                let word_cow = config.stem_if_enabled(word_cow);
-
-                for n in min_ngram..=max_ngram {
-                    let ngram = word_cow.as_ref().char_indices().map(|(i, _)| i).nth(n);
-                    match ngram {
-                        Some(end) => callback(truncate_cow_ref(&word_cow, end)),
-                        None => {
-                            callback(word_cow);
-                            break;
-                        }
+            for n in min_ngram..=max_ngram {
+                let ngram = word_cow.as_ref().char_indices().map(|(i, _)| i).nth(n);
+                match ngram {
+                    Some(end) => callback(truncate_cow_ref(&word_cow, end)),
+                    None => {
+                        callback(word_cow);
+                        break;
                     }
                 }
-            });
+            }
+        });
     }
 
     /// For querying prefixes, it makes sense to use a maximal ngram only.
@@ -121,20 +95,29 @@ impl PrefixTokenizer {
     /// Query tokens: `"hello"` -> `["hello"]`
     fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(
         text: &'a str,
-        config: &TokenizerConfig,
-        max_ngram: usize,
+        tokens_processor: &TokensProcessor,
         mut callback: C,
     ) {
+        let max_ngram = tokens_processor.max_token_len.unwrap_or(usize::MAX);
+
         text.split(|c| !char::is_alphanumeric(c))
             .filter(|token| !token.is_empty())
             .for_each(|word| {
-                let word_cow = if config.lowercase {
+                let word_cow = if tokens_processor.lowercase {
                     Cow::Owned(word.to_lowercase())
                 } else {
                     Cow::Borrowed(word)
                 };
 
-                let word_cow = config.stem_if_enabled(word_cow);
+                let word_cow = tokens_processor.stem_if_enabled(word_cow);
+
+                if tokens_processor
+                    .min_token_len
+                    .is_some_and(|min_len| word_cow.chars().count() < min_len)
+                {
+                    // Tokens shorter than min_token_len don't exist in the index
+                    return;
+                }
 
                 let ngram = word_cow.char_indices().map(|(i, _)| i).nth(max_ngram);
                 match ngram {
@@ -170,13 +153,11 @@ fn truncate_cow_ref<'a>(inp: &Cow<'a, str>, len: usize) -> Cow<'a, str> {
 #[derive(Debug, Clone)]
 pub struct Tokenizer {
     tokenizer_type: TokenizerType,
-    min_token_len: Option<usize>,
-    max_token_len: Option<usize>,
-    config: TokenizerConfig,
+    tokens_processor: TokensProcessor,
 }
 
 impl Tokenizer {
-    pub fn new(params: &TextIndexParams) -> Self {
+    pub fn new_from_text_index_params(params: &TextIndexParams) -> Self {
         let TextIndexParams {
             r#type: _,
             tokenizer,
@@ -190,108 +171,61 @@ impl Tokenizer {
         } = params;
 
         let lowercase = lowercase.unwrap_or(true);
-        let stopwords_filter = StopwordsFilter::new(stopwords, lowercase);
+        let stopwords_filter = Arc::new(StopwordsFilter::new(stopwords, lowercase));
 
-        let config = TokenizerConfig {
+        let tokens_processor = TokensProcessor::new(
             lowercase,
             stopwords_filter,
-            stemmer: stemmer.as_ref().map(Stemmer::from_algorithm),
-        };
+            stemmer.as_ref().map(Stemmer::from_algorithm),
+            *min_token_len,
+            *max_token_len,
+        );
 
+        Self::new(*tokenizer, tokens_processor)
+    }
+
+    pub fn new(tokenizer_type: TokenizerType, tokens_processor: TokensProcessor) -> Self {
         Self {
-            tokenizer_type: *tokenizer,
-            min_token_len: *min_token_len,
-            max_token_len: *max_token_len,
-            config,
+            tokenizer_type,
+            tokens_processor,
         }
     }
 
-    fn doc_token_filter<'a, 'b, C: FnMut(Cow<'b, str>) + 'a>(
-        &'a self,
-        mut callback: C,
-    ) -> impl FnMut(Cow<'b, str>) + 'a {
-        move |token: Cow<'b, str>| {
-            if self
-                .min_token_len
-                .map(|min_len| token.len() < min_len && token.chars().count() < min_len)
-                .unwrap_or(false)
-            {
-                return;
-            }
-            if self
-                .max_token_len
-                .map(|max_len| token.len() > max_len && token.chars().count() > max_len)
-                .unwrap_or(false)
-            {
-                return;
-            }
-
-            callback(token);
-        }
-    }
-
-    pub fn tokenize_doc<'a, C: FnMut(Cow<'a, str>)>(&self, text: &'a str, mut callback: C) {
-        let token_filter = self.doc_token_filter(&mut callback);
+    pub fn tokenize_doc<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, callback: C) {
         match self.tokenizer_type {
             TokenizerType::Whitespace => {
-                WhiteSpaceTokenizer::tokenize(text, &self.config, token_filter)
+                WhiteSpaceTokenizer::tokenize(text, &self.tokens_processor, callback)
             }
-            TokenizerType::Word => WordTokenizer::tokenize(text, &self.config, token_filter),
+            TokenizerType::Word => WordTokenizer::tokenize(text, &self.tokens_processor, callback),
             TokenizerType::Multilingual => {
-                MultilingualTokenizer::tokenize(text, &self.config, token_filter)
+                MultilingualTokenizer::tokenize(text, &self.tokens_processor, callback)
             }
-            TokenizerType::Prefix => PrefixTokenizer::tokenize(
-                text,
-                &self.config,
-                self.min_token_len.unwrap_or(1),
-                self.max_token_len.unwrap_or(usize::MAX),
-                token_filter,
-            ),
+            TokenizerType::Prefix => {
+                PrefixTokenizer::tokenize(text, &self.tokens_processor, callback)
+            }
         }
     }
 
-    pub fn tokenize_query<C: FnMut(Cow<str>)>(&self, text: &str, mut callback: C) {
-        let token_filter = self.doc_token_filter(&mut callback);
+    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, callback: C) {
         match self.tokenizer_type {
             TokenizerType::Whitespace => {
-                WhiteSpaceTokenizer::tokenize(text, &self.config, token_filter)
+                WhiteSpaceTokenizer::tokenize(text, &self.tokens_processor, callback)
             }
-            TokenizerType::Word => WordTokenizer::tokenize(text, &self.config, token_filter),
+            TokenizerType::Word => WordTokenizer::tokenize(text, &self.tokens_processor, callback),
             TokenizerType::Multilingual => {
-                MultilingualTokenizer::tokenize(text, &self.config, token_filter)
+                MultilingualTokenizer::tokenize(text, &self.tokens_processor, callback)
             }
-            TokenizerType::Prefix => PrefixTokenizer::tokenize_query(
-                text,
-                &self.config,
-                self.max_token_len.unwrap_or(usize::MAX),
-                token_filter,
-            ),
+            TokenizerType::Prefix => {
+                PrefixTokenizer::tokenize_query(text, &self.tokens_processor, callback)
+            }
         }
-    }
-}
-
-// TODO(rocksdb): Remove `Clone` once rocksdb has been removed!
-#[derive(Debug, Clone, Default)]
-pub struct TokenizerConfig {
-    pub(crate) lowercase: bool,
-    pub(crate) stopwords_filter: StopwordsFilter,
-    pub(crate) stemmer: Option<Stemmer>,
-}
-
-impl TokenizerConfig {
-    /// Applies stemming if enabled and applies the configured stemming algorithm. Does nothing if
-    /// stemming is disabled.
-    pub fn stem_if_enabled<'a>(&self, input: Cow<'a, str>) -> Cow<'a, str> {
-        let Some(stemmer) = self.stemmer.as_ref() else {
-            return input;
-        };
-
-        stemmer.stem(input)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::default::Default;
+
     use super::*;
     use crate::data_types::index::{
         Language, Snowball, SnowballLanguage, SnowballParams, StemmingAlgorithm,
@@ -308,10 +242,10 @@ mod tests {
     #[test]
     fn test_whitespace_tokenizer() {
         let text = "hello world";
-        let config = TokenizerConfig::default();
+        let tokens_processor = TokensProcessor::default();
 
         let mut tokens = Vec::new();
-        WhiteSpaceTokenizer::tokenize(text, &config, |token| tokens.push(token));
+        WhiteSpaceTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
 
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("hello")));
@@ -321,9 +255,9 @@ mod tests {
     #[test]
     fn test_word_tokenizer() {
         let text = "hello, world! Привет, мир!";
-        let mut config = TokenizerConfig::default();
+        let mut tokens_processor = TokensProcessor::default();
         let mut tokens = Vec::new();
-        WordTokenizer::tokenize(text, &config, |token| tokens.push(token));
+        WordTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("hello")));
         assert_eq!(tokens.get(1), Some(&Cow::Borrowed("world")));
@@ -331,8 +265,8 @@ mod tests {
         assert_eq!(tokens.get(3), Some(&Cow::Borrowed("мир")));
 
         tokens.clear();
-        config.lowercase = true;
-        WordTokenizer::tokenize(text, &config, |token| tokens.push(token));
+        tokens_processor.lowercase = true;
+        WordTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("hello")));
         assert_eq!(tokens.get(1), Some(&Cow::Borrowed("world")));
@@ -343,9 +277,11 @@ mod tests {
     #[test]
     fn test_prefix_tokenizer() {
         let text = "hello, мир!";
-        let config = TokenizerConfig::default();
+        let tokens_processor =
+            TokensProcessor::new(true, Default::default(), None, Some(1), Some(4));
+
         let mut tokens = Vec::new();
-        PrefixTokenizer::tokenize(text, &config, 1, 4, |token| tokens.push(token));
+        PrefixTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 7);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("h")));
@@ -360,9 +296,10 @@ mod tests {
     #[test]
     fn test_prefix_query_tokenizer() {
         let text = "hello, мир!";
-        let config = TokenizerConfig::default();
+        let tokens_processor = TokensProcessor::new(true, Default::default(), None, None, Some(4));
+
         let mut tokens = Vec::new();
-        PrefixTokenizer::tokenize_query(text, &config, 4, |token| tokens.push(token));
+        PrefixTokenizer::tokenize_query(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("hell")));
@@ -372,9 +309,9 @@ mod tests {
     #[test]
     fn test_multilingual_tokenizer_japanese() {
         let text = "本日の日付は";
-        let mut config = TokenizerConfig::default();
+        let tokens_processor = TokensProcessor::default();
         let mut tokens = Vec::new();
-        MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
+        MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("本日")));
@@ -387,8 +324,8 @@ mod tests {
         // Test stopwords getting applied
         let filter =
             StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["の", "は"])), false);
-        config.stopwords_filter = filter;
-        MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
+        let tokens_processor = TokensProcessor::new(true, Arc::new(filter), None, None, None);
+        MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("本日")));
@@ -398,9 +335,9 @@ mod tests {
     #[test]
     fn test_multilingual_tokenizer_chinese() {
         let text = "今天是星期一";
-        let mut config = TokenizerConfig::default();
+        let tokens_processor = TokensProcessor::default();
         let mut tokens = Vec::new();
-        MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
+        MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("今天")));
@@ -412,8 +349,8 @@ mod tests {
 
         // Test stopwords getting applied
         let filter = StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["是"])), false);
-        config.stopwords_filter = filter;
-        MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
+        let tokens_processor = TokensProcessor::new(true, Arc::new(filter), None, None, None);
+        MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 3);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("今天")));
@@ -425,8 +362,8 @@ mod tests {
     fn test_multilingual_tokenizer_thai() {
         let text = "มาทำงานกันเถอะ";
         let mut tokens = Vec::new();
-        let config = TokenizerConfig::default();
-        MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
+        let tokens_processor = TokensProcessor::default();
+        MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("มา")));
@@ -438,9 +375,9 @@ mod tests {
     #[test]
     fn test_multilingual_tokenizer_english() {
         let text = "What are you waiting for?";
-        let config = TokenizerConfig::default();
+        let tokens_processor = TokensProcessor::default();
         let mut tokens = Vec::new();
-        MultilingualTokenizer::tokenize(text, &config, |token| tokens.push(token));
+        MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 5);
         assert_eq!(tokens.first(), Some(&Cow::Borrowed("what")));
@@ -466,7 +403,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -497,7 +434,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -539,7 +476,7 @@ mod tests {
                 stemmer: None,
             };
 
-            let tokenizer = Tokenizer::new(&params);
+            let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
             tokenizer.tokenize_doc(text, |token| tokens.push(token));
 
@@ -574,7 +511,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
 
@@ -609,7 +546,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -647,7 +584,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -685,7 +622,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -726,7 +663,7 @@ mod tests {
             stemmer: None,
         };
 
-        let tokenizer = Tokenizer::new(&params);
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
 
         tokenizer.tokenize_doc(text, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
@@ -750,25 +687,30 @@ mod tests {
     #[test]
     fn test_stemming_snowball() {
         let input = "interestingly proceeding living";
-        let config = TokenizerConfig {
-            stemmer: Some(make_stemmer(SnowballLanguage::English)),
-            ..Default::default()
-        };
+        let mut tokens_processor = TokensProcessor::new(
+            true,
+            Default::default(),
+            Some(make_stemmer(SnowballLanguage::English)),
+            None,
+            None,
+        );
 
         let mut out = Vec::new();
-        WhiteSpaceTokenizer::tokenize(input, &config, |i| out.push(i.to_string()));
+        WhiteSpaceTokenizer::tokenize(input, &tokens_processor, |i| out.push(i.to_string()));
         assert_eq!(out, vec!["interest", "proceed", "live"]);
 
         out.clear();
-        WordTokenizer::tokenize(input, &config, |i| out.push(i.to_string()));
+        WordTokenizer::tokenize(input, &tokens_processor, |i| out.push(i.to_string()));
         assert_eq!(out, vec!["interest", "proceed", "live"]);
 
         out.clear();
-        PrefixTokenizer::tokenize(input, &config, 3, 4, |i| out.push(i.to_string()));
+        MultilingualTokenizer::tokenize(input, &tokens_processor, |i| out.push(i.to_string()));
+        assert_eq!(out, vec!["interest", "proceed", "live"]);
+
+        out.clear();
+        tokens_processor.min_token_len = Some(3);
+        tokens_processor.max_token_len = Some(4);
+        PrefixTokenizer::tokenize(input, &tokens_processor, |i| out.push(i.to_string()));
         assert_eq!(out, vec!["int", "inte", "pro", "proc", "liv", "live"]);
-
-        out.clear();
-        MultilingualTokenizer::tokenize(input, &config, |i| out.push(i.to_string()));
-        assert_eq!(out, vec!["interest", "proceed", "live"]);
     }
 }
