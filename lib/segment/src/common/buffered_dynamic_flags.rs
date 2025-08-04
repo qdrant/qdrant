@@ -13,7 +13,7 @@ use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing and fast in-memory reads.
 ///
 /// This provides a growable persistent "bitslice" which keeps true values in memory.
-/// Use [`MmapBitSliceBufferedUpdateWrapper`][1] if you don't need appending functionality.
+/// Use [`MmapBitSliceBufferedUpdateWrapper`][1] if you don't need appending functionality, nor fast iteration.
 ///
 /// Changes are buffered until explicitly flushed.
 ///
@@ -30,7 +30,7 @@ pub struct BufferedDynamicFlags {
     bitmap: RoaringBitmap,
 
     /// Total length of the flags, including the trailing ones which have been set to false
-    cached_len: usize,
+    len: usize,
 }
 
 impl BufferedDynamicFlags {
@@ -42,7 +42,7 @@ impl BufferedDynamicFlags {
         let buffer = Arc::new(RwLock::new(AHashMap::new()));
 
         Self {
-            cached_len: mmap_flags.len(),
+            len: mmap_flags.len(),
             storage: Arc::new(Mutex::new(mmap_flags)),
             buffer,
             bitmap,
@@ -50,11 +50,11 @@ impl BufferedDynamicFlags {
     }
 
     pub fn len(&self) -> usize {
-        self.cached_len
+        self.len
     }
 
     pub fn is_empty(&self) -> bool {
-        self.cached_len == 0
+        self.len == 0
     }
 
     pub fn get(&self, index: PointOffsetType) -> bool {
@@ -74,7 +74,7 @@ impl BufferedDynamicFlags {
         // potential optimization:
         //      Create custom iterator which leverages bitmap's iterator for knowing ranges where the flags are false.
         //      This will help by not checking the bitmap for indices that are already known to be false.
-        (0..self.cached_len as PointOffsetType).filter(|&i| !self.bitmap.contains(i))
+        (0..self.len as PointOffsetType).filter(|&i| !self.bitmap.contains(i))
     }
 
     pub fn count_trues(&self) -> usize {
@@ -82,7 +82,7 @@ impl BufferedDynamicFlags {
     }
 
     pub fn count_falses(&self) -> usize {
-        self.cached_len.saturating_sub(self.count_trues())
+        self.len.saturating_sub(self.count_trues())
     }
 
     pub fn set(&mut self, index: PointOffsetType, value: bool) {
@@ -91,8 +91,8 @@ impl BufferedDynamicFlags {
 
         // update cached length if needed
         let index_usize = index as usize;
-        if index_usize >= self.cached_len {
-            self.cached_len = index_usize + 1;
+        if index_usize >= self.len {
+            self.len = index_usize + 1;
         }
 
         // update bitmap
@@ -114,19 +114,17 @@ impl BufferedDynamicFlags {
 
     pub fn flusher(&self) -> Flusher {
         // take pending changes
-        let buffer_arc = self.buffer.clone();
+        let (updates, required_len) = {
+            let mut buffer_guard = self.buffer.write();
+            let updates = std::mem::take(&mut *buffer_guard);
+            let required_len = self.len();
+            (updates, required_len)
+        };
+
         let flags_arc = self.storage.clone();
-
         Box::new(move || {
-            // take all updates from buffer.
-            let updates = std::mem::take(&mut *buffer_arc.write());
-
             // lock for the entire flushing process
             let mut flags_guard = flags_arc.lock();
-
-            // Calculate required length based on updates
-            let max_index = updates.keys().map(|&k| k as usize).max().unwrap_or(0);
-            let required_len = max_index + 1;
 
             // resize if needed
             if required_len > flags_guard.len() {
