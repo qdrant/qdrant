@@ -335,6 +335,7 @@ pub struct WalConfigDiff {
     pub wal_segments_ahead: ::core::option::Option<u64>,
     /// Number of closed segments to retain
     #[prost(uint64, optional, tag = "3")]
+    #[validate(range(min = 1))]
     pub wal_retain_closed: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
