@@ -7277,7 +7277,6 @@
         "type": "object",
         "required": [
           "wal_capacity_mb",
-          "wal_retain_closed",
           "wal_segments_ahead"
         ],
         "properties": {
@@ -7295,6 +7294,7 @@
           },
           "wal_retain_closed": {
             "description": "Number of closed WAL segments to keep",
+            "default": 0,
             "type": "integer",
             "format": "uint",
             "minimum": 1
@@ -12327,6 +12327,13 @@
       "SparseVectorStorageType": {
         "oneOf": [
           {
+            "description": "Storage on disk (rocksdb storage)",
+            "type": "string",
+            "enum": [
+              "on_disk"
+            ]
+          },
+          {
             "description": "Storage in memory maps (gridstore storage)",
             "type": "string",
             "enum": [
@@ -12338,6 +12345,34 @@
       "PayloadStorageType": {
         "description": "Type of payload storage",
         "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "in_memory"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "on_disk"
+                ]
+              }
+            }
+          },
           {
             "type": "object",
             "required": [
