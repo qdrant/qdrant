@@ -212,6 +212,7 @@ message SparseIndexConfig {
 message WalConfigDiff {
   optional uint64 wal_capacity_mb = 1; // Size of a single WAL block file
   optional uint64 wal_segments_ahead = 2; // Number of segments to create in advance
+  optional uint64 wal_retain_closed = 3; // Number of closed segments to retain
 }
 
 message OptimizersConfigDiff {

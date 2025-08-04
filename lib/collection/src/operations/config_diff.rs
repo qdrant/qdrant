@@ -99,6 +99,8 @@ pub struct WalConfigDiff {
     pub wal_capacity_mb: Option<usize>,
     /// Number of WAL segments to create ahead of actually used ones
     pub wal_segments_ahead: Option<usize>,
+    /// Number of closed WAL segments to retain
+    pub wal_retain_closed: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge, PartialEq, Eq, Hash)]

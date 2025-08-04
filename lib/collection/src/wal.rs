@@ -264,6 +264,7 @@ impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 mod tests {
     #[cfg(not(target_os = "windows"))]
     use std::fs;
+    use std::num::NonZeroUsize;
     #[cfg(not(target_os = "windows"))]
     use std::os::unix::fs::MetadataExt;
 
@@ -278,6 +279,7 @@ mod tests {
         let wal_options = WalOptions {
             segment_capacity: capacity,
             segment_queue_len: 0,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
         };
 
         let mut serde_wal: SerdeWal<TestRecord> =

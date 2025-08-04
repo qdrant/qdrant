@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Write};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::Path;
 
 use atomicwrites::AtomicFile;
@@ -38,6 +38,9 @@ pub struct WalConfig {
     pub wal_capacity_mb: usize,
     /// Number of WAL segments to create ahead of actually used ones
     pub wal_segments_ahead: usize,
+    /// Number of closed WAL segments to keep
+    #[validate(range(min = 1))]
+    pub wal_retain_closed: usize,
 }
 
 impl From<&WalConfig> for WalOptions {
@@ -45,10 +48,12 @@ impl From<&WalConfig> for WalOptions {
         let WalConfig {
             wal_capacity_mb,
             wal_segments_ahead,
+            wal_retain_closed,
         } = config;
         WalOptions {
             segment_capacity: wal_capacity_mb * 1024 * 1024,
             segment_queue_len: *wal_segments_ahead,
+            retain_closed: NonZeroUsize::new(*wal_retain_closed).unwrap(),
         }
     }
 }
@@ -58,6 +63,7 @@ impl Default for WalConfig {
         WalConfig {
             wal_capacity_mb: 32,
             wal_segments_ahead: 0,
+            wal_retain_closed: 1,
         }
     }
 }
