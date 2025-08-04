@@ -40,6 +40,7 @@ pub struct WalConfig {
     pub wal_segments_ahead: usize,
     /// Number of closed WAL segments to keep
     #[validate(range(min = 1))]
+    #[serde(default)]
     pub wal_retain_closed: usize,
 }
 
