@@ -253,8 +253,7 @@ pub async fn recover_shard_snapshot_impl(
     //
     // It is *possible* to make this function to be cancel safe, but it is *extremely tedious* to do so
 
-    // `Collection::restore_shard_snapshot` is *not* cancel safe
-    // (see `ShardReplicaSet::restore_local_replica_from`)
+    // TODO: `Collection::restore_shard_snapshot` *is* cancel-safe, but `recover_shard_snapshot_impl` is *not* cancel-safe (yet)
     collection
         .restore_shard_snapshot(
             shard,
@@ -265,6 +264,7 @@ pub async fn recover_shard_snapshot_impl(
             &toc.optional_temp_or_snapshot_temp_path()?,
             cancel,
         )
+        .await?
         .await?;
 
     let state = collection.state().await;
