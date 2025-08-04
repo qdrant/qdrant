@@ -259,6 +259,7 @@ pub enum WalDeltaError {
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet, VecDeque};
+    use std::num::NonZeroUsize;
     use std::ops::Range;
     use std::sync::Arc;
 
@@ -285,7 +286,7 @@ mod tests {
         let options = WalOptions {
             segment_capacity: 1024 * 1024,
             segment_queue_len: 0,
-            retain_closed: 1,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
         };
         let wal = SerdeWal::new(dir.path().to_str().unwrap(), options).unwrap();
         (
