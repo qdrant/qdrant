@@ -7294,7 +7294,7 @@
           },
           "wal_retain_closed": {
             "description": "Number of closed WAL segments to keep",
-            "default": 0,
+            "default": 1,
             "type": "integer",
             "format": "uint",
             "minimum": 1
