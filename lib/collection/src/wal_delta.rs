@@ -285,6 +285,7 @@ mod tests {
         let options = WalOptions {
             segment_capacity: 1024 * 1024,
             segment_queue_len: 0,
+            retain_closed: 1,
         };
         let wal = SerdeWal::new(dir.path().to_str().unwrap(), options).unwrap();
         (
