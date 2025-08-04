@@ -40,8 +40,12 @@ pub struct WalConfig {
     pub wal_segments_ahead: usize,
     /// Number of closed WAL segments to keep
     #[validate(range(min = 1))]
-    #[serde(default)]
+    #[serde(default = "default_wal_retain_closed")]
     pub wal_retain_closed: usize,
+}
+
+fn default_wal_retain_closed() -> usize {
+    1
 }
 
 impl From<&WalConfig> for WalOptions {
@@ -64,7 +68,7 @@ impl Default for WalConfig {
         WalConfig {
             wal_capacity_mb: 32,
             wal_segments_ahead: 0,
-            wal_retain_closed: 1,
+            wal_retain_closed: default_wal_retain_closed(),
         }
     }
 }
