@@ -60,7 +60,7 @@ runs:
               // Add a summary to the workflow
               await core.summary
                 .addHeading('Workflow Cancelled', 2)
-                .addRaw(`This workflow was cancelled because job <strong>${currentJob}</strong> failed.`)
+                .addRaw(`This workflow was cancelled because job <strong>${currentJobId}</strong> failed.`)
                 .addBreak()
                 .addRaw(`<strong>Reason:</strong> ${{ inputs.reason }}`)
                 .write();
