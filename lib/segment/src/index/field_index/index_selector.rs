@@ -21,7 +21,7 @@ use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
-use crate::index::field_index::null_index::mmap_null_index::MmapNullIndex;
+use crate::index::field_index::null_index::MutableNullIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
 use crate::json_path::JsonPath;
@@ -132,14 +132,11 @@ impl IndexSelector<'_> {
             }
 
             (PayloadIndexType::NullIndex, _) => {
-                let Some(null_index) = MmapNullIndex::open_if_exists(
+                let null_index = MutableNullIndex::open(
                     &null_dir(path, field),
                     total_point_count,
                     create_if_missing,
-                )?
-                else {
-                    return Ok(None);
-                };
+                )?;
                 FieldIndex::NullIndex(null_index)
             }
 
@@ -446,7 +443,7 @@ impl IndexSelector<'_> {
 
     pub fn null_builder(dir: &Path, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
         // null index is always on disk and appendable
-        Ok(FieldIndexBuilder::NullIndex(MmapNullIndex::builder(
+        Ok(FieldIndexBuilder::NullIndex(MutableNullIndex::builder(
             &null_dir(dir, field),
         )?))
     }
@@ -458,12 +455,11 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
     ) -> OperationResult<Option<FieldIndex>> {
         // null index is always on disk and is appendable
-        Ok(MmapNullIndex::open_if_exists(
+        Ok(Some(FieldIndex::NullIndex(MutableNullIndex::open(
             &null_dir(dir, field),
             total_point_count,
             create_if_missing,
-        )?
-        .map(FieldIndex::NullIndex))
+        )?)))
     }
 
     fn text_new(
