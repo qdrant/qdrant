@@ -37,7 +37,7 @@ runs:
           
           // Check if there are other running jobs
           const cancellableStates = new Set(['queued', 'waiting', 'in_progress']);
-          const otherRunningJobs = jobs.filter(job => 
+          const otherRunningJobs = jobs.filter( 
             job => cancellableStates.has(job.status) && job.id !== currentJobDetails?.id
           );
           
