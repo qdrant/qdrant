@@ -9,7 +9,7 @@ use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage, InferenceUsage, U
 use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use serde::Serialize;
-use storage::content_manager::errors::StorageError;
+use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::dispatcher::Dispatcher;
 
@@ -124,15 +124,6 @@ pub fn process_response_error(
     process_response_error_with_inference_usage(err, timing, hardware_usage, None)
 }
 
-pub fn already_in_progress_response() -> HttpResponse {
-    HttpResponse::build(http::StatusCode::SERVICE_UNAVAILABLE).json(ApiResponse::<()> {
-        result: None,
-        status: ApiStatus::AlreadyInProgress,
-        time: 0.0,
-        usage: None,
-    })
-}
-
 /// Response wrapper for a `Future` returning `Result`.
 ///
 /// # Cancel safety
@@ -189,6 +180,31 @@ where
         Some(res) => process_response(res, instant, None),
         None => accepted_response(instant, None, None),
     }
+}
+
+/// # Cancel safety
+///
+/// Future must be cancel safe.
+pub async fn already_in_progress<Fut>(future: Fut) -> HttpResponse
+where
+    Fut: Future<Output = StorageResult<HttpResponse>>,
+{
+    let instant = Instant::now();
+
+    match future.await {
+        Ok(response) => response,
+        Err(StorageError::ShardUnavailable { .. }) => already_in_progress_response(),
+        Err(err) => process_response_error(err, instant, None),
+    }
+}
+
+pub fn already_in_progress_response() -> HttpResponse {
+    HttpResponse::build(http::StatusCode::SERVICE_UNAVAILABLE).json(ApiResponse::<()> {
+        result: None,
+        status: ApiStatus::AlreadyInProgress,
+        time: 0.0,
+        usage: None,
+    })
 }
 
 fn log_service_error(err: &StorageError) {
