@@ -12,7 +12,8 @@ use collection::operations::snapshot_ops::{
 };
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set::snapshots::RecoveryType;
-use collection::shards::{shard::ShardId, shard_holder::shard_not_found_error};
+use collection::shards::shard::ShardId;
+use collection::shards::shard_holder::shard_not_found_error;
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
