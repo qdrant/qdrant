@@ -4,8 +4,6 @@ use std::io::Write;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 
-use common::counter::conditioned_counter::ConditionedCounter;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt;
 use memmap2::Mmap;
@@ -88,7 +86,6 @@ pub struct MmapPostings<V: MmapPostingValue> {
     _path: PathBuf,
     mmap: Mmap,
     header: PostingsHeader,
-    on_disk: bool,
     _value_type: PhantomData<V>,
 }
 
@@ -118,19 +115,11 @@ impl<V: MmapPostingValue> MmapPostings<V> {
     /// _alignment: &'a [u8], // 0-3 extra bytes to align the data
     /// remainder_postings: &'a [PointOffsetType],
     /// ```
-    fn get_view<'a>(
-        &'a self,
-        header: &'a PostingListHeader,
-        hw_counter: ConditionedCounter<'a>,
-    ) -> Option<PostingListView<'a, V>> {
-        let counter = hw_counter.payload_index_io_read_counter();
-
+    fn get_view<'a>(&'a self, header: &'a PostingListHeader) -> Option<PostingListView<'a, V>> {
         let bytes = self.mmap.get(header.offset as usize..)?;
-        counter.incr_delta(size_of::<PointOffsetType>());
 
         let (last_doc_id, bytes) = PointOffsetType::read_from_prefix(bytes).ok()?;
 
-        counter.incr_delta(size_of::<PostingChunk<SizedTypeFor<V>>>());
         let (chunks, bytes) = <[PostingChunk<SizedTypeFor<V>>]>::ref_from_prefix_with_elems(
             bytes,
             header.chunks_count as usize,
@@ -157,24 +146,12 @@ impl<V: MmapPostingValue> MmapPostings<V> {
             var_size_data,
             remainder_postings,
             Some(last_doc_id),
-            hw_counter,
         ))
     }
 
-    pub fn get<'a>(
-        &'a self,
-        token_id: TokenId,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> Option<PostingListView<'a, V>> {
-        let hw_counter = ConditionedCounter::new(self.on_disk, hw_counter);
-
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(size_of::<PostingListHeader>());
-
+    pub fn get<'a>(&'a self, token_id: TokenId) -> Option<PostingListView<'a, V>> {
         let header = self.get_header(token_id)?;
-
-        self.get_view(header, hw_counter)
+        self.get_view(header)
     }
 
     /// Given a vector of compressed posting lists, this function writes them to the `path` file.
@@ -294,7 +271,6 @@ impl<V: MmapPostingValue> MmapPostings<V> {
             _path: path,
             mmap,
             header,
-            on_disk: !populate,
             _value_type: PhantomData,
         })
     }
@@ -306,12 +282,9 @@ impl<V: MmapPostingValue> MmapPostings<V> {
     }
 
     /// Iterate over posting lists, returning a view for each
-    pub fn iter_postings<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = PostingListView<'a, V>> {
+    pub fn iter_postings<'a>(&'a self) -> impl Iterator<Item = PostingListView<'a, V>> {
         (0..self.header.posting_count as u32)
             // we are iterating over existing posting lists, all of them should return `Some`
-            .filter_map(|posting_idx| self.get(posting_idx, hw_counter))
+            .filter_map(|posting_idx| self.get(posting_idx))
     }
 }

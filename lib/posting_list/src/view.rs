@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 use std::ops::RangeInclusive;
 
 use bitpacking::BitPacker;
-use common::counter::conditioned_counter::ConditionedCounter;
 use common::types::PointOffsetType;
 use zerocopy::little_endian::U32;
 
@@ -19,7 +18,6 @@ pub struct PostingListView<'a, V: PostingValue> {
     pub(crate) var_size_data: &'a [u8],
     remainders: &'a [RemainderPosting<SizedTypeFor<V>>],
     pub(crate) last_id: Option<PointOffsetType>,
-    pub(crate) hw_counter: ConditionedCounter<'a>,
     pub(crate) _phantom: PhantomData<V>,
 }
 
@@ -65,7 +63,6 @@ impl<'a, V: PostingValue> PostingListView<'a, V> {
             var_size_data,
             remainders,
             last_id,
-            hw_counter: _,
             _phantom,
         } = self;
 
@@ -84,7 +81,6 @@ impl<'a, V: PostingValue> PostingListView<'a, V> {
         var_size_data: &'a [u8],
         remainders: &'a [RemainderPosting<SizedTypeFor<V>>],
         last_id: Option<PointOffsetType>,
-        hw_counter: ConditionedCounter<'a>,
     ) -> Self {
         Self {
             id_data,
@@ -92,7 +88,6 @@ impl<'a, V: PostingValue> PostingListView<'a, V> {
             var_size_data,
             remainders,
             last_id,
-            hw_counter,
             _phantom: PhantomData,
         }
     }
@@ -107,11 +102,6 @@ impl<'a, V: PostingValue> PostingListView<'a, V> {
             PostingChunk::get_compressed_size(self.chunks, self.id_data, chunk_index);
         let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_LEN;
 
-        // Measure the compressed size
-        self.hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(compressed_size);
-
         let start_offset = chunk.offset.get() as usize;
         let end_offset = start_offset + compressed_size;
 
@@ -124,19 +114,11 @@ impl<'a, V: PostingValue> PostingListView<'a, V> {
     }
 
     pub(crate) fn get_chunk_unchecked(&self, chunk_idx: usize) -> &PostingChunk<SizedTypeFor<V>> {
-        self.hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(size_of::<PostingChunk<SizedTypeFor<V>>>());
-
         &self.chunks[chunk_idx]
     }
 
     pub(crate) fn get_chunk(&self, chunk_idx: usize) -> Option<&PostingChunk<SizedTypeFor<V>>> {
-        self.chunks.get(chunk_idx).inspect(|_| {
-            self.hw_counter
-                .payload_index_io_read_counter()
-                .incr_delta(size_of::<PostingChunk<SizedTypeFor<V>>>());
-        })
+        self.chunks.get(chunk_idx)
     }
 
     pub(crate) fn chunks_len(&self) -> usize {
@@ -148,11 +130,7 @@ impl<'a, V: PostingValue> PostingListView<'a, V> {
     }
 
     pub(crate) fn get_remainder(&self, idx: usize) -> Option<&RemainderPosting<SizedTypeFor<V>>> {
-        self.remainders.get(idx).inspect(|_| {
-            self.hw_counter
-                .payload_index_io_read_counter()
-                .incr_delta(size_of::<RemainderPosting<SizedTypeFor<V>>>());
-        })
+        self.remainders.get(idx)
     }
 
     pub(crate) fn ids_range(&self, start_chunk: usize) -> Option<RangeInclusive<u32>> {
@@ -199,17 +177,9 @@ impl<'a, V: PostingValue> PostingListView<'a, V> {
             let id1 = second.initial_id.get();
 
             if id0 <= id && id < id1 {
-                self.hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(size_of::<PostingChunk<SizedTypeFor<V>>>());
                 return Some(start_chunk);
             }
         }
-
-        // Measure with complexity of the binary search
-        self.hw_counter.payload_index_io_read_counter().incr_delta(
-            chunks_slice.len().ilog2() as usize * size_of::<PostingChunk<SizedTypeFor<V>>>(),
-        );
 
         match chunks_slice.binary_search_by(|chunk| chunk.initial_id.get().cmp(&id)) {
             // id is the initial value of the chunk with index idx
