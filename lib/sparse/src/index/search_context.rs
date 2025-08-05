@@ -51,26 +51,26 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         let mut min_record_id = u32::MAX;
         // iterate over query indices
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
-            if let Some(mut it) = inverted_index.get(*id, hardware_counter) {
-                if let (Some(first), Some(last_id)) = (it.peek(), it.last_id()) {
-                    // check if new min
-                    let min_record_id_posting = first.record_id;
-                    min_record_id = min(min_record_id, min_record_id_posting);
+            if let Some(mut it) = inverted_index.get(*id, hardware_counter)
+                && let (Some(first), Some(last_id)) = (it.peek(), it.last_id())
+            {
+                // check if new min
+                let min_record_id_posting = first.record_id;
+                min_record_id = min(min_record_id, min_record_id_posting);
 
-                    // check if new max
-                    let max_record_id_posting = last_id;
-                    max_record_id = max(max_record_id, max_record_id_posting);
+                // check if new max
+                let max_record_id_posting = last_id;
+                max_record_id = max(max_record_id, max_record_id_posting);
 
-                    // capture query info
-                    let query_index = *id;
-                    let query_weight = query.values[query_weight_offset];
+                // capture query info
+                let query_index = *id;
+                let query_weight = query.values[query_weight_offset];
 
-                    postings_iterators.push(IndexedPostingListIterator {
-                        posting_list_iterator: it,
-                        query_index,
-                        query_weight,
-                    });
-                }
+                postings_iterators.push(IndexedPostingListIterator {
+                    posting_list_iterator: it,
+                    query_index,
+                    query_weight,
+                });
             }
         }
         let top_results = TopK::new(top);

@@ -14,7 +14,7 @@ pub fn get_match_checkers(
     index: &FieldIndex,
     cond_match: Match,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn> {
+) -> Option<ConditionCheckerFn<'_>> {
     match cond_match {
         Match::Value(MatchValue { value }) => get_match_value_checker(value, index, hw_acc),
         Match::Text(MatchText { text }) => get_match_text_checker::<false>(text, index, hw_acc),
@@ -30,7 +30,7 @@ fn get_match_value_checker(
     value_variant: ValueVariants,
     index: &FieldIndex,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn> {
+) -> Option<ConditionCheckerFn<'_>> {
     match (value_variant, index) {
         (ValueVariants::String(keyword), FieldIndex::KeywordIndex(index)) => {
             let hw_counter = hw_acc.get_counter_cell();
@@ -93,7 +93,7 @@ fn get_match_any_checker(
     any_variant: AnyVariants,
     index: &FieldIndex,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn> {
+) -> Option<ConditionCheckerFn<'_>> {
     match (any_variant, index) {
         (AnyVariants::Strings(list), FieldIndex::KeywordIndex(index)) => {
             if list.len() < INDEXSET_ITER_THRESHOLD {
@@ -169,7 +169,7 @@ fn get_match_except_checker(
     except: AnyVariants,
     index: &FieldIndex,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn> {
+) -> Option<ConditionCheckerFn<'_>> {
     let checker: Option<ConditionCheckerFn> = match (except, index) {
         (AnyVariants::Strings(list), FieldIndex::KeywordIndex(index)) => {
             let hw_counter = hw_acc.get_counter_cell();
@@ -253,7 +253,7 @@ fn get_match_text_checker<const IS_PHRASE: bool>(
     text: String,
     index: &FieldIndex,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn> {
+) -> Option<ConditionCheckerFn<'_>> {
     let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::FullTextIndex(full_text_index) => {

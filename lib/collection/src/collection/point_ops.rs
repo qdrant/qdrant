@@ -188,10 +188,10 @@ impl Collection {
                             )
                             .await;
 
-                        if let Err(err) = &res {
-                            if err.is_missing_point() {
-                                continue;
-                            }
+                        if let Err(err) = &res
+                            && err.is_missing_point()
+                        {
+                            continue;
                         }
 
                         result = res?;

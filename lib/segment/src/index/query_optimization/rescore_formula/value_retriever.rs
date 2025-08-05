@@ -69,7 +69,7 @@ fn payload_variable_retriever(
     payload_provider: PayloadProvider,
     json_path: JsonPath,
     hw_counter: &HardwareCounterCell,
-) -> VariableRetrieverFn {
+) -> VariableRetrieverFn<'_> {
     let retriever_fn = move |point_id: PointOffsetType| {
         payload_provider.with_payload(
             point_id,
@@ -103,7 +103,7 @@ fn payload_variable_retriever(
 /// Returns function to extract all the values a point has in the index
 ///
 /// If there is no appropriate index, returns None
-fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn> {
+fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn<'_>> {
     match index {
         FieldIndex::IntIndex(numeric_index) => {
             let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {

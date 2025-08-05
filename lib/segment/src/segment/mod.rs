@@ -132,10 +132,10 @@ impl Drop for Segment {
                 log::error!("Failed to clear cache of vector storage {name}: {e}");
             }
 
-            if let Some(quantized_vectors) = quantized_vectors.borrow().as_ref() {
-                if let Err(e) = quantized_vectors.clear_cache() {
-                    log::error!("Failed to clear cache of quantized vectors {name}: {e}");
-                }
+            if let Some(quantized_vectors) = quantized_vectors.borrow().as_ref()
+                && let Err(e) = quantized_vectors.clear_cache()
+            {
+                log::error!("Failed to clear cache of quantized vectors {name}: {e}");
             }
         }
     }

@@ -175,9 +175,8 @@ pub async fn revert_proxy_shard_to_local(
     shard_holder: &ShardHolder,
     shard_id: ShardId,
 ) -> CollectionResult<bool> {
-    let replica_set = match shard_holder.get_shard(shard_id) {
-        None => return Ok(false),
-        Some(replica_set) => replica_set,
+    let Some(replica_set) = shard_holder.get_shard(shard_id) else {
+        return Ok(false);
     };
 
     // Revert queue proxy if we still have any and forget all collected updates

@@ -129,7 +129,7 @@ pub trait SegmentEntry: SnapshotEntry {
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<NamedVectors>;
+    ) -> OperationResult<NamedVectors<'_>>;
 
     /// Retrieve payload for the point
     /// If not found, return empty payload

@@ -44,16 +44,16 @@ fn move_all_impl(base: &Path, dir: &Path, dest_dir: &Path) -> OperationResult<()
             move_all_impl(base, &path, &dest_path)?;
             std::fs::remove_dir(path)?;
         } else {
-            if let Some(dir) = dest_path.parent() {
-                if !dir.exists() {
-                    fs::create_dir_all(dir).map_err(|err| {
-                        failed_to_move_error(
-                            &path,
-                            &dest_path,
-                            format!("failed to create {dir:?} directory: {err}"),
-                        )
-                    })?;
-                }
+            if let Some(dir) = dest_path.parent()
+                && !dir.exists()
+            {
+                fs::create_dir_all(dir).map_err(|err| {
+                    failed_to_move_error(
+                        &path,
+                        &dest_path,
+                        format!("failed to create {dir:?} directory: {err}"),
+                    )
+                })?;
             }
 
             fs::rename(&path, &dest_path)

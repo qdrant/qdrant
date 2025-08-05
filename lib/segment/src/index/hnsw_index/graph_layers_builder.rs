@@ -47,7 +47,7 @@ pub struct GraphLayersBuilder {
 }
 
 impl GraphLayersBase for GraphLayersBuilder {
-    fn get_visited_list_from_pool(&self) -> VisitedListHandle {
+    fn get_visited_list_from_pool(&self) -> VisitedListHandle<'_> {
         self.visited_pool.get(self.num_points())
     }
 
@@ -73,7 +73,7 @@ impl GraphLayersBase for GraphLayersBuilder {
 const SUBGRAPH_CONNECTIVITY_SEARCH_BUDGET: usize = 64;
 
 impl GraphLayersBuilder {
-    pub fn get_entry_points(&self) -> MutexGuard<EntryPoints> {
+    pub fn get_entry_points(&self) -> MutexGuard<'_, EntryPoints> {
         self.entry_points.lock()
     }
 

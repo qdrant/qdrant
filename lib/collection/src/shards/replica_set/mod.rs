@@ -439,16 +439,16 @@ impl ShardReplicaSet {
     pub fn is_last_source_of_truth_replica(&self, peer_id: PeerId) -> bool {
         // This includes `Active` and `ReshardingScaleDown` replicas!
         let active_peers = self.replica_state.read().active_peers();
-        if active_peers.is_empty() {
-            if let Some(peer_state) = self.peer_state(peer_id) {
-                // If there are no other active peers, deactivating those replicas
-                // is not recoverable, so it is considered the last source of truth,
-                // even though it is not technically active.
-                return matches!(
-                    peer_state,
-                    ReplicaState::Initializing | ReplicaState::Listener
-                );
-            }
+        if active_peers.is_empty()
+            && let Some(peer_state) = self.peer_state(peer_id)
+        {
+            // If there are no other active peers, deactivating those replicas
+            // is not recoverable, so it is considered the last source of truth,
+            // even though it is not technically active.
+            return matches!(
+                peer_state,
+                ReplicaState::Initializing | ReplicaState::Listener
+            );
         }
         active_peers.len() == 1 && active_peers.contains(&peer_id)
     }
@@ -824,16 +824,15 @@ impl ShardReplicaSet {
         }
         drop(read_local);
         let config = self.collection_config.read().await;
-        if let Some(strict_mode_config) = &config.strict_mode_config {
-            if strict_mode_config.enabled == Some(true) {
-                // update write rate limiter
-                if let Some(write_rate_limit_per_min) = strict_mode_config.write_rate_limit {
-                    let new_write_rate_limiter =
-                        RateLimiter::new_per_minute(write_rate_limit_per_min);
-                    self.write_rate_limiter
-                        .replace(parking_lot::Mutex::new(new_write_rate_limiter));
-                    return Ok(());
-                }
+        if let Some(strict_mode_config) = &config.strict_mode_config
+            && strict_mode_config.enabled == Some(true)
+        {
+            // update write rate limiter
+            if let Some(write_rate_limit_per_min) = strict_mode_config.write_rate_limit {
+                let new_write_rate_limiter = RateLimiter::new_per_minute(write_rate_limit_per_min);
+                self.write_rate_limiter
+                    .replace(parking_lot::Mutex::new(new_write_rate_limiter));
+                return Ok(());
             }
         }
         // remove write rate limiter for all other situations

@@ -65,7 +65,7 @@ pub fn iterate_packed_links(
     links: &[u8],
     bits_per_unsorted: u8,
     sorted_count: usize,
-) -> PackedLinksIterator {
+) -> PackedLinksIterator<'_> {
     let mut reader = BitReader::new(links);
 
     let mut remaining_bits = links.len() * u8::BITS as usize;

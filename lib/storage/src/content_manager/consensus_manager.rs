@@ -286,12 +286,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         };
         let operation = ConsensusOperations::RemovePeer(peer_id);
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-        if let Some(on_apply) = on_apply {
-            if on_apply.send(report).is_err() {
-                log::warn!(
-                    "Failed to notify on consensus operation completion: channel receiver is dropped",
-                )
-            }
+        if let Some(on_apply) = on_apply
+            && on_apply.send(report).is_err()
+        {
+            log::warn!(
+                "Failed to notify on consensus operation completion: channel receiver is dropped",
+            )
         }
         Ok(stop_consensus)
     }
@@ -454,12 +454,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                                 uri: peer_uri.to_string(),
                             };
                             let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-                            if let Some(on_apply) = on_apply {
-                                if on_apply.send(Ok(true)).is_err() {
-                                    log::warn!(
-                                        "Failed to notify on consensus operation completion: channel receiver is dropped",
-                                    )
-                                }
+                            if let Some(on_apply) = on_apply
+                                && on_apply.send(Ok(true)).is_err()
+                            {
+                                log::warn!(
+                                    "Failed to notify on consensus operation completion: channel receiver is dropped",
+                                )
                             }
                         }
                     } else if entry.get_context().is_empty() {
@@ -527,12 +527,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }
         };
 
-        if let Some(on_apply) = on_apply {
-            if on_apply.send(result.clone()).is_err() {
-                log::warn!(
-                    "Failed to notify on consensus operation completion: channel receiver is dropped",
-                )
-            }
+        if let Some(on_apply) = on_apply
+            && on_apply.send(result.clone()).is_err()
+        {
+            log::warn!(
+                "Failed to notify on consensus operation completion: channel receiver is dropped",
+            )
         }
         result
     }

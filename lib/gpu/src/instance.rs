@@ -278,7 +278,7 @@ impl Instance {
 
     fn debug_messenger_create_info(
         debug_messenger: &dyn DebugMessenger,
-    ) -> vk::DebugUtilsMessengerCreateInfoEXT {
+    ) -> vk::DebugUtilsMessengerCreateInfoEXT<'_> {
         vk::DebugUtilsMessengerCreateInfoEXT::default()
             .flags(vk::DebugUtilsMessengerCreateFlagsEXT::empty())
             .message_severity(debug_messenger.severity_flags())
@@ -286,7 +286,7 @@ impl Instance {
             .pfn_user_callback(debug_messenger.callback())
     }
 
-    pub fn cpu_allocation_callbacks(&self) -> Option<&vk::AllocationCallbacks> {
+    pub fn cpu_allocation_callbacks(&self) -> Option<&vk::AllocationCallbacks<'_>> {
         self.allocation_callbacks
             .as_ref()
             .map(|alloc| alloc.allocation_callbacks())
@@ -368,10 +368,8 @@ impl Instance {
 
     fn extensions_list(validation: bool) -> Vec<String> {
         let mut extensions_list = Vec::new();
-        if validation {
-            if let Ok(ext) = ash::ext::debug_utils::NAME.to_str() {
-                extensions_list.push(ext.to_string());
-            }
+        if validation && let Ok(ext) = ash::ext::debug_utils::NAME.to_str() {
+            extensions_list.push(ext.to_string());
         }
 
         #[cfg(target_os = "macos")]
@@ -420,13 +418,10 @@ impl Drop for Instance {
         let allocation_callbacks = self.cpu_allocation_callbacks();
         unsafe {
             // Destroy first debug messenger if it's present.
-            if let Some(loader) = &self.vk_debug_utils_loader {
-                if self.vk_debug_messenger != vk::DebugUtilsMessengerEXT::null() {
-                    loader.destroy_debug_utils_messenger(
-                        self.vk_debug_messenger,
-                        allocation_callbacks,
-                    );
-                }
+            if let Some(loader) = &self.vk_debug_utils_loader
+                && self.vk_debug_messenger != vk::DebugUtilsMessengerEXT::null()
+            {
+                loader.destroy_debug_utils_messenger(self.vk_debug_messenger, allocation_callbacks);
             }
 
             // Last step after all drops of all GPU resources: destroy vulkan instance.

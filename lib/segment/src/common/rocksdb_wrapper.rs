@@ -204,7 +204,7 @@ impl DatabaseColumnWrapper {
         Ok(())
     }
 
-    pub fn lock_db(&self) -> LockedDatabaseColumnWrapper {
+    pub fn lock_db(&self) -> LockedDatabaseColumnWrapper<'_> {
         LockedDatabaseColumnWrapper {
             guard: self.database.read(),
             column_name: &self.column_name,
@@ -298,7 +298,7 @@ impl DatabaseColumnWrapper {
 }
 
 impl LockedDatabaseColumnWrapper<'_> {
-    pub fn iter(&self) -> OperationResult<DatabaseColumnIterator> {
+    pub fn iter(&self) -> OperationResult<DatabaseColumnIterator<'_>> {
         DatabaseColumnIterator::new(&self.guard, self.column_name)
     }
 }

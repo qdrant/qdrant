@@ -30,17 +30,17 @@ where
     let collection_pass =
         access.check_collection_access(collection_name, AccessRequirements::new())?;
     let collection = toc.get_collection(&collection_pass).await?;
-    if let Some(strict_mode_config) = &collection.strict_mode_config().await {
-        if strict_mode_config.enabled.unwrap_or_default() {
-            for request in requests {
-                request
-                    .check_strict_mode(&collection, strict_mode_config)
-                    .await?;
-            }
+    if let Some(strict_mode_config) = &collection.strict_mode_config().await
+        && strict_mode_config.enabled.unwrap_or_default()
+    {
+        for request in requests {
+            request
+                .check_strict_mode(&collection, strict_mode_config)
+                .await?;
+        }
 
-            if let Some(timeout) = timeout {
-                check_timeout(timeout, strict_mode_config)?;
-            }
+        if let Some(timeout) = timeout {
+            check_timeout(timeout, strict_mode_config)?;
         }
     }
 
@@ -112,10 +112,10 @@ pub async fn check_strict_mode_timeout(
         access.check_collection_access(collection_name, AccessRequirements::new())?;
     let collection = toc.get_collection(&collection_pass).await?;
 
-    if let Some(strict_mode_config) = &collection.strict_mode_config().await {
-        if strict_mode_config.enabled.unwrap_or_default() {
-            check_timeout(timeout, strict_mode_config)?;
-        }
+    if let Some(strict_mode_config) = &collection.strict_mode_config().await
+        && strict_mode_config.enabled.unwrap_or_default()
+    {
+        check_timeout(timeout, strict_mode_config)?;
     }
 
     // It's checked now

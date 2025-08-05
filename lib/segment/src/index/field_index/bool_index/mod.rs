@@ -242,7 +242,7 @@ impl FacetIndex for BoolIndex {
     fn get_point_values(
         &self,
         point_id: PointOffsetType,
-    ) -> impl Iterator<Item = FacetValueRef> + '_ {
+    ) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
         self.get_point_values(point_id)
             .into_iter()
             .map(FacetValueRef::Bool)

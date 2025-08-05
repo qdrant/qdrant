@@ -167,7 +167,7 @@ fn similarity_matrix(
     volatile_storage: &VectorStorageEnum,
     vectors: Vec<VectorInternal>,
     hw_measurement_acc: HwMeasurementAcc,
-) -> CollectionResult<LazyMatrix> {
+) -> CollectionResult<LazyMatrix<'_>> {
     let num_vectors = vectors.len();
 
     // if we have less than 2 points, we can't build a matrix

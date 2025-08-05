@@ -100,7 +100,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
         })
     }
 
-    pub fn lock_db(&self) -> LockedDatabaseColumnWrapper {
+    pub fn lock_db(&self) -> LockedDatabaseColumnWrapper<'_> {
         self.db.lock_db()
     }
 

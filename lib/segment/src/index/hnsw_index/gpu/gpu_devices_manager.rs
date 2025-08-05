@@ -117,7 +117,10 @@ impl GpuDevicesMaganer {
         })
     }
 
-    pub fn lock_device(&self, stopped: &AtomicBool) -> OperationResult<Option<LockedGpuDevice>> {
+    pub fn lock_device(
+        &self,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Option<LockedGpuDevice<'_>>> {
         if self.devices.is_empty() {
             return Ok(None);
         }

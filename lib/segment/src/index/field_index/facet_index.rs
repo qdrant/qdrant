@@ -11,7 +11,7 @@ pub trait FacetIndex {
     fn get_point_values(
         &self,
         point_id: PointOffsetType,
-    ) -> impl Iterator<Item = FacetValueRef> + '_;
+    ) -> impl Iterator<Item = FacetValueRef<'_>> + '_;
 
     /// Get all values in the index
     fn iter_values(&self) -> impl Iterator<Item = FacetValueRef<'_>> + '_;

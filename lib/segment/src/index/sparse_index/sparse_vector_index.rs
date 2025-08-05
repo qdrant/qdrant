@@ -254,11 +254,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let mut unique_record_ids = std::collections::HashSet::new();
         for dim_id in query_vector.indices.iter() {
-            if let Some(dim_id) = self.indices_tracker.remap_index(*dim_id) {
-                if let Some(posting_list_iter) = self.inverted_index.get(dim_id, &hw_counter) {
-                    for element in posting_list_iter.into_std_iter() {
-                        unique_record_ids.insert(element.record_id);
-                    }
+            if let Some(dim_id) = self.indices_tracker.remap_index(*dim_id)
+                && let Some(posting_list_iter) = self.inverted_index.get(dim_id, &hw_counter)
+            {
+                for element in posting_list_iter.into_std_iter() {
+                    unique_record_ids.insert(element.record_id);
                 }
             }
         }
@@ -528,13 +528,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         hw_counter: &HardwareCounterCell,
     ) {
         for (dim_id, count) in idf.iter_mut() {
-            if let Some(remapped_dim_id) = self.indices_tracker.remap_index(*dim_id) {
-                if let Some(posting_list_len) = self
+            if let Some(remapped_dim_id) = self.indices_tracker.remap_index(*dim_id)
+                && let Some(posting_list_len) = self
                     .inverted_index
                     .posting_list_len(&remapped_dim_id, hw_counter)
-                {
-                    *count += posting_list_len
-                }
+            {
+                *count += posting_list_len
             }
         }
     }

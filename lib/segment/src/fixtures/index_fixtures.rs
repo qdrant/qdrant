@@ -62,15 +62,15 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
         self.get_vector_opt(key).expect("vector not found")
     }
 
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
         self.get_vector(key)
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.vectors.get_opt(key as _).map(|v| v.into())
     }
 

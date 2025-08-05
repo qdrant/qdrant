@@ -28,22 +28,22 @@ impl Deref for HwMetricRefCounter<'_> {
 // Implement referenced functions here to prevent exposing `HwMetricRefCounter::new()`.
 impl HardwareCounterCell {
     #[inline]
-    pub fn ref_payload_io_write_counter(&self) -> HwMetricRefCounter {
+    pub fn ref_payload_io_write_counter(&self) -> HwMetricRefCounter<'_> {
         HwMetricRefCounter::new(&self.payload_io_write_counter)
     }
 
     #[inline]
-    pub fn ref_payload_io_read_counter(&self) -> HwMetricRefCounter {
+    pub fn ref_payload_io_read_counter(&self) -> HwMetricRefCounter<'_> {
         HwMetricRefCounter::new(&self.payload_io_read_counter)
     }
 
     #[inline]
-    pub fn ref_vector_io_write_counter(&self) -> HwMetricRefCounter {
+    pub fn ref_vector_io_write_counter(&self) -> HwMetricRefCounter<'_> {
         HwMetricRefCounter::new(&self.vector_io_write_counter)
     }
 
     #[inline]
-    pub fn ref_payload_index_io_write_counter(&self) -> HwMetricRefCounter {
+    pub fn ref_payload_index_io_write_counter(&self) -> HwMetricRefCounter<'_> {
         HwMetricRefCounter::new(&self.payload_index_io_write_counter)
     }
 }

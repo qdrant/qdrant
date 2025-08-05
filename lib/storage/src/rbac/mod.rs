@@ -44,7 +44,7 @@ pub struct CollectionAccess {
 }
 
 impl CollectionAccess {
-    fn view(&self) -> CollectionAccessView {
+    fn view(&self) -> CollectionAccessView<'_> {
         CollectionAccessView {
             collection: &self.collection,
             access: self.access,

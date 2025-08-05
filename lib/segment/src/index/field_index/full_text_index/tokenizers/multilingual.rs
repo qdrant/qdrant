@@ -64,7 +64,7 @@ impl MultilingualTokenizer {
 
 // Tokenize::tokenize() function from charabia unrolled due to lifetime issues
 // when using .tokenize() on a `str` directly.
-fn charabia_token_iter(inp: &str) -> NormalizedTokenIter {
+fn charabia_token_iter(inp: &str) -> NormalizedTokenIter<'_, '_, '_, '_> {
     inp.segment().normalize(&DEFAULT_NORMALIZER)
 }
 

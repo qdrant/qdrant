@@ -447,7 +447,7 @@ where
         self.map.iter().map(|(k, v)| (k.borrow(), v.len() as usize))
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter)> {
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> {
         self.map
             .iter()
             .map(move |(k, v)| (k.borrow(), Box::new(v.iter()) as IdIter))

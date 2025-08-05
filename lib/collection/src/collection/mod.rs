@@ -469,10 +469,8 @@ impl Collection {
             let is_resharding = current_state
                 .as_ref()
                 .is_some_and(ReplicaState::is_resharding);
-            if is_resharding {
-                if let Some(state) = resharding_state {
-                    abort_resharding_result = self.abort_resharding(state.key(), false).await;
-                }
+            if is_resharding && let Some(state) = resharding_state {
+                abort_resharding_result = self.abort_resharding(state.key(), false).await;
             }
 
             // Terminate transfer if source or target replicas are now dead
@@ -573,13 +571,13 @@ impl Collection {
             .await
             .filter(|state| state.peer_id == peer_id);
 
-        if let Some(state) = resharding_state {
-            if let Err(err) = self.abort_resharding(state.key(), true).await {
-                log::error!(
-                    "Failed to abort resharding {} while removing peer {peer_id}: {err}",
-                    state.key(),
-                );
-            }
+        if let Some(state) = resharding_state
+            && let Err(err) = self.abort_resharding(state.key(), true).await
+        {
+            log::error!(
+                "Failed to abort resharding {} while removing peer {peer_id}: {err}",
+                state.key(),
+            );
         }
 
         for transfer in self.get_related_transfers(peer_id).await {
@@ -855,7 +853,7 @@ impl Collection {
         }
     }
 
-    pub async fn lock_updates(&self) -> RwLockWriteGuard<()> {
+    pub async fn lock_updates(&self) -> RwLockWriteGuard<'_, ()> {
         self.updates_lock.write().await
     }
 

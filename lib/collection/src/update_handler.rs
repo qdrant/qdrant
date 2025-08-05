@@ -205,10 +205,10 @@ impl UpdateHandler {
     }
 
     pub fn stop_flush_worker(&mut self) {
-        if let Some(flush_stop) = self.flush_stop.take() {
-            if let Err(()) = flush_stop.send(()) {
-                warn!("Failed to stop flush worker as it is already stopped.");
-            }
+        if let Some(flush_stop) = self.flush_stop.take()
+            && let Err(()) = flush_stop.send(())
+        {
+            warn!("Failed to stop flush worker as it is already stopped.");
         }
     }
 

@@ -100,7 +100,7 @@ impl CowVector<'_> {
         }
     }
 
-    pub fn as_vec_ref(&self) -> VectorRef {
+    pub fn as_vec_ref(&self) -> VectorRef<'_> {
         match self {
             CowVector::Dense(v) => VectorRef::Dense(v.as_ref()),
             CowVector::Sparse(v) => VectorRef::Sparse(v.as_ref()),

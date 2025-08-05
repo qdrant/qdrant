@@ -71,7 +71,7 @@ enum GraphLinksEnum {
 }
 
 impl GraphLinksEnum {
-    fn load_view(&self, format: GraphLinksFormat) -> OperationResult<GraphLinksView> {
+    fn load_view(&self, format: GraphLinksFormat) -> OperationResult<GraphLinksView<'_>> {
         let data = match self {
             GraphLinksEnum::Ram(data) => data.as_slice(),
             GraphLinksEnum::Mmap(mmap) => &mmap[..],
@@ -93,7 +93,7 @@ impl GraphLinks {
         })
     }
 
-    fn view(&self) -> &GraphLinksView {
+    fn view(&self) -> &GraphLinksView<'_> {
         self.borrow_dependent()
     }
 
@@ -122,7 +122,7 @@ impl GraphLinks {
     }
 
     #[inline]
-    pub fn links(&self, point_id: PointOffsetType, level: usize) -> LinksIterator {
+    pub fn links(&self, point_id: PointOffsetType, level: usize) -> LinksIterator<'_> {
         self.view().links(point_id, level)
     }
 

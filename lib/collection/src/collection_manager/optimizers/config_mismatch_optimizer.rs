@@ -77,7 +77,7 @@ impl ConfigMismatchOptimizer {
     /// with current configuration.
     ///
     /// Takes vector-specific HNSW config (if any) and merges it with the collection-wide config.
-    fn get_required_hnsw_config(&self, vector_name: &VectorName) -> Cow<HnswConfig> {
+    fn get_required_hnsw_config(&self, vector_name: &VectorName) -> Cow<'_, HnswConfig> {
         let target_hnsw_collection = &self.hnsw_config;
         // Select vector specific target HNSW config
         let target_hnsw_vector = self
@@ -150,10 +150,9 @@ impl ConfigMismatchOptimizer {
 
                             if let Some(is_required_on_disk) =
                                 self.check_if_vectors_on_disk(vector_name)
+                                && is_required_on_disk != vector_data.storage_type.is_on_disk()
                             {
-                                if is_required_on_disk != vector_data.storage_type.is_on_disk() {
-                                    return true;
-                                }
+                                return true;
                             }
 
                             // Check quantization mismatch

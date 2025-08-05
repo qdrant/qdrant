@@ -149,13 +149,13 @@ mod tests {
         assert!(handle.is_finished());
 
         // Expect task counter to be between [5, 25], we cannot be exact on busy systems
-        if let Some(handle) = handle.stop() {
-            if let Some(count) = handle.await.unwrap() {
-                assert!(
-                    count < 25,
-                    "Stoppable task should have count should be less than 25, but it is {count}",
-                );
-            }
+        if let Some(handle) = handle.stop()
+            && let Some(count) = handle.await.unwrap()
+        {
+            assert!(
+                count < 25,
+                "Stoppable task should have count should be less than 25, but it is {count}",
+            );
         }
     }
 
@@ -176,13 +176,13 @@ mod tests {
 
         // Expect task counters to be between [5, 30], we cannot be exact on busy systems
         for handle in handles {
-            if let Some(handle) = handle.stop() {
-                if let Some(count) = handle.await.unwrap() {
-                    assert!(
-                        count < 30, // 10 extra steps to stop all tasks
-                        "Stoppable task should have count should be less than 30, but it is {count}",
-                    );
-                }
+            if let Some(handle) = handle.stop()
+                && let Some(count) = handle.await.unwrap()
+            {
+                assert!(
+                    count < 30, // 10 extra steps to stop all tasks
+                    "Stoppable task should have count should be less than 30, but it is {count}",
+                );
             }
         }
     }

@@ -34,7 +34,7 @@ impl ScoresMemoryPool {
         }
     }
 
-    pub fn get(&self) -> PooledScoresHandle {
+    pub fn get(&self) -> PooledScoresHandle<'_> {
         match self.pool.lock().pop() {
             None => PooledScoresHandle::new(self, vec![]),
             Some(data) => PooledScoresHandle::new(self, data),
