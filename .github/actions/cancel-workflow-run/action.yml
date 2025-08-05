@@ -3,8 +3,7 @@ description: 'Cancels all other running jobs in the current workflow run'
 inputs:
   github-token:
     description: 'GitHub token with actions:write permission'
-    required: false
-    default: ${{ github.token }}
+    required: true
   reason:
     description: 'Reason for cancelling the workflow'
     required: false
