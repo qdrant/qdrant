@@ -19,7 +19,7 @@ runs:
         script: |
           const { owner, repo } = context.repo;
           const run_id = context.runId;
-          const currentJob = process.env.GITHUB_JOB;
+          const currentJobId = process.env.GITHUB_JOB;
           
           console.log(`Checking jobs for workflow run ${run_id}...`);
           
@@ -31,18 +31,21 @@ runs:
           });
           
           // Find current job details
-          const currentJobDetails = jobs.find(job => job.name === currentJob);
+          const currentJobDetails = jobs.find(
+            job => job.name === currentJobId || job.id === Number(process.env.GITHUB_JOB_ID)
+          );
           
           // Check if there are other running jobs
+          const cancellableStates = new Set(['queued', 'waiting', 'in_progress']);
           const otherRunningJobs = jobs.filter(job => 
-            job.status === 'in_progress' && job.id !== currentJobDetails?.id
+            job => cancellableStates.has(job.status) && job.id !== currentJobDetails?.id
           );
           
           console.log(`Found ${otherRunningJobs.length} other running jobs`);
           
           if (otherRunningJobs.length > 0) {
             // Create an error annotation to make it clear why the workflow was cancelled
-            core.error(`Cancelling workflow run due to failure in job '${currentJob}': ${{ inputs.reason }}`);
+            core.error(`Cancelling workflow run due to failure in job '${currentJobId}': ${{ inputs.reason }}`);
             
             console.log('Cancelling workflow run to stop all other running jobs...');
             
