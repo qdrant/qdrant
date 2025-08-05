@@ -42,7 +42,7 @@ impl GraphLinksSerializer {
         mut edges: Vec<Vec<Vec<PointOffsetType>>>,
         format: GraphLinksFormat,
         hnsw_m: HnswM,
-    ) -> Self {
+    ) -> OperationResult<Self> {
         // create map from index in `offsets` to point_id
         let mut back_index: Vec<usize> = (0..edges.len()).collect();
         // sort by max layer and use this map to build `Self.reindex`
@@ -117,13 +117,13 @@ impl GraphLinksSerializer {
             }
         };
 
-        Self {
+        Ok(Self {
             hnsw_m,
             links,
             kind,
             reindex,
             level_offsets,
-        }
+        })
     }
 
     pub fn to_graph_links_ram(&self) -> GraphLinks {

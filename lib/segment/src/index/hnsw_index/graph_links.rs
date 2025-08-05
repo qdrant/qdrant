@@ -237,6 +237,7 @@ mod tests {
         let links_file = path.path().join("links.bin");
         let links = random_links(points_count, max_levels_count, &hnsw_m);
         GraphLinksSerializer::new(links.clone(), format, hnsw_m)
+            .unwrap()
             .save_as(&links_file)
             .unwrap();
         let cmp_links = GraphLinks::load_from_file(&links_file, on_disk, format).unwrap();
@@ -250,8 +251,9 @@ mod tests {
         let hnsw_m = HnswM::new2(8);
 
         let check = |links: Vec<Vec<Vec<PointOffsetType>>>| {
-            let cmp_links =
-                GraphLinksSerializer::new(links.clone(), format, hnsw_m).to_graph_links_ram();
+            let cmp_links = GraphLinksSerializer::new(links.clone(), format, hnsw_m)
+                .unwrap()
+                .to_graph_links_ram();
             check_links(links, &cmp_links);
         };
 

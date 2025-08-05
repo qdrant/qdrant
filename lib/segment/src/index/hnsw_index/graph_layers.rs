@@ -334,7 +334,7 @@ impl GraphLayers {
 
         let links = GraphLinks::load_from_file(&plain_path, true, GraphLinksFormat::Plain)?;
         let original_size = plain_path.metadata()?.len();
-        GraphLinksSerializer::new(links.to_edges(), GraphLinksFormat::Compressed, hnsw_m)
+        GraphLinksSerializer::new(links.to_edges(), GraphLinksFormat::Compressed, hnsw_m)?
             .save_as(&compressed_path)?;
         let new_size = compressed_path.metadata()?.len();
 
@@ -358,10 +358,12 @@ impl GraphLayers {
         assert_eq!(self.links.format(), GraphLinksFormat::Plain);
         let dummy =
             GraphLinksSerializer::new(Vec::new(), GraphLinksFormat::Plain, HnswM::new(0, 0))
+                .unwrap()
                 .to_graph_links_ram();
         let links = std::mem::replace(&mut self.links, dummy);
         self.links =
             GraphLinksSerializer::new(links.to_edges(), GraphLinksFormat::Compressed, self.hnsw_m)
+                .unwrap()
                 .to_graph_links_ram();
     }
 
@@ -426,6 +428,7 @@ mod tests {
         let graph_layers = GraphLayers {
             hnsw_m,
             links: GraphLinksSerializer::new(graph_links.clone(), format, hnsw_m)
+                .unwrap()
                 .to_graph_links_ram(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),

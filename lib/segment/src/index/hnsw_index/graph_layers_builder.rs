@@ -189,7 +189,7 @@ impl GraphLayersBuilder {
     ) -> OperationResult<GraphLayers> {
         let links_path = GraphLayers::get_links_path(path, format);
 
-        let serializer = Self::links_layers_to_serializer(self.links_layers, format, self.hnsw_m);
+        let serializer = Self::links_layers_to_serializer(self.links_layers, format, self.hnsw_m)?;
         serializer.save_as(&links_path)?;
 
         let links = if on_disk {
@@ -221,6 +221,7 @@ impl GraphLayersBuilder {
         GraphLayers {
             hnsw_m: self.hnsw_m,
             links: Self::links_layers_to_serializer(self.links_layers, format, self.hnsw_m)
+                .unwrap()
                 .to_graph_links_ram(),
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
@@ -231,7 +232,7 @@ impl GraphLayersBuilder {
         link_layers: Vec<LockedLayersContainer>,
         format: GraphLinksFormat,
         hnsw_m: HnswM,
-    ) -> GraphLinksSerializer {
+    ) -> OperationResult<GraphLinksSerializer> {
         let edges = link_layers
             .into_iter()
             .map(|l| l.into_iter().map(|l| l.into_inner().into_vec()).collect())
