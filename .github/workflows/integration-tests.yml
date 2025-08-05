@@ -2,7 +2,7 @@ name: Integration tests
 
 on:
   push:
-    branches: [ master, dev, ci-image-build-fail-fast ]
+    branches: [ master, dev ]
   pull_request:
     branches: [ '**' ]
 
