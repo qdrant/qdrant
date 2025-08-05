@@ -242,7 +242,9 @@ impl PayloadFieldIndex for MutableNullIndex {
     }
 
     fn cleanup(self) -> OperationResult<()> {
-        std::fs::remove_dir_all(&self.base_dir)?;
+        if self.base_dir.is_dir() {
+            std::fs::remove_dir_all(&self.base_dir)?;
+        }
         Ok(())
     }
 
