@@ -89,7 +89,7 @@ impl BufferedDynamicFlags {
         // queue write in buffer
         self.buffer.write().insert(index, value);
 
-        // update cached length if needed
+        // update length if needed
         let index_usize = index as usize;
         if index_usize >= self.len {
             self.len = index_usize + 1;
@@ -177,7 +177,7 @@ mod tests {
             assert_eq!(buffered_flags.count_trues(), 2);
             assert_eq!(buffered_flags.len(), 3);
 
-            // Set flags beyond current length - this should grow the cached length
+            // Set flags beyond current length - this should grow the length
             buffered_flags.set(5, true);
             buffered_flags.set(7, true);
             buffered_flags.set(8, false); // Also grows on false flag.
