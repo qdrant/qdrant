@@ -35,9 +35,10 @@ use common::cpu::get_num_cpus;
 use dashmap::DashMap;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use tokio::runtime::{Handle, Runtime};
-use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
+use tokio::sync::{Mutex, OwnedRwLockReadGuard, RwLock, RwLockReadGuard, Semaphore};
 
 use self::dispatcher::TocDispatcher;
+use super::errors::StorageResult;
 use crate::ConsensusOperations;
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
@@ -268,7 +269,7 @@ impl TableOfContent {
 
         let real_collection_name = {
             let alias_persistence = self.alias_persistence.read().await;
-            Self::resolve_name(collection_name, &read_collection, &alias_persistence)?
+            Self::resolve_alias(collection_name, &read_collection, &alias_persistence)?
         };
         // resolve_name already checked collection existence, unwrap is safe here
         Ok(RwLockReadGuard::map(read_collection, |collection| {
@@ -290,6 +291,34 @@ impl TableOfContent {
         self.get_collection_unchecked(&collection_name).await.ok()
     }
 
+    pub async fn get_collection_owned(
+        &self,
+        collection: &CollectionPass<'_>,
+    ) -> StorageResult<OwnedRwLockReadGuard<Collections, Collection>> {
+        self.get_collection_owned_unchecked(collection.name()).await
+    }
+
+    async fn get_collection_owned_unchecked(
+        &self,
+        collection_name: &str,
+    ) -> StorageResult<OwnedRwLockReadGuard<Collections, Collection>> {
+        let collections = self.collections.clone().read_owned().await;
+
+        let collection_name = Self::resolve_alias(
+            collection_name,
+            &collections,
+            &*self.alias_persistence.read().await,
+        )?;
+
+        let collection = OwnedRwLockReadGuard::map(collections, |collections| {
+            collections
+                .get(&collection_name)
+                .expect("collection exists")
+        });
+
+        Ok(collection)
+    }
+
     /// Finds the original name of the collection
     ///
     /// # Arguments
@@ -303,19 +332,20 @@ impl TableOfContent {
     /// If the collection exists - return its name
     /// If alias exists - returns the original collection name
     /// If neither exists - returns [`StorageError`]
-    fn resolve_name(
+    fn resolve_alias(
         collection_name: &str,
         collections: &Collections,
         aliases: &AliasPersistence,
     ) -> Result<String, StorageError> {
-        let alias_collection_name = aliases.get(collection_name);
+        let resolved_name = aliases.get(collection_name);
 
-        let resolved_name = match alias_collection_name {
-            None => collection_name.to_string(),
-            Some(resolved_alias) => resolved_alias,
+        let resolved_name = match resolved_name.as_deref() {
+            Some(resolved_name) => resolved_name,
+            None => collection_name,
         };
-        collections.validate_collection_exists(&resolved_name)?;
-        Ok(resolved_name)
+
+        collections.validate_collection_exists(resolved_name)?;
+        Ok(resolved_name.into())
     }
 
     /// List of all aliases for a given collection
