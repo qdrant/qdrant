@@ -129,14 +129,26 @@ def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
 
     assert is_search_rejected, "Search requests have to be rejected during partial snapshot recovery"
 
-def test_partial_snapshot_not_modified(tmp_path: pathlib.Path):
+def test_partial_snapshot_empty(tmp_path: pathlib.Path):
     assert_project_root()
 
-    peer = bootstrap_peer(tmp_path, 6331)
-    bootstrap_collection(peer, bootstrap_points = 1_000)
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1000, recover_read= True)
 
-    resp = create_partial_snapshot(peer, manifest = get_snapshot_manifest(peer))
+    # Collection snapshot doesn't affect partial snapshot recovery timestamp
+    recovery_ts = get_telemetry(read_peer)['collections']['collections'][0]['shards'][0]['partial_snapshot']['recovery_timestamp']
+    assert recovery_ts == 0
+
+    # Ensure that both replicas are in sync (because of collection snapshot) and new partial snapshots are empty
+    resp = create_partial_snapshot(write_peer, shard = 0, manifest = get_snapshot_manifest(read_peer))
     assert resp.status_code == 304
+
+    recovered = recover_partial_snapshot_from(read_peer, write_peer, shard = 0)
+    assert not recovered
+
+    # Partial snapshot recovery timestamp on read peer should be updated despite empty partial snapshot
+    recovery_ts = get_telemetry(read_peer)['collections']['collections'][0]['shards'][0]['partial_snapshot']['recovery_timestamp']
+    assert recovery_ts > 0
+
 
 def test_partial_snapshot_payload_index_schema(tmp_path: pathlib.Path):
     assert_project_root()

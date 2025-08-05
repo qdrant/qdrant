@@ -250,3 +250,10 @@ def get_telemetry_hw_info(peer_url, collection):
         return hw[collection]
     else:
         return None
+
+def get_telemetry(peer_url):
+    r_search = requests.get(
+        f"{peer_url}/telemetry", params="details_level=3"
+    )
+    assert_http_ok(r_search)
+    return r_search.json()["result"]

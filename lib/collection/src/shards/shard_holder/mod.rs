@@ -1243,7 +1243,7 @@ pub(crate) enum ShardTransferChange {
     Abort(ShardTransferKey),
 }
 
-pub(crate) fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
+pub fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
     CollectionError::NotFound {
         what: format!("shard {shard_id}"),
     }
