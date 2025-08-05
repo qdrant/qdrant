@@ -203,29 +203,22 @@ mod tests {
             .collect()
     }
 
-    fn compare_links(
-        mut left: Vec<Vec<Vec<PointOffsetType>>>,
-        mut right: Vec<Vec<Vec<PointOffsetType>>>,
-        format: GraphLinksFormat,
-        hnsw_m: HnswM,
-    ) {
-        for links in [&mut left, &mut right].iter_mut() {
+    fn check_links(mut left: Vec<Vec<Vec<PointOffsetType>>>, right: &GraphLinks) {
+        let mut right_links = right.to_edges();
+        for links in [&mut left, &mut right_links].iter_mut() {
             links.iter_mut().for_each(|levels| {
                 levels
                     .iter_mut()
                     .enumerate()
                     .for_each(|(level_idx, links)| {
                         *links = normalize_links(
-                            match format {
-                                GraphLinksFormat::Compressed => hnsw_m.level_m(level_idx),
-                                GraphLinksFormat::Plain => 0,
-                            },
+                            right.view().sorted_count(level_idx),
                             std::mem::take(links),
                         );
                     })
             });
         }
-        assert_eq!(left, right);
+        assert_eq!(left, right_links);
     }
 
     /// Test that random links can be saved by [`GraphLinksSerializer`] and
@@ -243,10 +236,8 @@ mod tests {
         GraphLinksSerializer::new(links.clone(), format, hnsw_m)
             .save_as(&links_file)
             .unwrap();
-        let cmp_links = GraphLinks::load_from_file(&links_file, on_disk, format)
-            .unwrap()
-            .to_edges();
-        compare_links(links, cmp_links, format, hnsw_m);
+        let cmp_links = GraphLinks::load_from_file(&links_file, on_disk, format).unwrap();
+        check_links(links, &cmp_links);
     }
 
     #[rstest]
@@ -255,63 +246,46 @@ mod tests {
     fn test_graph_links_construction(#[case] format: GraphLinksFormat) {
         let hnsw_m = HnswM::new2(8);
 
-        let make_cmp_links = |links: Vec<Vec<Vec<PointOffsetType>>>,
-                              hnsw_m: HnswM|
-         -> Vec<Vec<Vec<PointOffsetType>>> {
-            GraphLinksSerializer::new(links, format, hnsw_m)
-                .to_graph_links_ram()
-                .to_edges()
+        let check = |links: Vec<Vec<Vec<PointOffsetType>>>| {
+            let cmp_links =
+                GraphLinksSerializer::new(links.clone(), format, hnsw_m).to_graph_links_ram();
+            check_links(links, &cmp_links);
         };
 
         // no points
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![];
-        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
-        compare_links(links, cmp_links, format, hnsw_m);
+        check(vec![]);
 
         // 2 points without any links
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![]], vec![vec![]]];
-        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
-        compare_links(links, cmp_links, format, hnsw_m);
+        check(vec![vec![vec![]], vec![vec![]]]);
 
         // one link at level 0
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![1]], vec![vec![0]]];
-        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
-        compare_links(links, cmp_links, format, hnsw_m);
+        check(vec![vec![vec![1]], vec![vec![0]]]);
 
         // 3 levels with no links at second level
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
+        check(vec![
             vec![vec![1, 2]],
             vec![vec![0, 2], vec![], vec![2]],
             vec![vec![0, 1], vec![], vec![1]],
-        ];
-        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
-        compare_links(links, cmp_links, format, hnsw_m);
+        ]);
 
         // 3 levels with no links at last level
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
+        check(vec![
             vec![vec![1, 2], vec![2], vec![]],
             vec![vec![0, 2], vec![1], vec![]],
             vec![vec![0, 1]],
-        ];
-        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
-        compare_links(links, cmp_links, format, hnsw_m);
+        ]);
 
         // 4 levels with random nonexistent links
-        let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
+        check(vec![
             vec![vec![1, 2, 5, 6]],
             vec![vec![0, 2, 7, 8], vec![], vec![34, 45, 10]],
             vec![vec![0, 1, 1, 2], vec![3, 5, 9], vec![9, 8], vec![9], vec![]],
             vec![vec![0, 1, 5, 6], vec![1, 5, 0]],
             vec![vec![0, 1, 9, 18], vec![1, 5, 6], vec![5], vec![9]],
-        ];
-        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
-        compare_links(links, cmp_links, format, hnsw_m);
+        ]);
 
         // fully random links
-        let hnsw_m = HnswM::new2(8);
-        let links = random_links(100, 10, &hnsw_m);
-        let cmp_links = make_cmp_links(links.clone(), hnsw_m);
-        compare_links(links, cmp_links, format, hnsw_m);
+        check(random_links(100, 10, &hnsw_m));
     }
 
     #[test]

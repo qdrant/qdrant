@@ -146,6 +146,14 @@ impl GraphLinksView<'_> {
         // See the doc comment on `level_offsets`.
         self.level_offsets.len() - 2
     }
+
+    #[cfg(test)]
+    pub(super) fn sorted_count(&self, level: usize) -> usize {
+        match self.compression {
+            CompressionInfo::Uncompressed { .. } => 0,
+            CompressionInfo::Compressed { hnsw_m, .. } => hnsw_m.level_m(level),
+        }
+    }
 }
 
 fn read_level_offsets(
