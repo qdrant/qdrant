@@ -8,7 +8,7 @@ use match_converter::get_match_checkers;
 use serde_json::Value;
 
 use crate::index::field_index::FieldIndex;
-use crate::index::field_index::null_index::mmap_null_index::MmapNullIndex;
+use crate::index::field_index::null_index::MutableNullIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -393,8 +393,10 @@ pub fn get_datetime_range_checkers(
     }
 }
 
-fn get_is_empty_indexes(indexes: &[FieldIndex]) -> (Option<&MmapNullIndex>, Option<&FieldIndex>) {
-    let mut primary_null_index: Option<&MmapNullIndex> = None;
+fn get_is_empty_indexes(
+    indexes: &[FieldIndex],
+) -> (Option<&MutableNullIndex>, Option<&FieldIndex>) {
+    let mut primary_null_index: Option<&MutableNullIndex> = None;
     let mut fallback_index: Option<&FieldIndex> = None;
 
     for index in indexes {
@@ -412,7 +414,7 @@ fn get_is_empty_indexes(indexes: &[FieldIndex]) -> (Option<&MmapNullIndex>, Opti
 }
 
 fn get_null_index_is_empty_checker(
-    null_index: &MmapNullIndex,
+    null_index: &MutableNullIndex,
     is_empty: bool,
 ) -> ConditionCheckerFn {
     Box::new(move |point_id: PointOffsetType| null_index.values_is_empty(point_id) == is_empty)
