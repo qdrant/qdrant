@@ -648,22 +648,15 @@ async fn recover_partial_snapshot(
             recover_snapshot.await
         };
 
-        Ok(recover_snapshot_with_recovery_lock)
+        StorageResult::Ok(recover_snapshot_with_recovery_lock)
     };
 
-    let recover_snapshot = match validate.await {
-        Ok(recover_snapshot) => recover_snapshot,
-
-        Err(StorageError::ShardUnavailable { .. }) => {
-            return helpers::already_in_progress_response();
-        }
-
-        Err(err) => {
-            return helpers::process_response_error(err, tokio::time::Instant::now(), None);
-        }
-    };
-
-    helpers::time_or_accept(recover_snapshot, wait.unwrap_or(true)).await
+    helpers::already_in_progress(async move {
+        let recover_snapshot = validate.await?;
+        let response = helpers::time_or_accept(recover_snapshot, wait.unwrap_or(true)).await; // TODO: Timings in response are not accurate...
+        Ok(response)
+    })
+    .await
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
