@@ -466,7 +466,12 @@ impl Segment {
     }
 
     /// Check consistency of the segment's data and repair it if possible.
+    /// Removes partially persisted points.
     pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
+        // Get rid of versionless points.
+        self.cleanup_versions()?;
+
+        // Get rid of unmapped points.
         let mut internal_ids_to_delete = HashSet::new();
         let id_tracker = self.id_tracker.borrow();
         for internal_id in id_tracker.iter_ids() {
