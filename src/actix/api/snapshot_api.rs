@@ -13,7 +13,7 @@ use collection::operations::snapshot_ops::{
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
-use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
+use futures::{FutureExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
 use segment::data_types::manifest::SnapshotManifest;
@@ -27,7 +27,6 @@ use storage::content_manager::snapshots::{
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
-use tokio::io::AsyncWriteExt as _;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -686,19 +685,75 @@ async fn recover_partial_snapshot_from(
     let PartialSnapshotRecoverFrom { peer_url, api_key } = request;
     let SnapshottingParam { wait } = query.into_inner();
 
-    // nothing to verify
-    let pass = new_unchecked_verification_pass();
+    let validate = async move {
+        // nothing to verify.
+        let pass = new_unchecked_verification_pass();
 
-    let try_take_recovery_lock_future = try_take_partial_snapshot_recovery_lock(
-        &dispatcher,
-        &collection_name,
-        shard_id,
-        &access,
-        &pass,
-    );
+        // TODO: Run this check before the multipart blob is uploaded
+        let collection_pass = access
+            .check_global_access(AccessRequirements::new().manage())?
+            .issue_pass(&collection_name)
+            .into_static();
 
-    let recovery_lock = match try_take_recovery_lock_future.await {
-        Ok(recovery_lock) => recovery_lock,
+        let recovery_lock = try_take_partial_snapshot_recovery_lock(
+            &dispatcher,
+            &collection_name,
+            shard_id,
+            &access,
+            &pass,
+        )
+        .await?;
+
+        // TODO: Check that remote peer is compatible
+
+        let download_and_recover_snapshot = async move {
+            let _recovery_lock = recovery_lock;
+
+            let toc = dispatcher.toc(&access, &pass);
+            let collection = toc.get_collection_owned(&collection_pass).await?;
+
+            collection.assert_shard_exists(shard_id).await?;
+
+            let snapshot_manifest = collection.get_partial_snapshot_manifest(shard_id).await?;
+            let download_dir = toc.optional_temp_or_snapshot_temp_path()?;
+
+            let snapshot_path = common::snapshots::download_partial_snapshot(
+                &http_client,
+                peer_url.as_str(),
+                &collection_name,
+                shard_id,
+                &snapshot_manifest,
+                &download_dir,
+                api_key.as_deref(),
+            )
+            .await;
+
+            let snapshot_path = match snapshot_path {
+                Ok(snapshot_path) => snapshot_path,
+                Err(StorageError::EmptyPartialSnapshot { .. }) => return Ok(()), // TODO: Return custom response?
+                Err(err) => return Err(err),
+            };
+
+            common::snapshots::recover_shard_snapshot_wip(
+                toc.clone(),
+                collection,
+                shard_id,
+                snapshot_path.into(),
+                None,
+                RecoveryType::Partial,
+                SnapshotPriority::NoSync,
+            )
+            .await?
+            .await?;
+
+            Ok(())
+        };
+
+        StorageResult::Ok(download_and_recover_snapshot)
+    };
+
+    let download_and_recover_snapshot = match validate.await {
+        Ok(download_and_recover_snapshot) => download_and_recover_snapshot,
 
         Err(StorageError::ShardUnavailable { .. }) => {
             return helpers::already_in_progress_response();
@@ -709,85 +764,7 @@ async fn recover_partial_snapshot_from(
         }
     };
 
-    let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
-        let _recovery_lock = recovery_lock;
-
-        let cancel_safe = async {
-            let toc = dispatcher.toc(&access, &pass);
-
-            let collection_pass = access
-                .check_global_access(AccessRequirements::new().manage())?
-                .issue_pass(&collection_name)
-                .into_static();
-
-            let collection = toc.get_collection(&collection_pass).await?;
-            collection.assert_shard_exists(shard_id).await?;
-
-            let http_client = http_client.client(api_key.as_deref())?;
-
-            let create_snapshot_url = format!(
-                "{peer_url}/collections/{collection_name}/shards/{shard_id}/snapshot/partial/create"
-            );
-
-            let snapshot_manifest = collection.get_partial_snapshot_manifest(shard_id).await?;
-
-            let download_dir = toc.optional_temp_or_snapshot_temp_path()?;
-            let (partial_snapshot_file, partial_snapshot_temp_path) = tempfile::Builder::new()
-                .prefix("partial-snapshot")
-                .suffix(".download")
-                .tempfile_in(&download_dir)?
-                .into_parts();
-
-            let response = http_client
-                .post(create_snapshot_url)
-                .json(&snapshot_manifest)
-                .send()
-                .await?
-                .error_for_status()?;
-
-            if response.status() == reqwest::StatusCode::NOT_MODIFIED {
-                return Err(StorageError::EmptyPartialSnapshot { shard_id });
-            }
-
-            let mut partial_snapshot_file =
-                tokio::io::BufWriter::new(tokio::fs::File::from_std(partial_snapshot_file));
-
-            let mut partial_snapshot_stream = response.bytes_stream();
-
-            while let Some(chunk) = partial_snapshot_stream.next().await {
-                partial_snapshot_file.write_all(&chunk?).await?;
-            }
-
-            partial_snapshot_file.flush().await?;
-
-            StorageResult::Ok((collection, partial_snapshot_temp_path))
-        };
-
-        let create_partial_snapshot_result =
-            cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await?;
-
-        let (collection, partial_snapshot_temp_path) = match create_partial_snapshot_result {
-            Ok(output) => output,
-            Err(StorageError::EmptyPartialSnapshot { .. }) => return Ok(false),
-            Err(err) => return Err(err),
-        };
-
-        common::snapshots::recover_shard_snapshot_impl(
-            dispatcher.toc(&access, &pass),
-            &collection,
-            shard_id,
-            partial_snapshot_temp_path.into(),
-            SnapshotPriority::NoSync,
-            RecoveryType::Partial,
-            cancel,
-        )
-        .await?;
-
-        Ok(true)
-    })
-    .map(|res| res.map_err(Into::into).and_then(|res| res));
-
-    helpers::time_or_accept(future, wait.unwrap_or(true)).await
+    helpers::time_or_accept(download_and_recover_snapshot, wait.unwrap_or(true)).await
 }
 
 #[get("/collections/{collection}/shards/{shard}/snapshot/partial/manifest")]

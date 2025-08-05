@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use collection::collection::Collection;
@@ -12,12 +13,14 @@ use collection::shards::replica_set::ReplicaState;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
 use common::tempfile_ext::MaybeTempPath;
+use futures::StreamExt as _;
 use segment::data_types::manifest::SnapshotManifest;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
+use tokio::io::AsyncWriteExt as _;
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard};
 use tokio::task;
 
@@ -320,6 +323,53 @@ pub async fn recover_shard_snapshot_wip(
     };
 
     Ok(restore_and_notify_cancel_on_drop)
+}
+
+/// # Cancel safety
+///
+/// This function is cancel safe.
+pub async fn download_partial_snapshot(
+    http_client: &HttpClient,
+    peer_url: &str,
+    collection_name: &str,
+    shard_id: ShardId,
+    snapshot_manifest: &SnapshotManifest,
+    download_dir: &Path,
+    api_key: Option<&str>,
+) -> StorageResult<tempfile::TempPath> {
+    let http_client = http_client.client(api_key)?;
+
+    let create_snapshot_url = format!(
+        "{peer_url}/collections/{collection_name}/shards/{shard_id}/snapshot/partial/create"
+    );
+
+    let (snapshot_file, snapshot_path) = tempfile::Builder::new()
+        .prefix("partial-snapshot")
+        .suffix(".download")
+        .tempfile_in(&download_dir)?
+        .into_parts();
+
+    let response = http_client
+        .post(create_snapshot_url)
+        .json(&snapshot_manifest)
+        .send()
+        .await?
+        .error_for_status()?;
+
+    if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+        return Err(StorageError::EmptyPartialSnapshot { shard_id });
+    }
+
+    let mut snapshot_file = tokio::io::BufWriter::new(tokio::fs::File::from_std(snapshot_file));
+    let mut snapshot_stream = response.bytes_stream();
+
+    while let Some(chunk) = snapshot_stream.next().await {
+        snapshot_file.write_all(&chunk?).await?;
+    }
+
+    snapshot_file.flush().await?;
+
+    StorageResult::Ok(snapshot_path)
 }
 
 pub async fn notify_recovered_replicas(
