@@ -745,19 +745,16 @@ async fn recover_partial_snapshot_from(
         StorageResult::Ok(download_and_recover_snapshot)
     };
 
-    let download_and_recover_snapshot = match validate.await {
-        Ok(download_and_recover_snapshot) => download_and_recover_snapshot,
+    helpers::already_in_progress(async move {
+        let download_and_recover_snapshot = validate.await?;
 
-        Err(StorageError::ShardUnavailable { .. }) => {
-            return helpers::already_in_progress_response();
-        }
+        // TODO: Timings in response are not accurate...
+        let response =
+            helpers::time_or_accept(download_and_recover_snapshot, wait.unwrap_or(true)).await;
 
-        Err(err) => {
-            return helpers::process_response_error(err, tokio::time::Instant::now(), None);
-        }
-    };
-
-    helpers::time_or_accept(download_and_recover_snapshot, wait.unwrap_or(true)).await
+        Ok(response)
+    })
+    .await
 }
 
 #[get("/collections/{collection}/shards/{shard}/snapshot/partial/manifest")]
