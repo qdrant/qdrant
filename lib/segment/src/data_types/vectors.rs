@@ -468,11 +468,11 @@ pub fn default_multi_vector(vec: MultiDenseVectorInternal) -> NamedVectors<'stat
     named_vectors
 }
 
-pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
+pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors<'_> {
     NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(vec))
 }
 
-pub fn only_default_multi_vector(vec: &MultiDenseVectorInternal) -> NamedVectors {
+pub fn only_default_multi_vector(vec: &MultiDenseVectorInternal) -> NamedVectors<'_> {
     NamedVectors::from_ref(
         DEFAULT_VECTOR_NAME,
         VectorRef::MultiDense(TypedMultiDenseVectorRef::from(vec)),
@@ -524,7 +524,7 @@ impl From<NamedVectors<'_>> for VectorStructInternal {
 }
 
 impl VectorStructInternal {
-    pub fn get(&self, name: &VectorName) -> Option<VectorRef> {
+    pub fn get(&self, name: &VectorName) -> Option<VectorRef<'_>> {
         match self {
             VectorStructInternal::Single(v) => {
                 (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(v))
@@ -648,7 +648,7 @@ impl NamedVectorStruct {
         }
     }
 
-    pub fn get_vector(&self) -> VectorRef {
+    pub fn get_vector(&self) -> VectorRef<'_> {
         match self {
             NamedVectorStruct::Default(v) => v.as_slice().into(),
             NamedVectorStruct::Dense(v) => v.vector.as_slice().into(),

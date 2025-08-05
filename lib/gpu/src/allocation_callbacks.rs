@@ -5,5 +5,5 @@ use ash::vk;
 /// GPU memory allocation is managed by the `gpu-allocator` crate.
 /// Even though Vulkan provides default allocation callbacks, it's helpful at least for debugging purposes.
 pub trait AllocationCallbacks: Send + Sync + 'static {
-    fn allocation_callbacks(&self) -> &vk::AllocationCallbacks;
+    fn allocation_callbacks(&self) -> &vk::AllocationCallbacks<'_>;
 }

@@ -2521,16 +2521,15 @@ impl GeoPolygon {
             });
         }
 
-        if let (Some(first), Some(last)) = (line.points.first(), line.points.last()) {
-            if (first.lat - last.lat).abs() > f64::EPSILON
-                || (first.lon - last.lon).abs() > f64::EPSILON
-            {
-                return Err(OperationError::ValidationError {
-                    description: String::from(
-                        "polygon invalid, the first and the last points should be the same to form a closed line",
-                    ),
-                });
-            }
+        if let (Some(first), Some(last)) = (line.points.first(), line.points.last())
+            && ((first.lat - last.lat).abs() > f64::EPSILON
+                || (first.lon - last.lon).abs() > f64::EPSILON)
+        {
+            return Err(OperationError::ValidationError {
+                description: String::from(
+                    "polygon invalid, the first and the last points should be the same to form a closed line",
+                ),
+            });
         }
 
         Ok(())

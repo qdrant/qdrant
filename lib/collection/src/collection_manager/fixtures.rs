@@ -44,10 +44,10 @@ impl PointIdGenerator {
     pub fn unique(&mut self) -> PointIdType {
         for _ in 0..100_000 {
             let id = self.random();
-            if let PointIdType::NumId(num) = id {
-                if self.used.insert(num) {
-                    return id;
-                }
+            if let PointIdType::NumId(num) = id
+                && self.used.insert(num)
+            {
+                return id;
             }
         }
         panic!("failed to generate unique point ID after 100000 attempts");

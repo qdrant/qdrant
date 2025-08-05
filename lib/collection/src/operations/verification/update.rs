@@ -70,10 +70,9 @@ impl StrictModeVerification for SetPayload {
         strict_mode_config: &StrictModeConfig,
     ) -> CollectionResult<()> {
         if let Some(payload_size_limit_bytes) = strict_mode_config.max_collection_payload_size_bytes
+            && let Some(local_stats) = collection.estimated_collection_stats().await
         {
-            if let Some(local_stats) = collection.estimated_collection_stats().await {
-                check_collection_payload_size_limit(payload_size_limit_bytes, local_stats)?;
-            }
+            check_collection_payload_size_limit(payload_size_limit_bytes, local_stats)?;
         }
 
         Ok(())
@@ -451,10 +450,10 @@ fn check_named_sparse_vec_limit(
     vector: &Vector,
     sparse_max_size_by_name: &TinyMap<&VectorName, usize>,
 ) -> CollectionResult<()> {
-    if let Vector::Sparse(sparse) = vector {
-        if let Some(strict_sparse_limit) = sparse_max_size_by_name.get(name) {
-            check_sparse_vector_limit(name, sparse, *strict_sparse_limit)?;
-        }
+    if let Vector::Sparse(sparse) = vector
+        && let Some(strict_sparse_limit) = sparse_max_size_by_name.get(name)
+    {
+        check_sparse_vector_limit(name, sparse, *strict_sparse_limit)?;
     }
     Ok(())
 }

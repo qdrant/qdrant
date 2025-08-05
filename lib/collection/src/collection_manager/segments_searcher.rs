@@ -191,12 +191,10 @@ impl SegmentsSearcher {
             if let Some(sparse_vector_params) = collection_config
                 .params
                 .get_sparse_vector_params_opt(vector_name)
+                && sparse_vector_params.modifier == Some(Modifier::Idf)
+                && !idf_vectors.contains(&vector_name)
             {
-                if sparse_vector_params.modifier == Some(Modifier::Idf)
-                    && !idf_vectors.contains(&vector_name)
-                {
-                    idf_vectors.push(vector_name);
-                }
+                idf_vectors.push(vector_name);
             }
         }
 

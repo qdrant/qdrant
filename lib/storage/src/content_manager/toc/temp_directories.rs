@@ -163,16 +163,16 @@ impl TableOfContent {
             })?;
         }
 
-        if let Some(path) = optional_temp_path {
-            if path.exists() {
-                std::fs::remove_dir_all(&path).map_err(|e| {
-                    CollectionError::service_error(format!(
-                        "Failed to remove optional temp directory at {}: {:?}",
-                        path.display(),
-                        e,
-                    ))
-                })?;
-            }
+        if let Some(path) = optional_temp_path
+            && path.exists()
+        {
+            std::fs::remove_dir_all(&path).map_err(|e| {
+                CollectionError::service_error(format!(
+                    "Failed to remove optional temp directory at {}: {:?}",
+                    path.display(),
+                    e,
+                ))
+            })?;
         }
 
         Ok(())

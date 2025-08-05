@@ -314,7 +314,7 @@ impl Device {
     }
 
     /// Get CPU allocator.
-    pub fn cpu_allocation_callbacks(&self) -> Option<&vk::AllocationCallbacks> {
+    pub fn cpu_allocation_callbacks(&self) -> Option<&vk::AllocationCallbacks<'_>> {
         self.instance.cpu_allocation_callbacks()
     }
 

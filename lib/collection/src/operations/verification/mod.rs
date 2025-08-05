@@ -111,21 +111,21 @@ pub trait StrictModeVerification {
             };
 
             // Check for filter indices
-            if allow_unindexed_filter == Some(false) {
-                if let Some((key, schemas)) = collection.one_unindexed_key(filter) {
-                    let possible_schemas_str = schemas
-                        .iter()
-                        .map(|schema| schema.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ");
+            if allow_unindexed_filter == Some(false)
+                && let Some((key, schemas)) = collection.one_unindexed_key(filter)
+            {
+                let possible_schemas_str = schemas
+                    .iter()
+                    .map(|schema| schema.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-                    return Err(CollectionError::strict_mode(
-                        format!(
-                            "Index required but not found for \"{key}\" of one of the following types: [{possible_schemas_str}]",
-                        ),
-                        "Create an index for this key or use a different filter.",
-                    ));
-                }
+                return Err(CollectionError::strict_mode(
+                    format!(
+                        "Index required but not found for \"{key}\" of one of the following types: [{possible_schemas_str}]",
+                    ),
+                    "Create an index for this key or use a different filter.",
+                ));
             }
 
             check_filter_limits(filter, strict_mode_config)?;

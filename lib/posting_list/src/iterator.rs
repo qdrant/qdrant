@@ -31,10 +31,10 @@ impl<'a, V: PostingValue> PostingIterator<'a, V> {
         &mut self,
         target_id: PointOffsetType,
     ) -> Option<PostingElement<V>> {
-        if let Some(current) = &self.current_elem {
-            if current.id >= target_id {
-                return Some(current.clone());
-            }
+        if let Some(current) = &self.current_elem
+            && current.id >= target_id
+        {
+            return Some(current.clone());
         }
 
         if self.offset >= self.visitor.len() {

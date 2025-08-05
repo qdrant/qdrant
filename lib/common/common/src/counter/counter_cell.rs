@@ -66,7 +66,7 @@ impl CounterCell {
     /// Creates a write-back counter for best performance possible.
     /// For more information on when and why to use, see [`WriteBackCounterCell`]
     #[inline]
-    pub fn write_back_counter(&self) -> WritebackCounterCell {
+    pub fn write_back_counter(&self) -> WritebackCounterCell<'_> {
         WritebackCounterCell::new(self)
     }
 }

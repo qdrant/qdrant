@@ -198,11 +198,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         };
 
         let idx = idx as usize;
-        if let Some(deleted) = storage.deleted.get(idx) {
-            if !deleted {
-                storage.deleted.set(idx, true);
-                self.deleted_count += 1;
-            }
+        if let Some(deleted) = storage.deleted.get(idx)
+            && !deleted
+        {
+            storage.deleted.set(idx, true);
+            self.deleted_count += 1;
         }
     }
 

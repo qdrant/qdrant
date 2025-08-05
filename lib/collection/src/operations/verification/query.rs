@@ -14,25 +14,22 @@ impl Query {
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> CollectionResult<()> {
-        if strict_mode_config.unindexed_filtering_retrieve == Some(false) {
-            if let Query::Formula(formula) = self {
-                if let Some((key, schemas)) =
-                    collection.one_unindexed_expression_key(&formula.formula)
-                {
-                    let possible_schemas_str = schemas
-                        .iter()
-                        .map(|schema| schema.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ");
+        if strict_mode_config.unindexed_filtering_retrieve == Some(false)
+            && let Query::Formula(formula) = self
+            && let Some((key, schemas)) = collection.one_unindexed_expression_key(&formula.formula)
+        {
+            let possible_schemas_str = schemas
+                .iter()
+                .map(|schema| schema.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
 
-                    return Err(CollectionError::strict_mode(
-                        format!(
-                            "Index required but not found for \"{key}\" of one of the following types: [{possible_schemas_str}]",
-                        ),
-                        "Create an index for this key or use a different formula expression.",
-                    ));
-                }
-            }
+            return Err(CollectionError::strict_mode(
+                format!(
+                    "Index required but not found for \"{key}\" of one of the following types: [{possible_schemas_str}]",
+                ),
+                "Create an index for this key or use a different formula expression.",
+            ));
         }
         Ok(())
     }

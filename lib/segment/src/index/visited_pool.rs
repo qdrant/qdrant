@@ -105,7 +105,7 @@ impl VisitedPool {
         }
     }
 
-    pub fn get(&self, num_points: usize) -> VisitedListHandle {
+    pub fn get(&self, num_points: usize) -> VisitedListHandle<'_> {
         // If there are more concurrent requests, a new temporary list is created dynamically.
         // This limit is implemented to prevent memory leakage.
         match self.pool.write().pop() {

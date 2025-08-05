@@ -298,11 +298,11 @@ impl CollectionParams {
                 description: "Vectors are not configured in this collection".into(),
             }
         } else if available_names == vec![DEFAULT_VECTOR_NAME] {
-            return CollectionError::BadInput {
+            CollectionError::BadInput {
                 description: format!(
                     "Vector with name {vector_name} is not configured in this collection"
                 ),
-            };
+            }
         } else {
             let available_names = available_names.join(", ");
             if vector_name == DEFAULT_VECTOR_NAME {
@@ -325,10 +325,10 @@ impl CollectionParams {
         match self.vectors.get_params(vector_name) {
             Some(params) => Ok(params.distance),
             None => {
-                if let Some(sparse_vectors) = &self.sparse_vectors {
-                    if let Some(_params) = sparse_vectors.get(vector_name) {
-                        return Ok(Distance::Dot);
-                    }
+                if let Some(sparse_vectors) = &self.sparse_vectors
+                    && let Some(_params) = sparse_vectors.get(vector_name)
+                {
+                    return Ok(Distance::Dot);
                 }
                 Err(self.missing_vector_error(vector_name))
             }

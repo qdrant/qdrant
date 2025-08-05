@@ -292,37 +292,33 @@ impl ShardReplicaSet {
 
         let mut update_futures = Vec::with_capacity(updatable_remote_shards.len() + 1);
 
-        if let Some(local) = local.deref() {
-            if self.is_peer_updatable(this_peer_id) {
-                let local_wait = if self.peer_state(this_peer_id) == Some(ReplicaState::Listener) {
-                    false
-                } else {
-                    wait
-                };
+        if let Some(local) = local.deref()
+            && self.is_peer_updatable(this_peer_id)
+        {
+            let local_wait = if self.peer_state(this_peer_id) == Some(ReplicaState::Listener) {
+                false
+            } else {
+                wait
+            };
 
-                if self.peer_is_active(this_peer_id) {
-                    // Check write rate limiter before proceeding if replica active
-                    self.check_operation_write_rate_limiter(
-                        &hw_measurement_acc,
-                        local,
-                        &operation,
-                    )?;
-                }
-
-                let operation = operation.clone();
-
-                let hw_acc = hw_measurement_acc.clone();
-                let local_update = async move {
-                    local
-                        .get()
-                        .update(operation, local_wait, hw_acc)
-                        .await
-                        .map(|ok| (this_peer_id, ok))
-                        .map_err(|err| (this_peer_id, err))
-                };
-
-                update_futures.push(local_update.left_future());
+            if self.peer_is_active(this_peer_id) {
+                // Check write rate limiter before proceeding if replica active
+                self.check_operation_write_rate_limiter(&hw_measurement_acc, local, &operation)?;
             }
+
+            let operation = operation.clone();
+
+            let hw_acc = hw_measurement_acc.clone();
+            let local_update = async move {
+                local
+                    .get()
+                    .update(operation, local_wait, hw_acc)
+                    .await
+                    .map(|ok| (this_peer_id, ok))
+                    .map_err(|err| (this_peer_id, err))
+            };
+
+            update_futures.push(local_update.left_future());
         }
 
         for remote in updatable_remote_shards {

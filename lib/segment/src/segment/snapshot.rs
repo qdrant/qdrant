@@ -252,18 +252,18 @@ pub fn snapshot_files(
     // TODO: Version RocksDB!? 🤯
 
     #[cfg(feature = "rocksdb")]
-    if include_if(ROCKS_DB_VIRT_FILE.as_ref()) {
-        if let Some(db) = &segment.database {
-            let db_backup_path = temp_path.join(super::DB_BACKUP_PATH);
+    if include_if(ROCKS_DB_VIRT_FILE.as_ref())
+        && let Some(db) = &segment.database
+    {
+        let db_backup_path = temp_path.join(super::DB_BACKUP_PATH);
 
-            let db = db.read();
-            crate::rocksdb_backup::create(&db, &db_backup_path).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to create RocksDB backup at {}: {err}",
-                    db_backup_path.display()
-                ))
-            })?;
-        }
+        let db = db.read();
+        crate::rocksdb_backup::create(&db, &db_backup_path).map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to create RocksDB backup at {}: {err}",
+                db_backup_path.display()
+            ))
+        })?;
     }
 
     #[cfg(feature = "rocksdb")]

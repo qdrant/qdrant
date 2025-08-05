@@ -21,12 +21,11 @@ fn search_in_builder(
     ef: usize,
     mut points_scorer: FilteredScorer,
 ) -> Vec<ScoredPointOffset> {
-    let entry_point = match builder
+    let Some(entry_point) = builder
         .get_entry_points()
         .get_entry_point(|point_id| points_scorer.check_vector(point_id))
-    {
-        None => return vec![],
-        Some(ep) => ep,
+    else {
+        return vec![];
     };
 
     let zero_level_entry = builder

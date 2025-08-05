@@ -65,13 +65,13 @@ pub trait VectorStorage {
     }
 
     /// Get the vector by the given key
-    fn get_vector(&self, key: PointOffsetType) -> CowVector;
+    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_>;
 
     /// Get the vector by the given key with potential optimizations for sequential reads.
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector;
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_>;
 
     /// Get the vector by the given key if it exists
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector>;
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>>;
 
     fn insert_vector(
         &mut self,
@@ -162,10 +162,12 @@ pub trait SparseVectorStorage: VectorStorage {
 
 pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn vector_dim(&self) -> usize;
-    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T>;
-    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>>;
-    fn get_multi_opt_sequential(&self, key: PointOffsetType)
-    -> Option<TypedMultiDenseVectorRef<T>>;
+    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<'_, T>;
+    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<'_, T>>;
+    fn get_multi_opt_sequential(
+        &self,
+        key: PointOffsetType,
+    ) -> Option<TypedMultiDenseVectorRef<'_, T>>;
     fn get_batch_multi<'a>(
         &'a self,
         keys: &[PointOffsetType],
@@ -809,7 +811,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
         match self {
             #[cfg(feature = "rocksdb")]
             VectorStorageEnum::DenseSimple(v) => v.get_vector(key),
@@ -855,7 +857,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
         match self {
             #[cfg(feature = "rocksdb")]
             VectorStorageEnum::DenseSimple(v) => v.get_vector_sequential(key),
@@ -901,7 +903,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         match self {
             #[cfg(feature = "rocksdb")]
             VectorStorageEnum::DenseSimple(v) => v.get_vector_opt(key),

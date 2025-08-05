@@ -85,7 +85,7 @@ impl<S: Sized> PostingChunk<S> {
 }
 
 impl<V: PostingValue> PostingList<V> {
-    pub fn view(&self) -> PostingListView<V> {
+    pub fn view(&self) -> PostingListView<'_, V> {
         let PostingList {
             id_data,
             chunks,

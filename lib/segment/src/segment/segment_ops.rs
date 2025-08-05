@@ -277,15 +277,14 @@ impl Segment {
         F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
     {
         // If point does not exist or has lower version, ignore operation
-        if let Some(point_offset) = op_point_offset {
-            if self
+        if let Some(point_offset) = op_point_offset
+            && self
                 .id_tracker
                 .borrow()
                 .internal_version(point_offset)
                 .is_some_and(|current_version| current_version > op_num)
-            {
-                return Ok(false);
-            }
+        {
+            return Ok(false);
         }
 
         let (applied, internal_id) = operation(self)?;
@@ -396,7 +395,7 @@ impl Segment {
         &self,
         point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<NamedVectors> {
+    ) -> OperationResult<NamedVectors<'_>> {
         let mut vectors = NamedVectors::default();
         for vector_name in self.vector_data.keys() {
             if let Some(vector) = self.vector_by_offset(vector_name, point_offset, hw_counter)? {
@@ -442,8 +441,9 @@ impl Segment {
     // Returns lock to guarantee that there will be no other flush in a different thread
     pub(super) fn lock_flushing(
         &self,
-    ) -> OperationResult<parking_lot::MutexGuard<Option<JoinHandle<OperationResult<SeqNumberType>>>>>
-    {
+    ) -> OperationResult<
+        parking_lot::MutexGuard<'_, Option<JoinHandle<OperationResult<SeqNumberType>>>>,
+    > {
         let mut lock = self.flush_thread.lock();
         let mut join_handle: Option<JoinHandle<OperationResult<SeqNumberType>>> = None;
         std::mem::swap(&mut join_handle, &mut lock);

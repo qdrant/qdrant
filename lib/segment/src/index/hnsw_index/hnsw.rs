@@ -551,20 +551,21 @@ impl HNSWIndex {
                         &vector_storage_ref,
                     );
 
-                    if !is_tenant && index_pos > 0 {
-                        if let Some(required_connectivity) = required_connectivity {
-                            // Always build for tenants
-                            let graph_connectivity = graph_layers_builder
-                                .subgraph_connectivity(&points_to_index, percolation);
+                    if !is_tenant
+                        && index_pos > 0
+                        && let Some(required_connectivity) = required_connectivity
+                    {
+                        // Always build for tenants
+                        let graph_connectivity = graph_layers_builder
+                            .subgraph_connectivity(&points_to_index, percolation);
 
-                            if graph_connectivity >= required_connectivity {
-                                trace!(
-                                    "skip building additional HNSW links for {field}, connectivity {graph_connectivity:.4} >= {required_connectivity:.4}"
-                                );
-                                continue;
-                            }
-                            trace!("graph connectivity: {graph_connectivity} for {field}");
+                        if graph_connectivity >= required_connectivity {
+                            trace!(
+                                "skip building additional HNSW links for {field}, connectivity {graph_connectivity:.4} >= {required_connectivity:.4}"
+                            );
+                            continue;
                         }
+                        trace!("graph connectivity: {graph_connectivity} for {field}");
                     }
 
                     // ToDo: reuse graph layer for same payload

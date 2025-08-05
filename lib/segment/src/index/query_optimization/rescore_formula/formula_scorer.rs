@@ -202,10 +202,10 @@ impl FormulaScorer<'_> {
                 }
                 let right = self.eval_expression(right, point_id)?;
 
-                if right == 0.0 {
-                    if let Some(default) = by_zero_default {
-                        return Ok(*default);
-                    }
+                if right == 0.0
+                    && let Some(default) = by_zero_default
+                {
+                    return Ok(*default);
                 }
 
                 let div_value = left / right;

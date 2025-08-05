@@ -229,12 +229,12 @@ impl VectorStorage for MmapSparseVectorStorage {
         self.next_point_offset
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
         let vector = self.get_vector_opt(key);
         vector.unwrap_or_else(CowVector::default_sparse)
     }
 
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
         self.get_sparse_sequential(key)
             .map(CowVector::from)
             .unwrap_or_else(|_| CowVector::default_sparse())
@@ -243,7 +243,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     /// Get vector by key, if it exists.
     ///
     /// Ignore any error
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         match self.get_sparse_opt(key) {
             Ok(Some(vector)) => Some(CowVector::from(vector)),
             _ => None,

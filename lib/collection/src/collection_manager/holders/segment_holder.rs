@@ -759,11 +759,11 @@ impl SegmentHolder {
             ids,
             update_nonappendable,
             |point_id, _idx, write_segment, &update_nonappendable| {
-                if let Some(point_version) = write_segment.point_version(point_id) {
-                    if point_version >= op_num {
-                        applied_points.insert(point_id);
-                        return Ok(false);
-                    }
+                if let Some(point_version) = write_segment.point_version(point_id)
+                    && point_version >= op_num
+                {
+                    applied_points.insert(point_id);
+                    return Ok(false);
                 }
 
                 let is_applied = if update_nonappendable || write_segment.is_appendable() {

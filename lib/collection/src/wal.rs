@@ -36,14 +36,6 @@ struct TestInternalStruct2 {
     b: i32,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
-enum TestRecord {
-    Struct1(TestInternalStruct1),
-    Struct2(TestInternalStruct2),
-}
-
 pub(super) type Result<T> = result::Result<T, WalError>;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -270,6 +262,14 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+
+    #[derive(Debug, Deserialize, Serialize)]
+    #[serde(rename_all = "snake_case")]
+    #[serde(untagged)]
+    enum TestRecord {
+        Struct1(TestInternalStruct1),
+        Struct2(TestInternalStruct2),
+    }
 
     #[test]
     fn test_wal() {

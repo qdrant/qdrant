@@ -263,7 +263,7 @@ impl TableOfContent {
     async fn get_collection_unchecked(
         &self,
         collection_name: &str,
-    ) -> Result<RwLockReadGuard<Collection>, StorageError> {
+    ) -> Result<RwLockReadGuard<'_, Collection>, StorageError> {
         let read_collection = self.collections.read().await;
 
         let real_collection_name = {
@@ -279,14 +279,14 @@ impl TableOfContent {
     pub async fn get_collection(
         &self,
         collection: &CollectionPass<'_>,
-    ) -> Result<RwLockReadGuard<Collection>, StorageError> {
+    ) -> Result<RwLockReadGuard<'_, Collection>, StorageError> {
         self.get_collection_unchecked(collection.name()).await
     }
 
     async fn get_collection_opt(
         &self,
         collection_name: String,
-    ) -> Option<RwLockReadGuard<Collection>> {
+    ) -> Option<RwLockReadGuard<'_, Collection>> {
         self.get_collection_unchecked(&collection_name).await.ok()
     }
 
