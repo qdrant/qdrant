@@ -23,6 +23,7 @@ const FALSES_DIRNAME: &str = "falses";
 
 /// Payload index for boolean values, in-memory via roaring bitmaps, stored in memory-mapped bitslices.
 pub struct MutableBoolIndex {
+    base_dir: PathBuf,
     indexed_count: usize,
     trues_count: usize,
     falses_count: usize,
@@ -30,7 +31,6 @@ pub struct MutableBoolIndex {
 }
 
 struct Storage {
-    base_dir: PathBuf,
     trues_flags: BufferedDynamicFlags,
     falses_flags: BufferedDynamicFlags,
 }
@@ -52,6 +52,7 @@ impl MutableBoolIndex {
         // If falses directory doesn't exist, assume the index doesn't exist on disk
         if !falses_dir.is_dir() && !create_if_missing {
             return Ok(Self {
+                base_dir: path.to_path_buf(),
                 storage: None,
                 indexed_count: 0,
                 trues_count: 0,
@@ -80,8 +81,8 @@ impl MutableBoolIndex {
         let falses_flags = BufferedDynamicFlags::new(falses_slice);
 
         Ok(Self {
+            base_dir: path.to_path_buf(),
             storage: Some(Storage {
-                base_dir: path.to_path_buf(),
                 trues_flags,
                 falses_flags,
             }),
@@ -369,13 +370,13 @@ impl PayloadFieldIndex for MutableBoolIndex {
 
         // Destructure to not forget any fields
         let Self {
+            base_dir: _,
             indexed_count,
             storage,
             trues_count,
             falses_count,
         } = self;
         let Storage {
-            base_dir: _,
             trues_flags,
             falses_flags,
         } = storage.as_ref().unwrap();
@@ -388,8 +389,8 @@ impl PayloadFieldIndex for MutableBoolIndex {
     }
 
     fn cleanup(self) -> OperationResult<()> {
-        if let Some(storage) = self.storage {
-            std::fs::remove_dir_all(storage.base_dir)?;
+        if self.base_dir.is_dir() {
+            std::fs::remove_dir_all(self.base_dir)?;
         };
 
         Ok(())
@@ -401,13 +402,13 @@ impl PayloadFieldIndex for MutableBoolIndex {
         };
 
         let Self {
+            base_dir: _,
             indexed_count: _,
             trues_count: _,
             falses_count: _,
             storage: _,
         } = self;
         let Storage {
-            base_dir: _,
             trues_flags,
             falses_flags,
         } = storage;
