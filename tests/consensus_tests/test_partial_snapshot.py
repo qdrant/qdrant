@@ -135,7 +135,7 @@ def test_partial_snapshot_empty(tmp_path: pathlib.Path):
     write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1000, recover_read= True)
 
     # Collection snapshot doesn't affect partial snapshot recovery timestamp
-    recovery_ts = get_telemetry(read_peer)['collections']['collections'][0]['shards'][0]['partial_snapshot']['recovery_timestamp']
+    recovery_ts = get_telemetry_collections(read_peer)[0]['shards'][0]['partial_snapshot']['recovery_timestamp']
     assert recovery_ts == 0
 
     # Ensure that both replicas are in sync (because of collection snapshot) and new partial snapshots are empty
@@ -145,8 +145,8 @@ def test_partial_snapshot_empty(tmp_path: pathlib.Path):
     recovered = recover_partial_snapshot_from(read_peer, write_peer, shard = 0)
     assert not recovered
 
-    # Partial snapshot recovery timestamp on read peer should be updated despite empty partial snapshot
-    recovery_ts = get_telemetry(read_peer)['collections']['collections'][0]['shards'][0]['partial_snapshot']['recovery_timestamp']
+    # recovery ts should be updated despite empty partial snapshot
+    recovery_ts = get_telemetry_collections(read_peer)[0]['shards'][0]['partial_snapshot']['recovery_timestamp']
     assert recovery_ts > 0
 
 

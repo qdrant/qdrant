@@ -757,6 +757,8 @@ async fn recover_partial_snapshot_from(
                     .get_shard(shard_id)
                     .ok_or_else(|| shard_not_found_error(shard_id))?;
 
+                // The replica is up to date so we bump the recovered timestamp
+                // This prevents CM from immediately trying to recover again
                 replica_set.partial_snapshot_meta.snapshot_recovered();
                 return Err(StorageError::EmptyPartialSnapshot { shard_id });
             }
