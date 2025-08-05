@@ -101,6 +101,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
+        id: docker-build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -257,6 +258,7 @@ jobs:
           poetry -C tests check --lock
           poetry -C tests install --no-root
       - name: Build Qdrant Docker image
+        id: docker-build
         uses: docker/build-push-action@v6
         with:
           context: .
