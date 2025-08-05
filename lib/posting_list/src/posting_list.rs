@@ -1,7 +1,6 @@
 use std::borrow::Borrow;
 use std::marker::PhantomData;
 
-use common::counter::conditioned_counter::ConditionedCounter;
 use common::types::PointOffsetType;
 use zerocopy::little_endian::U32;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -102,7 +101,6 @@ impl<V: PostingValue> PostingList<V> {
             var_size_data.borrow(),
             remainders,
             *last_id,
-            ConditionedCounter::never(),
         )
     }
 
