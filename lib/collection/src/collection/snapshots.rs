@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use common::tar_ext::BuilderExt;
+use common::tempfile_ext::MaybeTempPath;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
@@ -300,7 +301,7 @@ impl Collection {
     pub async fn restore_shard_snapshot(
         &self,
         shard_id: ShardId,
-        snapshot_path: &Path,
+        snapshot_path: MaybeTempPath,
         recovery_type: RecoveryType,
         this_peer_id: PeerId,
         is_distributed: bool,
@@ -317,8 +318,6 @@ impl Collection {
             CollectionResult::Ok(shard_holder)
         })
         .await??;
-
-        let snapshot_path = snapshot_path.to_path_buf();
 
         let collection_path = self.path.clone();
         let collection_name = self.name();
@@ -340,7 +339,13 @@ impl Collection {
                     &temp_dir,
                     cancel,
                 )
-                .await
+                .await?;
+
+            if let Err(err) = snapshot_path.close() {
+                log::error!("Failed to remove downloaded snapshot archive after recovery: {err}");
+            }
+
+            CollectionResult::Ok(())
         });
 
         // Flatten nested `Result<Result<()>>` into `Result<()>`

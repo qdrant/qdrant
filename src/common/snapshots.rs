@@ -10,6 +10,7 @@ use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
+use common::tempfile_ext::MaybeTempPath;
 use segment::data_types::manifest::SnapshotManifest;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
@@ -213,23 +214,16 @@ pub async fn recover_shard_snapshot(
             cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
 
         // `recover_shard_snapshot_impl` is *not* cancel safe
-        let result = recover_shard_snapshot_impl(
+        recover_shard_snapshot_impl(
             &toc,
             &collection,
             shard_id,
-            &snapshot_path,
+            snapshot_path,
             snapshot_priority,
             RecoveryType::Full,
             cancel,
         )
-        .await;
-
-        // Remove snapshot after recovery if downloaded
-        if let Err(err) = snapshot_path.close() {
-            log::error!("Failed to remove downloaded shards snapshot after recovery: {err}");
-        }
-
-        result
+        .await
     })
     .await??;
 
@@ -243,7 +237,7 @@ pub async fn recover_shard_snapshot_impl(
     toc: &TableOfContent,
     collection: &Collection,
     shard: ShardId,
-    snapshot_path: &std::path::Path,
+    snapshot_path: MaybeTempPath,
     priority: SnapshotPriority,
     recovery_type: RecoveryType,
     cancel: cancel::CancellationToken,
