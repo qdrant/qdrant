@@ -244,7 +244,7 @@ impl SimpleBoolIndex {
         self.memory.get(point_id).has_false()
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (bool, IdIter)> {
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (bool, IdIter<'_>)> {
         [
             (false, Box::new(self.memory.iter_has_false()) as IdIter),
             (true, Box::new(self.memory.iter_has_true()) as IdIter),

@@ -279,11 +279,10 @@ pub trait SegmentOptimizer {
 
                 // If we explicitly configure on_disk, but the segment storage type uses something
                 // that doesn't match, warn about it
-                if let Some(config_on_disk) = config_on_disk {
-                    if config_on_disk != config.storage_type.is_on_disk() {
+                if let Some(config_on_disk) = config_on_disk
+                    && config_on_disk != config.storage_type.is_on_disk() {
                         log::warn!("Collection config for vector {vector_name} has on_disk={config_on_disk:?} configured, but storage type for segment doesn't match it");
                     }
-                }
             });
         }
 
@@ -291,24 +290,24 @@ pub trait SegmentOptimizer {
             .iter_mut()
             .for_each(|(vector_name, config)| {
                 // Assign sparse index on disk
-                if let Some(sparse_config) = &collection_params.sparse_vectors {
-                    if let Some(params) = sparse_config.get(vector_name) {
-                        let config_on_disk = params
-                            .index
-                            .and_then(|index_params| index_params.on_disk)
-                            .unwrap_or(threshold_is_on_disk);
+                if let Some(sparse_config) = &collection_params.sparse_vectors
+                    && let Some(params) = sparse_config.get(vector_name)
+                {
+                    let config_on_disk = params
+                        .index
+                        .and_then(|index_params| index_params.on_disk)
+                        .unwrap_or(threshold_is_on_disk);
 
-                        // If mmap OR index is exceeded
-                        let is_big = threshold_is_on_disk || threshold_is_indexed;
+                    // If mmap OR index is exceeded
+                    let is_big = threshold_is_on_disk || threshold_is_indexed;
 
-                        let index_type = match (is_big, config_on_disk) {
-                            (true, true) => SparseIndexType::Mmap, // Big and configured on disk
-                            (true, false) => SparseIndexType::ImmutableRam, // Big and not on disk nor reached threshold
-                            (false, _) => SparseIndexType::MutableRam,      // Small
-                        };
+                    let index_type = match (is_big, config_on_disk) {
+                        (true, true) => SparseIndexType::Mmap, // Big and configured on disk
+                        (true, false) => SparseIndexType::ImmutableRam, // Big and not on disk nor reached threshold
+                        (false, _) => SparseIndexType::MutableRam,      // Small
+                    };
 
-                        config.index.index_type = index_type;
-                    }
+                    config.index.index_type = index_type;
                 }
             });
 

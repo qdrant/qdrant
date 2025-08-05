@@ -219,14 +219,14 @@ impl Validate for Batch {
             BatchVectorStruct::Image(_) => {}
             BatchVectorStruct::Object(_) => {}
         }
-        if let Some(payload_vector) = &batch.payloads {
-            if payload_vector.len() != batch.ids.len() {
-                return Err(create_error(format!(
-                    "number of ids and payloads must be equal ({} != {})",
-                    batch.ids.len(),
-                    payload_vector.len(),
-                )));
-            }
+        if let Some(payload_vector) = &batch.payloads
+            && payload_vector.len() != batch.ids.len()
+        {
+            return Err(create_error(format!(
+                "number of ids and payloads must be equal ({} != {})",
+                batch.ids.len(),
+                payload_vector.len(),
+            )));
         }
         Ok(())
     }

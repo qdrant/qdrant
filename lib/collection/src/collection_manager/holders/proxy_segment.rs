@@ -683,7 +683,7 @@ impl SegmentEntry for ProxySegment {
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<NamedVectors> {
+    ) -> OperationResult<NamedVectors<'_>> {
         let mut result = NamedVectors::default();
         for vector_name in self
             .wrapped_segment
@@ -1258,10 +1258,10 @@ impl SegmentEntry for ProxySegment {
                     indexed_fields.remove(field_name);
                 }
                 ProxyIndexChange::DeleteIfIncompatible(_, schema) => {
-                    if let Some(existing_schema) = indexed_fields.get(field_name) {
-                        if existing_schema != schema {
-                            indexed_fields.remove(field_name);
-                        }
+                    if let Some(existing_schema) = indexed_fields.get(field_name)
+                        && existing_schema != schema
+                    {
+                        indexed_fields.remove(field_name);
                     }
                 }
             }

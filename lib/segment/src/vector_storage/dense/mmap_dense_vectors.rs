@@ -269,10 +269,10 @@ fn ensure_mmap_file_size(path: &Path, header: &[u8], size: Option<u64>) -> Opera
     // Create file, and make it the correct size
     let mut file = File::create(path)?;
     file.write_all(header)?;
-    if let Some(size) = size {
-        if size > header.len() as u64 {
-            file.set_len(size)?;
-        }
+    if let Some(size) = size
+        && size > header.len() as u64
+    {
+        file.set_len(size)?;
     }
     Ok(())
 }

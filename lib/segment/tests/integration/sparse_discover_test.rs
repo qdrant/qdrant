@@ -38,7 +38,10 @@ fn convert_to_sparse_vector(vector: &[VectorElementType]) -> SparseVector {
     sparse_vector
 }
 
-fn random_named_vector<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> (NamedVectors, NamedVectors) {
+fn random_named_vector<R: Rng + ?Sized>(
+    rnd: &mut R,
+    dim: usize,
+) -> (NamedVectors<'_>, NamedVectors<'_>) {
     let dense_vector = random_vector(rnd, dim);
     let sparse_vector = convert_to_sparse_vector(&dense_vector);
 

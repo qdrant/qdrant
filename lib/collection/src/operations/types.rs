@@ -1482,7 +1482,7 @@ impl From<tempfile::PathPersistError> for CollectionError {
 pub type CollectionResult<T> = Result<T, CollectionError>;
 
 impl RecordInternal {
-    pub fn get_vector_by_name(&self, name: &VectorName) -> Option<VectorRef> {
+    pub fn get_vector_by_name(&self, name: &VectorName) -> Option<VectorRef<'_>> {
         match &self.vector {
             Some(VectorStructInternal::Single(vector)) => {
                 (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(vector))

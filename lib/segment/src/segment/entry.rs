@@ -336,7 +336,7 @@ impl SegmentEntry for Segment {
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<NamedVectors> {
+    ) -> OperationResult<NamedVectors<'_>> {
         let mut result = NamedVectors::default();
         for vector_name in self.vector_data.keys() {
             if let Some(vec) = self.vector(vector_name, point_id, hw_counter)? {

@@ -241,7 +241,7 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
         &self,
         key: PointOffsetType,
         deleted: bool,
-        vector: Option<TypedMultiDenseVectorRef<T>>,
+        vector: Option<TypedMultiDenseVectorRef<'_, T>>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let mut record = StoredMultiDenseVector {
@@ -335,12 +335,12 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
     }
 
     /// Panics if key is out of bounds
-    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
+    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<'_, T> {
         self.get_multi_opt(key).expect("vector not found")
     }
 
     /// None if key is out of bounds
-    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>> {
+    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<'_, T>> {
         self.vectors_metadata.get(key as usize).map(|metadata| {
             let flattened_vectors = self
                 .vectors
@@ -356,7 +356,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
     fn get_multi_opt_sequential(
         &self,
         key: PointOffsetType,
-    ) -> Option<TypedMultiDenseVectorRef<T>> {
+    ) -> Option<TypedMultiDenseVectorRef<'_, T>> {
         // No sequential optimizations available for in memory storage.
         self.get_multi_opt(key)
     }
@@ -400,15 +400,15 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
         self.vectors_metadata.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
         self.get_vector_opt(key).expect("vector not found")
     }
 
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
         self.get_vector(key)
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.get_multi_opt(key).map(|multi_dense_vector| {
             CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
                 multi_dense_vector,

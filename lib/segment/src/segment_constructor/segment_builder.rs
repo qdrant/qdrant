@@ -177,10 +177,10 @@ impl SegmentBuilder {
         field: &PayloadKeyType,
         schema: &PayloadFieldSchema,
     ) {
-        if let Some(existing_schema) = self.indexed_fields.get(field) {
-            if existing_schema != schema {
-                self.indexed_fields.remove(field);
-            }
+        if let Some(existing_schema) = self.indexed_fields.get(field)
+            && existing_schema != schema
+        {
+            self.indexed_fields.remove(field);
         }
     }
 

@@ -93,7 +93,7 @@ impl BatchedPoints {
         &self.points
     }
 
-    pub fn iter_batches(&self, skip_count: usize) -> impl Iterator<Item = Batch> {
+    pub fn iter_batches(&self, skip_count: usize) -> impl Iterator<Item = Batch<'_>> {
         self.batches
             .iter()
             .filter(move |batch| batch.end > skip_count)

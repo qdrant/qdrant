@@ -131,7 +131,9 @@ fn basic_gpu_test() {
     // Run computeation command. Threads count is the inputs count.
     context.dispatch(numbers_count, 1, 1).unwrap();
     // Add barrier to ensure that all writes to the storage buffer are visible to the next command.
-    context.barrier_buffers(&[storage_buffer.clone()]).unwrap();
+    context
+        .barrier_buffers(std::slice::from_ref(&storage_buffer))
+        .unwrap();
     // Run GPU and wait finish.
     context.run().unwrap();
     context.wait_finish(context_timeout).unwrap();

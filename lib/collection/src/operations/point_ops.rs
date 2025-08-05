@@ -360,7 +360,7 @@ pub struct PointStructPersisted {
 }
 
 impl PointStructPersisted {
-    pub fn get_vectors(&self) -> NamedVectors {
+    pub fn get_vectors(&self) -> NamedVectors<'_> {
         let mut named_vectors = NamedVectors::default();
         match &self.vector {
             VectorStructPersisted::Single(vector) => named_vectors.insert(

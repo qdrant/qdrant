@@ -109,7 +109,7 @@ impl PostingList {
         }
     }
 
-    pub fn iter(&self) -> PostingListIterator {
+    pub fn iter(&self) -> PostingListIterator<'_> {
         PostingListIterator::new(&self.elements)
     }
 }

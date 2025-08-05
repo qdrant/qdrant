@@ -23,10 +23,10 @@ impl ClockMap {
     pub fn load_or_default(path: &Path) -> Result<Self> {
         let result = Self::load(path);
 
-        if let Err(Error::Io(err)) = &result {
-            if err.kind() == std::io::ErrorKind::NotFound {
-                return Ok(Self::default());
-            }
+        if let Err(Error::Io(err)) = &result
+            && err.kind() == std::io::ErrorKind::NotFound
+        {
+            return Ok(Self::default());
         }
 
         result
@@ -284,10 +284,10 @@ impl RecoveryPoint {
     /// Remove clocks from this recovery point, that are equal to the clocks in the `other`.
     pub fn remove_clocks_equal_to(&mut self, other: &Self) {
         for (key, (other_tick, _)) in &other.clocks {
-            if let Some((tick, _)) = self.clocks.get(key) {
-                if tick == other_tick {
-                    self.clocks.remove(key);
-                }
+            if let Some((tick, _)) = self.clocks.get(key)
+                && tick == other_tick
+            {
+                self.clocks.remove(key);
             }
         }
     }
@@ -301,11 +301,11 @@ impl RecoveryPoint {
 
         let mut is_equal = false;
 
-        if let Some(&(tick, _)) = self.clocks.get(&key) {
-            if tick >= tag.clock_tick {
-                self.clocks.remove(&key);
-                is_equal = tick == tag.clock_tick;
-            }
+        if let Some(&(tick, _)) = self.clocks.get(&key)
+            && tick >= tag.clock_tick
+        {
+            self.clocks.remove(&key);
+            is_equal = tick == tag.clock_tick;
         }
 
         is_equal

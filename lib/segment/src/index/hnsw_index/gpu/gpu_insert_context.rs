@@ -336,7 +336,9 @@ impl<'a> GpuInsertContext<'a> {
         )?;
         self.context.dispatch(requests.len(), 1, 1)?;
         self.context
-            .barrier_buffers(&[self.insert_resources.responses_buffer.clone()])
+            .barrier_buffers(std::slice::from_ref(
+                &self.insert_resources.responses_buffer,
+            ))
             .unwrap();
         self.context.run()?;
         self.context.wait_finish(GPU_TIMEOUT)?;

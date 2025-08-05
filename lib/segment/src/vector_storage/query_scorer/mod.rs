@@ -49,8 +49,8 @@ pub trait QueryScorerBytes {
 /// In that case the score value will be different but the ranking will be the same.
 /// We do that because of performance reasons and complex sort ordering of the vectors when applying the post-processing step.
 pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
-    multi_dense_a: TypedMultiDenseVectorRef<T>,
-    multi_dense_b: TypedMultiDenseVectorRef<T>,
+    multi_dense_a: TypedMultiDenseVectorRef<'_, T>,
+    multi_dense_b: TypedMultiDenseVectorRef<'_, T>,
 ) -> ScoreType {
     debug_assert!(!multi_dense_a.is_empty());
     debug_assert!(!multi_dense_b.is_empty());
@@ -72,8 +72,8 @@ pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
 
 fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T>>(
     multi_vector_config: &MultiVectorConfig,
-    multi_dense_a: TypedMultiDenseVectorRef<T>,
-    multi_dense_b: TypedMultiDenseVectorRef<T>,
+    multi_dense_a: TypedMultiDenseVectorRef<'_, T>,
+    multi_dense_b: TypedMultiDenseVectorRef<'_, T>,
 ) -> ScoreType {
     match multi_vector_config.comparator {
         MultiVectorComparator::MaxSim => {

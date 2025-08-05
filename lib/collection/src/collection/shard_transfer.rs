@@ -221,50 +221,50 @@ impl Collection {
         let dest_replica_set =
             shard_holder.get_shard(transfer.to_shard_id.unwrap_or(transfer.shard_id));
 
-        if let Some(replica_set) = dest_replica_set {
-            if replica_set.peer_state(transfer.to).is_some() {
-                // Promote *destination* replica/shard to `Active` if:
-                //
-                // - replica *exists*
-                //   - replica should be created when shard transfer (or resharding) is started
-                //   - replica might *not* exist, if it (or the whole *peer*) was removed right
-                //     before transfer is finished
-                // - transfer is *not* resharding
-                //   - resharding requires multiple transfers, so destination shard is promoted
-                //     *explicitly* when all transfers are finished
+        if let Some(replica_set) = dest_replica_set
+            && replica_set.peer_state(transfer.to).is_some()
+        {
+            // Promote *destination* replica/shard to `Active` if:
+            //
+            // - replica *exists*
+            //   - replica should be created when shard transfer (or resharding) is started
+            //   - replica might *not* exist, if it (or the whole *peer*) was removed right
+            //     before transfer is finished
+            // - transfer is *not* resharding
+            //   - resharding requires multiple transfers, so destination shard is promoted
+            //     *explicitly* when all transfers are finished
 
-                // TODO(resharding): Do not change replica state at all, when finishing resharding transfer?
-                //
-                // We switch replica into correct state when *starting* resharding transfer, and
-                // we want to *keep* it in the same state *after* resharding transfer is finished...
-                let state = if is_resharding_transfer {
-                    let resharding_direction =
-                        self.resharding_state().await.map(|state| state.direction);
+            // TODO(resharding): Do not change replica state at all, when finishing resharding transfer?
+            //
+            // We switch replica into correct state when *starting* resharding transfer, and
+            // we want to *keep* it in the same state *after* resharding transfer is finished...
+            let state = if is_resharding_transfer {
+                let resharding_direction =
+                    self.resharding_state().await.map(|state| state.direction);
 
-                    match resharding_direction {
-                        Some(ReshardingDirection::Up) => ReplicaState::Resharding,
-                        Some(ReshardingDirection::Down) => ReplicaState::ReshardingScaleDown,
-                        None => {
-                            log::error!(
-                                "Can't finish resharding shard transfer correctly, \
+                match resharding_direction {
+                    Some(ReshardingDirection::Up) => ReplicaState::Resharding,
+                    Some(ReshardingDirection::Down) => ReplicaState::ReshardingScaleDown,
+                    None => {
+                        log::error!(
+                            "Can't finish resharding shard transfer correctly, \
                                  because resharding is not in progress anymore!",
-                            );
+                        );
 
-                            ReplicaState::Dead
-                        }
+                        ReplicaState::Dead
                     }
-                } else {
-                    ReplicaState::Active
-                };
-
-                if transfer.to == self.this_peer_id {
-                    replica_set.set_replica_state(transfer.to, state)?;
-                } else {
-                    replica_set.add_remote(transfer.to, state).await?;
                 }
+            } else {
+                ReplicaState::Active
+            };
 
-                is_dest_replica_active = state == ReplicaState::Active;
+            if transfer.to == self.this_peer_id {
+                replica_set.set_replica_state(transfer.to, state)?;
+            } else {
+                replica_set.add_remote(transfer.to, state).await?;
             }
+
+            is_dest_replica_active = state == ReplicaState::Active;
         }
 
         // Handle *source* replica

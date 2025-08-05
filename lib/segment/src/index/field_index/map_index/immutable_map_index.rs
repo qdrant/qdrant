@@ -510,7 +510,7 @@ where
             .map(|(k, entry)| (k.borrow(), entry.count as usize))
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter)> {
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> {
         self.value_to_points.keys().map(move |k| {
             (
                 k.borrow(),

@@ -396,7 +396,7 @@ impl FieldIndex {
         }
     }
 
-    pub fn as_numeric(&self) -> Option<NumericFieldIndex> {
+    pub fn as_numeric(&self) -> Option<NumericFieldIndex<'_>> {
         match self {
             FieldIndex::IntIndex(index) => Some(NumericFieldIndex::IntIndex(index.inner())),
             FieldIndex::DatetimeIndex(index) => Some(NumericFieldIndex::IntIndex(index.inner())),
@@ -412,7 +412,7 @@ impl FieldIndex {
         }
     }
 
-    pub fn as_facet_index(&self) -> Option<FacetIndexEnum> {
+    pub fn as_facet_index(&self) -> Option<FacetIndexEnum<'_>> {
         match self {
             FieldIndex::KeywordIndex(index) => Some(FacetIndexEnum::Keyword(index)),
             FieldIndex::IntMapIndex(index) => Some(FacetIndexEnum::Int(index)),

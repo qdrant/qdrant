@@ -684,7 +684,7 @@ impl StructPayloadIndex {
     }
 
     /// Select which type of PayloadIndex to use for the field
-    fn selector(&self, payload_schema: &PayloadFieldSchema) -> IndexSelector {
+    fn selector(&self, payload_schema: &PayloadFieldSchema) -> IndexSelector<'_> {
         let is_on_disk = payload_schema.is_on_disk();
 
         match &self.storage_type {
@@ -721,7 +721,7 @@ impl StructPayloadIndex {
     fn selector_with_type(
         &self,
         index_type: &FullPayloadIndexType,
-    ) -> OperationResult<IndexSelector> {
+    ) -> OperationResult<IndexSelector<'_>> {
         let selector = match index_type.storage_type {
             payload_config::StorageType::Gridstore => {
                 IndexSelector::Gridstore(IndexSelectorGridstore { dir: &self.path })
@@ -771,7 +771,7 @@ impl StructPayloadIndex {
         Ok(selector)
     }
 
-    pub fn get_facet_index(&self, key: &JsonPath) -> OperationResult<FacetIndexEnum> {
+    pub fn get_facet_index(&self, key: &JsonPath) -> OperationResult<FacetIndexEnum<'_>> {
         self.field_indexes
             .get(key)
             .and_then(|index| index.iter().find_map(|index| index.as_facet_index()))

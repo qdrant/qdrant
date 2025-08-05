@@ -363,10 +363,10 @@ fn convert_histogram(
             prev = None;
         }
     }
-    if let Some(prev) = prev {
-        if cumulative_count != total_count {
-            result.push((prev, cumulative_count));
-        }
+    if let Some(prev) = prev
+        && cumulative_count != total_count
+    {
+        result.push((prev, cumulative_count));
     }
     result
 }

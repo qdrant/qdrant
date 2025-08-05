@@ -481,14 +481,12 @@ impl CollectionPrefetch {
             lookup_other_collection = lookup_collection != collection
         };
 
-        if !lookup_other_collection {
-            if let Some(Query::Vector(vector_query)) = &self.query {
-                if let VectorQuery::Nearest(VectorInputInternal::Id(id)) = vector_query {
-                    refs.push(*id);
-                }
-                refs.extend(vector_query.get_referenced_ids())
-            };
-        }
+        if !lookup_other_collection && let Some(Query::Vector(vector_query)) = &self.query {
+            if let VectorQuery::Nearest(VectorInputInternal::Id(id)) = vector_query {
+                refs.push(*id);
+            }
+            refs.extend(vector_query.get_referenced_ids())
+        };
 
         for prefetch in &self.prefetch {
             refs.extend(prefetch.get_referenced_point_ids_on_collection(collection))
@@ -590,14 +588,12 @@ impl CollectionQueryRequest {
             lookup_other_collection = lookup_collection != collection
         };
 
-        if !lookup_other_collection {
-            if let Some(Query::Vector(vector_query)) = &self.query {
-                if let VectorQuery::Nearest(VectorInputInternal::Id(id)) = vector_query {
-                    refs.push(*id);
-                }
-                refs.extend(vector_query.get_referenced_ids())
-            };
-        }
+        if !lookup_other_collection && let Some(Query::Vector(vector_query)) = &self.query {
+            if let VectorQuery::Nearest(VectorInputInternal::Id(id)) = vector_query {
+                refs.push(*id);
+            }
+            refs.extend(vector_query.get_referenced_ids())
+        };
 
         for prefetch in &self.prefetch {
             refs.extend(prefetch.get_referenced_point_ids_on_collection(collection))
@@ -700,12 +696,12 @@ impl CollectionQueryRequest {
         }
 
         // Check that fusion queries are not combined with a using vector name
-        if let Some(Query::Fusion(_)) = query {
-            if using != DEFAULT_VECTOR_NAME {
-                return Err(CollectionError::bad_request(
-                    "Fusion queries cannot be combined with the 'using' field.",
-                ));
-            }
+        if let Some(Query::Fusion(_)) = query
+            && using != DEFAULT_VECTOR_NAME
+        {
+            return Err(CollectionError::bad_request(
+                "Fusion queries cannot be combined with the 'using' field.",
+            ));
         }
 
         Ok(())

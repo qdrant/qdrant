@@ -772,16 +772,15 @@ impl LocalShard {
     pub async fn on_strict_mode_config_update(&mut self) {
         let config = self.collection_config.read().await;
 
-        if let Some(strict_mode_config) = &config.strict_mode_config {
-            if strict_mode_config.enabled == Some(true) {
-                // update read rate limiter
-                if let Some(read_rate_limit_per_min) = strict_mode_config.read_rate_limit {
-                    let new_read_rate_limiter =
-                        RateLimiter::new_per_minute(read_rate_limit_per_min);
-                    self.read_rate_limiter
-                        .replace(parking_lot::Mutex::new(new_read_rate_limiter));
-                    return;
-                }
+        if let Some(strict_mode_config) = &config.strict_mode_config
+            && strict_mode_config.enabled == Some(true)
+        {
+            // update read rate limiter
+            if let Some(read_rate_limit_per_min) = strict_mode_config.read_rate_limit {
+                let new_read_rate_limiter = RateLimiter::new_per_minute(read_rate_limit_per_min);
+                self.read_rate_limiter
+                    .replace(parking_lot::Mutex::new(new_read_rate_limiter));
+                return;
             }
         }
         // remove read rate limiter for all other situations

@@ -26,10 +26,10 @@ impl Mem {
 
     pub fn total_memory_bytes(&self) -> u64 {
         #[cfg(target_os = "linux")]
-        if let Some(cgroups) = &self.cgroups {
-            if let Some(memory_limit_bytes) = cgroups.memory_limit_bytes() {
-                return memory_limit_bytes;
-            }
+        if let Some(cgroups) = &self.cgroups
+            && let Some(memory_limit_bytes) = cgroups.memory_limit_bytes()
+        {
+            return memory_limit_bytes;
         }
 
         self.sysinfo.total_memory_bytes()
@@ -37,10 +37,10 @@ impl Mem {
 
     pub fn available_memory_bytes(&self) -> u64 {
         #[cfg(target_os = "linux")]
-        if let Some(cgroups) = &self.cgroups {
-            if let Some(memory_limit_bytes) = cgroups.memory_limit_bytes() {
-                return memory_limit_bytes.saturating_sub(cgroups.used_memory_bytes());
-            }
+        if let Some(cgroups) = &self.cgroups
+            && let Some(memory_limit_bytes) = cgroups.memory_limit_bytes()
+        {
+            return memory_limit_bytes.saturating_sub(cgroups.used_memory_bytes());
         }
 
         self.sysinfo.available_memory_bytes()

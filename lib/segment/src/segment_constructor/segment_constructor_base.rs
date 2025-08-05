@@ -1443,13 +1443,13 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
         // On migration error, clean up and remove all new storage files
         Err(err) => {
             let storage_dir = mmap_payload_storage::storage_dir(segment_path);
-            if storage_dir.is_dir() {
-                if let Err(err) = std::fs::remove_dir_all(&storage_dir) {
-                    log::error!(
-                        "Payload storage migration to mmap failed, failed to remove mmap files in {} for cleanup: {err}",
-                        storage_dir.display(),
-                    );
-                }
+            if storage_dir.is_dir()
+                && let Err(err) = std::fs::remove_dir_all(&storage_dir)
+            {
+                log::error!(
+                    "Payload storage migration to mmap failed, failed to remove mmap files in {} for cleanup: {err}",
+                    storage_dir.display(),
+                );
             }
             return Err(err);
         }

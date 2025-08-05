@@ -107,7 +107,7 @@ impl QueryContext {
         &mut self.idf_stats
     }
 
-    pub fn get_segment_query_context(&self) -> SegmentQueryContext {
+    pub fn get_segment_query_context(&self) -> SegmentQueryContext<'_> {
         SegmentQueryContext {
             query_context: self,
             deleted_points: None,
@@ -140,7 +140,7 @@ impl<'a> SegmentQueryContext<'a> {
         self.query_context.available_point_count()
     }
 
-    pub fn get_vector_context(&self, vector_name: &VectorName) -> VectorQueryContext {
+    pub fn get_vector_context(&self, vector_name: &VectorName) -> VectorQueryContext<'_> {
         VectorQueryContext {
             search_optimized_threshold_kb: self.query_context.search_optimized_threshold_kb,
             is_stopped: Some(&self.query_context.is_stopped),

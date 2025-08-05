@@ -58,7 +58,7 @@ impl<'a, V: PostingValue> PostingListView<'a, V> {
         }
     }
 
-    pub fn components(&self) -> PostingListComponents<SizedTypeFor<V>> {
+    pub fn components(&self) -> PostingListComponents<'_, SizedTypeFor<V>> {
         let Self {
             id_data,
             chunks,

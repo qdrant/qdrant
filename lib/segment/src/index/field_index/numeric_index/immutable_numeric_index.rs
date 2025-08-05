@@ -69,14 +69,14 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
     }
 
     fn remove(&mut self, key: &Point<T>) -> bool {
-        if let Ok(index) = self.data.binary_search(key) {
-            if let Some(is_deleted) = self.deleted.get_mut(index).as_deref_mut() {
-                if !*is_deleted {
-                    self.deleted_count += 1;
-                    *is_deleted = true;
-                }
-                return true;
+        if let Ok(index) = self.data.binary_search(key)
+            && let Some(is_deleted) = self.deleted.get_mut(index).as_deref_mut()
+        {
+            if !*is_deleted {
+                self.deleted_count += 1;
+                *is_deleted = true;
             }
+            return true;
         }
         false
     }

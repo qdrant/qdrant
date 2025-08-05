@@ -104,9 +104,9 @@ pub async fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Collecti
 
 /// Remove the file if it exists. Print a warning if the file can't be removed.
 async fn cleanup_file(path: &Path) {
-    if let Err(err) = tokio::fs::remove_file(path).await {
-        if err.kind() != std::io::ErrorKind::NotFound {
-            log::warn!("Failed to remove file {}: {err}", path.display());
-        }
+    if let Err(err) = tokio::fs::remove_file(path).await
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        log::warn!("Failed to remove file {}: {err}", path.display());
     }
 }

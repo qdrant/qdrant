@@ -258,7 +258,7 @@ pub fn get_geo_polygon_checkers(
     index: &FieldIndex,
     geo_polygon: GeoPolygon,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn> {
+) -> Option<ConditionCheckerFn<'_>> {
     let polygon_wrapper = geo_polygon.convert();
     let hw_counter = hw_acc.get_counter_cell();
     match index {
@@ -284,7 +284,7 @@ pub fn get_geo_radius_checkers(
     index: &FieldIndex,
     geo_radius: GeoRadius,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn> {
+) -> Option<ConditionCheckerFn<'_>> {
     let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
@@ -307,7 +307,7 @@ pub fn get_geo_bounding_box_checkers(
     index: &FieldIndex,
     geo_bounding_box: GeoBoundingBox,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn> {
+) -> Option<ConditionCheckerFn<'_>> {
     let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
@@ -332,7 +332,7 @@ pub fn get_range_checkers(
     index: &FieldIndex,
     range: RangeInterface,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn> {
+) -> Option<ConditionCheckerFn<'_>> {
     match range {
         RangeInterface::Float(range) => get_float_range_checkers(index, range, hw_acc),
         RangeInterface::DateTime(range) => get_datetime_range_checkers(index, range, hw_acc),
@@ -343,7 +343,7 @@ pub fn get_float_range_checkers(
     index: &FieldIndex,
     range: Range<FloatPayloadType>,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn> {
+) -> Option<ConditionCheckerFn<'_>> {
     let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::IntIndex(num_index) => {
@@ -371,7 +371,7 @@ pub fn get_datetime_range_checkers(
     index: &FieldIndex,
     range: Range<DateTimePayloadType>,
     hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn> {
+) -> Option<ConditionCheckerFn<'_>> {
     match index {
         FieldIndex::DatetimeIndex(num_index) => {
             let range = range.map(|dt| dt.timestamp());
@@ -414,7 +414,7 @@ fn get_is_empty_indexes(indexes: &[FieldIndex]) -> (Option<&MmapNullIndex>, Opti
 fn get_null_index_is_empty_checker(
     null_index: &MmapNullIndex,
     is_empty: bool,
-) -> ConditionCheckerFn {
+) -> ConditionCheckerFn<'_> {
     Box::new(move |point_id: PointOffsetType| null_index.values_is_empty(point_id) == is_empty)
 }
 
@@ -439,7 +439,7 @@ fn get_fallback_is_empty_checker<'a>(
 ///
 /// * `index` - index to check
 /// * `is_empty` - if the field should be empty
-fn get_is_empty_checker(index: &FieldIndex, is_empty: bool) -> Option<ConditionCheckerFn> {
+fn get_is_empty_checker(index: &FieldIndex, is_empty: bool) -> Option<ConditionCheckerFn<'_>> {
     match index {
         FieldIndex::NullIndex(null_index) => {
             Some(get_null_index_is_empty_checker(null_index, is_empty))
@@ -457,7 +457,7 @@ fn get_is_empty_checker(index: &FieldIndex, is_empty: bool) -> Option<ConditionC
     }
 }
 
-fn get_is_null_checker(index: &FieldIndex, is_null: bool) -> Option<ConditionCheckerFn> {
+fn get_is_null_checker(index: &FieldIndex, is_null: bool) -> Option<ConditionCheckerFn<'_>> {
     match index {
         FieldIndex::NullIndex(null_index) => Some(Box::new(move |point_id: PointOffsetType| {
             null_index.values_is_null(point_id) == is_null

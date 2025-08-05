@@ -98,12 +98,12 @@ impl<
     }
 
     /// Panics if key is not found
-    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
+    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<'_, T> {
         self.get_multi_opt(key).expect("vector not found")
     }
 
     /// Returns None if key is not found
-    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>> {
+    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<'_, T>> {
         self.offsets
             .get(key as VectorOffsetType)
             .and_then(|mmap_offset| {
@@ -123,7 +123,7 @@ impl<
     fn get_multi_opt_sequential(
         &self,
         key: PointOffsetType,
-    ) -> Option<TypedMultiDenseVectorRef<T>> {
+    ) -> Option<TypedMultiDenseVectorRef<'_, T>> {
         self.offsets
             .get_sequential(key as VectorOffsetType)
             .and_then(|mmap_offset| {
@@ -192,11 +192,11 @@ impl<
         self.offsets.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
         self.get_vector_opt(key).expect("vector not found")
     }
 
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
         self.get_multi_opt_sequential(key)
             .map(|multi_dense_vector| {
                 CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
@@ -206,7 +206,7 @@ impl<
             .expect("vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.get_multi_opt(key).map(|multi_dense_vector| {
             CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
                 multi_dense_vector,

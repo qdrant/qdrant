@@ -654,9 +654,11 @@ impl Collection {
                 // Prevents undersampling warning in case there are not enough data to merge.
                 let is_enough = merged.len() == query_info.take;
 
-                if number_of_shards > 1 && is_enough && best_last_result.is_some() {
+                if let Some(best_last_result) = best_last_result
+                    && number_of_shards > 1
+                    && is_enough
+                {
                     let worst_merged_point = merged.last();
-                    let best_last_result = best_last_result.unwrap();
                     if let Some(worst_merged_point) = worst_merged_point {
                         self.check_undersampling(worst_merged_point, &best_last_result, order);
                     }
