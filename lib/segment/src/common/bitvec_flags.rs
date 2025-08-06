@@ -9,7 +9,7 @@ use crate::common::buffered_dynamic_flags::BufferedDynamicFlags;
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 
-/// A buffered, growable, and persistent bitslice with fast in-memory roaring bitmap.
+/// A buffered, growable, and persistent bitslice with a separate in-memory bitvec.
 ///
 /// Use [`RoaringFlags`][1] if you need a reference to a bitmap.
 ///
