@@ -143,18 +143,9 @@ jobs:
         with:
           context: tools/schema2openapi
           tags: schema2openapi
-          cache-from: |
-            type=gha,scope=${{ github.ref }}-schema2openapi
-            type=gha,scope=${{ github.base_ref }}-schema2openapi
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}-schema2openapi
           load: true
           build-args: |
             PROFILE=ci
-      - name: Cancel other jobs in a run if Docker build failed
-        if: failure() && steps.docker-build.outcome == 'failure'
-        uses: ./.github/actions/cancel-workflow-run
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
