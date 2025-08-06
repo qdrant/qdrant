@@ -40,9 +40,9 @@ pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement, S: Chunke
 impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> AppendableMmapDenseVectorStorage<T, S> {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
-    fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
+    fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
         if !deleted && self.vectors.len() <= key as usize {
-            return Ok(false);
+            return false;
         }
 
         // mark deletion
@@ -55,7 +55,7 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> AppendableMmapDenseV
             self.deleted_count -= 1;
         }
 
-        Ok(previous)
+        previous
     }
 
     /// Populate all pages in the mmap.
@@ -155,7 +155,7 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
         let vector = T::slice_from_float_cow(Cow::from(vector));
         self.vectors
             .insert(key as VectorOffsetType, vector.as_ref(), hw_counter)?;
-        self.set_deleted(key, false)?;
+        self.set_deleted(key, false);
         Ok(())
     }
 
@@ -171,7 +171,7 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
             // Do not perform preprocessing - vectors should be already processed
             let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
             let new_id = self.vectors.push(other_vector.as_ref(), &disposed_hw)?;
-            self.set_deleted(new_id as PointOffsetType, other_deleted)?;
+            self.set_deleted(new_id as PointOffsetType, other_deleted);
         }
         let end_index = self.vectors.len() as PointOffsetType;
         Ok(start_index..end_index)
@@ -200,7 +200,7 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
-        self.set_deleted(key, true)
+        Ok(self.set_deleted(key, true))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {

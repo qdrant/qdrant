@@ -113,17 +113,14 @@ impl MmapSparseVectorStorage {
         })
     }
 
-    fn set_deleted_flag(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
-        Ok(self.deleted.set(key, deleted))
-    }
-
     #[inline]
-    fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
+    fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
         if !deleted && key as usize >= self.next_point_offset {
-            return Ok(false);
+            return false;
         }
+
         // set deleted flag
-        let previous_value = self.set_deleted_flag(key, deleted)?;
+        let previous_value = self.deleted.set(key, deleted);
 
         // update deleted_count if it changed
         match (previous_value, deleted) {
@@ -131,7 +128,7 @@ impl MmapSparseVectorStorage {
             (true, false) => self.deleted_count = self.deleted_count.saturating_sub(1),
             _ => {}
         }
-        Ok(previous_value)
+        previous_value
     }
 
     fn update_stored(
@@ -247,7 +244,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     ) -> OperationResult<()> {
         let vector = <&SparseVector>::try_from(vector)?;
         debug_assert!(vector.is_sorted(), "Vector is not sorted {vector:?}");
-        self.set_deleted(key, false)?;
+        self.set_deleted(key, false);
         self.update_stored(key, Some(vector), hw_counter)?;
         Ok(())
     }
@@ -266,7 +263,7 @@ impl VectorStorage for MmapSparseVectorStorage {
             let other_vector = other_vector.as_vec_ref().try_into()?;
             let new_id = self.next_point_offset as PointOffsetType;
             self.next_point_offset += 1;
-            self.set_deleted(new_id, other_deleted)?;
+            self.set_deleted(new_id, other_deleted);
 
             let vector = (!other_deleted).then_some(other_vector);
             self.update_stored(new_id, vector, &hw_counter)?;
@@ -306,7 +303,7 @@ impl VectorStorage for MmapSparseVectorStorage {
         &mut self,
         key: common::types::PointOffsetType,
     ) -> crate::common::operation_error::OperationResult<bool> {
-        let was_deleted = !self.set_deleted(key, true)?;
+        let was_deleted = !self.set_deleted(key, true);
 
         let hw_counter = HardwareCounterCell::disposable(); // Deletions not measured
         self.update_stored(key, None, &hw_counter)?;

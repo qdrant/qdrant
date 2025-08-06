@@ -55,9 +55,9 @@ impl<
 {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
-    fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
+    fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
         if !deleted && self.vectors.len() <= key as usize {
-            return Ok(false);
+            return false;
         }
 
         // set value
@@ -70,7 +70,7 @@ impl<
             self.deleted_count -= 1;
         }
 
-        Ok(previous)
+        previous
     }
 
     /// Populate all pages in the mmap.
@@ -267,7 +267,7 @@ impl<
         )?;
         self.offsets
             .insert(key as VectorOffsetType, &[offset], hw_counter)?;
-        self.set_deleted(key, false)?;
+        self.set_deleted(key, false);
 
         Ok(())
     }
@@ -285,7 +285,7 @@ impl<
             let other_vector: VectorRef = other_vector.as_vec_ref();
             let new_id = self.offsets.len() as PointOffsetType;
             self.insert_vector(new_id, other_vector, &disposed_hw_counter)?;
-            self.set_deleted(new_id, other_deleted)?;
+            self.set_deleted(new_id, other_deleted);
         }
         let end_index = self.offsets.len() as PointOffsetType;
         Ok(start_index..end_index)
@@ -319,7 +319,7 @@ impl<
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
-        self.set_deleted(key, true)
+        Ok(self.set_deleted(key, true))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
