@@ -40,3 +40,15 @@ impl Deref for MaybeTempPath {
         }
     }
 }
+
+impl From<TempPath> for MaybeTempPath {
+    fn from(path: TempPath) -> Self {
+        Self::Temporary(path)
+    }
+}
+
+impl From<PathBuf> for MaybeTempPath {
+    fn from(path: PathBuf) -> Self {
+        Self::Persistent(path)
+    }
+}
