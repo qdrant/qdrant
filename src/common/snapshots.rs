@@ -346,7 +346,7 @@ pub async fn download_partial_snapshot(
     let (snapshot_file, snapshot_path) = tempfile::Builder::new()
         .prefix("partial-snapshot")
         .suffix(".download")
-        .tempfile_in(&download_dir)?
+        .tempfile_in(download_dir)?
         .into_parts();
 
     let response = http_client
