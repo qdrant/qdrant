@@ -131,26 +131,35 @@ pub trait GraphLayersBase {
         };
         for level in rev_range(top_level, target_level) {
             check_process_stopped(is_stopped)?;
-            current_point =
-                self.search_entry_on_level(current_point, level, points_scorer, &mut links_buffer);
+            current_point = self.search_entry_on_level(
+                current_point.idx,
+                level,
+                points_scorer,
+                &mut links_buffer,
+            );
         }
         Ok(current_point)
     }
 
     fn search_entry_on_level(
         &self,
-        entry_point: ScoredPointOffset,
+        entry_point: PointOffsetType,
         level: usize,
         points_scorer: &mut FilteredScorer,
+        // Temporary buffer for links to avoid unnecessary allocations.
+        // 'links' is reused if `search_entry_on_level` is called multiple times.
         links: &mut Vec<PointOffsetType>,
     ) -> ScoredPointOffset {
         let limit = self.get_m(level);
 
         links.clear();
-        links.reserve(limit);
+        links.reserve(2 * self.get_m(0));
 
         let mut changed = true;
-        let mut current_point = entry_point;
+        let mut current_point = ScoredPointOffset {
+            idx: entry_point,
+            score: points_scorer.score_point(entry_point),
+        };
         while changed {
             changed = false;
 
