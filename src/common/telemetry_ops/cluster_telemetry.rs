@@ -75,6 +75,7 @@ pub struct ClusterTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub peers: Option<HashMap<PeerId, PeerInfo>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub peer_metadata: Option<HashMap<PeerId, PeerMetadata>>,
     #[serde(skip_serializing_if = "Option::is_none")]
