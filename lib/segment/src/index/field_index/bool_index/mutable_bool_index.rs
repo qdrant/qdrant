@@ -7,8 +7,8 @@ use itertools::Either;
 use roaring::RoaringBitmap;
 
 use super::BoolIndex;
-use crate::common::buffered_dynamic_flags::BufferedDynamicFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::roaring_flags::RoaringFlags;
 use crate::index::field_index::map_index::IdIter;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
@@ -31,8 +31,8 @@ pub struct MutableBoolIndex {
 }
 
 struct Storage {
-    trues_flags: BufferedDynamicFlags,
-    falses_flags: BufferedDynamicFlags,
+    trues_flags: RoaringFlags,
+    falses_flags: RoaringFlags,
 }
 
 impl MutableBoolIndex {
@@ -73,12 +73,12 @@ impl MutableBoolIndex {
         // Trues bitslice
         let trues_path = path.join(TRUES_DIRNAME);
         let trues_slice = DynamicMmapFlags::open(&trues_path, false)?;
-        let trues_flags = BufferedDynamicFlags::new(trues_slice);
+        let trues_flags = RoaringFlags::new(trues_slice);
 
         // Falses bitslice
         let falses_path = path.join(FALSES_DIRNAME);
         let falses_slice = DynamicMmapFlags::open(&falses_path, false)?;
-        let falses_flags = BufferedDynamicFlags::new(falses_slice);
+        let falses_flags = RoaringFlags::new(falses_slice);
 
         Ok(Self {
             base_dir: path.to_path_buf(),

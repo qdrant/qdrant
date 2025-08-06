@@ -17,6 +17,7 @@ pub mod score_fusion;
 pub mod utils;
 pub mod validate_snapshot_archive;
 pub mod vector_utils;
+pub mod roaring_flags;
 
 use std::sync::atomic::AtomicBool;
 
