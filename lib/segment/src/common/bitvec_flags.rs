@@ -32,6 +32,10 @@ impl BitvecFlags {
         // load flags into memory
         let bitvec = BitVec::from_bitslice(mmap_flags.get_bitslice());
 
+        if let Err(err) = mmap_flags.clear_cache() {
+            log::warn!("Failed to clear bitslice cache: {}", err);
+        }
+
         Self {
             len: mmap_flags.len(),
             storage: BufferedDynamicFlags::new(mmap_flags),
