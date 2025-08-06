@@ -18,6 +18,7 @@ pub mod utils;
 pub mod validate_snapshot_archive;
 pub mod vector_utils;
 pub mod roaring_flags;
+pub mod bitvec_flags;
 
 use std::sync::atomic::AtomicBool;
 

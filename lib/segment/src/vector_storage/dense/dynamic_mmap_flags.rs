@@ -261,7 +261,7 @@ impl DynamicMmapFlags {
     }
 
     pub fn get_bitslice(&self) -> &BitSlice {
-        &self.flags
+        &self.flags[..self.len()]
     }
 
     // no immutable files, everything is mutable
