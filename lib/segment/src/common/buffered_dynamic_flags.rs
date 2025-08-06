@@ -12,7 +12,7 @@ use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing, without interface for reading.
 ///
 /// Changes are buffered until explicitly flushed.
-pub struct BufferedDynamicFlags {
+pub(crate) struct BufferedDynamicFlags {
     /// Persisted flags.
     storage: Arc<Mutex<DynamicMmapFlags>>,
 
