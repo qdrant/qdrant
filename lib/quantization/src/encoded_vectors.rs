@@ -15,9 +15,14 @@ pub enum DistanceType {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct VectorParameters {
     pub dim: usize,
-    pub count: usize,
     pub distance_type: DistanceType,
     pub invert: bool,
+
+    // Deprecated, use `EncodedVectors::vectors_count` from quantization instead.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "count")]
+    pub deprecated_count: Option<usize>,
 }
 
 pub trait EncodedVectors: Sized {
@@ -50,6 +55,14 @@ pub trait EncodedVectors: Sized {
     /// Construct a query from stored vector, so it can be used for scoring.
     /// Some implementations may not support this, in which case they should return `None`.
     fn encode_internal_vector(&self, id: u32) -> Option<Self::EncodedQuery>;
+
+    fn push_vector(
+        &mut self,
+        vector: &[f32],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()>;
+
+    fn vectors_count(&self) -> usize;
 }
 
 pub trait EncodedVectorsBytes: EncodedVectors {
@@ -87,11 +100,12 @@ pub(crate) fn validate_vector_parameters<'a>(
         }
         count += 1;
     }
-    if count != vector_parameters.count {
-        return Err(EncodingError::ArgumentsError(format!(
-            "Vector count {} does not match vector parameters count {}",
-            count, vector_parameters.count
-        )));
+    if let Some(vectors_count) = vector_parameters.deprecated_count {
+        if count != vectors_count {
+            return Err(EncodingError::ArgumentsError(format!(
+                "Vector count {count} does not match vector parameters count {vectors_count}"
+            )));
+        }
     }
     Ok(())
 }

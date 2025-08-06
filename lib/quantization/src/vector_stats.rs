@@ -69,15 +69,11 @@ impl VectorStats {
                 };
 
                 let delta = f64::from(value) - *mean;
-                *mean += delta / count as f64;
+                *mean += delta / f64::from(count);
                 *m2 += delta * (f64::from(value) - *mean);
             }
         }
 
-        debug_assert_eq!(
-            count, vector_params.count,
-            "Count of vectors processed does not match the expected count in vector parameters"
-        );
         for ((element_stats, means), m2) in stats
             .elements_stats
             .iter_mut()
@@ -85,7 +81,7 @@ impl VectorStats {
             .zip(m2.iter())
         {
             element_stats.stddev = if count > 1 {
-                (*m2 / (count - 1) as f64).sqrt() as f32
+                (*m2 / f64::from(count - 1)).sqrt() as f32
             } else {
                 0.0
             };

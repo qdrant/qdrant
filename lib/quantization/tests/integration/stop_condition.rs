@@ -22,7 +22,7 @@ mod tests {
         let vector_dim = 8;
         let vector_parameters = VectorParameters {
             dim: vector_dim,
-            count: vectors_count,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         };
@@ -30,9 +30,10 @@ mod tests {
 
         assert_eq!(
             EncodedVectorsU8::encode(
-                (0..vector_parameters.count).map(|_| &zero_vector),
+                (0..vectors_count).map(|_| &zero_vector),
                 Vec::<u8>::new(),
                 &vector_parameters,
+                vectors_count,
                 None,
                 stopped_ref,
             )
@@ -58,7 +59,7 @@ mod tests {
         let vector_dim = 8;
         let vector_parameters = VectorParameters {
             dim: vector_dim,
-            count: vectors_count,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         };
@@ -66,9 +67,10 @@ mod tests {
 
         assert_eq!(
             EncodedVectorsPQ::encode(
-                (0..vector_parameters.count).map(|_| &zero_vector),
+                (0..vectors_count).map(|_| &zero_vector),
                 Vec::<u8>::new(),
                 &vector_parameters,
+                vectors_count,
                 2,
                 1,
                 stopped_ref,

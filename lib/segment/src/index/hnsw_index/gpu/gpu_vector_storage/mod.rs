@@ -13,7 +13,7 @@ use common::types::PointOffsetType;
 use gpu_multivectors::GpuMultivectors;
 use gpu_quantization::GpuQuantization;
 use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
-use quantization::{EncodedStorage, EncodedVectorsPQ, EncodedVectorsU8};
+use quantization::{EncodedStorage, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 
 use super::shader_builder::ShaderBuilderParameters;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};

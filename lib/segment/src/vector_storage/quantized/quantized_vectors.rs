@@ -433,6 +433,7 @@ impl QuantizedVectors {
             }) => Self::create_scalar(
                 vectors,
                 &vector_parameters,
+                count,
                 scalar_config,
                 path,
                 on_disk_vector_storage,
@@ -442,6 +443,7 @@ impl QuantizedVectors {
                 Self::create_pq(
                     vectors,
                     &vector_parameters,
+                    count,
                     pq_config,
                     path,
                     on_disk_vector_storage,
@@ -454,6 +456,7 @@ impl QuantizedVectors {
             }) => Self::create_binary(
                 vectors,
                 &vector_parameters,
+                count,
                 binary_config,
                 path,
                 on_disk_vector_storage,
@@ -497,12 +500,13 @@ impl QuantizedVectors {
             PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, v)
         });
         let inner_vectors_count = vectors.clone().count();
+        let vectors_count = vector_storage.total_vector_count();
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
         let vector_parameters =
             Self::construct_vector_parameters(distance, dim, inner_vectors_count);
 
-        let offsets = (0..vector_storage.total_vector_count() as PointOffsetType)
+        let offsets = (0..vectors_count as PointOffsetType)
             .map(|idx| vector_storage.get_multi(idx).vectors_count() as PointOffsetType)
             .scan(0, |offset_acc, multi_vector_len| {
                 let offset = *offset_acc;
@@ -520,6 +524,8 @@ impl QuantizedVectors {
                 vectors,
                 offsets,
                 &vector_parameters,
+                vectors_count,
+                inner_vectors_count,
                 scalar_config,
                 multi_vector_config,
                 path,
@@ -531,6 +537,8 @@ impl QuantizedVectors {
                     vectors,
                     offsets,
                     &vector_parameters,
+                    vectors_count,
+                    inner_vectors_count,
                     pq_config,
                     multi_vector_config,
                     path,
@@ -545,6 +553,8 @@ impl QuantizedVectors {
                 vectors,
                 offsets,
                 &vector_parameters,
+                vectors_count,
+                inner_vectors_count,
                 binary_config,
                 multi_vector_config,
                 path,
@@ -719,6 +729,7 @@ impl QuantizedVectors {
     fn create_scalar<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
         vector_parameters: &quantization::VectorParameters,
+        vectors_count: usize,
         scalar_config: &ScalarQuantizationConfig,
         path: &Path,
         on_disk_vector_storage: bool,
@@ -729,11 +740,12 @@ impl QuantizedVectors {
         let in_ram = Self::is_ram(scalar_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
-            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
+            storage_builder.try_set_capacity_exact(vectors_count)?;
             Ok(QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::encode(
                 vectors,
                 storage_builder,
                 vector_parameters,
+                vectors_count,
                 scalar_config.quantile,
                 stopped,
             )?))
@@ -741,7 +753,7 @@ impl QuantizedVectors {
             let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
             let storage_builder = QuantizedMmapStorageBuilder::new(
                 mmap_data_path.as_path(),
-                vector_parameters.count,
+                vectors_count,
                 quantized_vector_size,
             )?;
             Ok(QuantizedVectorStorage::ScalarMmap(
@@ -749,6 +761,7 @@ impl QuantizedVectors {
                     vectors,
                     storage_builder,
                     vector_parameters,
+                    vectors_count,
                     scalar_config.quantile,
                     stopped,
                 )?,
@@ -761,6 +774,8 @@ impl QuantizedVectors {
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
+        vectors_count: usize,
+        inner_vectors_count: usize,
         scalar_config: &ScalarQuantizationConfig,
         multi_vector_config: MultiVectorConfig,
         path: &Path,
@@ -772,11 +787,12 @@ impl QuantizedVectors {
         let in_ram = Self::is_ram(scalar_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
-            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
+            storage_builder.try_set_capacity_exact(inner_vectors_count)?;
             let quantized_storage = EncodedVectorsU8::encode(
                 vectors,
                 storage_builder,
                 vector_parameters,
+                inner_vectors_count,
                 scalar_config.quantile,
                 stopped,
             )?;
@@ -792,18 +808,19 @@ impl QuantizedVectors {
             let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
             let storage_builder = QuantizedMmapStorageBuilder::new(
                 mmap_data_path.as_path(),
-                vector_parameters.count,
+                inner_vectors_count,
                 quantized_vector_size,
             )?;
             let quantized_storage = EncodedVectorsU8::encode(
                 vectors,
                 storage_builder,
                 vector_parameters,
+                inner_vectors_count,
                 scalar_config.quantile,
                 stopped,
             )?;
             let offsets_path = path.join(QUANTIZED_OFFSETS_PATH);
-            create_offsets_file_from_iter(&offsets_path, vector_parameters.count, offsets)?;
+            create_offsets_file_from_iter(&offsets_path, vectors_count, offsets)?;
             Ok(QuantizedVectorStorage::ScalarMmapMulti(
                 QuantizedMultivectorStorage::new(
                     vector_parameters.dim,
@@ -815,9 +832,11 @@ impl QuantizedVectors {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_pq<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + Send,
         vector_parameters: &quantization::VectorParameters,
+        vectors_count: usize,
         pq_config: &ProductQuantizationConfig,
         path: &Path,
         on_disk_vector_storage: bool,
@@ -833,11 +852,12 @@ impl QuantizedVectors {
         let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
-            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
+            storage_builder.try_set_capacity_exact(vectors_count)?;
             Ok(QuantizedVectorStorage::PQRam(EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,
                 vector_parameters,
+                vectors_count,
                 bucket_size,
                 max_threads,
                 stopped,
@@ -846,13 +866,14 @@ impl QuantizedVectors {
             let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
             let storage_builder = QuantizedMmapStorageBuilder::new(
                 mmap_data_path.as_path(),
-                vector_parameters.count,
+                vectors_count,
                 quantized_vector_size,
             )?;
             Ok(QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,
                 vector_parameters,
+                vectors_count,
                 bucket_size,
                 max_threads,
                 stopped,
@@ -865,6 +886,8 @@ impl QuantizedVectors {
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + Send,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
+        vectors_count: usize,
+        inner_vectors_count: usize,
         pq_config: &ProductQuantizationConfig,
         multi_vector_config: MultiVectorConfig,
         path: &Path,
@@ -881,11 +904,12 @@ impl QuantizedVectors {
         let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
-            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
+            storage_builder.try_set_capacity_exact(inner_vectors_count)?;
             let quantized_storage = EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,
                 vector_parameters,
+                inner_vectors_count,
                 bucket_size,
                 max_threads,
                 stopped,
@@ -902,19 +926,20 @@ impl QuantizedVectors {
             let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
             let storage_builder = QuantizedMmapStorageBuilder::new(
                 mmap_data_path.as_path(),
-                vector_parameters.count,
+                inner_vectors_count,
                 quantized_vector_size,
             )?;
             let quantized_storage = EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,
                 vector_parameters,
+                inner_vectors_count,
                 bucket_size,
                 max_threads,
                 stopped,
             )?;
             let offsets_path = path.join(QUANTIZED_OFFSETS_PATH);
-            create_offsets_file_from_iter(&offsets_path, vector_parameters.count, offsets)?;
+            create_offsets_file_from_iter(&offsets_path, vectors_count, offsets)?;
             Ok(QuantizedVectorStorage::PQMmapMulti(
                 QuantizedMultivectorStorage::new(
                     vector_parameters.dim,
@@ -929,6 +954,7 @@ impl QuantizedVectors {
     fn create_binary<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
         vector_parameters: &quantization::VectorParameters,
+        vectors_count: usize,
         binary_config: &BinaryQuantizationConfig,
         path: &Path,
         on_disk_vector_storage: bool,
@@ -969,7 +995,7 @@ impl QuantizedVectors {
         let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
-            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
+            storage_builder.try_set_capacity_exact(vectors_count)?;
             Ok(QuantizedVectorStorage::BinaryRam(
                 EncodedVectorsBin::encode(
                     vectors,
@@ -984,7 +1010,7 @@ impl QuantizedVectors {
             let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
             let storage_builder = QuantizedMmapStorageBuilder::new(
                 mmap_data_path.as_path(),
-                vector_parameters.count,
+                vectors_count,
                 quantized_vector_size,
             )?;
             Ok(QuantizedVectorStorage::BinaryMmap(
@@ -1005,6 +1031,8 @@ impl QuantizedVectors {
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
+        vectors_count: usize,
+        inner_vectors_count: usize,
         binary_config: &BinaryQuantizationConfig,
         multi_vector_config: MultiVectorConfig,
         path: &Path,
@@ -1046,7 +1074,7 @@ impl QuantizedVectors {
         let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
-            storage_builder.try_set_capacity_exact(vector_parameters.count)?;
+            storage_builder.try_set_capacity_exact(inner_vectors_count)?;
             let quantized_storage = EncodedVectorsBin::encode(
                 vectors,
                 storage_builder,
@@ -1067,7 +1095,7 @@ impl QuantizedVectors {
             let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
             let storage_builder = QuantizedMmapStorageBuilder::new(
                 mmap_data_path.as_path(),
-                vector_parameters.count,
+                inner_vectors_count,
                 quantized_vector_size,
             )?;
             let quantized_storage = EncodedVectorsBin::encode(
@@ -1079,7 +1107,7 @@ impl QuantizedVectors {
                 stopped,
             )?;
             let offsets_path = path.join(QUANTIZED_OFFSETS_PATH);
-            create_offsets_file_from_iter(&offsets_path, vector_parameters.count, offsets)?;
+            create_offsets_file_from_iter(&offsets_path, vectors_count, offsets)?;
             Ok(QuantizedVectorStorage::BinaryMmapMulti(
                 QuantizedMultivectorStorage::new(
                     vector_parameters.dim,
@@ -1102,7 +1130,7 @@ impl QuantizedVectors {
     ) -> quantization::VectorParameters {
         quantization::VectorParameters {
             dim,
-            count,
+            deprecated_count: Some(count),
             distance_type: match distance {
                 Distance::Cosine => quantization::DistanceType::Dot,
                 Distance::Euclid => quantization::DistanceType::L2,

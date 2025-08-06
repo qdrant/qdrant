@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
 use memory::madvise::Madviseable;
@@ -25,24 +26,25 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
         &self.mmap[vector_size * index..vector_size * (index + 1)]
     }
 
+    fn push_vector(
+        &mut self,
+        _vector: &[u8],
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Cannot push vector to mmap storage",
+        ))
+    }
+
     fn from_file(
         path: &Path,
-        quantized_vector_size: usize,
-        vectors_count: usize,
+        _quantized_vector_size: usize,
     ) -> std::io::Result<QuantizedMmapStorage> {
         let file = std::fs::OpenOptions::new().read(true).open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
         madvise::madvise(&mmap, madvise::get_global())?;
-
-        let expected_size = quantized_vector_size * vectors_count;
-        if mmap.len() == expected_size {
-            Ok(Self { mmap })
-        } else {
-            Err(std::io::Error::other(format!(
-                "Loaded storage size {} is not equal to expected size {expected_size}",
-                mmap.len()
-            )))
-        }
+        Ok(Self { mmap })
     }
 
     fn save_to_file(&self, _path: &Path) -> std::io::Result<()> {
@@ -53,15 +55,19 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
     fn is_on_disk(&self) -> bool {
         true
     }
+
+    fn vectors_count(&self, quantized_vector_size: usize) -> usize {
+        self.mmap.len() / quantized_vector_size
+    }
 }
 
 impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
     type Storage = QuantizedMmapStorage;
 
-    fn build(self) -> QuantizedMmapStorage {
-        self.mmap.flush().unwrap();
-        let mmap = self.mmap.make_read_only().unwrap(); // TODO: remove unwrap
-        QuantizedMmapStorage { mmap }
+    fn build(self) -> std::io::Result<QuantizedMmapStorage> {
+        self.mmap.flush()?;
+        let mmap = self.mmap.make_read_only()?;
+        Ok(QuantizedMmapStorage { mmap })
     }
 
     fn push_vector_data(&mut self, other: &[u8]) {

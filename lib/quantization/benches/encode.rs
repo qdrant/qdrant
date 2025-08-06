@@ -23,10 +23,11 @@ fn encode_dot_bench(c: &mut Criterion) {
         Vec::<u8>::new(),
         &VectorParameters {
             dim: vector_dim,
-            count: vectors_count,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         },
+        vectors_count,
         None,
         &AtomicBool::new(false),
     )
@@ -116,10 +117,11 @@ fn encode_l1_bench(c: &mut Criterion) {
         Vec::<u8>::new(),
         &VectorParameters {
             dim: vector_dim,
-            count: vectors_count,
+            deprecated_count: None,
             distance_type: DistanceType::L1,
             invert: true,
         },
+        vectors_count,
         None,
         &AtomicBool::new(false),
     )
