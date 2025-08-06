@@ -25,7 +25,7 @@ pub fn make_cached_graph<METRIC>(
     m: usize,
     ef_construct: usize,
     use_heuristic: bool,
-) -> (TestRawScorerProducer<METRIC>, GraphLayers)
+) -> (TestRawScorerProducer, GraphLayers)
 where
     METRIC: Metric<f32> + Sync + Send,
 {
@@ -40,8 +40,12 @@ where
         ));
 
     // Note: make sure that vector generation is deterministic.
-    let vector_holder =
-        TestRawScorerProducer::<METRIC>::new(dim, num_vectors, &mut StdRng::seed_from_u64(42));
+    let vector_holder = TestRawScorerProducer::new(
+        dim,
+        METRIC::distance(),
+        num_vectors,
+        &mut StdRng::seed_from_u64(42),
+    );
 
     let graph_layers_path = GraphLayers::get_path(&path);
     let graph_layers = if graph_layers_path.exists() {
@@ -60,8 +64,7 @@ where
         }
 
         let add_point = |idx| {
-            let added_vector = vector_holder.vectors.get(idx).to_vec();
-            let scorer = vector_holder.get_scorer(added_vector);
+            let scorer = vector_holder.internal_scorer(idx as PointOffsetType);
             graph_layers_builder.link_new_point(idx as PointOffsetType, scorer);
         };
 
