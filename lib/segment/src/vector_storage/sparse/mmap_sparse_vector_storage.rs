@@ -12,6 +12,7 @@ use gridstore::config::{Compression, StorageOptions};
 use parking_lot::RwLock;
 use sparse::common::sparse_vector::SparseVector;
 
+use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
@@ -23,15 +24,12 @@ use crate::vector_storage::{SparseVectorStorage, VectorStorage};
 const DELETED_DIRNAME: &str = "deleted";
 const STORAGE_DIRNAME: &str = "store";
 
-/// When resizing bitslice, grow by this extra amount.
-const BITSLICE_GROWTH_SLACK: usize = 1024;
-
 /// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]
 pub struct MmapSparseVectorStorage {
     storage: Arc<RwLock<Gridstore<StoredSparseVector>>>,
     /// BitSlice for deleted flags. Grows dynamically upto last set flag.
-    deleted: DynamicMmapFlags, // TODO currently eagerly flushed outside of the flushing sequence
+    deleted: BitvecFlags,
     /// Current number of deleted vectors.
     deleted_count: usize,
     /// Maximum point offset in the storage + 1. This also means the total amount of point offsets
@@ -64,9 +62,9 @@ impl MmapSparseVectorStorage {
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = DynamicMmapFlags::open(&deleted_path, populate)?;
+        let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
 
-        let deleted_count = deleted.count_flags();
+        let deleted_count = deleted.count_trues();
         let next_point_offset = deleted
             .get_bitslice()
             .last_one()
@@ -105,7 +103,7 @@ impl MmapSparseVectorStorage {
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = DynamicMmapFlags::open(&deleted_path, populate)?;
+        let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
 
         Ok(Self {
             storage: Arc::new(RwLock::new(storage)),
@@ -116,17 +114,7 @@ impl MmapSparseVectorStorage {
     }
 
     fn set_deleted_flag(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
-        if (key as usize) < self.deleted.len() {
-            return Ok(self.deleted.set(key, deleted));
-        }
-
-        // Bitslice is too small; grow and set the deletion flag, but only if we need to set it to true.
-        if deleted {
-            self.deleted.set_len(key as usize + BITSLICE_GROWTH_SLACK)?;
-            return Ok(self.deleted.set(key, true));
-        }
-
-        Ok(false)
+        Ok(self.deleted.set(key, deleted))
     }
 
     #[inline]
@@ -175,7 +163,8 @@ impl MmapSparseVectorStorage {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
-        self.deleted.populate()?;
+        /* deleted bitvec is already in-memory */
+
         self.storage.read().populate()?;
         Ok(())
     }
@@ -326,7 +315,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 
     fn is_deleted_vector(&self, key: common::types::PointOffsetType) -> bool {
-        self.deleted.get(key as usize)
+        self.deleted.get(key)
     }
 
     fn deleted_vector_count(&self) -> usize {
