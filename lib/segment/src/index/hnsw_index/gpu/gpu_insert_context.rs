@@ -489,9 +489,7 @@ mod tests {
     use crate::index::hnsw_index::graph_layers::GraphLayersBase;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::links_container::LinksContainer;
-    use crate::spaces::simple::DotProductMetric;
     use crate::types::Distance;
-    use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
 
@@ -507,7 +505,7 @@ mod tests {
         m: usize,
         ef: usize,
         gpu_vector_storage: GpuVectorStorage,
-        vector_holder: TestRawScorerProducer<DotProductMetric>,
+        vector_holder: TestRawScorerProducer,
         graph_layers_builder: GraphLayersBuilder,
     }
 
@@ -520,22 +518,15 @@ mod tests {
     ) -> TestData {
         // Generate random vectors
         let mut rng = StdRng::seed_from_u64(42);
-        let vector_holder = TestRawScorerProducer::<DotProductMetric>::new(
-            dim,
-            num_vectors + groups_count,
-            &mut rng,
-        );
+        let vector_holder =
+            TestRawScorerProducer::new(dim, Distance::Dot, num_vectors + groups_count, &mut rng);
 
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Dot);
-        for idx in 0..(num_vectors + groups_count) {
-            let v = vector_holder.get_vector(idx as PointOffsetType);
+        for idx in 0..(num_vectors + groups_count) as PointOffsetType {
+            let v = vector_holder.storage().get_vector(idx);
             storage
-                .insert_vector(
-                    idx as PointOffsetType,
-                    v.as_vec_ref(),
-                    &HardwareCounterCell::new(),
-                )
+                .insert_vector(idx, v.as_vec_ref(), &HardwareCounterCell::new())
                 .unwrap();
         }
 
@@ -547,9 +538,7 @@ mod tests {
             graph_layers_builder.set_levels(idx, level);
         }
         for idx in 0..(num_vectors as PointOffsetType) {
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-            let scorer = vector_holder.get_scorer(added_vector.clone());
-            graph_layers_builder.link_new_point(idx, scorer);
+            graph_layers_builder.link_new_point(idx, vector_holder.internal_scorer(idx));
         }
 
         // Create GPU search context
@@ -753,8 +742,9 @@ mod tests {
 
         // Check response
         for i in 0..groups_count {
-            let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
-            let mut scorer = test.vector_holder.get_scorer(added_vector.clone());
+            let mut scorer = test
+                .vector_holder
+                .internal_scorer((num_vectors + i) as PointOffsetType);
             let entry = ScoredPointOffset {
                 idx: 0,
                 score: scorer.score_point(0),
@@ -808,8 +798,9 @@ mod tests {
 
         // Check response
         for (i, &gpu_search_result) in gpu_responses.iter().enumerate() {
-            let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
-            let mut scorer = test.vector_holder.get_scorer(added_vector.clone());
+            let mut scorer = test
+                .vector_holder
+                .internal_scorer((num_vectors + i) as PointOffsetType);
             let search_result = test
                 .graph_layers_builder
                 .search_entry_on_level(0, 0, &mut scorer);
@@ -971,8 +962,9 @@ mod tests {
 
         // Check response
         for (i, gpu_group_result) in gpu_responses.iter().enumerate() {
-            let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
-            let mut scorer = test.vector_holder.get_scorer(added_vector.clone());
+            let mut scorer = test
+                .vector_holder
+                .internal_scorer((num_vectors + i) as PointOffsetType);
             let entry = ScoredPointOffset {
                 idx: 0,
                 score: scorer.score_point(0),

@@ -34,7 +34,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let scorer = vector_holder.get_scorer(query);
+            let scorer = vector_holder.scorer(query);
 
             black_box(
                 graph_layers
@@ -50,7 +50,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let scorer = vector_holder.get_scorer(query);
+            let scorer = vector_holder.scorer(query);
 
             black_box(
                 graph_layers
@@ -67,7 +67,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let mut scorer = vector_holder.get_scorer(query);
+            let mut scorer = vector_holder.scorer(query);
 
             let mut top_score = 0.;
             let scores = scorer.score_points(&mut plain_search_range, NUM_VECTORS);

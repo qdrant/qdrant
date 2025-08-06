@@ -5,28 +5,27 @@ use common::types::PointOffsetType;
 use rand::Rng;
 
 use super::graph_links::GraphLinksFormat;
-use crate::data_types::vectors::VectorElementType;
 use crate::fixtures::index_fixtures::TestRawScorerProducer;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::spaces::metric::Metric;
-use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
+use crate::types::Distance;
 
-pub(crate) fn create_graph_layer_builder_fixture<TMetric: Metric<VectorElementType>, R>(
+pub(crate) fn create_graph_layer_builder_fixture<R>(
     num_vectors: usize,
     m: usize,
     dim: usize,
     use_heuristic: bool,
+    distance: Distance,
     rng: &mut R,
-) -> (TestRawScorerProducer<TMetric>, GraphLayersBuilder)
+) -> (TestRawScorerProducer, GraphLayersBuilder)
 where
     R: Rng + ?Sized,
 {
     let ef_construct = 16;
     let entry_points_num = 10;
 
-    let vector_holder = TestRawScorerProducer::<TMetric>::new(dim, num_vectors, rng);
+    let vector_holder = TestRawScorerProducer::new(dim, distance, num_vectors, rng);
 
     let mut graph_layers_builder = GraphLayersBuilder::new(
         num_vectors,
@@ -37,29 +36,27 @@ where
     );
 
     for idx in 0..(num_vectors as PointOffsetType) {
-        let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-        let scorer = vector_holder.get_scorer(added_vector);
-
         let level = graph_layers_builder.get_random_layer(rng);
         graph_layers_builder.set_levels(idx, level);
-        graph_layers_builder.link_new_point(idx, scorer);
+        graph_layers_builder.link_new_point(idx, vector_holder.internal_scorer(idx));
     }
     (vector_holder, graph_layers_builder)
 }
 
-pub(crate) fn create_graph_layer_fixture<TMetric: Metric<VectorElementType>, R>(
+pub(crate) fn create_graph_layer_fixture<R>(
     num_vectors: usize,
     m: usize,
     dim: usize,
     format: GraphLinksFormat,
     use_heuristic: bool,
+    distance: Distance,
     rng: &mut R,
-) -> (TestRawScorerProducer<TMetric>, GraphLayers)
+) -> (TestRawScorerProducer, GraphLayers)
 where
     R: Rng + ?Sized,
 {
     let (vector_holder, graph_layers_builder) =
-        create_graph_layer_builder_fixture(num_vectors, m, dim, use_heuristic, rng);
+        create_graph_layer_builder_fixture(num_vectors, m, dim, use_heuristic, distance, rng);
 
     (
         vector_holder,

@@ -106,15 +106,13 @@ mod tests {
     use crate::index::hnsw_index::graph_layers::GraphLayers;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::graph_links::GraphLinksFormat;
-    use crate::spaces::simple::CosineMetric;
     use crate::types::Distance;
-    use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 
     pub struct GpuGraphTestData {
         pub vector_storage: VectorStorageEnum,
-        pub vector_holder: TestRawScorerProducer<CosineMetric>,
+        pub vector_holder: TestRawScorerProducer,
         pub graph_layers_builder: GraphLayersBuilder,
         pub search_vectors: Vec<DenseVector>,
     }
@@ -128,18 +126,15 @@ mod tests {
     ) -> GpuGraphTestData {
         // Generate random vectors
         let mut rng = StdRng::seed_from_u64(42);
-        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
+        let vector_holder =
+            TestRawScorerProducer::new(dim, Distance::Cosine, num_vectors, &mut rng);
 
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Cosine);
-        for idx in 0..num_vectors {
-            let v = vector_holder.get_vector(idx as PointOffsetType);
+        for idx in 0..num_vectors as PointOffsetType {
+            let v = vector_holder.storage().get_vector(idx);
             storage
-                .insert_vector(
-                    idx as PointOffsetType,
-                    v.as_vec_ref(),
-                    &HardwareCounterCell::new(),
-                )
+                .insert_vector(idx, v.as_vec_ref(), &HardwareCounterCell::new())
                 .unwrap();
         }
 
@@ -157,8 +152,7 @@ mod tests {
         );
 
         for &idx in &ids {
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-            let scorer = vector_holder.get_scorer(added_vector);
+            let scorer = vector_holder.internal_scorer(idx);
             graph_layers_builder.link_new_point(idx, scorer);
         }
 
@@ -217,13 +211,13 @@ mod tests {
         let mut total_sames = 0;
         let total_top = top * test.search_vectors.len();
         for search_vector in &test.search_vectors {
-            let scorer = test.vector_holder.get_scorer(search_vector.clone());
+            let scorer = test.vector_holder.scorer(search_vector.clone());
 
             let search_result_gpu = graph
                 .search(top, ef, scorer, None, &DEFAULT_STOPPED)
                 .unwrap();
 
-            let scorer = test.vector_holder.get_scorer(search_vector.clone());
+            let scorer = test.vector_holder.scorer(search_vector.clone());
 
             let search_result_cpu = ref_graph
                 .search(top, ef, scorer, None, &DEFAULT_STOPPED)

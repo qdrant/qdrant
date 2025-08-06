@@ -8,8 +8,7 @@ use rand::rngs::StdRng;
 use segment::fixtures::index_fixtures::TestRawScorerProducer;
 use segment::index::hnsw_index::HnswM;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use segment::spaces::simple::CosineMetric;
-use segment::vector_storage::chunked_vector_storage::VectorOffsetType;
+use segment::types::Distance;
 
 const NUM_VECTORS: usize = 10000;
 const DIM: usize = 32;
@@ -19,7 +18,7 @@ const USE_HEURISTIC: bool = true;
 
 fn hnsw_benchmark(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
-    let vector_holder = TestRawScorerProducer::<CosineMetric>::new(DIM, NUM_VECTORS, &mut rng);
+    let vector_holder = TestRawScorerProducer::new(DIM, Distance::Cosine, NUM_VECTORS, &mut rng);
     let mut group = c.benchmark_group("hnsw-index-build-group");
     group.sample_size(10);
     group.bench_function("hnsw_index", |b| {
@@ -33,11 +32,9 @@ fn hnsw_benchmark(c: &mut Criterion) {
                 USE_HEURISTIC,
             );
             for idx in 0..(NUM_VECTORS as PointOffsetType) {
-                let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-                let scorer = vector_holder.get_scorer(added_vector);
                 let level = graph_layers_builder.get_random_layer(&mut rng);
                 graph_layers_builder.set_levels(idx, level);
-                graph_layers_builder.link_new_point(idx, scorer);
+                graph_layers_builder.link_new_point(idx, vector_holder.internal_scorer(idx));
             }
         })
     });

@@ -598,24 +598,22 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::data_types::vectors::VectorElementType;
     use crate::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
     use crate::index::hnsw_index::graph_links::normalize_links;
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
-    use crate::spaces::metric::Metric;
-    use crate::spaces::simple::CosineMetric;
-    use crate::vector_storage::DEFAULT_STOPPED;
-    use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
+    use crate::types::Distance;
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage as _};
 
     const M: usize = 8;
 
     #[cfg(not(windows))]
-    fn parallel_graph_build<TMetric: Metric<VectorElementType> + Sync + Send, R>(
+    fn parallel_graph_build<R>(
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,
+        distance: Distance,
         rng: &mut R,
-    ) -> (TestRawScorerProducer<TMetric>, GraphLayersBuilder)
+    ) -> (TestRawScorerProducer, GraphLayersBuilder)
     where
         R: Rng + ?Sized,
     {
@@ -629,7 +627,7 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
 
-        let vector_holder = TestRawScorerProducer::<TMetric>::new(dim, num_vectors, rng);
+        let vector_holder = TestRawScorerProducer::new(dim, distance, num_vectors, rng);
 
         let mut graph_layers = GraphLayersBuilder::new(
             num_vectors,
@@ -647,8 +645,7 @@ mod tests {
             (0..(num_vectors as PointOffsetType))
                 .into_par_iter()
                 .for_each(|idx| {
-                    let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-                    let scorer = vector_holder.get_scorer(added_vector);
+                    let scorer = vector_holder.internal_scorer(idx);
                     graph_layers.link_new_point(idx, scorer);
                 });
         });
@@ -656,12 +653,13 @@ mod tests {
         (vector_holder, graph_layers)
     }
 
-    fn create_graph_layer<TMetric: Metric<VectorElementType>, R>(
+    fn create_graph_layer<R>(
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,
+        distance: Distance,
         rng: &mut R,
-    ) -> (TestRawScorerProducer<TMetric>, GraphLayersBuilder)
+    ) -> (TestRawScorerProducer, GraphLayersBuilder)
     where
         R: Rng + ?Sized,
     {
@@ -669,7 +667,7 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
 
-        let vector_holder = TestRawScorerProducer::<TMetric>::new(dim, num_vectors, rng);
+        let vector_holder = TestRawScorerProducer::new(dim, distance, num_vectors, rng);
 
         let mut graph_layers = GraphLayersBuilder::new(
             num_vectors,
@@ -685,8 +683,7 @@ mod tests {
         }
 
         for idx in 0..(num_vectors as PointOffsetType) {
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-            let scorer = vector_holder.get_scorer(added_vector);
+            let scorer = vector_holder.internal_scorer(idx);
             graph_layers.link_new_point(idx, scorer);
         }
 
@@ -698,17 +695,17 @@ mod tests {
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
     fn test_parallel_graph_build(#[case] format: GraphLinksFormat) {
+        let distance = Distance::Cosine;
         let num_vectors = 1000;
         let dim = 8;
 
         let mut rng = StdRng::seed_from_u64(42);
-        type M = CosineMetric;
 
         // let (vector_holder, graph_layers_builder) =
         //     create_graph_layer::<M, _>(num_vectors, dim, false, &mut rng);
 
         let (vector_holder, graph_layers_builder) =
-            parallel_graph_build::<M, _>(num_vectors, dim, false, &mut rng);
+            parallel_graph_build(num_vectors, dim, false, distance, &mut rng);
 
         let main_entry = graph_layers_builder
             .entry_points
@@ -741,19 +738,16 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
+        let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
-        for idx in 0..vector_holder.vectors.len() as PointOffsetType {
-            let vec = &vector_holder.vectors.get(idx as VectorOffsetType);
-            reference_top.push(ScoredPointOffset {
-                idx,
-                score: M::similarity(vec, &processed_query),
-            });
+        for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
+            let score = scorer.score_point(idx);
+            reference_top.push(ScoredPointOffset { idx, score });
         }
 
         let graph = graph_layers_builder.into_graph_layers_ram(format);
 
-        let scorer = vector_holder.get_scorer(query);
+        let scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
             .search(top, ef, scorer, None, &DEFAULT_STOPPED)
@@ -766,19 +760,18 @@ mod tests {
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
     fn test_add_points(#[case] format: GraphLinksFormat) {
+        let distance = Distance::Cosine;
         let num_vectors = 1000;
         let dim = 8;
 
         let mut rng = StdRng::seed_from_u64(42);
         let mut rng2 = StdRng::seed_from_u64(42);
 
-        type M = CosineMetric;
-
         let (vector_holder, graph_layers_builder) =
-            create_graph_layer::<M, _>(num_vectors, dim, false, &mut rng);
+            create_graph_layer(num_vectors, dim, false, distance, &mut rng);
 
         let (_vector_holder_orig, graph_layers_orig) =
-            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, format, false, &mut rng2);
+            create_graph_layer_fixture(num_vectors, M, dim, format, false, distance, &mut rng2);
 
         // check is graph_layers_builder links are equal to graph_layers_orig
         let orig_len = graph_layers_orig.links.num_points();
@@ -834,19 +827,16 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
+        let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
-        for idx in 0..vector_holder.vectors.len() as PointOffsetType {
-            let vec = &vector_holder.vectors.get(idx as VectorOffsetType);
-            reference_top.push(ScoredPointOffset {
-                idx,
-                score: M::similarity(vec, &processed_query),
-            });
+        for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
+            let score = scorer.score_point(idx);
+            reference_top.push(ScoredPointOffset { idx, score });
         }
 
         let graph = graph_layers_builder.into_graph_layers_ram(format);
 
-        let scorer = vector_holder.get_scorer(query);
+        let scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
             .search(top, ef, scorer, None, &DEFAULT_STOPPED)
@@ -866,12 +856,12 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(DIM, NUM_VECTORS, &mut rng);
+        let vector_holder =
+            TestRawScorerProducer::new(DIM, Distance::Cosine, NUM_VECTORS, &mut rng);
         let mut graph_layers_builder =
             GraphLayersBuilder::new(NUM_VECTORS, HnswM::new2(M), EF_CONSTRUCT, 10, USE_HEURISTIC);
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-            let scorer = vector_holder.get_scorer(added_vector);
+            let scorer = vector_holder.internal_scorer(idx);
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);

@@ -386,17 +386,17 @@ mod tests {
         create_graph_layer_builder_fixture, create_graph_layer_fixture,
     };
     use crate::spaces::metric::Metric;
-    use crate::spaces::simple::{CosineMetric, DotProductMetric};
-    use crate::vector_storage::DEFAULT_STOPPED;
-    use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
+    use crate::spaces::simple::CosineMetric;
+    use crate::types::Distance;
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
 
     fn search_in_graph(
         query: &[VectorElementType],
         top: usize,
-        vector_storage: &TestRawScorerProducer<CosineMetric>,
+        vector_storage: &TestRawScorerProducer,
         graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
-        let scorer = vector_storage.get_scorer(query.to_owned());
+        let scorer = vector_storage.scorer(query.to_owned());
 
         let ef = 16;
         graph
@@ -417,8 +417,7 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let vector_holder =
-            TestRawScorerProducer::<DotProductMetric>::new(dim, num_vectors, &mut rng);
+        let vector_holder = TestRawScorerProducer::new(dim, Distance::Dot, num_vectors, &mut rng);
 
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
@@ -433,11 +432,7 @@ mod tests {
 
         let linking_idx: PointOffsetType = 7;
 
-        let added_vector = vector_holder
-            .vectors
-            .get(linking_idx as VectorOffsetType)
-            .to_vec();
-        let mut scorer = vector_holder.get_scorer(added_vector);
+        let mut scorer = vector_holder.internal_scorer(linking_idx);
 
         let nearest_on_level = graph_layers
             .search_on_level(
@@ -469,6 +464,7 @@ mod tests {
     #[case::compressed((GraphLinksFormat::Compressed, false))]
     #[case::recompressed((GraphLinksFormat::Compressed, true))]
     fn test_save_and_load(#[case] (initial_format, compress): (GraphLinksFormat, bool)) {
+        let distance = Distance::Cosine;
         let num_vectors = 100;
         let dim = 8;
         let top = 5;
@@ -480,7 +476,7 @@ mod tests {
         let query = random_vector(&mut rng, dim);
 
         let (vector_holder, graph_layers_builder) =
-            create_graph_layer_builder_fixture(num_vectors, M, dim, false, &mut rng);
+            create_graph_layer_builder_fixture(num_vectors, M, dim, false, distance, &mut rng);
         let graph1 = graph_layers_builder
             .into_graph_layers(dir.path(), initial_format, true)
             .unwrap();
@@ -503,15 +499,15 @@ mod tests {
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
     fn test_add_points(#[case] format: GraphLinksFormat) {
+        type M = CosineMetric;
+        let distance = <M as Metric<VectorElementType>>::distance();
         let num_vectors = 1000;
         let dim = 8;
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        type M = CosineMetric;
-
         let (vector_holder, graph_layers) =
-            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, format, false, &mut rng);
+            create_graph_layer_fixture(num_vectors, M, dim, format, false, distance, &mut rng);
 
         let main_entry = graph_layers
             .entry_points
@@ -537,14 +533,12 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
+        let processed_query = distance.preprocess_vector::<VectorElementType>(query.clone());
+        let scorer = vector_holder.scorer(processed_query);
         let mut reference_top = FixedLengthPriorityQueue::new(top);
-        for idx in 0..vector_holder.vectors.len() as PointOffsetType {
-            let vec = &vector_holder.vectors.get(idx as VectorOffsetType);
-            reference_top.push(ScoredPointOffset {
-                idx,
-                score: M::similarity(vec, &processed_query),
-            });
+        for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
+            let score = scorer.score_point(idx);
+            reference_top.push(ScoredPointOffset { idx, score });
         }
 
         let graph_search = search_in_graph(&query, top, &vector_holder, &graph_layers);
