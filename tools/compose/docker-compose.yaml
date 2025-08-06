@@ -11,8 +11,13 @@ services:
       - "6333:6333"
       - "6334:6334"
     command: ./qdrant --uri 'http://qdrant_node_1:6335'
+    healthcheck:
+      test: bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 3
 
-  qdrant_node_follower:
+  qdrant_node_2:
     image: qdrant/qdrant:latest
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
@@ -23,9 +28,9 @@ services:
     ports:
       - "6433:6333"
       - "6434:6334"
-    command: ./qdrant --bootstrap 'http://qdrant_node_1:6335' --uri 'http://qdrant_node_follower:6335'
+    command: ./qdrant --bootstrap 'http://qdrant_node_1:6335' --uri 'http://qdrant_node_2:6335'
 
-  qdrant_node_follower_2:
+  qdrant_node_3:
     image: qdrant/qdrant:latest
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
@@ -36,5 +41,5 @@ services:
     ports:
       - "6533:6333"
       - "6534:6334"
-    command: ./qdrant --bootstrap 'http://qdrant_node_1:6335' --uri 'http://qdrant_node_follower_2:6335'
+    command: ./qdrant --bootstrap 'http://qdrant_node_1:6335' --uri 'http://qdrant_node_3:6335'
 
