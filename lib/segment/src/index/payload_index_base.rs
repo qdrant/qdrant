@@ -52,14 +52,14 @@ pub trait PayloadIndex {
     ) -> OperationResult<()>;
 
     /// Remove index
-    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()>;
+    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<bool>;
 
     /// Remove index if incompatible with new payload schema
     fn drop_index_if_incompatible(
         &mut self,
         field: PayloadKeyTypeRef,
         new_payload_schema: &PayloadFieldSchema,
-    ) -> OperationResult<()>;
+    ) -> OperationResult<bool>;
 
     /// Estimate amount of points (min, max) which satisfies filtering condition.
     ///
@@ -158,7 +158,7 @@ pub trait PayloadIndex {
 
     fn files(&self) -> Vec<PathBuf>;
 
-    fn immutable_files(&self) -> Vec<PathBuf> {
+    fn immutable_files(&self) -> Vec<(PayloadKeyType, PathBuf)> {
         Vec::new()
     }
 }
