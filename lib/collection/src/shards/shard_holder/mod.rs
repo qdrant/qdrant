@@ -12,7 +12,9 @@ use common::budget::ResourceBudget;
 use common::tar_ext::BuilderExt;
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
-use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
+use segment::common::validate_snapshot_archive::{
+    open_snapshot_archive, validate_snapshot_archive,
+};
 use segment::data_types::manifest::SnapshotManifest;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
@@ -951,6 +953,17 @@ impl ShardHolder {
 
     /// # Cancel safety
     ///
+    /// This method is cancel safe.
+    pub async fn validate_shard_snapshot(&self, snapshot_path: &Path) -> CollectionResult<()> {
+        validate_snapshot_archive(snapshot_path)?;
+
+        // TODO: Validate that shard/partial snapshot is compatible with collection config!
+
+        Ok(())
+    }
+
+    /// # Cancel safety
+    ///
     /// This method is *not* cancel safe.
     #[allow(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
@@ -975,27 +988,27 @@ impl ShardHolder {
 
         let snapshot_file_name = snapshot_path.file_name().unwrap().to_string_lossy();
 
-        let snapshot_path = snapshot_path.to_path_buf();
         let snapshot_temp_dir = tempfile::Builder::new()
             .prefix(&format!(
                 "{collection_name}-shard-{shard_id}-{snapshot_file_name}"
             ))
             .tempdir_in(temp_dir)?;
 
-        let task = {
+        let extract = {
+            let snapshot_path = snapshot_path.to_path_buf();
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
 
             cancel::blocking::spawn_cancel_on_token(
                 cancel.child_token(),
                 move |cancel| -> CollectionResult<_> {
-                    let mut tar = open_snapshot_archive_with_validation(&snapshot_path)?;
+                    let mut ar = open_snapshot_archive(&snapshot_path)?;
 
                     if cancel.is_cancelled() {
                         return Err(cancel::Error::Cancelled.into());
                     }
 
-                    tar.unpack(&snapshot_temp_dir)?;
-                    drop(tar);
+                    ar.unpack(&snapshot_temp_dir)?;
+                    drop(ar);
 
                     if cancel.is_cancelled() {
                         return Err(cancel::Error::Cancelled.into());
@@ -1012,7 +1025,7 @@ impl ShardHolder {
             )
         };
 
-        task.await??;
+        extract.await??;
 
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)

@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use ::common::tempfile_ext::MaybeTempPath;
 use actix_multipart::form::MultipartForm;
 use actix_multipart::form::tempfile::TempFile;
 use actix_web::{Responder, Result, delete, get, post, put, web};
@@ -500,7 +501,7 @@ async fn upload_shard_snapshot(
             dispatcher.toc(&access, &pass),
             &collection,
             shard,
-            form.snapshot.file.path(),
+            MaybeTempPath::from(form.snapshot.file.into_temp_path()),
             priority.unwrap_or_default(),
             RecoveryType::Full,
             cancel,
@@ -658,7 +659,7 @@ async fn recover_partial_snapshot(
             dispatcher.toc(&access, &pass),
             &collection,
             shard,
-            form.snapshot.file.path(),
+            MaybeTempPath::from(form.snapshot.file.into_temp_path()),
             priority.unwrap_or_default(),
             RecoveryType::Partial,
             cancel,
@@ -790,7 +791,7 @@ async fn recover_partial_snapshot_from(
             dispatcher.toc(&access, &pass),
             &collection,
             shard_id,
-            &partial_snapshot_temp_path,
+            MaybeTempPath::from(partial_snapshot_temp_path),
             SnapshotPriority::NoSync,
             RecoveryType::Partial,
             cancel,
