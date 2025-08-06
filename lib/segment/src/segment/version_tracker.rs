@@ -18,6 +18,14 @@ pub struct VersionTracker {
 
     /// Tracks version of *immutable* files inside payload index.
     /// Should be updated when payload index *schema* of the field is modified.
+    ///
+    /// Generally, we can rely on `Segment::initial_version` to filter immutable files.
+    /// E.g., HNSW index is created when creating immutable segment, and so immutable files
+    /// of HNSW index stays immutable for the whole lifetime of the segment.
+    ///
+    /// However, payload indices can be updated at any moment even for immutable segments.
+    /// E.g., payload index can be created *after* immutable segment is created, and so we have to
+    /// track payload index schema version separately from `Segment::initial_version`.
     payload_index_schema: HashMap<JsonPath, SeqNumberType>,
 }
 
