@@ -9,6 +9,7 @@ use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 
 use crate::common::Flusher;
+use crate::common::flags::bitvec_flags::BitvecFlags;
 use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
@@ -39,7 +40,7 @@ pub struct AppendableMmapMultiDenseVectorStorage<
 > {
     vectors: S,
     offsets: O,
-    deleted: DynamicMmapFlags,
+    deleted: BitvecFlags,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     deleted_count: usize,
@@ -59,15 +60,16 @@ impl<
             return Ok(false);
         }
 
-        if self.deleted.len() <= key as usize {
-            self.deleted.set_len(key as usize + 1)?;
-        }
+        // set value
         let previous = self.deleted.set(key, deleted);
+
+        // update counter
         if !previous && deleted {
             self.deleted_count += 1;
         } else if previous && !deleted {
             self.deleted_count -= 1;
         }
+
         Ok(previous)
     }
 
@@ -443,8 +445,8 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         Some(populate),
     )?;
 
-    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path, populate)?;
-    let deleted_count = deleted.count_flags();
+    let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
+    let deleted_count = deleted.count_trues();
 
     Ok(AppendableMmapMultiDenseVectorStorage {
         vectors,
@@ -555,8 +557,8 @@ pub fn open_appendable_in_ram_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let vectors = InRamPersistedVectors::open(&vectors_path, dim)?;
     let offsets = InRamPersistedVectors::open(&offsets_path, 1)?;
 
-    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path, populate)?;
-    let deleted_count = deleted.count_flags();
+    let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
+    let deleted_count = deleted.count_trues();
 
     Ok(AppendableMmapMultiDenseVectorStorage {
         vectors,

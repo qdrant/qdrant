@@ -82,7 +82,7 @@ impl BitvecFlags {
         self.bitvec.count_zeros()
     }
 
-    /// Set the value of a flag at the given index.
+    /// Set the value of a flag at the given index, grows the bitvec if needed.
     /// Returns the previous value of the flag.
     pub fn set(&mut self, index: PointOffsetType, value: bool) -> bool {
         // queue write in buffer
