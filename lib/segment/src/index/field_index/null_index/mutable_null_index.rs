@@ -5,8 +5,9 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::Flusher;
+use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::roaring_flags::RoaringFlags;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
     PrimaryCondition,
@@ -14,7 +15,6 @@ use crate::index::field_index::{
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
-use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 
 const HAS_VALUES_DIRNAME: &str = "has_values";
 const IS_NULL_DIRNAME: &str = "is_null";
