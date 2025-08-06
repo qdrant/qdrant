@@ -149,14 +149,12 @@ def test_partial_snapshot_empty(tmp_path: pathlib.Path):
     recovery_ts = get_telemetry_collections(read_peer)[0]['shards'][0]['partial_snapshot']['recovery_timestamp']
     assert recovery_ts > 0
 
-
-def test_partial_snapshot_payload_index_schema(tmp_path: pathlib.Path):
+def test_partial_snapshot_update_payload_index_schema(tmp_path: pathlib.Path):
     assert_project_root()
 
-    write_peer, read_peer = bootstrap_peers(tmp_path, shards = 2, bootstrap_points = 10_000)
+    write_peer, read_peer = bootstrap_peers(tmp_path, shards = 2, bootstrap_points = 1_000)
 
-    create_field_index(write_peer, "city", "keyword")
-
+    # Enable strict mode on read peer
     update_collection_parameters(read_peer, {
         "strict_mode_config": {
             "enabled": True,
@@ -164,12 +162,53 @@ def test_partial_snapshot_payload_index_schema(tmp_path: pathlib.Path):
         }
     })
 
+    # Crete field index on write peer
+    create_field_index(write_peer, "city", "keyword")
+
+    # Recover shard 0 on read peer
+    # Expect filtered query to fail, because field index does not exist on shard 1 yet
     recover_partial_snapshot_from(read_peer, write_peer, shard = 0)
     resp = try_query_by_field(read_peer, "city", "London")
     assert resp.status_code == 400
 
+    # Recover shard 1 on read peer
+    # Expect filtered query to succeed, because field index exists on both shards
     recover_partial_snapshot_from(read_peer, write_peer, shard = 1)
     resp = try_query_by_field(read_peer, "city", "London")
+    assert_http_ok(resp)
+
+def test_partial_snapshot_recreate_payload_field_index(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1_000)
+
+    # Enable strict mode on read peer
+    update_collection_parameters(read_peer, {
+        "strict_mode_config": {
+            "enabled": True,
+            "unindexed_filtering_retrieve": False,
+        }
+    })
+
+    # Create field index *with range filters disabled* on write peer
+    create_field_index(write_peer, "magic", {
+        "type": "integer",
+        "range": False,
+    })
+
+    # Recover read peer
+    # Expect filtered query to fail, because range index does not exist yet
+    recover_partial_snapshot_from(read_peer, write_peer)
+    resp = try_query_by_range(read_peer, "magic", 42, 69)
+    assert resp.status_code == 400
+
+    # Recreate field index *with range filters enabled* on write peer
+    create_field_index(write_peer, "magic", "integer")
+
+    # Recover read peer
+    # Expect filtered query to succeed, because range index exists now
+    recover_partial_snapshot_from(read_peer, write_peer)
+    resp = try_query_by_range(read_peer, "magic", 42, 69)
     assert_http_ok(resp)
 
 
@@ -271,15 +310,15 @@ def get_snapshot_manifest(peer_url: str, shard = 0):
 
     return resp.json()["result"]
 
-def create_field_index(peer_url: str, key: str, schema: str):
+def update_collection_parameters(peer_url: str, parameters: Any):
+    resp = requests.patch(f"{peer_url}/collections/{COLLECTION}", json = parameters)
+    assert_http_ok(resp)
+
+def create_field_index(peer_url: str, key: str, schema: Any):
     resp = requests.put(f"{peer_url}/collections/{COLLECTION}/index?wait=true", json = {
         "field_name": key,
         "field_schema": schema,
     })
-    assert_http_ok(resp)
-
-def update_collection_parameters(peer_url: str, parameters: Any):
-    resp = requests.patch(f"{peer_url}/collections/{COLLECTION}", json = parameters)
     assert_http_ok(resp)
 
 
@@ -339,6 +378,21 @@ def try_query_by_field(peer_url: str, key: str, value: Any):
                 "key": key,
                 "match": {
                     "value": value,
+                }
+            }
+        }
+    })
+
+    return resp
+
+def try_query_by_range(peer_url: str, key: str, min: int, max: int):
+    resp = requests.post(f"{peer_url}/collections/{COLLECTION}/points/query", json = {
+        "filter": {
+            "must": {
+                "key": key,
+                "range": {
+                    "gte": min,
+                    "lte": max,
                 }
             }
         }

@@ -120,16 +120,17 @@ impl PayloadIndex for PlainPayloadIndex {
         self.apply_index(field.clone(), payload_schema.into(), vec![])
     }
 
-    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        self.config.indices.remove(field);
-        self.save_config()
+    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<bool> {
+        let is_removed = self.config.indices.remove(field).is_some();
+        self.save_config()?;
+        Ok(is_removed)
     }
 
     fn drop_index_if_incompatible(
         &mut self,
         field: PayloadKeyTypeRef,
         _new_payload_schema: &PayloadFieldSchema,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<bool> {
         // Just always drop the index, as we don't have any indexes
         self.drop_index(field)
     }
