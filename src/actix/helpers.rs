@@ -157,10 +157,8 @@ where
         let handle = tokio::task::spawn(async move {
             let result = future.await;
 
-            if !wait {
-                if let Err(err) = &result {
-                    log_service_error(err);
-                }
+            if !wait && let Err(err) = &result {
+                log_service_error(err);
             }
 
             result
