@@ -23,10 +23,11 @@ fn encode_bench(c: &mut Criterion) {
         Vec::<u8>::new(),
         &VectorParameters {
             dim: vector_dim,
-            count: vectors_count,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         },
+        vectors_count,
         2,
         2,
         &AtomicBool::new(false),

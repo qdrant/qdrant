@@ -23,6 +23,7 @@ pub trait MultivectorOffsets {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
 }
 
+#[allow(clippy::len_without_is_empty)]
 pub trait MultivectorOffsetsStorage: Sized {
     fn load(path: &Path) -> OperationResult<Self>;
 
@@ -32,9 +33,11 @@ pub trait MultivectorOffsetsStorage: Sized {
 
     fn len(&self) -> usize;
 
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
+    fn push_offset(
+        &mut self,
+        offset: MultivectorOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()>;
 }
 
 impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
@@ -59,6 +62,16 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
 
     fn len(&self) -> usize {
         self.len()
+    }
+
+    fn push_offset(
+        &mut self,
+        offset: MultivectorOffset,
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        // Skip hardware counter increment because it's a RAM storage.
+        self.push(offset);
+        Ok(())
     }
 }
 
@@ -97,6 +110,14 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
 
     fn len(&self) -> usize {
         self.offsets.len()
+    }
+
+    fn push_offset(
+        &mut self,
+        _offset: MultivectorOffset,
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        unreachable!("Cannot push offset to mmap storage");
     }
 }
 
@@ -152,10 +173,12 @@ where
         vector_parameters: &VectorParameters,
         multi_vector_config: &MultiVectorConfig,
     ) -> OperationResult<Self> {
+        let offsets = TMultivectorOffsetsStorage::load(offsets_path)?;
+        let quantized_storage = QuantizedStorage::load(data_path, meta_path, vector_parameters)?;
         Ok(Self {
             dim: vector_parameters.dim,
-            quantized_storage: QuantizedStorage::load(data_path, meta_path, vector_parameters)?,
-            offsets: TMultivectorOffsetsStorage::load(offsets_path)?,
+            quantized_storage,
+            offsets,
             multi_vector_config: *multi_vector_config,
         })
     }
@@ -301,6 +324,34 @@ where
             query.push(self.quantized_storage.encode_internal_vector(internal_id)?)
         }
         Some(query)
+    }
+
+    fn push_vector(
+        &mut self,
+        vector: &[f32],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        let multi_vector = TypedMultiDenseVectorRef {
+            dim: self.dim,
+            flattened_vectors: vector,
+        };
+
+        let old_inner_vectors_count = self.quantized_storage.vectors_count();
+        for inner_vector in multi_vector.multi_vectors() {
+            self.quantized_storage
+                .push_vector(inner_vector, hw_counter)?;
+        }
+
+        let offset: MultivectorOffset = MultivectorOffset {
+            start: old_inner_vectors_count as PointOffsetType,
+            count: multi_vector.vectors_count() as PointOffsetType,
+        };
+        self.offsets.push_offset(offset, hw_counter)?;
+        Ok(())
+    }
+
+    fn vectors_count(&self) -> usize {
+        self.offsets.len()
     }
 }
 

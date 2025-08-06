@@ -16,7 +16,7 @@ mod tests {
         let vector_dim = 256;
         let vector_parameters = VectorParameters {
             dim: vector_dim,
-            count: vectors_count,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         };
@@ -26,6 +26,7 @@ mod tests {
             vector_data.iter(),
             Vec::<u8>::new(),
             &vector_parameters,
+            vectors_count,
             None,
             &AtomicBool::new(false),
         )
@@ -53,7 +54,7 @@ mod tests {
         let vector_dim = 8;
         let vector_parameters = VectorParameters {
             dim: vector_dim,
-            count: vectors_count,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: false,
         };
@@ -63,6 +64,7 @@ mod tests {
             vector_data.iter(),
             Vec::<u8>::new(),
             &vector_parameters,
+            vectors_count,
             2,
             1,
             &AtomicBool::new(false),
@@ -87,11 +89,10 @@ mod tests {
     fn empty_data_bq() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-        let vectors_count = 0;
         let vector_dim = 8;
         let vector_parameters = VectorParameters {
             dim: vector_dim,
-            count: vectors_count,
+            deprecated_count: None,
             distance_type: DistanceType::Dot,
             invert: true,
         };

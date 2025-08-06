@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
-use quantization::{EncodedStorage, EncodedVectorsPQ, EncodedVectorsU8};
+use quantization::{EncodedStorage, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 
 use super::{GpuVectorStorage, STORAGES_COUNT};
 use crate::common::operation_error::OperationResult;

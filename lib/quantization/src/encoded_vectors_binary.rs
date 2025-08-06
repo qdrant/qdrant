@@ -399,6 +399,24 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         &self.encoded_vectors
     }
 
+    pub fn new_empty_appendable(
+        encoded_vectors: TStorage,
+        vector_parameters: VectorParameters,
+        encoding: Encoding,
+        query_encoding: QueryEncoding,
+    ) -> Self {
+        Self {
+            encoded_vectors,
+            metadata: Metadata {
+                vector_parameters,
+                encoding,
+                query_encoding,
+                vector_stats: None,
+            },
+            bits_store_type: PhantomData,
+        }
+    }
+
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
@@ -438,7 +456,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         }
 
         Ok(Self {
-            encoded_vectors: storage_builder.build(),
+            encoded_vectors: storage_builder.build().map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to build storage: {e}",))
+            })?,
             metadata: Metadata {
                 vector_parameters: vector_parameters.clone(),
                 encoding,
@@ -767,10 +787,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         &self.metadata.vector_parameters
     }
 
-    pub fn vectors_count(&self) -> usize {
-        self.metadata.vector_parameters.count
-    }
-
     pub fn encode_internal_query(&self, point_id: u32) -> EncodedQueryBQ<TBitsStoreType> {
         // For internal queries we use the same encoding as for storage
         EncodedQueryBQ::Binary(EncodedBinVector {
@@ -806,8 +822,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         let metadata: Metadata = serde_json::from_str(&contents)?;
         let quantized_vector_size =
             Self::get_quantized_vector_size_from_params(vector_parameters.dim, metadata.encoding);
-        let encoded_vectors =
-            TStorage::from_file(data_path, quantized_vector_size, vector_parameters.count)?;
+        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size)?;
 
         let result = Self {
             metadata,
@@ -878,6 +893,23 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
             )
             .to_vec(),
         }))
+    }
+
+    fn push_vector(
+        &mut self,
+        vector: &[f32],
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        let encoded_vector = Self::encode_vector(vector, &None, self.metadata.encoding);
+        self.encoded_vectors.push_vector(
+            bytemuck::cast_slice(encoded_vector.encoded_vector.as_slice()),
+            hw_counter,
+        )
+    }
+
+    fn vectors_count(&self) -> usize {
+        self.encoded_vectors
+            .vectors_count(self.get_quantized_vector_size())
     }
 }
 
