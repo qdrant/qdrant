@@ -10,8 +10,14 @@ function clear_after_tests()
   docker compose down
 }
 
-# Prevent double building in docker-compose
-docker buildx build --build-arg=PROFILE=ci --load ../../ --tag=qdrant_consensus
+# Build image only if it doesn't exist (for local runs)
+# In CI, the image is already built and loaded by the workflow
+if ! docker image inspect qdrant_consensus >/dev/null 2>&1; then
+  echo "Building qdrant_consensus image..."
+  docker buildx build --build-arg=PROFILE=ci --load ../../ --tag=qdrant_consensus
+else
+  echo "Using existing qdrant_consensus image"
+fi
 docker compose down --volumes
 docker compose up -d --force-recreate
 trap clear_after_tests EXIT
