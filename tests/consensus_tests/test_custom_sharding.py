@@ -347,7 +347,7 @@ def check_peer_metadata(peer_url: str):
     metadata = cluster and cluster.get("peer_metadata")
     peers = cluster and cluster.get("peers")
 
-    return metadata and peers and all(metadata.get(peer) for peer in peers.keys())
+    return metadata and peers and all(metadata.get(peer) for peer in peers)
 
 def get_telemetry(peer_url: str):
     resp = requests.get(f"{peer_url}/telemetry?details_level=3")
