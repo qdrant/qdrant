@@ -72,10 +72,10 @@ pub fn recover_snapshots(
             panic!("Failed to recover snapshot {collection_name}: {err}");
         }
         // Remove collection_path directory if exists
-        if collection_path.exists() {
-            if let Err(err) = remove_dir_all(&collection_path) {
-                panic!("Failed to remove collection {collection_name}: {err}");
-            }
+        if collection_path.exists()
+            && let Err(err) = remove_dir_all(&collection_path)
+        {
+            panic!("Failed to remove collection {collection_name}: {err}");
         }
         rename(&collection_temp_path, &collection_path).unwrap();
     }

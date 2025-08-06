@@ -51,9 +51,9 @@ pub fn touch_started_file_indicator() {
 /// Use before server initialization to avoid false positives.
 pub fn remove_started_file_indicator() {
     let path = get_init_file_path();
-    if path.exists() {
-        if let Err(err) = std::fs::remove_file(path) {
-            log::warn!("Failed to remove init file indicator: {err}");
-        }
+    if path.exists()
+        && let Err(err) = std::fs::remove_file(path)
+    {
+        log::warn!("Failed to remove init file indicator: {err}");
     }
 }

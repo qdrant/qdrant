@@ -232,12 +232,12 @@ impl Settings {
         let config_exists = |path| File::with_name(path).collect().is_ok();
 
         // Check if custom config file exists, report error if not
-        if let Some(path) = &custom_config_path {
-            if !config_exists(path) {
-                load_errors.push(LogMsg::Error(format!(
-                    "Config file via --config-path is not found: {path}"
-                )));
-            }
+        if let Some(path) = &custom_config_path
+            && !config_exists(path)
+        {
+            load_errors.push(LogMsg::Error(format!(
+                "Config file via --config-path is not found: {path}"
+            )));
         }
 
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
