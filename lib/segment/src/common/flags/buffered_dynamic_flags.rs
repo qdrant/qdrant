@@ -12,6 +12,7 @@ use crate::common::operation_error::OperationResult;
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing, without interface for reading.
 ///
 /// Changes are buffered until explicitly flushed.
+#[derive(Debug)]
 pub(crate) struct BufferedDynamicFlags {
     /// Persisted flags.
     storage: Arc<Mutex<DynamicMmapFlags>>,

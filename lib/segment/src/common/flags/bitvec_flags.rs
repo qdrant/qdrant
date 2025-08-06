@@ -16,6 +16,7 @@ use crate::common::operation_error::OperationResult;
 /// Changes are buffered until explicitly flushed.
 ///
 /// [1]: super::roaring_flags::RoaringFlags
+#[derive(Debug)]
 pub struct BitvecFlags {
     /// Buffered persisted flags.
     storage: BufferedDynamicFlags,
@@ -71,17 +72,19 @@ impl BitvecFlags {
             .map(|index| index as PointOffsetType)
     }
 
+    #[inline]
     pub fn count_trues(&self) -> usize {
         self.bitvec.count_ones()
     }
 
+    #[inline]
     pub fn count_falses(&self) -> usize {
         self.bitvec.count_zeros()
     }
 
     /// Set the value of a flag at the given index.
     /// Returns the previous value of the flag.
-    pub fn set(&mut self, index: PointOffsetType, value: bool) {
+    pub fn set(&mut self, index: PointOffsetType, value: bool) -> bool {
         // queue write in buffer
         self.storage.buffer_set(index, value);
 
@@ -93,7 +96,7 @@ impl BitvecFlags {
         }
 
         // update bitmap
-        self.bitvec.set(index_usize, value)
+        self.bitvec.replace(index_usize, value)
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
