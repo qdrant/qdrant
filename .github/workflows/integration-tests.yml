@@ -89,8 +89,6 @@ jobs:
       docker-tag: ${{ steps.docker-build.outputs.imageid }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true  # Fetch LFS files automatically
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build Qdrant Docker image
@@ -100,9 +98,9 @@ jobs:
           context: .
           tags: qdrant/qdrant:test
           cache-from: |
-            type=gha,scope=${{ github.ref }}
-            type=gha,scope=${{ github.base_ref }}
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+            type=gha,scope=${{ github.ref }}-tests
+            type=gha,scope=${{ github.base_ref }}-tests
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}-tests
           outputs: type=docker,dest=/tmp/qdrant-image.tar
           build-args: |
             PROFILE=ci
@@ -253,6 +251,8 @@ jobs:
         run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
 
       - uses: actions/checkout@v4
+        with:
+          lfs: true  # Fetch LFS files automatically
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
