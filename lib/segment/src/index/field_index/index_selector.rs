@@ -5,7 +5,7 @@ use std::sync::Arc;
 use gridstore::Blob;
 
 use super::bool_index::BoolIndex;
-use super::bool_index::mmap_bool_index::MmapBoolIndex;
+use super::bool_index::mutable_bool_index::MutableBoolIndex;
 #[cfg(feature = "rocksdb")]
 use super::bool_index::simple_bool_index::SimpleBoolIndex;
 use super::geo_index::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
@@ -524,18 +524,17 @@ impl IndexSelector<'_> {
                 Arc::clone(db),
                 &field.to_string(),
             ))),
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => {
                 let dir = bool_dir(dir, field);
-                Ok(FieldIndexBuilder::BoolMmapIndex(MmapBoolIndex::builder(
+                Ok(FieldIndexBuilder::BoolMmapIndex(MutableBoolIndex::builder(
                     &dir,
-                    *is_on_disk,
                 )?))
             }
             // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 let dir = bool_dir(dir, field);
-                Ok(FieldIndexBuilder::BoolMmapIndex(MmapBoolIndex::builder(
-                    &dir, false,
+                Ok(FieldIndexBuilder::BoolMmapIndex(MutableBoolIndex::builder(
+                    &dir,
                 )?))
             }
         }
@@ -551,20 +550,18 @@ impl IndexSelector<'_> {
                 Arc::clone(db),
                 &field.to_string(),
             ))),
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => {
                 let dir = bool_dir(dir, field);
-                FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open(
+                FieldIndex::BoolIndex(BoolIndex::Mmap(MutableBoolIndex::open(
                     &dir,
-                    *is_on_disk,
                     create_if_missing,
                 )?))
             }
             // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 let dir = bool_dir(dir, field);
-                FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open(
+                FieldIndex::BoolIndex(BoolIndex::Mmap(MutableBoolIndex::open(
                     &dir,
-                    false,
                     create_if_missing,
                 )?))
             }

@@ -6,7 +6,7 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use super::bool_index::BoolIndex;
-use super::bool_index::mmap_bool_index::MmapBoolIndexBuilder;
+use super::bool_index::mutable_bool_index::MutableBoolIndexBuilder;
 use super::facet_index::FacetIndexEnum;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use super::full_text_index::text_index::{FullTextGridstoreIndexBuilder, FullTextIndex};
@@ -613,7 +613,7 @@ pub enum FieldIndexBuilder {
     FullTextGridstoreIndex(FullTextGridstoreIndexBuilder),
     #[cfg(feature = "rocksdb")]
     BoolIndex(super::bool_index::simple_bool_index::BoolIndexBuilder),
-    BoolMmapIndex(MmapBoolIndexBuilder),
+    BoolMmapIndex(MutableBoolIndexBuilder),
     #[cfg(feature = "rocksdb")]
     UuidIndex(MapIndexBuilder<UuidIntType>),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),

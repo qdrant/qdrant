@@ -1,6 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use mmap_bool_index::MmapBoolIndex;
+use mutable_bool_index::MutableBoolIndex;
 #[cfg(feature = "rocksdb")]
 use simple_bool_index::SimpleBoolIndex;
 
@@ -12,14 +12,14 @@ use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::payload_config::{IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 
-pub mod mmap_bool_index;
+pub mod mutable_bool_index;
 #[cfg(feature = "rocksdb")]
 pub mod simple_bool_index;
 
 pub enum BoolIndex {
     #[cfg(feature = "rocksdb")]
     Simple(SimpleBoolIndex),
-    Mmap(MmapBoolIndex),
+    Mmap(MutableBoolIndex),
 }
 
 impl BoolIndex {
@@ -78,12 +78,12 @@ impl BoolIndex {
         &self,
         point_id: PointOffsetType,
         is_true: bool,
-        hw_counter: &HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
     ) -> bool {
         match self {
             #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(index) => index.check_values_any(point_id, is_true),
-            BoolIndex::Mmap(index) => index.check_values_any(point_id, is_true, hw_counter),
+            BoolIndex::Mmap(index) => index.check_values_any(point_id, is_true),
         }
     }
 
@@ -315,7 +315,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::BoolIndex;
-    use super::mmap_bool_index::MmapBoolIndex;
+    use super::mutable_bool_index::MutableBoolIndex;
     #[cfg(feature = "rocksdb")]
     use super::simple_bool_index::SimpleBoolIndex;
     #[cfg(feature = "rocksdb")]
@@ -348,9 +348,9 @@ mod tests {
         }
     }
 
-    impl OpenIndex for MmapBoolIndex {
+    impl OpenIndex for MutableBoolIndex {
         fn open_at(path: &Path) -> BoolIndex {
-            MmapBoolIndex::builder(path, false)
+            MutableBoolIndex::builder(path)
                 .unwrap()
                 .make_empty()
                 .unwrap()
@@ -413,7 +413,7 @@ mod tests {
     fn test_filter_true(#[case] given: serde_json::Value, #[case] expected_count: usize) {
         #[cfg(feature = "rocksdb")]
         filter::<SimpleBoolIndex>(given.clone(), true, expected_count);
-        filter::<MmapBoolIndex>(given, true, expected_count);
+        filter::<MutableBoolIndex>(given, true, expected_count);
     }
 
     #[rstest]
@@ -428,14 +428,14 @@ mod tests {
     fn test_filter_false(#[case] given: serde_json::Value, #[case] expected_count: usize) {
         #[cfg(feature = "rocksdb")]
         filter::<SimpleBoolIndex>(given.clone(), false, expected_count);
-        filter::<MmapBoolIndex>(given, false, expected_count);
+        filter::<MutableBoolIndex>(given, false, expected_count);
     }
 
     #[test]
     fn test_load_from_disk() {
         #[cfg(feature = "rocksdb")]
         load_from_disk::<SimpleBoolIndex>();
-        load_from_disk::<MmapBoolIndex>();
+        load_from_disk::<MutableBoolIndex>();
     }
 
     fn load_from_disk<I: OpenIndex>() {
@@ -481,7 +481,7 @@ mod tests {
     fn test_modify_value(#[case] before: serde_json::Value, #[case] after: serde_json::Value) {
         #[cfg(feature = "rocksdb")]
         modify_value::<SimpleBoolIndex>(before.clone(), after.clone());
-        modify_value::<MmapBoolIndex>(before, after);
+        modify_value::<MutableBoolIndex>(before, after);
     }
 
     /// Try to modify from falsy to only true
@@ -521,7 +521,7 @@ mod tests {
     fn test_indexed_count() {
         #[cfg(feature = "rocksdb")]
         indexed_count::<SimpleBoolIndex>();
-        indexed_count::<MmapBoolIndex>();
+        indexed_count::<MutableBoolIndex>();
     }
 
     fn indexed_count<I: OpenIndex>() {
@@ -544,7 +544,7 @@ mod tests {
     fn test_payload_blocks() {
         #[cfg(feature = "rocksdb")]
         payload_blocks::<SimpleBoolIndex>();
-        payload_blocks::<MmapBoolIndex>();
+        payload_blocks::<MutableBoolIndex>();
     }
 
     fn payload_blocks<I: OpenIndex>() {
@@ -572,7 +572,7 @@ mod tests {
     fn test_estimate_cardinality() {
         #[cfg(feature = "rocksdb")]
         estimate_cardinality::<SimpleBoolIndex>();
-        estimate_cardinality::<MmapBoolIndex>();
+        estimate_cardinality::<MutableBoolIndex>();
     }
 
     fn estimate_cardinality<I: OpenIndex>() {

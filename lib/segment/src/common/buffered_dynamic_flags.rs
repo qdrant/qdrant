@@ -85,7 +85,9 @@ impl BufferedDynamicFlags {
         self.len.saturating_sub(self.count_trues())
     }
 
-    pub fn set(&mut self, index: PointOffsetType, value: bool) {
+    /// Set the value of a flag at the given index.
+    /// Returns the previous value of the flag.
+    pub fn set(&mut self, index: PointOffsetType, value: bool) -> bool {
         // queue write in buffer
         self.buffer.write().insert(index, value);
 
@@ -97,10 +99,14 @@ impl BufferedDynamicFlags {
 
         // update bitmap
         if value {
-            self.bitmap.insert(index);
+            !self.bitmap.insert(index)
         } else {
-            self.bitmap.remove(index);
+            self.bitmap.remove(index)
         }
+    }
+
+    pub fn get_bitmap(&self) -> &RoaringBitmap {
+        &self.bitmap
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
