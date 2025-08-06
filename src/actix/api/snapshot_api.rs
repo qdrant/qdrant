@@ -13,6 +13,7 @@ use collection::operations::snapshot_ops::{
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
+use collection::shards::shard_holder::shard_not_found_error;
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
@@ -750,6 +751,15 @@ async fn recover_partial_snapshot_from(
                 .error_for_status()?;
 
             if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+                let shard_holder = collection.shards_holder();
+                let shard_holder = shard_holder.read().await;
+                let replica_set = shard_holder
+                    .get_shard(shard_id)
+                    .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+                // The replica is up to date so we bump the recovered timestamp
+                // This prevents CM from immediately trying to recover again
+                replica_set.partial_snapshot_meta.snapshot_recovered();
                 return Err(StorageError::EmptyPartialSnapshot { shard_id });
             }
 
