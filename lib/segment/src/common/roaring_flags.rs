@@ -34,7 +34,7 @@ impl RoaringFlags {
             .expect("iter_trues iterates in sorted order");
 
         if let Err(err) = mmap_flags.clear_cache() {
-            log::warn!("Failed to clear bitslice cache: {}", err);
+            log::warn!("Failed to clear bitslice cache: {err}");
         }
 
         Self {

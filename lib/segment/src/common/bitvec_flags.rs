@@ -33,7 +33,7 @@ impl BitvecFlags {
         let bitvec = BitVec::from_bitslice(mmap_flags.get_bitslice());
 
         if let Err(err) = mmap_flags.clear_cache() {
-            log::warn!("Failed to clear bitslice cache: {}", err);
+            log::warn!("Failed to clear bitslice cache: {err}");
         }
 
         Self {
