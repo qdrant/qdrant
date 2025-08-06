@@ -304,8 +304,8 @@ def test_create_shard_key_read_availability(tmp_path: pathlib.Path):
     # Bootstrap cluster
     peer_urls, _, _ = start_cluster(tmp_path, N_PEERS)
 
-    # Wait until all peers submit their metadata to consensus
-    time.sleep(2)
+    # Wait until all peers submit their metadata to consensus 🙄
+    wait_for_peer_metadata(peer_urls[0], )
 
     create_collection_with_custom_sharding(peer_urls[0], shard_number = N_SHARDS, replication_factor = N_PEERS)
     wait_collection_exists_and_active_on_all_peers(collection_name = COLLECTION_NAME, peer_api_uris = peer_urls)
@@ -330,6 +330,30 @@ def test_create_shard_key_read_availability(tmp_path: pathlib.Path):
 
     # Assert that all search requests succeeded while custom shard was being created
     assert all(search_future.result() for search_future in concurrent.futures.as_completed(search_futures))
+
+def wait_for_peer_metadata(peer_url: str):
+    try:
+        wait_for(check_peer_metadata, peer_url)
+    except Exception as e:
+        import json
+        print(json.dumps(get_telemetry(peer_url), indent = 2))
+        raise e
+
+def check_peer_metadata(peer_url: str):
+    telemetry = get_telemetry(peer_url)
+
+    cluster = telemetry.get("cluster")
+
+    metadata = cluster and cluster.get("peer_metadata")
+    peers = cluster and cluster.get("peers")
+
+    return metadata and peers and all(metadata.get(peer) for peer in peers)
+
+def get_telemetry(peer_url: str):
+    resp = requests.get(f"{peer_url}/telemetry?details_level=3")
+    assert_http_ok(resp)
+
+    return resp.json()["result"]
 
 def try_search_random(peer_url: str, cancel: threading.Event):
     while not cancel.is_set():

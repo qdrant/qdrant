@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use collection::operations::types::PeerMetadata;
 use collection::shards::shard::PeerId;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
@@ -75,6 +76,9 @@ pub struct ClusterTelemetry {
     #[anonymize(false)]
     pub peers: Option<HashMap<PeerId, PeerInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub peer_metadata: Option<HashMap<PeerId, PeerMetadata>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, serde_json::Value>>,
 }
 
@@ -113,6 +117,13 @@ impl ClusterTelemetry {
                 .then(|| match dispatcher.cluster_status() {
                     ClusterStatus::Disabled => None,
                     ClusterStatus::Enabled(cluster_info) => Some(cluster_info.peers),
+                })
+                .flatten(),
+            peer_metadata: (detail.level >= DetailsLevel::Level3)
+                .then(|| {
+                    dispatcher
+                        .consensus_state()
+                        .map(|state| state.persistent.read().peer_metadata_by_id())
                 })
                 .flatten(),
             metadata: (detail.level >= DetailsLevel::Level1)
