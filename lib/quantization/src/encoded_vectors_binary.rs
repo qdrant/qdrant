@@ -408,7 +408,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         Self {
             encoded_vectors,
             metadata: Metadata {
-                vector_parameters: vector_parameters.clone(),
+                vector_parameters,
                 encoding,
                 query_encoding,
                 vector_stats: None,
