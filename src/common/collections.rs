@@ -551,12 +551,12 @@ pub async fn do_update_collection_cluster(
 
             let collection_state = collection.state().await;
 
-            if let Some(shard_key) = &shard_key {
-                if !collection_state.shards_key_mapping.contains_key(shard_key) {
-                    return Err(StorageError::bad_request(format!(
-                        "sharding key {shard_key} does not exist for collection {collection_name}",
-                    )));
-                }
+            if let Some(shard_key) = &shard_key
+                && !collection_state.shards_key_mapping.contains_key(shard_key)
+            {
+                return Err(StorageError::bad_request(format!(
+                    "sharding key {shard_key} does not exist for collection {collection_name}",
+                )));
             }
 
             let shard_id = match (direction, shard_key.as_ref()) {
