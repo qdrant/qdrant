@@ -184,6 +184,7 @@ impl MetricsProvider for ClusterTelemetry {
             status,
             config: _,
             peers: _,
+            peer_metadata: _,
             metadata: _,
         } = self;
 

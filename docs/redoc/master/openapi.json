@@ -12784,6 +12784,13 @@
             },
             "nullable": true
           },
+          "peer_metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PeerMetadata"
+            },
+            "nullable": true
+          },
           "metadata": {
             "type": "object",
             "additionalProperties": true,
@@ -12902,6 +12909,19 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          }
+        }
+      },
+      "PeerMetadata": {
+        "description": "Metadata describing extra properties for each peer",
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "description": "Peer Qdrant version",
+            "type": "string"
           }
         }
       },

@@ -2131,9 +2131,10 @@ pub struct IssuesReport {
 }
 
 /// Metadata describing extra properties for each peer
-#[derive(Debug, Hash, Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
 pub struct PeerMetadata {
     /// Peer Qdrant version
+    #[schemars(schema_with = "String::json_schema")]
     pub(crate) version: Version,
 }
 
