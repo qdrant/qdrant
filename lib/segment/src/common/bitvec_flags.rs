@@ -52,7 +52,7 @@ impl BitvecFlags {
     }
 
     pub fn get(&self, index: PointOffsetType) -> bool {
-        self.bitvec.get(index as usize).map_or(false, |bit| *bit)
+        self.bitvec.get(index as usize).is_some_and(|bit| *bit)
     }
 
     pub fn iter_trues(&self) -> impl Iterator<Item = PointOffsetType> {
@@ -102,8 +102,7 @@ impl BitvecFlags {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let storage_flusher = self.storage.flusher();
-        Box::new(move || storage_flusher())
+        self.storage.flusher()
     }
 }
 

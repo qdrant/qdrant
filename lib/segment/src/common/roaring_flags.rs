@@ -105,8 +105,7 @@ impl RoaringFlags {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let storage_flusher = self.storage.flusher();
-        Box::new(move || storage_flusher())
+        self.storage.flusher()
     }
 }
 
