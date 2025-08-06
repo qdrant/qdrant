@@ -283,9 +283,8 @@ impl MutableBoolIndex {
         false
     }
 
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
+        // The true and false flags are always in memory
         Ok(())
     }
 
