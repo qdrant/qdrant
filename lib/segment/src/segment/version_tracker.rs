@@ -5,11 +5,20 @@ use std::hash::Hash;
 use crate::json_path::JsonPath;
 use crate::types::{SeqNumberType, VectorNameBuf};
 
+/// Tracks versions of different sub-structures of segment to optimize partial snapshots.
 #[derive(Clone, Debug, Default)]
 pub struct VersionTracker {
+    /// Tracks version of *mutable* files inside vector storage.
+    /// Should be updated when vector storage is modified.
     vector_storage: HashMap<VectorNameBuf, SeqNumberType>,
+
+    /// Tracks version of *mutable* files inside payload storage.
+    /// Should be updated when payload storage is modified.
     payload_storage: Option<SeqNumberType>,
-    payload_index: HashMap<JsonPath, SeqNumberType>,
+
+    /// Tracks version of *immutable* files inside payload index.
+    /// Should be updated when payload index *schema* of the field is modified.
+    payload_index_schema: HashMap<JsonPath, SeqNumberType>,
 }
 
 impl VersionTracker {
@@ -29,12 +38,12 @@ impl VersionTracker {
         self.payload_storage = bump(self.payload_storage, version);
     }
 
-    pub fn get_payload_index(&self, field: &JsonPath) -> Option<SeqNumberType> {
-        self.payload_index.get(field).copied()
+    pub fn get_payload_index_schema(&self, field: &JsonPath) -> Option<SeqNumberType> {
+        self.payload_index_schema.get(field).copied()
     }
 
-    pub fn set_payload_index(&mut self, field: &JsonPath, version: Option<SeqNumberType>) {
-        bump_key(&mut self.payload_index, field, version)
+    pub fn set_payload_index_schema(&mut self, field: &JsonPath, version: Option<SeqNumberType>) {
+        bump_key(&mut self.payload_index_schema, field, version)
     }
 }
 

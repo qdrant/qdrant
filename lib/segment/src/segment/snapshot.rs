@@ -168,7 +168,7 @@ impl Segment {
             .map(|(field, file)| {
                 let version = FileVersion::from(
                     self.version_tracker
-                        .get_payload_index(&field)
+                        .get_payload_index_schema(&field)
                         .or(self.initial_version)
                         .or(self.version)
                         .unwrap_or(0),
