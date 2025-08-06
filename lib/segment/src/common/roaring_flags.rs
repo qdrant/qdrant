@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use common::types::PointOffsetType;
 use roaring::RoaringBitmap;
 
-use crate::common::buffered_dynamic_flags::BufferedDynamicFlags;
 use crate::common::Flusher;
+use crate::common::buffered_dynamic_flags::BufferedDynamicFlags;
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 
@@ -106,9 +106,7 @@ impl RoaringFlags {
 
     pub fn flusher(&self) -> Flusher {
         let storage_flusher = self.storage.flusher();
-        Box::new(move || {
-            storage_flusher()
-        })
+        Box::new(move || storage_flusher())
     }
 }
 
@@ -175,5 +173,4 @@ mod tests {
             assert_eq!(all_indices, expected_all);
         }
     }
-
 }

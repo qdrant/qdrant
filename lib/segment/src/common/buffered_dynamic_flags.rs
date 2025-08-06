@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
-
 use common::types::PointOffsetType;
 use parking_lot::{Mutex, RwLock};
 
@@ -51,7 +50,7 @@ impl BufferedDynamicFlags {
             let mut buffer_guard = self.buffer.write();
             let updates = std::mem::take(&mut *buffer_guard);
             let Some(required_len) = updates.keys().max().map(|&max_id| max_id as usize + 1) else {
-                return Box::new(|| Ok(()))
+                return Box::new(|| Ok(()));
             };
             (updates, required_len)
         };

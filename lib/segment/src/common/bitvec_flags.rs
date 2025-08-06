@@ -56,11 +56,15 @@ impl BitvecFlags {
     }
 
     pub fn iter_trues(&self) -> impl Iterator<Item = PointOffsetType> {
-        self.bitvec.iter_ones().map(|index| index as PointOffsetType)
+        self.bitvec
+            .iter_ones()
+            .map(|index| index as PointOffsetType)
     }
 
     pub fn iter_falses(&self) -> impl Iterator<Item = PointOffsetType> {
-        self.bitvec.iter_zeros().map(|index| index as PointOffsetType)
+        self.bitvec
+            .iter_zeros()
+            .map(|index| index as PointOffsetType)
     }
 
     pub fn count_trues(&self) -> usize {
