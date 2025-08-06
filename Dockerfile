@@ -84,6 +84,9 @@ ARG LINKER=mold
 # Enable GPU support
 ARG GPU
 
+# Download and extract web UI
+RUN mkdir /static && STATIC_DIR=/static ./tools/sync-web-ui.sh
+
 COPY --from=planner /qdrant/recipe.json recipe.json
 # `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates using `pkg-config`!
 #
@@ -107,10 +110,6 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace ${GPU:+--features=gpu} --bin qdrant \
     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
-
-# Download and extract web UI
-RUN mkdir /static && STATIC_DIR=/static ./tools/sync-web-ui.sh
-
 
 # Dockerfile does not support conditional `FROM` directly.
 # To workaround this limitation, we use a multi-stage build with a different base images which have equal name to ARG value.
