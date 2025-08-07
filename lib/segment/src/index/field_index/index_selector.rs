@@ -157,62 +157,50 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
         create_if_missing: bool,
-    ) -> OperationResult<Vec<FieldIndex>> {
+    ) -> OperationResult<Option<Vec<FieldIndex>>> {
         let indexes = match payload_schema.expand().as_ref() {
-            PayloadSchemaParams::Keyword(_) => {
-                vec![FieldIndex::KeywordIndex(
-                    self.map_new(field, create_if_missing)?,
-                )]
-            }
-            PayloadSchemaParams::Integer(integer_params) => itertools::chain(
-                integer_params
-                    .lookup
-                    .unwrap_or(true)
-                    .then(|| {
-                        OperationResult::Ok(FieldIndex::IntMapIndex(
-                            self.map_new(field, create_if_missing)?,
-                        ))
-                    })
-                    .transpose()?,
-                integer_params
-                    .range
-                    .unwrap_or(true)
-                    .then(|| {
-                        OperationResult::Ok(FieldIndex::IntIndex(
-                            self.numeric_new(field, create_if_missing)?,
-                        ))
-                    })
-                    .transpose()?,
-            )
-            .collect(),
-            PayloadSchemaParams::Float(_) => {
-                vec![FieldIndex::FloatIndex(
-                    self.numeric_new(field, create_if_missing)?,
-                )]
-            }
-            PayloadSchemaParams::Geo(_) => vec![FieldIndex::GeoIndex(
+            PayloadSchemaParams::Keyword(_) => Some(vec![FieldIndex::KeywordIndex(
+                self.map_new(field, create_if_missing)?,
+            )]),
+            PayloadSchemaParams::Integer(integer_params) => Some(
+                itertools::chain(
+                    integer_params
+                        .lookup
+                        .unwrap_or(true)
+                        .then(|| {
+                            OperationResult::Ok(FieldIndex::IntMapIndex(
+                                self.map_new(field, create_if_missing)?,
+                            ))
+                        })
+                        .transpose()?,
+                    integer_params
+                        .range
+                        .unwrap_or(true)
+                        .then(|| {
+                            OperationResult::Ok(FieldIndex::IntIndex(
+                                self.numeric_new(field, create_if_missing)?,
+                            ))
+                        })
+                        .transpose()?,
+                )
+                .collect(),
+            ),
+            PayloadSchemaParams::Float(_) => Some(vec![FieldIndex::FloatIndex(
+                self.numeric_new(field, create_if_missing)?,
+            )]),
+            PayloadSchemaParams::Geo(_) => Some(vec![FieldIndex::GeoIndex(
                 self.geo_new(field, create_if_missing)?,
-            )],
-            PayloadSchemaParams::Text(text_index_params) => {
-                vec![FieldIndex::FullTextIndex(self.text_new(
-                    field,
-                    text_index_params.clone(),
-                    create_if_missing,
-                )?)]
-            }
-            PayloadSchemaParams::Bool(_) => {
-                vec![self.bool_new(field, create_if_missing)?]
-            }
-            PayloadSchemaParams::Datetime(_) => {
-                vec![FieldIndex::DatetimeIndex(
-                    self.numeric_new(field, create_if_missing)?,
-                )]
-            }
-            PayloadSchemaParams::Uuid(_) => {
-                vec![FieldIndex::UuidMapIndex(
-                    self.map_new(field, create_if_missing)?,
-                )]
-            }
+            )]),
+            PayloadSchemaParams::Text(text_index_params) => Some(vec![FieldIndex::FullTextIndex(
+                self.text_new(field, text_index_params.clone(), create_if_missing)?,
+            )]),
+            PayloadSchemaParams::Bool(_) => Some(vec![self.bool_new(field, create_if_missing)?]),
+            PayloadSchemaParams::Datetime(_) => Some(vec![FieldIndex::DatetimeIndex(
+                self.numeric_new(field, create_if_missing)?,
+            )]),
+            PayloadSchemaParams::Uuid(_) => Some(vec![FieldIndex::UuidMapIndex(
+                self.map_new(field, create_if_missing)?,
+            )]),
         };
 
         Ok(indexes)
