@@ -38,6 +38,7 @@ pub async fn multi_vec_collection_fixture(collection_path: &Path, shard_number: 
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
+        wal_retain_closed: 1,
     };
 
     let vector_params1 = VectorParamsBuilder::new(4, Distance::Dot).build();

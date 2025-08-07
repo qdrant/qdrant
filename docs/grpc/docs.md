@@ -1898,6 +1898,7 @@ Note: 1kB = 1 vector of size 256. |
 | ----- | ---- | ----- | ----------- |
 | wal_capacity_mb | [uint64](#uint64) | optional | Size of a single WAL block file |
 | wal_segments_ahead | [uint64](#uint64) | optional | Number of segments to create in advance |
+| wal_retain_closed | [uint64](#uint64) | optional | Number of closed segments to retain |
 
 
 

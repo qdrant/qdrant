@@ -9,6 +9,7 @@ pub(super) mod shard_ops;
 mod telemetry;
 
 use std::collections::{BTreeSet, HashMap};
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -916,6 +917,7 @@ impl LocalShard {
             &WalOptions {
                 segment_capacity,
                 segment_queue_len: 0,
+                retain_closed: NonZeroUsize::new(1).unwrap(),
             },
             latest_op_num,
         )

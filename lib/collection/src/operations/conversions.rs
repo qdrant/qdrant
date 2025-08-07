@@ -288,10 +288,12 @@ impl From<api::grpc::qdrant::WalConfigDiff> for WalConfigDiff {
         let api::grpc::qdrant::WalConfigDiff {
             wal_capacity_mb,
             wal_segments_ahead,
+            wal_retain_closed,
         } = value;
         Self {
             wal_capacity_mb: wal_capacity_mb.map(|v| v as usize),
             wal_segments_ahead: wal_segments_ahead.map(|v| v as usize),
+            wal_retain_closed: wal_retain_closed.map(|v| v as usize),
         }
     }
 }
@@ -518,11 +520,13 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     let WalConfig {
                         wal_capacity_mb,
                         wal_segments_ahead,
+                        wal_retain_closed,
                     } = wal_config;
 
                     api::grpc::qdrant::WalConfigDiff {
                         wal_capacity_mb: Some(wal_capacity_mb as u64),
                         wal_segments_ahead: Some(wal_segments_ahead as u64),
+                        wal_retain_closed: Some(wal_retain_closed as u64),
                     }
                 }),
                 quantization_config: quantization_config.map(|x| x.into()),
@@ -622,10 +626,12 @@ impl From<api::grpc::qdrant::WalConfigDiff> for WalConfig {
         let api::grpc::qdrant::WalConfigDiff {
             wal_capacity_mb,
             wal_segments_ahead,
+            wal_retain_closed,
         } = wal_config;
         Self {
             wal_capacity_mb: wal_capacity_mb.unwrap_or_default() as usize,
             wal_segments_ahead: wal_segments_ahead.unwrap_or_default() as usize,
+            wal_retain_closed: wal_retain_closed.unwrap_or_default() as usize,
         }
     }
 }
