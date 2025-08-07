@@ -53,9 +53,6 @@ storage:
     # Number of WAL segments to create ahead of actual data requirement
     wal_segments_ahead: 0
 
-    # Number of closed WAL segments to keep.
-    wal_retain_closed: 1
-
   # Normal node - receives all updates and answers all queries
   node_type: "Normal"
 
