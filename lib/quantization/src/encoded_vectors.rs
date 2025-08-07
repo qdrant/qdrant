@@ -100,12 +100,12 @@ pub(crate) fn validate_vector_parameters<'a>(
         }
         count += 1;
     }
-    if let Some(vectors_count) = vector_parameters.deprecated_count {
-        if count != vectors_count {
-            return Err(EncodingError::ArgumentsError(format!(
-                "Vector count {count} does not match vector parameters count {vectors_count}"
-            )));
-        }
+    if let Some(vectors_count) = vector_parameters.deprecated_count
+        && count != vectors_count
+    {
+        return Err(EncodingError::ArgumentsError(format!(
+            "Vector count {count} does not match vector parameters count {vectors_count}"
+        )));
     }
     Ok(())
 }
