@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use common::types::PointOffsetType;
 use roaring::RoaringBitmap;
 
+use super::buffered_dynamic_flags::BufferedDynamicFlags;
+use super::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::Flusher;
-use crate::common::buffered_dynamic_flags::BufferedDynamicFlags;
 use crate::common::operation_error::OperationResult;
-use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 
 /// A buffered, growable, and persistent bitslice with fast in-memory roaring bitmap.
 ///
@@ -117,8 +117,8 @@ impl RoaringFlags {
 mod tests {
     use common::types::PointOffsetType;
 
-    use crate::common::roaring_flags::RoaringFlags;
-    use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
+    use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+    use crate::common::flags::roaring_flags::RoaringFlags;
 
     #[test]
     fn test_roaring_flags_consistency_after_persistence() {
