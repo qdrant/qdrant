@@ -71,10 +71,10 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
     let db = open_db_with_existing_cf(temp_dir.path()).unwrap();
     let mut builder = match index_type {
         #[cfg(feature = "rocksdb")]
-        IndexType::Mutable => IndexBuilder::Mutable(NumericIndex::<
-            FloatPayloadType,
-            FloatPayloadType,
-        >::builder_rocksdb(db, COLUMN_NAME)),
+        IndexType::Mutable => IndexBuilder::Mutable(
+            NumericIndex::<FloatPayloadType, FloatPayloadType>::builder_rocksdb(db, COLUMN_NAME)
+                .unwrap(),
+        ),
         IndexType::MutableGridstore => IndexBuilder::MutableGridstore(NumericIndex::<
             FloatPayloadType,
             FloatPayloadType,
@@ -387,17 +387,25 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
     let mut new_index = match index_type {
         #[cfg(feature = "rocksdb")]
         IndexType::Mutable => {
-            NumericIndexInner::<FloatPayloadType>::new_rocksdb(db.unwrap(), COLUMN_NAME, true)
+            NumericIndexInner::<FloatPayloadType>::new_rocksdb(db.unwrap(), COLUMN_NAME, true, true)
+                .unwrap()
+                .unwrap()
         }
         IndexType::MutableGridstore => NumericIndexInner::<FloatPayloadType>::new_gridstore(
             temp_dir.path().to_path_buf(),
             true,
         )
+        .unwrap()
         .unwrap(),
         #[cfg(feature = "rocksdb")]
-        IndexType::Immutable => {
-            NumericIndexInner::<FloatPayloadType>::new_rocksdb(db.unwrap(), COLUMN_NAME, false)
-        }
+        IndexType::Immutable => NumericIndexInner::<FloatPayloadType>::new_rocksdb(
+            db.unwrap(),
+            COLUMN_NAME,
+            false,
+            true,
+        )
+        .unwrap()
+        .unwrap(),
         IndexType::Mmap => {
             NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), true).unwrap()
         }

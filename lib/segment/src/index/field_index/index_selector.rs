@@ -80,7 +80,9 @@ impl IndexSelector<'_> {
                     );
                 }
 
-                FieldIndex::IntIndex(self.numeric_new(field, create_if_missing)?)
+                return Ok(self
+                    .numeric_new(field, create_if_missing)?
+                    .map(FieldIndex::IntIndex));
             }
             (PayloadIndexType::IntMapIndex, PayloadSchemaParams::Integer(params)) => {
                 // IntMapIndex only gets created if `lookup` is true. This will only throw an error if storage is corrupt.
@@ -96,7 +98,9 @@ impl IndexSelector<'_> {
                 FieldIndex::IntMapIndex(self.map_new(field, create_if_missing)?)
             }
             (PayloadIndexType::DatetimeIndex, PayloadSchemaParams::Datetime(_)) => {
-                FieldIndex::DatetimeIndex(self.numeric_new(field, create_if_missing)?)
+                return Ok(self
+                    .numeric_new(field, create_if_missing)?
+                    .map(FieldIndex::DatetimeIndex));
             }
 
             (PayloadIndexType::KeywordIndex, PayloadSchemaParams::Keyword(_)) => {
@@ -104,7 +108,9 @@ impl IndexSelector<'_> {
             }
 
             (PayloadIndexType::FloatIndex, PayloadSchemaParams::Float(_)) => {
-                FieldIndex::FloatIndex(self.numeric_new(field, create_if_missing)?)
+                return Ok(self
+                    .numeric_new(field, create_if_missing)?
+                    .map(FieldIndex::FloatIndex));
             }
 
             (PayloadIndexType::GeoIndex, PayloadSchemaParams::Geo(_)) => {
@@ -162,32 +168,33 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Keyword(_) => Some(vec![FieldIndex::KeywordIndex(
                 self.map_new(field, create_if_missing)?,
             )]),
-            PayloadSchemaParams::Integer(integer_params) => Some(
-                itertools::chain(
-                    integer_params
-                        .lookup
-                        .unwrap_or(true)
-                        .then(|| {
-                            OperationResult::Ok(FieldIndex::IntMapIndex(
-                                self.map_new(field, create_if_missing)?,
-                            ))
-                        })
-                        .transpose()?,
-                    integer_params
-                        .range
-                        .unwrap_or(true)
-                        .then(|| {
-                            OperationResult::Ok(FieldIndex::IntIndex(
-                                self.numeric_new(field, create_if_missing)?,
-                            ))
-                        })
-                        .transpose()?,
-                )
-                .collect(),
-            ),
-            PayloadSchemaParams::Float(_) => Some(vec![FieldIndex::FloatIndex(
-                self.numeric_new(field, create_if_missing)?,
-            )]),
+            PayloadSchemaParams::Integer(integer_params) => {
+                let use_lookup = integer_params.lookup.unwrap_or(true);
+                let use_range = integer_params.range.unwrap_or(true);
+
+                let lookup = if use_lookup {
+                    Some(FieldIndex::IntMapIndex(
+                        self.map_new(field, create_if_missing)?,
+                    ))
+                } else {
+                    None
+                };
+                let range = if use_range {
+                    match self.numeric_new(field, create_if_missing)? {
+                        Some(index) => Some(FieldIndex::IntIndex(index)),
+                        None => return Ok(None),
+                    }
+                } else {
+                    None
+                };
+
+                Some(lookup.into_iter().chain(range).collect())
+            }
+            PayloadSchemaParams::Float(_) => {
+                return Ok(self
+                    .numeric_new(field, create_if_missing)?
+                    .map(|index| vec![FieldIndex::FloatIndex(index)]));
+            }
             PayloadSchemaParams::Geo(_) => Some(vec![FieldIndex::GeoIndex(
                 self.geo_new(field, create_if_missing)?,
             )]),
@@ -195,9 +202,11 @@ impl IndexSelector<'_> {
                 self.text_new(field, text_index_params.clone(), create_if_missing)?,
             )]),
             PayloadSchemaParams::Bool(_) => Some(vec![self.bool_new(field, create_if_missing)?]),
-            PayloadSchemaParams::Datetime(_) => Some(vec![FieldIndex::DatetimeIndex(
-                self.numeric_new(field, create_if_missing)?,
-            )]),
+            PayloadSchemaParams::Datetime(_) => {
+                return Ok(self
+                    .numeric_new(field, create_if_missing)?
+                    .map(|index| vec![FieldIndex::DatetimeIndex(index)]));
+            }
             PayloadSchemaParams::Uuid(_) => Some(vec![FieldIndex::UuidMapIndex(
                 self.map_new(field, create_if_missing)?,
             )]),
@@ -222,27 +231,36 @@ impl IndexSelector<'_> {
                     FieldIndexBuilder::KeywordGridstoreIndex,
                 )]
             }
-            PayloadSchemaParams::Integer(integer_params) => itertools::chain(
-                integer_params.lookup.unwrap_or(true).then(|| {
-                    self.map_builder(
+            PayloadSchemaParams::Integer(integer_params) => {
+                let use_lookup = integer_params.lookup.unwrap_or(true);
+                let use_range = integer_params.range.unwrap_or(true);
+
+                let lookup = if use_lookup {
+                    Some(self.map_builder(
                         field,
                         #[cfg(feature = "rocksdb")]
                         FieldIndexBuilder::IntMapIndex,
                         FieldIndexBuilder::IntMapMmapIndex,
                         FieldIndexBuilder::IntMapGridstoreIndex,
-                    )
-                }),
-                integer_params.range.unwrap_or(true).then(|| {
-                    self.numeric_builder(
+                    ))
+                } else {
+                    None
+                };
+
+                let range = if use_range {
+                    Some(self.numeric_builder(
                         field,
                         #[cfg(feature = "rocksdb")]
                         FieldIndexBuilder::IntIndex,
                         FieldIndexBuilder::IntMmapIndex,
                         FieldIndexBuilder::IntGridstoreIndex,
-                    )
-                }),
-            )
-            .collect(),
+                    )?)
+                } else {
+                    None
+                };
+
+                lookup.into_iter().chain(range).collect()
+            }
             PayloadSchemaParams::Float(_) => {
                 vec![self.numeric_builder(
                     field,
@@ -250,7 +268,7 @@ impl IndexSelector<'_> {
                     FieldIndexBuilder::FloatIndex,
                     FieldIndexBuilder::FloatMmapIndex,
                     FieldIndexBuilder::FloatGridstoreIndex,
-                )]
+                )?]
             }
             PayloadSchemaParams::Geo(_) => {
                 vec![self.geo_builder(
@@ -274,7 +292,7 @@ impl IndexSelector<'_> {
                     FieldIndexBuilder::DatetimeIndex,
                     FieldIndexBuilder::DatetimeMmapIndex,
                     FieldIndexBuilder::DatetimeGridstoreIndex,
-                )]
+                )?]
             }
             PayloadSchemaParams::Uuid(_) => {
                 vec![self.map_builder(
@@ -342,18 +360,23 @@ impl IndexSelector<'_> {
         &self,
         field: &JsonPath,
         create_if_missing: bool,
-    ) -> OperationResult<NumericIndex<T, P>>
+    ) -> OperationResult<Option<NumericIndex<T, P>>>
     where
         Vec<T>: Blob,
     {
         Ok(match self {
             #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                NumericIndex::new_rocksdb(Arc::clone(db), &field.to_string(), *is_appendable)
+                NumericIndex::new_rocksdb(
+                    Arc::clone(db),
+                    &field.to_string(),
+                    *is_appendable,
+                    create_if_missing,
+                )?
             }
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
-                NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk)?
-            }
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => Some(
+                NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk)?,
+            ),
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 NumericIndex::new_gridstore(numeric_dir(dir, field), create_if_missing)?
             }
@@ -368,7 +391,7 @@ impl IndexSelector<'_> {
         ) -> FieldIndexBuilder,
         make_mmap: fn(NumericIndexMmapBuilder<T, P>) -> FieldIndexBuilder,
         make_gridstore: fn(NumericIndexGridstoreBuilder<T, P>) -> FieldIndexBuilder,
-    ) -> FieldIndexBuilder
+    ) -> OperationResult<FieldIndexBuilder>
     where
         NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
         Vec<T>: Blob,
@@ -378,16 +401,16 @@ impl IndexSelector<'_> {
             IndexSelector::RocksDb(IndexSelectorRocksDb {
                 db,
                 is_appendable: _,
-            }) => make_rocksdb(NumericIndex::builder_rocksdb(
+            }) => Ok(make_rocksdb(NumericIndex::builder_rocksdb(
                 Arc::clone(db),
                 &field.to_string(),
-            )),
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => make_mmap(
+            )?)),
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => Ok(make_mmap(
                 NumericIndex::builder_mmap(&numeric_dir(dir, field), *is_on_disk),
-            ),
-            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
-                make_gridstore(NumericIndex::builder_gridstore(numeric_dir(dir, field)))
-            }
+            )),
+            IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => Ok(make_gridstore(
+                NumericIndex::builder_gridstore(numeric_dir(dir, field)),
+            )),
         }
     }
 

@@ -227,7 +227,12 @@ where
             ));
         };
 
-        let mut mutable = MutableNumericIndex::<T>::open_rocksdb_db_wrapper(db_wrapper.clone());
+        let Some(mutable) =
+            MutableNumericIndex::<T>::open_rocksdb_db_wrapper(db_wrapper.clone(), false)?
+        else {
+            return Ok(false);
+        };
+        // TODO(payload-index-remove-load): remove load when single stage open/load is implemented
         mutable.load()?;
         let InMemoryNumericIndex {
             map,
