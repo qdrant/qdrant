@@ -31,6 +31,10 @@ const DELETED_DIR_PATH: &str = "deleted";
 #[derive(Debug)]
 pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> {
     vectors: S,
+    /// Flags marking deleted vectors
+    ///
+    /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
+    /// depend on its length.
     deleted: BitvecFlags,
     distance: Distance,
     deleted_count: usize,
@@ -61,8 +65,7 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> AppendableMmapDenseV
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
-        /* deleted bitvec is already loaded */
-
+        // deleted bitvec is already loaded
         self.vectors.populate()?;
         Ok(())
     }

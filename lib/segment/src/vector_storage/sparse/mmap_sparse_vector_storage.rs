@@ -28,7 +28,10 @@ const STORAGE_DIRNAME: &str = "store";
 #[derive(Debug)]
 pub struct MmapSparseVectorStorage {
     storage: Arc<RwLock<Gridstore<StoredSparseVector>>>,
-    /// BitSlice for deleted flags. Grows dynamically upto last set flag.
+    /// Flags marking deleted vectors
+    ///
+    /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
+    /// depend on its length.
     deleted: BitvecFlags,
     /// Current number of deleted vectors.
     deleted_count: usize,
@@ -160,8 +163,7 @@ impl MmapSparseVectorStorage {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
-        /* deleted bitvec is already in-memory */
-
+        // deleted bitvec is already in-memory
         self.storage.read().populate()?;
         Ok(())
     }

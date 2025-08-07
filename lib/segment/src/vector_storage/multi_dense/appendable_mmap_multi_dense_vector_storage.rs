@@ -40,6 +40,10 @@ pub struct AppendableMmapMultiDenseVectorStorage<
 > {
     vectors: S,
     offsets: O,
+    /// Flags marking deleted vectors
+    ///
+    /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
+    /// depend on its length.
     deleted: BitvecFlags,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
@@ -76,6 +80,7 @@ impl<
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
+        // deleted bitvec is already loaded
         self.vectors.populate()?;
         self.offsets.populate()?;
         Ok(())
