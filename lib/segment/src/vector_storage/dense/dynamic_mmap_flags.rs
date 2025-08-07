@@ -261,7 +261,9 @@ impl DynamicMmapFlags {
     }
 
     pub fn get_bitslice(&self) -> &BitSlice {
-        &self.flags
+        // Take subslice with actual length, bitslice may be larger due to extra allocated capacity
+        // See `mmap_capacity_bytes`
+        &self.flags[..self.len()]
     }
 
     // no immutable files, everything is mutable

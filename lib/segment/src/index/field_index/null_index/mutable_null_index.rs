@@ -5,8 +5,8 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::Flusher;
-use crate::common::buffered_dynamic_flags::BufferedDynamicFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::roaring_flags::RoaringFlags;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
     PrimaryCondition,
@@ -29,9 +29,9 @@ pub struct MutableNullIndex {
 
 struct Storage {
     /// Points which have at least one value
-    has_values_flags: BufferedDynamicFlags,
+    has_values_flags: RoaringFlags,
     /// Points which have null values
-    is_null_flags: BufferedDynamicFlags,
+    is_null_flags: RoaringFlags,
 }
 
 impl MutableNullIndex {
@@ -73,11 +73,11 @@ impl MutableNullIndex {
 
         let has_values_path = path.join(HAS_VALUES_DIRNAME);
         let has_values_mmap = DynamicMmapFlags::open(&has_values_path, false)?;
-        let has_values_flags = BufferedDynamicFlags::new(has_values_mmap);
+        let has_values_flags = RoaringFlags::new(has_values_mmap);
 
         let is_null_path = path.join(IS_NULL_DIRNAME);
         let is_null_mmap = DynamicMmapFlags::open(&is_null_path, false)?;
-        let is_null_flags = BufferedDynamicFlags::new(is_null_mmap);
+        let is_null_flags = RoaringFlags::new(is_null_mmap);
 
         let storage = Storage {
             has_values_flags,
