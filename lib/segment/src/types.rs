@@ -85,7 +85,7 @@ impl<'de> Deserialize<'de> for DateTimePayloadType {
     {
         let str_datetime = <&str>::deserialize(deserializer)?;
         eprintln!("Attempting to parse datetime: '{}'", str_datetime); // Debug log
-        
+
         let parse_result = DateTimePayloadType::from_str(str_datetime);
         match parse_result {
             Ok(datetime) => {
@@ -2360,16 +2360,16 @@ impl<'de> Deserialize<'de> for RangeInterface {
         D: Deserializer<'de>,
     {
         let value = serde_json::Value::deserialize(deserializer)?;
-        
+
         if let Ok(float_range) = Range::<FloatPayloadType>::deserialize(&value) {
             return Ok(RangeInterface::Float(float_range));
         }
-        
+
         match Range::<DateTimePayloadType>::deserialize(&value) {
             Ok(datetime_range) => Ok(RangeInterface::DateTime(datetime_range)),
             Err(datetime_err) => {
                 let mut failed_fields = Vec::new();
-                
+
                 if let serde_json::Value::Object(map) = &value {
                     for (key, val) in map {
                         if matches!(key.as_str(), "lt" | "gt" | "lte" | "gte") {
@@ -2381,7 +2381,7 @@ impl<'de> Deserialize<'de> for RangeInterface {
                         }
                     }
                 }
-                
+
                 if !failed_fields.is_empty() {
                     Err(serde::de::Error::custom(format!(
                         "Invalid datetime format in range fields [{}], please use RFC 3339",
@@ -2979,29 +2979,29 @@ macro_rules! define_enum_with_custom_deser {
                 $skip_variant($skip_type),
             )*
         }
-        
+
         impl<'de> Deserialize<'de> for $name {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: Deserializer<'de>,
             {
                 let value = serde_json::Value::deserialize(deserializer)?;
-                
+
                 let mut priority_errors = Vec::new();
-                
+
                 $(
                     match <$priority_type>::deserialize(&value) {
                         Ok(v) => return Ok($name::$priority_variant(v)),
                         Err(e) => priority_errors.push(e.to_string()),
                     }
                 )*
-                
+
                 #[derive(Deserialize)]
                 #[serde(untagged)]
                 enum Helper {
                     $($variant($type)),*
                 }
-                
+
                 match Helper::deserialize(&value) {
                     $(Ok(Helper::$variant(v)) => Ok($name::$variant(v)),)*
                     Err(_) => {
