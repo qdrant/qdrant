@@ -11,6 +11,7 @@ mod update;
 
 use std::fmt::Display;
 
+use itertools::Itertools;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, SearchParams, StrictModeConfig};
 
@@ -117,6 +118,8 @@ pub trait StrictModeVerification {
                 let possible_schemas_str = schemas
                     .iter()
                     .map(|schema| schema.to_string())
+                    .sorted()
+                    .dedup()
                     .collect::<Vec<_>>()
                     .join(", ");
 
