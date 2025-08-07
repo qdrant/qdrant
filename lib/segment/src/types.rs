@@ -84,16 +84,13 @@ impl<'de> Deserialize<'de> for DateTimePayloadType {
         D: Deserializer<'de>,
     {
         let str_datetime = <&str>::deserialize(deserializer)?;
-        eprintln!("Attempting to parse datetime: '{}'", str_datetime); // Debug log
 
         let parse_result = DateTimePayloadType::from_str(str_datetime);
         match parse_result {
             Ok(datetime) => {
-                eprintln!("Successfully parsed: {:?}", datetime); // Debug log
                 Ok(datetime)
             }
             Err(e) => {
-                eprintln!("Failed to parse: {:?}", e); // Debug log
                 Err(serde::de::Error::custom(format!(
                     "'{str_datetime}' is not in a supported date/time format, please use RFC 3339"
                 )))
