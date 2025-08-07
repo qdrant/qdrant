@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{Filter, StrictModeConfig};
 
@@ -21,6 +22,8 @@ impl Query {
             let possible_schemas_str = schemas
                 .iter()
                 .map(|schema| schema.to_string())
+                .sorted()
+                .dedup()
                 .collect::<Vec<_>>()
                 .join(", ");
 
