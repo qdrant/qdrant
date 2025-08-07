@@ -7291,6 +7291,13 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          },
+          "wal_retain_closed": {
+            "description": "Number of closed WAL segments to keep",
+            "default": 1,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1
           }
         }
       },
@@ -9702,6 +9709,13 @@
           },
           "wal_segments_ahead": {
             "description": "Number of WAL segments to create ahead of actually used ones",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "wal_retain_closed": {
+            "description": "Number of closed WAL segments to retain",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
