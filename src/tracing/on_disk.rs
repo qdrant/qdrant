@@ -17,6 +17,7 @@ pub struct Config {
     pub log_level: Option<String>,
     pub format: Option<config::LogFormat>,
     pub span_events: Option<HashSet<config::SpanEvent>>,
+    pub buffer_size_bytes: Option<usize>,
 }
 
 impl Config {
@@ -27,6 +28,7 @@ impl Config {
             log_level,
             span_events,
             format,
+            buffer_size_bytes,
         } = other;
 
         self.enabled.replace_if_some(enabled);
@@ -34,6 +36,7 @@ impl Config {
         self.log_level.replace_if_some(log_level);
         self.span_events.replace_if_some(span_events);
         self.format.replace_if_some(format);
+        self.buffer_size_bytes.replace_if_some(buffer_size_bytes);
     }
 }
 
@@ -77,7 +80,10 @@ where
         .with_context(|| format!("failed to open {log_file} log-file"))?;
 
     let layer = fmt::Layer::default()
-        .with_writer(Mutex::new(io::BufWriter::new(writer)))
+        .with_writer(Mutex::new(io::BufWriter::with_capacity(
+            config.buffer_size_bytes.unwrap_or(8192),
+            writer,
+        )))
         .with_span_events(config::SpanEvent::unwrap_or_default_config(
             &config.span_events,
         ))
