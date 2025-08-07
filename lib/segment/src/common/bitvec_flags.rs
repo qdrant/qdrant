@@ -89,7 +89,7 @@ impl BitvecFlags {
         let index_usize = index as usize;
         if index_usize >= self.len {
             self.len = index_usize + 1;
-            self.bitvec.resize_with(self.len, |_| false);
+            self.bitvec.resize(self.len, false);
         }
 
         // update bitmap
