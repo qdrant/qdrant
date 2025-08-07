@@ -12,7 +12,7 @@ log_level: INFO
 #     log_level: INFO
 #     # Logging format, supports `text` and `json`
 #     format: text
-#     buffer_size_b: 1024
+#     buffer_size_bytes: 1024
 
 storage:
   # Where to store all the data

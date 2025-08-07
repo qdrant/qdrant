@@ -16,7 +16,7 @@ fn deserialize_logger_config() {
             "log_file": "/logs/qdrant",
             "log_level": "tracing",
             "span_events": ["new", "close"],
-            "buffer_size_b": 1024,
+            "buffer_size_bytes": 1024,
         }
     });
 
@@ -42,7 +42,7 @@ fn deserialize_logger_config() {
                 config::SpanEvent::Close,
             ])),
             format: None,
-            buffer_size_b: Some(1024),
+            buffer_size_bytes: Some(1024),
         },
     };
 
@@ -63,7 +63,7 @@ fn deserialize_json_logger_config() {
             "log_level": "tracing",
             "span_events": ["new", "close"],
             "format": "text",
-            "buffer_size_b": 1024,
+            "buffer_size_bytes": 1024,
         }
     });
 
@@ -89,7 +89,7 @@ fn deserialize_json_logger_config() {
                 config::SpanEvent::Close,
             ])),
             format: Some(config::LogFormat::Text),
-            buffer_size_b: Some(1024),
+            buffer_size_bytes: Some(1024),
         },
     };
 
@@ -122,7 +122,7 @@ fn deseriailze_config_with_explicit_nulls() {
             "log_level": null,
             "span_events": null,
             "format": null,
-            "buffer_size_b": null,
+            "buffer_size_bytes": null,
         }
     });
 
