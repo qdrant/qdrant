@@ -1,4 +1,5 @@
 pub mod anonymize;
+pub mod bitvec_flags;
 pub mod buffered_dynamic_flags;
 pub mod error_logging;
 pub mod macros;
@@ -7,6 +8,7 @@ pub mod mmap_slice_buffered_update_wrapper;
 pub mod operation_error;
 pub mod operation_time_statistics;
 pub mod reciprocal_rank_fusion;
+pub mod roaring_flags;
 #[cfg(feature = "rocksdb")]
 pub mod rocksdb_buffered_delete_wrapper;
 #[cfg(feature = "rocksdb")]
