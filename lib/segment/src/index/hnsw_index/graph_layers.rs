@@ -125,20 +125,24 @@ pub trait GraphLayersBase {
         is_stopped: &AtomicBool,
     ) -> CancellableResult<ScoredPointOffset> {
         let mut links_buffer = Vec::new();
-        let mut current_point = ScoredPointOffset {
-            idx: entry_point,
-            score: points_scorer.score_point(entry_point),
-        };
+        let mut result = None;
+        let mut level_entry = entry_point;
         for level in rev_range(top_level, target_level) {
             check_process_stopped(is_stopped)?;
-            current_point = self.search_entry_on_level(
-                current_point.idx,
-                level,
-                points_scorer,
-                &mut links_buffer,
-            );
+            let search_result =
+                self.search_entry_on_level(level_entry, level, points_scorer, &mut links_buffer);
+            level_entry = search_result.idx;
+            result = Some(search_result);
         }
-        Ok(current_point)
+        if let Some(result) = result {
+            Ok(result)
+        } else {
+            // If no levels, return the entry point with it's score
+            Ok(ScoredPointOffset {
+                idx: entry_point,
+                score: points_scorer.score_point(entry_point),
+            })
+        }
     }
 
     fn search_entry_on_level(
