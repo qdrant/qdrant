@@ -10,7 +10,7 @@ from docker.errors import ImageNotFound
 from .models import QdrantContainerConfig
 from .utils import (
     create_qdrant_container,
-    cleanup_container, extract_archive
+    cleanup_container, extract_archive, run_docker_compose
 )
 
 
@@ -247,3 +247,57 @@ def storage_from_archive(request, test_data_dir: Path, temp_storage_dir: Path) -
     extract_archive(archive_file, extract_to)
 
     return temp_storage_dir
+
+
+@pytest.fixture(scope="function")
+def qdrant_compose(docker_client, qdrant_image, test_data_dir, request):
+    """
+    Fixture for creating Qdrant containers using docker-compose.yaml files from test_data folder.
+
+    Usage with parametrization:
+        @pytest.mark.parametrize("qdrant_compose", [
+            {"compose_file": "docker-compose.yaml"}
+        ], indirect=True)
+        def test_something(qdrant_compose):
+            # qdrant_compose is a QdrantContainer object with container info
+            host = qdrant_compose.host
+            port = qdrant_compose.http_port
+
+        # With custom service name (if compose has multiple services):
+        @pytest.mark.parametrize("qdrant_compose", [
+            {"compose_file": "docker-compose.yaml", "service_name": "qdrant-node"}
+        ], indirect=True)
+        def test_something(qdrant_compose):
+            # Uses specific service from compose file
+
+    Parameters (via indirect parametrization):
+        - compose_file (str, required): Name of compose file in test_data directory
+        - service_name (str, optional): Specific service name for multiservice compose files.
+                                       If not provided:
+                                       - Single-service compose: returns QdrantContainer object
+                                       - Multi-service compose: returns list of QdrantContainer objects
+        - wait_for_ready (bool): Whether to wait for containers to be ready (default: True)
+
+    Returns:
+        Single-service compose or when service_name specified:
+            QdrantContainer: Container info object with:
+                - container: The Docker container object
+                - host: The host address (always "127.0.0.1")
+                - name: The container name
+                - http_port: The HTTP API port
+                - grpc_port: The gRPC API port (may be None)
+                - compose_project: The docker-compose project name
+
+        Multi-service compose without service_name:
+            list: Array of QdrantContainer objects (one per service)
+    """
+    if not hasattr(request, "param") or not isinstance(request.param, dict):
+        raise ValueError("qdrant_compose fixture requires parametrization with compose_file path")
+
+    config = request.param
+    container_info, cleanup = run_docker_compose(docker_client, qdrant_image, test_data_dir, config)
+
+    try:
+        yield container_info
+    finally:
+        cleanup()

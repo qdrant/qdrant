@@ -15,7 +15,7 @@ openssl genrsa -out key.pem 2048
 openssl req \
   -new -key key.pem \
   -out cert.csr \
-  -config ./tests/tls/cert.cfg
+  -config ./tests/e2e_tests/test_data/cert.cfg
 
 openssl x509 \
   -req \
@@ -25,5 +25,5 @@ openssl x509 \
   -CAkey cakey.pem \
   -CAcreateserial \
   -extensions v3_req \
-  -extfile ./tests/tls/cert.cfg \
+  -extfile ./tests/e2e_tests/test_data/cert.cfg \
   -out cert.pem
