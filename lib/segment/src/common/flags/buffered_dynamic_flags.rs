@@ -5,13 +5,14 @@ use ahash::AHashMap;
 use common::types::PointOffsetType;
 use parking_lot::{Mutex, RwLock};
 
+use super::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing, without interface for reading.
 ///
 /// Changes are buffered until explicitly flushed.
+#[derive(Debug)]
 pub(crate) struct BufferedDynamicFlags {
     /// Persisted flags.
     storage: Arc<Mutex<DynamicMmapFlags>>,
@@ -83,8 +84,8 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
-    use crate::common::buffered_dynamic_flags::BufferedDynamicFlags;
-    use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
+    use crate::common::flags::buffered_dynamic_flags::BufferedDynamicFlags;
+    use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
 
     #[test]
     fn test_buffered_flags_growth_persistence() {

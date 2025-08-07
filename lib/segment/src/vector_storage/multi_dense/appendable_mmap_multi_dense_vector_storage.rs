@@ -9,6 +9,8 @@ use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 
 use crate::common::Flusher;
+use crate::common::flags::bitvec_flags::BitvecFlags;
+use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -16,7 +18,6 @@ use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, Ve
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
-use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
 
@@ -39,7 +40,11 @@ pub struct AppendableMmapMultiDenseVectorStorage<
 > {
     vectors: S,
     offsets: O,
-    deleted: DynamicMmapFlags,
+    /// Flags marking deleted vectors
+    ///
+    /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
+    /// depend on its length.
+    deleted: BitvecFlags,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     deleted_count: usize,
@@ -54,26 +59,28 @@ impl<
 {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
-    fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
+    fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
         if !deleted && self.vectors.len() <= key as usize {
-            return Ok(false);
+            return false;
         }
 
-        if self.deleted.len() <= key as usize {
-            self.deleted.set_len(key as usize + 1)?;
-        }
+        // set value
         let previous = self.deleted.set(key, deleted);
+
+        // update counter
         if !previous && deleted {
             self.deleted_count += 1;
         } else if previous && !deleted {
             self.deleted_count -= 1;
         }
-        Ok(previous)
+
+        previous
     }
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
+        // deleted bitvec is already loaded
         self.vectors.populate()?;
         self.offsets.populate()?;
         Ok(())
@@ -265,7 +272,7 @@ impl<
         )?;
         self.offsets
             .insert(key as VectorOffsetType, &[offset], hw_counter)?;
-        self.set_deleted(key, false)?;
+        self.set_deleted(key, false);
 
         Ok(())
     }
@@ -283,7 +290,7 @@ impl<
             let other_vector: VectorRef = other_vector.as_vec_ref();
             let new_id = self.offsets.len() as PointOffsetType;
             self.insert_vector(new_id, other_vector, &disposed_hw_counter)?;
-            self.set_deleted(new_id, other_deleted)?;
+            self.set_deleted(new_id, other_deleted);
         }
         let end_index = self.offsets.len() as PointOffsetType;
         Ok(start_index..end_index)
@@ -317,7 +324,7 @@ impl<
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
-        self.set_deleted(key, true)
+        Ok(self.set_deleted(key, true))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -443,8 +450,8 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         Some(populate),
     )?;
 
-    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path, populate)?;
-    let deleted_count = deleted.count_flags();
+    let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
+    let deleted_count = deleted.count_trues();
 
     Ok(AppendableMmapMultiDenseVectorStorage {
         vectors,
@@ -555,8 +562,8 @@ pub fn open_appendable_in_ram_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let vectors = InRamPersistedVectors::open(&vectors_path, dim)?;
     let offsets = InRamPersistedVectors::open(&offsets_path, 1)?;
 
-    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path, populate)?;
-    let deleted_count = deleted.count_flags();
+    let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
+    let deleted_count = deleted.count_trues();
 
     Ok(AppendableMmapMultiDenseVectorStorage {
         vectors,

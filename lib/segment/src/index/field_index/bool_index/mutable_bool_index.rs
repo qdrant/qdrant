@@ -7,8 +7,9 @@ use itertools::Either;
 use roaring::RoaringBitmap;
 
 use super::BoolIndex;
+use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::roaring_flags::RoaringFlags;
 use crate::index::field_index::map_index::IdIter;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
@@ -16,7 +17,6 @@ use crate::index::field_index::{
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
-use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 
 const TRUES_DIRNAME: &str = "trues";
 const FALSES_DIRNAME: &str = "falses";
