@@ -84,12 +84,20 @@ impl<'de> Deserialize<'de> for DateTimePayloadType {
         D: Deserializer<'de>,
     {
         let str_datetime = <&str>::deserialize(deserializer)?;
-        let parse_result = DateTimePayloadType::from_str(str_datetime).ok();
+        eprintln!("Attempting to parse datetime: '{}'", str_datetime); // Debug log
+        
+        let parse_result = DateTimePayloadType::from_str(str_datetime);
         match parse_result {
-            Some(datetime) => Ok(datetime),
-            None => Err(serde::de::Error::custom(format!(
-                "'{str_datetime}' is not in a supported date/time format, please use RFC 3339"
-            ))),
+            Ok(datetime) => {
+                eprintln!("Successfully parsed: {:?}", datetime); // Debug log
+                Ok(datetime)
+            }
+            Err(e) => {
+                eprintln!("Failed to parse: {:?}", e); // Debug log
+                Err(serde::de::Error::custom(format!(
+                    "'{str_datetime}' is not in a supported date/time format, please use RFC 3339"
+                )))
+            }
         }
     }
 }
@@ -2339,11 +2347,53 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum RangeInterface {
     Float(Range<FloatPayloadType>),
     DateTime(Range<DateTimePayloadType>),
+}
+
+impl<'de> Deserialize<'de> for RangeInterface {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        
+        if let Ok(float_range) = Range::<FloatPayloadType>::deserialize(&value) {
+            return Ok(RangeInterface::Float(float_range));
+        }
+        
+        match Range::<DateTimePayloadType>::deserialize(&value) {
+            Ok(datetime_range) => Ok(RangeInterface::DateTime(datetime_range)),
+            Err(datetime_err) => {
+                let mut failed_fields = Vec::new();
+                
+                if let serde_json::Value::Object(map) = &value {
+                    for (key, val) in map {
+                        if matches!(key.as_str(), "lt" | "gt" | "lte" | "gte") {
+                            if let serde_json::Value::String(s) = val {
+                                if DateTimePayloadType::from_str(s).is_err() {
+                                    failed_fields.push(format!("{}: '{}'", key, s));
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if !failed_fields.is_empty() {
+                    Err(serde::de::Error::custom(format!(
+                        "Invalid datetime format in range fields [{}], please use RFC 3339",
+                        failed_fields.join(", ")
+                    )))
+                } else {
+                    let err_msg = datetime_err.to_string();
+                    Err(serde::de::Error::custom(err_msg))
+                }
+            }
+        }
+    }
 }
 
 /// Range filter request
@@ -2902,30 +2952,95 @@ impl NestedCondition {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(untagged)]
-#[serde(
-    expecting = "Expected some form of condition, which can be a field condition (like {\"key\": ..., \"match\": ... }), or some other mentioned in the documentation: https://qdrant.tech/documentation/concepts/filtering/#filtering-conditions"
-)]
-#[allow(clippy::large_enum_variant)]
-pub enum Condition {
-    /// Check if field satisfies provided condition
-    Field(FieldCondition),
-    /// Check if payload field is empty: equals to empty array, or does not exists
-    IsEmpty(IsEmptyCondition),
-    /// Check if payload field equals `NULL`
-    IsNull(IsNullCondition),
-    /// Check if points id is in a given set
-    HasId(HasIdCondition),
-    /// Check if point has vector assigned
-    HasVector(HasVectorCondition),
-    /// Nested filters
-    Nested(NestedCondition),
-    /// Nested filter
-    Filter(Filter),
+macro_rules! define_enum_with_custom_deser {
+    (
+        $(#[$meta:meta])*
+        pub enum $name:ident {
+            priority: [
+                $($priority_variant:ident($priority_type:ty)),* $(,)?
+            ],
+            normal: [
+                $($variant:ident($type:ty)),* $(,)?
+            ],
+            // Variants in the skip section automatically get #[serde(skip)] applied
+            skip: [
+                $($skip_variant:ident($skip_type:ty)),* $(,)?
+            ]
+        }
+    ) => {
+        $(#[$meta])*
+        #[derive(Clone, Debug, Serialize, JsonSchema)]
+        #[serde(untagged)]
+        pub enum $name {
+            $($priority_variant($priority_type),)*
+            $($variant($type),)*
+            $(
+                #[serde(skip)]
+                $skip_variant($skip_type),
+            )*
+        }
+        
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let value = serde_json::Value::deserialize(deserializer)?;
+                
+                let mut priority_errors = Vec::new();
+                
+                $(
+                    match <$priority_type>::deserialize(&value) {
+                        Ok(v) => return Ok($name::$priority_variant(v)),
+                        Err(e) => priority_errors.push(e.to_string()),
+                    }
+                )*
+                
+                #[derive(Deserialize)]
+                #[serde(untagged)]
+                enum Helper {
+                    $($variant($type)),*
+                }
+                
+                match Helper::deserialize(&value) {
+                    $(Ok(Helper::$variant(v)) => Ok($name::$variant(v)),)*
+                    Err(_) => {
+                        // If a priority variant failed, use its specific error
+                        if let Some(priority_error) = priority_errors.first() {
+                            Err(serde::de::Error::custom(priority_error))
+                        } else {
+                            Err(serde::de::Error::custom(
+                                "Expected some form of condition, which can be a field condition..."
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+    };
+}
 
-    #[serde(skip)]
-    CustomIdChecker(Arc<dyn CustomIdCheckerCondition + Send + Sync + 'static>),
+define_enum_with_custom_deser! {
+    #[allow(clippy::large_enum_variant)]
+    pub enum Condition {
+        // Variants listed here raise their deserialization errors instead of defaulting to the expect message
+        priority: [
+            Field(FieldCondition)
+        ],
+        // Variants listed here are functionally identical to serde-derived deserialize
+        normal: [
+            IsEmpty(IsEmptyCondition),
+            IsNull(IsNullCondition),
+            HasId(HasIdCondition),
+            HasVector(HasVectorCondition),
+            Nested(NestedCondition),
+            Filter(Filter)
+        ],
+        // Variants listed here automatically get #[serde(skip)] applied
+        skip: [
+            CustomIdChecker(Arc<dyn CustomIdCheckerCondition + Send + Sync + 'static>)
+        ]
+    }
 }
 
 impl PartialEq for Condition {
