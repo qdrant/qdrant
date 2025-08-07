@@ -2949,6 +2949,12 @@ impl NestedCondition {
     }
 }
 
+/// Defines an enum with custom deserialization that prioritizes errors from specific variants.
+/// 
+/// # Arguments
+/// * `priority`: Variants whose deserialization errors take precedence
+/// * `normal`: Variants that use standard serde deserialization  
+/// * `skip`: Variants that are skipped during serialization/deserialization
 macro_rules! define_enum_with_custom_deser {
     (
         $(#[$meta:meta])*
