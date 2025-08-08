@@ -13,7 +13,7 @@ pub enum DistanceType {
     L2,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct VectorParameters {
     pub dim: usize,
     pub distance_type: DistanceType,
@@ -49,8 +49,9 @@ pub trait EncodedVectors: Sized {
     /// Some implementations may not support this, in which case they should return `None`.
     fn encode_internal_vector(&self, id: u32) -> Option<Self::EncodedQuery>;
 
-    fn push_vector(
+    fn update_vector(
         &mut self,
+        id: u32,
         vector: &[f32],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()>;

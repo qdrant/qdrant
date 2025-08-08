@@ -23,8 +23,8 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    ExtendedPointId, Payload, PointIdType, SegmentConfig, SegmentType, SeqNumberType,
-    SnapshotFormat,
+    ExtendedPointId, Payload, PointIdType, QuantizationConfig, SegmentConfig, SegmentType,
+    SeqNumberType, SnapshotFormat,
 };
 use smallvec::{SmallVec, smallvec};
 
@@ -996,6 +996,7 @@ impl SegmentHolder {
         segments: LockedSegmentHolder,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
+        collection_quantization: &Option<QuantizationConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         mut operation: F,
     ) -> OperationResult<()>
@@ -1010,6 +1011,7 @@ impl SegmentHolder {
             segments_lock,
             segments_path,
             collection_params,
+            collection_quantization,
             payload_index_schema,
         )?;
 
@@ -1073,11 +1075,13 @@ impl SegmentHolder {
         &mut self,
         segments_path: &Path,
         collection_params: &CollectionParams,
+        collection_quantization: &Option<QuantizationConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<LockedSegment> {
         let segment = self.build_tmp_segment(
             segments_path,
             Some(collection_params),
+            collection_quantization,
             payload_index_schema,
             true,
         )?;
@@ -1106,6 +1110,7 @@ impl SegmentHolder {
         &self,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
+        collection_quantization: &Option<QuantizationConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         save_version: bool,
     ) -> OperationResult<LockedSegment> {
@@ -1113,7 +1118,7 @@ impl SegmentHolder {
             // Base config on collection params
             Some(collection_params) => SegmentConfig {
                 vector_data: collection_params
-                    .to_base_vector_data()
+                    .to_base_vector_data(collection_quantization)
                     .map_err(|err| OperationError::service_error(format!("Failed to source dense vector configuration from collection parameters: {err:?}")))?,
                 sparse_vector_data: collection_params
                     .to_sparse_vector_data()
@@ -1151,6 +1156,7 @@ impl SegmentHolder {
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
+        collection_quantization: &Option<QuantizationConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<(
         Vec<(SegmentId, SegmentId, LockedSegment)>,
@@ -1165,6 +1171,7 @@ impl SegmentHolder {
         let tmp_segment = segments_lock.build_tmp_segment(
             segments_path,
             collection_params,
+            collection_quantization,
             payload_index_schema,
             false,
         )?;
@@ -1369,6 +1376,7 @@ impl SegmentHolder {
         segments: LockedSegmentHolder,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
+        collection_quantization: &Option<QuantizationConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         temp_dir: &Path,
         tar: &tar_ext::BuilderExt,
@@ -1384,6 +1392,7 @@ impl SegmentHolder {
             segments,
             segments_path,
             collection_params,
+            collection_quantization,
             payload_index_schema,
             |segment| {
                 let read_segment = segment.read();
@@ -2090,6 +2099,7 @@ mod tests {
             holder.clone(),
             segments_dir.path(),
             None,
+            &None,
             schema,
             temp_dir.path(),
             &tar,

@@ -888,13 +888,15 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         }))
     }
 
-    fn push_vector(
+    fn update_vector(
         &mut self,
+        id: u32,
         vector: &[f32],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         let encoded_vector = Self::encode_vector(vector, &None, self.metadata.encoding);
-        self.encoded_vectors.push_vector(
+        self.encoded_vectors.update_vector(
+            id,
             bytemuck::cast_slice(encoded_vector.encoded_vector.as_slice()),
             hw_counter,
         )

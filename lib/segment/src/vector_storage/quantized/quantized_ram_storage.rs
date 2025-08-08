@@ -43,14 +43,15 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         self.vectors.get(index)
     }
 
-    fn push_vector(
+    fn update_vector(
         &mut self,
+        id: u32,
         vector: &[u8],
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
         self.vectors
-            .push(vector)
+            .insert(id as usize, vector)
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::OutOfMemory, err.to_string()))?;
         Ok(())
     }

@@ -14,8 +14,9 @@ pub trait EncodedStorage {
 
     fn is_on_disk(&self) -> bool;
 
-    fn push_vector(
+    fn update_vector(
         &mut self,
+        id: u32,
         vector: &[u8],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()>;
@@ -50,14 +51,20 @@ impl EncodedStorage for TestEncodedStorage {
         &self.data[self.quantized_vector_size * index..self.quantized_vector_size * (index + 1)]
     }
 
-    fn push_vector(
+    fn update_vector(
         &mut self,
+        id: u32,
         vector: &[u8],
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
-        self.data.try_reserve(vector.len())?;
-        self.data.extend_from_slice(vector);
+        if id as usize >= self.data.len() / self.quantized_vector_size {
+            self.data
+                .resize((id as usize + 1) * self.quantized_vector_size, 0);
+        }
+        self.data[id as usize * self.quantized_vector_size
+            ..(id as usize + 1) * self.quantized_vector_size]
+            .copy_from_slice(vector);
         Ok(())
     }
 

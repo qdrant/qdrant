@@ -51,8 +51,9 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
         &self.mmap[self.quantized_vector_size * index..self.quantized_vector_size * (index + 1)]
     }
 
-    fn push_vector(
+    fn update_vector(
         &mut self,
+        _id: u32,
         _vector: &[u8],
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
