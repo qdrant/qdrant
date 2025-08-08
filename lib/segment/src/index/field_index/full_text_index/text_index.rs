@@ -47,17 +47,22 @@ impl FullTextIndex {
         config: TextIndexParams,
         field: &str,
         is_appendable: bool,
-    ) -> Self {
+        create_if_missing: bool,
+    ) -> OperationResult<Option<Self>> {
         let store_cf_name = Self::storage_cf_name(field);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             &store_cf_name,
         ));
-        if is_appendable {
-            Self::Mutable(MutableFullTextIndex::open_rocksdb(db_wrapper, config))
+        let index = if is_appendable {
+            MutableFullTextIndex::open_rocksdb(db_wrapper, config, create_if_missing)?
+                .map(Self::Mutable)
         } else {
-            Self::Immutable(ImmutableFullTextIndex::open_rocksdb(db_wrapper, config))
-        }
+            Some(Self::Immutable(ImmutableFullTextIndex::open_rocksdb(
+                db_wrapper, config,
+            )))
+        };
+        Ok(index)
     }
 
     pub fn new_mmap(
@@ -66,27 +71,23 @@ impl FullTextIndex {
         is_on_disk: bool,
     ) -> OperationResult<Self> {
         let mmap_index = MmapFullTextIndex::open(path, config, is_on_disk)?;
-        if is_on_disk {
+        let index = if is_on_disk {
             // Use on mmap directly
-            Ok(Self::Mmap(Box::new(mmap_index)))
+            Self::Mmap(Box::new(mmap_index))
         } else {
             // Load into RAM, use mmap as backing storage
-            Ok(Self::Immutable(ImmutableFullTextIndex::open_mmap(
-                mmap_index,
-            )))
-        }
+            Self::Immutable(ImmutableFullTextIndex::open_mmap(mmap_index))
+        };
+        Ok(index)
     }
 
     pub fn new_gridstore(
         dir: PathBuf,
         config: TextIndexParams,
         create_if_missing: bool,
-    ) -> OperationResult<Self> {
-        Ok(Self::Mutable(MutableFullTextIndex::open_gridstore(
-            dir,
-            config,
-            create_if_missing,
-        )?))
+    ) -> OperationResult<Option<Self>> {
+        let index = MutableFullTextIndex::open_gridstore(dir, config, create_if_missing)?;
+        Ok(index.map(Self::Mutable))
     }
 
     pub fn init(&mut self) -> OperationResult<()> {
@@ -109,7 +110,7 @@ impl FullTextIndex {
         config: TextIndexParams,
         field: &str,
         keep_appendable: bool,
-    ) -> FullTextIndexRocksDbBuilder {
+    ) -> OperationResult<FullTextIndexRocksDbBuilder> {
         FullTextIndexRocksDbBuilder::new(db, config, field, keep_appendable)
     }
 
@@ -437,16 +438,22 @@ impl FullTextIndexRocksDbBuilder {
         config: TextIndexParams,
         field: &str,
         keep_appendable: bool,
-    ) -> Self {
+    ) -> OperationResult<Self> {
         let store_cf_name = FullTextIndex::storage_cf_name(field);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             &store_cf_name,
         ));
-        FullTextIndexRocksDbBuilder {
-            mutable_index: MutableFullTextIndex::open_rocksdb(db_wrapper, config),
+        let mutable_index = MutableFullTextIndex::open_rocksdb(db_wrapper, config, true)?
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Failed to create and open mutable full text index for field: {field}"
+                ))
+            })?;
+        Ok(FullTextIndexRocksDbBuilder {
+            mutable_index,
             keep_appendable,
-        }
+        })
     }
 }
 
@@ -660,11 +667,15 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
             self.index.is_none(),
             "index must be initialized exactly once",
         );
-        self.index.replace(FullTextIndex::new_gridstore(
-            self.dir.clone(),
-            self.config.clone(),
-            true,
-        )?);
+        self.index.replace(
+            FullTextIndex::new_gridstore(self.dir.clone(), self.config.clone(), true)?.ok_or_else(
+                || {
+                    OperationError::service_error(
+                        "Failed to create and open mutable full text index on gridstore",
+                    )
+                },
+            )?,
+        );
         Ok(())
     }
 
