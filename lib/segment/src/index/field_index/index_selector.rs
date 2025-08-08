@@ -498,9 +498,9 @@ impl IndexSelector<'_> {
                     create_if_missing,
                 )?
             }
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => Some(
-                FullTextIndex::new_mmap(text_dir(dir, field), config, *is_on_disk)?,
-            ),
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                FullTextIndex::new_mmap(text_dir(dir, field), config, *is_on_disk)?
+            }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 FullTextIndex::new_gridstore(text_dir(dir, field), config, create_if_missing)?
             }

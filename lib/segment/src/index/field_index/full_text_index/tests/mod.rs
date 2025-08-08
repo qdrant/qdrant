@@ -167,7 +167,9 @@ fn test_prefix_search() {
     };
 
     let mut index =
-        FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config.clone(), true).unwrap();
+        FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config.clone(), true)
+            .unwrap()
+            .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 

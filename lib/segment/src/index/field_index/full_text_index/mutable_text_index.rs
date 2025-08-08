@@ -478,6 +478,7 @@ mod tests {
         {
             let mut index =
                 FullTextIndex::new_gridstore(temp_dir.path().join("test_db"), config.clone(), true)
+                    .unwrap()
                     .unwrap();
             let loaded = index.load().unwrap();
             assert!(loaded);
@@ -549,6 +550,7 @@ mod tests {
         {
             let mut index =
                 FullTextIndex::new_gridstore(temp_dir.path().join("test_db"), config, true)
+                    .unwrap()
                     .unwrap();
             let loaded = index.load().unwrap();
             assert!(loaded);

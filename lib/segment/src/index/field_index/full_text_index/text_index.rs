@@ -58,9 +58,7 @@ impl FullTextIndex {
             MutableFullTextIndex::open_rocksdb(db_wrapper, config, create_if_missing)?
                 .map(Self::Mutable)
         } else {
-            Some(Self::Immutable(ImmutableFullTextIndex::open_rocksdb(
-                db_wrapper, config,
-            )))
+            ImmutableFullTextIndex::open_rocksdb(db_wrapper, config)?.map(Self::Immutable)
         };
         Ok(index)
     }
@@ -69,14 +67,14 @@ impl FullTextIndex {
         path: PathBuf,
         config: TextIndexParams,
         is_on_disk: bool,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Option<Self>> {
         let mmap_index = MmapFullTextIndex::open(path, config, is_on_disk)?;
         let index = if is_on_disk {
             // Use on mmap directly
-            Self::Mmap(Box::new(mmap_index))
+            Some(Self::Mmap(Box::new(mmap_index)))
         } else {
             // Load into RAM, use mmap as backing storage
-            Self::Immutable(ImmutableFullTextIndex::open_mmap(mmap_index))
+            ImmutableFullTextIndex::open_mmap(mmap_index).map(Self::Immutable)
         };
         Ok(index)
     }
