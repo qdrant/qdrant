@@ -12,7 +12,7 @@ use super::inverted_index::{Document, InvertedIndex, TokenSet};
 use super::text_index::FullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::immutable_text_index::{
     ImmutableFullTextIndex, Storage,
@@ -25,17 +25,21 @@ pub struct MmapFullTextIndex {
 }
 
 impl MmapFullTextIndex {
-    pub fn open(path: PathBuf, config: TextIndexParams, is_on_disk: bool) -> OperationResult<Self> {
+    pub fn open(
+        path: PathBuf,
+        config: TextIndexParams,
+        is_on_disk: bool,
+    ) -> OperationResult<Option<Self>> {
         let populate = !is_on_disk;
 
         let has_positions = config.phrase_matching == Some(true);
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
         let inverted_index = MmapInvertedIndex::open(path, populate, has_positions)?;
-        Ok(Self {
+        Ok(inverted_index.map(|inverted_index| Self {
             inverted_index,
             tokenizer,
-        })
+        }))
     }
 
     pub fn load(&self) -> bool {
@@ -194,7 +198,12 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
 
         let populate = !is_on_disk;
         let has_positions = config.phrase_matching.unwrap_or_default();
-        let inverted_index = MmapInvertedIndex::open(path, populate, has_positions)?;
+        let inverted_index =
+            MmapInvertedIndex::open(path, populate, has_positions)?.ok_or_else(|| {
+                OperationError::service_error(
+                    "Failed to open MmapInvertedIndex that was just created",
+                )
+            })?;
 
         let mmap_index = MmapFullTextIndex {
             inverted_index,

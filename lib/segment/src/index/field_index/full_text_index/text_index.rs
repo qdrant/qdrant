@@ -68,7 +68,9 @@ impl FullTextIndex {
         config: TextIndexParams,
         is_on_disk: bool,
     ) -> OperationResult<Option<Self>> {
-        let mmap_index = MmapFullTextIndex::open(path, config, is_on_disk)?;
+        let Some(mmap_index) = MmapFullTextIndex::open(path, config, is_on_disk)? else {
+            return Ok(None);
+        };
         let index = if is_on_disk {
             // Use on mmap directly
             Some(Self::Mmap(Box::new(mmap_index)))
