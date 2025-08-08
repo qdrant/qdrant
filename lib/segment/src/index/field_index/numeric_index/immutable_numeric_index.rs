@@ -13,9 +13,9 @@ use parking_lot::RwLock;
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 
+use super::Encodable;
 use super::mmap_numeric_index::MmapNumericIndex;
 use super::mutable_numeric_index::InMemoryNumericIndex;
-use super::{Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 #[cfg(feature = "rocksdb")]
@@ -161,79 +161,27 @@ impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default> ImmutableNu
 where
     Vec<T>: Blob,
 {
-    /// Open immutable numeric index from RocksDB storage
-    ///
-    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    /// Open and load immutable numeric index from RocksDB storage
     #[cfg(feature = "rocksdb")]
-    pub(super) fn open_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> Self {
+    pub(super) fn open_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> OperationResult<Option<Self>> {
+        use crate::index::field_index::numeric_index::mutable_numeric_index::MutableNumericIndex;
+
         let store_cf_name = super::numeric_index_storage_cf_name(field);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             &store_cf_name,
         ));
-        Self {
-            map: NumericKeySortedVec {
-                data: Default::default(),
-                deleted: BitVec::new(),
-                deleted_count: 0,
-            },
-            histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
-            points_count: 0,
-            max_values_per_point: 1,
-            point_to_values: Default::default(),
-            storage: Storage::RocksDb(db_wrapper),
-        }
-    }
 
-    /// Open immutable numeric index from mmap storage
-    ///
-    /// Note: after opening, the data must be loaded into memory separately using [`load`].
-    pub(super) fn open_mmap(index: MmapNumericIndex<T>) -> Self {
-        Self {
-            map: NumericKeySortedVec {
-                data: Default::default(),
-                deleted: BitVec::new(),
-                deleted_count: 0,
-            },
-            histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
-            points_count: 0,
-            max_values_per_point: 1,
-            point_to_values: Default::default(),
-            storage: Storage::Mmap(Box::new(index)),
-        }
-    }
-
-    /// Load storage
-    ///
-    /// Loads in-memory index from backing RocksDB or mmap storage.
-    pub(super) fn load(&mut self) -> OperationResult<bool> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Mmap(_) => self.load_mmap(),
-        }
-    }
-
-    /// Load from RocksDB storage
-    ///
-    /// Loads in-memory index from RocksDB storage.
-    #[cfg(feature = "rocksdb")]
-    fn load_rocksdb(&mut self) -> OperationResult<bool> {
-        use super::mutable_numeric_index::MutableNumericIndex;
-
-        let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from RocksDB, using different storage backend",
-            ));
-        };
-
+        // Load through mutable numeric index structure
         let Some(mutable) =
             MutableNumericIndex::<T>::open_rocksdb_db_wrapper(db_wrapper.clone(), false)?
         else {
-            return Ok(false);
+            // Column family doesn't exist, cannot load
+            return Ok(None);
         };
         // TODO(payload-index-remove-load): remove load when single stage open/load is implemented
         mutable.load()?;
+
         let InMemoryNumericIndex {
             map,
             histogram,
@@ -242,44 +190,78 @@ where
             point_to_values,
         } = mutable.into_in_memory_index();
 
-        self.map = NumericKeySortedVec::from_btree_set(map);
-        self.histogram = histogram;
-        self.points_count = points_count;
-        self.max_values_per_point = max_values_per_point;
-        self.point_to_values = ImmutablePointToValues::new(point_to_values);
-
-        Ok(true)
+        Ok(Some(Self {
+            map: NumericKeySortedVec::from_btree_set(map),
+            histogram,
+            points_count,
+            max_values_per_point,
+            point_to_values: ImmutablePointToValues::new(point_to_values),
+            storage: Storage::RocksDb(db_wrapper),
+        }))
     }
 
-    /// Load from mmap storage
-    ///
-    /// Loads in-memory index from mmap storage.
-    fn load_mmap(&mut self) -> OperationResult<bool> {
-        #[allow(irrefutable_let_patterns)]
-        let Storage::Mmap(index) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from mmap, using different storage backend",
-            ));
-        };
-
+    /// Open and load immutable numeric index from mmap storage
+    pub(super) fn open_mmap(index: MmapNumericIndex<T>) -> Self {
+        // Load in-memory index from mmap storage
         let InMemoryNumericIndex {
             map,
             histogram,
             points_count,
             max_values_per_point,
             point_to_values,
-        } = InMemoryNumericIndex::from_mmap(index);
+        } = InMemoryNumericIndex::from_mmap(&index);
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.clear_cache() {
             log::warn!("Failed to clear mmap cache of ram mmap numeric index: {err}");
         }
 
-        self.map = NumericKeySortedVec::from_btree_set(map);
-        self.histogram = histogram;
-        self.points_count = points_count;
-        self.max_values_per_point = max_values_per_point;
-        self.point_to_values = ImmutablePointToValues::new(point_to_values);
+        Self {
+            map: NumericKeySortedVec::from_btree_set(map),
+            histogram,
+            points_count,
+            max_values_per_point,
+            point_to_values: ImmutablePointToValues::new(point_to_values),
+            storage: Storage::Mmap(Box::new(index)),
+        }
+    }
+
+    /// Load storage
+    ///
+    /// Loads in-memory index from backing RocksDB or mmap storage.
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    pub(super) fn load(&self) -> OperationResult<bool> {
+        match self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => self.load_rocksdb(),
+            Storage::Mmap(_) => self.load_mmap(),
+        }
+    }
+
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    #[cfg(feature = "rocksdb")]
+    fn load_rocksdb(&self) -> OperationResult<bool> {
+        let Storage::RocksDb(_) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
+        };
+
+        // Note: this structure is now loaded on open
+
+        Ok(true)
+    }
+
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    fn load_mmap(&self) -> OperationResult<bool> {
+        #[allow(irrefutable_let_patterns)]
+        let Storage::Mmap(_) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from mmap, using different storage backend",
+            ));
+        };
+
+        // Note: this structure is now loaded on open
 
         Ok(true)
     }

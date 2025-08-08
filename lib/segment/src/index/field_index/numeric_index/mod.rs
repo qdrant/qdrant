@@ -190,23 +190,21 @@ where
                     .map(NumericIndexInner::Mutable),
             )
         } else {
-            Ok(Some(NumericIndexInner::Immutable(
-                ImmutableNumericIndex::open_rocksdb(db, field),
-            )))
+            Ok(ImmutableNumericIndex::open_rocksdb(db, field)?.map(NumericIndexInner::Immutable))
         }
     }
 
     /// Load immutable mmap based index, either in RAM or on disk
-    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
+    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
         let mmap_index = MmapNumericIndex::open(path, is_on_disk)?;
         if is_on_disk {
             // Use on mmap directly
-            Ok(NumericIndexInner::Mmap(mmap_index))
+            Ok(Some(NumericIndexInner::Mmap(mmap_index)))
         } else {
             // Load into RAM, use mmap as backing storage
-            Ok(NumericIndexInner::Immutable(
+            Ok(Some(NumericIndexInner::Immutable(
                 ImmutableNumericIndex::open_mmap(mmap_index),
-            ))
+            )))
         }
     }
 
@@ -542,11 +540,13 @@ where
     }
 
     /// Load immutable mmap based index, either in RAM or on disk
-    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        Ok(Self {
-            inner: NumericIndexInner::new_mmap(path, is_on_disk)?,
+    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
+        let index = NumericIndexInner::new_mmap(path, is_on_disk)?;
+
+        Ok(index.map(|inner| Self {
+            inner,
             _phantom: PhantomData,
-        })
+        }))
     }
 
     pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {

@@ -374,9 +374,9 @@ impl IndexSelector<'_> {
                     create_if_missing,
                 )?
             }
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => Some(
-                NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk)?,
-            ),
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk)?
+            }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 NumericIndex::new_gridstore(numeric_dir(dir, field), create_if_missing)?
             }

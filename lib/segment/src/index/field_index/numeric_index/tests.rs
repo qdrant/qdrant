@@ -406,11 +406,13 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         )
         .unwrap()
         .unwrap(),
-        IndexType::Mmap => {
-            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), true).unwrap()
-        }
+        IndexType::Mmap => NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), true)
+            .unwrap()
+            .unwrap(),
         IndexType::RamMmap => {
-            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), false).unwrap()
+            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), false)
+                .unwrap()
+                .unwrap()
         }
     };
     new_index.load().unwrap();
