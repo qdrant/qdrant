@@ -196,7 +196,11 @@ where
 
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
-        let mmap_index = MmapNumericIndex::open(path, is_on_disk)?;
+        let Some(mmap_index) = MmapNumericIndex::open(path, is_on_disk)? else {
+            // Files don't exist, cannot load
+            return Ok(None);
+        };
+
         if is_on_disk {
             // Use on mmap directly
             Ok(Some(NumericIndexInner::Mmap(mmap_index)))
