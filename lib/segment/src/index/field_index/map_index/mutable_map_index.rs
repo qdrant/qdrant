@@ -61,148 +61,116 @@ where
     Vec<N::Owned>: Blob + Send + Sync,
 {
     /// Open mutable map index from RocksDB storage
-    ///
-    /// Note: after opening, the data must be loaded into memory separately using [`load`].
     #[cfg(feature = "rocksdb")]
-    pub fn open_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
+    pub fn open_rocksdb(
+        db: Arc<RwLock<DB>>,
+        field_name: &str,
+        create_if_missing: bool,
+    ) -> OperationResult<Option<Self>> {
         let store_cf_name = MapIndex::<N>::storage_cf_name(field_name);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             &store_cf_name,
         ));
-        Self::open_rocksdb_db_wrapper(db_wrapper)
+        Self::open_rocksdb_db_wrapper(db_wrapper, create_if_missing)
     }
 
     #[cfg(feature = "rocksdb")]
-    pub fn open_rocksdb_db_wrapper(db_wrapper: DatabaseColumnScheduledDeleteWrapper) -> Self {
-        Self {
-            map: Default::default(),
-            point_to_values: Vec::new(),
-            indexed_points: 0,
-            values_count: 0,
-            storage: Storage::RocksDb(db_wrapper),
-        }
-    }
-
-    /// Open mutable map index from Gridstore storage
-    ///
-    /// Note: after opening, the data must be loaded into memory separately using [`load`].
-    ///
-    /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
-    /// not exist. If false and files don't exist, the load function will indicate nothing could be
-    /// loaded.
-    pub fn open_gridstore(path: PathBuf, create_if_missing: bool) -> OperationResult<Self> {
-        let store = if create_if_missing {
-            let options = default_gridstore_options(N::gridstore_block_size());
-            Some(Arc::new(RwLock::new(
-                Gridstore::open_or_create(path, options).map_err(|err| {
-                    OperationError::service_error(format!(
-                        "failed to open mutable map index on gridstore: {err}"
-                    ))
-                })?,
-            )))
-        } else if path.exists() {
-            Some(Arc::new(RwLock::new(Gridstore::open(path).map_err(
-                |err| {
-                    OperationError::service_error(format!(
-                        "failed to open mutable map index on gridstore: {err}"
-                    ))
-                },
-            )?)))
-        } else {
-            None
-        };
-
-        Ok(Self {
-            map: Default::default(),
-            point_to_values: Vec::new(),
-            indexed_points: 0,
-            values_count: 0,
-            storage: Storage::Gridstore(store),
-        })
-    }
-
-    /// Load storage
-    ///
-    /// Loads in-memory index from backing RocksDB or Gridstore storage.
-    pub(super) fn load(&mut self) -> OperationResult<bool> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Gridstore(Some(_)) => self.load_gridstore(),
-            Storage::Gridstore(None) => Ok(false),
-        }
-    }
-
-    /// Load from RocksDB storage
-    ///
-    /// Loads in-memory index from RocksDB storage.
-    #[cfg(feature = "rocksdb")]
-    fn load_rocksdb(&mut self) -> OperationResult<bool> {
-        let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from RocksDB, using different storage backend",
-            ));
-        };
-
+    pub fn open_rocksdb_db_wrapper(
+        db_wrapper: DatabaseColumnScheduledDeleteWrapper,
+        create_if_missing: bool,
+    ) -> OperationResult<Option<Self>> {
         if !db_wrapper.has_column_family()? {
-            return Ok(false);
-        }
+            if create_if_missing {
+                db_wrapper.recreate_column_family()?;
+            } else {
+                // Column family doesn't exist, cannot load
+                return Ok(None);
+            }
+        };
 
-        self.indexed_points = 0;
+        // Load in-memory index from RocksDB
+        let mut map = HashMap::<_, RoaringBitmap>::new();
+        let mut point_to_values = Vec::new();
+        let mut indexed_points = 0;
+        let mut values_count = 0;
         for (record, _) in db_wrapper.lock_db().iter()? {
             let record = std::str::from_utf8(&record).map_err(|_| {
                 OperationError::service_error("Index load error: UTF8 error while DB parsing")
             })?;
             let (value, idx) = MapIndex::<N>::decode_db_record(record)?;
 
-            if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize_with(idx as usize + 1, Vec::new)
+            if point_to_values.len() <= idx as usize {
+                point_to_values.resize_with(idx as usize + 1, Vec::new)
             }
-            let point_values = &mut self.point_to_values[idx as usize];
+            let point_values = &mut point_to_values[idx as usize];
 
             if point_values.is_empty() {
-                self.indexed_points += 1;
+                indexed_points += 1;
             }
-            self.values_count += 1;
+            values_count += 1;
 
             point_values.push(value.clone());
-            self.map.entry(value).or_default().insert(idx);
+            map.entry(value).or_default().insert(idx);
         }
-        Ok(true)
+
+        Ok(Some(Self {
+            map,
+            point_to_values,
+            indexed_points,
+            values_count,
+            storage: Storage::RocksDb(db_wrapper),
+        }))
     }
 
-    /// Load from Gridstore storage
+    /// Open and load mutable map index from Gridstore storage
     ///
-    /// Loads in-memory index from Gridstore storage.
-    fn load_gridstore(&mut self) -> OperationResult<bool> {
-        let Storage::Gridstore(Some(store)) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from Gridstore, using different storage backend",
-            ));
+    /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
+    /// not exist. If false and files don't exist, the load function will indicate nothing could be
+    /// loaded.
+    pub fn open_gridstore(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
+        let store = if create_if_missing {
+            let options = default_gridstore_options(N::gridstore_block_size());
+            Gridstore::open_or_create(path, options).map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to open mutable map index on gridstore: {err}"
+                ))
+            })?
+        } else if path.exists() {
+            Gridstore::open(path).map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to open mutable map index on gridstore: {err}"
+                ))
+            })?
+        } else {
+            // Files don't exist, cannot load
+            return Ok(None);
         };
 
-        self.indexed_points = 0;
+        // Load in-memory index from Gridstore
+        let mut map = HashMap::<_, RoaringBitmap>::new();
+        let mut point_to_values = Vec::new();
+        let mut indexed_points = 0;
+        let mut values_count = 0;
 
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
-            .read()
             .iter::<_, ()>(
-                |idx, values| {
+                |idx, values: &Vec<_>| {
                     for value in values {
-                        if self.point_to_values.len() <= idx as usize {
-                            self.point_to_values.resize_with(idx as usize + 1, Vec::new)
+                        if point_to_values.len() <= idx as usize {
+                            point_to_values.resize_with(idx as usize + 1, Vec::new)
                         }
-                        let point_values = &mut self.point_to_values[idx as usize];
+                        let point_values = &mut point_to_values[idx as usize];
 
                         if point_values.is_empty() {
-                            self.indexed_points += 1;
+                            indexed_points += 1;
                         }
-                        self.values_count += 1;
+                        values_count += 1;
 
                         point_values.push(value.clone());
-                        self.map.entry(value.clone()).or_default().insert(idx);
+                        map.entry(value.clone()).or_default().insert(idx);
                     }
 
                     Ok(true)
@@ -211,6 +179,52 @@ where
             )
             // unwrap safety: never returns an error
             .unwrap();
+
+        Ok(Some(Self {
+            map,
+            point_to_values,
+            indexed_points,
+            values_count,
+            storage: Storage::Gridstore(Some(Arc::new(RwLock::new(store)))),
+        }))
+    }
+
+    /// Load storage
+    ///
+    /// Loads in-memory index from backing RocksDB or Gridstore storage.
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    pub(super) fn load(&self) -> OperationResult<bool> {
+        match self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => self.load_rocksdb(),
+            Storage::Gridstore(Some(_)) => self.load_gridstore(),
+            Storage::Gridstore(None) => Ok(false),
+        }
+    }
+
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    #[cfg(feature = "rocksdb")]
+    fn load_rocksdb(&self) -> OperationResult<bool> {
+        let Storage::RocksDb(db_wrapper) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
+        };
+
+        // Note: this structure is now loaded on open
+
+        db_wrapper.has_column_family()
+    }
+
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    fn load_gridstore(&self) -> OperationResult<bool> {
+        let Storage::Gridstore(Some(_)) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from Gridstore, using different storage backend",
+            ));
+        };
+
+        // Note: this structure is now loaded on open
 
         Ok(true)
     }

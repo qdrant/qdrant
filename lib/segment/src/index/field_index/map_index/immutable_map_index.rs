@@ -123,7 +123,13 @@ where
         // To avoid code duplication, use `MutableMapIndex` to load data from db
         // and convert to immutable state
 
-        let mut mutable = MutableMapIndex::<N>::open_rocksdb_db_wrapper(db_wrapper.clone());
+        let Some(mutable) =
+            MutableMapIndex::<N>::open_rocksdb_db_wrapper(db_wrapper.clone(), false)?
+        else {
+            // Column family doesn't exist, cannot load
+            return Ok(false);
+        };
+        // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
         let result = mutable.load()?;
         let MutableMapIndex::<N> {
             map,

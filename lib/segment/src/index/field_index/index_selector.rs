@@ -95,7 +95,9 @@ impl IndexSelector<'_> {
                     );
                 }
 
-                FieldIndex::IntMapIndex(self.map_new(field, create_if_missing)?)
+                return Ok(self
+                    .map_new(field, create_if_missing)?
+                    .map(FieldIndex::IntMapIndex));
             }
             (PayloadIndexType::DatetimeIndex, PayloadSchemaParams::Datetime(_)) => {
                 return Ok(self
@@ -104,7 +106,9 @@ impl IndexSelector<'_> {
             }
 
             (PayloadIndexType::KeywordIndex, PayloadSchemaParams::Keyword(_)) => {
-                FieldIndex::KeywordIndex(self.map_new(field, create_if_missing)?)
+                return Ok(self
+                    .map_new(field, create_if_missing)?
+                    .map(FieldIndex::KeywordIndex));
             }
 
             (PayloadIndexType::FloatIndex, PayloadSchemaParams::Float(_)) => {
@@ -130,11 +134,15 @@ impl IndexSelector<'_> {
             }
 
             (PayloadIndexType::UuidIndex, PayloadSchemaParams::Uuid(_)) => {
-                FieldIndex::UuidMapIndex(self.map_new(field, create_if_missing)?)
+                return Ok(self
+                    .map_new(field, create_if_missing)?
+                    .map(FieldIndex::UuidMapIndex));
             }
 
             (PayloadIndexType::UuidMapIndex, PayloadSchemaParams::Uuid(_)) => {
-                FieldIndex::UuidMapIndex(self.map_new(field, create_if_missing)?)
+                return Ok(self
+                    .map_new(field, create_if_missing)?
+                    .map(FieldIndex::UuidMapIndex));
             }
 
             (PayloadIndexType::NullIndex, _) => {
@@ -165,17 +173,18 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
     ) -> OperationResult<Option<Vec<FieldIndex>>> {
         let indexes = match payload_schema.expand().as_ref() {
-            PayloadSchemaParams::Keyword(_) => Some(vec![FieldIndex::KeywordIndex(
-                self.map_new(field, create_if_missing)?,
-            )]),
+            PayloadSchemaParams::Keyword(_) => self
+                .map_new(field, create_if_missing)?
+                .map(|index| vec![FieldIndex::KeywordIndex(index)]),
             PayloadSchemaParams::Integer(integer_params) => {
                 let use_lookup = integer_params.lookup.unwrap_or(true);
                 let use_range = integer_params.range.unwrap_or(true);
 
                 let lookup = if use_lookup {
-                    Some(FieldIndex::IntMapIndex(
-                        self.map_new(field, create_if_missing)?,
-                    ))
+                    match self.map_new(field, create_if_missing)? {
+                        Some(index) => Some(FieldIndex::IntMapIndex(index)),
+                        None => return Ok(None),
+                    }
                 } else {
                     None
                 };
@@ -190,11 +199,9 @@ impl IndexSelector<'_> {
 
                 Some(lookup.into_iter().chain(range).collect())
             }
-            PayloadSchemaParams::Float(_) => {
-                return Ok(self
-                    .numeric_new(field, create_if_missing)?
-                    .map(|index| vec![FieldIndex::FloatIndex(index)]));
-            }
+            PayloadSchemaParams::Float(_) => self
+                .numeric_new(field, create_if_missing)?
+                .map(|index| vec![FieldIndex::FloatIndex(index)]),
             PayloadSchemaParams::Geo(_) => Some(vec![FieldIndex::GeoIndex(
                 self.geo_new(field, create_if_missing)?,
             )]),
@@ -202,14 +209,12 @@ impl IndexSelector<'_> {
                 self.text_new(field, text_index_params.clone(), create_if_missing)?,
             )]),
             PayloadSchemaParams::Bool(_) => Some(vec![self.bool_new(field, create_if_missing)?]),
-            PayloadSchemaParams::Datetime(_) => {
-                return Ok(self
-                    .numeric_new(field, create_if_missing)?
-                    .map(|index| vec![FieldIndex::DatetimeIndex(index)]));
-            }
-            PayloadSchemaParams::Uuid(_) => Some(vec![FieldIndex::UuidMapIndex(
-                self.map_new(field, create_if_missing)?,
-            )]),
+            PayloadSchemaParams::Datetime(_) => self
+                .numeric_new(field, create_if_missing)?
+                .map(|index| vec![FieldIndex::DatetimeIndex(index)]),
+            PayloadSchemaParams::Uuid(_) => self
+                .map_new(field, create_if_missing)?
+                .map(|index| vec![FieldIndex::UuidMapIndex(index)]),
         };
 
         Ok(indexes)
@@ -229,7 +234,7 @@ impl IndexSelector<'_> {
                     FieldIndexBuilder::KeywordIndex,
                     FieldIndexBuilder::KeywordMmapIndex,
                     FieldIndexBuilder::KeywordGridstoreIndex,
-                )]
+                )?]
             }
             PayloadSchemaParams::Integer(integer_params) => {
                 let use_lookup = integer_params.lookup.unwrap_or(true);
@@ -242,7 +247,7 @@ impl IndexSelector<'_> {
                         FieldIndexBuilder::IntMapIndex,
                         FieldIndexBuilder::IntMapMmapIndex,
                         FieldIndexBuilder::IntMapGridstoreIndex,
-                    ))
+                    )?)
                 } else {
                     None
                 };
@@ -301,7 +306,7 @@ impl IndexSelector<'_> {
                     FieldIndexBuilder::UuidIndex,
                     FieldIndexBuilder::UuidMmapIndex,
                     FieldIndexBuilder::UuidGridstoreIndex,
-                )]
+                )?]
             }
         };
 
@@ -312,17 +317,22 @@ impl IndexSelector<'_> {
         &self,
         field: &JsonPath,
         create_if_missing: bool,
-    ) -> OperationResult<MapIndex<N>>
+    ) -> OperationResult<Option<MapIndex<N>>>
     where
         Vec<N::Owned>: Blob + Send + Sync,
     {
         Ok(match self {
             #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                MapIndex::new_rocksdb(Arc::clone(db), &field.to_string(), *is_appendable)
+                MapIndex::new_rocksdb(
+                    Arc::clone(db),
+                    &field.to_string(),
+                    *is_appendable,
+                    create_if_missing,
+                )?
             }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
-                MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
+                Some(MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?)
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 MapIndex::new_gridstore(map_dir(dir, field), create_if_missing)?
@@ -338,14 +348,14 @@ impl IndexSelector<'_> {
         ) -> FieldIndexBuilder,
         make_mmap: fn(MapIndexMmapBuilder<N>) -> FieldIndexBuilder,
         make_gridstore: fn(MapIndexGridstoreBuilder<N>) -> FieldIndexBuilder,
-    ) -> FieldIndexBuilder
+    ) -> OperationResult<FieldIndexBuilder>
     where
         Vec<N::Owned>: Blob + Send + Sync,
     {
-        match self {
+        Ok(match self {
             #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => make_rocksdb(
-                MapIndex::builder_rocksdb(Arc::clone(db), &field.to_string()),
+                MapIndex::builder_rocksdb(Arc::clone(db), &field.to_string())?,
             ),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 make_mmap(MapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk))
@@ -353,7 +363,7 @@ impl IndexSelector<'_> {
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 make_gridstore(MapIndex::builder_gridstore(map_dir(dir, field)))
             }
-        }
+        })
     }
 
     fn numeric_new<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
