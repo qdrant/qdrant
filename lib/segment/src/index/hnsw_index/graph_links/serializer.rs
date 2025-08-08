@@ -20,7 +20,7 @@ use crate::index::hnsw_index::HnswM;
 
 pub struct GraphLinksSerializer {
     hnsw_m: HnswM,
-    links: Vec<u8>,
+    neighbors: Vec<u8>,
     kind: Kind,
     reindex: Vec<PointOffsetType>,
     level_offsets: Vec<u64>,
@@ -72,7 +72,7 @@ impl GraphLinksSerializer {
         }
         total_offsets_len += 1;
 
-        let mut links = Vec::new();
+        let mut neighbors = Vec::new();
         let mut offsets = Vec::with_capacity(total_offsets_len as usize);
         offsets.push(0);
         let bits_per_unsorted = packed_bits(u32::try_from(edges.len().saturating_sub(1)).unwrap())
@@ -88,12 +88,18 @@ impl GraphLinksSerializer {
                 let mut raw_links = take(&mut edges[id][level]);
                 match format {
                     GraphLinksFormat::Compressed => {
-                        pack_links(&mut links, &mut raw_links, bits_per_unsorted, sorted_count);
-                        offsets.push(links.len() as u64);
+                        pack_links(
+                            &mut neighbors,
+                            &mut raw_links,
+                            bits_per_unsorted,
+                            sorted_count,
+                        );
+                        offsets.push(neighbors.len() as u64);
                     }
                     GraphLinksFormat::Plain => {
-                        links.extend_from_slice(raw_links.as_bytes());
-                        offsets.push((links.len() as u64) / size_of::<PointOffsetType>() as u64);
+                        neighbors.extend_from_slice(raw_links.as_bytes());
+                        offsets
+                            .push((neighbors.len() as u64) / size_of::<PointOffsetType>() as u64);
                     }
                 }
             });
@@ -109,7 +115,7 @@ impl GraphLinksSerializer {
                 }
             }
             GraphLinksFormat::Plain => {
-                let len = links.len() + reindex.as_bytes().len();
+                let len = neighbors.len() + reindex.as_bytes().len();
                 Kind::Uncompressed {
                     offsets_padding: len.next_multiple_of(size_of::<u64>()) - len,
                     offsets,
@@ -119,7 +125,7 @@ impl GraphLinksSerializer {
 
         Ok(Self {
             hnsw_m,
-            links,
+            neighbors,
             kind,
             reindex,
             level_offsets,
@@ -134,7 +140,7 @@ impl GraphLinksSerializer {
 
         let size = self.level_offsets.as_bytes().len()
             + self.reindex.as_bytes().len()
-            + self.links.len()
+            + self.neighbors.len()
             + (match &self.kind {
                 Kind::Uncompressed {
                     offsets_padding: padding,
@@ -163,7 +169,7 @@ impl GraphLinksSerializer {
                 let header = HeaderPlain {
                     point_count: self.reindex.len() as u64,
                     levels_count: self.level_offsets.len() as u64,
-                    total_links_count: self.links.len() as u64
+                    total_neighbors_count: self.neighbors.len() as u64
                         / size_of::<PointOffsetType>() as u64,
                     total_offset_count: offsets.len() as u64,
                     offsets_padding_bytes: *offsets_padding as u64,
@@ -178,7 +184,7 @@ impl GraphLinksSerializer {
                 let header = HeaderCompressed {
                     version: HEADER_VERSION_COMPRESSED.into(),
                     point_count: LittleU64::new(self.reindex.len() as u64),
-                    total_links_bytes: LittleU64::new(self.links.len() as u64),
+                    total_neighbors_bytes: LittleU64::new(self.neighbors.len() as u64),
                     offsets_parameters: *offsets_parameters,
                     levels_count: LittleU64::new(self.level_offsets.len() as u64),
                     m: LittleU64::new(self.hnsw_m.m as u64),
@@ -191,7 +197,7 @@ impl GraphLinksSerializer {
 
         writer.write_all(self.level_offsets.as_bytes())?;
         writer.write_all(self.reindex.as_bytes())?;
-        writer.write_all(&self.links)?;
+        writer.write_all(&self.neighbors)?;
         match &self.kind {
             Kind::Uncompressed {
                 offsets_padding: padding,

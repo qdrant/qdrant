@@ -8,7 +8,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 pub(super) struct HeaderPlain {
     pub(super) point_count: u64,
     pub(super) levels_count: u64,
-    pub(super) total_links_count: u64,
+    pub(super) total_neighbors_count: u64,
     pub(super) total_offset_count: u64,
     /// Either 0 or 4.
     pub(super) offsets_padding_bytes: u64,
@@ -23,7 +23,7 @@ pub(super) struct HeaderCompressed {
     /// Should be [`HEADER_VERSION_COMPRESSED`].
     pub(super) version: LittleU64,
     pub(super) levels_count: LittleU64,
-    pub(super) total_links_bytes: LittleU64,
+    pub(super) total_neighbors_bytes: LittleU64,
     pub(super) offsets_parameters: bitpacking_ordered::Parameters,
     pub(super) m: LittleU64,
     pub(super) m0: LittleU64,

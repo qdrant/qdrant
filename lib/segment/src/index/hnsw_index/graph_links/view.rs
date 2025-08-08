@@ -32,11 +32,13 @@ pub type LinksIterator<'a> = Either<Copied<std::slice::Iter<'a, u32>>, PackedLin
 #[derive(Debug)]
 pub(super) enum CompressionInfo<'a> {
     Uncompressed {
-        links: &'a [u32],
+        /// Uncompressed links.
+        neighbors: &'a [u32],
         offsets: &'a [NativeU64],
     },
     Compressed {
-        compressed_links: &'a [u8],
+        /// Compressed links.
+        neighbors: &'a [u8],
         offsets: bitpacking_ordered::Reader<'a>,
         hnsw_m: HnswM,
         bits_per_unsorted: u8,
@@ -60,12 +62,12 @@ impl GraphLinksView<'_> {
         let (level_offsets, data) =
             read_level_offsets(data, header.levels_count, header.total_offset_count)?;
         let (reindex, data) = get_slice::<PointOffsetType>(data, header.point_count)?;
-        let (links, data) = get_slice::<u32>(data, header.total_links_count)?;
+        let (neighbors, data) = get_slice::<u32>(data, header.total_neighbors_count)?;
         let (_, data) = get_slice::<u8>(data, header.offsets_padding_bytes)?;
         let (offsets, _bytes) = get_slice::<NativeU64>(data, header.total_offset_count)?;
         Ok(GraphLinksView {
             reindex,
-            compression: CompressionInfo::Uncompressed { links, offsets },
+            compression: CompressionInfo::Uncompressed { neighbors, offsets },
             level_offsets,
         })
     }
@@ -80,7 +82,7 @@ impl GraphLinksView<'_> {
             header.offsets_parameters.length.get(),
         )?;
         let (reindex, data) = get_slice::<PointOffsetType>(data, header.point_count.get())?;
-        let (compressed_links, data) = get_slice::<u8>(data, header.total_links_bytes.get())?;
+        let (neighbors, data) = get_slice::<u8>(data, header.total_neighbors_bytes.get())?;
         let (offsets, _bytes) = bitpacking_ordered::Reader::new(header.offsets_parameters, data)
             .map_err(|e| {
                 OperationError::service_error(format!("Can't create decompressor: {e}"))
@@ -88,7 +90,7 @@ impl GraphLinksView<'_> {
         Ok(GraphLinksView {
             reindex,
             compression: CompressionInfo::Compressed {
-                compressed_links,
+                neighbors,
                 offsets,
                 hnsw_m: HnswM::new(header.m.get() as usize, header.m0.get() as usize),
                 bits_per_unsorted: MIN_BITS_PER_VALUE.max(packed_bits(
@@ -109,20 +111,20 @@ impl GraphLinksView<'_> {
         };
 
         match self.compression {
-            CompressionInfo::Uncompressed { links, offsets } => {
-                let links_range = offsets[idx].get() as usize..offsets[idx + 1].get() as usize;
-                Either::Left(links[links_range].iter().copied())
+            CompressionInfo::Uncompressed { neighbors, offsets } => {
+                let neighbors_range = offsets[idx].get() as usize..offsets[idx + 1].get() as usize;
+                Either::Left(neighbors[neighbors_range].iter().copied())
             }
             CompressionInfo::Compressed {
-                compressed_links,
+                neighbors,
                 ref offsets,
                 ref hnsw_m,
                 bits_per_unsorted,
             } => {
-                let links_range =
+                let neighbors_range =
                     offsets.get(idx).unwrap() as usize..offsets.get(idx + 1).unwrap() as usize;
                 Either::Right(iterate_packed_links(
-                    &compressed_links[links_range],
+                    &neighbors[neighbors_range],
                     bits_per_unsorted,
                     hnsw_m.level_m(level),
                 ))
