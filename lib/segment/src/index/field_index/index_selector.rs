@@ -332,7 +332,7 @@ impl IndexSelector<'_> {
                 )?
             }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
-                Some(MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?)
+                MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 MapIndex::new_gridstore(map_dir(dir, field), create_if_missing)?

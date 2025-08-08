@@ -115,30 +115,25 @@ where
         is_appendable: bool,
         create_if_missing: bool,
     ) -> OperationResult<Option<Self>> {
-        if is_appendable {
-            Ok(
-                MutableMapIndex::open_rocksdb(db, field_name, create_if_missing)?
-                    .map(MapIndex::Mutable),
-            )
+        let index = if is_appendable {
+            MutableMapIndex::open_rocksdb(db, field_name, create_if_missing)?.map(MapIndex::Mutable)
         } else {
-            Ok(Some(MapIndex::Immutable(ImmutableMapIndex::open_rocksdb(
-                db, field_name,
-            ))))
-        }
+            ImmutableMapIndex::open_rocksdb(db, field_name)?.map(MapIndex::Immutable)
+        };
+        Ok(index)
     }
 
     /// Load immutable mmap based index, either in RAM or on disk
-    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
+    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
         let mmap_index = MmapMapIndex::open(path, is_on_disk)?;
-        if is_on_disk {
+        let index = if is_on_disk {
             // Use on mmap directly
-            Ok(MapIndex::Mmap(Box::new(mmap_index)))
+            Some(MapIndex::Mmap(Box::new(mmap_index)))
         } else {
             // Load into RAM, use mmap as backing storage
-            Ok(MapIndex::Immutable(ImmutableMapIndex::open_mmap(
-                mmap_index,
-            )))
-        }
+            ImmutableMapIndex::open_mmap(mmap_index)?.map(MapIndex::Immutable)
+        };
+        Ok(index)
     }
 
     pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
@@ -1473,8 +1468,8 @@ mod tests {
             )
             .unwrap()
             .unwrap(),
-            IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap(),
-            IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap(),
+            IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap().unwrap(),
+            IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap().unwrap(),
         };
         index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {

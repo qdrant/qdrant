@@ -60,65 +60,16 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
 where
     Vec<N::Owned>: Blob + Send + Sync,
 {
-    /// Open immutable numeric index from RocksDB storage
-    ///
-    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    /// Open and load immutable numeric index from RocksDB storage
     #[cfg(feature = "rocksdb")]
-    pub fn open_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
+    pub fn open_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> OperationResult<Option<Self>> {
+        use crate::index::field_index::map_index::mutable_map_index::MutableMapIndex;
+
         let store_cf_name = MapIndex::<N>::storage_cf_name(field_name);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             &store_cf_name,
         ));
-        Self {
-            value_to_points: Default::default(),
-            value_to_points_container: Default::default(),
-            deleted_value_to_points_container: Default::default(),
-            point_to_values: Default::default(),
-            indexed_points: 0,
-            values_count: 0,
-            storage: Storage::RocksDb(db_wrapper),
-        }
-    }
-
-    /// Open immutable numeric index from mmap storage
-    ///
-    /// Note: after opening, the data must be loaded into memory separately using [`load`].
-    pub(super) fn open_mmap(index: MmapMapIndex<N>) -> Self {
-        Self {
-            value_to_points: Default::default(),
-            value_to_points_container: Default::default(),
-            deleted_value_to_points_container: Default::default(),
-            point_to_values: Default::default(),
-            indexed_points: 0,
-            values_count: 0,
-            storage: Storage::Mmap(Box::new(index)),
-        }
-    }
-
-    /// Load storage
-    ///
-    /// Loads in-memory index from backing RocksDB or mmap storage.
-    pub fn load(&mut self) -> OperationResult<bool> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Mmap(_) => self.load_mmap(),
-        }
-    }
-
-    /// Load from RocksDB storage
-    ///
-    /// Loads in-memory index from RocksDB storage.
-    #[cfg(feature = "rocksdb")]
-    fn load_rocksdb(&mut self) -> OperationResult<bool> {
-        use super::mutable_map_index::MutableMapIndex;
-
-        let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from RocksDB, using different storage backend",
-            ));
-        };
 
         // To avoid code duplication, use `MutableMapIndex` to load data from db
         // and convert to immutable state
@@ -127,10 +78,10 @@ where
             MutableMapIndex::<N>::open_rocksdb_db_wrapper(db_wrapper.clone(), false)?
         else {
             // Column family doesn't exist, cannot load
-            return Ok(false);
+            return Ok(None);
         };
         // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-        let result = mutable.load()?;
+        mutable.load()?;
         let MutableMapIndex::<N> {
             map,
             point_to_values,
@@ -139,36 +90,32 @@ where
             ..
         } = mutable;
 
-        self.indexed_points = indexed_points;
-        self.values_count = values_count;
-        self.value_to_points.clear();
-        self.value_to_points_container.clear();
-        self.value_to_points_container.reserve_exact(values_count);
-        self.deleted_value_to_points_container.clear();
+        let mut value_to_points = HashMap::new();
+        let mut value_to_points_container = Vec::with_capacity(values_count);
 
         // flatten values-to-points map
         for (value, points) in map {
             let points = points.into_iter().collect::<Vec<_>>();
-            let container_len = self.value_to_points_container.len() as u32;
+            let container_len = value_to_points_container.len() as u32;
             let range = container_len..container_len + points.len() as u32;
-            self.value_to_points.insert(
+            value_to_points.insert(
                 value,
                 ContainerSegment {
                     count: range.len() as u32,
                     range,
                 },
             );
-            self.value_to_points_container.extend(points);
+            value_to_points_container.extend(points);
         }
 
-        self.value_to_points.shrink_to_fit();
+        value_to_points.shrink_to_fit();
 
         // Sort IDs in each slice of points
         // This is very important because we binary search
-        for value in self.value_to_points.keys() {
+        for value in value_to_points.keys() {
             if let Some((slice, _offset)) = Self::get_mut_point_ids_slice(
-                &self.value_to_points,
-                &mut self.value_to_points_container,
+                &value_to_points,
+                &mut value_to_points_container,
                 value.borrow(),
             ) {
                 slice.sort_unstable();
@@ -181,25 +128,24 @@ where
             }
         }
 
-        self.point_to_values = ImmutablePointToValues::new(point_to_values);
-
-        Ok(result)
+        Ok(Some(Self {
+            value_to_points,
+            value_to_points_container,
+            deleted_value_to_points_container: BitVec::new(),
+            point_to_values: ImmutablePointToValues::new(point_to_values),
+            indexed_points,
+            values_count,
+            storage: Storage::RocksDb(db_wrapper),
+        }))
     }
 
-    /// Load from mmap storage
-    ///
-    /// Loads in-memory index from mmap storage.
-    fn load_mmap(&mut self) -> OperationResult<bool> {
-        #[allow(irrefutable_let_patterns)]
-        let Storage::Mmap(index) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from mmap, using different storage backend",
-            ));
-        };
-
+    /// Open and load immutable numeric index from mmap storage
+    pub(super) fn open_mmap(index: MmapMapIndex<N>) -> OperationResult<Option<Self>> {
+        // TODO(payload-index-remove-load): remove load when single stage open/load is implemented
         if !index.load()? {
-            return Ok(false);
+            return Ok(None);
         }
+
         let index_storage = index.storage.as_ref().unwrap();
 
         // Construct intermediate values to points map from backing storage
@@ -215,10 +161,9 @@ where
             })
         };
 
-        self.indexed_points = 0;
-        self.values_count = 0;
-        self.value_to_points.clear();
-        self.deleted_value_to_points_container.clear();
+        let mut indexed_points = 0;
+        let mut values_count = 0;
+        let mut value_to_points = HashMap::new();
 
         // Create points to values mapping
         let mut point_to_values: Vec<Vec<N::Owned>> = vec![];
@@ -230,40 +175,38 @@ where
                 let point_values = &mut point_to_values[idx as usize];
 
                 if point_values.is_empty() {
-                    self.indexed_points += 1;
+                    indexed_points += 1;
                 }
-                self.values_count += 1;
+                values_count += 1;
 
                 point_values.push(value.to_owned());
             }
         }
-        self.point_to_values = ImmutablePointToValues::new(point_to_values);
+        let point_to_values = ImmutablePointToValues::new(point_to_values);
 
         // Create flattened values-to-points mapping
-        self.value_to_points_container.clear();
-        self.value_to_points_container
-            .reserve_exact(self.values_count);
+        let mut value_to_points_container = Vec::with_capacity(values_count);
         for (value, points) in mapping() {
             let points = points.into_iter().collect::<Vec<_>>();
-            let container_len = self.value_to_points_container.len() as u32;
+            let container_len = value_to_points_container.len() as u32;
             let range = container_len..container_len + points.len() as u32;
-            self.value_to_points.insert(
+            value_to_points.insert(
                 value.to_owned(),
                 ContainerSegment {
                     count: range.len() as u32,
                     range,
                 },
             );
-            self.value_to_points_container.extend(points);
+            value_to_points_container.extend(points);
         }
-        self.value_to_points.shrink_to_fit();
+        value_to_points.shrink_to_fit();
 
         // Sort IDs in each slice of points
         // This is very important because we binary search
-        for value in self.value_to_points.keys() {
+        for value in value_to_points.keys() {
             if let Some((slice, _offset)) = Self::get_mut_point_ids_slice(
-                &self.value_to_points,
-                &mut self.value_to_points_container,
+                &value_to_points,
+                &mut value_to_points_container,
                 value.borrow(),
             ) {
                 slice.sort_unstable();
@@ -276,12 +219,60 @@ where
             }
         }
 
-        debug_assert_eq!(self.indexed_points, index.get_indexed_points());
+        debug_assert_eq!(indexed_points, index.get_indexed_points());
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.clear_cache() {
             log::warn!("Failed to clear mmap cache of ram mmap map index: {err}");
         }
+
+        Ok(Some(Self {
+            value_to_points,
+            value_to_points_container,
+            deleted_value_to_points_container: BitVec::new(),
+            point_to_values,
+            indexed_points,
+            values_count,
+            storage: Storage::Mmap(Box::new(index)),
+        }))
+    }
+
+    /// Load storage
+    ///
+    /// Loads in-memory index from backing RocksDB or mmap storage.
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    pub fn load(&self) -> OperationResult<bool> {
+        match self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => self.load_rocksdb(),
+            Storage::Mmap(_) => self.load_mmap(),
+        }
+    }
+
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    #[cfg(feature = "rocksdb")]
+    fn load_rocksdb(&self) -> OperationResult<bool> {
+        let Storage::RocksDb(db_wrapper) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
+        };
+
+        // Note: this structure is now loaded on open
+
+        db_wrapper.has_column_family()
+    }
+
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    fn load_mmap(&self) -> OperationResult<bool> {
+        #[allow(irrefutable_let_patterns)]
+        let Storage::Mmap(_) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from mmap, using different storage backend",
+            ));
+        };
+
+        // Note: this structure is now loaded on open
 
         Ok(true)
     }
