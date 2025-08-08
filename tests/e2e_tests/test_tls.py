@@ -26,19 +26,18 @@ class TestTLS:
         Class-scoped fixture for TLS cluster using the extracted compose function.
         """
         config = {"compose_file": "tls-compose.yaml", "wait_for_ready": False}
-        container_info, cleanup = run_docker_compose(docker_client, qdrant_image, test_data_dir, config)
+        cluster = run_docker_compose(docker_client, qdrant_image, test_data_dir, config)
 
-        # Should be a list of 2 nodes
-        assert isinstance(container_info, list)
-        assert len(container_info) == 2
+        # Should have 2 containers
+        assert len(cluster) == 2
 
         # Wait for cluster to stabilize
         time.sleep(15)
         
         try:
-            yield container_info
+            yield cluster
         finally:
-            cleanup()
+            cluster.cleanup()
 
     @staticmethod
     def _test_http_tls_connectivity(node_info, tls_certs, node_name):

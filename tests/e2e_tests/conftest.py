@@ -295,9 +295,9 @@ def qdrant_compose(docker_client, qdrant_image, test_data_dir, request):
         raise ValueError("qdrant_compose fixture requires parametrization with compose_file path")
 
     config = request.param
-    container_info, cleanup = run_docker_compose(docker_client, qdrant_image, test_data_dir, config)
+    cluster = run_docker_compose(docker_client, qdrant_image, test_data_dir, config)
 
     try:
-        yield container_info
+        yield cluster
     finally:
-        cleanup()
+        cluster.cleanup()

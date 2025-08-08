@@ -8,13 +8,13 @@ import time
 import uuid
 import zipfile
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional, Union
+from typing import Dict, Any, Tuple, Optional, Union, List
 
 import docker.models.containers
 import requests
 from docker.errors import NotFound
 
-from .models import QdrantContainer, QdrantContainerConfig
+from .models import QdrantContainer, QdrantContainerConfig, QdrantDockerCluster
 
 
 def wait_for_qdrant_ready(port: int = 6333, timeout: int = 30) -> bool:
@@ -29,6 +29,31 @@ def wait_for_qdrant_ready(port: int = 6333, timeout: int = 30) -> bool:
             pass
         time.sleep(0.2)
     return False
+
+
+def get_docker_compose_command() -> List[str]:
+    """Detect and return the available docker-compose command.
+    
+    Tries docker compose v2 first, then falls back to docker-compose v1.
+    
+    Returns:
+        List[str]: Command prefix for docker-compose (e.g., ["docker", "compose"] or ["docker-compose"])
+        
+    Raises:
+        RuntimeError: If neither docker compose nor docker-compose is available
+    """
+    compose_commands = [
+        ["docker", "compose"],  # v2
+        ["docker-compose"]  # v1
+    ]
+    
+    for cmd_prefix in compose_commands:
+        test_cmd = cmd_prefix + ["version"]
+        result = subprocess.run(test_cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return cmd_prefix
+    
+    raise RuntimeError("Neither 'docker compose' nor 'docker-compose' command found")
 
 
 def get_default_qdrant_config(qdrant_image: str) -> Dict[str, Any]:
@@ -304,7 +329,7 @@ def run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
         config: Configuration dict with compose_file, wait_for_ready, service_name
 
     Returns:
-        tuple: (container_info, cleanup_function)
+        QdrantDockerCluster: Cluster object containing containers and cleanup function
     """
     wait_for_ready = config.get("wait_for_ready", True)
     compose_file = config.get("compose_file")
@@ -320,22 +345,8 @@ def run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
     project_name = f"qdrant-test-{uuid.uuid4().hex[:8]}"
     service_name = config.get("service_name")  # None means return all services
 
-    # Try docker compose v2 first, then fall back to docker-compose v1
-    compose_commands = [
-        ["docker", "compose"],  # v2
-        ["docker-compose"]  # v1
-    ]
-
-    compose_cmd = None
-    for cmd_prefix in compose_commands:
-        test_cmd = cmd_prefix + ["version"]
-        result = subprocess.run(test_cmd, capture_output=True, text=True)
-        if result.returncode == 0:
-            compose_cmd = cmd_prefix
-            break
-
-    if not compose_cmd:
-        raise RuntimeError("Neither 'docker compose' nor 'docker-compose' command found")
+    # Get docker-compose command
+    compose_cmd = get_docker_compose_command()
 
     # Get list of services from compose file
     services_cmd = compose_cmd + ["-f", str(compose_path), "config", "--services"]
@@ -420,17 +431,4 @@ def run_docker_compose(docker_client, qdrant_image, test_data_dir, config):
 
             container_info = container_infos  # Return the array
 
-    def cleanup():
-        compose_down_cmd = compose_cmd + [
-            "-f", str(compose_path),
-            "-p", project_name,
-            "down", "-v"  # Also remove volumes
-        ]
-
-        result = subprocess.run(compose_down_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"Warning: Failed to stop docker-compose: {result.stderr}")
-        else:
-            print(f"Cleaned up compose project: {project_name}")
-
-    return container_info, cleanup
+    return QdrantDockerCluster(container_info, project_name, str(compose_path))
