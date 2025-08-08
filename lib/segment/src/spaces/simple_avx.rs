@@ -197,10 +197,10 @@ pub(crate) unsafe fn dot_similarity_avx(
             i += 32;
         }
 
-        let mut result = hsum256_ps_avx(sum256_1)
-            + hsum256_ps_avx(sum256_2)
-            + hsum256_ps_avx(sum256_3)
-            + hsum256_ps_avx(sum256_4);
+        let sum1 = _mm256_add_ps(sum256_1, sum256_2);
+        let sum2 = _mm256_add_ps(sum256_3, sum256_4);
+        let total = _mm256_add_ps(sum1, sum2);
+        let mut result = hsum256_ps_avx(total);
 
         for i in 0..n - m {
             result += (*ptr1.add(i)) * (*ptr2.add(i));
