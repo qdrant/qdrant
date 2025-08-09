@@ -146,8 +146,8 @@ FROM qdrant-${GPU:+gpu-}${GPU:-cpu} AS qdrant
 ARG GPU
 
 RUN if [ -n "$GPU" ]; then \
-    apt-get update && \
-    apt-get install -y \
+    apt-get update \
+    && apt-get install -y \
     libvulkan1 \
     libvulkan-dev \
     vulkan-tools \
@@ -157,8 +157,9 @@ RUN if [ -n "$GPU" ]; then \
 # E.g., the debugger of choice: gdb/gdbserver/lldb.
 ARG PACKAGES
 
-RUN apt-get update &&  \
-    apt-get install -y --no-install-recommends ca-certificates tzdata libunwind8 $PACKAGES \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata libunwind8 $PACKAGES \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/lib/dpkg/status-old
 
 # Copy Qdrant source files into the container. Useful for debugging.
