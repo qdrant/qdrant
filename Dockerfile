@@ -129,7 +129,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES compute,graphics,utility
 # Copy Nvidia ICD loader file into the container.
 COPY --from=builder /qdrant/lib/gpu/nvidia_icd.json /etc/vulkan/icd.d/
 # Override maintainer label. Nvidia base image have it's own maintainer label.
-LABEL maintainer "Qdrant Team <info@qdrant.tech>"
+LABEL maintainer="Qdrant Team <info@qdrant.tech>"
 
 
 # Base images for Qdrant with amd GPU support.
@@ -137,17 +137,16 @@ FROM rocm/dev-ubuntu-22.04 AS qdrant-gpu-amd
 # Set non-interactive mode for apt-get.
 ENV DEBIAN_FRONTEND=noninteractive
 # Override maintainer label. AMD base image have it's own maintainer label.
-LABEL maintainer "Qdrant Team <info@qdrant.tech>"
+LABEL maintainer="Qdrant Team <info@qdrant.tech>"
 
 
 FROM qdrant-${GPU:+gpu-}${GPU:-cpu} AS qdrant
-
-RUN apt-get update
 
 # Install GPU dependencies
 ARG GPU
 
 RUN if [ -n "$GPU" ]; then \
+    apt-get update && \
     apt-get install -y \
     libvulkan1 \
     libvulkan-dev \
@@ -158,8 +157,9 @@ RUN if [ -n "$GPU" ]; then \
 # E.g., the debugger of choice: gdb/gdbserver/lldb.
 ARG PACKAGES
 
-RUN apt-get install -y --no-install-recommends ca-certificates tzdata libunwind8 $PACKAGES \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update &&  \
+    apt-get install -y --no-install-recommends ca-certificates tzdata libunwind8 $PACKAGES \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/lib/dpkg/status-old
 
 # Copy Qdrant source files into the container. Useful for debugging.
 #
@@ -183,18 +183,11 @@ COPY --from=builder ${DIR:-/null?} $DIR/
 ENV DIR=${SOURCES:+/usr/local/cargo/git/checkouts}
 COPY --from=builder ${DIR:-/null?} $DIR/
 
-ENV DIR=
+ENV DIR=""
 
 ARG APP=/qdrant
 
-COPY --from=builder /qdrant/qdrant "$APP"/qdrant
-COPY --from=builder /qdrant/config "$APP"/config
-COPY --from=builder /qdrant/tools/entrypoint.sh "$APP"/entrypoint.sh
-COPY --from=builder /static "$APP"/static
-
-WORKDIR "$APP"
-
-ARG USER_ID=0
+ARG USER_ID=1000
 
 RUN if [ "$USER_ID" != 0 ]; then \
         groupadd --gid "$USER_ID" qdrant; \
@@ -202,6 +195,13 @@ RUN if [ "$USER_ID" != 0 ]; then \
         mkdir -p "$APP"/storage "$APP"/snapshots; \
         chown -R "$USER_ID:$USER_ID" "$APP"; \
     fi
+
+COPY --from=builder --chown=$USER_ID:$USER_ID /qdrant/qdrant "$APP"/qdrant
+COPY --from=builder --chown=$USER_ID:$USER_ID /qdrant/config "$APP"/config
+COPY --from=builder --chown=$USER_ID:$USER_ID /qdrant/tools/entrypoint.sh "$APP"/entrypoint.sh
+COPY --from=builder --chown=$USER_ID:$USER_ID /static "$APP"/static
+
+WORKDIR "$APP"
 
 USER "$USER_ID:$USER_ID"
 
