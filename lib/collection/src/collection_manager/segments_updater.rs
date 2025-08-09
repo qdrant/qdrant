@@ -12,18 +12,18 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::types::{
-    Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType,
-    PayloadKeyTypeRef, PointIdType, SeqNumberType, VectorNameBuf,
+    Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
+    SeqNumberType, VectorNameBuf,
 };
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
+use crate::operations::FieldIndexOperations;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{
     ConditionalInsertOperationInternal, PointOperations, PointStructPersisted,
 };
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::vector_ops::{PointVectorsPersisted, VectorOperations};
-use crate::operations::FieldIndexOperations;
 
 pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],

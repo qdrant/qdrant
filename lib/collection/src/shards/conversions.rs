@@ -1,13 +1,3 @@
-use crate::operations::conversions::write_ordering_to_proto;
-use crate::operations::payload_ops::{DeletePayloadOp, SetPayloadOp};
-use crate::operations::point_ops::{
-    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointSyncOperation,
-    WriteOrdering,
-};
-use crate::operations::types::CollectionResult;
-use crate::operations::vector_ops::UpdateVectorsOp;
-use crate::operations::{ClockTag, CreateIndex};
-use crate::shards::shard::ShardId;
 use api::conversions::json::payload_to_proto;
 use api::grpc;
 use api::grpc::conversions::convert_shard_key_from_grpc_opt;
@@ -25,6 +15,17 @@ use segment::data_types::vectors::VectorStructInternal;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PointIdType, ScoredPoint, VectorNameBuf};
 use tonic::Status;
+
+use crate::operations::conversions::write_ordering_to_proto;
+use crate::operations::payload_ops::{DeletePayloadOp, SetPayloadOp};
+use crate::operations::point_ops::{
+    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointSyncOperation,
+    WriteOrdering,
+};
+use crate::operations::types::CollectionResult;
+use crate::operations::vector_ops::UpdateVectorsOp;
+use crate::operations::{ClockTag, CreateIndex};
+use crate::shards::shard::ShardId;
 
 pub fn internal_sync_points(
     shard_id: Option<ShardId>,
