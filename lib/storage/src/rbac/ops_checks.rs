@@ -451,6 +451,9 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
                 PointOperations::UpsertPoints(_) => {
                     view.check_whole_access()?;
                 }
+                PointOperations::UpsertPointsConditional(_) => {
+                    view.check_whole_access()?;
+                }
                 PointOperations::DeletePoints { ids } => {
                     if let Some(payload) = &view.payload {
                         *op = PointOperations::DeletePointsByFilter(
@@ -677,9 +680,10 @@ mod tests_ops {
     };
     use collection::operations::payload_ops::PayloadOpsDiscriminants;
     use collection::operations::point_ops::{
-        BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal,
-        PointInsertOperationsInternalDiscriminants, PointOperationsDiscriminants,
-        PointStructPersisted, PointSyncOperation, VectorStructPersisted,
+        BatchPersisted, BatchVectorStructPersisted, ConditionalInsertOperationInternal,
+        PointInsertOperationsInternal, PointInsertOperationsInternalDiscriminants,
+        PointOperationsDiscriminants, PointStructPersisted, PointSyncOperation,
+        VectorStructPersisted,
     };
     use collection::operations::query_enum::QueryEnum;
     use collection::operations::types::UsingVector;
@@ -1178,6 +1182,24 @@ mod tests_ops {
                     );
                     assert_requires_whole_write_access(&op);
                 }
+            }
+            PointOperationsDiscriminants::UpsertPointsConditional => {
+                let inner = PointInsertOperationsInternal::PointsList(vec![PointStructPersisted {
+                    id: ExtendedPointId::NumId(12345),
+                    vector: VectorStructPersisted::Single(vec![0.0, 1.0, 2.0]),
+                    payload: None,
+                }]);
+
+                let filter = make_filter_from_ids(vec![ExtendedPointId::NumId(12345)]);
+
+                let op = CollectionUpdateOperations::PointOperation(
+                    PointOperations::UpsertPointsConditional(ConditionalInsertOperationInternal {
+                        points_op: inner,
+                        condition: filter,
+                    }),
+                );
+
+                assert_requires_whole_write_access(&op);
             }
 
             PointOperationsDiscriminants::DeletePoints => {

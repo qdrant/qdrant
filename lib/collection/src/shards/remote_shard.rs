@@ -35,13 +35,14 @@ use segment::types::{
 };
 use semver::Version;
 use tokio::runtime::Handle;
-use tonic::Status;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
+use tonic::Status;
 use url::Url;
 
 use super::conversions::{
-    internal_delete_vectors, internal_delete_vectors_by_filter, internal_update_vectors,
+    internal_conditional_upsert_points, internal_delete_vectors, internal_delete_vectors_by_filter,
+    internal_update_vectors,
 };
 use super::local_shard::clock_map::RecoveryPoint;
 use super::replica_set::ReplicaState;
@@ -56,7 +57,6 @@ use crate::operations::types::{
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations, OperationWithClockTag};
-use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::conversions::{
     internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
@@ -67,6 +67,7 @@ use crate::shards::conversions::{
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::RemoteShardTelemetry;
+use crate::shards::CollectionId;
 
 /// Timeout for transferring and recovering a shard snapshot on a remote peer.
 const SHARD_SNAPSHOT_TRANSFER_RECOVER_TIMEOUT: Duration = MAX_GRPC_CHANNEL_TIMEOUT;
@@ -252,6 +253,17 @@ impl RemoteShard {
                             ordering,
                         )?;
 
+                        Update::Upsert(request)
+                    }
+                    PointOperations::UpsertPointsConditional(conditional_upsert) => {
+                        let request = internal_conditional_upsert_points(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            conditional_upsert,
+                            wait,
+                            ordering,
+                        )?;
                         Update::Upsert(request)
                     }
                     PointOperations::DeletePoints { ids } => {
@@ -488,6 +500,21 @@ impl RemoteShard {
                         operation.clock_tag,
                         collection_name,
                         point_insert_operations,
+                        wait,
+                        ordering,
+                    )?;
+                    self.with_points_client(|mut client| async move {
+                        client.upsert(tonic::Request::new(request.clone())).await
+                    })
+                    .await?
+                    .into_inner()
+                }
+                PointOperations::UpsertPointsConditional(conditional_upsert) => {
+                    let request = &internal_conditional_upsert_points(
+                        shard_id,
+                        operation.clock_tag,
+                        collection_name,
+                        conditional_upsert,
                         wait,
                         ordering,
                     )?;

@@ -1,4 +1,15 @@
+use crate::operations::conversions::write_ordering_to_proto;
+use crate::operations::payload_ops::{DeletePayloadOp, SetPayloadOp};
+use crate::operations::point_ops::{
+    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointSyncOperation,
+    WriteOrdering,
+};
+use crate::operations::types::CollectionResult;
+use crate::operations::vector_ops::UpdateVectorsOp;
+use crate::operations::{ClockTag, CreateIndex};
+use crate::shards::shard::ShardId;
 use api::conversions::json::payload_to_proto;
+use api::grpc;
 use api::grpc::conversions::convert_shard_key_from_grpc_opt;
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
@@ -14,16 +25,6 @@ use segment::data_types::vectors::VectorStructInternal;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PointIdType, ScoredPoint, VectorNameBuf};
 use tonic::Status;
-
-use crate::operations::conversions::write_ordering_to_proto;
-use crate::operations::payload_ops::{DeletePayloadOp, SetPayloadOp};
-use crate::operations::point_ops::{
-    PointInsertOperationsInternal, PointSyncOperation, WriteOrdering,
-};
-use crate::operations::types::CollectionResult;
-use crate::operations::vector_ops::UpdateVectorsOp;
-use crate::operations::{ClockTag, CreateIndex};
-use crate::shards::shard::ShardId;
 
 pub fn internal_sync_points(
     shard_id: Option<ShardId>,
@@ -78,6 +79,40 @@ pub fn internal_upsert_points(
             },
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
+            update_if: None,
+        }),
+    })
+}
+
+pub fn internal_conditional_upsert_points(
+    shard_id: Option<ShardId>,
+    clock_tag: Option<ClockTag>,
+    collection_name: String,
+    point_condition_upsert_operations: ConditionalInsertOperationInternal,
+    wait: bool,
+    ordering: Option<WriteOrdering>,
+) -> CollectionResult<UpsertPointsInternal> {
+    let ConditionalInsertOperationInternal {
+        points_op: point_insert_operations,
+        condition,
+    } = point_condition_upsert_operations;
+
+    Ok(UpsertPointsInternal {
+        shard_id,
+        clock_tag: clock_tag.map(Into::into),
+        upsert_points: Some(UpsertPoints {
+            collection_name,
+            wait: Some(wait),
+            points: match point_insert_operations {
+                PointInsertOperationsInternal::PointsBatch(batch) => TryFrom::try_from(batch)?,
+                PointInsertOperationsInternal::PointsList(list) => list
+                    .into_iter()
+                    .map(api::grpc::qdrant::PointStruct::try_from)
+                    .collect::<Result<Vec<_>, Status>>()?,
+            },
+            ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
+            update_if: Some(grpc::Filter::from(condition)),
         }),
     })
 }

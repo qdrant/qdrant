@@ -245,24 +245,40 @@ pub async fn do_upsert_points(
         .check_strict_mode(&operation, &collection_name, None, &access)
         .await?;
 
-    let (operation, shard_key, usage) = match operation {
+    let (operation, shard_key, usage, update_if) = match operation {
         PointInsertOperations::PointsBatch(batch) => {
-            let PointsBatch { batch, shard_key } = batch;
+            let PointsBatch {
+                batch,
+                shard_key,
+                update_if,
+            } = batch;
             let (batch, usage) = convert_batch(batch, inference_token).await?;
             let operation = PointInsertOperationsInternal::PointsBatch(batch);
-            (operation, shard_key, usage)
+            (operation, shard_key, usage, update_if)
         }
         PointInsertOperations::PointsList(list) => {
-            let PointsList { points, shard_key } = list;
+            let PointsList {
+                points,
+                shard_key,
+                update_if,
+            } = list;
             let (list, usage) =
                 convert_point_struct(points, InferenceType::Update, inference_token).await?;
             let operation = PointInsertOperationsInternal::PointsList(list);
-            (operation, shard_key, usage)
+            (operation, shard_key, usage, update_if)
         }
     };
 
-    let operation =
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation));
+    let operation = if let Some(condition) = update_if {
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsConditional(
+            ConditionalInsertOperationInternal {
+                points_op: operation,
+                condition,
+            },
+        ))
+    } else {
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation))
+    };
 
     let result = update(
         toc,

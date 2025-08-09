@@ -1,6 +1,11 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::common::inference::InferenceToken;
+use crate::common::inference::service::InferenceType;
+use crate::common::inference::update_requests::convert_point_struct;
+use crate::common::strict_mode::*;
+use crate::common::update::*;
 use api::conversions::json::{json_path_from_proto, proto_to_payloads};
 use api::grpc;
 use api::grpc::qdrant::payload_index_params::IndexParams;
@@ -31,12 +36,6 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use tonic::{Response, Status};
 
-use crate::common::inference::InferenceToken;
-use crate::common::inference::service::InferenceType;
-use crate::common::inference::update_requests::convert_point_struct;
-use crate::common::strict_mode::*;
-use crate::common::update::*;
-
 pub async fn upsert(
     toc_provider: impl CheckedTocProvider,
     upsert_points: UpsertPoints,
@@ -51,6 +50,7 @@ pub async fn upsert(
         points,
         ordering,
         shard_key_selector,
+        update_if,
     } = upsert_points;
 
     let points: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
@@ -58,6 +58,9 @@ pub async fn upsert(
     let operation = PointInsertOperations::PointsList(PointsList {
         points: points?,
         shard_key: shard_key_selector.map(ShardKeySelector::from),
+        update_if: update_if
+            .map(segment::types::Filter::try_from)
+            .transpose()?,
     });
 
     let timing = Instant::now();
@@ -418,6 +421,7 @@ pub async fn update_batch(
             points_update_operation::Operation::Upsert(PointStructList {
                 points,
                 shard_key_selector,
+                update_if,
             }) => {
                 upsert(
                     StrictModeCheckedTocProvider::new(dispatcher),
@@ -427,6 +431,7 @@ pub async fn update_batch(
                         points,
                         ordering,
                         shard_key_selector,
+                        update_if,
                     },
                     internal_params,
                     access.clone(),

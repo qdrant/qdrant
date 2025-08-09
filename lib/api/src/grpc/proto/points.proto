@@ -135,6 +135,7 @@ message UpsertPoints {
   repeated PointStruct points = 3;
   optional WriteOrdering ordering = 4; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
+  optional Filter update_if = 6; // If specified, only points that match this filter will be updated, others will be inserted
 }
 
 message DeletePoints {
@@ -794,6 +795,7 @@ message PointsUpdateOperation {
   message PointStructList {
     repeated PointStruct points = 1;
     optional ShardKeySelector shard_key_selector = 2; // Option for custom sharding to specify used shard keys
+    optional Filter update_if = 3; // If specified, only points that match this filter will be updated, others will be inserted
   }
   message SetPayload {
       map<string, Value> payload = 1;
