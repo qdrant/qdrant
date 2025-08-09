@@ -187,7 +187,7 @@ ENV DIR=""
 
 ARG APP=/qdrant
 
-ARG USER_ID=1000
+ARG USER_ID=0
 
 RUN if [ "$USER_ID" != 0 ]; then \
         groupadd --gid "$USER_ID" qdrant; \
