@@ -1275,7 +1275,7 @@ mod tests_ops {
                             id: ExtendedPointId::NumId(12345),
                             vector: VectorStructPersisted::Single(vec![0.0, 1.0, 2.0]),
                         }],
-                        update_if: None,
+                        update_filter: None,
                     }),
                 );
                 assert_requires_whole_write_access(&op);

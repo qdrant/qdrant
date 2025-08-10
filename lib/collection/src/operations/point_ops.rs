@@ -568,14 +568,17 @@ impl PointInsertOperationsInternal {
         }
     }
 
-    pub fn into_update_only(self, update_if: Option<Filter>) -> Vec<CollectionUpdateOperations> {
+    pub fn into_update_only(
+        self,
+        update_filter: Option<Filter>,
+    ) -> Vec<CollectionUpdateOperations> {
         let mut operations = Vec::new();
 
         match self {
             Self::PointsBatch(batch) => {
                 let mut update_vectors = UpdateVectorsOp {
                     points: Vec::new(),
-                    update_if: update_if.clone(),
+                    update_filter: update_filter.clone(),
                 };
 
                 match batch.vectors {
@@ -635,7 +638,7 @@ impl PointInsertOperationsInternal {
 
                     for (id, payload) in ids.zip(payloads) {
                         if let Some(payload) = payload {
-                            let set_payload = if let Some(update_filter) = update_if.clone() {
+                            let set_payload = if let Some(update_filter) = update_filter.clone() {
                                 SetPayloadOp {
                                     points: None,
                                     payload,
@@ -665,7 +668,7 @@ impl PointInsertOperationsInternal {
             Self::PointsList(points) => {
                 let mut update_vectors = UpdateVectorsOp {
                     points: Vec::new(),
-                    update_if: update_if.clone(),
+                    update_filter: update_filter.clone(),
                 };
 
                 for point in points {
@@ -675,7 +678,7 @@ impl PointInsertOperationsInternal {
                     });
 
                     if let Some(payload) = point.payload {
-                        let set_payload = if let Some(update_filter) = update_if.clone() {
+                        let set_payload = if let Some(update_filter) = update_filter.clone() {
                             SetPayloadOp {
                                 points: None,
                                 payload,
@@ -1122,7 +1125,7 @@ mod tests {
                 payloads: None,
             },
             shard_key: None,
-            update_if: None,
+            update_filter: None,
         });
         assert!(batch.validate().is_err());
 
@@ -1133,7 +1136,7 @@ mod tests {
                 payloads: None,
             },
             shard_key: None,
-            update_if: None,
+            update_filter: None,
         });
         assert!(batch.validate().is_ok());
 
@@ -1144,7 +1147,7 @@ mod tests {
                 payloads: Some(vec![]),
             },
             shard_key: None,
-            update_if: None,
+            update_filter: None,
         });
         assert!(batch.validate().is_err());
     }

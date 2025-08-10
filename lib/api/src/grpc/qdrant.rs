@@ -4368,7 +4368,7 @@ pub struct UpsertPoints {
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
     /// If specified, only points that match this filter will be updated, others will be inserted
     #[prost(message, optional, tag = "6")]
-    pub update_if: ::core::option::Option<Filter>,
+    pub update_filter: ::core::option::Option<Filter>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -4453,7 +4453,7 @@ pub struct UpdatePointVectors {
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
     /// If specified, only points that match this filter will be updated
     #[prost(message, optional, tag = "6")]
-    pub update_if: ::core::option::Option<Filter>,
+    pub update_filter: ::core::option::Option<Filter>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -6029,7 +6029,7 @@ pub mod points_update_operation {
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
         /// If specified, only points that match this filter will be updated, others will be inserted
         #[prost(message, optional, tag = "3")]
-        pub update_if: ::core::option::Option<super::Filter>,
+        pub update_filter: ::core::option::Option<super::Filter>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6094,7 +6094,7 @@ pub mod points_update_operation {
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
         /// If specified, only points that match this filter will be updated
         #[prost(message, optional, tag = "3")]
-        pub update_if: ::core::option::Option<super::Filter>,
+        pub update_filter: ::core::option::Option<super::Filter>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]

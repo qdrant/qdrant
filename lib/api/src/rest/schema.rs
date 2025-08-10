@@ -1327,7 +1327,7 @@ pub struct PointsBatch {
     /// If specified, only points that match this filter will be updated, others will be inserted
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
-    pub update_if: Option<Filter>,
+    pub update_filter: Option<Filter>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
@@ -1349,7 +1349,7 @@ pub struct UpdateVectors {
     pub shard_key: Option<ShardKeySelector>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
-    pub update_if: Option<Filter>,
+    pub update_filter: Option<Filter>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, Validate)]
@@ -1361,7 +1361,7 @@ pub struct PointsList {
     /// If specified, only points that match this filter will be updated, others will be inserted
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
-    pub update_if: Option<Filter>,
+    pub update_filter: Option<Filter>,
 }
 
 impl<'de> serde::Deserialize<'de> for PointInsertOperations {

@@ -51,7 +51,7 @@ pub async fn upsert(
         points,
         ordering,
         shard_key_selector,
-        update_if,
+        update_filter,
     } = upsert_points;
 
     let points: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
@@ -59,7 +59,7 @@ pub async fn upsert(
     let operation = PointInsertOperations::PointsList(PointsList {
         points: points?,
         shard_key: shard_key_selector.map(ShardKeySelector::from),
-        update_if: update_if
+        update_filter: update_filter
             .map(segment::types::Filter::try_from)
             .transpose()?,
     });
@@ -137,7 +137,7 @@ pub async fn update_vectors(
         points,
         ordering,
         shard_key_selector,
-        update_if,
+        update_filter,
     } = update_point_vectors;
 
     // Build list of operation points
@@ -157,7 +157,7 @@ pub async fn update_vectors(
     let operation = UpdateVectors {
         points: op_points,
         shard_key: shard_key_selector.map(ShardKeySelector::from),
-        update_if: update_if
+        update_filter: update_filter
             .map(segment::types::Filter::try_from)
             .transpose()?,
     };
@@ -426,7 +426,7 @@ pub async fn update_batch(
             points_update_operation::Operation::Upsert(PointStructList {
                 points,
                 shard_key_selector,
-                update_if,
+                update_filter,
             }) => {
                 upsert(
                     StrictModeCheckedTocProvider::new(dispatcher),
@@ -436,7 +436,7 @@ pub async fn update_batch(
                         points,
                         ordering,
                         shard_key_selector,
-                        update_if,
+                        update_filter,
                     },
                     internal_params,
                     access.clone(),
@@ -558,7 +558,7 @@ pub async fn update_batch(
                 points_update_operation::UpdateVectors {
                     points,
                     shard_key_selector,
-                    update_if,
+                    update_filter,
                 },
             ) => {
                 update_vectors(
@@ -569,7 +569,7 @@ pub async fn update_batch(
                         points,
                         ordering,
                         shard_key_selector,
-                        update_if,
+                        update_filter,
                     },
                     internal_params,
                     access.clone(),

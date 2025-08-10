@@ -80,7 +80,7 @@ pub fn internal_upsert_points(
             },
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            update_if: None,
+            update_filter: None,
         }),
     })
 }
@@ -113,7 +113,7 @@ pub fn internal_conditional_upsert_points(
             },
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            update_if: Some(grpc::Filter::from(condition)),
+            update_filter: Some(grpc::Filter::from(condition)),
         }),
     })
 }
@@ -174,7 +174,10 @@ pub fn internal_update_vectors(
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> CollectionResult<UpdateVectorsInternal> {
-    let UpdateVectorsOp { points, update_if } = update_vectors;
+    let UpdateVectorsOp {
+        points,
+        update_filter,
+    } = update_vectors;
     let points: Result<Vec<_>, _> = points
         .into_iter()
         .map(|point| {
@@ -194,7 +197,7 @@ pub fn internal_update_vectors(
             points: points?,
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            update_if: update_if.map(grpc::Filter::from),
+            update_filter: update_filter.map(grpc::Filter::from),
         }),
     })
 }

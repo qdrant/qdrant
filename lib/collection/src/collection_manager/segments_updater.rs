@@ -110,10 +110,10 @@ pub(crate) fn update_vectors_conditional(
 ) -> CollectionResult<usize> {
     let UpdateVectorsOp {
         mut points,
-        update_if,
+        update_filter,
     } = points;
 
-    let Some(filter_condition) = update_if else {
+    let Some(filter_condition) = update_filter else {
         return update_vectors(segments, op_num, points, hw_counter);
     };
 

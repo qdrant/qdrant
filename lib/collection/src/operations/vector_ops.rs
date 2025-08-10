@@ -41,7 +41,7 @@ pub struct UpdateVectorsOp {
     pub points: Vec<PointVectorsPersisted>,
     /// Condition to check before updating vectors
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub update_if: Option<Filter>,
+    pub update_filter: Option<Filter>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
@@ -94,7 +94,10 @@ impl SplitByShard for Vec<PointVectors> {
 impl SplitByShard for VectorOperations {
     fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
         match self {
-            VectorOperations::UpdateVectors(UpdateVectorsOp { points, update_if }) => {
+            VectorOperations::UpdateVectors(UpdateVectorsOp {
+                points,
+                update_filter,
+            }) => {
                 let shard_points = points
                     .into_iter()
                     .flat_map(|point| {
@@ -114,7 +117,7 @@ impl SplitByShard for VectorOperations {
                         shard_id,
                         VectorOperations::UpdateVectors(UpdateVectorsOp {
                             points,
-                            update_if: update_if.clone(),
+                            update_filter: update_filter.clone(),
                         }),
                     )
                 });

@@ -10400,7 +10400,7 @@
               }
             ]
           },
-          "update_if": {
+          "update_filter": {
             "description": "If specified, only points that match this filter will be updated, others will be inserted",
             "anyOf": [
               {
@@ -10723,7 +10723,7 @@
               }
             ]
           },
-          "update_if": {
+          "update_filter": {
             "description": "If specified, only points that match this filter will be updated, others will be inserted",
             "anyOf": [
               {
@@ -13742,7 +13742,7 @@
               }
             ]
           },
-          "update_if": {
+          "update_filter": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"

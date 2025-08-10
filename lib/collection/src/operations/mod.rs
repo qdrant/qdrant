@@ -442,7 +442,7 @@ mod tests {
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             let update = Self::UpdateVectors(UpdateVectorsOp {
                 points: Vec::new(),
-                update_if: None,
+                update_filter: None,
             });
 
             let delete = Self::DeleteVectors(

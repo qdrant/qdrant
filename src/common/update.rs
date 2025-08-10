@@ -245,31 +245,31 @@ pub async fn do_upsert_points(
         .check_strict_mode(&operation, &collection_name, None, &access)
         .await?;
 
-    let (operation, shard_key, usage, update_if) = match operation {
+    let (operation, shard_key, usage, update_filter) = match operation {
         PointInsertOperations::PointsBatch(batch) => {
             let PointsBatch {
                 batch,
                 shard_key,
-                update_if,
+                update_filter,
             } = batch;
             let (batch, usage) = convert_batch(batch, inference_token).await?;
             let operation = PointInsertOperationsInternal::PointsBatch(batch);
-            (operation, shard_key, usage, update_if)
+            (operation, shard_key, usage, update_filter)
         }
         PointInsertOperations::PointsList(list) => {
             let PointsList {
                 points,
                 shard_key,
-                update_if,
+                update_filter,
             } = list;
             let (list, usage) =
                 convert_point_struct(points, InferenceType::Update, inference_token).await?;
             let operation = PointInsertOperationsInternal::PointsList(list);
-            (operation, shard_key, usage, update_if)
+            (operation, shard_key, usage, update_filter)
         }
     };
 
-    let operation = if let Some(condition) = update_if {
+    let operation = if let Some(condition) = update_filter {
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsConditional(
             ConditionalInsertOperationInternal {
                 points_op: operation,
@@ -350,14 +350,17 @@ pub async fn do_update_vectors(
     let UpdateVectors {
         points,
         shard_key,
-        update_if,
+        update_filter,
     } = operation;
 
     let (points, usage) =
         convert_point_vectors(points, InferenceType::Update, inference_token).await?;
 
     let operation = CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(
-        UpdateVectorsOp { points, update_if },
+        UpdateVectorsOp {
+            points,
+            update_filter,
+        },
     ));
 
     let result = update(
