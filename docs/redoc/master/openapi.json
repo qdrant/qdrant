@@ -10399,6 +10399,17 @@
                 "nullable": true
               }
             ]
+          },
+          "update_if": {
+            "description": "If specified, only points that match this filter will be updated, others will be inserted",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -10706,6 +10717,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "update_if": {
+            "description": "If specified, only points that match this filter will be updated, others will be inserted",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
               },
               {
                 "nullable": true
