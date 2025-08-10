@@ -193,9 +193,11 @@ fn configure_validation(builder: Builder) -> Builder {
         .validates(&[
             ("UpsertPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("UpsertPoints.points", ""),
+            ("UpsertPoints.update_filter", ""),
             ("DeletePoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("UpdatePointVectors.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("UpdatePointVectors.points", ""),
+            ("UpdatePointVectors.update_filter", ""),
             ("DeletePointVectors.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("DeletePointVectors.vector_names", "length(min = 1, message = \"must specify vector names to delete\")"),
             ("PointVectors.vectors", ""),

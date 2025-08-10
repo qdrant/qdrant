@@ -4368,6 +4368,7 @@ pub struct UpsertPoints {
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
     /// If specified, only points that match this filter will be updated, others will be inserted
     #[prost(message, optional, tag = "6")]
+    #[validate(nested)]
     pub update_filter: ::core::option::Option<Filter>,
 }
 #[derive(validator::Validate)]
@@ -4453,6 +4454,7 @@ pub struct UpdatePointVectors {
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
     /// If specified, only points that match this filter will be updated
     #[prost(message, optional, tag = "6")]
+    #[validate(nested)]
     pub update_filter: ::core::option::Option<Filter>,
 }
 #[derive(validator::Validate)]

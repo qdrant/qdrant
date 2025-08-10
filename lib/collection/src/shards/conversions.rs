@@ -1,5 +1,4 @@
 use api::conversions::json::payload_to_proto;
-use api::grpc;
 use api::grpc::conversions::convert_shard_key_from_grpc_opt;
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
@@ -113,7 +112,7 @@ pub fn internal_conditional_upsert_points(
             },
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            update_filter: Some(grpc::Filter::from(condition)),
+            update_filter: Some(api::grpc::Filter::from(condition)),
         }),
     })
 }
@@ -197,7 +196,7 @@ pub fn internal_update_vectors(
             points: points?,
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            update_filter: update_filter.map(grpc::Filter::from),
+            update_filter: update_filter.map(api::grpc::Filter::from),
         }),
     })
 }
