@@ -3297,6 +3297,33 @@ impl Filter {
         }
     }
 
+    /// Create an extended filtering condition, which would also include filter by given list of IDs.
+    pub fn merge_with_ids(self, ids: impl IntoIterator<Item = PointIdType>) -> Filter {
+        let has_id_condition: HasIdCondition = ids.into_iter().collect();
+
+        let Filter {
+            should,
+            min_should,
+            must,
+            must_not,
+        } = self;
+
+        let new_must = match must {
+            Some(mut must) => {
+                must.push(Condition::HasId(has_id_condition));
+                Some(must)
+            }
+            None => Some(vec![Condition::HasId(has_id_condition)]),
+        };
+
+        Filter {
+            should,
+            min_should,
+            must: new_must,
+            must_not,
+        }
+    }
+
     pub fn merge(&self, other: &Filter) -> Filter {
         self.clone().merge_owned(other.clone())
     }

@@ -163,6 +163,7 @@ message UpdatePointVectors {
   repeated PointVectors points = 3; // List of points and vectors to update
   optional WriteOrdering ordering = 4; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
+  optional Filter update_if = 6; // If specified, only points that match this filter will be updated
 }
 
 message PointVectors {
@@ -817,6 +818,7 @@ message PointsUpdateOperation {
   message UpdateVectors {
     repeated PointVectors points = 1; // List of points and vectors to update
     optional ShardKeySelector shard_key_selector = 2; // Option for custom sharding to specify used shard keys
+    optional Filter update_if = 3; // If specified, only points that match this filter will be updated
   }
   message DeleteVectors {
     PointsSelector points_selector = 1; // Affected points

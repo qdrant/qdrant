@@ -568,12 +568,15 @@ impl PointInsertOperationsInternal {
         }
     }
 
-    pub fn into_update_only(self) -> Vec<CollectionUpdateOperations> {
+    pub fn into_update_only(self, update_if: Option<Filter>) -> Vec<CollectionUpdateOperations> {
         let mut operations = Vec::new();
 
         match self {
             Self::PointsBatch(batch) => {
-                let mut update_vectors = UpdateVectorsOp { points: Vec::new() };
+                let mut update_vectors = UpdateVectorsOp {
+                    points: Vec::new(),
+                    update_if: update_if.clone(),
+                };
 
                 match batch.vectors {
                     BatchVectorStructPersisted::Single(vectors) => {
@@ -632,11 +635,20 @@ impl PointInsertOperationsInternal {
 
                     for (id, payload) in ids.zip(payloads) {
                         if let Some(payload) = payload {
-                            let set_payload = SetPayloadOp {
-                                points: Some(vec![id]),
-                                payload,
-                                filter: None,
-                                key: None,
+                            let set_payload = if let Some(update_filter) = update_if.clone() {
+                                SetPayloadOp {
+                                    points: None,
+                                    payload,
+                                    filter: Some(update_filter.merge_with_ids(vec![id])),
+                                    key: None,
+                                }
+                            } else {
+                                SetPayloadOp {
+                                    points: Some(vec![id]),
+                                    payload,
+                                    filter: None,
+                                    key: None,
+                                }
                             };
 
                             let set_payload =
@@ -651,7 +663,10 @@ impl PointInsertOperationsInternal {
             }
 
             Self::PointsList(points) => {
-                let mut update_vectors = UpdateVectorsOp { points: Vec::new() };
+                let mut update_vectors = UpdateVectorsOp {
+                    points: Vec::new(),
+                    update_if: update_if.clone(),
+                };
 
                 for point in points {
                     update_vectors.points.push(PointVectorsPersisted {
@@ -660,11 +675,20 @@ impl PointInsertOperationsInternal {
                     });
 
                     if let Some(payload) = point.payload {
-                        let set_payload = SetPayloadOp {
-                            points: Some(vec![point.id]),
-                            payload,
-                            filter: None,
-                            key: None,
+                        let set_payload = if let Some(update_filter) = update_if.clone() {
+                            SetPayloadOp {
+                                points: None,
+                                payload,
+                                filter: Some(update_filter.merge_with_ids(vec![point.id])),
+                                key: None,
+                            }
+                        } else {
+                            SetPayloadOp {
+                                points: Some(vec![point.id]),
+                                payload,
+                                filter: None,
+                                key: None,
+                            }
                         };
 
                         let set_payload = payload_ops::PayloadOps::OverwritePayload(set_payload);

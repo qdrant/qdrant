@@ -137,6 +137,7 @@ pub async fn update_vectors(
         points,
         ordering,
         shard_key_selector,
+        update_if,
     } = update_point_vectors;
 
     // Build list of operation points
@@ -156,6 +157,9 @@ pub async fn update_vectors(
     let operation = UpdateVectors {
         points: op_points,
         shard_key: shard_key_selector.map(ShardKeySelector::from),
+        update_if: update_if
+            .map(segment::types::Filter::try_from)
+            .transpose()?,
     };
 
     let timing = Instant::now();
@@ -554,6 +558,7 @@ pub async fn update_batch(
                 points_update_operation::UpdateVectors {
                     points,
                     shard_key_selector,
+                    update_if,
                 },
             ) => {
                 update_vectors(
@@ -564,6 +569,7 @@ pub async fn update_batch(
                         points,
                         ordering,
                         shard_key_selector,
+                        update_if,
                     },
                     internal_params,
                     access.clone(),

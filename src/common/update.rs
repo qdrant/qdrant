@@ -347,13 +347,17 @@ pub async fn do_update_vectors(
         .check_strict_mode(&operation, &collection_name, None, &access)
         .await?;
 
-    let UpdateVectors { points, shard_key } = operation;
+    let UpdateVectors {
+        points,
+        shard_key,
+        update_if,
+    } = operation;
 
     let (points, usage) =
         convert_point_vectors(points, InferenceType::Update, inference_token).await?;
 
     let operation = CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(
-        UpdateVectorsOp { points },
+        UpdateVectorsOp { points, update_if },
     ));
 
     let result = update(

@@ -13741,6 +13741,16 @@
                 "nullable": true
               }
             ]
+          },
+          "update_if": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

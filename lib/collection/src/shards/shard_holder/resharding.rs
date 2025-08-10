@@ -8,9 +8,10 @@ use segment::types::{Condition, CustomIdCheckerCondition as _, Filter, ShardKey}
 
 use super::ShardHolder;
 use crate::hash_ring::{self, HashRingRouter};
+use crate::operations::CollectionUpdateOperations;
 use crate::operations::cluster_ops::ReshardingDirection;
+use crate::operations::point_ops::{ConditionalInsertOperationInternal, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::operations::{CollectionUpdateOperations, point_ops};
 use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::resharding::{ReshardKey, ReshardStage, ReshardState};
 use crate::shards::shard::ShardId;
@@ -520,17 +521,39 @@ pub struct OperationsByMode {
 
 impl OperationsByMode {
     pub fn with_update_only_existing(mut self, operation: CollectionUpdateOperations) -> Self {
-        match operation {
-            CollectionUpdateOperations::PointOperation(
-                point_ops::PointOperations::UpsertPoints(operation),
-            ) => {
-                self.update_only_existing = operation.into_update_only();
-            }
+        self.update_only_existing = match operation {
+            CollectionUpdateOperations::PointOperation(point_operation) => match point_operation {
+                PointOperations::UpsertPoints(operation) => operation.into_update_only(None),
+                PointOperations::UpsertPointsConditional(operation) => {
+                    let ConditionalInsertOperationInternal {
+                        points_op,
+                        condition,
+                    } = operation;
+                    points_op.into_update_only(Some(condition))
+                }
 
-            operation => {
-                self.update_only_existing = vec![operation];
+                PointOperations::DeletePoints { ids } => {
+                    vec![CollectionUpdateOperations::PointOperation(
+                        PointOperations::DeletePoints { ids },
+                    )]
+                }
+                PointOperations::DeletePointsByFilter(op) => {
+                    vec![CollectionUpdateOperations::PointOperation(
+                        PointOperations::DeletePointsByFilter(op),
+                    )]
+                }
+                PointOperations::SyncPoints(op) => {
+                    vec![CollectionUpdateOperations::PointOperation(
+                        PointOperations::SyncPoints(op),
+                    )]
+                }
+            },
+            CollectionUpdateOperations::VectorOperation(_)
+            | CollectionUpdateOperations::PayloadOperation(_)
+            | CollectionUpdateOperations::FieldIndexOperation(_) => {
+                vec![operation]
             }
-        }
+        };
 
         self
     }

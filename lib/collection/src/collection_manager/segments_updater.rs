@@ -2,7 +2,7 @@
 
 use std::sync::atomic::AtomicBool;
 
-use ahash::{AHashMap, AHashSet, HashSet};
+use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -23,7 +23,7 @@ use crate::operations::point_ops::{
     ConditionalInsertOperationInternal, PointOperations, PointStructPersisted,
 };
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::operations::vector_ops::{PointVectorsPersisted, VectorOperations};
+use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
 
 pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],
@@ -100,6 +100,30 @@ pub(crate) fn update_vectors(
     }
 
     Ok(total_updated_points)
+}
+
+pub(crate) fn update_vectors_conditional(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    points: UpdateVectorsOp,
+    hw_counter: &HardwareCounterCell,
+) -> CollectionResult<usize> {
+    let UpdateVectorsOp {
+        mut points,
+        update_if,
+    } = points;
+
+    let Some(filter_condition) = update_if else {
+        return update_vectors(segments, op_num, points, hw_counter);
+    };
+
+    let point_ids: Vec<_> = points.iter().map(|point| point.id).collect();
+
+    let points_to_exclude =
+        select_excluded_by_filter_ids(segments, point_ids, filter_condition, hw_counter)?;
+
+    points.retain(|p| !points_to_exclude.contains(&p.id));
+    update_vectors(segments, op_num, points, hw_counter)
 }
 
 const VECTOR_OP_BATCH_SIZE: usize = 512;
@@ -573,6 +597,25 @@ where
     Ok(res)
 }
 
+fn select_excluded_by_filter_ids(
+    segments: &SegmentHolder,
+    point_ids: impl IntoIterator<Item = PointIdType>,
+    filter: Filter,
+    hw_counter: &HardwareCounterCell,
+) -> CollectionResult<AHashSet<PointIdType>> {
+    // Filter for points that doesn't match the condition, and have matching
+    let non_match_filter = segment::types::Filter {
+        should: None,
+        min_should: None,
+        must: Some(vec![Condition::HasId(point_ids.into_iter().collect())]),
+        must_not: Some(vec![Condition::Filter(filter)]),
+    };
+
+    Ok(points_by_filter(segments, &non_match_filter, hw_counter)?
+        .into_iter()
+        .collect())
+}
+
 pub(crate) fn conditional_upsert(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -589,17 +632,8 @@ pub(crate) fn conditional_upsert(
 
     let point_ids = points_op.point_ids();
 
-    // Filter for points that doesn't match the condition, and have matching
-    let non_match_filter = segment::types::Filter {
-        should: None,
-        min_should: None,
-        must: Some(vec![Condition::HasId(point_ids.into_iter().collect())]),
-        must_not: Some(vec![Condition::Filter(condition)]),
-    };
-
-    let points_to_exclude: HashSet<_> = points_by_filter(segments, &non_match_filter, hw_counter)?
-        .into_iter()
-        .collect();
+    let points_to_exclude =
+        select_excluded_by_filter_ids(segments, point_ids, condition, hw_counter)?;
 
     points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
     let points = points_op.into_point_vec();
@@ -648,8 +682,8 @@ pub(crate) fn process_vector_operation(
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
     match vector_operation {
-        VectorOperations::UpdateVectors(operation) => {
-            update_vectors(&segments.read(), op_num, operation.points, hw_counter)
+        VectorOperations::UpdateVectors(update_vectors) => {
+            update_vectors_conditional(&segments.read(), op_num, update_vectors, hw_counter)
         }
         VectorOperations::DeleteVectors(ids, vector_names) => {
             delete_vectors(&segments.read(), op_num, &ids.points, &vector_names)
