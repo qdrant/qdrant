@@ -47,12 +47,12 @@ impl CollectionUpdater {
         update_tracker: UpdateTracker,
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<usize> {
-        // Allow only one update at a time, ensure no data races between segments.
-        // let _lock = self.update_lock.lock().unwrap();
+        // Use block_in_place here to avoid blocking the current async executor
+        let operation_result = tokio::task::block_in_place(|| {
+            // Allow only one update at a time, ensure no data races between segments.
+            // let _update_lock = self.update_lock.lock().unwrap();
 
-        let operation_result = {
-            // Use block_in_place here to avoid blocking the current async executor
-            let _scroll_lock = tokio::task::block_in_place(|| scroll_lock.blocking_write());
+            let _scroll_lock = scroll_lock.blocking_write();
             let _update_guard = update_tracker.update();
 
             match operation {
@@ -69,7 +69,7 @@ impl CollectionUpdater {
                     process_field_index_operation(segments, op_num, &index_operation, hw_counter)
                 }
             }
-        };
+        });
 
         CollectionUpdater::handle_update_result(segments, op_num, &operation_result);
 
