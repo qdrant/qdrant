@@ -604,12 +604,8 @@ fn select_excluded_by_filter_ids(
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<AHashSet<PointIdType>> {
     // Filter for points that doesn't match the condition, and have matching
-    let non_match_filter = segment::types::Filter {
-        should: None,
-        min_should: None,
-        must: Some(vec![Condition::HasId(point_ids.into_iter().collect())]),
-        must_not: Some(vec![Condition::Filter(filter)]),
-    };
+    let non_match_filter =
+        Filter::new_must_not(Condition::Filter(filter)).merge_with_ids(point_ids);
 
     Ok(points_by_filter(segments, &non_match_filter, hw_counter)?
         .into_iter()
