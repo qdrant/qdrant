@@ -184,6 +184,10 @@ impl<'a> FilteredScorer<'a> {
         }
     }
 
+    pub fn raw_scorer(&self) -> &dyn RawScorer {
+        self.raw_scorer.as_ref()
+    }
+
     pub fn filters(&self) -> &ScorerFilters<'a> {
         &self.filters
     }
