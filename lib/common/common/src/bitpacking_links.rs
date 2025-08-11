@@ -1,4 +1,4 @@
-use crate::bitpacking::{BitReader, BitWriter, packed_bits};
+use crate::bitpacking::{BitReader, BitWriter, make_bitmask, packed_bits};
 
 /// To simplify value counting, each value should be at least one byte.
 /// Otherwise the count could would be ambiguous, e.g., a 2-byte slice of 5-bit
@@ -99,6 +99,37 @@ pub fn iterate_packed_links(
         remaining_bits_target,
         current_delta: 0,
     }
+}
+
+/// Returns the size in bytes of packed links.
+///
+/// Used to separate the `data` into `links` (for [`iterate_packed_links()`])
+/// and trailing bytes.
+pub fn packed_links_size(
+    data: &[u8],
+    bits_per_unsorted: u8,
+    sorted_count: usize,
+    total_count: usize,
+) -> usize {
+    if total_count == 0 {
+        return 0;
+    }
+    let Some(first_byte) = data.first() else {
+        return 0;
+    };
+
+    let mut total_bits = 0;
+    let actual_sorted_count = total_count.min(sorted_count);
+
+    if actual_sorted_count > 0 {
+        total_bits += HEADER_BITS as usize;
+        let bits_per_sorted = (first_byte & make_bitmask::<u8>(HEADER_BITS)) + MIN_BITS_PER_VALUE;
+        total_bits += actual_sorted_count * bits_per_sorted as usize;
+    }
+
+    let unsorted_count = total_count - actual_sorted_count;
+    total_bits += unsorted_count * bits_per_unsorted as usize;
+    total_bits.div_ceil(u8::BITS as usize)
 }
 
 /// Iterator over links packed with [`pack_links`].
@@ -245,6 +276,7 @@ mod tests {
                 bits_per_unsorted,
                 sorted_count,
             );
+            let packed_len = links.len();
 
             let mut unpacked = Vec::new();
             let iter = iterate_packed_links(&links, bits_per_unsorted, sorted_count);
@@ -260,6 +292,12 @@ mod tests {
                 bits_per_unsorted,
                 sorted_count,
             ));
+
+            for _ in 0..10 {
+                let len = packed_links_size(&links, bits_per_unsorted, sorted_count, total_count);
+                assert_eq!(len, packed_len);
+                links.push(rng.random());
+            }
         }
     }
 
