@@ -18,7 +18,8 @@ const USE_HEURISTIC: bool = true;
 
 fn hnsw_benchmark(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
-    let vector_holder = TestRawScorerProducer::new(DIM, Distance::Cosine, NUM_VECTORS, &mut rng);
+    let vector_holder =
+        TestRawScorerProducer::new(DIM, Distance::Cosine, NUM_VECTORS, false, &mut rng);
     let mut group = c.benchmark_group("hnsw-index-build-group");
     group.sample_size(10);
     group.bench_function("hnsw_index", |b| {

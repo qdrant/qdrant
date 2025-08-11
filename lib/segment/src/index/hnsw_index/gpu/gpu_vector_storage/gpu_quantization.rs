@@ -243,7 +243,8 @@ impl GpuScalarQuantization {
         let mut upload_context = gpu::Context::new(device.clone())?;
 
         for i in 0..quantized_storage.vectors_count() {
-            let (offset, _) = quantized_storage.get_quantized_vector(i as PointOffsetType);
+            let (offset, _) =
+                quantized_storage.get_quantized_vector_offset_and_code(i as PointOffsetType);
             sq_offsets_staging_buffer.upload(&offset, i * std::mem::size_of::<f32>())?;
         }
 

@@ -1,4 +1,4 @@
-use crate::bitpacking::{BitReader, BitWriter, packed_bits};
+use crate::bitpacking::{BitReader, BitWriter, make_bitmask, packed_bits};
 
 /// To simplify value counting, each value should be at least one byte.
 /// Otherwise the count could would be ambiguous, e.g., a 2-byte slice of 5-bit
@@ -18,9 +18,11 @@ const HEADER_BITS: u8 = 5;
 /// - `bits_per_unsorted` should be enough to store the maximum point ID
 ///   (it should be the same for all nodes/links within a segment).
 /// - `sorted_count` is `m` (or `m0`) for this layer.
+/// - `raw_links` is in/out parameter. Input: links to pack, output: same links,
+///   but re-ordered.
 pub fn pack_links(
     links: &mut Vec<u8>,
-    mut raw_links: Vec<u32>,
+    raw_links: &mut [u32],
     bits_per_unsorted: u8,
     sorted_count: usize,
 ) {
@@ -56,6 +58,11 @@ pub fn pack_links(
     }
 
     w.finish();
+
+    // Undo delta-encoding.
+    for i in 1..sorted_count {
+        raw_links[i] += raw_links[i - 1];
+    }
 }
 
 /// Returns an iterator over packed links.
@@ -92,6 +99,37 @@ pub fn iterate_packed_links(
         remaining_bits_target,
         current_delta: 0,
     }
+}
+
+/// Returns the size in bytes of packed links.
+///
+/// Used to separate the `data` into `links` (for [`iterate_packed_links()`])
+/// and trailing bytes.
+pub fn packed_links_size(
+    data: &[u8],
+    bits_per_unsorted: u8,
+    sorted_count: usize,
+    total_count: usize,
+) -> usize {
+    if total_count == 0 {
+        return 0;
+    }
+    let Some(first_byte) = data.first() else {
+        return 0;
+    };
+
+    let mut total_bits = 0;
+    let actual_sorted_count = total_count.min(sorted_count);
+
+    if actual_sorted_count > 0 {
+        total_bits += HEADER_BITS as usize;
+        let bits_per_sorted = (first_byte & make_bitmask::<u8>(HEADER_BITS)) + MIN_BITS_PER_VALUE;
+        total_bits += actual_sorted_count * bits_per_sorted as usize;
+    }
+
+    let unsorted_count = total_count - actual_sorted_count;
+    total_bits += unsorted_count * bits_per_unsorted as usize;
+    total_bits.div_ceil(u8::BITS as usize)
 }
 
 /// Iterator over links packed with [`pack_links`].
@@ -229,21 +267,24 @@ mod tests {
 
             let bits_per_unsorted = rng.random_range(MIN_BITS_PER_VALUE..=32);
 
-            let mut raw_links = gen_unique_values(&mut rng, total_count, bits_per_unsorted);
+            let mut raw_links_orig = gen_unique_values(&mut rng, total_count, bits_per_unsorted);
+            let mut raw_links_updated = raw_links_orig.clone();
             let mut links = Vec::new();
             pack_links(
                 &mut links,
-                raw_links.clone(),
+                &mut raw_links_updated,
                 bits_per_unsorted,
                 sorted_count,
             );
+            let packed_len = links.len();
 
             let mut unpacked = Vec::new();
             let iter = iterate_packed_links(&links, bits_per_unsorted, sorted_count);
             iter.for_each(|value| unpacked.push(value));
 
-            raw_links[..sorted_count.min(total_count)].sort_unstable();
-            assert_eq!(raw_links, unpacked);
+            raw_links_orig[..sorted_count.min(total_count)].sort_unstable();
+            assert_eq!(raw_links_orig, unpacked);
+            assert_eq!(raw_links_updated, unpacked);
 
             check_iterator_fold(|| iterate_packed_links(&links, bits_per_unsorted, sorted_count));
             check_exact_size_iterator_len(iterate_packed_links(
@@ -251,6 +292,12 @@ mod tests {
                 bits_per_unsorted,
                 sorted_count,
             ));
+
+            for _ in 0..10 {
+                let len = packed_links_size(&links, bits_per_unsorted, sorted_count, total_count);
+                assert_eq!(len, packed_len);
+                links.push(rng.random());
+            }
         }
     }
 

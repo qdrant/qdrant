@@ -268,9 +268,13 @@ impl GpuVectorStorage {
             distance,
             quantized_storage.vectors_count(),
             num_vectors,
-            quantized_storage.get_quantized_vector(0).1.len(),
+            quantized_storage
+                .get_quantized_vector_offset_and_code(0)
+                .1
+                .len(),
             (0..quantized_storage.vectors_count()).map(|id| {
-                let (_, vector) = quantized_storage.get_quantized_vector(id as PointOffsetType);
+                let (_, vector) =
+                    quantized_storage.get_quantized_vector_offset_and_code(id as PointOffsetType);
                 Cow::Borrowed(vector)
             }),
             Some(GpuQuantization::new_sq(device, quantized_storage)?),

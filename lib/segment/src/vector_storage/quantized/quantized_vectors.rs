@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -156,6 +157,47 @@ impl QuantizedVectors {
             QuantizedVectorStorage::PQMmapMulti(_) => true,
             QuantizedVectorStorage::BinaryRamMulti(_) => true,
             QuantizedVectorStorage::BinaryMmapMulti(_) => true,
+        }
+    }
+
+    /// Get layout for a single quantized vector.
+    ///
+    /// I.e. the size of a single vector in bytes, and the required alignment.
+    pub fn get_quantized_vector_layout(&self) -> OperationResult<Layout> {
+        match &self.storage_impl {
+            QuantizedVectorStorage::ScalarRam(storage) => Ok(storage.layout()),
+            QuantizedVectorStorage::ScalarMmap(storage) => Ok(storage.layout()),
+            QuantizedVectorStorage::PQRam(storage) => Ok(storage.layout()),
+            QuantizedVectorStorage::PQMmap(storage) => Ok(storage.layout()),
+            QuantizedVectorStorage::BinaryRam(storage) => Ok(storage.layout()),
+            QuantizedVectorStorage::BinaryMmap(storage) => Ok(storage.layout()),
+            QuantizedVectorStorage::ScalarRamMulti(_)
+            | QuantizedVectorStorage::ScalarMmapMulti(_)
+            | QuantizedVectorStorage::PQRamMulti(_)
+            | QuantizedVectorStorage::PQMmapMulti(_)
+            | QuantizedVectorStorage::BinaryRamMulti(_)
+            | QuantizedVectorStorage::BinaryMmapMulti(_) => Err(OperationError::service_error(
+                "Cannot get quantized vector layout from multivector storage",
+            )),
+        }
+    }
+
+    pub fn get_quantized_vector(&self, id: PointOffsetType) -> &[u8] {
+        match &self.storage_impl {
+            QuantizedVectorStorage::ScalarRam(storage) => storage.get_quantized_vector(id),
+            QuantizedVectorStorage::ScalarMmap(storage) => storage.get_quantized_vector(id),
+            QuantizedVectorStorage::PQRam(storage) => storage.get_quantized_vector(id),
+            QuantizedVectorStorage::PQMmap(storage) => storage.get_quantized_vector(id),
+            QuantizedVectorStorage::BinaryRam(storage) => storage.get_quantized_vector(id),
+            QuantizedVectorStorage::BinaryMmap(storage) => storage.get_quantized_vector(id),
+            QuantizedVectorStorage::ScalarRamMulti(_)
+            | QuantizedVectorStorage::ScalarMmapMulti(_)
+            | QuantizedVectorStorage::PQRamMulti(_)
+            | QuantizedVectorStorage::PQMmapMulti(_)
+            | QuantizedVectorStorage::BinaryRamMulti(_)
+            | QuantizedVectorStorage::BinaryMmapMulti(_) => {
+                panic!("Cannot get quantized vector from multivector storage");
+            }
         }
     }
 

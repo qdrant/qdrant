@@ -610,8 +610,11 @@ impl HNSWIndex {
         // as it will be discarded anyway
         let is_on_disk = true;
 
-        let graph: GraphLayers =
-            graph_layers_builder.into_graph_layers(path, LINK_COMPRESSION_FORMAT, is_on_disk)?;
+        let graph: GraphLayers = graph_layers_builder.into_graph_layers(
+            path,
+            LINK_COMPRESSION_FORMAT.with_param(quantized_vectors_ref.as_ref()),
+            is_on_disk,
+        )?;
 
         #[cfg(debug_assertions)]
         {
