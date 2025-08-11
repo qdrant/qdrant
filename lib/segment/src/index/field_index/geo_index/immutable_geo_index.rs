@@ -121,11 +121,17 @@ impl ImmutableGeoMapIndex {
             ));
         };
 
-        let mut mutable_geo_index = MutableGeoMapIndex::open_rocksdb(
+        let Some(mutable) = MutableGeoMapIndex::open_rocksdb(
             db_wrapper.get_database(),
             db_wrapper.get_column_name(),
-        );
-        let result = mutable_geo_index.load()?;
+            false,
+        )?
+        else {
+            // Column family doesn't exist, cannot load
+            return Ok(false);
+        };
+        // TODO(payload-index-remove-load): remove load when single stage open/load is implemented
+        let result = mutable.load()?;
 
         let InMemoryGeoMapIndex {
             points_per_hash,
@@ -136,7 +142,7 @@ impl ImmutableGeoMapIndex {
             points_values_count,
             max_values_per_point,
             ..
-        } = mutable_geo_index.into_in_memory_index();
+        } = mutable.into_in_memory_index();
 
         let mut counts_per_hash: BTreeMap<GeoHash, Counts> = Default::default();
         for (hash, points) in points_per_hash {
