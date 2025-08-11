@@ -50,7 +50,8 @@ class TestSnapshotsRecovery:
             # For S3 testing, we'd need a MinIO container or mock S3
             # For now, skip if MinIO is not available
             try:
-                requests.get("http://127.0.0.1:9000", timeout=1)
+                response = requests.get("http://127.0.0.1:9000/minio/health/live", timeout=1)
+                response.raise_for_status()
             except requests.exceptions.RequestException:
                 pytest.skip("MinIO is not available for S3 testing")
         
