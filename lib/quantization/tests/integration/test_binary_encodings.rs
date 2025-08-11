@@ -3,6 +3,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_counter::HardwareCounterCell;
+    use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_binary::{
         BitsStoreType, EncodedVectorsBin, Encoding, QueryEncoding,
@@ -69,7 +70,7 @@ mod tests {
             .map(|&encoding| {
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
                     vector_data.iter(),
-                    Vec::<u8>::new(),
+                    TestEncodedStorageBuilder::new(),
                     &VectorParameters {
                         dim: vector_dim,
                         deprecated_count: None,
@@ -165,7 +166,7 @@ mod tests {
             .map(|query_encoding| {
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
                     vector_data.iter(),
-                    Vec::<u8>::new(),
+                    TestEncodedStorageBuilder::new(),
                     &VectorParameters {
                         dim: vector_dim,
                         deprecated_count: None,

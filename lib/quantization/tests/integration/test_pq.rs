@@ -4,6 +4,7 @@ mod tests {
     use std::time::Duration;
 
     use common::counter::hardware_counter::HardwareCounterCell;
+    use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_pq::EncodedVectorsPQ;
     use rand::{Rng, SeedableRng};
@@ -25,7 +26,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vec![],
+            TestEncodedStorageBuilder::new(),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -59,7 +60,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vec![],
+            TestEncodedStorageBuilder::new(),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -93,7 +94,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vec![],
+            TestEncodedStorageBuilder::new(),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -127,7 +128,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vec![],
+            TestEncodedStorageBuilder::new(),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -161,7 +162,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vec![],
+            TestEncodedStorageBuilder::new(),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -195,7 +196,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vec![],
+            TestEncodedStorageBuilder::new(),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -228,7 +229,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vec![],
+            TestEncodedStorageBuilder::new(),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -260,7 +261,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vec![],
+            TestEncodedStorageBuilder::new(),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -312,7 +313,7 @@ mod tests {
                             std::thread::sleep(Duration::from_micros(100));
                         }
                     }),
-                    vec![],
+                    TestEncodedStorageBuilder::new(),
                     &VectorParameters {
                         dim: VECTOR_DIM,
                         deprecated_count: None,

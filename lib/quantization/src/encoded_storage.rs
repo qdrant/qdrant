@@ -33,9 +33,13 @@ pub trait EncodedStorageBuilder {
     fn push_vector_data(&mut self, other: &[u8]);
 }
 
-impl EncodedStorage for Vec<u8> {
+pub struct TestEncodedStorage {
+    data: Vec<u8>,
+}
+
+impl EncodedStorage for TestEncodedStorage {
     fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8] {
-        &self[vector_size * index..vector_size * (index + 1)]
+        &self.data[vector_size * index..vector_size * (index + 1)]
     }
 
     fn push_vector(
@@ -44,8 +48,8 @@ impl EncodedStorage for Vec<u8> {
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
-        self.try_reserve(vector.len())?;
-        self.extend_from_slice(vector);
+        self.data.try_reserve(vector.len())?;
+        self.data.extend_from_slice(vector);
         Ok(())
     }
 
@@ -54,12 +58,12 @@ impl EncodedStorage for Vec<u8> {
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
         file.drop_cache()?;
-        Ok(buffer)
+        Ok(Self { data: buffer })
     }
 
     fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
         let mut buffer = File::create(path)?;
-        buffer.write_all(self.as_slice())?;
+        buffer.write_all(self.data.as_slice())?;
         buffer.sync_all()?;
         Ok(())
     }
@@ -69,18 +73,37 @@ impl EncodedStorage for Vec<u8> {
     }
 
     fn vectors_count(&self, quantized_vector_size: usize) -> usize {
-        self.len() / quantized_vector_size
+        self.data
+            .len()
+            .checked_div(quantized_vector_size)
+            .unwrap_or_default()
     }
 }
 
-impl EncodedStorageBuilder for Vec<u8> {
-    type Storage = Vec<u8>;
+pub struct TestEncodedStorageBuilder {
+    data: Vec<u8>,
+}
 
-    fn build(self) -> std::io::Result<Vec<u8>> {
-        Ok(self)
+impl TestEncodedStorageBuilder {
+    pub fn new() -> Self {
+        Self { data: Vec::new() }
+    }
+}
+
+impl Default for TestEncodedStorageBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EncodedStorageBuilder for TestEncodedStorageBuilder {
+    type Storage = TestEncodedStorage;
+
+    fn build(self) -> std::io::Result<Self::Storage> {
+        Ok(TestEncodedStorage { data: self.data })
     }
 
     fn push_vector_data(&mut self, other: &[u8]) {
-        self.extend_from_slice(other);
+        self.data.extend_from_slice(other);
     }
 }

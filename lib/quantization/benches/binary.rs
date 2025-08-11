@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
 use permutation_iterator::Permutor;
+use quantization::encoded_storage::TestEncodedStorageBuilder;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 use quantization::encoded_vectors_binary::{
     EncodedQueryBQ, EncodedVectorsBin, Encoding, QueryEncoding,
@@ -35,7 +36,7 @@ fn binary_bench(c: &mut Criterion) {
 
     let encoded_u128 = EncodedVectorsBin::<u128, _>::encode(
         vectors.iter(),
-        Vec::<u8>::new(),
+        TestEncodedStorageBuilder::new(),
         &VectorParameters {
             dim: vector_dim,
             deprecated_count: None,
@@ -76,7 +77,7 @@ fn binary_bench(c: &mut Criterion) {
 
     let encoded_u8 = EncodedVectorsBin::<u8, _>::encode(
         vectors.iter(),
-        Vec::<u8>::new(),
+        TestEncodedStorageBuilder::new(),
         &VectorParameters {
             dim: vector_dim,
             deprecated_count: None,
@@ -130,7 +131,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
 
     let encoded_u128 = EncodedVectorsBin::<u128, _>::encode(
         vectors.iter(),
-        Vec::<u8>::new(),
+        TestEncodedStorageBuilder::new(),
         &VectorParameters {
             dim: vector_dim,
             deprecated_count: None,
@@ -187,7 +188,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
 
     let encoded_u8 = EncodedVectorsBin::<u8, _>::encode(
         vectors.iter(),
-        Vec::<u8>::new(),
+        TestEncodedStorageBuilder::new(),
         &VectorParameters {
             dim: vector_dim,
             deprecated_count: None,

@@ -3,6 +3,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use quantization::EncodedVectorsPQ;
+    use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_binary::{EncodedVectorsBin, QueryEncoding};
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
@@ -24,7 +25,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            Vec::<u8>::new(),
+            TestEncodedStorageBuilder::new(),
             &vector_parameters,
             vectors_count,
             None,
@@ -38,7 +39,7 @@ mod tests {
             .save(data_path.as_path(), meta_path.as_path())
             .unwrap();
 
-        EncodedVectorsU8::<Vec<u8>>::load(
+        EncodedVectorsU8::<TestEncodedStorage>::load(
             data_path.as_path(),
             meta_path.as_path(),
             &vector_parameters,
@@ -62,7 +63,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            Vec::<u8>::new(),
+            TestEncodedStorageBuilder::new(),
             &vector_parameters,
             vectors_count,
             2,
@@ -77,7 +78,7 @@ mod tests {
             .save(data_path.as_path(), meta_path.as_path())
             .unwrap();
 
-        EncodedVectorsPQ::<Vec<u8>>::load(
+        EncodedVectorsPQ::<TestEncodedStorage>::load(
             data_path.as_path(),
             meta_path.as_path(),
             &vector_parameters,
@@ -100,7 +101,7 @@ mod tests {
 
         let encoded = EncodedVectorsBin::<u8, _>::encode(
             vector_data.iter(),
-            Vec::<u8>::new(),
+            TestEncodedStorageBuilder::new(),
             &vector_parameters,
             quantization::encoded_vectors_binary::Encoding::OneBit,
             QueryEncoding::SameAsStorage,
@@ -114,7 +115,7 @@ mod tests {
             .save(data_path.as_path(), meta_path.as_path())
             .unwrap();
 
-        EncodedVectorsBin::<u8, Vec<u8>>::load(
+        EncodedVectorsBin::<u8, TestEncodedStorage>::load(
             data_path.as_path(),
             meta_path.as_path(),
             &vector_parameters,
