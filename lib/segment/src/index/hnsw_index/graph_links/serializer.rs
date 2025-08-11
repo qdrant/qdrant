@@ -110,8 +110,6 @@ impl GraphLinksSerializer {
                 _ => (hnsw_m.m, Either::Right(back_index[..count].iter().copied())),
             };
 
-            let mut compressed_links_buf = Vec::new();
-
             iter.try_for_each(|id| {
                 let mut raw_links = take(&mut edges[id][level]);
                 match format_param {
@@ -137,23 +135,20 @@ impl GraphLinksSerializer {
                         // Unwrap safety: `impl Write for Vec<u8>` never fails.
                         neighbors.write_varint(raw_links.len() as u64).unwrap();
 
-                        // 2. Padding to align vectors (`_` in the doc).
-                        let padding = neighbors.len().next_multiple_of(vector_layout.align())
-                            - neighbors.len();
-                        neighbors.write_zeros(padding).unwrap();
-
-                        // Prepare compressed links.
-                        // NOTE: we can avoid using intermediate buffer if we
-                        // split `pack_links` into two steps: prepare and write.
-                        // But it's not a bottleneck for now.
+                        // 2. Compressed links (`c` in the doc)
                         pack_links(
-                            &mut compressed_links_buf,
+                            &mut neighbors,
                             &mut raw_links,
                             bits_per_unsorted,
                             sorted_count,
                         );
 
-                        // 3. Vectors (`V` in the doc).
+                        // 3. Padding to align vectors (`_` in the doc).
+                        let padding = neighbors.len().next_multiple_of(vector_layout.align())
+                            - neighbors.len();
+                        neighbors.write_zeros(padding).unwrap();
+
+                        // 4. Vectors (`V` in the doc).
                         // Write them in the same order as `raw_links`.
                         for i in raw_links {
                             let vector = vectors.get_vector(i)?;
@@ -162,10 +157,6 @@ impl GraphLinksSerializer {
                             }
                             neighbors.extend(vector);
                         }
-
-                        // 4. Compressed links (`c` in the doc)
-                        neighbors.extend_from_slice(&compressed_links_buf);
-                        compressed_links_buf.clear();
 
                         offsets.push(neighbors.len() as u64);
                     }

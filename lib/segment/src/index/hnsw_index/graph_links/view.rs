@@ -2,7 +2,9 @@ use std::iter::{Copied, Zip};
 use std::num::NonZero;
 
 use common::bitpacking::packed_bits;
-use common::bitpacking_links::{MIN_BITS_PER_VALUE, PackedLinksIterator, iterate_packed_links};
+use common::bitpacking_links::{
+    MIN_BITS_PER_VALUE, PackedLinksIterator, iterate_packed_links, packed_links_size,
+};
 use common::bitpacking_ordered;
 use common::types::PointOffsetType;
 use integer_encoding::VarInt as _;
@@ -78,15 +80,15 @@ pub(super) enum CompressionInfo<'a> {
         /// accompanied by a fixed-size vector.
         ///
         /// ```text
-        /// [N__VVVVVVVcccccccccc][N__VVVVVVVcccccccccc][N__VVVVVVVcccccccccc]
+        /// [Ncccccccccc__VVVVVVV][Ncccccccccc__VVVVVVV][Ncccccccccc__VVVVVVV]
         /// [neighbors for node 0][neighbors for node 1][neighbors for node 2]...
         /// ```
         /// Where:
         /// 1. `N` is a varint-encoded length.
         ///    This value == number of links == number of vectors.
-        /// 2. `_` is a padding to make vectors aligned.
-        /// 3. `V` are encoded vectors, one per link (i.e. `Vec<Vec<u8>>`).
-        /// 4. `c` are compressed links (i.e. a compressed form of `Vec<u32>`).
+        /// 2. `c` are compressed links (i.e. a compressed form of `Vec<u32>`).
+        /// 3. `_` is a padding to make vectors aligned.
+        /// 4. `V` are encoded vectors, one per link (i.e. `Vec<Vec<u8>>`).
         neighbors: &'a [u8],
         offsets: bitpacking_ordered::Reader<'a>,
         hnsw_m: HnswM,
@@ -270,24 +272,30 @@ impl GraphLinksView<'_> {
                 let end = offsets.get(idx + 1).unwrap() as usize;
 
                 // 1. The varint-encoded length (`N` in the doc).
-                let (vectors_count, vectors_count_size) =
+                let (neighbors_count, neighbors_count_size) =
                     u64::decode_var(&neighbors[start..end]).unwrap();
 
-                // 2. Padding to align vectors (`_` in the doc).
-                let vectors_start =
-                    (start + vectors_count_size).next_multiple_of(vector_alignment as usize);
-
-                // 3. Vectors (`V` in the doc).
-                let vectors_bytes_len = vectors_count as usize * vector_size_bytes.get();
-                let vectors = &neighbors[vectors_start..vectors_start + vectors_bytes_len];
-                debug_assert!(vectors.as_ptr().addr() % vector_alignment as usize == 0);
-
-                // 4. Compressed links (`c` in the doc).
+                // 2. Compressed links (`c` in the doc).
+                let mut pos = start + neighbors_count_size;
+                let links_size = packed_links_size(
+                    &neighbors[pos..end],
+                    bits_per_unsorted,
+                    hnsw_m.level_m(level),
+                    neighbors_count as usize,
+                );
                 let links = iterate_packed_links(
-                    &neighbors[vectors_start + vectors_bytes_len..end],
+                    &neighbors[pos..pos + links_size],
                     bits_per_unsorted,
                     hnsw_m.level_m(level),
                 );
+                pos += links_size;
+
+                // 3. Padding to align vectors (`_` in the doc).
+                pos = pos.next_multiple_of(vector_alignment as usize);
+
+                // 4. Vectors (`V` in the doc).
+                let vectors = &neighbors[pos..end];
+                debug_assert!(vectors.as_ptr().addr() % vector_alignment as usize == 0);
 
                 (links, vectors.chunks_exact(vector_size_bytes.get()))
             }
