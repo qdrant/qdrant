@@ -60,27 +60,23 @@ impl GeoMapIndex {
         create_if_missing: bool,
     ) -> OperationResult<Option<Self>> {
         let store_cf_name = GeoMapIndex::storage_cf_name(field);
-        if is_appendable {
-            Ok(
-                MutableGeoMapIndex::open_rocksdb(db, &store_cf_name, create_if_missing)?
-                    .map(GeoMapIndex::Mutable),
-            )
+        let index = if is_appendable {
+            MutableGeoMapIndex::open_rocksdb(db, &store_cf_name, create_if_missing)?
+                .map(GeoMapIndex::Mutable)
         } else {
-            Ok(Some(GeoMapIndex::Immutable(
-                ImmutableGeoMapIndex::open_rocksdb(db, &store_cf_name),
-            )))
-        }
+            ImmutableGeoMapIndex::open_rocksdb(db, &store_cf_name)?.map(GeoMapIndex::Immutable)
+        };
+        Ok(index)
     }
 
-    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
+    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
         let mmap_index = MmapGeoMapIndex::open(path, is_on_disk)?;
-        if is_on_disk {
-            Ok(GeoMapIndex::Mmap(Box::new(mmap_index)))
+        let index = if is_on_disk {
+            Some(GeoMapIndex::Mmap(Box::new(mmap_index)))
         } else {
-            Ok(GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
-                mmap_index,
-            )))
-        }
+            ImmutableGeoMapIndex::open_mmap(mmap_index)?.map(GeoMapIndex::Immutable)
+        };
+        Ok(index)
     }
 
     pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
@@ -900,7 +896,9 @@ mod tests {
                     };
 
                     // Load index from mmap
-                    let mut index = GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(*index));
+                    let mut index = GeoMapIndex::Immutable(
+                        ImmutableGeoMapIndex::open_mmap(*index).unwrap().unwrap(),
+                    );
                     index.load()?;
                     Ok(index)
                 }
@@ -1527,10 +1525,16 @@ mod tests {
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false, true)
                 .unwrap()
                 .unwrap(),
-            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
-            IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
-                MmapGeoMapIndex::open(temp_dir.path(), false).unwrap(),
-            )),
+            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false)
+                .unwrap()
+                .unwrap(),
+            IndexType::RamMmap => GeoMapIndex::Immutable(
+                ImmutableGeoMapIndex::open_mmap(
+                    MmapGeoMapIndex::open(temp_dir.path(), false).unwrap(),
+                )
+                .unwrap()
+                .unwrap(),
+            ),
         };
         new_index.load().unwrap();
 
@@ -1614,10 +1618,16 @@ mod tests {
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false, true)
                 .unwrap()
                 .unwrap(),
-            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
-            IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
-                MmapGeoMapIndex::open(temp_dir.path(), false).unwrap(),
-            )),
+            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false)
+                .unwrap()
+                .unwrap(),
+            IndexType::RamMmap => GeoMapIndex::Immutable(
+                ImmutableGeoMapIndex::open_mmap(
+                    MmapGeoMapIndex::open(temp_dir.path(), false).unwrap(),
+                )
+                .unwrap()
+                .unwrap(),
+            ),
         };
         new_index.load().unwrap();
         assert_eq!(new_index.points_count(), 1);

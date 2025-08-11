@@ -60,66 +60,22 @@ enum Storage {
 }
 
 impl ImmutableGeoMapIndex {
-    /// Open immutable geo index from RocksDB storage
-    ///
-    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    /// Open and load immutable geo index from RocksDB storage
     #[cfg(feature = "rocksdb")]
-    pub fn open_rocksdb(db: std::sync::Arc<RwLock<DB>>, store_cf_name: &str) -> Self {
+    pub fn open_rocksdb(
+        db: std::sync::Arc<RwLock<DB>>,
+        store_cf_name: &str,
+    ) -> OperationResult<Option<Self>> {
+        use std::collections::BTreeMap;
+
+        use crate::index::field_index::geo_index::mutable_geo_index::{
+            InMemoryGeoMapIndex, MutableGeoMapIndex,
+        };
+
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             store_cf_name,
         ));
-        Self {
-            counts_per_hash: Default::default(),
-            points_map: Default::default(),
-            point_to_values: Default::default(),
-            points_count: 0,
-            points_values_count: 0,
-            max_values_per_point: 0,
-            storage: Storage::RocksDb(db_wrapper),
-        }
-    }
-
-    /// Open immutable geo index from mmap storage
-    ///
-    /// Note: after opening, the data must be loaded into memory separately using [`load`].
-    pub fn open_mmap(index: MmapGeoMapIndex) -> Self {
-        Self {
-            counts_per_hash: Default::default(),
-            points_map: Default::default(),
-            point_to_values: Default::default(),
-            points_count: 0,
-            points_values_count: 0,
-            max_values_per_point: 0,
-            storage: Storage::Mmap(Box::new(index)),
-        }
-    }
-
-    /// Load storage
-    ///
-    /// Loads in-memory index from backing RocksDB or mmap storage.
-    pub fn load(&mut self) -> OperationResult<bool> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Mmap(_) => self.load_mmap(),
-        }
-    }
-
-    /// Load from RocksDB storage
-    ///
-    /// Loads in-memory index from RocksDB storage.
-    #[cfg(feature = "rocksdb")]
-    fn load_rocksdb(&mut self) -> OperationResult<bool> {
-        use std::collections::BTreeMap;
-
-        use super::mutable_geo_index::{InMemoryGeoMapIndex, MutableGeoMapIndex};
-
-        let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from RocksDB, using different storage backend",
-            ));
-        };
 
         let Some(mutable) = MutableGeoMapIndex::open_rocksdb(
             db_wrapper.get_database(),
@@ -128,10 +84,12 @@ impl ImmutableGeoMapIndex {
         )?
         else {
             // Column family doesn't exist, cannot load
-            return Ok(false);
+            return Ok(None);
         };
         // TODO(payload-index-remove-load): remove load when single stage open/load is implemented
-        let result = mutable.load()?;
+        if !mutable.load()? {
+            return Ok(None);
+        }
 
         let InMemoryGeoMapIndex {
             points_per_hash,
@@ -170,36 +128,26 @@ impl ImmutableGeoMapIndex {
             }
         }
 
-        self.counts_per_hash = counts_per_hash.values().cloned().collect();
-        self.points_map = points_map.iter().map(|(k, v)| (*k, v.clone())).collect();
-        self.point_to_values = ImmutablePointToValues::new(point_to_values);
-        self.points_count = points_count;
-        self.points_values_count = points_values_count;
-        self.max_values_per_point = max_values_per_point;
-
-        Ok(result)
+        Ok(Some(Self {
+            counts_per_hash: counts_per_hash.values().cloned().collect(),
+            points_map: points_map.iter().map(|(k, v)| (*k, v.clone())).collect(),
+            point_to_values: ImmutablePointToValues::new(point_to_values),
+            points_count,
+            points_values_count,
+            max_values_per_point,
+            storage: Storage::RocksDb(db_wrapper),
+        }))
     }
 
-    /// Load from mmap storage
-    ///
-    /// Loads in-memory index fmmap RocksDB storage.
-    fn load_mmap(&mut self) -> OperationResult<bool> {
-        #[allow(irrefutable_let_patterns)]
-        let Storage::Mmap(index) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from mmap, using different storage backend",
-            ));
-        };
-
+    /// Open and load immutable geo index from mmap storage
+    pub fn open_mmap(index: MmapGeoMapIndex) -> OperationResult<Option<Self>> {
+        // TODO(payload-index-remove-load): remove load when single stage open/load is implemented
         if !index.load()? {
-            return Ok(false);
+            return Ok(None);
         }
         let index_storage = index.storage.as_ref().unwrap();
 
-        self.points_count = index.points_count();
-        self.points_values_count = index.points_values_count();
-        self.max_values_per_point = index.max_values_per_point();
-        self.counts_per_hash = index_storage
+        let counts_per_hash = index_storage
             .counts_per_hash
             .iter()
             .copied()
@@ -207,7 +155,7 @@ impl ImmutableGeoMapIndex {
             .collect();
 
         // Get points per geo hash and filter deleted points
-        self.points_map = index_storage
+        let points_map = index_storage
             .points_map
             .iter()
             .copied()
@@ -233,7 +181,7 @@ impl ImmutableGeoMapIndex {
         // Track deleted points to adjust point and value counts after loading
         let mut deleted_points: Vec<(PointOffsetType, Vec<GeoPoint>)> =
             Vec::with_capacity(index.deleted_count);
-        self.point_to_values = ImmutablePointToValues::new(
+        let point_to_values = ImmutablePointToValues::new(
             index_storage
                 .point_to_values
                 .iter()
@@ -262,19 +210,72 @@ impl ImmutableGeoMapIndex {
         }
         let _ = index;
 
+        // Construct immutable geo index
+        let mut index = Self {
+            counts_per_hash,
+            points_map,
+            point_to_values,
+            points_count: index.points_count(),
+            points_values_count: index.points_values_count(),
+            max_values_per_point: index.max_values_per_point(),
+            storage: Storage::Mmap(Box::new(index)),
+        };
+
         // Update point and value counts based on deleted points
         for (_idx, removed_geo_points) in deleted_points {
-            self.points_values_count -= removed_geo_points.len();
+            index.points_values_count = index
+                .points_values_count
+                .saturating_sub(removed_geo_points.len());
 
             let removed_geo_hashes: Vec<_> = removed_geo_points
                 .into_iter()
                 .map(|geo_point| encode_max_precision(geo_point.lon, geo_point.lat).unwrap())
                 .collect();
             for removed_geo_hash in &removed_geo_hashes {
-                self.decrement_hash_value_counts(removed_geo_hash);
+                index.decrement_hash_value_counts(removed_geo_hash);
             }
-            self.decrement_hash_point_counts(&removed_geo_hashes);
+            index.decrement_hash_point_counts(&removed_geo_hashes);
         }
+
+        Ok(Some(index))
+    }
+
+    /// Load storage
+    ///
+    /// Loads in-memory index from backing RocksDB or mmap storage.
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    pub fn load(&self) -> OperationResult<bool> {
+        match self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => self.load_rocksdb(),
+            Storage::Mmap(_) => self.load_mmap(),
+        }
+    }
+
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    #[cfg(feature = "rocksdb")]
+    fn load_rocksdb(&self) -> OperationResult<bool> {
+        let Storage::RocksDb(db_wrapper) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
+        };
+
+        // Note: this structure is now loaded on open
+
+        db_wrapper.has_column_family()
+    }
+
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    fn load_mmap(&self) -> OperationResult<bool> {
+        #[allow(irrefutable_let_patterns)]
+        let Storage::Mmap(_) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from mmap, using different storage backend",
+            ));
+        };
+
+        // Note: this structure is now loaded on open
 
         Ok(true)
     }
