@@ -29,8 +29,7 @@ jobs:
     - name: Install Vulkan packages
       run: |
         sudo apt-get update -yqq
-        sudo apt-get install clang
-        sudo apt-get install mesa-vulkan-drivers libvulkan1 vulkan-tools vulkan-validationlayers
+        sudo apt-get install clang mesa-vulkan-drivers libvulkan1 vulkan-tools vulkan-validationlayers
         /usr/bin/vulkaninfo --summary
     - name: Build
       run: cargo build --tests --workspace --features gpu --locked
