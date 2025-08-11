@@ -6,7 +6,7 @@
 skip = [
     "**/stop_words/*.rs",
     "./static",
-    "./tests/tls/cert/key.pem",
+    "./tests/e2e_tests/test_data/cert/key.pem",
     "openapi.json", # openapi.json is typically a released version and could carry old typos
     "target",
 ]
