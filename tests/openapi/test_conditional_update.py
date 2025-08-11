@@ -116,6 +116,9 @@ def test_conditional_update(collection_name):
     assert response.ok
     assert response.json()["result"]["payload"]["version"] == 6
 
+    # First vector element must be in expected range, confirms we don't normalize
+    assert 1.05 < response.json()["result"]["vector"][0] < 1.15
+
     # Upsert and delete points
     response = request_with_validation(
         api="/collections/{collection_name}/points/vectors",
