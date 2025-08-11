@@ -1,6 +1,7 @@
 """Data models for e2e tests."""
 from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass, field
+import subprocess
 
 import docker.models.containers
 import docker.models.networks
@@ -35,6 +36,73 @@ class QdrantCluster:
     
     def __repr__(self) -> str:
         return f"QdrantCluster(leader={self.leader.name}, followers={len(self.followers)}, network='{self.network_name}')"
+
+
+class QdrantDockerCluster:
+    """Cluster info object for Docker Compose managed Qdrant clusters."""
+    
+    def __init__(self, containers: Union[QdrantContainer, List[QdrantContainer]], 
+                 compose_project: str, compose_path: str) -> None:
+        """Initialize a Docker Compose cluster.
+        
+        Args:
+            containers: Single container or list of containers
+            compose_project: Docker Compose project name
+            compose_path: Path to the docker-compose file
+        """
+        if isinstance(containers, QdrantContainer):
+            self.containers = [containers]
+            self.single_container = containers
+        else:
+            self.containers = containers
+            self.single_container = None
+        
+        self.compose_project = compose_project
+        self.compose_path = compose_path
+    
+    def cleanup(self) -> None:
+        """Stop and remove the docker-compose deployment including volumes."""
+        # Import here to avoid circular dependency
+        from .utils import get_docker_compose_command
+        
+        compose_cmd = get_docker_compose_command()
+        compose_down_cmd = compose_cmd + [
+            "-f", str(self.compose_path),
+            "-p", self.compose_project,
+            "down", "-v"  # Also remove volumes
+        ]
+        
+        result = subprocess.run(compose_down_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"Warning: Failed to stop docker-compose: {result.stderr}")
+        else:
+            print(f"Cleaned up compose project: {self.compose_project}")
+    
+    def get_container(self, index: int = 0) -> QdrantContainer:
+        """Get a specific container by index."""
+        if index >= len(self.containers):
+            raise IndexError(f"Container index {index} out of range (have {len(self.containers)} containers)")
+        return self.containers[index]
+    
+    def get_all_containers(self) -> List[QdrantContainer]:
+        """Get all containers in the cluster."""
+        return self.containers
+    
+    def __len__(self) -> int:
+        """Return the number of containers in the cluster."""
+        return len(self.containers)
+    
+    def __getitem__(self, index: int) -> QdrantContainer:
+        """Support indexing to get containers."""
+        return self.containers[index]
+    
+    def __iter__(self):
+        """Support iteration over containers."""
+        return iter(self.containers)
+    
+    def __repr__(self) -> str:
+        container_names = ", ".join(c.name for c in self.containers)
+        return f"QdrantDockerCluster(project='{self.compose_project}', containers=[{container_names}])"
 
 
 @dataclass
