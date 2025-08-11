@@ -54,6 +54,7 @@ fn search_in_builder(
 #[rstest]
 #[case::uncompressed(GraphLinksFormat::Plain)]
 #[case::compressed(GraphLinksFormat::Compressed)]
+#[case::compressed_with_vectors(GraphLinksFormat::CompressedWithVectors)]
 fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
     let num_vectors = 1000;
     let num_queries = 100;
@@ -64,8 +65,15 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
 
     let mut rng = StdRng::seed_from_u64(42);
 
-    let (vector_holder, graph_layers_builder) =
-        create_graph_layer_builder_fixture(num_vectors, m, dim, false, Distance::Cosine, &mut rng);
+    let (vector_holder, graph_layers_builder) = create_graph_layer_builder_fixture(
+        num_vectors,
+        m,
+        dim,
+        false,
+        format.is_with_vectors(),
+        Distance::Cosine,
+        &mut rng,
+    );
 
     let queries = (0..num_queries)
         .map(|_| random_vector(&mut rng, dim))
@@ -79,7 +87,8 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
         })
         .collect_vec();
 
-    let graph_layers = graph_layers_builder.into_graph_layers_ram(format);
+    let graph_layers = graph_layers_builder
+        .into_graph_layers_ram(format.with_param_for_tests(vector_holder.quantized_vectors()));
 
     let results = queries
         .iter()

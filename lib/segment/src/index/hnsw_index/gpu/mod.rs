@@ -105,7 +105,7 @@ mod tests {
     use crate::index::hnsw_index::HnswM;
     use crate::index::hnsw_index::graph_layers::GraphLayers;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-    use crate::index::hnsw_index::graph_links::GraphLinksFormat;
+    use crate::index::hnsw_index::graph_links::GraphLinksFormatParam;
     use crate::types::Distance;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
@@ -127,7 +127,7 @@ mod tests {
         // Generate random vectors
         let mut rng = StdRng::seed_from_u64(42);
         let vector_holder =
-            TestRawScorerProducer::new(dim, Distance::Cosine, num_vectors, &mut rng);
+            TestRawScorerProducer::new(dim, Distance::Cosine, num_vectors, false, &mut rng);
 
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Cosine);
@@ -203,10 +203,10 @@ mod tests {
         ef: usize,
         accuracy: f32,
     ) {
-        let graph: GraphLayers = graph.into_graph_layers_ram(GraphLinksFormat::Plain);
+        let graph: GraphLayers = graph.into_graph_layers_ram(GraphLinksFormatParam::Plain);
         let ref_graph: GraphLayers = test
             .graph_layers_builder
-            .into_graph_layers_ram(GraphLinksFormat::Plain);
+            .into_graph_layers_ram(GraphLinksFormatParam::Plain);
 
         let mut total_sames = 0;
         let total_top = top * test.search_vectors.len();

@@ -44,6 +44,7 @@ pprof = { workspace = true }
 bytemuck = { workspace = true }
 data-encoding = { workspace = true }
 delegate = { workspace = true }
+integer-encoding = { workspace = true }
 tempfile = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true }

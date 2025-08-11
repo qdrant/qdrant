@@ -76,10 +76,10 @@ pub fn bench_bitpacking_links(c: &mut Criterion) {
 
         pack_links(
             &mut links,
-            std::iter::repeat_with(|| rng.random_range(0..1u64 << bits_per_unsorted) as u32)
+            &mut std::iter::repeat_with(|| rng.random_range(0..1u64 << bits_per_unsorted) as u32)
                 .unique()
                 .take(sorted_count + unsorted_count)
-                .collect(),
+                .collect_vec(),
             bits_per_unsorted,
             sorted_count,
         );

@@ -90,12 +90,12 @@ fn benchmarks_bitpacking_links() -> impl IntoBenchmarks {
 
                 common::bitpacking_links::pack_links(
                     &mut links,
-                    std::iter::repeat_with(|| {
+                    &mut std::iter::repeat_with(|| {
                         rng.random_range(0..1u64 << bits_per_unsorted) as u32
                     })
                     .unique()
                     .take(sorted_count + unsorted_count)
-                    .collect(),
+                    .collect_vec(),
                     bits_per_unsorted,
                     sorted_count,
                 );
