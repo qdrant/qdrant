@@ -70,12 +70,17 @@ impl GeoMapIndex {
     }
 
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
-        let mmap_index = MmapGeoMapIndex::open(path, is_on_disk)?;
+        let Some(mmap_index) = MmapGeoMapIndex::open(path, is_on_disk)? else {
+            // Files don't exist, cannot load
+            return Ok(None);
+        };
+
         let index = if is_on_disk {
             Some(GeoMapIndex::Mmap(Box::new(mmap_index)))
         } else {
             ImmutableGeoMapIndex::open_mmap(mmap_index)?.map(GeoMapIndex::Immutable)
         };
+
         Ok(index)
     }
 
@@ -1530,7 +1535,9 @@ mod tests {
                 .unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(
                 ImmutableGeoMapIndex::open_mmap(
-                    MmapGeoMapIndex::open(temp_dir.path(), false).unwrap(),
+                    MmapGeoMapIndex::open(temp_dir.path(), false)
+                        .unwrap()
+                        .unwrap(),
                 )
                 .unwrap()
                 .unwrap(),
@@ -1623,7 +1630,9 @@ mod tests {
                 .unwrap(),
             IndexType::RamMmap => GeoMapIndex::Immutable(
                 ImmutableGeoMapIndex::open_mmap(
-                    MmapGeoMapIndex::open(temp_dir.path(), false).unwrap(),
+                    MmapGeoMapIndex::open(temp_dir.path(), false)
+                        .unwrap()
+                        .unwrap(),
                 )
                 .unwrap()
                 .unwrap(),

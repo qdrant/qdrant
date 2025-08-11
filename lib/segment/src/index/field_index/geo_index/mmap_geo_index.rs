@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::mutable_geo_index::InMemoryGeoMapIndex;
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::field_index::mmap_point_to_values::MmapPointToValues;
 use crate::types::GeoPoint;
@@ -196,10 +196,12 @@ impl MmapGeoMapIndex {
             },
         )?;
 
-        Self::open(path, is_on_disk)
+        Self::open(path, is_on_disk)?.ok_or_else(|| {
+            OperationError::service_error("Failed to open MmapGeoMapIndex after building it")
+        })
     }
 
-    pub fn open(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
+    pub fn open(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
         let deleted_path = path.join(DELETED_PATH);
         let stats_path = path.join(STATS_PATH);
         let counts_per_hash_path = path.join(COUNTS_PER_HASH);
@@ -208,14 +210,7 @@ impl MmapGeoMapIndex {
 
         // If stats file doesn't exist, assume the index doesn't exist on disk
         if !stats_path.is_file() {
-            return Ok(Self {
-                path: path.to_owned(),
-                storage: None,
-                deleted_count: 0,
-                points_values_count: 0,
-                max_values_per_point: 0,
-                is_on_disk,
-            });
+            return Ok(None);
         }
 
         let populate = !is_on_disk;
@@ -247,7 +242,7 @@ impl MmapGeoMapIndex {
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
 
-        Ok(Self {
+        Ok(Some(Self {
             path: path.to_owned(),
             storage: Some(Storage {
                 counts_per_hash,
@@ -260,10 +255,13 @@ impl MmapGeoMapIndex {
             points_values_count: stats.points_values_count,
             max_values_per_point: stats.max_values_per_point,
             is_on_disk,
-        })
+        }))
     }
 
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
     pub fn load(&self) -> OperationResult<bool> {
+        // Note: this structure is now loaded on open
+
         let is_loaded = self.storage.is_some();
         Ok(is_loaded)
     }
