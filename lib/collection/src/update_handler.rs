@@ -171,6 +171,7 @@ impl UpdateHandler {
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
+
         self.optimizer_worker = Some(self.runtime_handle.spawn(Self::optimization_worker_fn(
             self.optimizers.clone(),
             tx.clone(),
@@ -185,12 +186,14 @@ impl UpdateHandler {
             self.has_triggered_optimizers.clone(),
             self.payload_index_schema.clone(),
         )));
-        self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
-            update_receiver,
-            tx,
-            self.wal.clone(),
-            self.segments.clone(),
-        )));
+
+        let wal = self.wal.clone();
+        let segments = self.segments.clone();
+        self.update_worker =
+            Some(self.runtime_handle.spawn_blocking(move || {
+                Self::update_worker_fn(update_receiver, tx, wal, segments)
+            }));
+
         let (flush_tx, flush_rx) = oneshot::channel();
         self.flush_worker = Some(self.runtime_handle.spawn(Self::flush_worker(
             self.segments.clone(),
@@ -201,6 +204,7 @@ impl UpdateHandler {
             self.clocks.clone(),
             self.shard_path.clone(),
         )));
+
         self.flush_stop = Some(flush_tx);
     }
 
@@ -688,13 +692,13 @@ impl UpdateHandler {
         }
     }
 
-    async fn update_worker_fn(
+    fn update_worker_fn(
         mut receiver: Receiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
         wal: LockedWal,
         segments: LockedSegmentHolder,
     ) {
-        while let Some(signal) = receiver.recv().await {
+        while let Some(signal) = receiver.blocking_recv() {
             match signal {
                 UpdateSignal::Operation(OperationData {
                     op_num,
@@ -704,7 +708,7 @@ impl UpdateHandler {
                     hw_measurements,
                 }) => {
                     let flush_res = if wait {
-                        wal.lock().await.flush().map_err(|err| {
+                        wal.blocking_lock().flush().map_err(|err| {
                             CollectionError::service_error(format!(
                                 "Can't flush WAL before operation {op_num} - {err}"
                             ))
@@ -724,8 +728,7 @@ impl UpdateHandler {
 
                     let res = match operation_result {
                         Ok(update_res) => optimize_sender
-                            .send(OptimizerSignal::Operation(op_num))
-                            .await
+                            .blocking_send(OptimizerSignal::Operation(op_num))
                             .and(Ok(update_res))
                             .map_err(|send_err| send_err.into()),
                         Err(err) => Err(err),
@@ -739,14 +742,12 @@ impl UpdateHandler {
                 }
                 UpdateSignal::Stop => {
                     optimize_sender
-                        .send(OptimizerSignal::Stop)
-                        .await
+                        .blocking_send(OptimizerSignal::Stop)
                         .unwrap_or_else(|_| debug!("Optimizer already stopped"));
                     break;
                 }
                 UpdateSignal::Nop => optimize_sender
-                    .send(OptimizerSignal::Nop)
-                    .await
+                    .blocking_send(OptimizerSignal::Nop)
                     .unwrap_or_else(|_| {
                         info!(
                             "Can't notify optimizers, assume process is dead. Restart is required"
@@ -761,8 +762,7 @@ impl UpdateHandler {
         }
         // Transmitter was destroyed
         optimize_sender
-            .send(OptimizerSignal::Stop)
-            .await
+            .blocking_send(OptimizerSignal::Stop)
             .unwrap_or_else(|_| debug!("Optimizer already stopped"));
     }
 
