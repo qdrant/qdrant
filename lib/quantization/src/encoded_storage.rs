@@ -1,8 +1,11 @@
+#[cfg(feature = "testing")]
 use std::fs::File;
+#[cfg(feature = "testing")]
 use std::io::{Read, Write};
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+#[cfg(feature = "testing")]
 use memory::fadvise::OneshotFile;
 
 pub trait EncodedStorage {
@@ -33,10 +36,12 @@ pub trait EncodedStorageBuilder {
     fn push_vector_data(&mut self, other: &[u8]);
 }
 
+#[cfg(feature = "testing")]
 pub struct TestEncodedStorage {
     data: Vec<u8>,
 }
 
+#[cfg(feature = "testing")]
 impl EncodedStorage for TestEncodedStorage {
     fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8] {
         &self.data[vector_size * index..vector_size * (index + 1)]
@@ -80,22 +85,26 @@ impl EncodedStorage for TestEncodedStorage {
     }
 }
 
+#[cfg(feature = "testing")]
 pub struct TestEncodedStorageBuilder {
     data: Vec<u8>,
 }
 
+#[cfg(feature = "testing")]
 impl TestEncodedStorageBuilder {
     pub fn new() -> Self {
         Self { data: Vec::new() }
     }
 }
 
+#[cfg(feature = "testing")]
 impl Default for TestEncodedStorageBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "testing")]
 impl EncodedStorageBuilder for TestEncodedStorageBuilder {
     type Storage = TestEncodedStorage;
 

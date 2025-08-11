@@ -11,6 +11,9 @@ edition = "2024"
 [lints]
 workspace = true
 
+[features]
+testing = ["common/testing"]
+
 [build-dependencies]
 cc = "1.0"
 
@@ -28,10 +31,10 @@ strum = { workspace = true }
 bytemuck = { workspace = true }
 
 [dev-dependencies]
+quantization = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
 num_threads = "0.1.6"
 tempfile = { workspace = true }
-common = { path = "../common/common", features = ["testing"] }
 
 [[bench]]
 name = "encode"
