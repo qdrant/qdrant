@@ -66,7 +66,7 @@ impl ImmutableFullTextIndex {
     }
 
     /// Open and load immutable full text index from mmap storage
-    pub fn open_mmap(index: MmapFullTextIndex) -> Option<Self> {
+    pub fn open_mmap(index: MmapFullTextIndex) -> Self {
         let inverted_index = match index.inverted_index.storage.postings {
             MmapPostingsEnum::Ids(_) => ImmutableInvertedIndex::ids_empty(),
             MmapPostingsEnum::WithPositions(_) => ImmutableInvertedIndex::positions_empty(),
@@ -80,11 +80,11 @@ impl ImmutableFullTextIndex {
             log::warn!("Failed to clear mmap cache of ram mmap full text index: {err}");
         }
 
-        Some(Self {
+        Self {
             inverted_index,
             storage: Storage::Mmap(Box::new(index)),
             tokenizer,
-        })
+        }
     }
 
     #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
