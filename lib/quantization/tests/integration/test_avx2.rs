@@ -3,6 +3,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
+    use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
     use rand::{Rng, SeedableRng};
@@ -25,7 +26,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            Vec::<u8>::new(),
+            TestEncodedStorageBuilder::new(),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -62,7 +63,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            Vec::<u8>::new(),
+            TestEncodedStorageBuilder::new(),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -103,7 +104,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            Vec::<u8>::new(),
+            TestEncodedStorageBuilder::new(),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
