@@ -161,6 +161,7 @@ impl PayloadFieldIndex for BoolIndex {
         }
     }
 
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
     fn load(&mut self) -> crate::common::operation_error::OperationResult<bool> {
         match self {
             #[cfg(feature = "rocksdb")]

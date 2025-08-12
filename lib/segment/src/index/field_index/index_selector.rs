@@ -593,18 +593,12 @@ impl IndexSelector<'_> {
                 .map(BoolIndex::Simple),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => {
                 let dir = bool_dir(dir, field);
-                Some(BoolIndex::Mmap(MutableBoolIndex::open(
-                    &dir,
-                    create_if_missing,
-                )?))
+                MutableBoolIndex::open(&dir, create_if_missing)?.map(BoolIndex::Mmap)
             }
             // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 let dir = bool_dir(dir, field);
-                Some(BoolIndex::Mmap(MutableBoolIndex::open(
-                    &dir,
-                    create_if_missing,
-                )?))
+                MutableBoolIndex::open(&dir, create_if_missing)?.map(BoolIndex::Mmap)
             }
         })
     }
