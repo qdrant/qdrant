@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
 use crate::encoded_vectors::{EncodedVectorsBytes, validate_vector_parameters};
-use crate::vector_stats::VectorStats;
+use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedVectors, EncodingError,
     VectorParameters,
@@ -510,21 +510,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         encoded_vector: &mut [TBitsStoreType],
         vector_stats: &Option<VectorStats>,
     ) {
-        let Some(vector_stats) = vector_stats else {
-            debug_assert!(false, "Vector stats must be provided for two bits encoding");
-            // If vector stats are not provided, we cannot encode two bits
-            // So we fall back to one bit encoding
-            return Self::encode_one_bit_vector(vector, encoded_vector);
-        };
-
         let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
-        for (i, &v) in vector.iter().enumerate() {
-            let mean = vector_stats.elements_stats[i].mean;
-            let sd = vector_stats.elements_stats[i].stddev;
-
-            let (b1, b2) = Self::encode_two_bits_value(v, mean, sd);
-
+        for i in 0..vector.len() {
+            let value = vector[i];
+            let stats = vector_stats.as_ref().map(|stats| &stats.elements_stats[i]);
+            let (b1, b2) = Self::encode_two_bits_value(value, stats);
             if b1 {
                 encoded_vector[i / bits_count] |= one << (i % bits_count);
             }
@@ -540,13 +531,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         encoded_vector: &mut [TBitsStoreType],
         vector_stats: &Option<VectorStats>,
     ) {
-        let Some(vector_stats) = vector_stats else {
-            debug_assert!(false, "Vector stats must be provided for two bits encoding");
-            // If vector stats are not provided, we cannot encode one and half bits
-            // So we fall back to one bit encoding
-            return Self::encode_one_bit_vector(vector, encoded_vector);
-        };
-
         // One and half bit encoding is a 2bit quantization but first bit,
         // which describes that value is less that sigma,
         // is united with the bit from the next value using OR operand.
@@ -561,11 +545,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         // The resulting 1.5bit encoding will be `[value1[0], value2[0], value1[1] | value2[1]] = [0, 1, 0]`.
         let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
-        for (i, &v) in vector.iter().enumerate() {
-            let mean = vector_stats.elements_stats[i].mean;
-            let sd = vector_stats.elements_stats[i].stddev;
-            let (b1, b2) = Self::encode_two_bits_value(v, mean, sd);
-
+        for i in 0..vector.len() {
+            let value = vector[i];
+            let stats = vector_stats.as_ref().map(|stats| &stats.elements_stats[i]);
+            let (b1, b2) = Self::encode_two_bits_value(value, stats);
             if b1 {
                 encoded_vector[i / bits_count] |= one << (i % bits_count);
             }
@@ -576,7 +559,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         }
     }
 
-    fn encode_two_bits_value(value: f32, mean: f32, sd: f32) -> (bool, bool) {
+    fn encode_two_bits_value(
+        value: f32,
+        element_stats: Option<&VectorElementStats>,
+    ) -> (bool, bool) {
         // Two bit encoding is a regular BQ with "zero".
         // It uses 2 bits per value and encodes values in the following way:
         // 00 - if the value is in the range (-inf; -SIGMAS];
@@ -585,6 +571,21 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         // where sigma is the standard deviation of the value.
         //
         // Scoring for 2bit quantization is the same as for 1bit quantization.
+        let Some(element_stats) = element_stats else {
+            return if value > 0.0 {
+                (true, true)
+            } else {
+                (false, false)
+            };
+        };
+        let VectorElementStats {
+            min: _,
+            max: _,
+            mean,
+            stddev,
+        } = element_stats;
+
+        let sd = *stddev;
 
         if sd < f32::EPSILON {
             // If standard deviation is zero,
@@ -618,34 +619,28 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                 EncodedQueryBQ::Binary(Self::encode_vector(query, vector_stats, encoding))
             }
             QueryEncoding::Scalar8bits => EncodedQueryBQ::Scalar8bits(
-                Self::encode_scalar_query_vector(query, vector_stats, encoding, u8::BITS as usize),
+                Self::encode_scalar_query_vector(query, encoding, u8::BITS as usize),
             ),
-            QueryEncoding::Scalar4bits => {
-                EncodedQueryBQ::Scalar4bits(Self::encode_scalar_query_vector(
-                    query,
-                    vector_stats,
-                    encoding,
-                    (u8::BITS / 2) as usize,
-                ))
-            }
+            QueryEncoding::Scalar4bits => EncodedQueryBQ::Scalar4bits(
+                Self::encode_scalar_query_vector(query, encoding, (u8::BITS / 2) as usize),
+            ),
         }
     }
 
     fn encode_scalar_query_vector(
         query: &[f32],
-        vector_stats: &Option<VectorStats>,
         encoding: Encoding,
         bits_count: usize,
     ) -> EncodedScalarVector<TBitsStoreType> {
         match encoding {
-            Encoding::OneBit => Self::_encode_scalar_query_vector(query, vector_stats, bits_count),
+            Encoding::OneBit => Self::_encode_scalar_query_vector(query, bits_count),
             Encoding::TwoBits => {
                 // For two bits encoding we need to extend the query vector
                 let mut extended_query = Vec::with_capacity(query.len() * 2);
                 // Copy the original query vector twice: for first and second bits in 2bit BQ encoding
                 extended_query.extend_from_slice(query);
                 extended_query.extend_from_slice(query);
-                Self::_encode_scalar_query_vector(&extended_query, vector_stats, bits_count)
+                Self::_encode_scalar_query_vector(&extended_query, bits_count)
             }
             Encoding::OneAndHalfBits => {
                 // For one and half bits encoding we need to extend the query vector
@@ -657,37 +652,20 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                         .chunks(2)
                         .map(|v| if v.len() == 2 { v[0].max(v[1]) } else { v[0] }),
                 );
-                Self::_encode_scalar_query_vector(&extended_query, vector_stats, bits_count)
+                Self::_encode_scalar_query_vector(&extended_query, bits_count)
             }
         }
     }
 
     fn _encode_scalar_query_vector(
         query: &[f32],
-        vector_stats: &Option<VectorStats>,
         bits_count: usize,
     ) -> EncodedScalarVector<TBitsStoreType> {
         let encoded_query_size = TBitsStoreType::get_storage_size(query.len().max(1)) * bits_count;
         let mut encoded_query: Vec<TBitsStoreType> = vec![Default::default(); encoded_query_size];
 
-        let (min, max) = if let Some(vector_stats) = vector_stats {
-            let max_abs_value = vector_stats
-                .elements_stats
-                .iter()
-                .map(|stat| (stat.mean - 2.0 * stat.stddev).abs())
-                .chain(
-                    vector_stats
-                        .elements_stats
-                        .iter()
-                        .map(|stat| (stat.mean + 2.0 * stat.stddev).abs()),
-                )
-                .fold(0.0, f32::max);
-            (-max_abs_value, max_abs_value)
-        } else {
-            debug_assert!(false, "Vector stats must be provided for scalar encoding");
-            let max_abs_value = query.iter().map(|x| x.abs()).fold(0.0, f32::max);
-            (-max_abs_value, max_abs_value)
-        };
+        let max_abs_value = query.iter().map(|x| x.abs()).fold(0.0, f32::max);
+        let (min, max) = (-max_abs_value, max_abs_value);
 
         let ranges = (1usize << bits_count) - 1;
         let delta = (max - min) / ranges as f32;
