@@ -137,9 +137,8 @@ impl ImmutableGeoMapIndex {
 
     /// Open and load immutable geo index from mmap storage
     pub fn open_mmap(index: MmapGeoMapIndex) -> Self {
-        let index_storage = index.storage.as_ref().unwrap();
-
-        let counts_per_hash = index_storage
+        let counts_per_hash = index
+            .storage
             .counts_per_hash
             .iter()
             .copied()
@@ -147,7 +146,8 @@ impl ImmutableGeoMapIndex {
             .collect();
 
         // Get points per geo hash and filter deleted points
-        let points_map = index_storage
+        let points_map = index
+            .storage
             .points_map
             .iter()
             .copied()
@@ -159,11 +159,11 @@ impl ImmutableGeoMapIndex {
                 } = item;
                 (
                     hash,
-                    index_storage.points_map_ids[ids_start as usize..ids_end as usize]
+                    index.storage.points_map_ids[ids_start as usize..ids_end as usize]
                         .iter()
                         .copied()
                         // Filter deleted points
-                        .filter(|id| !index_storage.deleted.get(*id as usize).unwrap_or_default())
+                        .filter(|id| !index.storage.deleted.get(*id as usize).unwrap_or_default())
                         .collect(),
                 )
             })
@@ -174,11 +174,12 @@ impl ImmutableGeoMapIndex {
         let mut deleted_points: Vec<(PointOffsetType, Vec<GeoPoint>)> =
             Vec::with_capacity(index.deleted_count);
         let point_to_values = ImmutablePointToValues::new(
-            index_storage
+            index
+                .storage
                 .point_to_values
                 .iter()
                 .map(|(id, values)| {
-                    let is_deleted = index_storage.deleted.get(id as usize).unwrap_or_default();
+                    let is_deleted = index.storage.deleted.get(id as usize).unwrap_or_default();
                     match (is_deleted, values) {
                         (false, Some(values)) => values.into_iter().collect(),
                         (false, None) => vec![],
