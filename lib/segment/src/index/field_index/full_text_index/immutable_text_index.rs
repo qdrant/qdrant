@@ -67,12 +67,7 @@ impl ImmutableFullTextIndex {
 
     /// Open and load immutable full text index from mmap storage
     pub fn open_mmap(index: MmapFullTextIndex) -> Option<Self> {
-        // If we have no storage, don't load
-        let Some(index_storage) = &index.inverted_index.storage else {
-            return None;
-        };
-
-        let inverted_index = match index_storage.postings {
+        let inverted_index = match index.inverted_index.storage.postings {
             MmapPostingsEnum::Ids(_) => ImmutableInvertedIndex::ids_empty(),
             MmapPostingsEnum::WithPositions(_) => ImmutableInvertedIndex::positions_empty(),
         };

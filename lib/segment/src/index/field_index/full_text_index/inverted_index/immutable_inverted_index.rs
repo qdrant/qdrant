@@ -395,17 +395,7 @@ fn create_compressed_postings_with_positions(
 
 impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
     fn from(index: &MmapInvertedIndex) -> Self {
-        // If we have no storage, load a dummy index
-        let Some(index_storage) = &index.storage else {
-            return ImmutableInvertedIndex {
-                postings: ImmutablePostings::Ids(vec![]),
-                vocab: HashMap::new(),
-                point_to_tokens_count: vec![],
-                points_count: 0,
-            };
-        };
-
-        let postings = match &index_storage.postings {
+        let postings = match &index.storage.postings {
             MmapPostingsEnum::Ids(postings) => ImmutablePostings::Ids(
                 postings
                     .iter_postings()
@@ -420,7 +410,8 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
             ),
         };
 
-        let vocab: HashMap<String, TokenId> = index_storage
+        let vocab: HashMap<String, TokenId> = index
+            .storage
             .vocab
             .iter()
             .map(|(token_str, token_id)| (token_str.to_owned(), token_id[0]))
@@ -434,7 +425,7 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
         ImmutableInvertedIndex {
             postings,
             vocab,
-            point_to_tokens_count: index_storage.point_to_tokens_count.to_vec(),
+            point_to_tokens_count: index.storage.point_to_tokens_count.to_vec(),
             points_count: index.points_count(),
         }
     }
