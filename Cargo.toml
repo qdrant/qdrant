@@ -206,7 +206,7 @@ clap = { version = "4.5.41", features = ["derive", "env"] }
 criterion = "0.6.0"
 data-encoding = "2.9.0"
 delegate = "0.13.4"
-ecow = { version = "0.2.5", features = ["serde"] }
+ecow = { version = "0.2.6", features = ["serde"] }
 fnv = "1.0"
 futures = "0.3.31"
 futures-util = "0.3.31"
