@@ -297,9 +297,9 @@ dependencies = [
 
 [[package]]
 name = "actix-web-validator"
-version = "6.0.0"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f65804955af25ad36225100983ec8d92f14795e7f8080073f8147d0b768c78e"
+checksum = "3539e2d27ebbe44c8baa585c4018004c6161d0dd5a0e8b72ab8a49a06a323460"
 dependencies = [
  "actix-http",
  "actix-router",
@@ -313,8 +313,8 @@ dependencies = [
  "serde_json",
  "serde_qs",
  "serde_urlencoded",
- "thiserror 1.0.69",
- "validator",
+ "thiserror 2.0.12",
+ "validator 0.20.0",
 ]
 
 [[package]]
@@ -511,7 +511,7 @@ dependencies = [
  "tonic-build",
  "tracing",
  "uuid",
- "validator",
+ "validator 0.18.1",
 ]
 
 [[package]]
@@ -1230,7 +1230,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
- "validator",
+ "validator 0.18.1",
  "wal",
 ]
 
@@ -1289,7 +1289,7 @@ dependencies = [
  "thiserror 2.0.12",
  "thread-priority",
  "tokio",
- "validator",
+ "validator 0.18.1",
  "walkdir",
  "zerocopy 0.8.26",
 ]
@@ -4788,7 +4788,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-tracy",
  "uuid",
- "validator",
+ "validator 0.18.1",
  "wal",
 ]
 
@@ -5802,7 +5802,7 @@ dependencies = [
  "tinyvec",
  "tracing",
  "uuid",
- "validator",
+ "validator 0.18.1",
  "vaporetto",
  "walkdir",
  "zerocopy 0.8.26",
@@ -6171,7 +6171,7 @@ dependencies = [
  "serde_json",
  "sparse",
  "tempfile",
- "validator",
+ "validator 0.18.1",
 ]
 
 [[package]]
@@ -6231,7 +6231,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
- "validator",
+ "validator 0.18.1",
  "wal",
 ]
 
@@ -7169,6 +7169,21 @@ dependencies = [
  "serde_json",
  "url",
  "validator_derive",
+]
+
+[[package]]
+name = "validator"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43fb22e1a008ece370ce08a3e9e4447a910e92621bb49b85d6e48a45397e7cfa"
+dependencies = [
+ "idna 1.0.3",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "url",
 ]
 
 [[package]]
