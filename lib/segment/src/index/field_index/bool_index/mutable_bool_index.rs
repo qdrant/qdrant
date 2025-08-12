@@ -97,7 +97,7 @@ impl MutableBoolIndex {
         })
     }
 
-    fn set_or_insert(&mut self, id: u32, has_true: bool, has_false: bool) -> OperationResult<()> {
+    fn set_or_insert(&mut self, id: u32, has_true: bool, has_false: bool) {
         // Set or insert the flags
         let prev_true = self.storage.trues_flags.set(id, has_true);
         let prev_false = self.storage.falses_flags.set(id, has_false);
@@ -137,8 +137,6 @@ impl MutableBoolIndex {
             }
             _ => {}
         }
-
-        Ok(())
     }
 
     fn get_bitmap_for(&self, value: bool) -> &RoaringBitmap {
@@ -288,7 +286,7 @@ impl ValueIndexer for MutableBoolIndex {
         let has_true = values.iter().any(|v| *v);
         let has_false = values.iter().any(|v| !*v);
 
-        self.set_or_insert(id, has_true, has_false)?;
+        self.set_or_insert(id, has_true, has_false);
 
         Ok(())
     }
@@ -298,7 +296,7 @@ impl ValueIndexer for MutableBoolIndex {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.set_or_insert(id, false, false)?;
+        self.set_or_insert(id, false, false);
         Ok(())
     }
 }
