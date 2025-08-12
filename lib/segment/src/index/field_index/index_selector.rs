@@ -130,7 +130,9 @@ impl IndexSelector<'_> {
             }
 
             (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => {
-                self.bool_new(field, create_if_missing)?
+                return Ok(self
+                    .bool_new(field, create_if_missing)?
+                    .map(FieldIndex::BoolIndex));
             }
 
             (PayloadIndexType::UuidIndex, PayloadSchemaParams::Uuid(_)) => {
@@ -208,7 +210,9 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Text(text_index_params) => self
                 .text_new(field, text_index_params.clone(), create_if_missing)?
                 .map(|index| vec![FieldIndex::FullTextIndex(index)]),
-            PayloadSchemaParams::Bool(_) => Some(vec![self.bool_new(field, create_if_missing)?]),
+            PayloadSchemaParams::Bool(_) => self
+                .bool_new(field, create_if_missing)?
+                .map(|index| vec![FieldIndex::BoolIndex(index)]),
             PayloadSchemaParams::Datetime(_) => self
                 .numeric_new(field, create_if_missing)?
                 .map(|index| vec![FieldIndex::DatetimeIndex(index)]),
@@ -558,7 +562,7 @@ impl IndexSelector<'_> {
             }) => Ok(FieldIndexBuilder::BoolIndex(SimpleBoolIndex::builder(
                 Arc::clone(db),
                 &field.to_string(),
-            ))),
+            )?)),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => {
                 let dir = bool_dir(dir, field);
                 Ok(FieldIndexBuilder::BoolMmapIndex(MutableBoolIndex::builder(
@@ -575,19 +579,21 @@ impl IndexSelector<'_> {
         }
     }
 
-    fn bool_new(&self, field: &JsonPath, create_if_missing: bool) -> OperationResult<FieldIndex> {
+    fn bool_new(
+        &self,
+        field: &JsonPath,
+        create_if_missing: bool,
+    ) -> OperationResult<Option<BoolIndex>> {
         Ok(match self {
             #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb {
                 db,
                 is_appendable: _,
-            }) => FieldIndex::BoolIndex(BoolIndex::Simple(SimpleBoolIndex::new(
-                Arc::clone(db),
-                &field.to_string(),
-            ))),
+            }) => SimpleBoolIndex::new(Arc::clone(db), &field.to_string(), create_if_missing)?
+                .map(BoolIndex::Simple),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => {
                 let dir = bool_dir(dir, field);
-                FieldIndex::BoolIndex(BoolIndex::Mmap(MutableBoolIndex::open(
+                Some(BoolIndex::Mmap(MutableBoolIndex::open(
                     &dir,
                     create_if_missing,
                 )?))
@@ -595,7 +601,7 @@ impl IndexSelector<'_> {
             // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
             IndexSelector::Gridstore(IndexSelectorGridstore { dir }) => {
                 let dir = bool_dir(dir, field);
-                FieldIndex::BoolIndex(BoolIndex::Mmap(MutableBoolIndex::open(
+                Some(BoolIndex::Mmap(MutableBoolIndex::open(
                     &dir,
                     create_if_missing,
                 )?))
