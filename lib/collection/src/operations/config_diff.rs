@@ -65,9 +65,11 @@ pub struct HnswConfigDiff {
     #[validate(range(min = 4))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ef_construct: Option<usize>,
-    /// Minimal size (in kilobytes) of vectors for additional payload-based indexing.
-    /// If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
-    /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
+    /// Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search.
+    /// This measures the total size of vectors being queried against.
+    /// When the maximum estimated amount of points that a condition satisfies is smaller than
+    /// `full_scan_threshold_kb`, the query planner will use full-scan search instead of HNSW index
+    /// traversal for better performance.
     /// Note: 1Kb = 1 vector of size 256
     #[serde(
         alias = "full_scan_threshold_kb",
