@@ -290,7 +290,7 @@ pub struct HnswConfigDiff {
     /// Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search.
     /// This measures the total size of vectors being queried against.
     /// When the maximum estimated amount of points that a condition satisfies is smaller than
-    /// `full_scan_threshold_kb`, the query planner will use full-scan search instead of HNSW index
+    /// `full_scan_threshold`, the query planner will use full-scan search instead of HNSW index
     /// traversal for better performance.
     /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "3")]
