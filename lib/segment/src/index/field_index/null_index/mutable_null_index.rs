@@ -23,7 +23,7 @@ const IS_NULL_DIRNAME: &str = "is_null";
 /// and buffers updates before persisting them to DynamicMmapFlags.
 pub struct MutableNullIndex {
     base_dir: PathBuf,
-    storage: Option<Storage>,
+    storage: Storage,
     total_point_count: usize,
 }
 
@@ -89,21 +89,9 @@ impl MutableNullIndex {
 
         Ok(Self {
             base_dir: path.to_path_buf(),
-            storage: Some(storage),
+            storage,
             total_point_count,
         })
-    }
-
-    fn storage(&self) -> OperationResult<&Storage> {
-        self.storage
-            .as_ref()
-            .ok_or_else(|| OperationError::service_error("Null index is not initialized"))
-    }
-
-    fn storage_mut(&mut self) -> OperationResult<&mut Storage> {
-        self.storage
-            .as_mut()
-            .ok_or_else(|| OperationError::service_error("Null index is not initialized"))
     }
 
     pub fn add_point(
@@ -146,9 +134,8 @@ impl MutableNullIndex {
             }
         }
 
-        let storage = self.storage_mut()?;
-        storage.has_values_flags.set(id, has_values);
-        storage.is_null_flags.set(id, is_null);
+        self.storage.has_values_flags.set(id, has_values);
+        self.storage.is_null_flags.set(id, is_null);
 
         // Bump total points
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
@@ -161,9 +148,8 @@ impl MutableNullIndex {
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         // Update bitmaps immediately
-        let storage = self.storage_mut()?;
-        storage.has_values_flags.set(id, false);
-        storage.is_null_flags.set(id, false);
+        self.storage.has_values_flags.set(id, false);
+        self.storage.is_null_flags.set(id, false);
 
         // Bump total points
         // We MUST bump the total point count when removing a point too
@@ -180,27 +166,19 @@ impl MutableNullIndex {
     }
 
     pub fn values_count(&self, id: PointOffsetType) -> usize {
-        usize::from(
-            self.storage()
-                .is_ok_and(|storage| storage.has_values_flags.get(id)),
-        )
+        usize::from(self.storage.has_values_flags.get(id))
     }
 
     pub fn values_is_empty(&self, id: PointOffsetType) -> bool {
-        !self
-            .storage()
-            .is_ok_and(|storage| storage.has_values_flags.get(id))
+        !self.storage.has_values_flags.get(id)
     }
 
     pub fn values_is_null(&self, id: PointOffsetType) -> bool {
-        self.storage()
-            .is_ok_and(|storage| storage.is_null_flags.get(id))
+        self.storage.is_null_flags.get(id)
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        let points_count = self
-            .storage()
-            .map_or(0, |storage| storage.has_values_flags.len());
+        let points_count = self.storage.has_values_flags.len();
 
         PayloadIndexTelemetry {
             field_name: None,
@@ -220,10 +198,8 @@ impl MutableNullIndex {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.storage()?.is_null_flags.clear_cache()?;
-        self.storage()?.has_values_flags.clear_cache()?;
-
-        Ok(())
+        self.storage.is_null_flags.clear_cache()?;
+        self.storage.has_values_flags.clear_cache()
     }
 
     pub fn get_mutability_type(&self) -> IndexMutability {
@@ -239,8 +215,7 @@ impl MutableNullIndex {
 
 impl PayloadFieldIndex for MutableNullIndex {
     fn count_indexed_points(&self) -> usize {
-        self.storage()
-            .map_or(0, |storage| storage.has_values_flags.len())
+        self.storage.has_values_flags.len()
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -251,12 +226,8 @@ impl PayloadFieldIndex for MutableNullIndex {
     }
 
     fn flusher(&self) -> Flusher {
-        let Ok(storage) = self.storage() else {
-            return Box::new(|| Ok(()));
-        };
-
-        let flush_has_values = storage.has_values_flags.flusher();
-        let flush_is_null = storage.is_null_flags.flusher();
+        let flush_has_values = self.storage.has_values_flags.flusher();
+        let flush_is_null = self.storage.is_null_flags.flusher();
 
         Box::new(move || {
             flush_has_values()?;
@@ -266,12 +237,8 @@ impl PayloadFieldIndex for MutableNullIndex {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        let Ok(storage) = self.storage() else {
-            return Vec::new();
-        };
-
-        let mut files = storage.has_values_flags.files();
-        files.extend(storage.is_null_flags.files());
+        let mut files = self.storage.has_values_flags.files();
+        files.extend(self.storage.is_null_flags.files());
         files
     }
 
@@ -296,26 +263,24 @@ impl PayloadFieldIndex for MutableNullIndex {
             is_null,
         } = condition;
 
-        let storage = self.storage().ok()?;
-
         if let Some(is_empty) = is_empty {
             if *is_empty {
                 // Return points that don't have values
-                let iter = storage.has_values_flags.iter_falses();
+                let iter = self.storage.has_values_flags.iter_falses();
                 Some(Box::new(iter))
             } else {
                 // Return points that have values
-                let iter = storage.has_values_flags.iter_trues();
+                let iter = self.storage.has_values_flags.iter_trues();
                 Some(Box::new(iter))
             }
         } else if let Some(is_null) = is_null {
             if *is_null {
                 // Return points that have null values
-                let iter = storage.is_null_flags.iter_trues();
+                let iter = self.storage.is_null_flags.iter_trues();
                 Some(Box::new(iter))
             } else {
                 // Return points that don't have null values
-                let iter = storage.is_null_flags.iter_falses();
+                let iter = self.storage.is_null_flags.iter_falses();
                 Some(Box::new(iter))
             }
         } else {
@@ -340,11 +305,9 @@ impl PayloadFieldIndex for MutableNullIndex {
             is_null,
         } = condition;
 
-        let storage = self.storage().ok()?;
-
         if let Some(is_empty) = is_empty {
             if *is_empty {
-                let has_values_count = storage.has_values_flags.count_trues();
+                let has_values_count = self.storage.has_values_flags.count_trues();
                 let estimated = self.total_point_count.saturating_sub(has_values_count);
 
                 Some(CardinalityEstimation {
@@ -357,19 +320,19 @@ impl PayloadFieldIndex for MutableNullIndex {
                     ))],
                 })
             } else {
-                let count = storage.has_values_flags.count_trues();
+                let count = self.storage.has_values_flags.count_trues();
                 Some(CardinalityEstimation::exact(count).with_primary_clause(
                     PrimaryCondition::from(FieldCondition::new_is_empty(key.clone(), false)),
                 ))
             }
         } else if let Some(is_null) = is_null {
             if *is_null {
-                let count = storage.is_null_flags.count_trues();
+                let count = self.storage.is_null_flags.count_trues();
                 Some(CardinalityEstimation::exact(count).with_primary_clause(
                     PrimaryCondition::from(FieldCondition::new_is_null(key.clone(), true)),
                 ))
             } else {
-                let is_null_count = storage.is_null_flags.count_trues();
+                let is_null_count = self.storage.is_null_flags.count_trues();
                 let estimated = self.total_point_count.saturating_sub(is_null_count);
 
                 Some(CardinalityEstimation {
