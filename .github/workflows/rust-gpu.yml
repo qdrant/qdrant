@@ -18,7 +18,7 @@ jobs:
     steps:
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: Swatinem/rust-cache@v2
     - name: Install Protoc
       uses: arduino/setup-protoc@v3
@@ -77,7 +77,7 @@ jobs:
           echo $delimiter >> $GITHUB_OUTPUT
       - name: pull issue template
         if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           sparse-checkout: |
             .github/ISSUE_TEMPLATE/flaky_test.md

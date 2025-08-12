@@ -16,7 +16,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
           ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
@@ -46,7 +46,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
           ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
@@ -85,7 +85,7 @@ jobs:
     needs: [unit-coverage, integration-coverage]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
           ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
