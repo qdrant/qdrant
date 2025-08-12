@@ -172,14 +172,6 @@ where
         MapIndexGridstoreBuilder::new(dir)
     }
 
-    fn load(&mut self) -> OperationResult<bool> {
-        match self {
-            MapIndex::Mutable(index) => index.load(),
-            MapIndex::Immutable(index) => index.load(),
-            MapIndex::Mmap(index) => index.load(),
-        }
-    }
-
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,
@@ -736,8 +728,9 @@ impl PayloadFieldIndex for MapIndex<str> {
         self.get_indexed_points()
     }
 
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
     fn load(&mut self) -> OperationResult<bool> {
-        self.load()
+        Ok(true)
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -888,8 +881,9 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
         self.get_indexed_points()
     }
 
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
     fn load(&mut self) -> OperationResult<bool> {
-        self.load()
+        Ok(true)
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -1081,8 +1075,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         self.get_indexed_points()
     }
 
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
     fn load(&mut self) -> OperationResult<bool> {
-        self.load()
+        Ok(true)
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -1450,7 +1445,7 @@ mod tests {
     where
         Vec<N::Owned>: Blob + Send + Sync,
     {
-        let mut index = match index_type {
+        let index = match index_type {
             #[cfg(feature = "rocksdb")]
             IndexType::Mutable => MapIndex::<N>::new_rocksdb(
                 open_db_with_existing_cf(path).unwrap(),
@@ -1475,7 +1470,6 @@ mod tests {
             IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap().unwrap(),
             IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap().unwrap(),
         };
-        index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N::Owned> = index
                 .get_values(idx as PointOffsetType)
