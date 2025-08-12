@@ -136,7 +136,7 @@ impl ImmutableGeoMapIndex {
     }
 
     /// Open and load immutable geo index from mmap storage
-    pub fn open_mmap(index: MmapGeoMapIndex) -> OperationResult<Option<Self>> {
+    pub fn open_mmap(index: MmapGeoMapIndex) -> Self {
         let index_storage = index.storage.as_ref().unwrap();
 
         let counts_per_hash = index_storage
@@ -229,7 +229,7 @@ impl ImmutableGeoMapIndex {
             index.decrement_hash_point_counts(&removed_geo_hashes);
         }
 
-        Ok(Some(index))
+        index
     }
 
     #[cfg(all(test, feature = "rocksdb"))]
