@@ -157,7 +157,7 @@ where
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
             .iter::<_, ()>(
-                |idx, values: &Vec<_>| {
+                |idx, values: Vec<_>| {
                     for value in values {
                         if point_to_values.len() <= idx as usize {
                             point_to_values.resize_with(idx as usize + 1, Vec::new)
@@ -170,7 +170,7 @@ where
                         values_count += 1;
 
                         point_values.push(value.clone());
-                        map.entry(value.clone()).or_default().insert(idx);
+                        map.entry(value).or_default().insert(idx);
                     }
 
                     Ok(true)

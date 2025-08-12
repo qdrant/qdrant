@@ -244,7 +244,7 @@ impl PayloadStorage for MmapPayloadStorage {
     {
         self.storage.read().iter(
             |point_id, payload| {
-                callback(point_id, payload).map_err(|e|
+                callback(point_id, &payload).map_err(|e|
                     // TODO return proper error
                     std::io::Error::other(
                         e.to_string(),

@@ -171,12 +171,8 @@ impl MutableGeoMapIndex {
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
             .iter::<_, OperationError>(
-                |idx, values: &Vec<_>| {
-                    let geo_points = values
-                        .iter()
-                        .cloned()
-                        .map(GeoPoint::from)
-                        .collect::<Vec<_>>();
+                |idx, values: Vec<RawGeoPoint>| {
+                    let geo_points = values.into_iter().map(GeoPoint::from).collect::<Vec<_>>();
                     let geo_hashes = geo_points
                         .iter()
                         .map(|geo_point| {

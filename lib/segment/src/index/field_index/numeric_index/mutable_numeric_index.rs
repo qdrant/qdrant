@@ -328,8 +328,8 @@ where
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
             .iter::<_, ()>(
-                |idx, values: &Vec<T>| {
-                    in_memory_index.add_many_to_list(idx, values.clone());
+                |idx, values: Vec<T>| {
+                    in_memory_index.add_many_to_list(idx, values);
                     Ok(true)
                 },
                 hw_counter_ref,
