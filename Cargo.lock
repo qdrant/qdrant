@@ -4289,9 +4289,9 @@ dependencies = [
 
 [[package]]
 name = "pprof"
-version = "0.14.0"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebbe2f8898beba44815fdc9e5a4ae9c929e21c5dc29b0c774a15555f7f58d6d0"
+checksum = "afad4d4df7b31280028245f152d5a575083e2abb822d05736f5e47653e77689f"
 dependencies = [
  "aligned-vec",
  "backtrace",
@@ -4302,12 +4302,12 @@ dependencies = [
  "log",
  "nix 0.26.2",
  "once_cell",
- "parking_lot",
  "prost 0.12.6",
  "prost-build 0.12.6",
  "prost-derive 0.12.6",
  "sha2",
  "smallvec",
+ "spin",
  "symbolic-demangle",
  "tempfile",
  "thiserror 1.0.69",
@@ -6173,6 +6173,15 @@ dependencies = [
  "sparse",
  "tempfile",
  "validator",
+]
+
+[[package]]
+name = "spin"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
+dependencies = [
+ "lock_api",
 ]
 
 [[package]]
