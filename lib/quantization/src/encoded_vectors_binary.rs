@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
 use crate::encoded_vectors::{EncodedVectorsBytes, validate_vector_parameters};
-use crate::vector_stats::VectorStats;
+use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedVectors, EncodingError,
     VectorParameters,
@@ -512,7 +512,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
         for i in 0..vector.len() {
-            let (b1, b2) = Self::encode_two_bits_value(vector, i, vector_stats);
+            let value = vector[i];
+            let stats = vector_stats.as_ref().map(|stats| &stats.elements_stats[i]);
+            let (b1, b2) = Self::encode_two_bits_value(value, stats);
             if b1 {
                 encoded_vector[i / bits_count] |= one << (i % bits_count);
             }
@@ -543,7 +545,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
         for i in 0..vector.len() {
-            let (b1, b2) = Self::encode_two_bits_value(vector, i, vector_stats);
+            let value = vector[i];
+            let stats = vector_stats.as_ref().map(|stats| &stats.elements_stats[i]);
+            let (b1, b2) = Self::encode_two_bits_value(value, stats);
             if b1 {
                 encoded_vector[i / bits_count] |= one << (i % bits_count);
             }
@@ -555,9 +559,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     }
 
     fn encode_two_bits_value(
-        vector: &[f32],
-        i: usize,
-        vector_stats: &Option<VectorStats>,
+        value: f32,
+        element_stats: Option<&VectorElementStats>,
     ) -> (bool, bool) {
         // Two bit encoding is a regular BQ with "zero".
         // It uses 2 bits per value and encodes values in the following way:
@@ -567,17 +570,21 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         // where sigma is the standard deviation of the value.
         //
         // Scoring for 2bit quantization is the same as for 1bit quantization.
-        let value = vector[i];
-
-        let Some(vector_stats) = vector_stats else {
-            if value > 0.0 {
-                return (true, true);
+        let Some(element_stats) = element_stats else {
+            return if value > 0.0 {
+                (true, true)
             } else {
-                return (false, false);
-            }
+                (false, false)
+            };
         };
-        let mean = vector_stats.elements_stats[i].mean;
-        let sd = vector_stats.elements_stats[i].stddev;
+        let VectorElementStats {
+            min: _,
+            max: _,
+            mean,
+            stddev,
+        } = element_stats;
+
+        let sd = *stddev;
 
         if sd < f32::EPSILON {
             // If standard deviation is zero,
