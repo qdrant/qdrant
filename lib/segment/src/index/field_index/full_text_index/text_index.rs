@@ -526,12 +526,9 @@ impl PayloadFieldIndex for FullTextIndex {
         self.points_count()
     }
 
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
     fn load(&mut self) -> OperationResult<bool> {
-        match self {
-            Self::Mutable(index) => index.load(),
-            Self::Immutable(index) => index.load(),
-            Self::Mmap(index) => Ok(index.load()),
-        }
+        Ok(true)
     }
 
     fn cleanup(self) -> OperationResult<()> {
