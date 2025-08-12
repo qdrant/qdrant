@@ -138,7 +138,7 @@ where
     }
 
     /// Open and load immutable numeric index from mmap storage
-    pub(super) fn open_mmap(index: MmapMapIndex<N>) -> OperationResult<Option<Self>> {
+    pub(super) fn open_mmap(index: MmapMapIndex<N>) -> Self {
         let index_storage = index.storage.as_ref().unwrap();
 
         // Construct intermediate values to points map from backing storage
@@ -219,7 +219,7 @@ where
             log::warn!("Failed to clear mmap cache of ram mmap map index: {err}");
         }
 
-        Ok(Some(Self {
+        Self {
             value_to_points,
             value_to_points_container,
             deleted_value_to_points_container: BitVec::new(),
@@ -227,7 +227,7 @@ where
             indexed_points,
             values_count,
             storage: Storage::Mmap(Box::new(index)),
-        }))
+        }
     }
 
     /// Return mutable slice of a container which holds point_ids for given value.

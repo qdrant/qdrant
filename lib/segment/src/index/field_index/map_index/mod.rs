@@ -132,12 +132,12 @@ where
 
         let index = if is_on_disk {
             // Use on mmap directly
-            Some(MapIndex::Mmap(Box::new(mmap_index)))
+            MapIndex::Mmap(Box::new(mmap_index))
         } else {
             // Load into RAM, use mmap as backing storage
-            ImmutableMapIndex::open_mmap(mmap_index)?.map(MapIndex::Immutable)
+            MapIndex::Immutable(ImmutableMapIndex::open_mmap(mmap_index))
         };
-        Ok(index)
+        Ok(Some(index))
     }
 
     pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
