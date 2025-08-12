@@ -80,9 +80,8 @@ impl IndexSelector<'_> {
                     );
                 }
 
-                return Ok(self
-                    .numeric_new(field, create_if_missing)?
-                    .map(FieldIndex::IntIndex));
+                self.numeric_new(field, create_if_missing)?
+                    .map(FieldIndex::IntIndex)
             }
             (PayloadIndexType::IntMapIndex, PayloadSchemaParams::Integer(params)) => {
                 // IntMapIndex only gets created if `lookup` is true. This will only throw an error if storage is corrupt.
@@ -95,66 +94,47 @@ impl IndexSelector<'_> {
                     );
                 }
 
-                return Ok(self
-                    .map_new(field, create_if_missing)?
-                    .map(FieldIndex::IntMapIndex));
+                self.map_new(field, create_if_missing)?
+                    .map(FieldIndex::IntMapIndex)
             }
-            (PayloadIndexType::DatetimeIndex, PayloadSchemaParams::Datetime(_)) => {
-                return Ok(self
-                    .numeric_new(field, create_if_missing)?
-                    .map(FieldIndex::DatetimeIndex));
-            }
+            (PayloadIndexType::DatetimeIndex, PayloadSchemaParams::Datetime(_)) => self
+                .numeric_new(field, create_if_missing)?
+                .map(FieldIndex::DatetimeIndex),
 
-            (PayloadIndexType::KeywordIndex, PayloadSchemaParams::Keyword(_)) => {
-                return Ok(self
-                    .map_new(field, create_if_missing)?
-                    .map(FieldIndex::KeywordIndex));
-            }
+            (PayloadIndexType::KeywordIndex, PayloadSchemaParams::Keyword(_)) => self
+                .map_new(field, create_if_missing)?
+                .map(FieldIndex::KeywordIndex),
 
-            (PayloadIndexType::FloatIndex, PayloadSchemaParams::Float(_)) => {
-                return Ok(self
-                    .numeric_new(field, create_if_missing)?
-                    .map(FieldIndex::FloatIndex));
-            }
+            (PayloadIndexType::FloatIndex, PayloadSchemaParams::Float(_)) => self
+                .numeric_new(field, create_if_missing)?
+                .map(FieldIndex::FloatIndex),
 
-            (PayloadIndexType::GeoIndex, PayloadSchemaParams::Geo(_)) => {
-                return Ok(self
-                    .geo_new(field, create_if_missing)?
-                    .map(FieldIndex::GeoIndex));
-            }
+            (PayloadIndexType::GeoIndex, PayloadSchemaParams::Geo(_)) => self
+                .geo_new(field, create_if_missing)?
+                .map(FieldIndex::GeoIndex),
 
-            (PayloadIndexType::FullTextIndex, PayloadSchemaParams::Text(params)) => {
-                return Ok(self
-                    .text_new(field, params.clone(), create_if_missing)?
-                    .map(FieldIndex::FullTextIndex));
-            }
+            (PayloadIndexType::FullTextIndex, PayloadSchemaParams::Text(params)) => self
+                .text_new(field, params.clone(), create_if_missing)?
+                .map(FieldIndex::FullTextIndex),
 
-            (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => {
-                return Ok(self
-                    .bool_new(field, create_if_missing)?
-                    .map(FieldIndex::BoolIndex));
-            }
+            (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => self
+                .bool_new(field, create_if_missing)?
+                .map(FieldIndex::BoolIndex),
 
-            (PayloadIndexType::UuidIndex, PayloadSchemaParams::Uuid(_)) => {
-                return Ok(self
-                    .map_new(field, create_if_missing)?
-                    .map(FieldIndex::UuidMapIndex));
-            }
+            (PayloadIndexType::UuidIndex, PayloadSchemaParams::Uuid(_)) => self
+                .map_new(field, create_if_missing)?
+                .map(FieldIndex::UuidMapIndex),
 
-            (PayloadIndexType::UuidMapIndex, PayloadSchemaParams::Uuid(_)) => {
-                return Ok(self
-                    .map_new(field, create_if_missing)?
-                    .map(FieldIndex::UuidMapIndex));
-            }
+            (PayloadIndexType::UuidMapIndex, PayloadSchemaParams::Uuid(_)) => self
+                .map_new(field, create_if_missing)?
+                .map(FieldIndex::UuidMapIndex),
 
-            (PayloadIndexType::NullIndex, _) => {
-                return Ok(MutableNullIndex::open(
-                    &null_dir(path, field),
-                    total_point_count,
-                    create_if_missing,
-                )?
-                .map(FieldIndex::NullIndex));
-            }
+            (PayloadIndexType::NullIndex, _) => MutableNullIndex::open(
+                &null_dir(path, field),
+                total_point_count,
+                create_if_missing,
+            )?
+            .map(FieldIndex::NullIndex),
 
             // Storage inconsistency. Should never happen.
             (index_type, schema) => {
@@ -164,7 +144,7 @@ impl IndexSelector<'_> {
             }
         };
 
-        Ok(Some(index))
+        Ok(index)
     }
 
     /// Selects index type based on field type.
