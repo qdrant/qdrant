@@ -1244,6 +1244,9 @@ pub struct UpdateCollection {
     /// already stored metadata
     #[prost(map = "string, message", tag = "10")]
     pub metadata: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    /// New WAL parameters for the collection
+    #[prost(message, optional, tag = "11")]
+    pub wal_config: ::core::option::Option<WalConfigDiff>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
