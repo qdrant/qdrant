@@ -198,17 +198,15 @@ impl StructPayloadIndex {
                     "index selector is not expected to provide null index",
                 );
 
-                // Special null index complements every index
-                if let Some(null_index) = IndexSelector::new_null_index(
+                // Special null index complements every index.
+                let null_index = IndexSelector::new_null_index(
                     &self.path,
                     field,
                     total_point_count,
                     create_if_missing,
-                )? {
-                    // TODO: This means that null index will not be built if it is not loaded here.
-                    //       Maybe we should set `rebuild` to true to trigger index building.
-                    indexes.push(null_index);
-                }
+                )?;
+
+                indexes.push(null_index);
 
                 // Persist exact payload index types
                 is_dirty = true;

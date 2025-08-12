@@ -464,13 +464,13 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         total_point_count: usize,
         create_if_missing: bool,
-    ) -> OperationResult<Option<FieldIndex>> {
+    ) -> OperationResult<FieldIndex> {
         // null index is always on disk and is appendable
-        Ok(Some(FieldIndex::NullIndex(MutableNullIndex::open(
+        Ok(FieldIndex::NullIndex(MutableNullIndex::open(
             &null_dir(dir, field),
             total_point_count,
             create_if_missing,
-        )?)))
+        )?))
     }
 
     fn text_new(
