@@ -162,12 +162,8 @@ impl PayloadFieldIndex for BoolIndex {
     }
 
     // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load(&mut self) -> crate::common::operation_error::OperationResult<bool> {
-        match self {
-            #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.load(),
-            BoolIndex::Mmap(index) => index.load(),
-        }
+    fn load(&mut self) -> OperationResult<bool> {
+        Ok(true)
     }
 
     fn cleanup(self) -> crate::common::operation_error::OperationResult<()> {
@@ -335,20 +331,10 @@ mod tests {
     impl OpenIndex for SimpleBoolIndex {
         fn open_at(path: &Path) -> BoolIndex {
             let db = open_db_with_existing_cf(path).unwrap();
-            let mut index = SimpleBoolIndex::new(db.clone(), FIELD_NAME, true)
+            let index = SimpleBoolIndex::new(db.clone(), FIELD_NAME, true)
                 .unwrap()
                 .unwrap();
-            // Try to load if it exists
-            if index.load().unwrap() {
-                return BoolIndex::Simple(index);
-            }
-            drop(index);
-
-            // Otherwise create a new one
-            SimpleBoolIndex::builder(db, FIELD_NAME)
-                .unwrap()
-                .make_empty()
-                .unwrap()
+            BoolIndex::Simple(index)
         }
     }
 
@@ -459,8 +445,7 @@ mod tests {
 
         drop(index);
 
-        let mut new_index = I::open_at(tmp_dir.path());
-        assert!(new_index.load().unwrap());
+        let new_index = I::open_at(tmp_dir.path());
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
