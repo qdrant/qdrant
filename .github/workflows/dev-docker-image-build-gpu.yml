@@ -7,7 +7,7 @@ jobs:
   branch-gpu-build-and-push:
     runs-on: [self-hosted, linux, x64]
     steps:
-        - uses: actions/checkout@v4
+        - uses: actions/checkout@v5
           with:
             ref: ${{ github.ref.name }}
         - uses: ./.github/actions/branch-build-and-push

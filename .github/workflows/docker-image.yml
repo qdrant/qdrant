@@ -12,7 +12,7 @@ jobs:
     # Run build on our self-hosted runner, we had trouble with shared runners
     runs-on: [self-hosted, linux, x64]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: Swatinem/rust-cache@v2
     - name: Get current tag
       id: vars
@@ -69,7 +69,7 @@ jobs:
   build-gpu:
     runs-on: [self-hosted, linux, x64]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: Swatinem/rust-cache@v2
     - name: Get current tag
       id: vars
