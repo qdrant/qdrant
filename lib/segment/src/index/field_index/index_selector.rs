@@ -148,12 +148,12 @@ impl IndexSelector<'_> {
             }
 
             (PayloadIndexType::NullIndex, _) => {
-                let null_index = MutableNullIndex::open(
+                return Ok(MutableNullIndex::open(
                     &null_dir(path, field),
                     total_point_count,
                     create_if_missing,
-                )?;
-                FieldIndex::NullIndex(null_index)
+                )?
+                .map(FieldIndex::NullIndex));
             }
 
             // Storage inconsistency. Should never happen.
@@ -487,13 +487,12 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         total_point_count: usize,
         create_if_missing: bool,
-    ) -> OperationResult<FieldIndex> {
+    ) -> OperationResult<Option<FieldIndex>> {
         // null index is always on disk and is appendable
-        Ok(FieldIndex::NullIndex(MutableNullIndex::open(
-            &null_dir(dir, field),
-            total_point_count,
-            create_if_missing,
-        )?))
+        Ok(
+            MutableNullIndex::open(&null_dir(dir, field), total_point_count, create_if_missing)?
+                .map(FieldIndex::NullIndex),
+        )
     }
 
     fn text_new(

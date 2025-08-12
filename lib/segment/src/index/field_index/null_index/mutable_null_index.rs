@@ -36,10 +36,17 @@ struct Storage {
 
 impl MutableNullIndex {
     pub fn builder(path: &Path) -> OperationResult<MutableNullIndexBuilder> {
-        Ok(MutableNullIndexBuilder(Self::open(path, 0, true)?))
+        Ok(MutableNullIndexBuilder(
+            Self::open(path, 0, true)?.ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Failed to create and open mutable null index at path: {}",
+                    path.display(),
+                ))
+            })?,
+        ))
     }
 
-    /// Open or create a mutable null index at the given path.
+    /// Open and load or create a mutable null index at the given path.
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
@@ -49,19 +56,15 @@ impl MutableNullIndex {
         path: &Path,
         total_point_count: usize,
         create_if_missing: bool,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Option<Self>> {
         let has_values_dir = path.join(HAS_VALUES_DIRNAME);
 
         // If has values directory doesn't exist, assume the index doesn't exist on disk
         if !has_values_dir.is_dir() && !create_if_missing {
-            return Ok(Self {
-                base_dir: path.to_path_buf(),
-                storage: None,
-                total_point_count,
-            });
+            return Ok(None);
         }
 
-        Self::open_or_create(path, total_point_count)
+        Ok(Some(Self::open_or_create(path, total_point_count)?))
     }
 
     fn open_or_create(path: &Path, total_point_count: usize) -> OperationResult<Self> {
@@ -240,9 +243,11 @@ impl PayloadFieldIndex for MutableNullIndex {
             .map_or(0, |storage| storage.has_values_flags.len())
     }
 
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
     fn load(&mut self) -> OperationResult<bool> {
-        let is_loaded = self.storage.is_some();
-        Ok(is_loaded)
+        // Note: this structure is now loaded on open
+
+        Ok(self.storage.is_some())
     }
 
     fn cleanup(self) -> OperationResult<()> {

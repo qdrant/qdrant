@@ -199,14 +199,14 @@ impl StructPayloadIndex {
                 );
 
                 // Special null index complements every index.
-                let null_index = IndexSelector::new_null_index(
+                if let Some(null_index) = IndexSelector::new_null_index(
                     &self.path,
                     field,
                     total_point_count,
                     create_if_missing,
-                )?;
-
-                indexes.push(null_index);
+                )? {
+                    indexes.push(null_index);
+                }
 
                 // Persist exact payload index types
                 is_dirty = true;
