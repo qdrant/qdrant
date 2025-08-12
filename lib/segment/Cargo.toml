@@ -13,7 +13,7 @@ workspace = true
 
 [features]
 default = ["rocksdb"]
-testing = ["common/testing", "sparse/testing", "gpu/testing"]
+testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing"]
 gpu = ["gpu/gpu"]
 rocksdb = ["dep:rocksdb"]
 

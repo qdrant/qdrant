@@ -3,6 +3,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, VectorParameters};
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
     use quantization::{EncodedVectorsPQ, EncodingError};
@@ -31,7 +32,7 @@ mod tests {
         assert_eq!(
             EncodedVectorsU8::encode(
                 (0..vectors_count).map(|_| &zero_vector),
-                Vec::<u8>::new(),
+                TestEncodedStorageBuilder::new(),
                 &vector_parameters,
                 vectors_count,
                 None,
@@ -68,7 +69,7 @@ mod tests {
         assert_eq!(
             EncodedVectorsPQ::encode(
                 (0..vectors_count).map(|_| &zero_vector),
-                Vec::<u8>::new(),
+                TestEncodedStorageBuilder::new(),
                 &vector_parameters,
                 vectors_count,
                 2,
