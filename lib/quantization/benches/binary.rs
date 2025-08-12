@@ -36,7 +36,7 @@ fn binary_bench(c: &mut Criterion) {
 
     let encoded_u128 = EncodedVectorsBin::<u128, _>::encode(
         vectors.iter(),
-        TestEncodedStorageBuilder::new(),
+        TestEncodedStorageBuilder::new(None),
         &VectorParameters {
             dim: vector_dim,
             deprecated_count: None,
@@ -45,6 +45,7 @@ fn binary_bench(c: &mut Criterion) {
         },
         Encoding::OneBit,
         QueryEncoding::SameAsStorage,
+        None,
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -77,7 +78,7 @@ fn binary_bench(c: &mut Criterion) {
 
     let encoded_u8 = EncodedVectorsBin::<u8, _>::encode(
         vectors.iter(),
-        TestEncodedStorageBuilder::new(),
+        TestEncodedStorageBuilder::new(None),
         &VectorParameters {
             dim: vector_dim,
             deprecated_count: None,
@@ -86,6 +87,7 @@ fn binary_bench(c: &mut Criterion) {
         },
         Encoding::OneBit,
         QueryEncoding::SameAsStorage,
+        None,
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -131,7 +133,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
 
     let encoded_u128 = EncodedVectorsBin::<u128, _>::encode(
         vectors.iter(),
-        TestEncodedStorageBuilder::new(),
+        TestEncodedStorageBuilder::new(None),
         &VectorParameters {
             dim: vector_dim,
             deprecated_count: None,
@@ -140,6 +142,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
         },
         Encoding::OneBit,
         QueryEncoding::Scalar8bits,
+        None,
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -188,7 +191,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
 
     let encoded_u8 = EncodedVectorsBin::<u8, _>::encode(
         vectors.iter(),
-        TestEncodedStorageBuilder::new(),
+        TestEncodedStorageBuilder::new(None),
         &VectorParameters {
             dim: vector_dim,
             deprecated_count: None,
@@ -197,6 +200,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
         },
         Encoding::OneBit,
         QueryEncoding::Scalar8bits,
+        None,
         &AtomicBool::new(false),
     )
     .unwrap();

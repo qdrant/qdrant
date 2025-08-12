@@ -45,22 +45,36 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         vector_parameters: &VectorParameters,
         count: usize,
         quantile: Option<f32>,
+        meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
         let actual_dim = Self::get_actual_dim(vector_parameters);
 
         if count == 0 {
+            let metadata = Metadata {
+                actual_dim,
+                alpha: 0.0,
+                offset: 0.0,
+                multiplier: 0.0,
+                vector_parameters: vector_parameters.clone(),
+            };
+            if let Some(meta_path) = meta_path {
+                if let Some(parent) = meta_path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        EncodingError::EncodingError(format!(
+                            "Failed to create metadata parent dir: {e}"
+                        ))
+                    })?;
+                }
+                atomic_save_json(meta_path, &metadata).map_err(|e| {
+                    EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
+                })?;
+            }
             return Ok(EncodedVectorsU8 {
                 encoded_vectors: storage_builder.build().map_err(|e| {
                     EncodingError::EncodingError(format!("Failed to build storage: {e}",))
                 })?,
-                metadata: Metadata {
-                    actual_dim,
-                    alpha: 0.0,
-                    offset: 0.0,
-                    multiplier: 0.0,
-                    vector_parameters: vector_parameters.clone(),
-                },
+                metadata,
             });
         }
 
@@ -135,17 +149,33 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             multiplier
         };
 
+        let encoded_vectors = storage_builder
+            .build()
+            .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
+
+        let metadata = Metadata {
+            actual_dim,
+            alpha,
+            offset,
+            multiplier,
+            vector_parameters: vector_parameters.clone(),
+        };
+        if let Some(meta_path) = meta_path {
+            if let Some(parent) = meta_path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    EncodingError::EncodingError(format!(
+                        "Failed to create metadata parent dir: {e}"
+                    ))
+                })?;
+            }
+            atomic_save_json(meta_path, &metadata).map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
+            })?;
+        }
+
         Ok(EncodedVectorsU8 {
-            encoded_vectors: storage_builder.build().map_err(|e| {
-                EncodingError::EncodingError(format!("Failed to build storage: {e}",))
-            })?,
-            metadata: Metadata {
-                actual_dim,
-                alpha,
-                offset,
-                multiplier,
-                vector_parameters: vector_parameters.clone(),
-            },
+            encoded_vectors,
+            metadata,
         })
     }
 
@@ -306,15 +336,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     type EncodedQuery = EncodedQueryU8;
-
-    fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
-        meta_path.parent().map(std::fs::create_dir_all);
-        atomic_save_json(meta_path, &self.metadata)?;
-
-        data_path.parent().map(std::fs::create_dir_all);
-        self.encoded_vectors.save_to_file(data_path)?;
-        Ok(())
-    }
 
     fn load(
         data_path: &Path,

@@ -23,21 +23,18 @@ mod tests {
         };
         let vector_data: Vec<Vec<f32>> = Default::default();
 
-        let encoded = EncodedVectorsU8::encode(
+        let data_path = dir.path().join("data.bin");
+        let meta_path = dir.path().join("meta.json");
+        let _encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(Some(&data_path)),
             &vector_parameters,
             vectors_count,
             None,
+            Some(meta_path.as_path()),
             &AtomicBool::new(false),
         )
         .unwrap();
-
-        let data_path = dir.path().join("data.bin");
-        let meta_path = dir.path().join("meta.json");
-        encoded
-            .save(data_path.as_path(), meta_path.as_path())
-            .unwrap();
 
         EncodedVectorsU8::<TestEncodedStorage>::load(
             data_path.as_path(),
@@ -61,22 +58,19 @@ mod tests {
         };
         let vector_data: Vec<Vec<f32>> = Default::default();
 
-        let encoded = EncodedVectorsPQ::encode(
+        let data_path = dir.path().join("data.bin");
+        let meta_path = dir.path().join("meta.json");
+        let _encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(Some(&data_path)),
             &vector_parameters,
             vectors_count,
             2,
             1,
+            Some(meta_path.as_path()),
             &AtomicBool::new(false),
         )
         .unwrap();
-
-        let data_path = dir.path().join("data.bin");
-        let meta_path = dir.path().join("meta.json");
-        encoded
-            .save(data_path.as_path(), meta_path.as_path())
-            .unwrap();
 
         EncodedVectorsPQ::<TestEncodedStorage>::load(
             data_path.as_path(),
@@ -99,21 +93,18 @@ mod tests {
         };
         let vector_data: Vec<Vec<f32>> = Default::default();
 
-        let encoded = EncodedVectorsBin::<u8, _>::encode(
+        let data_path = dir.path().join("data.bin");
+        let meta_path = dir.path().join("meta.json");
+        let _encoded = EncodedVectorsBin::<u8, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(Some(&data_path)),
             &vector_parameters,
             quantization::encoded_vectors_binary::Encoding::OneBit,
             QueryEncoding::SameAsStorage,
+            Some(meta_path.as_path()),
             &AtomicBool::new(false),
         )
         .unwrap();
-
-        let data_path = dir.path().join("data.bin");
-        let meta_path = dir.path().join("meta.json");
-        encoded
-            .save(data_path.as_path(), meta_path.as_path())
-            .unwrap();
 
         EncodedVectorsBin::<u8, TestEncodedStorage>::load(
             data_path.as_path(),

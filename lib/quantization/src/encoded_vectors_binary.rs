@@ -405,17 +405,23 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         vector_parameters: VectorParameters,
         encoding: Encoding,
         query_encoding: QueryEncoding,
-    ) -> Self {
-        Self {
-            encoded_vectors,
-            metadata: Metadata {
-                vector_parameters,
-                encoding,
-                query_encoding,
-                vector_stats: None,
-            },
-            bits_store_type: PhantomData,
+        meta_path: &Path,
+    ) -> std::io::Result<Self> {
+        let metadata = Metadata {
+            vector_parameters,
+            encoding,
+            query_encoding,
+            vector_stats: None,
+        };
+        if let Some(meta_path_directory) = meta_path.parent() {
+            std::fs::create_dir_all(meta_path_directory)?;
         }
+        atomic_save_json(meta_path, &metadata)?;
+        Ok(Self {
+            encoded_vectors,
+            metadata,
+            bits_store_type: PhantomData,
+        })
     }
 
     pub fn encode<'a>(
@@ -424,6 +430,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         vector_parameters: &VectorParameters,
         encoding: Encoding,
         query_encoding: QueryEncoding,
+        meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
@@ -456,16 +463,32 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             storage_builder.push_vector_data(bytes);
         }
 
+        let encoded_vectors = storage_builder
+            .build()
+            .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
+
+        let metadata = Metadata {
+            vector_parameters: vector_parameters.clone(),
+            encoding,
+            query_encoding,
+            vector_stats,
+        };
+        if let Some(meta_path) = meta_path {
+            if let Some(dir) = meta_path.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| {
+                    EncodingError::EncodingError(format!(
+                        "Failed to create metadata parent dir: {e}"
+                    ))
+                })?;
+            }
+            atomic_save_json(meta_path, &metadata).map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
+            })?;
+        }
+
         Ok(Self {
-            encoded_vectors: storage_builder.build().map_err(|e| {
-                EncodingError::EncodingError(format!("Failed to build storage: {e}",))
-            })?,
-            metadata: Metadata {
-                vector_parameters: vector_parameters.clone(),
-                encoding,
-                query_encoding,
-                vector_stats,
-            },
+            encoded_vectors,
+            metadata,
             bits_store_type: PhantomData,
         })
     }
@@ -789,16 +812,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     for EncodedVectorsBin<TBitsStoreType, TStorage>
 {
     type EncodedQuery = EncodedQueryBQ<TBitsStoreType>;
-
-    fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
-        meta_path.parent().map(std::fs::create_dir_all);
-        atomic_save_json(meta_path, &self.metadata)?;
-
-        data_path.parent().map(std::fs::create_dir_all);
-        self.encoded_vectors.save_to_file(data_path)?;
-
-        Ok(())
-    }
 
     fn load(
         data_path: &Path,

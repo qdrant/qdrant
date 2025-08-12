@@ -58,6 +58,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     /// * `chunk_size` - Max size of f32 chunk that replaced by centroid index (in original vector dimension)
     /// * `max_threads` - Max allowed threads for kmeans and encodind process
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
+    #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage> + Send,
@@ -65,6 +66,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         count: usize,
         chunk_size: usize,
         max_kmeans_threads: usize,
+        meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
@@ -93,18 +95,32 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
             stopped,
         )?;
 
-        let storage = storage_builder
+        let encoded_vectors = storage_builder
             .build()
             .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
 
+        let metadata = Metadata {
+            centroids,
+            vector_division,
+            vector_parameters: vector_parameters.clone(),
+        };
+        if let Some(meta_path) = meta_path {
+            if let Some(dir) = meta_path.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| {
+                    EncodingError::EncodingError(format!(
+                        "Failed to create metadata parent dir: {e}"
+                    ))
+                })?;
+            }
+            atomic_save_json(meta_path, &metadata).map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
+            })?;
+        }
+
         if !stopped.load(Ordering::Relaxed) {
             Ok(Self {
-                encoded_vectors: storage,
-                metadata: Metadata {
-                    centroids,
-                    vector_division,
-                    vector_parameters: vector_parameters.clone(),
-                },
+                encoded_vectors,
+                metadata,
             })
         } else {
             Err(EncodingError::Stopped)
@@ -449,15 +465,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     type EncodedQuery = EncodedQueryPQ;
-
-    fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
-        meta_path.parent().map(std::fs::create_dir_all);
-        atomic_save_json(meta_path, &self.metadata)?;
-
-        data_path.parent().map(std::fs::create_dir_all);
-        self.encoded_vectors.save_to_file(data_path)?;
-        Ok(())
-    }
 
     fn load(
         data_path: &Path,

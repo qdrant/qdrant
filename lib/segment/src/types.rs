@@ -717,7 +717,7 @@ impl Hash for ScalarQuantizationConfig {
 
 impl Eq for ScalarQuantizationConfig {}
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum BinaryQuantizationEncoding {
     #[default]
@@ -785,7 +785,7 @@ impl Validate for QuantizationConfig {
 }
 
 #[derive(
-    Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq, Hash,
+    Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, Copy, PartialEq, Eq, Hash,
 )]
 #[serde(rename_all = "lowercase")]
 #[anonymize(false)]

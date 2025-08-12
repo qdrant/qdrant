@@ -32,9 +32,10 @@ mod tests {
         assert_eq!(
             EncodedVectorsU8::encode(
                 (0..vectors_count).map(|_| &zero_vector),
-                TestEncodedStorageBuilder::new(),
+                TestEncodedStorageBuilder::new(None),
                 &vector_parameters,
                 vectors_count,
+                None,
                 None,
                 stopped_ref,
             )
@@ -69,11 +70,12 @@ mod tests {
         assert_eq!(
             EncodedVectorsPQ::encode(
                 (0..vectors_count).map(|_| &zero_vector),
-                TestEncodedStorageBuilder::new(),
+                TestEncodedStorageBuilder::new(None),
                 &vector_parameters,
                 vectors_count,
                 2,
                 1,
+                None,
                 stopped_ref,
             )
             .err(),

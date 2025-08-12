@@ -21,7 +21,7 @@ fn encode_dot_bench(c: &mut Criterion) {
 
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
-        TestEncodedStorageBuilder::new(),
+        TestEncodedStorageBuilder::new(None),
         &VectorParameters {
             dim: vector_dim,
             deprecated_count: None,
@@ -29,6 +29,7 @@ fn encode_dot_bench(c: &mut Criterion) {
             invert: false,
         },
         vectors_count,
+        None,
         None,
         &AtomicBool::new(false),
     )
@@ -115,7 +116,7 @@ fn encode_l1_bench(c: &mut Criterion) {
 
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
-        TestEncodedStorageBuilder::new(),
+        TestEncodedStorageBuilder::new(None),
         &VectorParameters {
             dim: vector_dim,
             deprecated_count: None,
@@ -123,6 +124,7 @@ fn encode_l1_bench(c: &mut Criterion) {
             invert: true,
         },
         vectors_count,
+        None,
         None,
         &AtomicBool::new(false),
     )

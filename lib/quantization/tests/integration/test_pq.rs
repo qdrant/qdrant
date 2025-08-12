@@ -26,7 +26,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -36,6 +36,7 @@ mod tests {
             VECTORS_COUNT,
             1,
             1,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -60,7 +61,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -70,6 +71,7 @@ mod tests {
             VECTORS_COUNT,
             1,
             1,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -94,7 +96,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -104,6 +106,7 @@ mod tests {
             VECTORS_COUNT,
             1,
             1,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -128,7 +131,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -138,6 +141,7 @@ mod tests {
             VECTORS_COUNT,
             1,
             1,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -162,7 +166,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -172,6 +176,7 @@ mod tests {
             VECTORS_COUNT,
             1,
             1,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -196,7 +201,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -206,6 +211,7 @@ mod tests {
             VECTORS_COUNT,
             1,
             1,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -229,7 +235,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -239,6 +245,7 @@ mod tests {
             VECTORS_COUNT,
             1,
             1,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -261,7 +268,7 @@ mod tests {
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: VECTOR_DIM,
                 deprecated_count: None,
@@ -271,6 +278,7 @@ mod tests {
             VECTORS_COUNT,
             1,
             1,
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -313,7 +321,7 @@ mod tests {
                             std::thread::sleep(Duration::from_micros(100));
                         }
                     }),
-                    TestEncodedStorageBuilder::new(),
+                    TestEncodedStorageBuilder::new(None),
                     &VectorParameters {
                         dim: VECTOR_DIM,
                         deprecated_count: None,
@@ -323,6 +331,7 @@ mod tests {
                     VECTORS_COUNT,
                     1,
                     5,
+                    None,
                     &AtomicBool::new(false),
                 )
                 .unwrap()

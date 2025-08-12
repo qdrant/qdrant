@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use memory::fadvise::OneshotFile;
@@ -48,18 +48,6 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         Ok(QuantizedRamStorage { vectors })
     }
 
-    fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
-        let mut buffer = BufWriter::new(File::create(path)?);
-        for i in 0..self.vectors.len() {
-            buffer.write_all(self.vectors.get(i))?;
-        }
-
-        // Explicitly flush write buffer so we can catch IO errors
-        buffer.flush()?;
-        buffer.into_inner()?.sync_all()?;
-        Ok(())
-    }
-
     fn is_on_disk(&self) -> bool {
         false
     }
@@ -71,13 +59,17 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
 
 pub struct QuantizedRamStorageBuilder {
     pub vectors: ChunkedVectors<u8>,
+    pub path: PathBuf,
 }
 
 impl QuantizedRamStorageBuilder {
-    pub fn new(count: usize, dim: usize) -> OperationResult<Self> {
+    pub fn new(path: &Path, count: usize, dim: usize) -> OperationResult<Self> {
         let mut vectors = ChunkedVectors::new(dim);
         vectors.try_set_capacity_exact(count)?;
-        Ok(Self { vectors })
+        Ok(Self {
+            vectors,
+            path: path.to_path_buf(),
+        })
     }
 }
 
@@ -85,6 +77,16 @@ impl quantization::EncodedStorageBuilder for QuantizedRamStorageBuilder {
     type Storage = QuantizedRamStorage;
 
     fn build(self) -> std::io::Result<QuantizedRamStorage> {
+        self.path.parent().map(std::fs::create_dir_all);
+        let mut buffer = BufWriter::new(File::create(&self.path)?);
+        for i in 0..self.vectors.len() {
+            buffer.write_all(self.vectors.get(i))?;
+        }
+
+        // Explicitly flush write buffer so we can catch IO errors
+        buffer.flush()?;
+        buffer.into_inner()?.sync_all()?;
+
         Ok(QuantizedRamStorage {
             vectors: self.vectors,
         })

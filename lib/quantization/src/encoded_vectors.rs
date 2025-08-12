@@ -28,8 +28,6 @@ pub struct VectorParameters {
 pub trait EncodedVectors: Sized {
     type EncodedQuery;
 
-    fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()>;
-
     fn load(
         data_path: &Path,
         meta_path: &Path,
