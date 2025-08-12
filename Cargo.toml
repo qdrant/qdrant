@@ -76,7 +76,7 @@ tokio = { workspace = true }
 actix-cors = "0.7.1"
 actix-files = "0.6.6"
 actix-web = { version = "4.11.0", features = ["rustls-0_23", "actix-tls"] }
-actix-web-validator = "6.0.0"
+actix-web-validator = "7.0.0"
 tonic = { workspace = true }
 tonic-reflection = { workspace = true }
 tower = { version = "0.5.2", features = ["util"] }
@@ -270,7 +270,7 @@ tonic-build = { version = "0.11.0", features = ["prost"] }
 tonic-reflection = "0.11.0"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.18", features = ["v4", "serde"] }
-validator = { version = "0.18.1", features = ["derive"] }
+validator = { version = "0.20.0", features = ["derive"] }
 wal = { git = "https://github.com/qdrant/wal.git", rev = "fad05934581585c18ff84712d6d4f5783b9b6a58" }
 zerocopy = { version = "0.8.26", features = ["derive"] }
 atomic_refcell = "0.1.13"
