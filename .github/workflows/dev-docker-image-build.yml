@@ -13,7 +13,7 @@ jobs:
     if: ${{ !github.event.client_payload.triggered }}
     runs-on: [self-hosted, linux, x64]
     steps:
-        - uses: actions/checkout@v4
+        - uses: actions/checkout@v5
           with:
             ref: ${{ github.ref.name }}
         - uses: ./.github/actions/branch-build-and-push
@@ -24,7 +24,7 @@ jobs:
     if: ${{ github.event.client_payload.triggered }}
     runs-on: [self-hosted, linux, x64]
     steps:
-        - uses: actions/checkout@v4
+        - uses: actions/checkout@v5
           with:
             ref: ${{ github.event.client_payload.version }}
         - uses: ./.github/actions/branch-build-and-push

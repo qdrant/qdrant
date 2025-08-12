@@ -21,7 +21,7 @@ jobs:
         run: git lfs install
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:

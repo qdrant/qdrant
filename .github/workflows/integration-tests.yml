@@ -18,7 +18,7 @@ jobs:
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -48,7 +48,7 @@ jobs:
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -88,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -123,7 +123,7 @@ jobs:
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: integration-tests
@@ -175,7 +175,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: integration-tests
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -229,7 +229,7 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
         run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           lfs: true  # Fetch LFS files automatically
       - uses: actions/setup-python@v5
