@@ -728,11 +728,6 @@ impl PayloadFieldIndex for MapIndex<str> {
         self.get_indexed_points()
     }
 
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load(&mut self) -> OperationResult<bool> {
-        Ok(true)
-    }
-
     fn cleanup(self) -> OperationResult<()> {
         self.wipe()
     }
@@ -879,11 +874,6 @@ impl PayloadFieldIndex for MapIndex<str> {
 impl PayloadFieldIndex for MapIndex<UuidIntType> {
     fn count_indexed_points(&self) -> usize {
         self.get_indexed_points()
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load(&mut self) -> OperationResult<bool> {
-        Ok(true)
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -1073,11 +1063,6 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
 impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     fn count_indexed_points(&self) -> usize {
         self.get_indexed_points()
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load(&mut self) -> OperationResult<bool> {
-        Ok(true)
     }
 
     fn cleanup(self) -> OperationResult<()> {

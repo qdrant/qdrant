@@ -882,11 +882,6 @@ where
         self.get_points_count()
     }
 
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load(&mut self) -> OperationResult<bool> {
-        Ok(true)
-    }
-
     fn cleanup(self) -> OperationResult<()> {
         match self {
             NumericIndexInner::Mutable(index) => index.wipe(),

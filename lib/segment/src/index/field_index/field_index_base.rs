@@ -40,10 +40,6 @@ pub trait PayloadFieldIndex {
     /// Return number of points with at least one value indexed in here
     fn count_indexed_points(&self) -> usize;
 
-    /// Load index from disk.
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load(&mut self) -> OperationResult<bool>;
-
     /// Remove db content or files of the current payload index
     fn cleanup(self) -> OperationResult<()>;
 
@@ -214,23 +210,6 @@ impl FieldIndex {
             FieldIndex::UuidIndex(payload_field_index) => payload_field_index.inner(),
             FieldIndex::UuidMapIndex(payload_field_index) => payload_field_index,
             FieldIndex::NullIndex(payload_field_index) => payload_field_index,
-        }
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    pub fn load(&mut self) -> OperationResult<bool> {
-        match self {
-            FieldIndex::IntMapIndex(payload_field_index) => payload_field_index.load(),
-            FieldIndex::KeywordIndex(payload_field_index) => payload_field_index.load(),
-            FieldIndex::GeoIndex(payload_field_index) => payload_field_index.load(),
-            FieldIndex::BoolIndex(payload_field_index) => payload_field_index.load(),
-            FieldIndex::FullTextIndex(payload_field_index) => payload_field_index.load(),
-            FieldIndex::UuidMapIndex(payload_field_index) => payload_field_index.load(),
-            FieldIndex::NullIndex(payload_field_index) => payload_field_index.load(),
-            FieldIndex::IntIndex(_)
-            | FieldIndex::DatetimeIndex(_)
-            | FieldIndex::FloatIndex(_)
-            | FieldIndex::UuidIndex(_) => Ok(true),
         }
     }
 
