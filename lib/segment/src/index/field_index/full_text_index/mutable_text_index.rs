@@ -43,27 +43,42 @@ pub(super) enum Storage {
 }
 
 impl MutableFullTextIndex {
-    /// Open mutable full text index from RocksDB storage
-    ///
-    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    /// Open and load mutable full text index from RocksDB storage
     #[cfg(feature = "rocksdb")]
     pub fn open_rocksdb(
         db_wrapper: DatabaseColumnScheduledDeleteWrapper,
         config: TextIndexParams,
-    ) -> Self {
-        let with_positions = config.phrase_matching == Some(true);
+        create_if_missing: bool,
+    ) -> OperationResult<Option<Self>> {
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
-        Self {
-            inverted_index: MutableInvertedIndex::new(with_positions),
+
+        if !db_wrapper.has_column_family()? {
+            if create_if_missing {
+                db_wrapper.recreate_column_family()?;
+            } else {
+                // Column family doesn't exist, cannot load
+                return Ok(None);
+            }
+        };
+
+        let phrase_matching = config.phrase_matching.unwrap_or_default();
+        let db = db_wrapper.clone();
+        let db = db.lock_db();
+        let iter = db.iter()?.map(|(key, value)| {
+            let idx = FullTextIndex::restore_key(&key);
+            let str_tokens = FullTextIndex::deserialize_document(&value)?;
+            Ok((idx, str_tokens))
+        });
+
+        Ok(Some(Self {
+            inverted_index: MutableInvertedIndex::build_index(iter, phrase_matching)?,
             config,
             storage: Storage::RocksDb(db_wrapper),
             tokenizer,
-        }
+        }))
     }
 
-    /// Open mutable full text index from Gridstore storage
-    ///
-    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    /// Open and load mutable full text index from Gridstore storage
     ///
     /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
     /// not exist. If false and files don't exist, the load function will indicate nothing could be
@@ -72,98 +87,35 @@ impl MutableFullTextIndex {
         path: PathBuf,
         config: TextIndexParams,
         create_if_missing: bool,
-    ) -> OperationResult<Self> {
+    ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
-            Some(Arc::new(RwLock::new(
-                Gridstore::open_or_create(path, GRIDSTORE_OPTIONS).map_err(|err| {
-                    OperationError::service_error(format!(
-                        "failed to open mutable full text index on gridstore: {err}"
-                    ))
-                })?,
-            )))
+            Gridstore::open_or_create(path, GRIDSTORE_OPTIONS).map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to open mutable full text index on gridstore: {err}"
+                ))
+            })?
         } else if path.exists() {
-            Some(Arc::new(RwLock::new(Gridstore::open(path).map_err(
-                |err| {
-                    OperationError::service_error(format!(
-                        "failed to open mutable full text index on gridstore: {err}"
-                    ))
-                },
-            )?)))
+            Gridstore::open(path).map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to open mutable full text index on gridstore: {err}"
+                ))
+            })?
         } else {
-            None
+            // Files don't exist, cannot load
+            return Ok(None);
         };
 
         let phrase_matching = config.phrase_matching.unwrap_or_default();
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
-        Ok(Self {
-            inverted_index: MutableInvertedIndex::new(phrase_matching),
-            config,
-            storage: Storage::Gridstore(store),
-            tokenizer,
-        })
-    }
-
-    /// Load storage
-    ///
-    /// Loads in-memory index from backing RocksDB or Gridstore storage.
-    pub(super) fn load(&mut self) -> OperationResult<bool> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Gridstore(Some(_)) => self.load_gridstore(),
-            Storage::Gridstore(None) => Ok(false),
-        }
-    }
-
-    /// Load from RocksDB storage
-    ///
-    /// Loads in-memory index from RocksDB storage.
-    #[cfg(feature = "rocksdb")]
-    fn load_rocksdb(&mut self) -> OperationResult<bool> {
-        let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from RocksDB, using different storage backend",
-            ));
-        };
-
-        if !db_wrapper.has_column_family()? {
-            return Ok(false);
-        };
-
-        let db = db_wrapper.lock_db();
-        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
-        let iter = db.iter()?.map(|(key, value)| {
-            let idx = FullTextIndex::restore_key(&key);
-            let str_tokens = FullTextIndex::deserialize_document(&value)?;
-            Ok((idx, str_tokens))
-        });
-
-        self.inverted_index = MutableInvertedIndex::build_index(iter, phrase_matching)?;
-
-        Ok(true)
-    }
-
-    /// Load from Gridstore storage
-    ///
-    /// Loads in-memory index from Gridstore storage.
-    fn load_gridstore(&mut self) -> OperationResult<bool> {
-        let Storage::Gridstore(Some(store)) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from Gridstore, using different storage backend",
-            ));
-        };
-
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
-        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
         let mut builder = MutableInvertedIndexBuilder::new(phrase_matching);
 
         store
-            .read()
             .iter::<_, OperationError>(
-                |idx, value| {
+                |idx, value: &Vec<u8>| {
                     let str_tokens = FullTextIndex::deserialize_document(value)?;
                     builder.add(idx, str_tokens);
                     Ok(true)
@@ -175,7 +127,51 @@ impl MutableFullTextIndex {
                     "Failed to load mutable full text index from gridstore: {err}"
                 ))
             })?;
-        self.inverted_index = builder.build();
+
+        Ok(Some(Self {
+            inverted_index: builder.build(),
+            config,
+            storage: Storage::Gridstore(Some(Arc::new(RwLock::new(store)))),
+            tokenizer,
+        }))
+    }
+
+    /// Load storage
+    ///
+    /// Loads in-memory index from backing RocksDB or Gridstore storage.
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    pub(super) fn load(&self) -> OperationResult<bool> {
+        match self.storage {
+            #[cfg(feature = "rocksdb")]
+            Storage::RocksDb(_) => self.load_rocksdb(),
+            Storage::Gridstore(Some(_)) => self.load_gridstore(),
+            Storage::Gridstore(None) => Ok(false),
+        }
+    }
+
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    #[cfg(feature = "rocksdb")]
+    fn load_rocksdb(&self) -> OperationResult<bool> {
+        let Storage::RocksDb(db_wrapper) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from RocksDB, using different storage backend",
+            ));
+        };
+
+        // Note: this structure is now loaded on open
+
+        db_wrapper.has_column_family()
+    }
+
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
+    fn load_gridstore(&self) -> OperationResult<bool> {
+        let Storage::Gridstore(Some(_)) = &self.storage else {
+            return Err(OperationError::service_error(
+                "Failed to load index from Gridstore, using different storage backend",
+            ));
+        };
+
+        // Note: this structure is now loaded on open
 
         Ok(true)
     }
@@ -482,6 +478,7 @@ mod tests {
         {
             let mut index =
                 FullTextIndex::new_gridstore(temp_dir.path().join("test_db"), config.clone(), true)
+                    .unwrap()
                     .unwrap();
             let loaded = index.load().unwrap();
             assert!(loaded);
@@ -553,6 +550,7 @@ mod tests {
         {
             let mut index =
                 FullTextIndex::new_gridstore(temp_dir.path().join("test_db"), config, true)
+                    .unwrap()
                     .unwrap();
             let loaded = index.load().unwrap();
             assert!(loaded);

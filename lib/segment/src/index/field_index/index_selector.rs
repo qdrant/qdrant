@@ -122,11 +122,9 @@ impl IndexSelector<'_> {
             }
 
             (PayloadIndexType::FullTextIndex, PayloadSchemaParams::Text(params)) => {
-                FieldIndex::FullTextIndex(self.text_new(
-                    field,
-                    params.clone(),
-                    create_if_missing,
-                )?)
+                return Ok(self
+                    .text_new(field, params.clone(), create_if_missing)?
+                    .map(FieldIndex::FullTextIndex));
             }
 
             (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => {
@@ -205,9 +203,9 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Geo(_) => Some(vec![FieldIndex::GeoIndex(
                 self.geo_new(field, create_if_missing)?,
             )]),
-            PayloadSchemaParams::Text(text_index_params) => Some(vec![FieldIndex::FullTextIndex(
-                self.text_new(field, text_index_params.clone(), create_if_missing)?,
-            )]),
+            PayloadSchemaParams::Text(text_index_params) => self
+                .text_new(field, text_index_params.clone(), create_if_missing)?
+                .map(|index| vec![FieldIndex::FullTextIndex(index)]),
             PayloadSchemaParams::Bool(_) => Some(vec![self.bool_new(field, create_if_missing)?]),
             PayloadSchemaParams::Datetime(_) => self
                 .numeric_new(field, create_if_missing)?
@@ -285,7 +283,7 @@ impl IndexSelector<'_> {
                 )]
             }
             PayloadSchemaParams::Text(text_index_params) => {
-                vec![self.text_builder(field, text_index_params.clone())]
+                vec![self.text_builder(field, text_index_params.clone())?]
             }
             PayloadSchemaParams::Bool(_) => {
                 vec![self.bool_builder(field)?]
@@ -488,7 +486,7 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         config: TextIndexParams,
         create_if_missing: bool,
-    ) -> OperationResult<FullTextIndex> {
+    ) -> OperationResult<Option<FullTextIndex>> {
         Ok(match self {
             #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
@@ -497,7 +495,8 @@ impl IndexSelector<'_> {
                     config,
                     &field.to_string(),
                     *is_appendable,
-                )
+                    create_if_missing,
+                )?
             }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 FullTextIndex::new_mmap(text_dir(dir, field), config, *is_on_disk)?
@@ -508,8 +507,12 @@ impl IndexSelector<'_> {
         })
     }
 
-    fn text_builder(&self, field: &JsonPath, config: TextIndexParams) -> FieldIndexBuilder {
-        match self {
+    fn text_builder(
+        &self,
+        field: &JsonPath,
+        config: TextIndexParams,
+    ) -> OperationResult<FieldIndexBuilder> {
+        Ok(match self {
             #[cfg(feature = "rocksdb")]
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 FieldIndexBuilder::FullTextIndex(FullTextIndex::builder_rocksdb(
@@ -517,7 +520,7 @@ impl IndexSelector<'_> {
                     config,
                     &field.to_string(),
                     *is_appendable,
-                ))
+                )?)
             }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 FieldIndexBuilder::FullTextMmapIndex(FullTextIndex::builder_mmap(
@@ -532,7 +535,7 @@ impl IndexSelector<'_> {
                     config,
                 ))
             }
-        }
+        })
     }
 
     fn bool_builder(&self, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
