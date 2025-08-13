@@ -79,32 +79,18 @@ impl ShardKeyMapping {
 
 impl From<SerdeHelper> for ShardKeyMapping {
     fn from(helper: SerdeHelper) -> Self {
-        let shard_key_to_shard_ids = match helper {
-            SerdeHelper::New(key_ids_pairs) => key_ids_pairs
-                .into_iter()
-                .map(KeyIdsPair::into_parts)
-                .collect(),
-        };
-
         Self {
-            shard_key_to_shard_ids,
+            shard_key_to_shard_ids: helper.0.into_iter().map(KeyIdsPair::into_parts).collect(),
             was_old_format: false,
         }
     }
 }
 
-/// Helper structure for persisting shard key mapping
-///
-/// The original format of persisting shard key mappings as hash map is broken. It forgets type
-/// information for the shard key, which resulted in shard key numbers to be converted into
-/// strings.
+/// Helper structure for persisting shard key mapping in safe format
 ///
 /// Bug: <https://github.com/qdrant/qdrant/pull/5838>
 #[derive(Deserialize, Serialize)]
-#[serde(untagged)]
-enum SerdeHelper {
-    New(Vec<KeyIdsPair>),
-}
+struct SerdeHelper(Vec<KeyIdsPair>);
 
 impl From<ShardKeyMapping> for SerdeHelper {
     fn from(mapping: ShardKeyMapping) -> Self {
@@ -113,7 +99,7 @@ impl From<ShardKeyMapping> for SerdeHelper {
             .into_iter()
             .map(KeyIdsPair::from)
             .collect();
-        Self::New(key_ids_pairs)
+        Self(key_ids_pairs)
     }
 }
 
