@@ -75,7 +75,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     // save index config to disk
     let index_config = SparseIndexConfig::new(
         Some(10_000),
-        SparseIndexType::ImmutableRam,
+        SparseIndexType::MutableRam,
         Some(VectorStorageDatatype::Float32),
     );
 
