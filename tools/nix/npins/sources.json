@@ -8,6 +8,7 @@
         "repo": "fenix"
       },
       "branch": "main",
+      "submodules": false,
       "revision": "34e07cd9d91ece6b1c69ea3c7ae7f9cdeb19448f",
       "url": "https://github.com/nix-community/fenix/archive/34e07cd9d91ece6b1c69ea3c7ae7f9cdeb19448f.tar.gz",
       "hash": "1l2m7a64j4b61x3j3zwmqi02qmypkv9rf5wlfrgq4cjyq7qajd2q"
@@ -26,10 +27,11 @@
         "repo": "poetry2nix"
       },
       "branch": "master",
+      "submodules": false,
       "revision": "ce2369db77f45688172384bbeb962bc6c2ea6f94",
       "url": "https://github.com/nix-community/poetry2nix/archive/ce2369db77f45688172384bbeb962bc6c2ea6f94.tar.gz",
       "hash": "0xq52gq2920xnv7n8rchy3myxbijfpap8z0sd572ifla9dnpqzvi"
     }
   },
-  "version": 3
+  "version": 5
 }

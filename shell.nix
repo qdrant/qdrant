@@ -8,42 +8,12 @@
 #
 # Usage: Run `nix-shell` in the root directory of this repository. You will then
 # be dropped into a new shell with all programs and dependencies available.
-#
-# To update dependencies, run ./tools/nix/update.py.
 
 let
   sources = import ./tools/nix/npins;
   fenix = import sources.fenix { inherit pkgs; };
   pkgs = import sources.nixpkgs { };
   poetry2nix = import sources.poetry2nix { inherit pkgs; };
-
-  versions = builtins.fromJSON (builtins.readFile ./tools/nix/versions.json);
-
-  rust-combined =
-    let
-      stable = fenix.toolchainOf {
-        channel = versions.stable.version;
-        sha256 = versions.stable.sha256;
-      };
-      nightly = fenix.toolchainOf {
-        channel = "nightly";
-        date = versions.nightly.date;
-        sha256 = versions.nightly.sha256;
-      };
-    in
-    fenix.combine [
-      nightly.rustfmt # should be the first
-      stable.rust
-      stable.rust-analyzer
-      stable.rust-src
-    ];
-
-  # A workaround to allow running `cargo +nightly fmt`
-  cargo-wrapper = pkgs.writeScriptBin "cargo" ''
-    #!${pkgs.stdenv.shell}
-    [ "$1" != "+nightly" ] || [ "$2" != "fmt" ] || shift
-    exec ${rust-combined}/bin/cargo "$@"
-  '';
 
   # Python dependencies used in tests
   python-env = poetry2nix.mkPoetryEnv {
@@ -61,8 +31,7 @@ in
 mkShell {
   buildInputs = [
     # Rust toolchain
-    cargo-wrapper # should be before rust-combined
-    rust-combined
+    pkgs.rustup
 
     # Crates' build dependencies
     pkgs.cmake # for shaderc-sys
