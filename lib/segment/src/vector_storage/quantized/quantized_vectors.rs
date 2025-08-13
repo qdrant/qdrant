@@ -16,6 +16,7 @@ use super::quantized_multivector_storage::{
     QuantizedMultivectorStorage, create_offsets_file_from_iter,
 };
 use super::quantized_scorer_builder::QuantizedScorerBuilder;
+use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
@@ -1225,5 +1226,26 @@ impl QuantizedVectors {
             clear_disk_cache(&file)?;
         }
         Ok(())
+    }
+
+    pub fn flusher(&self) -> Flusher {
+        let flusher = match &self.storage_impl {
+            QuantizedVectorStorage::ScalarRam(q) => q.flusher(),
+            QuantizedVectorStorage::ScalarMmap(q) => q.flusher(),
+            QuantizedVectorStorage::PQRam(q) => q.flusher(),
+            QuantizedVectorStorage::PQMmap(q) => q.flusher(),
+            QuantizedVectorStorage::BinaryRam(q) => q.flusher(),
+            QuantizedVectorStorage::BinaryMmap(q) => q.flusher(),
+            QuantizedVectorStorage::ScalarRamMulti(q) => q.flusher(),
+            QuantizedVectorStorage::ScalarMmapMulti(q) => q.flusher(),
+            QuantizedVectorStorage::PQRamMulti(q) => q.flusher(),
+            QuantizedVectorStorage::PQMmapMulti(q) => q.flusher(),
+            QuantizedVectorStorage::BinaryRamMulti(q) => q.flusher(),
+            QuantizedVectorStorage::BinaryMmapMulti(q) => q.flusher(),
+        };
+        Box::new(move || {
+            flusher()?;
+            Ok(())
+        })
     }
 }

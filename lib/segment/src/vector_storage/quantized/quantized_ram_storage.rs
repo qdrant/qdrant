@@ -4,6 +4,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use memory::fadvise::OneshotFile;
+use memory::mmap_type::MmapFlusher;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::vector_utils::TrySetCapacityExact;
@@ -66,6 +67,10 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
 
     fn vectors_count(&self, _quantized_vector_size: usize) -> usize {
         self.vectors.len()
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
     }
 }
 
