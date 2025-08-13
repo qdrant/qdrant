@@ -6,6 +6,9 @@ use super::tools::is_length_zero_or_normalized;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 
 #[target_feature(enable = "avx")]
+#[target_feature(enable = "sse")]
+#[target_feature(enable = "sse3")]
+#[target_feature(enable = "sse4.1")]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe fn hsum256_ps_avx(x: __m256) -> f32 {
     let lr_sum: __m128 = _mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x));
