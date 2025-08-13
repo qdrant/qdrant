@@ -3,6 +3,7 @@ use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::tbool::False;
 use common::types::{PointOffsetType, ScoreType};
 use memmap2::MmapMut;
 use memory::mmap_type::MmapSlice;
@@ -352,6 +353,17 @@ where
 
     fn vectors_count(&self) -> usize {
         self.offsets.len()
+    }
+
+    type SupportsBytes = False;
+    fn score_bytes(
+        &self,
+        enabled: Self::SupportsBytes,
+        _: &Self::EncodedQuery,
+        _: &[u8],
+        _: &HardwareCounterCell,
+    ) -> f32 {
+        match enabled {}
     }
 }
 

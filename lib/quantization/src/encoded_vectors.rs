@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::tbool::TBool;
 use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
@@ -63,6 +64,15 @@ pub trait EncodedVectors: Sized {
     ) -> std::io::Result<()>;
 
     fn vectors_count(&self) -> usize;
+
+    type SupportsBytes: TBool;
+    fn score_bytes(
+        &self,
+        enabled: Self::SupportsBytes,
+        query: &Self::EncodedQuery,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> f32;
 }
 
 pub trait EncodedVectorsBytes: EncodedVectors {
