@@ -19,7 +19,7 @@ use super::Encodable;
 use super::mutable_numeric_index::InMemoryNumericIndex;
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::mmap_point_to_values::{MmapPointToValues, MmapValue};
 
@@ -153,24 +153,20 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             }
         }
 
-        Self::open(path, is_on_disk)
+        Self::open(path, is_on_disk)?.ok_or_else(|| {
+            OperationError::service_error("Failed to open MmapNumericIndex after building it")
+        })
     }
 
-    pub fn open(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
+    /// Open and load mmap numeric index from the given path
+    pub fn open(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
         let pairs_path = path.join(PAIRS_PATH);
         let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
 
         // If config doesn't exist, assume the index doesn't exist on disk
         if !config_path.is_file() {
-            return Ok(Self {
-                path: path.to_path_buf(),
-                storage: None,
-                histogram: Histogram::default(),
-                deleted_count: 0,
-                max_values_per_point: 0,
-                is_on_disk,
-            });
+            return Ok(None);
         }
 
         let histogram = Histogram::<T>::load(path)?;
@@ -188,7 +184,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         };
         let point_to_values = MmapPointToValues::open(path, do_populate)?;
 
-        Ok(Self {
+        Ok(Some(Self {
             path: path.to_path_buf(),
             storage: Some(Storage {
                 pairs: map,
@@ -199,10 +195,12 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             deleted_count,
             max_values_per_point: config.max_values_per_point,
             is_on_disk,
-        })
+        }))
     }
 
     pub fn load(&self) -> OperationResult<bool> {
+        // Note: this structure is now loaded on open
+
         let is_loaded = self.storage.is_some();
         Ok(is_loaded)
     }

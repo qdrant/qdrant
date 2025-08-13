@@ -180,61 +180,70 @@ impl StructPayloadIndex {
         create_if_missing: bool,
     ) -> OperationResult<(Vec<FieldIndex>, bool)> {
         let total_point_count = self.id_tracker.borrow().total_point_count();
+        let mut rebuild = false;
         let mut is_dirty = false;
 
         let mut indexes = if payload_schema.types.is_empty() {
-            let mut indexes = self.selector(&payload_schema.schema).new_index(
+            let indexes = self.selector(&payload_schema.schema).new_index(
                 field,
                 &payload_schema.schema,
                 create_if_missing,
             )?;
 
-            debug_assert!(
-                !indexes
-                    .iter()
-                    .any(|index| matches!(index, FieldIndex::NullIndex(_))),
-                "index selector is not expected to provide null index",
-            );
+            if let Some(mut indexes) = indexes {
+                debug_assert!(
+                    !indexes
+                        .iter()
+                        .any(|index| matches!(index, FieldIndex::NullIndex(_))),
+                    "index selector is not expected to provide null index",
+                );
 
-            // Special null index complements every index
-            if let Some(null_index) = IndexSelector::new_null_index(
-                &self.path,
-                field,
-                total_point_count,
-                create_if_missing,
-            )? {
-                // TODO: This means that null index will not be built if it is not loaded here.
-                //       Maybe we should set `rebuild` to true to trigger index building.
+                // Special null index complements every index.
+                let null_index = IndexSelector::new_null_index(
+                    &self.path,
+                    field,
+                    total_point_count,
+                    create_if_missing,
+                )?;
+
                 indexes.push(null_index);
+
+                // Persist exact payload index types
+                is_dirty = true;
+                payload_schema.types = indexes.iter().map(|i| i.get_full_index_type()).collect();
+
+                indexes
+            } else {
+                rebuild = true;
+                vec![]
             }
-
-            // Persist exact payload index types
-            is_dirty = true;
-            payload_schema.types = indexes.iter().map(|i| i.get_full_index_type()).collect();
-
-            indexes
         } else {
             payload_schema
                 .types
                 .iter()
-                .filter_map(|index| {
-                    self.selector_with_type(index)
-                        .and_then(|selector| {
-                            selector.new_index_with_type(
-                                field,
-                                &payload_schema.schema,
-                                index,
-                                &self.path,
-                                total_point_count,
-                                create_if_missing,
-                            )
-                        })
-                        .transpose()
+                // Load each index
+                .map(|index| {
+                    self.selector_with_type(index).and_then(|selector| {
+                        selector.new_index_with_type(
+                            field,
+                            &payload_schema.schema,
+                            index,
+                            &self.path,
+                            total_point_count,
+                            create_if_missing,
+                        )
+                    })
                 })
+                // Interrupt loading indices if one fails to load
+                // Set rebuild flag if any index fails to load
+                .take_while(|index| {
+                    let is_loaded = index.as_ref().is_ok_and(|index| index.is_some());
+                    rebuild |= !is_loaded;
+                    is_loaded
+                })
+                .filter_map(|index| index.transpose())
                 .collect::<OperationResult<Vec<_>>>()?
         };
-
-        let mut rebuild = false;
 
         // Actively migrate away from RocksDB indices
         // Naively implemented by just rebuilding the indices from scratch
