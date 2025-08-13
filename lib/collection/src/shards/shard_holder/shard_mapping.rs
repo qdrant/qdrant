@@ -78,8 +78,6 @@ impl From<SerdeHelper> for ShardKeyMapping {
                 .into_iter()
                 .map(KeyIdsPair::into_parts)
                 .collect(),
-
-            SerdeHelper::Old(key_ids_map) => key_ids_map,
         };
 
         Self {
@@ -99,8 +97,6 @@ impl From<SerdeHelper> for ShardKeyMapping {
 #[serde(untagged)]
 enum SerdeHelper {
     New(Vec<KeyIdsPair>),
-    // TODO(1.15): remove this old format, deployment should exclusively be using new format
-    Old(HashMap<ShardKey, HashSet<ShardId>>),
 }
 
 impl From<ShardKeyMapping> for SerdeHelper {
