@@ -7,3 +7,23 @@ authors = [
 ]
 license = "Apache-2.0"
 edition = "2024"
+
+[dependencies]
+api = { path = "../api" }
+common = { path = "../common/common" }
+segment = { path = "../segment" }
+sparse = { path = "../sparse" }
+
+ahash = { workspace = true }
+itertools = { workspace = true }
+rand = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+strum = { workspace = true }
+tonic = { workspace = true }
+validator = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_cbor = { workspace = true }
+serde_json = { workspace = true }
