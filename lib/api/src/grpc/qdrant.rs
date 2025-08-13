@@ -287,10 +287,12 @@ pub struct HnswConfigDiff {
     #[prost(uint64, optional, tag = "2")]
     #[validate(range(min = 4))]
     pub ef_construct: ::core::option::Option<u64>,
-    /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
-    /// If the payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
-    /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
-    /// Note: 1 Kb = 1 vector of size 256
+    /// Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search.
+    /// This measures the total size of vectors being queried against.
+    /// When the maximum estimated amount of points that a condition satisfies is smaller than
+    /// `full_scan_threshold`, the query planner will use full-scan search instead of HNSW index
+    /// traversal for better performance.
+    /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "3")]
     pub full_scan_threshold: ::core::option::Option<u64>,
     /// Number of parallel threads used for background index building.
