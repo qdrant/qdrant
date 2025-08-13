@@ -269,7 +269,6 @@ impl Bm25Config {
     }
 }
 
-
 /// Option variants for text documents.
 /// Ether general-purpose options or BM25-specific options.
 /// BM25-specific will only take effect if the `qdrant/bm25` is specified as a model.
