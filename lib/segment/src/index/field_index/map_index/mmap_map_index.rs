@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::mmap_point_to_values::MmapPointToValues;
 
 const DELETED_PATH: &str = "deleted.bin";
@@ -52,20 +52,15 @@ struct MmapMapIndexConfig {
 }
 
 impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
-    pub fn open(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
+    /// Open and load mmap map index from the given path
+    pub fn open(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
         let hashmap_path = path.join(HASHMAP_PATH);
         let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
 
         // If config doesn't exist, assume the index doesn't exist on disk
         if !config_path.is_file() {
-            return Ok(Self {
-                path: path.to_path_buf(),
-                storage: None,
-                deleted_count: 0,
-                total_key_value_pairs: 0,
-                is_on_disk,
-            });
+            return Ok(None);
         }
 
         let config: MmapMapIndexConfig = read_json(&config_path)?;
@@ -79,7 +74,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
 
-        Ok(Self {
+        Ok(Some(Self {
             path: path.to_path_buf(),
             storage: Some(Storage {
                 value_to_points: hashmap,
@@ -89,10 +84,13 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             deleted_count,
             total_key_value_pairs: config.total_key_value_pairs,
             is_on_disk,
-        })
+        }))
     }
 
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
     pub fn load(&self) -> OperationResult<bool> {
+        // Note: this structure is now loaded on open
+
         let is_loaded = self.storage.is_some();
         Ok(is_loaded)
     }
@@ -151,7 +149,9 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             }
         }
 
-        Self::open(path, is_on_disk)
+        Self::open(path, is_on_disk)?.ok_or_else(|| {
+            OperationError::service_error("Failed to open MmapMapIndex after building it")
+        })
     }
 
     pub fn flusher(&self) -> Flusher {
