@@ -1,3 +1,10 @@
+# -> Warning! <-
+#
+# This config is only used in development profiles (debug/perf/..)
+# Always make sure implementations relying on configurations here also work on release.
+# Also don't forget to copy temporary configurations into config/config.yaml if they need
+# default values when released.
+
 log_level: DEBUG
 
 feature_flags:
