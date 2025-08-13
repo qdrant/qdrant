@@ -307,12 +307,13 @@ required-features = ["service_debug"]
 [workspace]
 members = [
     "lib/api",
-    "lib/gridstore",
     "lib/collection",
     "lib/common/*",
+    "lib/gridstore",
     "lib/macros",
     "lib/posting_list",
     "lib/segment",
+    "lib/shard",
     "lib/sparse",
     "lib/storage",
 ]
