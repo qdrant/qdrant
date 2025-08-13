@@ -79,23 +79,16 @@ impl ShardKeyMapping {
 
 impl From<SerdeHelper> for ShardKeyMapping {
     fn from(helper: SerdeHelper) -> Self {
-        let mut was_old_format = false;
-
         let shard_key_to_shard_ids = match helper {
             SerdeHelper::New(key_ids_pairs) => key_ids_pairs
                 .into_iter()
                 .map(KeyIdsPair::into_parts)
                 .collect(),
-
-            SerdeHelper::Old(key_ids_map) => {
-                was_old_format = true;
-                key_ids_map
-            }
         };
 
         Self {
             shard_key_to_shard_ids,
-            was_old_format,
+            was_old_format: false,
         }
     }
 }
@@ -111,8 +104,6 @@ impl From<SerdeHelper> for ShardKeyMapping {
 #[serde(untagged)]
 enum SerdeHelper {
     New(Vec<KeyIdsPair>),
-    // TODO(1.15): remove this old format, deployment should exclusively be using new format
-    Old(HashMap<ShardKey, HashSet<ShardId>>),
 }
 
 impl From<ShardKeyMapping> for SerdeHelper {
