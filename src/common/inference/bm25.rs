@@ -3,73 +3,17 @@ use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use api::rest::{Bm25Config, TextPreprocessingConfig};
 use collection::operations::point_ops::VectorPersisted;
 use itertools::Itertools;
 use murmur3::murmur3_32_of_slice;
-use segment::data_types::index::{Language, StemmingAlgorithm, StopwordsInterface, TokenizerType};
+use segment::data_types::index::{Language, StopwordsInterface};
 use segment::index::field_index::full_text_index::stop_words::StopwordsFilter;
 use segment::index::field_index::full_text_index::tokenizers::{
     Stemmer, Tokenizer, TokensProcessor,
 };
-use serde::{Deserialize, Serialize};
 
 const DEFAULT_LANGUAGE: &str = "english";
-
-/// Configuration of the local bm25 models.
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct Bm25Config {
-    #[serde(default = "default_k")]
-    pub k: f64,
-    #[serde(default = "default_b")]
-    pub b: f64,
-    #[serde(default = "default_avg_len")]
-    pub avg_len: f64,
-    #[serde(default)]
-    pub tokenizer: TokenizerType,
-    #[serde(default, flatten)]
-    pub text_preprocessing_config: TextPreprocessingConfig,
-}
-
-/// Bm25 tokenizer configurations.
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct TextPreprocessingConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lowercase: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stopwords: Option<StopwordsInterface>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stemmer: Option<StemmingAlgorithm>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min_token_len: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_token_len: Option<usize>,
-}
-
-const fn default_k() -> f64 {
-    1.2
-}
-
-const fn default_b() -> f64 {
-    0.75
-}
-
-const fn default_avg_len() -> f64 {
-    256.0
-}
-
-impl Default for Bm25Config {
-    fn default() -> Self {
-        Self {
-            k: default_k(),
-            b: default_b(),
-            avg_len: default_avg_len(),
-            tokenizer: Default::default(),
-            text_preprocessing_config: Default::default(),
-        }
-    }
-}
 
 /// Bm25 implementation
 #[derive(Debug)]
@@ -81,7 +25,7 @@ pub struct Bm25 {
 impl Bm25 {
     pub fn new(mut config: Bm25Config) -> Self {
         let tokenizer_conf = std::mem::take(&mut config.text_preprocessing_config);
-        let tokens_processor = TokensProcessor::from(tokenizer_conf);
+        let tokens_processor = new_token_processor_from_config(tokenizer_conf);
         let tokenizer = Tokenizer::new(config.tokenizer, tokens_processor);
         Self { config, tokenizer }
     }
@@ -134,9 +78,9 @@ impl Bm25 {
             .iter()
             .for_each(|token| *counter.entry(token.as_ref()).or_insert(0) += 1);
 
-        let k = self.config.k;
-        let b = self.config.b;
-        let avg_len = self.config.avg_len;
+        let k = self.config.k.into_inner();
+        let b = self.config.b.into_inner();
+        let avg_len = self.config.avg_len.into_inner();
 
         for (token, count) in &counter {
             let token_id = Self::compute_token_id(token);
@@ -154,42 +98,40 @@ impl Bm25 {
     }
 }
 
-impl From<TextPreprocessingConfig> for TokensProcessor {
-    fn from(value: TextPreprocessingConfig) -> Self {
-        let TextPreprocessingConfig {
-            language,
-            lowercase,
-            stopwords,
-            stemmer,
-            min_token_len,
-            max_token_len,
-        } = value;
+fn new_token_processor_from_config(value: TextPreprocessingConfig) -> TokensProcessor {
+    let TextPreprocessingConfig {
+        language,
+        lowercase,
+        stopwords,
+        stemmer,
+        min_token_len,
+        max_token_len,
+    } = value;
 
-        let lowercase = lowercase.unwrap_or(true);
+    let lowercase = lowercase.unwrap_or(true);
 
-        let language = language.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string());
+    let language = language.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string());
 
-        let stemmer = match stemmer {
-            None => Stemmer::try_default_from_language(&language),
-            Some(stemmer_algorithm) => Some(Stemmer::from_algorithm(&stemmer_algorithm)),
-        };
+    let stemmer = match stemmer {
+        None => Stemmer::try_default_from_language(&language),
+        Some(stemmer_algorithm) => Some(Stemmer::from_algorithm(&stemmer_algorithm)),
+    };
 
-        let stopwords_config = match stopwords {
-            None => {
-                // Try to create from the language
-                Language::from_str(&language)
-                    .ok()
-                    .map(StopwordsInterface::Language)
-            }
-            Some(stopwords_interface) => Some(stopwords_interface),
-        };
+    let stopwords_config = match stopwords {
+        None => {
+            // Try to create from the language
+            Language::from_str(&language)
+                .ok()
+                .map(StopwordsInterface::Language)
+        }
+        Some(stopwords_interface) => Some(stopwords_interface),
+    };
 
-        TokensProcessor::new(
-            lowercase,
-            Arc::new(StopwordsFilter::new(&stopwords_config, lowercase)),
-            stemmer,
-            min_token_len,
-            max_token_len,
-        )
-    }
+    TokensProcessor::new(
+        lowercase,
+        Arc::new(StopwordsFilter::new(&stopwords_config, lowercase)),
+        stemmer,
+        min_token_len,
+        max_token_len,
+    )
 }

@@ -30,6 +30,7 @@ thiserror = { workspace = true }
 parking_lot = { workspace = true }
 validator = { workspace = true }
 itertools = { workspace = true }
+ordered-float = { workspace = true }
 
 common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
