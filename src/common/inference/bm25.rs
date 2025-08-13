@@ -1,16 +1,19 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use collection::operations::point_ops::VectorPersisted;
 use itertools::Itertools;
 use murmur3::murmur3_32_of_slice;
-use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
+use segment::data_types::index::{Language, StemmingAlgorithm, StopwordsInterface, TokenizerType};
 use segment::index::field_index::full_text_index::stop_words::StopwordsFilter;
 use segment::index::field_index::full_text_index::tokenizers::{
     Stemmer, Tokenizer, TokensProcessor,
 };
 use serde::{Deserialize, Serialize};
+
+const DEFAULT_LANGUAGE: &str = "english";
 
 /// Configuration of the local bm25 models.
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -24,19 +27,23 @@ pub struct Bm25Config {
     #[serde(default)]
     pub tokenizer: TokenizerType,
     #[serde(default, flatten)]
-    pub text_preprocessing_config: Option<TextPreprocessingConfig>,
+    pub text_preprocessing_config: TextPreprocessingConfig,
 }
 
 /// Bm25 tokenizer configurations.
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct TextPreprocessingConfig {
-    #[serde(default)]
-    pub lowercase: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stopwords_filter: Option<StopwordsInterface>,
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lowercase: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopwords: Option<StopwordsInterface>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stemmer: Option<StemmingAlgorithm>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_token_len: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_token_len: Option<usize>,
 }
 
@@ -74,7 +81,7 @@ pub struct Bm25 {
 impl Bm25 {
     pub fn new(mut config: Bm25Config) -> Self {
         let tokenizer_conf = std::mem::take(&mut config.text_preprocessing_config);
-        let tokens_processor = TokensProcessor::from(tokenizer_conf.unwrap_or_default());
+        let tokens_processor = TokensProcessor::from(tokenizer_conf);
         let tokenizer = Tokenizer::new(config.tokenizer, tokens_processor);
         Self { config, tokenizer }
     }
@@ -149,15 +156,40 @@ impl Bm25 {
 
 impl From<TextPreprocessingConfig> for TokensProcessor {
     fn from(value: TextPreprocessingConfig) -> Self {
+        let TextPreprocessingConfig {
+            language,
+            lowercase,
+            stopwords,
+            stemmer,
+            min_token_len,
+            max_token_len,
+        } = value;
+
+        let lowercase = lowercase.unwrap_or(true);
+
+        let language = language.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string());
+
+        let stemmer = match stemmer {
+            None => Stemmer::try_default_from_language(&language),
+            Some(stemmer_algorithm) => Some(Stemmer::from_algorithm(&stemmer_algorithm)),
+        };
+
+        let stopwords_config = match stopwords {
+            None => {
+                // Try to create from the language
+                Language::from_str(&language)
+                    .ok()
+                    .map(StopwordsInterface::Language)
+            }
+            Some(stopwords_interface) => Some(stopwords_interface),
+        };
+
         TokensProcessor::new(
-            value.lowercase,
-            Arc::new(StopwordsFilter::new(
-                &value.stopwords_filter,
-                value.lowercase,
-            )),
-            value.stemmer.map(|i| Stemmer::from_algorithm(&i)),
-            value.min_token_len,
-            value.max_token_len,
+            lowercase,
+            Arc::new(StopwordsFilter::new(&stopwords_config, lowercase)),
+            stemmer,
+            min_token_len,
+            max_token_len,
         )
     }
 }
