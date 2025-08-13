@@ -6,13 +6,25 @@ use super::tools::is_length_zero_or_normalized;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 
 #[target_feature(enable = "avx")]
-#[target_feature(enable = "fma")]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe fn hsum256_ps_avx(x: __m256) -> f32 {
-    let x128: __m128 = _mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x));
-    let x64: __m128 = _mm_add_ps(x128, _mm_movehl_ps(x128, x128));
-    let x32: __m128 = _mm_add_ss(x64, _mm_shuffle_ps(x64, x64, 0x55));
-    _mm_cvtss_f32(x32)
+    let lr_sum: __m128 = _mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x));
+    let hsum = _mm_hadd_ps(lr_sum, lr_sum);
+    let p1 = _mm_extract_ps(hsum, 0);
+    let p2 = _mm_extract_ps(hsum, 1);
+    f32::from_bits(p1 as u32) + f32::from_bits(p2 as u32)
+}
+
+/// Calculates the hsum (horizontal sum) of four 32 byte registers.
+#[target_feature(enable = "avx")]
+#[allow(clippy::missing_safety_doc)]
+pub unsafe fn four_way_hsum(a: __m256, b: __m256, c: __m256, d: __m256) -> f32 {
+    unsafe {
+        let sum1 = _mm256_add_ps(a, b);
+        let sum2 = _mm256_add_ps(c, d);
+        let total = _mm256_add_ps(sum1, sum2);
+        hsum256_ps_avx(total)
+    }
 }
 
 #[target_feature(enable = "avx")]
@@ -53,10 +65,8 @@ pub(crate) unsafe fn euclid_similarity_avx(
             i += 32;
         }
 
-        let mut result = hsum256_ps_avx(sum256_1)
-            + hsum256_ps_avx(sum256_2)
-            + hsum256_ps_avx(sum256_3)
-            + hsum256_ps_avx(sum256_4);
+        let mut result = four_way_hsum(sum256_1, sum256_2, sum256_3, sum256_4);
+
         for i in 0..n - m {
             result += (*ptr1.add(i) - *ptr2.add(i)).powi(2);
         }
@@ -103,10 +113,8 @@ pub(crate) unsafe fn manhattan_similarity_avx(
             i += 32;
         }
 
-        let mut result = hsum256_ps_avx(sum256_1)
-            + hsum256_ps_avx(sum256_2)
-            + hsum256_ps_avx(sum256_3)
-            + hsum256_ps_avx(sum256_4);
+        let mut result = four_way_hsum(sum256_1, sum256_2, sum256_3, sum256_4);
+
         for i in 0..n - m {
             result += (*ptr1.add(i) - *ptr2.add(i)).abs();
         }
@@ -143,10 +151,8 @@ pub(crate) unsafe fn cosine_preprocess_avx(vector: DenseVector) -> DenseVector {
             i += 32;
         }
 
-        let mut length = hsum256_ps_avx(sum256_1)
-            + hsum256_ps_avx(sum256_2)
-            + hsum256_ps_avx(sum256_3)
-            + hsum256_ps_avx(sum256_4);
+        let mut length = four_way_hsum(sum256_1, sum256_2, sum256_3, sum256_4);
+
         for i in 0..n - m {
             length += (*ptr.add(i)).powi(2);
         }
@@ -197,10 +203,7 @@ pub(crate) unsafe fn dot_similarity_avx(
             i += 32;
         }
 
-        let mut result = hsum256_ps_avx(sum256_1)
-            + hsum256_ps_avx(sum256_2)
-            + hsum256_ps_avx(sum256_3)
-            + hsum256_ps_avx(sum256_4);
+        let mut result = four_way_hsum(sum256_1, sum256_2, sum256_3, sum256_4);
 
         for i in 0..n - m {
             result += (*ptr1.add(i)) * (*ptr2.add(i));
