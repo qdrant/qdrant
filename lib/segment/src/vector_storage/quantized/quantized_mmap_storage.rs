@@ -4,6 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
 use memory::madvise::Madviseable;
+use memory::mmap_type::MmapFlusher;
 
 #[derive(Debug)]
 pub struct QuantizedMmapStorage {
@@ -58,6 +59,11 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
 
     fn vectors_count(&self, quantized_vector_size: usize) -> usize {
         self.mmap.len() / quantized_vector_size
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        // Mmap storage does not need a flusher, as it is non-appendable and already backed by a file.
+        Box::new(|| Ok(()))
     }
 }
 

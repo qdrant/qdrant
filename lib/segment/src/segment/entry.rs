@@ -640,6 +640,11 @@ impl SegmentEntry for Segment {
             .values()
             .map(|v| v.vector_storage.borrow().flusher())
             .collect();
+        let quantization_flushers: Vec<_> = self
+            .vector_data
+            .values()
+            .filter_map(|v| v.quantized_vectors.borrow().as_ref().map(|q| q.flusher()))
+            .collect();
         let state = self.get_state();
         let current_path = self.current_path.clone();
         let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
@@ -702,6 +707,13 @@ impl SegmentEntry for Segment {
             for vector_storage_flusher in vector_storage_flushers {
                 vector_storage_flusher().map_err(|err| {
                     OperationError::service_error(format!("Failed to flush vector_storage: {err}"))
+                })?;
+            }
+            for quantization_flusher in quantization_flushers {
+                quantization_flusher().map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to flush quantized vectors: {err}"
+                    ))
                 })?;
             }
             payload_index_flusher().map_err(|err| {

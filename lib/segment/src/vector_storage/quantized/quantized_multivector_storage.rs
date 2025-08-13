@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use memmap2::MmapMut;
-use memory::mmap_type::MmapSlice;
+use memory::mmap_type::{MmapFlusher, MmapSlice};
 use quantization::{EncodedVectors, VectorParameters};
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +38,8 @@ pub trait MultivectorOffsetsStorage: Sized {
         offset: MultivectorOffset,
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()>;
+
+    fn flusher(&self) -> MmapFlusher;
 }
 
 impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
@@ -72,6 +74,10 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
         // Skip hardware counter increment because it's a RAM storage.
         self.push(offset);
         Ok(())
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
     }
 }
 
@@ -118,6 +124,11 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         unreachable!("Cannot push offset to mmap storage");
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        // Mmap storage does not need a flusher, as it is non-appendable and already backed by a file.
+        Box::new(|| Ok(()))
     }
 }
 
@@ -352,6 +363,16 @@ where
 
     fn vectors_count(&self) -> usize {
         self.offsets.len()
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        let quantized_storage_flusher = self.quantized_storage.flusher();
+        let offsets_flusher = self.offsets.flusher();
+        Box::new(move || {
+            quantized_storage_flusher()?;
+            offsets_flusher()?;
+            Ok(())
+        })
     }
 }
 

@@ -7,6 +7,7 @@ use std::path::Path;
 use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(feature = "testing")]
 use memory::fadvise::OneshotFile;
+use memory::mmap_type::MmapFlusher;
 
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8];
@@ -26,6 +27,8 @@ pub trait EncodedStorage {
     ) -> std::io::Result<()>;
 
     fn vectors_count(&self, quantized_vector_size: usize) -> usize;
+
+    fn flusher(&self) -> MmapFlusher;
 }
 
 pub trait EncodedStorageBuilder {
@@ -82,6 +85,10 @@ impl EncodedStorage for TestEncodedStorage {
             .len()
             .checked_div(quantized_vector_size)
             .unwrap_or_default()
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
     }
 }
 
