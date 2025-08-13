@@ -97,7 +97,11 @@ impl MmapInvertedIndex {
         Ok(())
     }
 
-    pub fn open(path: PathBuf, populate: bool, has_positions: bool) -> OperationResult<Self> {
+    pub fn open(
+        path: PathBuf,
+        populate: bool,
+        has_positions: bool,
+    ) -> OperationResult<Option<Self>> {
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
@@ -105,12 +109,7 @@ impl MmapInvertedIndex {
 
         // If postings don't exist, assume the index doesn't exist on disk
         if !postings_path.is_file() {
-            return Ok(Self {
-                path: path.clone(),
-                storage: None,
-                active_points_count: 0,
-                is_on_disk: !populate,
-            });
+            return Ok(None);
         }
 
         let postings = match has_positions {
@@ -138,7 +137,7 @@ impl MmapInvertedIndex {
         let deleted_points = MmapBitSliceBufferedUpdateWrapper::new(deleted);
         let points_count = point_to_tokens_count.len() - num_deleted_points;
 
-        Ok(Self {
+        Ok(Some(Self {
             path,
             storage: Some(Storage {
                 postings,
@@ -148,10 +147,13 @@ impl MmapInvertedIndex {
             }),
             active_points_count: points_count,
             is_on_disk: !populate,
-        })
+        }))
     }
 
+    // TODO(payload-index-non-optional-storage): remove this method when single stage open/load is implemented
     pub fn load(&self) -> bool {
+        // Note: this structure is now loaded on open
+
         self.storage.is_some()
     }
 

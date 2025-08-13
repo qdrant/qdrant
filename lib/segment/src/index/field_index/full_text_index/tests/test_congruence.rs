@@ -117,30 +117,29 @@ fn create_builder(
         ..TextIndexParams::default()
     };
 
-    let mut builder =
-        match index_type {
-            #[cfg(feature = "rocksdb")]
-            IndexType::MutableRocksdb => IndexBuilder::MutableRocksdb(
-                FullTextIndex::builder_rocksdb(db.clone(), config, FIELD_NAME, true),
-            ),
-            IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
-                FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config),
-            ),
-            #[cfg(feature = "rocksdb")]
-            IndexType::ImmRamRocksDb => IndexBuilder::ImmRamRocksdb(
-                FullTextIndex::builder_rocksdb(db.clone(), config, FIELD_NAME, false),
-            ),
-            IndexType::ImmMmap => IndexBuilder::ImmMmap(FullTextIndex::builder_mmap(
-                temp_dir.path().to_path_buf(),
-                config,
-                true,
-            )),
-            IndexType::ImmRamMmap => IndexBuilder::ImmRamMmap(FullTextIndex::builder_mmap(
-                temp_dir.path().to_path_buf(),
-                config,
-                false,
-            )),
-        };
+    let mut builder = match index_type {
+        #[cfg(feature = "rocksdb")]
+        IndexType::MutableRocksdb => IndexBuilder::MutableRocksdb(
+            FullTextIndex::builder_rocksdb(db.clone(), config, FIELD_NAME, true).unwrap(),
+        ),
+        IndexType::MutableGridstore => IndexBuilder::MutableGridstore(
+            FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config),
+        ),
+        #[cfg(feature = "rocksdb")]
+        IndexType::ImmRamRocksDb => IndexBuilder::ImmRamRocksdb(
+            FullTextIndex::builder_rocksdb(db.clone(), config, FIELD_NAME, false).unwrap(),
+        ),
+        IndexType::ImmMmap => IndexBuilder::ImmMmap(FullTextIndex::builder_mmap(
+            temp_dir.path().to_path_buf(),
+            config,
+            true,
+        )),
+        IndexType::ImmRamMmap => IndexBuilder::ImmRamMmap(FullTextIndex::builder_mmap(
+            temp_dir.path().to_path_buf(),
+            config,
+            false,
+        )),
+    };
     match &mut builder {
         #[cfg(feature = "rocksdb")]
         IndexBuilder::MutableRocksdb(builder) => builder.init().unwrap(),
