@@ -570,8 +570,9 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         None
     }
 
-    fn push_vector(
+    fn update_vector(
         &mut self,
+        _id: u32,
         _vector: &[f32],
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {

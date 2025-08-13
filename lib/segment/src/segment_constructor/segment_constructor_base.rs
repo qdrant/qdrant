@@ -303,6 +303,7 @@ pub(crate) fn open_vector_index(
         Indexes::Plain {} => VectorIndexEnum::Plain(PlainVectorIndex::new(
             id_tracker,
             vector_storage,
+            quantized_vectors,
             payload_index,
         )),
         Indexes::Hnsw(hnsw_config) => VectorIndexEnum::Hnsw(HNSWIndex::open(HnswIndexOpenArgs {
@@ -332,6 +333,7 @@ pub(crate) fn build_vector_index<R: Rng + ?Sized>(
         Indexes::Plain {} => VectorIndexEnum::Plain(PlainVectorIndex::new(
             id_tracker,
             vector_storage,
+            quantized_vectors,
             payload_index,
         )),
         Indexes::Hnsw(hnsw_config) => VectorIndexEnum::Hnsw(HNSWIndex::build(
@@ -524,18 +526,18 @@ fn create_segment(
             );
         }
 
-        let quantized_vectors = sp(if config.quantization_config(vector_name).is_some() {
-            let quantized_data_path = vector_storage_path;
-            if QuantizedVectors::config_exists(&quantized_data_path) {
-                let quantized_vectors =
-                    QuantizedVectors::load(&vector_storage.borrow(), &quantized_data_path)?;
-                Some(quantized_vectors)
+        let quantized_vectors = sp(
+            if let Some(quantization_config) = config.quantization_config(vector_name) {
+                let quantized_data_path = vector_storage_path;
+                QuantizedVectors::load(
+                    quantization_config,
+                    &vector_storage.borrow(),
+                    &quantized_data_path,
+                )?
             } else {
                 None
-            }
-        } else {
-            None
-        });
+            },
+        );
 
         let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = sp(open_vector_index(
             vector_config,

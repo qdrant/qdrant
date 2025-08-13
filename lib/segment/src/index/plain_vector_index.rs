@@ -6,7 +6,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 
-use super::hnsw_index::point_scorer::FilteredScorer;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::{
@@ -15,16 +14,19 @@ use crate::common::operation_time_statistics::{
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
+use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 #[derive(Debug)]
 pub struct PlainVectorIndex {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
     unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
@@ -34,11 +36,13 @@ impl PlainVectorIndex {
     pub fn new(
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+        quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     ) -> PlainVectorIndex {
         PlainVectorIndex {
             id_tracker,
             vector_storage,
+            quantized_vectors,
             payload_index,
             filtered_searches_telemetry: OperationDurationsAggregator::new(),
             unfiltered_searches_telemetry: OperationDurationsAggregator::new(),
@@ -103,6 +107,7 @@ impl VectorIndex for PlainVectorIndex {
                 let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
+                let quantized_storage = self.quantized_vectors.borrow();
                 let filtered_ids_vec = payload_index.query_points(filter, &hw_counter);
                 let deleted_points = query_context
                     .deleted_points()
@@ -110,27 +115,40 @@ impl VectorIndex for PlainVectorIndex {
                 vectors
                     .iter()
                     .map(|&vector| {
-                        FilteredScorer::new(
-                            vector.to_owned(),
+                        let scorer = HNSWIndex::construct_search_scorer(
+                            vector,
                             &vector_storage,
-                            None,
-                            None,
+                            quantized_storage.as_ref(),
                             deleted_points,
+                            params,
                             query_context.hardware_counter(),
-                        )
-                        .and_then(|scorer| {
-                            Ok(scorer.peek_top_iter(
-                                &mut filtered_ids_vec.iter().copied(),
-                                top,
-                                &is_stopped,
-                            )?)
-                        })
+                            None,
+                        )?;
+                        let oversampled_top =
+                            HNSWIndex::get_oversampled_top(quantized_storage.as_ref(), params, top);
+                        let search_result = scorer.peek_top_iter(
+                            &mut filtered_ids_vec.iter().copied(),
+                            oversampled_top,
+                            &is_stopped,
+                        )?;
+                        let res = HNSWIndex::postprocess_search_result(
+                            search_result,
+                            id_tracker.deleted_point_bitslice(),
+                            &vector_storage,
+                            quantized_storage.as_ref(),
+                            vector,
+                            params,
+                            top,
+                            query_context.hardware_counter(),
+                        )?;
+                        Ok(res)
                     })
                     .collect()
             }
             None => {
                 let _timer = ScopeDurationMeasurer::new(&self.unfiltered_searches_telemetry);
                 let vector_storage = self.vector_storage.borrow();
+                let quantized_storage = self.quantized_vectors.borrow();
                 let id_tracker = self.id_tracker.borrow();
                 let deleted_points = query_context
                     .deleted_points()
@@ -138,15 +156,29 @@ impl VectorIndex for PlainVectorIndex {
                 vectors
                     .iter()
                     .map(|&vector| {
-                        FilteredScorer::new(
-                            vector.to_owned(),
+                        let scorer = HNSWIndex::construct_search_scorer(
+                            vector,
                             &vector_storage,
-                            None,
-                            None,
+                            quantized_storage.as_ref(),
                             deleted_points,
+                            params,
                             query_context.hardware_counter(),
-                        )
-                        .and_then(|scorer| Ok(scorer.peek_top_all(top, &is_stopped)?))
+                            None,
+                        )?;
+                        let oversampled_top =
+                            HNSWIndex::get_oversampled_top(quantized_storage.as_ref(), params, top);
+                        let search_result = scorer.peek_top_all(oversampled_top, &is_stopped)?;
+                        let res = HNSWIndex::postprocess_search_result(
+                            search_result,
+                            id_tracker.deleted_point_bitslice(),
+                            &vector_storage,
+                            quantized_storage.as_ref(),
+                            vector,
+                            params,
+                            top,
+                            query_context.hardware_counter(),
+                        )?;
+                        Ok(res)
                     })
                     .collect()
             }
@@ -198,6 +230,11 @@ impl VectorIndex for PlainVectorIndex {
 
         if let Some(vector) = vector {
             vector_storage.insert_vector(id, vector, hw_counter)?;
+
+            let mut quantized_vectors = self.quantized_vectors.borrow_mut();
+            if let Some(quantized_vectors) = quantized_vectors.as_mut() {
+                quantized_vectors.update_vector(id, vector, hw_counter)?;
+            }
         } else {
             if id as usize >= vector_storage.total_vector_count() {
                 debug_assert!(id as usize == vector_storage.total_vector_count());

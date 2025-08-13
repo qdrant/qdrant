@@ -969,8 +969,11 @@ impl HNSWIndex {
             &is_stopped,
         )?;
 
-        let res = self.postprocess_search_result(
+        let res = Self::postprocess_search_result(
             search_result,
+            id_tracker.deleted_point_bitslice(),
+            &vector_storage,
+            quantized_vectors.as_ref(),
             vector,
             params,
             top,
@@ -1036,8 +1039,11 @@ impl HNSWIndex {
 
         let search_result = points_scorer.peek_top_iter(points, oversampled_top, &is_stopped)?;
 
-        let res = self.postprocess_search_result(
+        let res = Self::postprocess_search_result(
             search_result,
+            id_tracker.deleted_point_bitslice(),
+            &vector_storage,
+            quantized_vectors.as_ref(),
             vector,
             params,
             top,
@@ -1143,7 +1149,7 @@ impl HNSWIndex {
         quantized_storage.is_some() && !ignore_quantization
     }
 
-    fn construct_search_scorer<'a>(
+    pub fn construct_search_scorer<'a>(
         vector: &QueryVector,
         vector_storage: &'a VectorStorageEnum,
         quantized_storage: Option<&'a QuantizedVectors>,
@@ -1163,7 +1169,7 @@ impl HNSWIndex {
         )
     }
 
-    fn get_oversampled_top(
+    pub fn get_oversampled_top(
         quantized_storage: Option<&QuantizedVectors>,
         params: Option<&SearchParams>,
         top: usize,
@@ -1183,19 +1189,18 @@ impl HNSWIndex {
         }
     }
 
-    fn postprocess_search_result(
-        &self,
+    #[allow(clippy::too_many_arguments)]
+    pub fn postprocess_search_result(
         mut search_result: Vec<ScoredPointOffset>,
+        point_deleted: &BitSlice,
+        vector_storage: &VectorStorageEnum,
+        quantized_vectors: Option<&QuantizedVectors>,
         vector: &QueryVector,
         params: Option<&SearchParams>,
         top: usize,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let id_tracker = self.id_tracker.borrow();
-        let vector_storage = self.vector_storage.borrow();
-        let quantized_vectors = self.quantized_vectors.borrow();
-
-        let quantization_enabled = Self::is_quantized_search(quantized_vectors.as_ref(), params);
+        let quantization_enabled = Self::is_quantized_search(quantized_vectors, params);
 
         let default_rescoring = quantized_vectors
             .as_ref()
@@ -1210,10 +1215,10 @@ impl HNSWIndex {
         if rescore {
             let mut scorer = FilteredScorer::new(
                 vector.to_owned(),
-                &vector_storage,
+                vector_storage,
                 None,
                 None,
-                id_tracker.deleted_point_bitslice(),
+                point_deleted,
                 hardware_counter,
             )?;
 

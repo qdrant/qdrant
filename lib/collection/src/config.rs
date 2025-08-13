@@ -462,6 +462,7 @@ impl CollectionParams {
     /// based on threshold configurations.
     pub fn to_base_vector_data(
         &self,
+        collection_quantization: &Option<QuantizationConfig>,
     ) -> CollectionResult<HashMap<VectorNameBuf, VectorDataConfig>> {
         Ok(self
             .vectors
@@ -474,8 +475,21 @@ impl CollectionParams {
                         distance: params.distance,
                         // Plain (disabled) index
                         index: Indexes::Plain {},
-                        // Disabled quantization
-                        quantization_config: None,
+                        // Enable only binary quantization, disable otherwise
+                        quantization_config: match (
+                            params.quantization_config.as_ref(),
+                            collection_quantization,
+                        ) {
+                            // First use internal quantization config
+                            (Some(QuantizationConfig::Binary(b)), _) => {
+                                Some(QuantizationConfig::Binary(b.clone()))
+                            }
+                            // If external quantization config is binary, use it
+                            (None, Some(QuantizationConfig::Binary(b))) => {
+                                Some(QuantizationConfig::Binary(b.clone()))
+                            }
+                            _ => None,
+                        },
                         // Default to in memory storage
                         storage_type: if params.on_disk.unwrap_or_default() {
                             VectorStorageType::ChunkedMmap
