@@ -31,8 +31,9 @@ pub trait MultivectorOffsetsStorage: Sized {
 
     fn len(&self) -> usize;
 
-    fn push_offset(
+    fn upsert_offset(
         &mut self,
+        id: PointOffsetType,
         offset: MultivectorOffset,
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()>;
@@ -60,13 +61,17 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
         self.len()
     }
 
-    fn push_offset(
+    fn upsert_offset(
         &mut self,
+        id: PointOffsetType,
         offset: MultivectorOffset,
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
-        self.push(offset);
+        if id as usize >= self.len() {
+            self.resize(id as usize + 1, MultivectorOffset::default());
+        }
+        self[id as usize] = offset;
         Ok(())
     }
 
@@ -99,12 +104,16 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
         self.offsets.len()
     }
 
-    fn push_offset(
+    fn upsert_offset(
         &mut self,
+        _id: PointOffsetType,
         _offset: MultivectorOffset,
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        unreachable!("Cannot push offset to mmap storage");
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Cannot upsert offset in mmap storage",
+        ))
     }
 
     fn flusher(&self) -> MmapFlusher {
@@ -307,8 +316,9 @@ where
         Some(query)
     }
 
-    fn push_vector(
+    fn upsert_vector(
         &mut self,
+        id: PointOffsetType,
         vector: &[f32],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
@@ -317,17 +327,37 @@ where
             flattened_vectors: vector,
         };
 
-        let old_inner_vectors_count = self.quantized_storage.vectors_count();
-        for inner_vector in multi_vector.multi_vectors() {
-            self.quantized_storage
-                .push_vector(inner_vector, hw_counter)?;
-        }
-
-        let offset: MultivectorOffset = MultivectorOffset {
-            start: old_inner_vectors_count as PointOffsetType,
-            count: multi_vector.vectors_count() as PointOffsetType,
+        let inner_vectors_count = self.quantized_storage.vectors_count() as PointOffsetType;
+        let offset = if (id as usize) < self.offsets.len() {
+            let old_offset = self.offsets.get_offset(id);
+            if multi_vector.vectors_count() <= old_offset.count as usize {
+                // If the new vector has less or equal number of inner vectors, we can reuse the old offset
+                MultivectorOffset {
+                    start: old_offset.start,
+                    count: multi_vector.vectors_count() as PointOffsetType,
+                }
+            } else {
+                // Otherwise, we need allocate a new offset
+                MultivectorOffset {
+                    start: inner_vectors_count,
+                    count: multi_vector.vectors_count() as PointOffsetType,
+                }
+            }
+        } else {
+            MultivectorOffset {
+                start: inner_vectors_count,
+                count: multi_vector.vectors_count() as PointOffsetType,
+            }
         };
-        self.offsets.push_offset(offset, hw_counter)?;
+
+        for (i, inner_vector) in multi_vector.multi_vectors().enumerate() {
+            self.quantized_storage.upsert_vector(
+                offset.start + i as PointOffsetType,
+                inner_vector,
+                hw_counter,
+            )?;
+        }
+        self.offsets.upsert_offset(id, offset, hw_counter)?;
         Ok(())
     }
 

@@ -305,21 +305,19 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
     #[inline]
     fn get_vec_ptr(&self, i: PointOffsetType) -> (f32, *const u8) {
-        let vector_data_size = self.quantized_vector_size();
-        let data = self.encoded_vectors.get_vector_data(i, vector_data_size);
+        let data = self.encoded_vectors.get_vector_data(i);
         Self::parse_vec_data(data)
     }
 
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
-        self.encoded_vectors
-            .get_vector_data(i, self.quantized_vector_size())
+        self.encoded_vectors.get_vector_data(i)
     }
 
     pub fn layout(&self) -> Layout {
         Layout::from_size_align(self.quantized_vector_size(), align_of::<u8>()).unwrap()
     }
 
-    pub fn get_quantized_vector_offset_and_code(&self, i: u32) -> (f32, &[u8]) {
+    pub fn get_quantized_vector_offset_and_code(&self, i: PointOffsetType) -> (f32, &[u8]) {
         let (offset, v_ptr) = self.get_vec_ptr(i);
         let vector_data_size = self.metadata.actual_dim;
         let code = unsafe { std::slice::from_raw_parts(v_ptr, vector_data_size) };
@@ -422,9 +420,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let vector_data_size = self.metadata.actual_dim + std::mem::size_of::<f32>();
-        let bytes = self.encoded_vectors.get_vector_data(i, vector_data_size);
-
+        let bytes = self.encoded_vectors.get_vector_data(i);
         self.score_bytes(True, query, bytes, hw_counter)
     }
 
@@ -541,23 +537,21 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         })
     }
 
-    fn push_vector(
+    fn upsert_vector(
         &mut self,
+        _id: PointOffsetType,
         _vector: &[f32],
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        debug_assert!(false, "SQ does not support push_vector",);
+        debug_assert!(false, "SQ does not support upsert_vector",);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            "SQ does not support push_vector",
+            "SQ does not support upsert_vector",
         ))
     }
 
     fn vectors_count(&self) -> usize {
-        self.encoded_vectors
-            .vectors_count(Self::get_quantized_vector_size(
-                &self.metadata.vector_parameters,
-            ))
+        self.encoded_vectors.vectors_count()
     }
 
     fn flusher(&self) -> MmapFlusher {

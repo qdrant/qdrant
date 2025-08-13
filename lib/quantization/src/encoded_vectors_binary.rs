@@ -797,8 +797,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     }
 
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
-        self.encoded_vectors
-            .get_vector_data(i as _, self.get_quantized_vector_size())
+        self.encoded_vectors.get_vector_data(i as _)
     }
 
     pub fn layout(&self) -> Layout {
@@ -868,9 +867,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let vector_data = self
-            .encoded_vectors
-            .get_vector_data(i, self.get_quantized_vector_size());
+        let vector_data = self.encoded_vectors.get_vector_data(i);
 
         self.score_bytes(True, query, vector_data, hw_counter)
     }
@@ -881,12 +878,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         j: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let vector_data_1 = self
-            .encoded_vectors
-            .get_vector_data(i, self.get_quantized_vector_size());
-        let vector_data_2 = self
-            .encoded_vectors
-            .get_vector_data(j, self.get_quantized_vector_size());
+        let vector_data_1 = self.encoded_vectors.get_vector_data(i);
+        let vector_data_2 = self.encoded_vectors.get_vector_data(j);
 
         hw_counter
             .vector_io_read()
@@ -911,29 +904,28 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         id: PointOffsetType,
     ) -> Option<EncodedQueryBQ<TBitsStoreType>> {
         Some(EncodedQueryBQ::Binary(EncodedBinVector {
-            encoded_vector: transmute_from_u8_to_slice(
-                self.encoded_vectors
-                    .get_vector_data(id, self.get_quantized_vector_size()),
-            )
-            .to_vec(),
+            encoded_vector: transmute_from_u8_to_slice(self.encoded_vectors.get_vector_data(id))
+                .to_vec(),
         }))
     }
 
-    fn push_vector(
+    fn upsert_vector(
         &mut self,
+        id: PointOffsetType,
         vector: &[f32],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        let encoded_vector = Self::encode_vector(vector, &None, self.metadata.encoding);
-        self.encoded_vectors.push_vector(
+        let encoded_vector =
+            Self::encode_vector(vector, &self.metadata.vector_stats, self.metadata.encoding);
+        self.encoded_vectors.upsert_vector(
+            id,
             bytemuck::cast_slice(encoded_vector.encoded_vector.as_slice()),
             hw_counter,
         )
     }
 
     fn vectors_count(&self) -> usize {
-        self.encoded_vectors
-            .vectors_count(self.get_quantized_vector_size())
+        self.encoded_vectors.vectors_count()
     }
 
     fn flusher(&self) -> MmapFlusher {

@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -10,6 +11,7 @@ use memory::mmap_type::MmapFlusher;
 #[derive(Debug)]
 pub struct QuantizedMmapStorage {
     mmap: Mmap,
+    quantized_vector_size: NonZeroUsize,
 }
 
 impl QuantizedMmapStorage {
@@ -21,40 +23,64 @@ impl QuantizedMmapStorage {
 pub struct QuantizedMmapStorageBuilder {
     mmap: MmapMut,
     cursor_pos: usize,
+    quantized_vector_size: NonZeroUsize,
 }
 
 impl quantization::EncodedStorage for QuantizedMmapStorage {
-    fn get_vector_data(&self, index: PointOffsetType, vector_size: usize) -> &[u8] {
-        &self.mmap[vector_size * index as usize..vector_size * (index as usize + 1)]
+    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
+        let start = self.quantized_vector_size.get() * index as usize;
+        let end = self.quantized_vector_size.get() * (index + 1) as usize;
+        self.mmap.get(start..end).unwrap_or(&[])
     }
 
-    fn push_vector(
+    fn upsert_vector(
         &mut self,
+        _id: PointOffsetType,
         _vector: &[u8],
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            "Cannot push vector to mmap storage",
+            "Cannot upsert vector in mmap storage",
         ))
     }
 
     fn from_file(
         path: &Path,
-        _quantized_vector_size: usize,
+        quantized_vector_size: usize,
     ) -> std::io::Result<QuantizedMmapStorage> {
         let file = std::fs::OpenOptions::new().read(true).open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
         madvise::madvise(&mmap, madvise::get_global())?;
-        Ok(Self { mmap })
+
+        let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "`quantized_vector_size` must be non-zero",
+            )
+        })?;
+        if !mmap.len().is_multiple_of(quantized_vector_size.get()) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Encoded file size ({}) is not a multiple of quantized_vector_size ({})",
+                    mmap.len(),
+                    quantized_vector_size
+                ),
+            ));
+        }
+        Ok(Self {
+            mmap,
+            quantized_vector_size,
+        })
     }
 
     fn is_on_disk(&self) -> bool {
         true
     }
 
-    fn vectors_count(&self, quantized_vector_size: usize) -> usize {
-        self.mmap.len() / quantized_vector_size
+    fn vectors_count(&self) -> usize {
+        self.mmap.len() / self.quantized_vector_size.get()
     }
 
     fn flusher(&self) -> MmapFlusher {
@@ -69,7 +95,10 @@ impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
     fn build(self) -> std::io::Result<QuantizedMmapStorage> {
         self.mmap.flush()?;
         let mmap = self.mmap.make_read_only()?;
-        Ok(QuantizedMmapStorage { mmap })
+        Ok(QuantizedMmapStorage {
+            mmap,
+            quantized_vector_size: self.quantized_vector_size,
+        })
     }
 
     fn push_vector_data(&mut self, other: &[u8]) {
@@ -114,6 +143,12 @@ impl QuantizedMmapStorageBuilder {
         Ok(Self {
             mmap,
             cursor_pos: 0,
+            quantized_vector_size: NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "`quantized_vector_size` must be non-zero",
+                )
+            })?,
         })
     }
 }

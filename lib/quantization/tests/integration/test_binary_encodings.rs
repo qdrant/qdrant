@@ -3,7 +3,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_counter::HardwareCounterCell;
-    use quantization::encoded_storage::TestEncodedStorageBuilder;
+    use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_binary::{
         BitsStoreType, EncodedVectorsBin, Encoding, QueryEncoding,
@@ -68,9 +68,16 @@ mod tests {
         let encoded: Vec<_> = encodings
             .iter()
             .map(|&encoding| {
+                let quantized_vector_size = EncodedVectorsBin::<
+                        TBitsStoreType,
+                        TestEncodedStorage,
+                    >::get_quantized_vector_size_from_params(
+                        vector_dim, encoding
+                    );
+
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
                     vector_data.iter(),
-                    TestEncodedStorageBuilder::new(None),
+                    TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &VectorParameters {
                         dim: vector_dim,
                         deprecated_count: None,
@@ -165,9 +172,16 @@ mod tests {
 
         let encoded: Vec<_> = QueryEncoding::iter()
             .map(|query_encoding| {
+                let quantized_vector_size = EncodedVectorsBin::<
+                        TBitsStoreType,
+                        TestEncodedStorage,
+                    >::get_quantized_vector_size_from_params(
+                        vector_dim, encoding
+                    );
+
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
                     vector_data.iter(),
-                    TestEncodedStorageBuilder::new(None),
+                    TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &VectorParameters {
                         dim: vector_dim,
                         deprecated_count: None,
