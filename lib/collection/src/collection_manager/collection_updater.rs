@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
 use segment::types::SeqNumberType;
@@ -40,11 +42,11 @@ impl CollectionUpdater {
         segments: &RwLock<SegmentHolder>,
         op_num: SeqNumberType,
         operation: CollectionUpdateOperations,
+        scroll_lock: Arc<tokio::sync::RwLock<()>>,
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<usize> {
         // Allow only one update at a time, ensure no data races between segments.
         // let _lock = self.update_lock.lock().unwrap();
-        let scroll_lock = segments.read().scroll_read_lock.clone();
 
         // Use block_in_place here to avoid blocking the current async executor
         let _scroll_lock = tokio::task::block_in_place(|| scroll_lock.blocking_write());
