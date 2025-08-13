@@ -198,6 +198,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         }))
     }
 
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
     pub fn load(&self) -> OperationResult<bool> {
         // Note: this structure is now loaded on open
 

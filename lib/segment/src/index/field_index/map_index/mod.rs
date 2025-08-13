@@ -109,39 +109,53 @@ where
     Vec<N::Owned>: Blob + Send + Sync,
 {
     #[cfg(feature = "rocksdb")]
-    pub fn new_rocksdb(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
-        if is_appendable {
-            MapIndex::Mutable(MutableMapIndex::open_rocksdb(db, field_name))
+    pub fn new_rocksdb(
+        db: Arc<RwLock<DB>>,
+        field_name: &str,
+        is_appendable: bool,
+        create_if_missing: bool,
+    ) -> OperationResult<Option<Self>> {
+        let index = if is_appendable {
+            MutableMapIndex::open_rocksdb(db, field_name, create_if_missing)?.map(MapIndex::Mutable)
         } else {
-            MapIndex::Immutable(ImmutableMapIndex::open_rocksdb(db, field_name))
-        }
+            ImmutableMapIndex::open_rocksdb(db, field_name)?.map(MapIndex::Immutable)
+        };
+        Ok(index)
     }
 
     /// Load immutable mmap based index, either in RAM or on disk
-    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        let mmap_index = MmapMapIndex::open(path, is_on_disk)?;
-        if is_on_disk {
+    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Option<Self>> {
+        let Some(mmap_index) = MmapMapIndex::open(path, is_on_disk)? else {
+            // Files don't exist, cannot load
+            return Ok(None);
+        };
+
+        let index = if is_on_disk {
             // Use on mmap directly
-            Ok(MapIndex::Mmap(Box::new(mmap_index)))
+            Some(MapIndex::Mmap(Box::new(mmap_index)))
         } else {
             // Load into RAM, use mmap as backing storage
-            Ok(MapIndex::Immutable(ImmutableMapIndex::open_mmap(
-                mmap_index,
-            )))
-        }
+            ImmutableMapIndex::open_mmap(mmap_index)?.map(MapIndex::Immutable)
+        };
+        Ok(index)
     }
 
-    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Self> {
-        Ok(MapIndex::Mutable(MutableMapIndex::open_gridstore(
-            dir,
-            create_if_missing,
-        )?))
+    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
+        let index = MutableMapIndex::open_gridstore(dir, create_if_missing)?;
+        Ok(index.map(MapIndex::Mutable))
     }
 
     #[cfg(feature = "rocksdb")]
-    pub fn builder_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
-        MapIndexBuilder(MapIndex::Mutable(MutableMapIndex::open_rocksdb(
-            db, field_name,
+    pub fn builder_rocksdb(
+        db: Arc<RwLock<DB>>,
+        field_name: &str,
+    ) -> OperationResult<MapIndexBuilder<N>> {
+        Ok(MapIndexBuilder(MapIndex::Mutable(
+            MutableMapIndex::open_rocksdb(db, field_name, true)?.ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Failed to create and load mutable map index builder for field '{field_name}'",
+                ))
+            })?,
         )))
     }
 
@@ -684,8 +698,11 @@ where
             self.index.is_none(),
             "index must be initialized exactly once",
         );
-        self.index
-            .replace(MapIndex::new_gridstore(self.dir.clone(), true)?);
+        self.index.replace(
+            MapIndex::new_gridstore(self.dir.clone(), true)?.ok_or_else(|| {
+                OperationError::service_error("Failed to create mutable map index")
+            })?,
+        );
         Ok(())
     }
 
@@ -1386,7 +1403,8 @@ mod tests {
                 let mut builder = MapIndex::<N>::builder_rocksdb(
                     open_db_with_existing_cf(path).unwrap(),
                     FIELD_NAME,
-                );
+                )
+                .unwrap();
                 builder.init().unwrap();
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -1438,18 +1456,24 @@ mod tests {
                 open_db_with_existing_cf(path).unwrap(),
                 FIELD_NAME,
                 true,
-            ),
-            IndexType::MutableGridstore => {
-                MapIndex::<N>::new_gridstore(path.to_path_buf(), true).unwrap()
-            }
+                true,
+            )
+            .unwrap()
+            .unwrap(),
+            IndexType::MutableGridstore => MapIndex::<N>::new_gridstore(path.to_path_buf(), true)
+                .unwrap()
+                .unwrap(),
             #[cfg(feature = "rocksdb")]
             IndexType::Immutable => MapIndex::<N>::new_rocksdb(
                 open_db_with_existing_cf(path).unwrap(),
                 FIELD_NAME,
                 false,
-            ),
-            IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap(),
-            IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap(),
+                true,
+            )
+            .unwrap()
+            .unwrap(),
+            IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap().unwrap(),
+            IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap().unwrap(),
         };
         index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {
