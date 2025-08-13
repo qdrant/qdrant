@@ -21,3 +21,13 @@ impl InferenceConfig {
         }
     }
 }
+
+impl Default for InferenceConfig {
+    fn default() -> Self {
+        Self {
+            address: None,
+            timeout: default_inference_timeout(),
+            token: None,
+        }
+    }
+}
