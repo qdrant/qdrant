@@ -37,30 +37,28 @@ struct Storage {
 
 impl MutableBoolIndex {
     pub fn builder(path: &Path) -> OperationResult<MutableBoolIndexBuilder> {
-        Ok(MutableBoolIndexBuilder(Self::open(path, true)?))
+        Ok(MutableBoolIndexBuilder(
+            Self::open(path, true)?.ok_or_else(|| {
+                OperationError::service_error("Failed to create and open MutableBoolIndex")
+            })?,
+        ))
     }
 
-    /// Open or create a boolean index at the given path.
+    /// Open and load or create a boolean index at the given path.
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
     /// - `is_on_disk` - If the index should be kept on disk. Memory will be populated if false.
     /// - `create_if_missing` - If true, creates the index if it doesn't exist.
-    pub fn open(path: &Path, create_if_missing: bool) -> OperationResult<Self> {
+    pub fn open(path: &Path, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let falses_dir = path.join(FALSES_DIRNAME);
 
         // If falses directory doesn't exist, assume the index doesn't exist on disk
         if !falses_dir.is_dir() && !create_if_missing {
-            return Ok(Self {
-                base_dir: path.to_path_buf(),
-                storage: None,
-                indexed_count: 0,
-                trues_count: 0,
-                falses_count: 0,
-            });
+            return Ok(None);
         }
 
-        Self::open_or_create(path)
+        Ok(Some(Self::open_or_create(path)?))
     }
 
     fn open_or_create(path: &Path) -> OperationResult<Self> {
@@ -80,16 +78,23 @@ impl MutableBoolIndex {
         let falses_slice = DynamicMmapFlags::open(&falses_path, false)?;
         let falses_flags = RoaringFlags::new(falses_slice);
 
+        let trues_count = trues_flags.count_trues();
+        let falses_count = falses_flags.count_trues();
+        let indexed_count = {
+            let trues = trues_flags.get_bitmap();
+            let falses = falses_flags.get_bitmap();
+            trues.union_len(falses) as usize
+        };
+
         Ok(Self {
             base_dir: path.to_path_buf(),
             storage: Some(Storage {
                 trues_flags,
                 falses_flags,
             }),
-            // loading is done after opening during `PayloadFieldIndex::load()`
-            indexed_count: 0,
-            trues_count: 0,
-            falses_count: 0,
+            trues_count,
+            falses_count,
+            indexed_count,
         })
     }
 
@@ -162,17 +167,6 @@ impl MutableBoolIndex {
             self.trues_count
         } else {
             self.falses_count
-        }
-    }
-
-    /// Calculates the count of true values of the union of both slices.
-    fn calculate_indexed_count(&self) -> u32 {
-        if let Some(storage) = &self.storage {
-            let trues = storage.trues_flags.get_bitmap();
-            let falses = storage.falses_flags.get_bitmap();
-            trues.union_len(falses) as u32
-        } else {
-            0
         }
     }
 
@@ -359,32 +353,11 @@ impl PayloadFieldIndex for MutableBoolIndex {
         self.indexed_count
     }
 
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
     fn load(&mut self) -> OperationResult<bool> {
-        // Failed to load
-        if self.storage.is_none() {
-            return Ok(false);
-        }
+        // Note: this structure is now loaded on open
 
-        let calculated_indexed_count = self.calculate_indexed_count();
-
-        // Destructure to not forget any fields
-        let Self {
-            base_dir: _,
-            indexed_count,
-            storage,
-            trues_count,
-            falses_count,
-        } = self;
-        let Storage {
-            trues_flags,
-            falses_flags,
-        } = storage.as_ref().unwrap();
-
-        *indexed_count = calculated_indexed_count as usize;
-        *trues_count = trues_flags.count_trues();
-        *falses_count = falses_flags.count_trues();
-
-        Ok(true)
+        Ok(self.storage.is_some())
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -530,7 +503,7 @@ mod tests {
     #[test]
     fn test_files() {
         let dir = TempDir::with_prefix("test_mmap_bool_index").unwrap();
-        let index = MutableBoolIndex::open(dir.path(), true).unwrap();
+        let index = MutableBoolIndex::open(dir.path(), true).unwrap().unwrap();
 
         let reported = index.files().into_iter().collect::<HashSet<_>>();
 

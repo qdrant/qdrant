@@ -161,6 +161,7 @@ impl PayloadFieldIndex for BoolIndex {
         }
     }
 
+    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
     fn load(&mut self) -> crate::common::operation_error::OperationResult<bool> {
         match self {
             #[cfg(feature = "rocksdb")]
@@ -334,7 +335,9 @@ mod tests {
     impl OpenIndex for SimpleBoolIndex {
         fn open_at(path: &Path) -> BoolIndex {
             let db = open_db_with_existing_cf(path).unwrap();
-            let mut index = SimpleBoolIndex::new(db.clone(), FIELD_NAME);
+            let mut index = SimpleBoolIndex::new(db.clone(), FIELD_NAME, true)
+                .unwrap()
+                .unwrap();
             // Try to load if it exists
             if index.load().unwrap() {
                 return BoolIndex::Simple(index);
@@ -343,6 +346,7 @@ mod tests {
 
             // Otherwise create a new one
             SimpleBoolIndex::builder(db, FIELD_NAME)
+                .unwrap()
                 .make_empty()
                 .unwrap()
         }
