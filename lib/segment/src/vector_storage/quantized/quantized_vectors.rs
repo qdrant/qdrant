@@ -1243,9 +1243,6 @@ impl QuantizedVectors {
             QuantizedVectorStorage::BinaryRamMulti(q) => q.flusher(),
             QuantizedVectorStorage::BinaryMmapMulti(q) => q.flusher(),
         };
-        Box::new(move || {
-            flusher()?;
-            Ok(())
-        })
+        Box::new(move || flusher().map_err(OperationError::from))
     }
 }
