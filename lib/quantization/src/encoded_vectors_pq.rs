@@ -437,7 +437,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
         self.encoded_vectors
-            .get_vector_data(i as _, self.metadata.vector_division.len())
+            .get_vector_data(i, self.metadata.vector_division.len())
     }
 
     pub fn layout(&self) -> Layout {
