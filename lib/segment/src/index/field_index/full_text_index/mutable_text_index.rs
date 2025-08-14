@@ -115,8 +115,8 @@ impl MutableFullTextIndex {
 
         store
             .iter::<_, OperationError>(
-                |idx, value: &Vec<u8>| {
-                    let str_tokens = FullTextIndex::deserialize_document(value)?;
+                |idx, value: Vec<u8>| {
+                    let str_tokens = FullTextIndex::deserialize_document(&value)?;
                     builder.add(idx, str_tokens);
                     Ok(true)
                 },
