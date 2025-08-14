@@ -324,6 +324,7 @@ impl IndexSelector<'_> {
         })
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
     fn map_builder<N: MapIndexKey + ?Sized>(
         &self,
         field: &JsonPath,
@@ -377,6 +378,7 @@ impl IndexSelector<'_> {
         })
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
     fn numeric_builder<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
@@ -432,6 +434,7 @@ impl IndexSelector<'_> {
         })
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
     fn geo_builder(
         &self,
         field: &JsonPath,
@@ -501,6 +504,7 @@ impl IndexSelector<'_> {
         })
     }
 
+    #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
     fn text_builder(
         &self,
         field: &JsonPath,
