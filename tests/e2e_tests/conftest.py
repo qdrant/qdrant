@@ -14,6 +14,14 @@ from .utils import (
 )
 
 
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Hook to capture test outcome for logging purposes"""
+    outcome = yield
+    rep = outcome.get_result()
+    setattr(item, "rep_" + rep.when, rep)
+
+
 @pytest.fixture(scope="session")
 def docker_client() -> docker.DockerClient:
     """Create a Docker client instance.
@@ -160,6 +168,36 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
         containers.append(container_info.container)
         return container_info
     
+    def _log_containers_on_failure():
+        """Output container logs if the test failed"""
+        if request.node.rep_call.failed if hasattr(request.node, 'rep_call') else False:
+            print("\n" + "="*50)
+            print("TEST FAILED - DUMPING CONTAINER LOGS")
+            print("="*50)
+            for docker_container in containers:
+                try:
+                    docker_container.reload()
+                    logs = docker_container.logs(tail=50).decode('utf-8', errors='ignore')
+                    print(f"\nLogs for container {docker_container.name}:")
+                    print("-" * 30)
+                    print(logs)
+                    print("-" * 30)
+                except Exception as e:
+                    print(f"Failed to get logs for container {docker_container.name}: {e}")
+            print("="*50)
+    
+    def _cleanup_containers():
+        """Clean up containers after potentially logging them"""
+        # First log containers if test failed (before cleanup)
+        _log_containers_on_failure()
+        
+        # Then cleanup all containers
+        for container in containers:
+            cleanup_container(container)
+    
+    # Register the finalizer to handle logging and cleanup
+    request.addfinalizer(_cleanup_containers)
+    
     # Check if this is being used with indirect parametrization
     if hasattr(request, "param"):
         if isinstance(request.param, dict):
@@ -177,10 +215,6 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
     else:
         # Factory mode - return the factory function
         yield _create_container
-    
-    # Cleanup all containers
-    for container in containers:
-        cleanup_container(container)
 
 
 @pytest.fixture(scope="function")
