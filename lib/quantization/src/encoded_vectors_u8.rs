@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use io::file_operations::atomic_save_json;
 use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
@@ -258,17 +259,15 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 
     #[inline]
-    fn get_vec_ptr(&self, i: u32) -> (f32, *const u8) {
+    fn get_vec_ptr(&self, i: PointOffsetType) -> (f32, *const u8) {
         let vector_data_size = self.quantized_vector_size();
-        let data = self
-            .encoded_vectors
-            .get_vector_data(i as usize, vector_data_size);
+        let data = self.encoded_vectors.get_vector_data(i, vector_data_size);
         Self::parse_vec_data(data)
     }
 
-    pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
+    pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
         self.encoded_vectors
-            .get_vector_data(i as usize, self.quantized_vector_size())
+            .get_vector_data(i, self.quantized_vector_size())
     }
 
     pub fn layout(&self) -> Layout {
@@ -381,16 +380,24 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         }
     }
 
-    fn score_point(&self, query: &EncodedQueryU8, i: u32, hw_counter: &HardwareCounterCell) -> f32 {
+    fn score_point(
+        &self,
+        query: &EncodedQueryU8,
+        i: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         let vector_data_size = self.metadata.actual_dim + std::mem::size_of::<f32>();
-        let bytes = self
-            .encoded_vectors
-            .get_vector_data(i as usize, vector_data_size);
+        let bytes = self.encoded_vectors.get_vector_data(i, vector_data_size);
 
         self.score_point_vs_bytes(query, bytes, hw_counter)
     }
 
-    fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
+    fn score_internal(
+        &self,
+        i: PointOffsetType,
+        j: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         hw_counter
             .cpu_counter()
             .incr_delta(self.metadata.vector_parameters.dim);
@@ -473,7 +480,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         self.metadata.actual_dim + std::mem::size_of::<f32>()
     }
 
-    fn encode_internal_vector(&self, id: u32) -> Option<EncodedQueryU8> {
+    fn encode_internal_vector(&self, id: PointOffsetType) -> Option<EncodedQueryU8> {
         let offset_difference = match self.metadata.vector_parameters.distance_type {
             DistanceType::Dot => {
                 self.metadata.actual_dim as f32 * self.metadata.offset * self.metadata.offset

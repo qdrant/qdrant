@@ -5,12 +5,13 @@ use std::io::{Read, Write};
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 #[cfg(feature = "testing")]
 use memory::fadvise::OneshotFile;
 use memory::mmap_type::MmapFlusher;
 
 pub trait EncodedStorage {
-    fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8];
+    fn get_vector_data(&self, index: PointOffsetType, vector_size: usize) -> &[u8];
 
     fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self>
     where
@@ -46,8 +47,8 @@ pub struct TestEncodedStorage {
 
 #[cfg(feature = "testing")]
 impl EncodedStorage for TestEncodedStorage {
-    fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8] {
-        &self.data[vector_size * index..vector_size * (index + 1)]
+    fn get_vector_data(&self, index: PointOffsetType, vector_size: usize) -> &[u8] {
+        &self.data[vector_size * index as usize..vector_size * (index as usize + 1)]
     }
 
     fn push_vector(

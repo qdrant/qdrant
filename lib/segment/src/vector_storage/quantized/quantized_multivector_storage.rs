@@ -327,7 +327,10 @@ where
         self.quantized_storage.quantized_vector_size()
     }
 
-    fn encode_internal_vector(&self, id: u32) -> Option<Vec<QuantizedStorage::EncodedQuery>> {
+    fn encode_internal_vector(
+        &self,
+        id: PointOffsetType,
+    ) -> Option<Vec<QuantizedStorage::EncodedQuery>> {
         let offset = self.offsets.get_offset(id);
         let mut query = Vec::with_capacity(offset.count as usize);
         for i in 0..offset.count {
