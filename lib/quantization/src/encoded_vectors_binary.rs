@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use io::file_operations::atomic_save_json;
 use memory::mmap_ops::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use memory::mmap_type::MmapFlusher;
@@ -837,23 +838,28 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     fn score_point(
         &self,
         query: &EncodedQueryBQ<TBitsStoreType>,
-        i: u32,
+        i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
         let vector_data = self
             .encoded_vectors
-            .get_vector_data(i as _, self.get_quantized_vector_size());
+            .get_vector_data(i, self.get_quantized_vector_size());
 
         self.score_point_vs_bytes(query, vector_data, hw_counter)
     }
 
-    fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
+    fn score_internal(
+        &self,
+        i: PointOffsetType,
+        j: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         let vector_data_1 = self
             .encoded_vectors
-            .get_vector_data(i as _, self.get_quantized_vector_size());
+            .get_vector_data(i, self.get_quantized_vector_size());
         let vector_data_2 = self
             .encoded_vectors
-            .get_vector_data(j as _, self.get_quantized_vector_size());
+            .get_vector_data(j, self.get_quantized_vector_size());
 
         hw_counter
             .vector_io_read()
@@ -873,11 +879,14 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         self.get_quantized_vector_size()
     }
 
-    fn encode_internal_vector(&self, id: u32) -> Option<EncodedQueryBQ<TBitsStoreType>> {
+    fn encode_internal_vector(
+        &self,
+        id: PointOffsetType,
+    ) -> Option<EncodedQueryBQ<TBitsStoreType>> {
         Some(EncodedQueryBQ::Binary(EncodedBinVector {
             encoded_vector: transmute_from_u8_to_slice(
                 self.encoded_vectors
-                    .get_vector_data(id as _, self.get_quantized_vector_size()),
+                    .get_vector_data(id, self.get_quantized_vector_size()),
             )
             .to_vec(),
         }))

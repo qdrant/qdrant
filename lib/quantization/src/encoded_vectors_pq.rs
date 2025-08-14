@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use io::file_operations::atomic_save_json;
 use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
@@ -504,10 +505,15 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         EncodedQueryPQ { lut }
     }
 
-    fn score_point(&self, query: &EncodedQueryPQ, i: u32, hw_counter: &HardwareCounterCell) -> f32 {
+    fn score_point(
+        &self,
+        query: &EncodedQueryPQ,
+        i: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         let centroids = self
             .encoded_vectors
-            .get_vector_data(i as usize, self.metadata.vector_division.len());
+            .get_vector_data(i, self.metadata.vector_division.len());
 
         self.score_point_vs_bytes(query, centroids, hw_counter)
     }
@@ -515,13 +521,18 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     /// Score two points inside endoded data by their indexes
     /// To find score, this method decode both encoded vectors.
     /// Decocing in PQ is a replacing centroid index by centroid position
-    fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
+    fn score_internal(
+        &self,
+        i: PointOffsetType,
+        j: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         let centroids_i = self
             .encoded_vectors
-            .get_vector_data(i as usize, self.metadata.vector_division.len());
+            .get_vector_data(i, self.metadata.vector_division.len());
         let centroids_j = self
             .encoded_vectors
-            .get_vector_data(j as usize, self.metadata.vector_division.len());
+            .get_vector_data(j, self.metadata.vector_division.len());
 
         hw_counter
             .vector_io_read()
@@ -564,7 +575,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         self.metadata.vector_division.len()
     }
 
-    fn encode_internal_vector(&self, _id: u32) -> Option<EncodedQueryPQ> {
+    fn encode_internal_vector(&self, _id: PointOffsetType) -> Option<EncodedQueryPQ> {
         // We cannot create query in PQ from quantized vector without LUT accuracy loss
         None
     }
