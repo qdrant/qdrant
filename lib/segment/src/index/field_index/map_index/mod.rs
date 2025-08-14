@@ -252,7 +252,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.iter_values(),
             MapIndex::Immutable(index) => index.iter_values(),
-            MapIndex::Mmap(index) => index.iter_values(),
+            MapIndex::Mmap(index) => Box::new(index.iter_values()),
         }
     }
 

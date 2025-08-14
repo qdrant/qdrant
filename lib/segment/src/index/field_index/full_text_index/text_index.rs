@@ -76,7 +76,9 @@ impl FullTextIndex {
             Some(Self::Mmap(Box::new(mmap_index)))
         } else {
             // Load into RAM, use mmap as backing storage
-            ImmutableFullTextIndex::open_mmap(mmap_index).map(Self::Immutable)
+            Some(Self::Immutable(ImmutableFullTextIndex::open_mmap(
+                mmap_index,
+            )))
         };
         Ok(index)
     }

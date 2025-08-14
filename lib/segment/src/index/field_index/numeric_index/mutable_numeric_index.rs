@@ -53,7 +53,7 @@ where
 {
     #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
-    Gridstore(Option<Arc<RwLock<Gridstore<Vec<T>>>>>),
+    Gridstore(Arc<RwLock<Gridstore<Vec<T>>>>),
 }
 
 // Numeric Index with insertions and deletions without persistence
@@ -113,10 +113,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> InMemoryNumericIndex<T> {
     ///
     /// Expensive because this reads the full mmap index.
     pub(super) fn from_mmap(mmap_index: &MmapNumericIndex<T>) -> Self {
-        let point_count = mmap_index
-            .storage
-            .as_ref()
-            .map_or(0, |storage| storage.point_to_values.len());
+        let point_count = mmap_index.storage.point_to_values.len();
 
         (0..point_count as PointOffsetType)
             .filter_map(|idx| mmap_index.get_values(idx).map(|values| (idx, values)))
@@ -341,7 +338,7 @@ where
             .unwrap();
 
         Ok(Some(Self {
-            storage: Storage::Gridstore(Some(Arc::new(RwLock::new(store)))),
+            storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
             in_memory_index,
         }))
     }
@@ -364,12 +361,11 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Gridstore(Some(store)) => store.write().clear().map_err(|err| {
+            Storage::Gridstore(store) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable numeric index: {err}",
                 ))
             }),
-            Storage::Gridstore(None) => Ok(()),
         }
     }
 
@@ -378,8 +374,7 @@ where
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Gridstore(mut store @ Some(_)) => {
-                let store = store.take().unwrap();
+            Storage::Gridstore(store) => {
                 let store =
                     Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
 
@@ -389,7 +384,6 @@ where
                     ))
                 })
             }
-            Storage::Gridstore(None) => Ok(()),
         }
     }
 
@@ -401,12 +395,11 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
-            Storage::Gridstore(Some(index)) => index.read().clear_cache().map_err(|err| {
+            Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable numeric index gridstore cache: {err}"
                 ))
             }),
-            Storage::Gridstore(None) => Ok(()),
         }
     }
 
@@ -415,8 +408,7 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
-            Storage::Gridstore(Some(store)) => store.read().files(),
-            Storage::Gridstore(None) => vec![],
+            Storage::Gridstore(store) => store.read().files(),
         }
     }
 
@@ -425,7 +417,7 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
-            Storage::Gridstore(Some(store)) => {
+            Storage::Gridstore(store) => {
                 let store = Arc::downgrade(store);
                 Box::new(move || {
                     store
@@ -444,7 +436,6 @@ where
                         })
                 })
             }
-            Storage::Gridstore(None) => Box::new(|| Ok(())),
         }
     }
 
@@ -468,10 +459,10 @@ where
                 }
             }
             // We cannot store empty value, then delete instead
-            Storage::Gridstore(Some(store)) if values.is_empty() => {
+            Storage::Gridstore(store) if values.is_empty() => {
                 store.write().delete_value(idx);
             }
-            Storage::Gridstore(Some(store)) => {
+            Storage::Gridstore(store) => {
                 let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
                 store
                     .write()
@@ -481,11 +472,6 @@ where
                             "failed to put value in mutable numeric index gridstore: {err}"
                         ))
                     })?;
-            }
-            Storage::Gridstore(None) => {
-                return Err(OperationError::service_error(
-                    "Failed to add values to mutable numeric index, backing Gridstore storage does not exist",
-                ));
             }
         }
 
@@ -508,13 +494,8 @@ where
                     })
                     .transpose()?;
             }
-            Storage::Gridstore(Some(store)) => {
+            Storage::Gridstore(store) => {
                 store.write().delete_value(idx);
-            }
-            Storage::Gridstore(None) => {
-                return Err(OperationError::service_error(
-                    "Failed to remove values to mutable numeric index, backing Gridstore storage does not exist",
-                ));
             }
         }
 

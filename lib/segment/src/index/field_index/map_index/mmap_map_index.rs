@@ -11,7 +11,7 @@ use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
-use itertools::{Either, Itertools};
+use itertools::Itertools;
 use memmap2::MmapMut;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::AdviceSetting;
@@ -31,7 +31,7 @@ const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
 pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized> {
     path: PathBuf,
-    pub(super) storage: Option<Storage<N>>,
+    pub(super) storage: Storage<N>,
     // pub(super) value_to_points: MmapHashMap<N, PointOffsetType>,
     // point_to_values: MmapPointToValues<N>,
     // pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
@@ -76,11 +76,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
 
         Ok(Some(Self {
             path: path.to_path_buf(),
-            storage: Some(Storage {
+            storage: Storage {
                 value_to_points: hashmap,
                 point_to_values,
                 deleted: MmapBitSliceBufferedUpdateWrapper::new(deleted),
-            }),
+            },
             deleted_count,
             total_key_value_pairs: config.total_key_value_pairs,
             is_on_disk,
@@ -147,11 +147,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn flusher(&self) -> Flusher {
-        if let Some(storage) = &self.storage {
-            storage.deleted.flusher()
-        } else {
-            Box::new(|| Ok(()))
-        }
+        self.storage.deleted.flusher()
     }
 
     pub fn wipe(self) -> OperationResult<()> {
@@ -170,30 +166,22 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             self.path.join(DELETED_PATH),
             self.path.join(CONFIG_PATH),
         ];
-        if let Some(storage) = &self.storage {
-            files.extend(storage.point_to_values.files());
-        }
+        files.extend(self.storage.point_to_values.files());
         files
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
         let mut files = vec![self.path.join(HASHMAP_PATH), self.path.join(CONFIG_PATH)];
-        if let Some(storage) = &self.storage {
-            files.extend(storage.point_to_values.immutable_files());
-        }
+        files.extend(self.storage.point_to_values.immutable_files());
         files
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) {
-        let Some(storage) = &mut self.storage else {
-            return;
-        };
-
         let idx = idx as usize;
-        if let Some(deleted) = storage.deleted.get(idx)
+        if let Some(deleted) = self.storage.deleted.get(idx)
             && !deleted
         {
-            storage.deleted.set(idx, true);
+            self.storage.deleted.set(idx, true);
             self.deleted_count += 1;
         }
     }
@@ -204,10 +192,6 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> bool {
-        let Some(storage) = &self.storage else {
-            return false;
-        };
-
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         // Measure self.deleted access.
@@ -215,12 +199,12 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             .payload_index_io_read_counter()
             .incr_delta(size_of::<bool>());
 
-        storage
+        self.storage
             .deleted
             .get(idx as usize)
             .filter(|b| !b)
             .is_some_and(|_| {
-                storage.point_to_values.check_values_any(
+                self.storage.point_to_values.check_values_any(
                     idx,
                     |v| check_fn(N::from_referenced(&v)),
                     &hw_counter,
@@ -232,38 +216,26 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         &self,
         idx: PointOffsetType,
     ) -> Option<Box<dyn Iterator<Item = N::Referenced<'_>> + '_>> {
-        let Some(storage) = &self.storage else {
-            return None;
-        };
-
-        storage
+        self.storage
             .deleted
             .get(idx as usize)
             .filter(|b| !b)
             .and_then(|_| {
-                Some(Box::new(storage.point_to_values.get_values(idx)?)
+                Some(Box::new(self.storage.point_to_values.get_values(idx)?)
                     as Box<dyn Iterator<Item = N::Referenced<'_>>>)
             })
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        let Some(storage) = &self.storage else {
-            return None;
-        };
-
-        storage
+        self.storage
             .deleted
             .get(idx as usize)
             .filter(|b| !b)
-            .and_then(|_| storage.point_to_values.get_values_count(idx))
+            .and_then(|_| self.storage.point_to_values.get_values_count(idx))
     }
 
     pub fn get_indexed_points(&self) -> usize {
-        let Some(storage) = &self.storage else {
-            return 0;
-        };
-
-        storage
+        self.storage
             .point_to_values
             .len()
             .saturating_sub(self.deleted_count)
@@ -276,11 +248,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn get_unique_values_count(&self) -> usize {
-        let Some(storage) = &self.storage else {
-            return 0;
-        };
-
-        storage.value_to_points.keys_count()
+        self.storage.value_to_points.keys_count()
     }
 
     pub fn get_count_for_value(
@@ -288,10 +256,6 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         value: &N,
         hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
-        let Some(storage) = &self.storage else {
-            return None;
-        };
-
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         // Since `value_to_points.get` doesn't actually force read from disk for all values
@@ -300,7 +264,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             .payload_index_io_read_counter()
             .incr_delta(READ_ENTRY_OVERHEAD);
 
-        match storage.value_to_points.get(value) {
+        match self.storage.value_to_points.get(value) {
             Ok(Some(points)) => Some(points.len()),
             Ok(None) => None,
             Err(err) => {
@@ -315,13 +279,9 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
-        let Some(storage) = &self.storage else {
-            return Box::new(iter::empty());
-        };
-
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
-        match storage.value_to_points.get(value) {
+        match self.storage.value_to_points.get(value) {
             Ok(Some(slice)) => {
                 // We're iterating over the whole (mmapped) slice
                 hw_counter
@@ -331,7 +291,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 Box::new(
                     slice
                         .iter()
-                        .filter(|idx| !storage.deleted.get(**idx as usize).unwrap_or(false))
+                        .filter(|idx| !self.storage.deleted.get(**idx as usize).unwrap_or(false))
                         .copied(),
                 )
             }
@@ -353,43 +313,28 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         }
     }
 
-    pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
-        let Some(storage) = &self.storage else {
-            return Box::new(iter::empty());
-        };
-
-        Box::new(storage.value_to_points.keys())
+    pub fn iter_values(&self) -> impl Iterator<Item = &N> + '_ {
+        self.storage.value_to_points.keys()
     }
 
-    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
     pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
-        let Some(storage) = &self.storage else {
-            return Either::Left(iter::empty());
-        };
-
-        let iter = storage.value_to_points.iter().map(|(k, v)| {
+        self.storage.value_to_points.iter().map(|(k, v)| {
             let count = v
                 .iter()
-                .filter(|idx| !storage.deleted.get(**idx as usize).unwrap_or(true))
+                .filter(|idx| !self.storage.deleted.get(**idx as usize).unwrap_or(true))
                 .unique()
                 .count();
             (k, count)
-        });
-        Either::Right(iter)
+        })
     }
 
-    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
     pub fn iter_values_map<'a>(
         &'a self,
         hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = (&'a N, IdIter<'a>)> + 'a {
-        let Some(storage) = &self.storage else {
-            return Either::Right(iter::empty());
-        };
-
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
-        let iter = storage.value_to_points.iter().map(move |(k, v)| {
+        self.storage.value_to_points.iter().map(move |(k, v)| {
             hw_counter
                 .payload_index_io_read_counter()
                 .incr_delta(k.write_bytes());
@@ -399,7 +344,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 Box::new(
                     v.iter()
                         .copied()
-                        .filter(|idx| !storage.deleted.get(*idx as usize).unwrap_or(true))
+                        .filter(|idx| !self.storage.deleted.get(*idx as usize).unwrap_or(true))
                         .measure_hw_with_acc(
                             hw_counter.new_accumulator(),
                             size_of::<PointOffsetType>(),
@@ -407,8 +352,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                         ),
                 ) as IdIter,
             )
-        });
-        Either::Left(iter)
+        })
     }
 
     fn make_conditioned_counter<'a>(
@@ -425,10 +369,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
-        if let Some(storage) = &self.storage {
-            storage.value_to_points.populate()?;
-            storage.point_to_values.populate();
-        }
+        self.storage.value_to_points.populate()?;
+        self.storage.point_to_values.populate();
         Ok(())
     }
 
@@ -440,9 +382,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         clear_disk_cache(&value_to_points_path)?;
         clear_disk_cache(&deleted_path)?;
 
-        if let Some(storage) = &self.storage {
-            storage.point_to_values.clear_cache()?;
-        }
+        self.storage.point_to_values.clear_cache()?;
         Ok(())
     }
 }

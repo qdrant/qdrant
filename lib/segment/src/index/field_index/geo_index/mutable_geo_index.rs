@@ -44,7 +44,7 @@ pub struct MutableGeoMapIndex {
 enum Storage {
     #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
-    Gridstore(Option<Arc<RwLock<Gridstore<Vec<RawGeoPoint>>>>>),
+    Gridstore(Arc<RwLock<Gridstore<Vec<RawGeoPoint>>>>),
 }
 
 pub struct InMemoryGeoMapIndex {
@@ -225,7 +225,7 @@ impl MutableGeoMapIndex {
 
         Ok(Some(Self {
             in_memory_index,
-            storage: Storage::Gridstore(Some(Arc::new(RwLock::new(store)))),
+            storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
         }))
     }
 
@@ -235,10 +235,9 @@ impl MutableGeoMapIndex {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Gridstore(Some(store)) => store.write().clear().map_err(|err| {
+            Storage::Gridstore(store) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!("Failed to clear mutable geo index: {err}",))
             }),
-            Storage::Gridstore(None) => Ok(()),
         }
     }
 
@@ -247,8 +246,7 @@ impl MutableGeoMapIndex {
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Gridstore(mut store @ Some(_)) => {
-                let store = store.take().unwrap();
+            Storage::Gridstore(store) => {
                 let store =
                     Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
 
@@ -258,7 +256,6 @@ impl MutableGeoMapIndex {
                     ))
                 })
             }
-            Storage::Gridstore(None) => Ok(()),
         }
     }
 
@@ -270,12 +267,11 @@ impl MutableGeoMapIndex {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
-            Storage::Gridstore(Some(index)) => index.read().clear_cache().map_err(|err| {
+            Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable geo index gridstore cache: {err}"
                 ))
             }),
-            Storage::Gridstore(None) => Ok(()),
         }
     }
 
@@ -284,8 +280,7 @@ impl MutableGeoMapIndex {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
-            Storage::Gridstore(Some(store)) => store.read().files(),
-            Storage::Gridstore(None) => vec![],
+            Storage::Gridstore(store) => store.read().files(),
         }
     }
 
@@ -294,7 +289,7 @@ impl MutableGeoMapIndex {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
-            Storage::Gridstore(Some(store)) => {
+            Storage::Gridstore(store) => {
                 let store = Arc::downgrade(store);
                 Box::new(move || {
                     store
@@ -313,7 +308,6 @@ impl MutableGeoMapIndex {
                         })
                 })
             }
-            Storage::Gridstore(None) => Box::new(|| Ok(())),
         }
     }
 
@@ -340,10 +334,10 @@ impl MutableGeoMapIndex {
                 }
             }
             // We cannot store empty value, then delete instead
-            Storage::Gridstore(Some(store)) if values.is_empty() => {
+            Storage::Gridstore(store) if values.is_empty() => {
                 store.write().delete_value(idx);
             }
-            Storage::Gridstore(Some(store)) => {
+            Storage::Gridstore(store) => {
                 let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
                 let values = values
                     .iter()
@@ -358,11 +352,6 @@ impl MutableGeoMapIndex {
                             "failed to put value in mutable geo index gridstore: {err}"
                         ))
                     })?;
-            }
-            Storage::Gridstore(None) => {
-                return Err(OperationError::service_error(
-                    "Failed to add values to mutable geo index, backing Gridstore storage does not exist",
-                ));
             }
         }
 
@@ -391,13 +380,8 @@ impl MutableGeoMapIndex {
                     db_wrapper.remove(&key)?;
                 }
             }
-            Storage::Gridstore(Some(store)) => {
+            Storage::Gridstore(store) => {
                 store.write().delete_value(idx);
-            }
-            Storage::Gridstore(None) => {
-                return Err(OperationError::service_error(
-                    "Failed to remove values to mutable geo index, backing Gridstore storage does not exist",
-                ));
             }
         }
 
