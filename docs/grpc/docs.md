@@ -236,6 +236,7 @@
     - [QueryResponse](#qdrant-QueryResponse)
     - [Range](#qdrant-Range)
     - [ReadConsistency](#qdrant-ReadConsistency)
+    - [ReciprocalRankFusion](#qdrant-ReciprocalRankFusion)
     - [RecommendBatchPoints](#qdrant-RecommendBatchPoints)
     - [RecommendBatchResponse](#qdrant-RecommendBatchResponse)
     - [RecommendGroupsResponse](#qdrant-RecommendGroupsResponse)
@@ -4011,6 +4012,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | sample | [Sample](#qdrant-Sample) |  | Sample points from the collection. |
 | formula | [Formula](#qdrant-Formula) |  | Score boosting via an arbitrary formula |
 | nearest_with_mmr | [NearestInputWithMmr](#qdrant-NearestInputWithMmr) |  | Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm. |
+| rrf_custom | [ReciprocalRankFusion](#qdrant-ReciprocalRankFusion) |  | Reciprocal Rank Fusion with custom `k` parameter. |
 
 
 
@@ -4174,6 +4176,21 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | type | [ReadConsistencyType](#qdrant-ReadConsistencyType) |  | Common read consistency configurations |
 | factor | [uint64](#uint64) |  | Send request to a specified number of nodes, and return points which are present on all of them |
+
+
+
+
+
+
+<a name="qdrant-ReciprocalRankFusion"></a>
+
+### ReciprocalRankFusion
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| k | [uint32](#uint32) |  |  |
 
 
 
@@ -5216,7 +5233,7 @@ Vector type to be used in queries. Ids will be substituted with their correspond
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| RRF | 0 | Reciprocal Rank Fusion |
+| RRF | 0 | Reciprocal Rank Fusion (with k=2) |
 | DBSF | 1 | Distribution-Based Score Fusion |
 
 
