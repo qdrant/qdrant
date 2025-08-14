@@ -71,6 +71,7 @@ cancel = { path = "../common/cancel" }
 io = { path = "../common/io" }
 issues = { path = "../common/issues" }
 segment = { path = "../segment", default-features = false }
+shard = { path = "../shard" }
 sparse = { path = "../sparse" }
 api = { path = "../api" }
 
