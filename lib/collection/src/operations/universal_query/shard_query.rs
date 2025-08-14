@@ -3,6 +3,7 @@ use api::grpc::conversions::grpc_condition_into_condition;
 use api::grpc::{DecayParamsExpression, qdrant as grpc};
 use common::types::ScoreType;
 use itertools::Itertools;
+use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
@@ -56,7 +57,7 @@ impl ShardQueryRequest {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FusionInternal {
     /// Reciprocal Rank Fusion
-    Rrf,
+    RrfK(usize),
     /// Distribution-based score fusion
     Dbsf,
 }
@@ -116,7 +117,7 @@ impl ScoringQuery {
         match self {
             Self::Fusion(fusion) => match fusion {
                 // We need the ranking information of each prefetch
-                FusionInternal::Rrf => true,
+                FusionInternal::RrfK(_) => true,
                 // We need the score distribution information of each prefetch
                 FusionInternal::Dbsf => true,
             },
@@ -154,7 +155,7 @@ impl ScoringQuery {
                     }
                 }
                 ScoringQuery::Fusion(fusion) => match fusion {
-                    FusionInternal::Rrf | FusionInternal::Dbsf => Some(Order::LargeBetter),
+                    FusionInternal::RrfK(_) | FusionInternal::Dbsf => Some(Order::LargeBetter),
                 },
                 // Score boosting formulas are always have descending order,
                 // Euclidean scores can be negated within the formula
@@ -535,17 +536,43 @@ fn try_from_decay_params(
 impl From<api::grpc::qdrant::Fusion> for FusionInternal {
     fn from(fusion: api::grpc::qdrant::Fusion) -> Self {
         match fusion {
-            api::grpc::qdrant::Fusion::Rrf => FusionInternal::Rrf,
+            api::grpc::qdrant::Fusion::Rrf => FusionInternal::RrfK(DEFAULT_RRF_K),
             api::grpc::qdrant::Fusion::Dbsf => FusionInternal::Dbsf,
         }
     }
 }
 
-impl From<FusionInternal> for api::grpc::qdrant::Fusion {
+impl From<FusionInternal> for api::grpc::qdrant::Query {
     fn from(fusion: FusionInternal) -> Self {
+        use api::grpc::qdrant::query::Variant as QueryVariant;
+        use api::grpc::qdrant::{Fusion, Query, ReciprocalRankFusion};
+
         match fusion {
-            FusionInternal::Rrf => api::grpc::qdrant::Fusion::Rrf,
-            FusionInternal::Dbsf => api::grpc::qdrant::Fusion::Dbsf,
+            FusionInternal::RrfK(k) => Query {
+                variant: Some(QueryVariant::RrfCustom(ReciprocalRankFusion {
+                    k: k as u32,
+                })),
+            },
+            FusionInternal::Dbsf => Query {
+                variant: Some(QueryVariant::Fusion(i32::from(Fusion::Dbsf))),
+            },
+        }
+    }
+}
+
+impl From<FusionInternal> for api::grpc::qdrant::query_shard_points::Query {
+    fn from(fusion: FusionInternal) -> Self {
+        use api::grpc::qdrant::query_shard_points::Query;
+        use api::grpc::qdrant::query_shard_points::query::Score;
+        use api::grpc::qdrant::{Fusion, ReciprocalRankFusion};
+
+        match fusion {
+            FusionInternal::RrfK(k) => Query {
+                score: Some(Score::RrfCustom(ReciprocalRankFusion { k: k as u32 })),
+            },
+            FusionInternal::Dbsf => Query {
+                score: Some(Score::Fusion(i32::from(Fusion::Dbsf))),
+            },
         }
     }
 }
@@ -580,6 +607,9 @@ impl ScoringQuery {
             }
             grpc::query_shard_points::query::Score::Fusion(fusion) => {
                 ScoringQuery::Fusion(FusionInternal::try_from(fusion)?)
+            }
+            grpc::query_shard_points::query::Score::RrfCustom(grpc::ReciprocalRankFusion { k }) => {
+                ScoringQuery::Fusion(FusionInternal::RrfK(k as usize))
             }
             grpc::query_shard_points::query::Score::OrderBy(order_by) => {
                 ScoringQuery::OrderBy(OrderBy::try_from(order_by)?)
@@ -647,9 +677,7 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
             ScoringQuery::Vector(query) => Self {
                 score: Some(Score::Vector(grpc::RawQuery::from(query))),
             },
-            ScoringQuery::Fusion(fusion) => Self {
-                score: Some(Score::Fusion(api::grpc::qdrant::Fusion::from(fusion) as i32)),
-            },
+            ScoringQuery::Fusion(fusion) => Self::from(fusion),
             ScoringQuery::OrderBy(order_by) => Self {
                 score: Some(Score::OrderBy(grpc::OrderBy::from(order_by))),
             },

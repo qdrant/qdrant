@@ -96,7 +96,7 @@ impl Validate for ContextInput {
 impl Validate for Fusion {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
-            Fusion::Rrf | Fusion::Dbsf => Ok(()),
+            Fusion::Rrf | Fusion::RrfK(_) | Fusion::Dbsf => Ok(()),
         }
     }
 }

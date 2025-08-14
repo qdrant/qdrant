@@ -290,6 +290,9 @@ fn convert_query_with_inferred(
         }
         Variant::OrderBy(order_by) => Query::OrderBy(OrderBy::try_from(order_by)?),
         Variant::Fusion(fusion) => Query::Fusion(FusionInternal::try_from(fusion)?),
+        Variant::RrfCustom(grpc::ReciprocalRankFusion { k }) => {
+            Query::Fusion(FusionInternal::RrfK(k as usize))
+        }
         Variant::Formula(formula) => Query::Formula(FormulaInternal::try_from(formula)?),
         Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
         Variant::NearestWithMmr(grpc::NearestInputWithMmr { nearest, mmr }) => {

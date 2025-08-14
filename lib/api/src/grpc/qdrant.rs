@@ -5632,8 +5632,17 @@ pub struct Mmr {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReciprocalRankFusion {
+    #[prost(uint32, tag = "1")]
+    #[validate(range(min = 1))]
+    pub k: u32,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
@@ -5670,6 +5679,9 @@ pub mod query {
         /// Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm.
         #[prost(message, tag = "9")]
         NearestWithMmr(super::NearestInputWithMmr),
+        /// Reciprocal Rank Fusion with custom `k` parameter.
+        #[prost(message, tag = "10")]
+        RrfCustom(super::ReciprocalRankFusion),
     }
 }
 #[derive(validator::Validate)]
@@ -7106,7 +7118,7 @@ impl RecommendStrategy {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Fusion {
-    /// Reciprocal Rank Fusion
+    /// Reciprocal Rank Fusion (with k=2)
     Rrf = 0,
     /// Distribution-Based Score Fusion
     Dbsf = 1,
@@ -10161,7 +10173,7 @@ pub mod query_shard_points {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Query {
-        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6")]
+        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7")]
         pub score: ::core::option::Option<query::Score>,
     }
     /// Nested message and enum types in `Query`.
@@ -10188,6 +10200,9 @@ pub mod query_shard_points {
             /// Maximal Marginal Relevance
             #[prost(message, tag = "6")]
             Mmr(super::super::MmrInternal),
+            /// Reciprocal Rank Fusion with custom parameters
+            #[prost(message, tag = "7")]
+            RrfCustom(super::super::ReciprocalRankFusion),
         }
     }
     #[derive(serde::Serialize)]

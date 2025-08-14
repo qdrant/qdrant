@@ -565,7 +565,7 @@ message ContextInput {
 }
 
 enum Fusion {
-    RRF = 0; // Reciprocal Rank Fusion
+    RRF = 0; // Reciprocal Rank Fusion (with k=2)
     DBSF = 1; // Distribution-Based Score Fusion
 }
 
@@ -669,6 +669,10 @@ message Mmr {
     optional uint32 candidates_limit = 3;
 }
 
+message ReciprocalRankFusion {
+    uint32 k = 1;
+}
+
 message Query {
   oneof variant {
     VectorInput nearest = 1; // Find the nearest neighbors to this vector.
@@ -680,6 +684,7 @@ message Query {
     Sample sample = 7; // Sample points from the collection.
     Formula formula = 8; // Score boosting via an arbitrary formula
     NearestInputWithMmr nearest_with_mmr = 9; // Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm.
+    ReciprocalRankFusion rrf_custom = 10; // Reciprocal Rank Fusion with custom `k` parameter.
   }
 }
 

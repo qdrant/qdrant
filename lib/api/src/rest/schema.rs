@@ -514,6 +514,8 @@ pub enum OrderByInterface {
 #[serde(rename_all = "snake_case")]
 pub enum Fusion {
     Rrf,
+    #[validate(range(min = 1))]
+    RrfK(usize),
     Dbsf,
 }
 
