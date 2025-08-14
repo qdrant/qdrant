@@ -3,11 +3,13 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use memory::fadvise::OneshotFile;
 use memory::mmap_type::MmapFlusher;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::vector_utils::TrySetCapacityExact;
+use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 
 #[derive(Debug)]
@@ -16,8 +18,8 @@ pub struct QuantizedRamStorage {
 }
 
 impl quantization::EncodedStorage for QuantizedRamStorage {
-    fn get_vector_data(&self, index: usize, _vector_size: usize) -> &[u8] {
-        self.vectors.get(index)
+    fn get_vector_data(&self, index: PointOffsetType, _vector_size: usize) -> &[u8] {
+        self.vectors.get(index as VectorOffsetType)
     }
 
     fn push_vector(

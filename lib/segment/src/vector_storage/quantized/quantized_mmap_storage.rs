@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
 use memory::madvise::Madviseable;
@@ -23,8 +24,8 @@ pub struct QuantizedMmapStorageBuilder {
 }
 
 impl quantization::EncodedStorage for QuantizedMmapStorage {
-    fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8] {
-        &self.mmap[vector_size * index..vector_size * (index + 1)]
+    fn get_vector_data(&self, index: PointOffsetType, vector_size: usize) -> &[u8] {
+        &self.mmap[vector_size * index as usize..vector_size * (index as usize + 1)]
     }
 
     fn push_vector(

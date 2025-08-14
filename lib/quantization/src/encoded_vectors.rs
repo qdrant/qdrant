@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
 
@@ -44,18 +45,23 @@ pub trait EncodedVectors: Sized {
     fn score_point(
         &self,
         query: &Self::EncodedQuery,
-        i: u32,
+        i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32;
 
-    fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32;
+    fn score_internal(
+        &self,
+        i: PointOffsetType,
+        j: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32;
 
     /// Return size in bytes of a quantized vector
     fn quantized_vector_size(&self) -> usize;
 
     /// Construct a query from stored vector, so it can be used for scoring.
     /// Some implementations may not support this, in which case they should return `None`.
-    fn encode_internal_vector(&self, id: u32) -> Option<Self::EncodedQuery>;
+    fn encode_internal_vector(&self, id: PointOffsetType) -> Option<Self::EncodedQuery>;
 
     fn push_vector(
         &mut self,
