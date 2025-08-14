@@ -194,7 +194,6 @@ pub struct FinishReshardingOperation {
     pub finish_resharding: FinishResharding,
 }
 
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ReplicatePointsOperation {
