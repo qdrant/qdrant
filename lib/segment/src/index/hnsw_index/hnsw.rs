@@ -14,7 +14,7 @@ use common::cpu::linux_low_thread_priority;
 use common::ext::BitSliceExt as _;
 use common::flags::FeatureFlags;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
-use itertools::{EitherOrBoth, Itertools as _};
+use itertools::EitherOrBoth;
 use log::{debug, trace};
 use memory::fadvise::clear_disk_cache;
 use parking_lot::Mutex;
@@ -50,6 +50,9 @@ use crate::index::hnsw_index::point_scorer::{BoxCow, FilteredScorer};
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::vector_index_search_common::{
+    get_oversampled_top, is_quantized_search, postprocess_search_result,
+};
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::payload_storage::FilterContext;
@@ -58,7 +61,6 @@ use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{
     FieldCondition, Filter, HnswConfig, HnswGlobalConfig, QuantizationSearchParams, SearchParams,
-    default_quantization_ignore_value, default_quantization_oversampling_value,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::DiscoveryQuery;
@@ -959,7 +961,7 @@ impl HNSWIndex {
             vector_query_context.hardware_counter(),
             filter_context,
         )?;
-        let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
+        let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
         let search_result = self.graph.search(
             oversampled_top,
@@ -969,8 +971,11 @@ impl HNSWIndex {
             &is_stopped,
         )?;
 
-        let res = self.postprocess_search_result(
+        let res = postprocess_search_result(
             search_result,
+            id_tracker.deleted_point_bitslice(),
+            &vector_storage,
+            quantized_vectors.as_ref(),
             vector,
             params,
             top,
@@ -1032,12 +1037,15 @@ impl HNSWIndex {
             vector_query_context.hardware_counter(),
             None,
         )?;
-        let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
+        let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
         let search_result = points_scorer.peek_top_iter(points, oversampled_top, &is_stopped)?;
 
-        let res = self.postprocess_search_result(
+        let res = postprocess_search_result(
             search_result,
+            id_tracker.deleted_point_bitslice(),
+            &vector_storage,
+            quantized_vectors.as_ref(),
             vector,
             params,
             top,
@@ -1132,17 +1140,6 @@ impl HNSWIndex {
         )
     }
 
-    fn is_quantized_search(
-        quantized_storage: Option<&QuantizedVectors>,
-        params: Option<&SearchParams>,
-    ) -> bool {
-        let ignore_quantization = params
-            .and_then(|p| p.quantization)
-            .map(|q| q.ignore)
-            .unwrap_or(default_quantization_ignore_value());
-        quantized_storage.is_some() && !ignore_quantization
-    }
-
     fn construct_search_scorer<'a>(
         vector: &QueryVector,
         vector_storage: &'a VectorStorageEnum,
@@ -1152,7 +1149,7 @@ impl HNSWIndex {
         hardware_counter: HardwareCounterCell,
         filter_context: Option<Box<dyn FilterContext + 'a>>,
     ) -> OperationResult<FilteredScorer<'a>> {
-        let quantization_enabled = Self::is_quantized_search(quantized_storage, params);
+        let quantization_enabled = is_quantized_search(quantized_storage, params);
         FilteredScorer::new(
             vector.to_owned(),
             vector_storage,
@@ -1161,70 +1158,6 @@ impl HNSWIndex {
             deleted_points,
             hardware_counter,
         )
-    }
-
-    fn get_oversampled_top(
-        quantized_storage: Option<&QuantizedVectors>,
-        params: Option<&SearchParams>,
-        top: usize,
-    ) -> usize {
-        let quantization_enabled = Self::is_quantized_search(quantized_storage, params);
-
-        let oversampling_value = params
-            .and_then(|p| p.quantization)
-            .map(|q| q.oversampling)
-            .unwrap_or(default_quantization_oversampling_value());
-
-        match oversampling_value {
-            Some(oversampling) if quantization_enabled && oversampling > 1.0 => {
-                (oversampling * top as f64) as usize
-            }
-            _ => top,
-        }
-    }
-
-    fn postprocess_search_result(
-        &self,
-        mut search_result: Vec<ScoredPointOffset>,
-        vector: &QueryVector,
-        params: Option<&SearchParams>,
-        top: usize,
-        hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let id_tracker = self.id_tracker.borrow();
-        let vector_storage = self.vector_storage.borrow();
-        let quantized_vectors = self.quantized_vectors.borrow();
-
-        let quantization_enabled = Self::is_quantized_search(quantized_vectors.as_ref(), params);
-
-        let default_rescoring = quantized_vectors
-            .as_ref()
-            .map(|q| q.default_rescoring())
-            .unwrap_or(false);
-        let rescore = quantization_enabled
-            && params
-                .and_then(|p| p.quantization)
-                .and_then(|q| q.rescore)
-                .unwrap_or(default_rescoring);
-
-        if rescore {
-            let mut scorer = FilteredScorer::new(
-                vector.to_owned(),
-                &vector_storage,
-                None,
-                None,
-                id_tracker.deleted_point_bitslice(),
-                hardware_counter,
-            )?;
-
-            search_result = scorer
-                .score_points(&mut search_result.iter().map(|x| x.idx).collect_vec(), 0)
-                .collect();
-            search_result.sort_unstable();
-            search_result.reverse();
-        }
-        search_result.truncate(top);
-        Ok(search_result)
     }
 
     /// Read underlying data from disk into disk cache.
