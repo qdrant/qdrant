@@ -15,6 +15,32 @@ use super::{OperationToShard, SplitByShard, point_to_shards, split_iter_by_shard
 use crate::hash_ring::HashRingRouter;
 use crate::shards::shard::ShardId;
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum PointsSelector {
+    /// Select points by list of IDs
+    PointIdsSelector(PointIdsList),
+    /// Select points by filtering condition
+    FilterSelector(FilterSelector),
+}
+
+impl Validate for PointsSelector {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            PointsSelector::PointIdsSelector(ids) => ids.validate(),
+            PointsSelector::FilterSelector(filter) => filter.validate(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct FilterSelector {
+    pub filter: Filter,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
 /// Defines write ordering guarantees for collection operations
 ///
 /// * `weak` - write operations may be reordered, works faster, default
@@ -32,28 +58,26 @@ pub enum WriteOrdering {
     Strong,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
-pub struct FilterSelector {
-    pub filter: Filter,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shard_key: Option<ShardKeySelector>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(untagged, rename_all = "snake_case")]
-pub enum PointsSelector {
-    /// Select points by list of IDs
-    PointIdsSelector(PointIdsList),
-    /// Select points by filtering condition
-    FilterSelector(FilterSelector),
-}
-
-impl Validate for PointsSelector {
-    fn validate(&self) -> Result<(), ValidationErrors> {
+impl SplitByShard for PointOperations {
+    fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
         match self {
-            PointsSelector::PointIdsSelector(ids) => ids.validate(),
-            PointsSelector::FilterSelector(filter) => filter.validate(),
+            PointOperations::UpsertPoints(upsert_points) => upsert_points
+                .split_by_shard(ring)
+                .map(PointOperations::UpsertPoints),
+            PointOperations::UpsertPointsConditional(conditional_upsert) => conditional_upsert
+                .split_by_shard(ring)
+                .map(PointOperations::UpsertPointsConditional),
+            PointOperations::DeletePoints { ids } => split_iter_by_shard(ids, |id| *id, ring)
+                .map(|ids| PointOperations::DeletePoints { ids }),
+            by_filter @ PointOperations::DeletePointsByFilter(_) => {
+                OperationToShard::to_all(by_filter)
+            }
+            PointOperations::SyncPoints(_) => {
+                #[cfg(debug_assertions)]
+                panic!("SyncPoints operation is intended to by applied to specific shard only");
+                #[cfg(not(debug_assertions))]
+                OperationToShard::by_shard(vec![])
+            }
         }
     }
 }
@@ -279,30 +303,6 @@ impl SplitByShard for BatchPersisted {
 impl SplitByShard for Vec<PointStructPersisted> {
     fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
         split_iter_by_shard(self, |point| point.id, ring)
-    }
-}
-
-impl SplitByShard for PointOperations {
-    fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
-        match self {
-            PointOperations::UpsertPoints(upsert_points) => upsert_points
-                .split_by_shard(ring)
-                .map(PointOperations::UpsertPoints),
-            PointOperations::UpsertPointsConditional(conditional_upsert) => conditional_upsert
-                .split_by_shard(ring)
-                .map(PointOperations::UpsertPointsConditional),
-            PointOperations::DeletePoints { ids } => split_iter_by_shard(ids, |id| *id, ring)
-                .map(|ids| PointOperations::DeletePoints { ids }),
-            by_filter @ PointOperations::DeletePointsByFilter(_) => {
-                OperationToShard::to_all(by_filter)
-            }
-            PointOperations::SyncPoints(_) => {
-                #[cfg(debug_assertions)]
-                panic!("SyncPoints operation is intended to by applied to specific shard only");
-                #[cfg(not(debug_assertions))]
-                OperationToShard::by_shard(vec![])
-            }
-        }
     }
 }
 
