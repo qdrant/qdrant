@@ -504,7 +504,7 @@ impl<V: Blob> Gridstore<V> {
         hw_counter: HwMetricRefCounter,
     ) -> std::result::Result<(), E>
     where
-        F: FnMut(PointOffset, &V) -> std::result::Result<bool, E>,
+        F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
     {
         for (point_offset, pointer) in
             self.tracker
@@ -526,7 +526,7 @@ impl<V: Blob> Gridstore<V> {
 
             let decompressed = self.decompress(raw);
             let value = V::from_bytes(&decompressed);
-            if !callback(point_offset, &value)? {
+            if !callback(point_offset, value)? {
                 return Ok(());
             }
         }
