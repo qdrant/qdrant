@@ -258,14 +258,6 @@ impl MmapGeoMapIndex {
         }))
     }
 
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    pub fn load(&self) -> OperationResult<bool> {
-        // Note: this structure is now loaded on open
-
-        let is_loaded = self.storage.is_some();
-        Ok(is_loaded)
-    }
-
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,

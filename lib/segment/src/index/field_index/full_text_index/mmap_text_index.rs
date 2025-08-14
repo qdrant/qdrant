@@ -42,10 +42,6 @@ impl MmapFullTextIndex {
         }))
     }
 
-    pub fn load(&self) -> bool {
-        self.inverted_index.load()
-    }
-
     pub fn files(&self) -> Vec<PathBuf> {
         self.inverted_index.files()
     }

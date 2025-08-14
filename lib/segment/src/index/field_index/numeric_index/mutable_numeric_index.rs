@@ -346,47 +346,6 @@ where
         }))
     }
 
-    /// Load storage
-    ///
-    /// Loads in-memory index from backing RocksDB or Gridstore storage.
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    pub(super) fn load(&self) -> OperationResult<bool> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Gridstore(Some(_)) => self.load_gridstore(),
-            Storage::Gridstore(None) => Ok(false),
-        }
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    #[cfg(feature = "rocksdb")]
-    fn load_rocksdb(&self) -> OperationResult<bool> {
-        let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from RocksDB, using different storage backend",
-            ));
-        };
-
-        // Note: this structure is now loaded on open
-
-        db_wrapper.has_column_family()
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load_gridstore(&self) -> OperationResult<bool> {
-        #[allow(irrefutable_let_patterns)]
-        let Storage::Gridstore(store) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from Gridstore, using different storage backend",
-            ));
-        };
-
-        // Note: this structure is now loaded on open
-
-        Ok(store.is_some())
-    }
-
     pub fn into_in_memory_index(self) -> InMemoryNumericIndex<T> {
         self.in_memory_index
     }

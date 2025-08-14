@@ -280,19 +280,6 @@ impl StructPayloadIndex {
             }
         }
 
-        // Load all indices, trigger rebuild if load is not successful
-        if !rebuild {
-            for ref mut index in indexes.iter_mut() {
-                if !index.load()? {
-                    rebuild = true;
-                    log::debug!(
-                        "Payload index for field `{field}` was not loaded, triggering rebuild",
-                    );
-                    break;
-                }
-            }
-        }
-
         // If index is not properly loaded or when migrating, rebuild indices
         if rebuild {
             log::debug!("Rebuilding payload index for field `{field}`...");

@@ -76,12 +76,12 @@ impl GeoMapIndex {
         };
 
         let index = if is_on_disk {
-            Some(GeoMapIndex::Mmap(Box::new(mmap_index)))
+            GeoMapIndex::Mmap(Box::new(mmap_index))
         } else {
-            ImmutableGeoMapIndex::open_mmap(mmap_index)?.map(GeoMapIndex::Immutable)
+            GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(mmap_index))
         };
 
-        Ok(index)
+        Ok(Some(index))
     }
 
     pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
@@ -522,12 +522,10 @@ impl FieldIndexBuilderTrait for GeoMapImmutableIndexBuilder {
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         drop(self.index);
-        let mut immutable_index = GeoMapIndex::new_memory(self.db, &self.field, false, false)?
+        let immutable_index = GeoMapIndex::new_memory(self.db, &self.field, false, false)?
             .ok_or_else(|| {
                 OperationError::service_error("Failed to open GeoMapIndex after creating it")
             })?;
-        // TODO(payload-index-remove-load): remove load when single stage open/load is implemented
-        immutable_index.load()?;
         Ok(immutable_index)
     }
 }
@@ -670,14 +668,6 @@ impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
 impl PayloadFieldIndex for GeoMapIndex {
     fn count_indexed_points(&self) -> usize {
         self.points_count()
-    }
-
-    fn load(&mut self) -> OperationResult<bool> {
-        match self {
-            GeoMapIndex::Mutable(index) => index.load(),
-            GeoMapIndex::Immutable(index) => index.load(),
-            GeoMapIndex::Mmap(index) => index.load(),
-        }
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -901,10 +891,7 @@ mod tests {
                     };
 
                     // Load index from mmap
-                    let mut index = GeoMapIndex::Immutable(
-                        ImmutableGeoMapIndex::open_mmap(*index).unwrap().unwrap(),
-                    );
-                    index.load()?;
+                    let index = GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(*index));
                     Ok(index)
                 }
             }
@@ -1516,7 +1503,7 @@ mod tests {
 
         #[cfg(feature = "rocksdb")]
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-        let mut new_index = match index_type {
+        let new_index = match index_type {
             #[cfg(feature = "rocksdb")]
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true, true)
                 .unwrap()
@@ -1533,17 +1520,12 @@ mod tests {
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false)
                 .unwrap()
                 .unwrap(),
-            IndexType::RamMmap => GeoMapIndex::Immutable(
-                ImmutableGeoMapIndex::open_mmap(
-                    MmapGeoMapIndex::open(temp_dir.path(), false)
-                        .unwrap()
-                        .unwrap(),
-                )
-                .unwrap()
-                .unwrap(),
-            ),
+            IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
+                MmapGeoMapIndex::open(temp_dir.path(), false)
+                    .unwrap()
+                    .unwrap(),
+            )),
         };
-        new_index.load().unwrap();
 
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
@@ -1611,7 +1593,7 @@ mod tests {
 
         #[cfg(feature = "rocksdb")]
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-        let mut new_index = match index_type {
+        let new_index = match index_type {
             #[cfg(feature = "rocksdb")]
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true, true)
                 .unwrap()
@@ -1628,17 +1610,12 @@ mod tests {
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false)
                 .unwrap()
                 .unwrap(),
-            IndexType::RamMmap => GeoMapIndex::Immutable(
-                ImmutableGeoMapIndex::open_mmap(
-                    MmapGeoMapIndex::open(temp_dir.path(), false)
-                        .unwrap()
-                        .unwrap(),
-                )
-                .unwrap()
-                .unwrap(),
-            ),
+            IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
+                MmapGeoMapIndex::open(temp_dir.path(), false)
+                    .unwrap()
+                    .unwrap(),
+            )),
         };
-        new_index.load().unwrap();
         assert_eq!(new_index.points_count(), 1);
         if index_type != IndexType::Mmap {
             assert_eq!(new_index.points_values_count(), 2);

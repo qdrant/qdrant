@@ -136,46 +136,6 @@ impl MutableFullTextIndex {
         }))
     }
 
-    /// Load storage
-    ///
-    /// Loads in-memory index from backing RocksDB or Gridstore storage.
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    pub(super) fn load(&self) -> OperationResult<bool> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Gridstore(Some(_)) => self.load_gridstore(),
-            Storage::Gridstore(None) => Ok(false),
-        }
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    #[cfg(feature = "rocksdb")]
-    fn load_rocksdb(&self) -> OperationResult<bool> {
-        let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from RocksDB, using different storage backend",
-            ));
-        };
-
-        // Note: this structure is now loaded on open
-
-        db_wrapper.has_column_family()
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load_gridstore(&self) -> OperationResult<bool> {
-        let Storage::Gridstore(Some(_)) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from Gridstore, using different storage backend",
-            ));
-        };
-
-        // Note: this structure is now loaded on open
-
-        Ok(true)
-    }
-
     #[inline]
     pub(super) fn init(&self) -> OperationResult<()> {
         match &self.storage {
@@ -480,8 +440,6 @@ mod tests {
                 FullTextIndex::new_gridstore(temp_dir.path().join("test_db"), config.clone(), true)
                     .unwrap()
                     .unwrap();
-            let loaded = index.load().unwrap();
-            assert!(loaded);
 
             let hw_cell = HardwareCounterCell::new();
 
@@ -552,8 +510,6 @@ mod tests {
                 FullTextIndex::new_gridstore(temp_dir.path().join("test_db"), config, true)
                     .unwrap()
                     .unwrap();
-            let loaded = index.load().unwrap();
-            assert!(loaded);
 
             assert_eq!(index.count_indexed_points(), 4);
 

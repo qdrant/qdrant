@@ -217,14 +217,6 @@ where
             .map(NumericIndexInner::Mutable))
     }
 
-    pub fn load(&mut self) -> OperationResult<bool> {
-        match self {
-            NumericIndexInner::Mutable(index) => index.load(),
-            NumericIndexInner::Immutable(index) => index.load(),
-            NumericIndexInner::Mmap(index) => index.load(),
-        }
-    }
-
     fn get_histogram(&self) -> &Histogram<T> {
         match self {
             NumericIndexInner::Mutable(index) => index.get_histogram(),
@@ -647,7 +639,6 @@ where
             pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool, hw_counter: &HardwareCounterCell) -> bool;
             pub fn cleanup(self) -> OperationResult<()>;
             pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry;
-            pub fn load(&mut self) -> OperationResult<bool>;
             pub fn values_count(&self, idx: PointOffsetType) -> usize;
             pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
             pub fn values_is_empty(&self, idx: PointOffsetType) -> bool;
@@ -745,11 +736,10 @@ where
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         self.index.inner.flusher()()?;
         drop(self.index);
-        let mut inner: NumericIndexInner<T> =
+        let inner: NumericIndexInner<T> =
             NumericIndexInner::new_rocksdb(self.db, &self.field, false, false)?
                 // unwrap safety: only used in testing
                 .unwrap();
-        inner.load()?;
         Ok(NumericIndex {
             inner,
             _phantom: PhantomData,
@@ -890,10 +880,6 @@ where
 {
     fn count_indexed_points(&self) -> usize {
         self.get_points_count()
-    }
-
-    fn load(&mut self) -> OperationResult<bool> {
-        NumericIndexInner::load(self)
     }
 
     fn cleanup(self) -> OperationResult<()> {

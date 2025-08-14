@@ -86,10 +86,6 @@ impl ImmutableGeoMapIndex {
             // Column family doesn't exist, cannot load
             return Ok(None);
         };
-        // TODO(payload-index-remove-load): remove load when single stage open/load is implemented
-        if !mutable.load()? {
-            return Ok(None);
-        }
 
         let InMemoryGeoMapIndex {
             points_per_hash,
@@ -140,11 +136,7 @@ impl ImmutableGeoMapIndex {
     }
 
     /// Open and load immutable geo index from mmap storage
-    pub fn open_mmap(index: MmapGeoMapIndex) -> OperationResult<Option<Self>> {
-        // TODO(payload-index-remove-load): remove load when single stage open/load is implemented
-        if !index.load()? {
-            return Ok(None);
-        }
+    pub fn open_mmap(index: MmapGeoMapIndex) -> Self {
         let index_storage = index.storage.as_ref().unwrap();
 
         let counts_per_hash = index_storage
@@ -237,47 +229,7 @@ impl ImmutableGeoMapIndex {
             index.decrement_hash_point_counts(&removed_geo_hashes);
         }
 
-        Ok(Some(index))
-    }
-
-    /// Load storage
-    ///
-    /// Loads in-memory index from backing RocksDB or mmap storage.
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    pub fn load(&self) -> OperationResult<bool> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Mmap(_) => self.load_mmap(),
-        }
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    #[cfg(feature = "rocksdb")]
-    fn load_rocksdb(&self) -> OperationResult<bool> {
-        let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from RocksDB, using different storage backend",
-            ));
-        };
-
-        // Note: this structure is now loaded on open
-
-        db_wrapper.has_column_family()
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load_mmap(&self) -> OperationResult<bool> {
-        #[allow(irrefutable_let_patterns)]
-        let Storage::Mmap(_) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from mmap, using different storage backend",
-            ));
-        };
-
-        // Note: this structure is now loaded on open
-
-        Ok(true)
+        index
     }
 
     #[cfg(all(test, feature = "rocksdb"))]
