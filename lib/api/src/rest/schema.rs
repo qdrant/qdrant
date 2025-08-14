@@ -243,29 +243,22 @@ pub struct TextPreprocessingConfig {
 
 impl Bm25Config {
     pub fn to_options(&self) -> HashMap<String, Value> {
-        let Self {
-            k,
-            b,
-            avg_len,
-            tokenizer,
-            text_preprocessing_config,
-        } = self;
+        debug_assert!(
+            false,
+            "this code should never be called, it is only for schema generation",
+        );
 
-        let mut options = HashMap::new();
-        options.insert("k".to_string(), Value::from(k.into_inner()));
-        options.insert("b".to_string(), Value::from(b.into_inner()));
-        options.insert("avg_len".to_string(), Value::from(avg_len.into_inner()));
-        options.insert(
-            "tokenizer".to_string(),
-            serde_json::to_value(tokenizer)
-                .expect("conversion of internal structure to JSON should never fail"),
-        );
-        options.insert(
-            "text_preprocessing_config".to_string(),
-            serde_json::to_value(text_preprocessing_config)
-                .expect("conversion of internal structure to JSON should never fail"),
-        );
-        options
+        let value = serde_json::to_value(self)
+            .expect("conversion of internal structure to JSON should never fail");
+
+        match value {
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Array(_) => HashMap::default(), // not expected
+            Value::Object(map) => map.into_iter().collect(),
+        }
     }
 }
 
