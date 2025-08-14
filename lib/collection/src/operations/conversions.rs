@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::time::Duration;
 
@@ -16,9 +16,7 @@ use api::rest::{BaseGroupRequest, MaxOptimizationThreads};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
-use segment::data_types::vectors::{
-    BatchVectorStructInternal, NamedQuery, VectorInternal, VectorStructInternal,
-};
+use segment::data_types::vectors::{NamedQuery, VectorInternal, VectorStructInternal};
 use segment::types::{
     Distance, Filter, HnswConfig, MultiVectorConfig, QuantizationConfig, SearchParams,
     StrictModeConfigOutput, WithPayloadInterface, WithVector,
@@ -53,10 +51,7 @@ use crate::operations::config_diff::{
     WalConfigDiff,
 };
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
-use crate::operations::point_ops::{
-    BatchPersisted, FilterSelector, PointIdsList, PointStructPersisted, PointsSelector,
-    WriteOrdering,
-};
+use crate::operations::point_ops::{FilterSelector, PointIdsList, PointsSelector, WriteOrdering};
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
@@ -883,68 +878,6 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                 })
             }
         }
-    }
-}
-
-impl TryFrom<PointStructPersisted> for api::grpc::qdrant::PointStruct {
-    type Error = Status;
-
-    fn try_from(value: PointStructPersisted) -> Result<Self, Self::Error> {
-        let PointStructPersisted {
-            id,
-            vector,
-            payload,
-        } = value;
-
-        let vectors_internal = VectorStructInternal::try_from(vector)
-            .map_err(|e| Status::invalid_argument(format!("Failed to convert vectors: {e}")))?;
-
-        let vectors = api::grpc::qdrant::Vectors::from(vectors_internal);
-        let converted_payload = match payload {
-            None => HashMap::new(),
-            Some(payload) => payload_to_proto(payload),
-        };
-
-        Ok(Self {
-            id: Some(id.into()),
-            vectors: Some(vectors),
-            payload: converted_payload,
-        })
-    }
-}
-
-impl TryFrom<BatchPersisted> for Vec<api::grpc::qdrant::PointStruct> {
-    type Error = Status;
-
-    fn try_from(batch: BatchPersisted) -> Result<Self, Self::Error> {
-        let BatchPersisted {
-            ids,
-            vectors,
-            payloads,
-        } = batch;
-        let mut points = Vec::with_capacity(ids.len());
-        let batch_vectors = BatchVectorStructInternal::from(vectors);
-        let all_vectors = batch_vectors.into_all_vectors(ids.len());
-        for (i, p_id) in ids.into_iter().enumerate() {
-            let id = Some(p_id.into());
-            let vector = all_vectors.get(i).cloned();
-            let payload = payloads.as_ref().and_then(|payloads| {
-                payloads.get(i).map(|payload| match payload {
-                    None => HashMap::new(),
-                    Some(payload) => payload_to_proto(payload.clone()),
-                })
-            });
-            let vectors: Option<VectorStructInternal> = vector.map(|v| v.into());
-
-            let point = api::grpc::qdrant::PointStruct {
-                id,
-                vectors: vectors.map(api::grpc::qdrant::Vectors::from),
-                payload: payload.unwrap_or_default(),
-            };
-            points.push(point);
-        }
-
-        Ok(points)
     }
 }
 

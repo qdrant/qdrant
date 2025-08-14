@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTimeError};
 
 use api::grpc::transport_channel_pool::RequestError;
 use api::rest::{
-    BaseGroupRequest, LookupLocation, OrderByInterface, RecommendStrategy, Record,
+    BaseGroupRequest, LookupLocation, OrderByInterface, RecommendStrategy,
     SearchGroupsRequestInternal, SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
 use common::defaults;
@@ -147,30 +147,6 @@ impl TryFrom<RecordInternal> for PointStructPersisted {
 
     fn try_from(record: RecordInternal) -> Result<Self, Self::Error> {
         let RecordInternal {
-            id,
-            payload,
-            vector,
-            shard_key: _,
-            order_value: _,
-        } = record;
-
-        if vector.is_none() {
-            return Err("Vector is empty".to_string());
-        }
-
-        Ok(Self {
-            id,
-            payload,
-            vector: VectorStructPersisted::from(vector.unwrap()),
-        })
-    }
-}
-
-impl TryFrom<Record> for PointStructPersisted {
-    type Error = String;
-
-    fn try_from(record: Record) -> Result<Self, Self::Error> {
-        let Record {
             id,
             payload,
             vector,
