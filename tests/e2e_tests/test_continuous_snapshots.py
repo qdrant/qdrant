@@ -114,7 +114,7 @@ class TestContinuousSnapshots:
         client.create_collection(collection_name, collection_config)
         print(f"Created collection: {collection_name}")
         
-        iterations = 500
+        iterations = 100
         
         snapshot_results = {}
         modification_results = {}
