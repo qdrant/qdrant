@@ -1,3 +1,5 @@
+use std::fmt;
+
 use api::rest::ShardKeySelector;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
@@ -6,142 +8,6 @@ use serde;
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
-
-/// This data structure is used in API interface and applied across multiple shards
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-#[serde(try_from = "SetPayloadShadow")]
-pub struct SetPayload {
-    pub payload: Payload,
-    /// Assigns payload to each point in this list
-    pub points: Option<Vec<PointIdType>>,
-    /// Assigns payload to each point that satisfy this filter condition
-    pub filter: Option<Filter>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shard_key: Option<ShardKeySelector>,
-    /// Assigns payload to each point that satisfy this path of property
-    pub key: Option<JsonPath>,
-}
-
-/// This data structure is used inside shard operations queue
-/// and supposed to be written into WAL of individual shard.
-///
-/// Unlike `SetPayload` it does not contain `shard_key` field
-/// as individual shard does not need to know about shard key
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-pub struct SetPayloadOp {
-    pub payload: Payload,
-    /// Assigns payload to each point in this list
-    pub points: Option<Vec<PointIdType>>,
-    /// Assigns payload to each point that satisfy this filter condition
-    pub filter: Option<Filter>,
-    /// Payload selector to indicate property of payload, e.g. `a.b.c`
-    pub key: Option<JsonPath>,
-}
-
-#[derive(Deserialize)]
-struct SetPayloadShadow {
-    pub payload: Payload,
-    pub points: Option<Vec<PointIdType>>,
-    pub filter: Option<Filter>,
-    pub shard_key: Option<ShardKeySelector>,
-    pub key: Option<JsonPath>,
-}
-
-pub struct PointsSelectorValidationError;
-
-impl std::fmt::Display for PointsSelectorValidationError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "Either list of point ids or filter must be provided"
-        )
-    }
-}
-
-impl TryFrom<SetPayloadShadow> for SetPayload {
-    type Error = PointsSelectorValidationError;
-
-    fn try_from(value: SetPayloadShadow) -> Result<Self, Self::Error> {
-        let SetPayloadShadow {
-            payload,
-            points,
-            filter,
-            shard_key,
-            key,
-        } = value;
-        if points.is_some() || filter.is_some() {
-            Ok(SetPayload {
-                payload,
-                points,
-                filter,
-                shard_key,
-                key,
-            })
-        } else {
-            Err(PointsSelectorValidationError)
-        }
-    }
-}
-
-/// This data structure is used in API interface and applied across multiple shards
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-#[serde(try_from = "DeletePayloadShadow")]
-pub struct DeletePayload {
-    /// List of payload keys to remove from payload
-    pub keys: Vec<PayloadKeyType>,
-    /// Deletes values from each point in this list
-    pub points: Option<Vec<PointIdType>>,
-    /// Deletes values from points that satisfy this filter condition
-    pub filter: Option<Filter>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shard_key: Option<ShardKeySelector>,
-}
-
-/// This data structure is used inside shard operations queue
-/// and supposed to be written into WAL of individual shard.
-///
-/// Unlike `DeletePayload` it does not contain `shard_key` field
-/// as individual shard does not need to know about shard key
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-pub struct DeletePayloadOp {
-    /// List of payload keys to remove from payload
-    pub keys: Vec<PayloadKeyType>,
-    /// Deletes values from each point in this list
-    pub points: Option<Vec<PointIdType>>,
-    /// Deletes values from points that satisfy this filter condition
-    pub filter: Option<Filter>,
-}
-
-#[derive(Deserialize)]
-struct DeletePayloadShadow {
-    pub keys: Vec<PayloadKeyType>,
-    pub points: Option<Vec<PointIdType>>,
-    pub filter: Option<Filter>,
-    pub shard_key: Option<ShardKeySelector>,
-}
-
-impl TryFrom<DeletePayloadShadow> for DeletePayload {
-    type Error = PointsSelectorValidationError;
-
-    fn try_from(value: DeletePayloadShadow) -> Result<Self, Self::Error> {
-        let DeletePayloadShadow {
-            keys,
-            points,
-            filter,
-            shard_key,
-        } = value;
-        if points.is_some() || filter.is_some() {
-            Ok(DeletePayload {
-                keys,
-                points,
-                filter,
-                shard_key,
-            })
-        } else {
-            Err(PointsSelectorValidationError)
-        }
-    }
-}
 
 /// Define operations description for point payloads manipulation
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
@@ -201,6 +67,141 @@ where
 {
     if let Some(vec) = vec {
         vec.retain(filter);
+    }
+}
+
+/// This data structure is used in API interface and applied across multiple shards
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(try_from = "SetPayloadShadow")]
+pub struct SetPayload {
+    pub payload: Payload,
+    /// Assigns payload to each point in this list
+    pub points: Option<Vec<PointIdType>>,
+    /// Assigns payload to each point that satisfy this filter condition
+    pub filter: Option<Filter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+    /// Assigns payload to each point that satisfy this path of property
+    pub key: Option<JsonPath>,
+}
+
+/// This data structure is used inside shard operations queue
+/// and supposed to be written into WAL of individual shard.
+///
+/// Unlike `SetPayload` it does not contain `shard_key` field
+/// as individual shard does not need to know about shard key
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct SetPayloadOp {
+    pub payload: Payload,
+    /// Assigns payload to each point in this list
+    pub points: Option<Vec<PointIdType>>,
+    /// Assigns payload to each point that satisfy this filter condition
+    pub filter: Option<Filter>,
+    /// Payload selector to indicate property of payload, e.g. `a.b.c`
+    pub key: Option<JsonPath>,
+}
+
+/// This data structure is used in API interface and applied across multiple shards
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(try_from = "DeletePayloadShadow")]
+pub struct DeletePayload {
+    /// List of payload keys to remove from payload
+    pub keys: Vec<PayloadKeyType>,
+    /// Deletes values from each point in this list
+    pub points: Option<Vec<PointIdType>>,
+    /// Deletes values from points that satisfy this filter condition
+    pub filter: Option<Filter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+/// This data structure is used inside shard operations queue
+/// and supposed to be written into WAL of individual shard.
+///
+/// Unlike `DeletePayload` it does not contain `shard_key` field
+/// as individual shard does not need to know about shard key
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct DeletePayloadOp {
+    /// List of payload keys to remove from payload
+    pub keys: Vec<PayloadKeyType>,
+    /// Deletes values from each point in this list
+    pub points: Option<Vec<PointIdType>>,
+    /// Deletes values from points that satisfy this filter condition
+    pub filter: Option<Filter>,
+}
+
+#[derive(Deserialize)]
+struct SetPayloadShadow {
+    pub payload: Payload,
+    pub points: Option<Vec<PointIdType>>,
+    pub filter: Option<Filter>,
+    pub shard_key: Option<ShardKeySelector>,
+    pub key: Option<JsonPath>,
+}
+
+impl TryFrom<SetPayloadShadow> for SetPayload {
+    type Error = PointsSelectorValidationError;
+
+    fn try_from(value: SetPayloadShadow) -> Result<Self, Self::Error> {
+        let SetPayloadShadow {
+            payload,
+            points,
+            filter,
+            shard_key,
+            key,
+        } = value;
+
+        if points.is_some() || filter.is_some() {
+            Ok(SetPayload {
+                payload,
+                points,
+                filter,
+                shard_key,
+                key,
+            })
+        } else {
+            Err(PointsSelectorValidationError)
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct DeletePayloadShadow {
+    pub keys: Vec<PayloadKeyType>,
+    pub points: Option<Vec<PointIdType>>,
+    pub filter: Option<Filter>,
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+impl TryFrom<DeletePayloadShadow> for DeletePayload {
+    type Error = PointsSelectorValidationError;
+
+    fn try_from(value: DeletePayloadShadow) -> Result<Self, Self::Error> {
+        let DeletePayloadShadow {
+            keys,
+            points,
+            filter,
+            shard_key,
+        } = value;
+        if points.is_some() || filter.is_some() {
+            Ok(DeletePayload {
+                keys,
+                points,
+                filter,
+                shard_key,
+            })
+        } else {
+            Err(PointsSelectorValidationError)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PointsSelectorValidationError;
+
+impl fmt::Display for PointsSelectorValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Either list of point ids or filter must be provided")
     }
 }
 

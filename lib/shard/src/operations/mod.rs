@@ -9,13 +9,66 @@ use strum::{EnumDiscriminants, EnumIter};
 
 use crate::PeerId;
 
-pub type ClockToken = u64;
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum CollectionUpdateOperations {
+    PointOperation(point_ops::PointOperations),
+    VectorOperation(vector_ops::VectorOperations),
+    PayloadOperation(payload_ops::PayloadOps),
+    FieldIndexOperation(FieldIndexOperations),
+}
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub struct CreateIndex {
-    pub field_name: JsonPath,
-    pub field_schema: Option<PayloadFieldSchema>,
+impl CollectionUpdateOperations {
+    pub fn is_upsert_points(&self) -> bool {
+        matches!(
+            self,
+            Self::PointOperation(point_ops::PointOperations::UpsertPoints(_))
+        )
+    }
+
+    pub fn is_delete_points(&self) -> bool {
+        matches!(
+            self,
+            Self::PointOperation(point_ops::PointOperations::DeletePoints { .. })
+        )
+    }
+
+    pub fn is_write_operation(&self) -> bool {
+        match self {
+            CollectionUpdateOperations::PointOperation(operation) => operation.is_write_operation(),
+            CollectionUpdateOperations::VectorOperation(operation) => {
+                operation.is_write_operation()
+            }
+            CollectionUpdateOperations::PayloadOperation(operation) => {
+                operation.is_write_operation()
+            }
+            CollectionUpdateOperations::FieldIndexOperation(operation) => {
+                operation.is_write_operation()
+            }
+        }
+    }
+
+    pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
+        match self {
+            Self::PointOperation(op) => op.point_ids(),
+            Self::VectorOperation(op) => op.point_ids(),
+            Self::PayloadOperation(op) => op.point_ids(),
+            Self::FieldIndexOperation(_) => None,
+        }
+    }
+
+    pub fn retain_point_ids<F>(&mut self, filter: F)
+    where
+        F: Fn(&PointIdType) -> bool,
+    {
+        match self {
+            Self::PointOperation(op) => op.retain_point_ids(filter),
+            Self::VectorOperation(op) => op.retain_point_ids(filter),
+            Self::PayloadOperation(op) => op.retain_point_ids(filter),
+            Self::FieldIndexOperation(_) => (),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
@@ -26,6 +79,22 @@ pub enum FieldIndexOperations {
     CreateIndex(CreateIndex),
     /// Delete index for the field
     DeleteIndex(JsonPath),
+}
+
+impl FieldIndexOperations {
+    pub fn is_write_operation(&self) -> bool {
+        match self {
+            FieldIndexOperations::CreateIndex(_) => true,
+            FieldIndexOperations::DeleteIndex(_) => false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct CreateIndex {
+    pub field_name: JsonPath,
+    pub field_schema: Option<PayloadFieldSchema>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -64,6 +133,8 @@ pub struct ClockTag {
     pub token: ClockToken,
     pub force: bool,
 }
+
+pub type ClockToken = u64;
 
 impl ClockTag {
     pub fn new(peer_id: PeerId, clock_id: u32, clock_tick: u64) -> Self {
@@ -126,79 +197,6 @@ impl From<ClockTag> for api::grpc::qdrant::ClockTag {
             clock_tick,
             token,
             force,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
-#[strum_discriminants(derive(EnumIter))]
-#[serde(untagged, rename_all = "snake_case")]
-pub enum CollectionUpdateOperations {
-    PointOperation(point_ops::PointOperations),
-    VectorOperation(vector_ops::VectorOperations),
-    PayloadOperation(payload_ops::PayloadOps),
-    FieldIndexOperation(FieldIndexOperations),
-}
-
-impl CollectionUpdateOperations {
-    pub fn is_upsert_points(&self) -> bool {
-        matches!(
-            self,
-            Self::PointOperation(point_ops::PointOperations::UpsertPoints(_))
-        )
-    }
-
-    pub fn is_delete_points(&self) -> bool {
-        matches!(
-            self,
-            Self::PointOperation(point_ops::PointOperations::DeletePoints { .. })
-        )
-    }
-
-    pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
-        match self {
-            Self::PointOperation(op) => op.point_ids(),
-            Self::VectorOperation(op) => op.point_ids(),
-            Self::PayloadOperation(op) => op.point_ids(),
-            Self::FieldIndexOperation(_) => None,
-        }
-    }
-
-    pub fn retain_point_ids<F>(&mut self, filter: F)
-    where
-        F: Fn(&PointIdType) -> bool,
-    {
-        match self {
-            Self::PointOperation(op) => op.retain_point_ids(filter),
-            Self::VectorOperation(op) => op.retain_point_ids(filter),
-            Self::PayloadOperation(op) => op.retain_point_ids(filter),
-            Self::FieldIndexOperation(_) => (),
-        }
-    }
-}
-
-impl FieldIndexOperations {
-    pub fn is_write_operation(&self) -> bool {
-        match self {
-            FieldIndexOperations::CreateIndex(_) => true,
-            FieldIndexOperations::DeleteIndex(_) => false,
-        }
-    }
-}
-
-impl CollectionUpdateOperations {
-    pub fn is_write_operation(&self) -> bool {
-        match self {
-            CollectionUpdateOperations::PointOperation(operation) => operation.is_write_operation(),
-            CollectionUpdateOperations::VectorOperation(operation) => {
-                operation.is_write_operation()
-            }
-            CollectionUpdateOperations::PayloadOperation(operation) => {
-                operation.is_write_operation()
-            }
-            CollectionUpdateOperations::FieldIndexOperation(operation) => {
-                operation.is_write_operation()
-            }
         }
     }
 }
