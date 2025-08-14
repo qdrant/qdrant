@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use common::validation::validate_shard_different_peers;
 use schemars::JsonSchema;
-use segment::types::ShardKey;
+use segment::types::{Filter, ShardKey};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::{Validate, ValidationErrors};
@@ -45,6 +45,8 @@ pub enum ClusterOperations {
     FinishResharding(FinishReshardingOperation),
     /// Abort resharding
     AbortResharding(AbortReshardingOperation),
+    /// Trigger replication of points between two shards
+    ReplicatePoints(ReplicatePointsOperation),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -121,6 +123,7 @@ impl Validate for ClusterOperations {
             ClusterOperations::CommitWriteHashRing(op) => op.validate(),
             ClusterOperations::FinishResharding(op) => op.validate(),
             ClusterOperations::AbortResharding(op) => op.validate(),
+            ClusterOperations::ReplicatePoints(op) => op.validate(),
         }
     }
 }
@@ -189,6 +192,35 @@ pub struct CommitWriteHashRingOperation {
 pub struct FinishReshardingOperation {
     #[validate(nested)]
     pub finish_resharding: FinishResharding,
+}
+
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct ReplicatePointsOperation {
+    #[validate(nested)]
+    pub replicate_points: ReplicatePoints,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct ReplicatePoints {
+    pub filter: Filter,
+    pub from_shard_key: ShardKey,
+    pub to_shard_key: ShardKey,
+    pub from_peer_id: PeerId,
+    pub to_peer_id: PeerId,
+}
+
+impl Validate for ReplicatePoints {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        validate_shard_different_peers(
+            self.from_peer_id,
+            self.to_peer_id,
+            self.from_shard_id,
+            Some(self.to_shard_id),
+        )
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
