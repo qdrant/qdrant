@@ -132,12 +132,12 @@ where
 
         let index = if is_on_disk {
             // Use on mmap directly
-            Some(MapIndex::Mmap(Box::new(mmap_index)))
+            MapIndex::Mmap(Box::new(mmap_index))
         } else {
             // Load into RAM, use mmap as backing storage
-            ImmutableMapIndex::open_mmap(mmap_index)?.map(MapIndex::Immutable)
+            MapIndex::Immutable(ImmutableMapIndex::open_mmap(mmap_index))
         };
-        Ok(index)
+        Ok(Some(index))
     }
 
     pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
@@ -170,14 +170,6 @@ where
 
     pub fn builder_gridstore(dir: PathBuf) -> MapIndexGridstoreBuilder<N> {
         MapIndexGridstoreBuilder::new(dir)
-    }
-
-    fn load(&mut self) -> OperationResult<bool> {
-        match self {
-            MapIndex::Mutable(index) => index.load(),
-            MapIndex::Immutable(index) => index.load(),
-            MapIndex::Mmap(index) => index.load(),
-        }
     }
 
     pub fn check_values_any(
@@ -736,10 +728,6 @@ impl PayloadFieldIndex for MapIndex<str> {
         self.get_indexed_points()
     }
 
-    fn load(&mut self) -> OperationResult<bool> {
-        self.load()
-    }
-
     fn cleanup(self) -> OperationResult<()> {
         self.wipe()
     }
@@ -886,10 +874,6 @@ impl PayloadFieldIndex for MapIndex<str> {
 impl PayloadFieldIndex for MapIndex<UuidIntType> {
     fn count_indexed_points(&self) -> usize {
         self.get_indexed_points()
-    }
-
-    fn load(&mut self) -> OperationResult<bool> {
-        self.load()
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -1079,10 +1063,6 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
 impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     fn count_indexed_points(&self) -> usize {
         self.get_indexed_points()
-    }
-
-    fn load(&mut self) -> OperationResult<bool> {
-        self.load()
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -1450,7 +1430,7 @@ mod tests {
     where
         Vec<N::Owned>: Blob + Send + Sync,
     {
-        let mut index = match index_type {
+        let index = match index_type {
             #[cfg(feature = "rocksdb")]
             IndexType::Mutable => MapIndex::<N>::new_rocksdb(
                 open_db_with_existing_cf(path).unwrap(),
@@ -1475,7 +1455,6 @@ mod tests {
             IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap().unwrap(),
             IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap().unwrap(),
         };
-        index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N::Owned> = index
                 .get_values(idx as PointOffsetType)

@@ -384,7 +384,7 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
     };
     drop(index);
 
-    let mut new_index = match index_type {
+    let new_index = match index_type {
         #[cfg(feature = "rocksdb")]
         IndexType::Mutable => {
             NumericIndexInner::<FloatPayloadType>::new_rocksdb(db.unwrap(), COLUMN_NAME, true, true)
@@ -415,7 +415,6 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
                 .unwrap()
         }
     };
-    new_index.load().unwrap();
 
     test_cond(
         &new_index,

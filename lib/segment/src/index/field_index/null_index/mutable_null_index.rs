@@ -243,13 +243,6 @@ impl PayloadFieldIndex for MutableNullIndex {
             .map_or(0, |storage| storage.has_values_flags.len())
     }
 
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load(&mut self) -> OperationResult<bool> {
-        // Note: this structure is now loaded on open
-
-        Ok(self.storage.is_some())
-    }
-
     fn cleanup(self) -> OperationResult<()> {
         if self.base_dir.is_dir() {
             std::fs::remove_dir_all(&self.base_dir)?;

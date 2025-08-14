@@ -20,7 +20,7 @@ use super::MapIndex;
 use super::mmap_map_index::MmapMapIndex;
 use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 #[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 #[cfg(feature = "rocksdb")]
@@ -80,8 +80,6 @@ where
             // Column family doesn't exist, cannot load
             return Ok(None);
         };
-        // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-        mutable.load()?;
         let MutableMapIndex::<N> {
             map,
             point_to_values,
@@ -140,12 +138,7 @@ where
     }
 
     /// Open and load immutable numeric index from mmap storage
-    pub(super) fn open_mmap(index: MmapMapIndex<N>) -> OperationResult<Option<Self>> {
-        // TODO(payload-index-remove-load): remove load when single stage open/load is implemented
-        if !index.load()? {
-            return Ok(None);
-        }
-
+    pub(super) fn open_mmap(index: MmapMapIndex<N>) -> Self {
         let index_storage = index.storage.as_ref().unwrap();
 
         // Construct intermediate values to points map from backing storage
@@ -226,7 +219,7 @@ where
             log::warn!("Failed to clear mmap cache of ram mmap map index: {err}");
         }
 
-        Ok(Some(Self {
+        Self {
             value_to_points,
             value_to_points_container,
             deleted_value_to_points_container: BitVec::new(),
@@ -234,47 +227,7 @@ where
             indexed_points,
             values_count,
             storage: Storage::Mmap(Box::new(index)),
-        }))
-    }
-
-    /// Load storage
-    ///
-    /// Loads in-memory index from backing RocksDB or mmap storage.
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    pub fn load(&self) -> OperationResult<bool> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Mmap(_) => self.load_mmap(),
         }
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    #[cfg(feature = "rocksdb")]
-    fn load_rocksdb(&self) -> OperationResult<bool> {
-        let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from RocksDB, using different storage backend",
-            ));
-        };
-
-        // Note: this structure is now loaded on open
-
-        db_wrapper.has_column_family()
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load_mmap(&self) -> OperationResult<bool> {
-        #[allow(irrefutable_let_patterns)]
-        let Storage::Mmap(_) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from mmap, using different storage backend",
-            ));
-        };
-
-        // Note: this structure is now loaded on open
-
-        Ok(true)
     }
 
     /// Return mutable slice of a container which holds point_ids for given value.

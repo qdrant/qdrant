@@ -150,13 +150,6 @@ impl MmapInvertedIndex {
         }))
     }
 
-    // TODO(payload-index-non-optional-storage): remove this method when single stage open/load is implemented
-    pub fn load(&self) -> bool {
-        // Note: this structure is now loaded on open
-
-        self.storage.is_some()
-    }
-
     // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
     pub(super) fn iter_vocab(&self) -> impl Iterator<Item = (&str, &TokenId)> + '_ {
         let Some(storage) = &self.storage else {

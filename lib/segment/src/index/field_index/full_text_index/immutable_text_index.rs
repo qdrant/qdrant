@@ -92,46 +92,6 @@ impl ImmutableFullTextIndex {
         })
     }
 
-    /// Load storage
-    ///
-    /// Loads in-memory index from backing RocksDB or mmap storage.
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    pub fn load(&self) -> OperationResult<bool> {
-        match self.storage {
-            #[cfg(feature = "rocksdb")]
-            Storage::RocksDb(_) => self.load_rocksdb(),
-            Storage::Mmap(_) => self.load_mmap(),
-        }
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    #[cfg(feature = "rocksdb")]
-    fn load_rocksdb(&self) -> OperationResult<bool> {
-        let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from RocksDB, using different storage backend",
-            ));
-        };
-
-        // Note: this structure is now loaded on open
-
-        db_wrapper.has_column_family()
-    }
-
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load_mmap(&self) -> OperationResult<bool> {
-        #[cfg_attr(not(feature = "rocksdb"), expect(irrefutable_let_patterns))]
-        let Storage::Mmap(_) = &self.storage else {
-            return Err(OperationError::service_error(
-                "Failed to load index from mmap, using different storage backend",
-            ));
-        };
-
-        // Note: this structure is now loaded on open
-
-        Ok(true)
-    }
-
     #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         if self.inverted_index.remove(id) {

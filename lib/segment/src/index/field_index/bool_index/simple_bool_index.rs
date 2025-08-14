@@ -333,13 +333,6 @@ impl FieldIndexBuilderTrait for BoolIndexBuilder {
 }
 
 impl PayloadFieldIndex for SimpleBoolIndex {
-    // TODO(payload-index-remove-load): remove method when single stage open/load is implemented
-    fn load(&mut self) -> OperationResult<bool> {
-        // Note: this structure is now loaded on open
-
-        self.db_wrapper.has_column_family()
-    }
-
     fn cleanup(self) -> OperationResult<()> {
         self.db_wrapper.remove_column_family()
     }

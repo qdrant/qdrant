@@ -526,14 +526,6 @@ impl PayloadFieldIndex for FullTextIndex {
         self.points_count()
     }
 
-    fn load(&mut self) -> OperationResult<bool> {
-        match self {
-            Self::Mutable(index) => index.load(),
-            Self::Immutable(index) => index.load(),
-            Self::Mmap(index) => Ok(index.load()),
-        }
-    }
-
     fn cleanup(self) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.wipe(),
