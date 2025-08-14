@@ -39,7 +39,7 @@ pub struct MutableFullTextIndex {
 pub(super) enum Storage {
     #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
-    Gridstore(Option<Arc<RwLock<Gridstore<Vec<u8>>>>>),
+    Gridstore(Arc<RwLock<Gridstore<Vec<u8>>>>),
 }
 
 impl MutableFullTextIndex {
@@ -131,7 +131,7 @@ impl MutableFullTextIndex {
         Ok(Some(Self {
             inverted_index: builder.build(),
             config,
-            storage: Storage::Gridstore(Some(Arc::new(RwLock::new(store)))),
+            storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
             tokenizer,
         }))
     }
@@ -141,14 +141,11 @@ impl MutableFullTextIndex {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Gridstore(Some(store)) => store.write().clear().map_err(|err| {
+            Storage::Gridstore(store) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable full text index: {err}",
                 ))
             }),
-            Storage::Gridstore(None) => Err(OperationError::service_error(
-                "Failed to init full text index, backing Gridstore storage does not exist",
-            )),
         }
     }
 
@@ -157,8 +154,7 @@ impl MutableFullTextIndex {
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Gridstore(mut store @ Some(_)) => {
-                let store = store.take().unwrap();
+            Storage::Gridstore(store) => {
                 let store =
                     Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
 
@@ -168,7 +164,6 @@ impl MutableFullTextIndex {
                     ))
                 })
             }
-            Storage::Gridstore(None) => Ok(()),
         }
     }
 
@@ -180,12 +175,11 @@ impl MutableFullTextIndex {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
-            Storage::Gridstore(Some(index)) => index.read().clear_cache().map_err(|err| {
+            Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable full text index gridstore cache: {err}"
                 ))
             }),
-            Storage::Gridstore(None) => Ok(()),
         }
     }
 
@@ -194,8 +188,7 @@ impl MutableFullTextIndex {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
-            Storage::Gridstore(Some(store)) => store.read().files(),
-            Storage::Gridstore(None) => vec![],
+            Storage::Gridstore(store) => store.read().files(),
         }
     }
 
@@ -204,7 +197,7 @@ impl MutableFullTextIndex {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
-            Storage::Gridstore(Some(store)) => {
+            Storage::Gridstore(store) => {
                 let store = Arc::downgrade(store);
                 Box::new(move || {
                     store
@@ -223,7 +216,6 @@ impl MutableFullTextIndex {
                     })
                 })
             }
-            Storage::Gridstore(None) => Box::new(|| Ok(())),
         }
     }
 
@@ -275,7 +267,7 @@ impl MutableFullTextIndex {
                 let db_idx = FullTextIndex::store_key(idx);
                 db_wrapper.put(db_idx, db_document)?;
             }
-            Storage::Gridstore(Some(store)) => {
+            Storage::Gridstore(store) => {
                 store
                     .write()
                     .put_value(
@@ -288,11 +280,6 @@ impl MutableFullTextIndex {
                             "failed to put value in mutable full text index gridstore: {err}"
                         ))
                     })?;
-            }
-            Storage::Gridstore(None) => {
-                return Err(OperationError::service_error(
-                    "Failed to add values to mutable full text index, backing Gridstore storage does not exist",
-                ));
             }
         }
 
@@ -310,15 +297,10 @@ impl MutableFullTextIndex {
                     db_wrapper.remove(db_doc_id)?;
                 }
             }
-            Storage::Gridstore(Some(store)) => {
+            Storage::Gridstore(store) => {
                 if self.inverted_index.remove(id) {
                     store.write().delete_value(id);
                 }
-            }
-            Storage::Gridstore(None) => {
-                return Err(OperationError::service_error(
-                    "Failed to remove values to mutable full text index, backing Gridstore storage does not exist",
-                ));
             }
         }
 
@@ -338,8 +320,6 @@ impl MutableFullTextIndex {
                 .unwrap()
             }
             Storage::Gridstore(gridstore) => gridstore
-                .as_ref()
-                .expect("Gridstore should be initialized")
                 .read()
                 .get_value(idx, &HardwareCounterCell::disposable())
                 .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),

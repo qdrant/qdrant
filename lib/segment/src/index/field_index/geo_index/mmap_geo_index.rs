@@ -5,7 +5,6 @@ use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
-use itertools::Either;
 use memmap2::MmapMut;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::AdviceSetting;
@@ -59,7 +58,7 @@ pub(super) struct PointKeyValue {
 ///
 pub struct MmapGeoMapIndex {
     path: PathBuf,
-    pub(super) storage: Option<Storage>,
+    pub(super) storage: Storage,
     pub(super) deleted_count: usize,
     points_values_count: usize,
     max_values_per_point: usize,
@@ -244,13 +243,13 @@ impl MmapGeoMapIndex {
 
         Ok(Some(Self {
             path: path.to_owned(),
-            storage: Some(Storage {
+            storage: Storage {
                 counts_per_hash,
                 points_map,
                 points_map_ids,
                 point_to_values,
                 deleted: MmapBitSliceBufferedUpdateWrapper::new(deleted),
-            }),
+            },
             deleted_count,
             points_values_count: stats.points_values_count,
             max_values_per_point: stats.max_values_per_point,
@@ -264,17 +263,13 @@ impl MmapGeoMapIndex {
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
-        let Some(storage) = &self.storage else {
-            return false;
-        };
-
         let hw_counter = self.make_conditioned_counter(hw_counter);
-        storage
+        self.storage
             .deleted
             .get(idx as usize)
             .filter(|b| !b)
             .map(|_| {
-                storage
+                self.storage
                     .point_to_values
                     .check_values_any(idx, |v| check_fn(&v), &hw_counter)
             })
@@ -282,78 +277,64 @@ impl MmapGeoMapIndex {
     }
 
     pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = GeoPoint> + '_> {
-        self.storage.as_ref()?.point_to_values.get_values(idx)
+        self.storage.point_to_values.get_values(idx)
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> usize {
-        let Some(storage) = &self.storage else {
-            return 0;
-        };
-
-        storage
+        self.storage
             .deleted
             .get(idx as usize)
             .filter(|b| !b)
-            .and_then(|_| storage.point_to_values.get_values_count(idx))
+            .and_then(|_| self.storage.point_to_values.get_values_count(idx))
             .unwrap_or(0)
     }
 
-    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
     pub fn points_per_hash(&self) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
-        let Some(storage) = &self.storage else {
-            return Either::Right(std::iter::empty());
-        };
-
-        let iter = storage
+        self.storage
             .counts_per_hash
             .iter()
-            .map(|counts| (counts.hash, counts.points as usize));
-        Either::Left(iter)
+            .map(|counts| (counts.hash, counts.points as usize))
     }
 
     pub fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
-        let Some(storage) = &self.storage else {
-            return 0;
-        };
-
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         hw_counter
             .payload_index_io_read_counter()
             // Simulate binary search complexity as IO read estimation
             .incr_delta(
-                (storage.counts_per_hash.len() as f32).log2().ceil() as usize * size_of::<Counts>(),
+                (self.storage.counts_per_hash.len() as f32).log2().ceil() as usize
+                    * size_of::<Counts>(),
             );
 
-        if let Ok(index) = storage
+        if let Ok(index) = self
+            .storage
             .counts_per_hash
             .binary_search_by(|x| x.hash.cmp(hash))
         {
-            storage.counts_per_hash[index].points as usize
+            self.storage.counts_per_hash[index].points as usize
         } else {
             0
         }
     }
 
     pub fn values_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
-        let Some(storage) = &self.storage else {
-            return 0;
-        };
-
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         hw_counter
             .payload_index_io_read_counter()
             // Simulate binary search complexity as IO read estimation
             .incr_delta(
-                (storage.counts_per_hash.len() as f32).log2().ceil() as usize * size_of::<Counts>(),
+                (self.storage.counts_per_hash.len() as f32).log2().ceil() as usize
+                    * size_of::<Counts>(),
             );
 
-        if let Ok(index) = storage
+        if let Ok(index) = self
+            .storage
             .counts_per_hash
             .binary_search_by(|x| x.hash.cmp(hash))
         {
-            storage.counts_per_hash[index].values as usize
+            self.storage.counts_per_hash[index].values as usize
         } else {
             0
         }
@@ -377,9 +358,7 @@ impl MmapGeoMapIndex {
             self.path.join(POINTS_MAP_IDS),
             self.path.join(STATS_PATH),
         ];
-        if let Some(storage) = &self.storage {
-            files.extend(storage.point_to_values.files());
-        }
+        files.extend(self.storage.point_to_values.files());
         files
     }
 
@@ -390,72 +369,53 @@ impl MmapGeoMapIndex {
             self.path.join(POINTS_MAP_IDS),
             self.path.join(STATS_PATH),
         ];
-        if let Some(storage) = &self.storage {
-            files.extend(storage.point_to_values.immutable_files());
-        }
+        files.extend(self.storage.point_to_values.immutable_files());
         files
     }
 
     pub fn flusher(&self) -> Flusher {
-        if let Some(storage) = &self.storage {
-            storage.deleted.flusher()
-        } else {
-            Box::new(|| Ok(()))
-        }
+        self.storage.deleted.flusher()
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) {
-        let Some(storage) = &mut self.storage else {
-            return;
-        };
-
         let idx = idx as usize;
-        if let Some(deleted) = storage.deleted.get(idx)
+        if let Some(deleted) = self.storage.deleted.get(idx)
             && !deleted
         {
-            storage.deleted.set(idx, true);
+            self.storage.deleted.set(idx, true);
             self.deleted_count += 1;
         }
     }
 
     /// Returns an iterator over all point IDs which have the `geohash` prefix.
     /// Note. Point ID may be repeated multiple times in the iterator.
-    // TODO(payload-index-non-optional-storage): remove Either, just return pure iterator
     pub fn stored_sub_regions<'a>(
         &'a self,
         geohash: GeoHash,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
-        let Some(storage) = &self.storage else {
-            return Either::Right(std::iter::empty());
-        };
-
-        let start_index = storage
+        let start_index = self
+            .storage
             .points_map
             .binary_search_by(|point_key_value| point_key_value.hash.cmp(&geohash))
             .unwrap_or_else(|index| index);
-        let iter = storage.points_map[start_index..]
+        self.storage.points_map[start_index..]
             .iter()
             .take_while(move |point_key_value| point_key_value.hash.starts_with(geohash))
             .filter_map(|point_key_value| {
                 Some(
-                    storage
+                    self.storage
                         .points_map_ids
                         .get(point_key_value.ids_start as usize..point_key_value.ids_end as usize)?
                         .iter()
                         .copied()
-                        .filter(|idx| !storage.deleted.get(*idx as usize).unwrap_or(true)),
+                        .filter(|idx| !self.storage.deleted.get(*idx as usize).unwrap_or(true)),
                 )
             })
-            .flatten();
-        Either::Left(iter)
+            .flatten()
     }
 
     pub fn points_count(&self) -> usize {
-        let Some(storage) = &self.storage else {
-            return 0;
-        };
-
-        storage
+        self.storage
             .point_to_values
             .len()
             .saturating_sub(self.deleted_count)
@@ -483,12 +443,10 @@ impl MmapGeoMapIndex {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
-        if let Some(storage) = &self.storage {
-            storage.counts_per_hash.populate()?;
-            storage.points_map.populate()?;
-            storage.points_map_ids.populate()?;
-            storage.point_to_values.populate();
-        }
+        self.storage.counts_per_hash.populate()?;
+        self.storage.points_map.populate()?;
+        self.storage.points_map_ids.populate()?;
+        self.storage.point_to_values.populate();
         Ok(())
     }
 
@@ -504,9 +462,7 @@ impl MmapGeoMapIndex {
         clear_disk_cache(&points_map_path)?;
         clear_disk_cache(&points_map_ids_path)?;
 
-        if let Some(storage) = &self.storage {
-            storage.point_to_values.clear_cache()?;
-        }
+        self.storage.point_to_values.clear_cache()?;
 
         Ok(())
     }

@@ -139,15 +139,13 @@ where
 
     /// Open and load immutable numeric index from mmap storage
     pub(super) fn open_mmap(index: MmapMapIndex<N>) -> Self {
-        let index_storage = index.storage.as_ref().unwrap();
-
         // Construct intermediate values to points map from backing storage
         let mapping = || {
-            index_storage.value_to_points.iter().map(|(value, ids)| {
+            index.storage.value_to_points.iter().map(|(value, ids)| {
                 (
                     value,
                     ids.iter().copied().filter(|idx| {
-                        let is_deleted = index_storage.deleted.get(*idx as usize).unwrap_or(false);
+                        let is_deleted = index.storage.deleted.get(*idx as usize).unwrap_or(false);
                         !is_deleted
                     }),
                 )
