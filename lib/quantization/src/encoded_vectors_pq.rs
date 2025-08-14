@@ -435,7 +435,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
             .sum()
     }
 
-    pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
+    pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
         self.encoded_vectors
             .get_vector_data(i as _, self.metadata.vector_division.len())
     }

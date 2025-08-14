@@ -759,7 +759,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         }
     }
 
-    pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
+    pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
         self.encoded_vectors
             .get_vector_data(i as _, self.get_quantized_vector_size())
     }
