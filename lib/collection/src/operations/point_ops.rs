@@ -277,7 +277,7 @@ mod tests {
     use std::str::FromStr;
 
     use api::rest::{Batch, BatchVectorStruct, PointInsertOperations, PointsBatch};
-    use segment::types::ExtendedPointId;
+    use segment::types::{ExtendedPointId, PointIdType};
 
     use super::*;
 
