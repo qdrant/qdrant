@@ -158,6 +158,12 @@ impl EncodedStorageBuilder for TestEncodedStorageBuilder {
     type Storage = TestEncodedStorage;
 
     fn build(self) -> std::io::Result<Self::Storage> {
+        let quantized_vector_size = self.quantized_vector_size.ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "quantized_vector_size must be set before build()",
+            )
+        })?;
         Ok(TestEncodedStorage {
             data: self.data,
             quantized_vector_size: self.quantized_vector_size,
