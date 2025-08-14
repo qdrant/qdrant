@@ -279,6 +279,7 @@ message QueryShardPoints {
       Sample sample = 4; // Sample points
       Formula formula = 5; // Use an arbitrary formula to rescore points
       MmrInternal mmr = 6; // Maximal Marginal Relevance
+      ReciprocalRankFusion rrf_custom = 7; // Reciprocal Rank Fusion with custom parameters
     }
   }
 
