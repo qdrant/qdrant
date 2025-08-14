@@ -1,10 +1,13 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use common::types::ScoreType;
 use common::validation::validate_multi_vector;
+use ordered_float::NotNan;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
+use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -161,22 +164,177 @@ impl Hash for Options {
     }
 }
 
+/// Configuration of the local bm25 models.
+#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq, Eq)]
+pub struct Bm25Config {
+    /// Controls term frequency saturation. Higher values mean term frequency has more impact.
+    /// Default is 1.2
+    #[serde(default = "default_k")]
+    pub k: NotNan<f64>,
+    #[serde(default = "default_b")]
+    /// Controls document length normalization. Ranges from 0 (no normalization) to 1 (full normalization).
+    /// Higher values mean longer documents have less impact.
+    /// Default is 0.75.
+    pub b: NotNan<f64>,
+    #[serde(default = "default_avg_len")]
+    /// Expected average document length in the collection. Default is 256.
+    pub avg_len: NotNan<f64>,
+    /// Tokenizer type to use for text preprocessing.
+    #[serde(default)]
+    pub tokenizer: TokenizerType,
+    #[serde(default, flatten)]
+    pub text_preprocessing_config: TextPreprocessingConfig,
+}
+
+impl Default for Bm25Config {
+    fn default() -> Self {
+        Self {
+            k: default_k(),
+            b: default_b(),
+            avg_len: default_avg_len(),
+            tokenizer: TokenizerType::default(),
+            text_preprocessing_config: TextPreprocessingConfig::default(),
+        }
+    }
+}
+
+const fn default_k() -> NotNan<f64> {
+    unsafe { NotNan::new_unchecked(1.2) }
+}
+
+const fn default_b() -> NotNan<f64> {
+    unsafe { NotNan::new_unchecked(0.75) }
+}
+
+const fn default_avg_len() -> NotNan<f64> {
+    unsafe { NotNan::new_unchecked(256.0) }
+}
+
+/// Bm25 tokenizer configurations.
+#[derive(Debug, Deserialize, Serialize, Clone, Default, JsonSchema, PartialEq, Eq)]
+pub struct TextPreprocessingConfig {
+    /// Defines which language to use for text preprocessing.
+    /// This parameter is used to construct default stopwords filter and stemmer.
+    /// To disable language-specific processing, set this to `"language": "none"`.
+    /// If not specified, English is assumed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// Lowercase the text before tokenization.
+    /// Default is `true`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lowercase: Option<bool>,
+    /// Configuration of the stopwords filter. Supports list of pre-defined languages and custom stopwords.
+    /// Default: initialized for specified `language` or English if not specified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopwords: Option<StopwordsInterface>,
+    /// Configuration of the stemmer. Processes tokens to their root form.
+    /// Default: initialized Snowball stemmer for specified `language` or English if not specified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stemmer: Option<StemmingAlgorithm>,
+    /// Minimum token length to keep. If token is shorter than this, it will be discarded.
+    /// Default is `None`, which means no minimum length.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_token_len: Option<usize>,
+    /// Maximum token length to keep. If token is longer than this, it will be discarded.
+    /// Default is `None`, which means no maximum length.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_token_len: Option<usize>,
+}
+
+impl Bm25Config {
+    pub fn to_options(&self) -> HashMap<String, Value> {
+        debug_assert!(
+            false,
+            "this code should never be called, it is only for schema generation",
+        );
+
+        let value = serde_json::to_value(self)
+            .expect("conversion of internal structure to JSON should never fail");
+
+        match value {
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Array(_) => HashMap::default(), // not expected
+            Value::Object(map) => map.into_iter().collect(),
+        }
+    }
+}
+
+/// Option variants for text documents.
+/// Ether general-purpose options or BM25-specific options.
+/// BM25-specific will only take effect if the `qdrant/bm25` is specified as a model.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum DocumentOptions {
+    // This option should go first
+    Common(HashMap<String, Value>),
+    // This should never be deserialized into, but we keep it for schema generation
+    Bm25(Bm25Config),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_document_options_should_deserialize_into_common() {
+        let json = Bm25Config {
+            tokenizer: TokenizerType::Word,
+            ..Default::default()
+        };
+        let valid_bm25_config = serde_json::to_string(&json).unwrap();
+        let options: DocumentOptions = serde_json::from_str(&valid_bm25_config).unwrap();
+        // Bm25 option is used only for schema, actual deserialization will happen in specialized code
+        assert!(matches!(options, DocumentOptions::Common(_)));
+    }
+}
+
+impl DocumentOptions {
+    pub fn into_options(self) -> HashMap<String, Value> {
+        match self {
+            DocumentOptions::Common(options) => options,
+            DocumentOptions::Bm25(bm25) => bm25.to_options(),
+        }
+    }
+}
+
+impl Hash for DocumentOptions {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let options = match self {
+            DocumentOptions::Common(options) => Cow::Borrowed(options),
+            DocumentOptions::Bm25(bm25) => Cow::Owned(bm25.to_options()),
+        };
+
+        // Order of keys in the map should not affect the hash
+        let mut keys: Vec<_> = options.keys().collect();
+        keys.sort();
+        for key in keys {
+            key.hash(state);
+            options.get(key).unwrap().hash(state);
+        }
+    }
+}
+
 /// WARN: Work-in-progress, unimplemented
 ///
 /// Text document for embedding. Requires inference infrastructure, unimplemented.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash, Validate)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema, Hash, Validate)]
 pub struct Document {
-    /// Text of the document
-    /// This field will be used as input for the embedding model
+    /// Text of the document.
+    /// This field will be used as input for the embedding model.
     #[schemars(example = "document_text_example")]
     pub text: String,
-    /// Name of the model used to generate the vector
-    /// List of available models depends on a provider
+    /// Name of the model used to generate the vector.
+    /// List of available models depends on a provider.
     #[validate(length(min = 1))]
     #[schemars(length(min = 1), example = "model_example")]
     pub model: String,
-    #[serde(flatten)]
-    pub options: Options,
+    /// Additional options for the model, will be passed to the inference service as-is.
+    /// See model cards for available options.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<DocumentOptions>,
 }
 
 /// WARN: Work-in-progress, unimplemented
@@ -187,13 +345,13 @@ pub struct Image {
     /// Image data: base64 encoded image or an URL
     #[schemars(example = "image_value_example")]
     pub image: Value,
-    /// Name of the model used to generate the vector
-    /// List of available models depends on a provider
+    /// Name of the model used to generate the vector.
+    /// List of available models depends on a provider.
     #[validate(length(min = 1))]
     #[schemars(length(min = 1), example = "image_model_example")]
     pub model: String,
-    /// Parameters for the model
-    /// Values of the parameters are model-specific
+    /// Parameters for the model.
+    /// Values of the parameters are model-specific.
     #[serde(flatten)]
     pub options: Options,
 }
@@ -203,16 +361,16 @@ pub struct Image {
 /// Custom object for embedding. Requires inference infrastructure, unimplemented.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash, Validate)]
 pub struct InferenceObject {
-    /// Arbitrary data, used as input for the embedding model
-    /// Used if the model requires more than one input or a custom input
+    /// Arbitrary data, used as input for the embedding model.
+    /// Used if the model requires more than one input or a custom input.
     pub object: Value,
-    /// Name of the model used to generate the vector
-    /// List of available models depends on a provider
+    /// Name of the model used to generate the vector.
+    /// List of available models depends on a provider.
     #[validate(length(min = 1))]
     #[schemars(length(min = 1), example = "model_example")]
     pub model: String,
-    /// Parameters for the model
-    /// Values of the parameters are model-specific
+    /// Parameters for the model.
+    /// Values of the parameters are model-specific.
     #[serde(flatten)]
     pub options: Options,
 }

@@ -495,6 +495,7 @@ dependencies = [
  "chrono",
  "common",
  "itertools 0.14.0",
+ "ordered-float 5.0.0",
  "parking_lot",
  "prost 0.12.6",
  "prost-build 0.12.6",
@@ -3996,6 +3997,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2c1f9f56e534ac6a9b8a4600bdf0f530fb393b5f393e7b4d03489c3cf0c3f01"
 dependencies = [
  "num-traits",
+ "rand 0.8.5",
+ "schemars",
+ "serde",
 ]
 
 [[package]]
@@ -4962,6 +4966,7 @@ dependencies = [
  "libc",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "serde",
 ]
 
 [[package]]
@@ -5020,6 +5025,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom 0.2.11",
+ "serde",
 ]
 
 [[package]]
