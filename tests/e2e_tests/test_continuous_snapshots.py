@@ -1,7 +1,6 @@
 import pytest
 import time
 import threading
-import uuid
 
 from e2e_tests.client_utils import ClientUtils, VECTOR_SIZE
 from qdrant_client import models
@@ -11,12 +10,17 @@ class TestContinuousSnapshots:
     """Test continuous snapshots creation while modifying collection data."""
 
     @staticmethod
-    def _snapshot_creation_loop(client: ClientUtils, collection_name: str, iterations: int, results: dict):
-        """Continuously create snapshots for the specified number of iterations."""
+    def _snapshot_creation_loop(client: ClientUtils, collection_name: str, iterations: int, results: dict, stop_event: threading.Event):
+        """Continuously create snapshots until stop event is set or iterations complete."""
         snapshots_created = []
         errors = []
 
         for i in range(iterations):
+            # Check if we should stop
+            if stop_event.is_set():
+                print(f"Snapshot creation stopping early at iteration {i+1} (data modification completed)")
+                break
+                
             try:
                 snapshot_name = client.create_snapshot(collection_name)
                 snapshots_created.append(snapshot_name)
@@ -32,34 +36,34 @@ class TestContinuousSnapshots:
         results["errors"] = errors
 
     @staticmethod
-    def _data_modification_loop(client: ClientUtils, collection_name: str, iterations: int, results: dict):
+    def _data_modification_loop(client: ClientUtils, collection_name: str, iterations: int, results: dict, stop_event: threading.Event):
         """Continuously delete all points and insert new points for the specified number of iterations."""
         modification_count = 0
         errors = []
         
         for i in range(iterations):
             try:
-                # Delete all existing points
+                # Delete all existing points by their IDs
                 client.client.delete(
                     collection_name=collection_name,
-                    points_selector=models.FilterSelector(
-                        filter=models.Filter(must=[])
-                    ),
+                    points_selector=models.PointIdsList(points=list(range(150))),
                     wait=True
                 )
 
-                # Insert 150 points in batches of 10
+                # Insert 150 points in batches of 10 with integer IDs
                 total_inserted = 0
+                base_id = 0
                 for batch_idx in range(15):  # 15 batches of 10 points = 150 points
                     points = []
-                    for _ in range(10):
+                    for point_idx in range(10):
                         points.append(
                             models.PointStruct(
-                                id=str(uuid.uuid4()),
+                                id=base_id,
                                 vector=[round(float(j), 2) for j in range(VECTOR_SIZE)],
-                                payload={"city": ["Berlin", "London"], "iteration": i, "batch": batch_idx}
+                                payload={"city": ["Berlin", "London"], "iteration": modification_count, "batch": batch_idx}
                             )
                         )
+                        base_id += 1
                     
                     client.client.upsert(
                         collection_name=collection_name,
@@ -68,7 +72,7 @@ class TestContinuousSnapshots:
                     )
                     total_inserted += len(points)
 
-                print(f"Iteration {i+1}/{iterations}: Inserted {total_inserted} points")
+                # print(f"Iteration {i+1}/{iterations}: Inserted {total_inserted} points")
                 modification_count += 1
                 # time.sleep(0.05)  # Small delay between iterations
             except Exception as e:
@@ -78,6 +82,8 @@ class TestContinuousSnapshots:
                 break
 
         print(f"Done {modification_count}/{iterations} iterations.")
+        # Signal snapshot thread to stop
+        stop_event.set()
         results["errors"] = errors
         results["modifications_completed"] = modification_count
 
@@ -113,14 +119,17 @@ class TestContinuousSnapshots:
         snapshot_results = {}
         modification_results = {}
         
+        # Create event to signal when to stop
+        stop_event = threading.Event()
+        
         snapshot_thread = threading.Thread(
             target=self._snapshot_creation_loop,
-            args=(client, collection_name, iterations, snapshot_results)
+            args=(client, collection_name, iterations, snapshot_results, stop_event)
         )
         
         modification_thread = threading.Thread(
             target=self._data_modification_loop,
-            args=(client, collection_name, iterations, modification_results)
+            args=(client, collection_name, iterations, modification_results, stop_event)
         )
         
         print(f"Starting concurrent operations with {iterations} iterations each...")
