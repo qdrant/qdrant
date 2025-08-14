@@ -435,10 +435,13 @@ impl FromStr for Language {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 pub struct StopwordsSet {
+    /// Set of languages to use for stopwords.
+    /// Multiple pre-defined lists of stopwords can be combined.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub languages: Option<BTreeSet<Language>>,
 
+    /// Custom stopwords set. Will be merged with the languages set.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom: Option<BTreeSet<String>>,

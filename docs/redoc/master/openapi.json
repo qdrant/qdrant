@@ -7781,6 +7781,7 @@
         "type": "object",
         "properties": {
           "languages": {
+            "description": "Set of languages to use for stopwords. Multiple pre-defined lists of stopwords can be combined.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Language"
@@ -7789,6 +7790,7 @@
             "nullable": true
           },
           "custom": {
+            "description": "Custom stopwords set. Will be merged with the languages set.",
             "type": "array",
             "items": {
               "type": "string"
@@ -10520,20 +10522,110 @@
         ],
         "properties": {
           "text": {
-            "description": "Text of the document This field will be used as input for the embedding model",
+            "description": "Text of the document. This field will be used as input for the embedding model.",
             "type": "string",
             "example": "This is a document text"
           },
           "model": {
-            "description": "Name of the model used to generate the vector List of available models depends on a provider",
+            "description": "Name of the model used to generate the vector. List of available models depends on a provider.",
             "type": "string",
             "minLength": 1,
             "example": "jinaai/jina-embeddings-v2-base-en"
           },
           "options": {
-            "description": "Parameters for the model Values of the parameters are model-specific",
+            "description": "Additional options for the model, will be passed to the inference service as-is. See model cards for available options.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentOptions"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "DocumentOptions": {
+        "description": "Option variants for text documents. Ether general-purpose options or BM25-specific options. BM25-specific will only take effect if the `qdrant/bm25` is specified as a model.",
+        "anyOf": [
+          {
             "type": "object",
-            "additionalProperties": true,
+            "additionalProperties": true
+          },
+          {
+            "$ref": "#/components/schemas/Bm25Config"
+          }
+        ]
+      },
+      "Bm25Config": {
+        "description": "Configuration of the local bm25 models.",
+        "type": "object",
+        "properties": {
+          "k": {
+            "description": "Controls term frequency saturation. Higher values mean term frequency has more impact. Default is 1.2",
+            "default": 1.2,
+            "type": "number",
+            "format": "double"
+          },
+          "b": {
+            "description": "Controls document length normalization. Ranges from 0 (no normalization) to 1 (full normalization). Higher values mean longer documents have less impact. Default is 0.75.",
+            "default": 0.75,
+            "type": "number",
+            "format": "double"
+          },
+          "avg_len": {
+            "description": "Expected average document length in the collection. Default is 256.",
+            "default": 256,
+            "type": "number",
+            "format": "double"
+          },
+          "tokenizer": {
+            "$ref": "#/components/schemas/TokenizerType"
+          },
+          "language": {
+            "description": "Defines which language to use for text preprocessing. This parameter is used to construct default stopwords filter and stemmer. To disable language-specific processing, set this to `\"language\": \"none\"`. If not specified, English is assumed.",
+            "type": "string",
+            "nullable": true
+          },
+          "lowercase": {
+            "description": "Lowercase the text before tokenization. Default is `true`.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "stopwords": {
+            "description": "Configuration of the stopwords filter. Supports list of pre-defined languages and custom stopwords. Default: initialized for specified `language` or English if not specified.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StopwordsInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "stemmer": {
+            "description": "Configuration of the stemmer. Processes tokens to their root form. Default: initialized Snowball stemmer for specified `language` or English if not specified.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StemmingAlgorithm"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "min_token_len": {
+            "description": "Minimum token length to keep. If token is shorter than this, it will be discarded. Default is `None`, which means no minimum length.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "max_token_len": {
+            "description": "Maximum token length to keep. If token is longer than this, it will be discarded. Default is `None`, which means no maximum length.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
             "nullable": true
           }
         }
@@ -10551,7 +10643,7 @@
             "example": "https://example.com/image.jpg"
           },
           "model": {
-            "description": "Name of the model used to generate the vector List of available models depends on a provider",
+            "description": "Name of the model used to generate the vector. List of available models depends on a provider.",
             "type": "string",
             "minLength": 1,
             "example": "Qdrant/clip-ViT-B-32-vision"
@@ -10573,10 +10665,10 @@
         ],
         "properties": {
           "object": {
-            "description": "Arbitrary data, used as input for the embedding model Used if the model requires more than one input or a custom input"
+            "description": "Arbitrary data, used as input for the embedding model. Used if the model requires more than one input or a custom input."
           },
           "model": {
-            "description": "Name of the model used to generate the vector List of available models depends on a provider",
+            "description": "Name of the model used to generate the vector. List of available models depends on a provider.",
             "type": "string",
             "minLength": 1,
             "example": "jinaai/jina-embeddings-v2-base-en"

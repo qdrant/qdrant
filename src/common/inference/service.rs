@@ -333,13 +333,14 @@ fn merge_position_items<I>(
 mod test {
     use std::collections::HashMap;
 
+    use api::rest::Bm25Config;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
     use rand::{Rng, SeedableRng};
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::common::inference::bm25::{Bm25, Bm25Config};
+    use crate::common::inference::bm25::Bm25;
     use crate::common::inference::inference_input::InferenceDataType;
 
     const BM25_LOCAL_MODEL_NAME: &str = "bm25";
