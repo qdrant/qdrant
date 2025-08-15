@@ -12,9 +12,7 @@ use crate::spaces::tools::is_length_zero_or_normalized;
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "avx512f")]
 #[target_feature(enable = "avx512dq")]
-#[target_feature(enable = "sse")]
-#[target_feature(enable = "sse3")]
-#[target_feature(enable = "sse4.1")]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn dot_similarity_avx512(
     v1: &[VectorElementType],
     v2: &[VectorElementType],
@@ -70,6 +68,7 @@ pub unsafe fn dot_similarity_avx512(
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "avx512f")]
 #[target_feature(enable = "avx512dq")]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn hsum512_ps_avx512(x: __m512) -> f32 {
     unsafe {
         let low_half = _mm512_castps512_ps256(x);
@@ -79,14 +78,12 @@ pub unsafe fn hsum512_ps_avx512(x: __m512) -> f32 {
     }
 }
 
-/// Calculates the hsum (horizontal sum) of eight 32 byte registers.
+/// Calculates the hsum (horizontal sum) of 4x 64 byte registers.
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
 #[target_feature(enable = "avx512f")]
 #[target_feature(enable = "avx512dq")]
-#[target_feature(enable = "sse")]
-#[target_feature(enable = "sse3")]
-#[target_feature(enable = "sse4.1")]
+#[allow(clippy::missing_safety_doc)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe fn four_way_hsum_512(a: __m512, b: __m512, c: __m512, d: __m512) -> f32 {
     unsafe {
@@ -100,9 +97,7 @@ pub unsafe fn four_way_hsum_512(a: __m512, b: __m512, c: __m512, d: __m512) -> f
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "avx512f")]
 #[target_feature(enable = "avx512dq")]
-#[target_feature(enable = "sse")]
-#[target_feature(enable = "sse3")]
-#[target_feature(enable = "sse4.1")]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn cosine_preprocess_avx512(vector: Vec<f32>) -> Vec<f32> {
     unsafe {
         let n = vector.len();
@@ -116,17 +111,17 @@ pub unsafe fn cosine_preprocess_avx512(vector: Vec<f32>) -> Vec<f32> {
 
         let mut i: usize = 0;
         while i < m {
-            let m256_1 = _mm512_loadu_ps(ptr);
-            sum512_1 = _mm512_fmadd_ps(m256_1, m256_1, sum512_1);
+            let m512_1 = _mm512_loadu_ps(ptr);
+            sum512_1 = _mm512_fmadd_ps(m512_1, m512_1, sum512_1);
 
-            let m256_2 = _mm512_loadu_ps(ptr.add(16));
-            sum512_2 = _mm512_fmadd_ps(m256_2, m256_2, sum512_2);
+            let m512_2 = _mm512_loadu_ps(ptr.add(16));
+            sum512_2 = _mm512_fmadd_ps(m512_2, m512_2, sum512_2);
 
-            let m256_3 = _mm512_loadu_ps(ptr.add(32));
-            sum512_3 = _mm512_fmadd_ps(m256_3, m256_3, sum512_3);
+            let m512_3 = _mm512_loadu_ps(ptr.add(32));
+            sum512_3 = _mm512_fmadd_ps(m512_3, m512_3, sum512_3);
 
-            let m256_4 = _mm512_loadu_ps(ptr.add(48));
-            sum512_4 = _mm512_fmadd_ps(m256_4, m256_4, sum512_4);
+            let m512_4 = _mm512_loadu_ps(ptr.add(48));
+            sum512_4 = _mm512_fmadd_ps(m512_4, m512_4, sum512_4);
 
             ptr = ptr.add(64);
             i += 64;
