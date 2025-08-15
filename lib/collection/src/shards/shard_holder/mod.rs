@@ -346,7 +346,7 @@ impl ShardHolder {
 
         // If shard key is specified but no matching ring was found
         // Check if there is a fallback ring
-        if let Some(fallback_shard_key) = &self.fallback_shard_key {
+        if let Some(fallback_shard_key) = self.get_fallback_shard_key() {
             // Use the fallback shard key if it exists
             return if let Some(fallback_ring) = self.rings.get(&Some(fallback_shard_key.clone())) {
                 Ok(fallback_ring)
