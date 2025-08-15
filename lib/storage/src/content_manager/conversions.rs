@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
+    WalConfigDiff,
 };
 use collection::operations::conversions::sharding_method_from_proto;
 use collection::operations::types::{SparseVectorsConfig, VectorsConfigDiff};
@@ -171,6 +172,7 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
             quantization_config,
             sparse_vectors_config,
             strict_mode_config,
+            wal_config,
         } = value;
         Ok(Self::UpdateCollection(UpdateCollectionOperation::new(
             collection_name,
@@ -180,6 +182,7 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
                     .map(VectorsConfigDiff::try_from)
                     .transpose()?,
                 hnsw_config: hnsw_config.map(HnswConfigDiff::from),
+                wal_config: wal_config.map(WalConfigDiff::from),
                 params: params.map(CollectionParamsDiff::try_from).transpose()?,
                 optimizers_config: optimizers_config
                     .map(OptimizersConfigDiff::try_from)

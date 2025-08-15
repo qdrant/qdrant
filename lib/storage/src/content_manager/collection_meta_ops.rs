@@ -246,6 +246,9 @@ pub struct UpdateCollection {
     /// HNSW parameters to update for the collection index. If none - it is left unchanged.
     #[validate(nested)]
     pub hnsw_config: Option<HnswConfigDiff>,
+    /// WAL parameters for the collection. If none - it is left unchanged.
+    #[validate(nested)]
+    pub wal_config: Option<WalConfigDiff>,
     /// Quantization parameters to update. If none - it is left unchanged.
     #[serde(default, alias = "quantization")]
     #[validate(nested)]
@@ -273,6 +276,7 @@ impl UpdateCollectionOperation {
             update_collection: UpdateCollection {
                 vectors: None,
                 hnsw_config: None,
+                wal_config: None,
                 params: None,
                 optimizers_config: None,
                 quantization_config: None,

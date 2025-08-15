@@ -57,6 +57,23 @@ impl Collection {
         Ok(())
     }
 
+    /// Updates WAL config:
+    /// Saves new params on disk
+    ///
+    /// After this, `recreate_optimizers_blocking` must be called to create new optimizers using
+    /// the updated configuration.
+    pub async fn update_wal_config_from_diff(
+        &self,
+        wal_config_diff: WalConfigDiff,
+    ) -> CollectionResult<()> {
+        {
+            let mut config = self.collection_config.write().await;
+            config.wal_config = wal_config_diff.update(&config.wal_config)?;
+        }
+        self.collection_config.read().await.save(&self.path)?;
+        Ok(())
+    }
+
     /// Updates vectors config:
     /// Saves new params on disk
     ///
