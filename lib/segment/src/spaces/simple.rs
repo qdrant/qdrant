@@ -132,19 +132,20 @@ impl Metric<VectorElementType> for DotProductMetric {
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx") {
-                // AVX512 implementation
-                if is_x86_feature_detected!("avx512f")
-                    && is_x86_feature_detected!("avx512dq")
-                    && v1.len() >= MIN_DIM_SIZE_AVX512
-                {
-                    return unsafe { crate::spaces::simple_avx512::dot_similarity_avx512(v1, v2) };
-                }
+            // AVX512
+            if is_x86_feature_detected!("avx512f")
+                && is_x86_feature_detected!("avx512dq")
+                && v1.len() >= MIN_DIM_SIZE_AVX512
+            {
+                return unsafe { crate::spaces::simple_avx512::dot_similarity_avx512(v1, v2) };
+            }
 
-                // Fallback to AVX only
-                if is_x86_feature_detected!("fma") && v1.len() >= MIN_DIM_SIZE_AVX {
-                    return unsafe { dot_similarity_avx(v1, v2) };
-                }
+            // AVX2
+            if is_x86_feature_detected!("fma")
+                && is_x86_feature_detected!("avx")
+                && v1.len() >= MIN_DIM_SIZE_AVX
+            {
+                return unsafe { dot_similarity_avx(v1, v2) };
             }
         }
 
@@ -189,20 +190,20 @@ impl Metric<VectorElementType> for CosineMetric {
     fn preprocess(vector: DenseVector) -> DenseVector {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx") {
-                // AVX512 implementation
-                if is_x86_feature_detected!("avx512f")
-                    && is_x86_feature_detected!("avx512dq")
-                    && vector.len() >= MIN_DIM_SIZE_AVX512
-                {
-                    return unsafe {
-                        crate::spaces::simple_avx512::cosine_preprocess_avx512(vector)
-                    };
-                }
+            // AVX512
+            if is_x86_feature_detected!("avx512f")
+                && is_x86_feature_detected!("avx512dq")
+                && vector.len() >= MIN_DIM_SIZE_AVX512
+            {
+                return unsafe { crate::spaces::simple_avx512::cosine_preprocess_avx512(vector) };
+            }
 
-                if is_x86_feature_detected!("fma") && vector.len() >= MIN_DIM_SIZE_AVX {
-                    return unsafe { cosine_preprocess_avx(vector) };
-                }
+            // AVX2
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && vector.len() >= MIN_DIM_SIZE_AVX
+            {
+                return unsafe { cosine_preprocess_avx(vector) };
             }
         }
 
