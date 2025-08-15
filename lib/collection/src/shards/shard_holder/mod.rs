@@ -104,7 +104,7 @@ impl ShardHolder {
             rings,
             key_mapping,
             shard_id_to_key_mapping,
-            fallback_shard_key: Some(ShardKey::Keyword("fallback".into())), // ToDo: Take from collection params
+            fallback_shard_key: None, // Some(ShardKey::Keyword("fallback".into())), // ToDo: Take from collection params
         })
     }
 
@@ -325,26 +325,30 @@ impl ShardHolder {
     ) -> CollectionResult<&HashRingRouter> {
         let matching_hashring = self.rings.get(shard_key);
 
-        match (shard_key, matching_hashring) {
-            (None, Some(ring)) => Ok(ring), // if shard key is 'None', and 'None' hashring exists, return it
-            (Some(_), Some(ring)) => Ok(ring), // If shard key is specified and ring exists, return it
-            (None, None) => {
-                // If shard key is 'None' and no 'None' ring exists, error out
-                Err(CollectionError::bad_input("No shards exist".to_string()))
-            }
-            (Some(_), None) => {
-                // If shard key is specified but no matching ring was found
-                // Check if there is a fallback ring
-                let fallback_shard_key = Some(ShardKey::Keyword("fallback".into())); // ToDo: Take this from collection param
-                if let Some(fallback_ring) = self.rings.get(&fallback_shard_key) {
-                    Ok(fallback_ring)
-                } else {
-                    // If no fallback ring, error out
-                    Err(CollectionError::bad_input(
-                        "Shard key not found. Create fallback or pass valid shard key".to_string(),
-                    ))
-                }
-            }
+        if let Some(matching_hashring) = matching_hashring {
+            return Ok(matching_hashring);
+        }
+
+        // If shard key is specified but no matching ring was found
+        // Check if there is a fallback ring
+        if let Some(fallback_shard_key) = &self.fallback_shard_key {
+            // Use the fallback shard key if it exists
+            return if let Some(fallback_ring) = self.rings.get(&Some(fallback_shard_key.clone())) {
+                Ok(fallback_ring)
+            } else {
+                // If no fallback ring, error out
+                Err(CollectionError::bad_request(format!(
+                    "fallback shard `{fallback_shard_key}` is not created"
+                )))
+            };
+        }
+
+        if let Some(shard_key) = shard_key {
+            Err(CollectionError::bad_input(format!(
+                "Shard key `{shard_key}` not found. Create fallback or pass valid shard key"
+            )))
+        } else {
+            Err(CollectionError::bad_input("No shards exist".to_string()))
         }
     }
 
@@ -529,8 +533,12 @@ impl ShardHolder {
         })
     }
 
+    fn get_shard_ids_by_key_opt(&self, shard_key: &ShardKey) -> Option<HashSet<ShardId>> {
+        self.key_mapping.read().get(shard_key).cloned()
+    }
+
     pub fn get_shard_ids_by_key(&self, shard_key: &ShardKey) -> CollectionResult<HashSet<ShardId>> {
-        match self.key_mapping.read().get(shard_key).cloned() {
+        match self.get_shard_ids_by_key_opt(shard_key) {
             None => Err(CollectionError::bad_input(format!(
                 "Shard key {shard_key} not found"
             ))),
@@ -542,17 +550,21 @@ impl ShardHolder {
         &'a self,
         shard_key: &'a ShardKey,
     ) -> CollectionResult<(Option<&'a ShardKey>, HashSet<ShardId>)> {
-        match self.get_shard_ids_by_key(shard_key) {
-            Ok(ids) => Ok((Some(shard_key), ids)),
-            Err(err) => {
+        match self.get_shard_ids_by_key_opt(shard_key) {
+            Some(ids) => Ok((Some(shard_key), ids)),
+            None => {
                 if let Some(fallback_shard_key) = &self.fallback_shard_key {
                     if let Ok(fallback_ids) = self.get_shard_ids_by_key(fallback_shard_key) {
                         Ok((Some(fallback_shard_key), fallback_ids))
                     } else {
-                        Err(err) // Return the original error if fallback also fails
+                        Err(CollectionError::bad_request(format!(
+                            "Shard key {shard_key} not found and fallback shard key {fallback_shard_key} is not created",
+                        )))
                     }
                 } else {
-                    Err(err) // Return the original error if no fallback key is set
+                    Err(CollectionError::bad_request(format!(
+                        "Shard key {shard_key} not found"
+                    )))
                 }
             }
         }
