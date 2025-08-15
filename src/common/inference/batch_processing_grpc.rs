@@ -160,7 +160,7 @@ pub(crate) fn collect_query(query: &Query, batch: &mut BatchAccumGrpc) -> Result
         query::Variant::Context(context) => collect_context_input(context, batch)?,
         query::Variant::OrderBy(_) => {}
         query::Variant::Fusion(_) => {}
-        query::Variant::RrfCustom(_) => {}
+        query::Variant::FusionParams(_) => {}
         query::Variant::Sample(_) => {}
         query::Variant::Formula(_) => {}
         query::Variant::NearestWithMmr(nearest_with_mmr) => {

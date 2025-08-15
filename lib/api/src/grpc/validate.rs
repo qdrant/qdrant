@@ -346,7 +346,7 @@ impl Validate for super::qdrant::query::Variant {
             grpc::query::Variant::Formula(q) => q.validate(),
             grpc::query::Variant::Sample(_)
             | grpc::query::Variant::Fusion(_)
-            | grpc::query::Variant::RrfCustom(_)
+            | grpc::query::Variant::FusionParams(_)
             | grpc::query::Variant::OrderBy(_) => Ok(()),
         }
     }
