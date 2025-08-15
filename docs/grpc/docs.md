@@ -3877,6 +3877,7 @@ If not specified, the `limit` value is used. |
 | ----- | ---- | ----- | ----------- |
 | points | [PointStruct](#qdrant-PointStruct) | repeated |  |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+| update_filter | [Filter](#qdrant-Filter) | optional | If specified, only points that match this filter will be updated, others will be inserted |
 
 
 
@@ -3927,6 +3928,7 @@ If not specified, the `limit` value is used. |
 | ----- | ---- | ----- | ----------- |
 | points | [PointVectors](#qdrant-PointVectors) | repeated | List of points and vectors to update |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+| update_filter | [Filter](#qdrant-Filter) | optional | If specified, only points that match this filter will be updated |
 
 
 
@@ -4904,6 +4906,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | points | [PointVectors](#qdrant-PointVectors) | repeated | List of points and vectors to update |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+| update_filter | [Filter](#qdrant-Filter) | optional | If specified, only points that match this filter will be updated |
 
 
 
@@ -4939,6 +4942,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | points | [PointStruct](#qdrant-PointStruct) | repeated |  |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+| update_filter | [Filter](#qdrant-Filter) | optional | If specified, only points that match this filter will be updated, others will be inserted |
 
 
 

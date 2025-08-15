@@ -1,5 +1,6 @@
 use api::rest::{
-    BatchVectorStruct, MultiDenseVector, PointInsertOperations, UpdateVectors, Vector, VectorStruct,
+    BatchVectorStruct, MultiDenseVector, PointInsertOperations, PointsBatch, PointsList,
+    UpdateVectors, Vector, VectorStruct,
 };
 use segment::data_types::tiny_map::TinyMap;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
@@ -155,7 +156,21 @@ impl StrictModeVerification for PointInsertOperations {
     }
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
-        None
+        // Update filter doesn't require strict mode checks
+        // as it is only used on a limited and small subset of points.
+        // Reading from payload storage is acceptable in this case.
+        match self {
+            PointInsertOperations::PointsBatch(PointsBatch {
+                batch: _,
+                shard_key: _,
+                update_filter: _,
+            }) => None,
+            PointInsertOperations::PointsList(PointsList {
+                points: _,
+                shard_key: _,
+                update_filter: _,
+            }) => None,
+        }
     }
 
     fn request_exact(&self) -> Option<bool> {
@@ -201,6 +216,14 @@ impl StrictModeVerification for UpdateVectors {
     }
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
+        let UpdateVectors {
+            points: _,
+            shard_key: _,
+            // Update filter doesn't require strict mode checks
+            // as it is only used on a limited and small subset of points.
+            // Reading from payload storage is acceptable in this case.
+            update_filter: _,
+        } = self;
         None
     }
 

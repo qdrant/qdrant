@@ -9,11 +9,10 @@ use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{BatchVectorStructInternal, VectorStructInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
+    Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     SeqNumberType, VectorNameBuf,
 };
 
@@ -21,10 +20,10 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::FieldIndexOperations;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+    ConditionalInsertOperationInternal, PointOperations, PointStructPersisted,
 };
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::operations::vector_ops::{PointVectorsPersisted, VectorOperations};
+use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
 
 pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],
@@ -101,6 +100,30 @@ pub(crate) fn update_vectors(
     }
 
     Ok(total_updated_points)
+}
+
+pub(crate) fn update_vectors_conditional(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    points: UpdateVectorsOp,
+    hw_counter: &HardwareCounterCell,
+) -> CollectionResult<usize> {
+    let UpdateVectorsOp {
+        mut points,
+        update_filter,
+    } = points;
+
+    let Some(filter_condition) = update_filter else {
+        return update_vectors(segments, op_num, points, hw_counter);
+    };
+
+    let point_ids: Vec<_> = points.iter().map(|point| point.id).collect();
+
+    let points_to_exclude =
+        select_excluded_by_filter_ids(segments, point_ids, filter_condition, hw_counter)?;
+
+    points.retain(|p| !points_to_exclude.contains(&p.id));
+    update_vectors(segments, op_num, points, hw_counter)
 }
 
 const VECTOR_OP_BATCH_SIZE: usize = 512;
@@ -574,6 +597,45 @@ where
     Ok(res)
 }
 
+fn select_excluded_by_filter_ids(
+    segments: &SegmentHolder,
+    point_ids: impl IntoIterator<Item = PointIdType>,
+    filter: Filter,
+    hw_counter: &HardwareCounterCell,
+) -> CollectionResult<AHashSet<PointIdType>> {
+    // Filter for points that doesn't match the condition, and have matching
+    let non_match_filter =
+        Filter::new_must_not(Condition::Filter(filter)).with_point_ids(point_ids);
+
+    Ok(points_by_filter(segments, &non_match_filter, hw_counter)?
+        .into_iter()
+        .collect())
+}
+
+pub(crate) fn conditional_upsert(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    operation: ConditionalInsertOperationInternal,
+    hw_counter: &HardwareCounterCell,
+) -> CollectionResult<usize> {
+    // Find points, which do exist, but don't match the condition.
+    // Exclude those points from the upsert operation.
+
+    let ConditionalInsertOperationInternal {
+        mut points_op,
+        condition,
+    } = operation;
+
+    let point_ids = points_op.point_ids();
+
+    let points_to_exclude =
+        select_excluded_by_filter_ids(segments, point_ids, condition, hw_counter)?;
+
+    points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
+    let points = points_op.into_point_vec();
+    upsert_points(segments, op_num, points.iter(), hw_counter)
+}
+
 pub(crate) fn process_point_operation(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
@@ -585,33 +647,12 @@ pub(crate) fn process_point_operation(
             delete_points(&segments.read(), op_num, &ids, hw_counter)
         }
         PointOperations::UpsertPoints(operation) => {
-            let points: Vec<_> = match operation {
-                PointInsertOperationsInternal::PointsBatch(batch) => {
-                    let batch_vectors = BatchVectorStructInternal::from(batch.vectors);
-                    let all_vectors = batch_vectors.into_all_vectors(batch.ids.len());
-                    let vectors_iter = batch.ids.into_iter().zip(all_vectors);
-                    match batch.payloads {
-                        None => vectors_iter
-                            .map(|(id, vectors)| PointStructPersisted {
-                                id,
-                                vector: VectorStructInternal::from(vectors).into(),
-                                payload: None,
-                            })
-                            .collect(),
-                        Some(payloads) => vectors_iter
-                            .zip(payloads)
-                            .map(|((id, vectors), payload)| PointStructPersisted {
-                                id,
-                                vector: VectorStructInternal::from(vectors).into(),
-                                payload,
-                            })
-                            .collect(),
-                    }
-                }
-                PointInsertOperationsInternal::PointsList(points) => points,
-            };
+            let points = operation.into_point_vec();
             let res = upsert_points(&segments.read(), op_num, points.iter(), hw_counter)?;
             Ok(res)
+        }
+        PointOperations::UpsertPointsConditional(operation) => {
+            conditional_upsert(&segments.read(), op_num, operation, hw_counter)
         }
         PointOperations::DeletePointsByFilter(filter) => {
             delete_points_by_filter(&segments.read(), op_num, &filter, hw_counter)
@@ -637,8 +678,8 @@ pub(crate) fn process_vector_operation(
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
     match vector_operation {
-        VectorOperations::UpdateVectors(operation) => {
-            update_vectors(&segments.read(), op_num, operation.points, hw_counter)
+        VectorOperations::UpdateVectors(update_vectors) => {
+            update_vectors_conditional(&segments.read(), op_num, update_vectors, hw_counter)
         }
         VectorOperations::DeleteVectors(ids, vector_names) => {
             delete_vectors(&segments.read(), op_num, &ids.points, &vector_names)

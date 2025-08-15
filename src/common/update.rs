@@ -245,24 +245,40 @@ pub async fn do_upsert_points(
         .check_strict_mode(&operation, &collection_name, None, &access)
         .await?;
 
-    let (operation, shard_key, usage) = match operation {
+    let (operation, shard_key, usage, update_filter) = match operation {
         PointInsertOperations::PointsBatch(batch) => {
-            let PointsBatch { batch, shard_key } = batch;
+            let PointsBatch {
+                batch,
+                shard_key,
+                update_filter,
+            } = batch;
             let (batch, usage) = convert_batch(batch, inference_token).await?;
             let operation = PointInsertOperationsInternal::PointsBatch(batch);
-            (operation, shard_key, usage)
+            (operation, shard_key, usage, update_filter)
         }
         PointInsertOperations::PointsList(list) => {
-            let PointsList { points, shard_key } = list;
+            let PointsList {
+                points,
+                shard_key,
+                update_filter,
+            } = list;
             let (list, usage) =
                 convert_point_struct(points, InferenceType::Update, inference_token).await?;
             let operation = PointInsertOperationsInternal::PointsList(list);
-            (operation, shard_key, usage)
+            (operation, shard_key, usage, update_filter)
         }
     };
 
-    let operation =
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation));
+    let operation = if let Some(condition) = update_filter {
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsConditional(
+            ConditionalInsertOperationInternal {
+                points_op: operation,
+                condition,
+            },
+        ))
+    } else {
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation))
+    };
 
     let result = update(
         toc,
@@ -331,13 +347,20 @@ pub async fn do_update_vectors(
         .check_strict_mode(&operation, &collection_name, None, &access)
         .await?;
 
-    let UpdateVectors { points, shard_key } = operation;
+    let UpdateVectors {
+        points,
+        shard_key,
+        update_filter,
+    } = operation;
 
     let (points, usage) =
         convert_point_vectors(points, InferenceType::Update, inference_token).await?;
 
     let operation = CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(
-        UpdateVectorsOp { points },
+        UpdateVectorsOp {
+            points,
+            update_filter,
+        },
     ));
 
     let result = update(
