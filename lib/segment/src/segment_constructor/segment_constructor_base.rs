@@ -303,6 +303,7 @@ pub(crate) fn open_vector_index(
         Indexes::Plain {} => VectorIndexEnum::Plain(PlainVectorIndex::new(
             id_tracker,
             vector_storage,
+            quantized_vectors,
             payload_index,
         )),
         Indexes::Hnsw(hnsw_config) => VectorIndexEnum::Hnsw(HNSWIndex::open(HnswIndexOpenArgs {
@@ -332,6 +333,7 @@ pub(crate) fn build_vector_index<R: Rng + ?Sized>(
         Indexes::Plain {} => VectorIndexEnum::Plain(PlainVectorIndex::new(
             id_tracker,
             vector_storage,
+            quantized_vectors,
             payload_index,
         )),
         Indexes::Hnsw(hnsw_config) => VectorIndexEnum::Hnsw(HNSWIndex::build(
