@@ -987,7 +987,6 @@ impl QuantizedVectors {
                 Some(meta_path.as_path()),
                 stopped,
             )?;
-            let offsets_path = path.join(QUANTIZED_OFFSETS_PATH);
             create_offsets_file_from_iter(&offsets_path, vectors_count, offsets)?;
             Ok(QuantizedVectorStorage::PQMmapMulti(
                 QuantizedMultivectorStorage::new(
@@ -1156,9 +1155,8 @@ impl QuantizedVectors {
                 ),
             ))
         } else {
-            let mmap_data_path = path.join(QUANTIZED_DATA_PATH);
             let storage_builder = QuantizedMmapStorageBuilder::new(
-                mmap_data_path.as_path(),
+                data_path.as_path(),
                 inner_vectors_count,
                 quantized_vector_size,
             )?;
@@ -1171,7 +1169,6 @@ impl QuantizedVectors {
                 Some(meta_path.as_path()),
                 stopped,
             )?;
-            let offsets_path = path.join(QUANTIZED_OFFSETS_PATH);
             create_offsets_file_from_iter(&offsets_path, vectors_count, offsets)?;
             Ok(QuantizedVectorStorage::BinaryMmapMulti(
                 QuantizedMultivectorStorage::new(
