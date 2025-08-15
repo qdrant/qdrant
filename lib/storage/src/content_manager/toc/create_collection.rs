@@ -36,6 +36,7 @@ impl TableOfContent {
             mut vectors,
             shard_number,
             sharding_method,
+            fallback_shard_key,
             on_disk_payload,
             hnsw_config: hnsw_config_diff,
             wal_config: wal_config_diff,
@@ -150,6 +151,7 @@ impl TableOfContent {
             shard_number: NonZeroU32::new(shard_number)
                 .ok_or_else(|| StorageError::bad_input("`shard_number` cannot be 0"))?,
             sharding_method,
+            fallback_shard_key,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
             replication_factor: NonZeroU32::new(replication_factor).ok_or_else(|| {
                 StorageError::BadInput {

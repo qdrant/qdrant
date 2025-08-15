@@ -406,6 +406,7 @@ message CreateCollection {
   optional ShardingMethod sharding_method = 15; // Sharding method
   optional SparseVectorConfig sparse_vectors_config = 16; // Configuration for sparse vectors
   optional StrictModeConfig strict_mode_config = 17; // Configuration for strict mode
+  optional ShardKey fallback_shard_key = 18; // Fallback shard key to use if provided shard key is not found
 }
 
 message UpdateCollection {

@@ -172,8 +172,7 @@ impl Collection {
             is_auto_sharding,
         );
 
-        let all_searches = target_shards.iter().map(|(shard, shard_key)| {
-            let shard_key = shard_key.cloned();
+        let all_searches = target_shards.into_iter().map(|(shard, shard_key)| {
             shard
                 .query_batch(
                     Arc::clone(&batch_request),

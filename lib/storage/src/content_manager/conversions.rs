@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use api::grpc::conversions::convert_shard_key_from_grpc;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
 };
@@ -79,6 +80,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
             init_from_collection,
             quantization_config,
             sharding_method,
+            fallback_shard_key,
             sparse_vectors_config,
             strict_mode_config,
         } = value;
@@ -97,6 +99,12 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 wal_config: wal_config.map(|v| v.into()),
                 optimizers_config: optimizers_config.map(TryFrom::try_from).transpose()?,
                 shard_number,
+                fallback_shard_key: fallback_shard_key
+                    .map(|shard_key| {
+                        convert_shard_key_from_grpc(shard_key)
+                            .ok_or_else(|| Status::invalid_argument("Malformed shard key"))
+                    })
+                    .transpose()?,
                 on_disk_payload,
                 replication_factor,
                 write_consistency_factor,

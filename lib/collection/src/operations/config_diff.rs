@@ -410,6 +410,7 @@ mod tests {
             write_consistency_factor: Some(NonZeroU32::new(2).unwrap()),
             read_fan_out_factor: None,
             on_disk_payload: None,
+            fallback_shard_key: None,
         };
 
         let new_params = diff.update(&params).unwrap();

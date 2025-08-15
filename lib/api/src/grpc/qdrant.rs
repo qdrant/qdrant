@@ -706,6 +706,9 @@ pub struct CreateCollection {
     #[prost(message, optional, tag = "17")]
     #[validate(nested)]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
+    /// Fallback shard key to use if provided shard key is not found
+    #[prost(message, optional, tag = "18")]
+    pub fallback_shard_key: ::core::option::Option<ShardKey>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
