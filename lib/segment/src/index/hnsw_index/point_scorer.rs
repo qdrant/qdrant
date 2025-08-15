@@ -12,6 +12,7 @@ use crate::payload_storage::FilterContext;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::query_scorer::QueryScorerBytes;
 use crate::vector_storage::{
     RawScorer, VectorStorage, VectorStorageEnum, check_deleted_condition, new_raw_scorer,
 };
@@ -48,6 +49,39 @@ pub struct FilteredScorer<'a> {
     vec_deleted: &'a BitSlice,
     /// Temporary buffer for scores.
     scores_buffer: Vec<ScoreType>,
+}
+
+pub struct FilteredQuantizedScorer<'a> {
+    query_scorer_bytes: &'a dyn QueryScorerBytes,
+    filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+    point_deleted: &'a BitSlice,
+    vec_deleted: &'a BitSlice,
+}
+
+impl<'a> FilteredQuantizedScorer<'a> {
+    pub fn check_vector(&self, point_id: PointOffsetType) -> bool {
+        check_deleted_condition(point_id, self.vec_deleted, self.point_deleted)
+            && self
+                .filter_context
+                .as_ref()
+                .is_none_or(|f| f.check(point_id))
+    }
+
+    pub fn score_points(
+        &self,
+        points: &mut Vec<(PointOffsetType, &[u8])>,
+        limit: usize,
+    ) -> impl Iterator<Item = ScoredPointOffset> {
+        points.retain(|(point_id, _)| self.check_vector(*point_id));
+        if limit != 0 {
+            points.truncate(limit);
+        }
+
+        points.iter().map(|&(idx, bytes)| ScoredPointOffset {
+            idx,
+            score: self.query_scorer_bytes.score_bytes(bytes),
+        })
+    }
 }
 
 impl<'a> FilteredScorer<'a> {
@@ -154,6 +188,17 @@ impl<'a> FilteredScorer<'a> {
                 .filter_context
                 .as_ref()
                 .is_none_or(|f| f.check(point_id))
+    }
+
+    /// Return [`FilteredQuantizedScorer`] if the underlying scorer supports it.
+    pub fn quantized_scorer(&self) -> Option<FilteredQuantizedScorer<'_>> {
+        let query_scorer_bytes = self.raw_scorer.scorer_bytes()?;
+        Some(FilteredQuantizedScorer {
+            query_scorer_bytes,
+            filter_context: self.filter_context.as_ref().map(|f| f.as_borrowed()),
+            point_deleted: self.point_deleted,
+            vec_deleted: self.vec_deleted,
+        })
     }
 
     /// Filters and calculates scores for the given slice of points IDs.
@@ -271,5 +316,11 @@ impl<T: ?Sized> Deref for BoxCow<'_, T> {
             BoxCow::Borrowed(t) => t,
             BoxCow::Boxed(t) => t,
         }
+    }
+}
+
+impl<T: ?Sized> BoxCow<'_, T> {
+    pub fn as_borrowed(&self) -> BoxCow<'_, T> {
+        BoxCow::Borrowed(self)
     }
 }

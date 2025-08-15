@@ -19,7 +19,7 @@ pub mod dense;
 mod in_ram_persisted_vectors;
 pub mod multi_dense;
 pub mod query;
-mod query_scorer;
+pub mod query_scorer;
 pub mod sparse;
 
 pub use raw_scorer::*;
