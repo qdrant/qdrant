@@ -1004,8 +1004,8 @@ impl QuantizedVectors {
         on_disk_vector_storage: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
-        let encoding = Self::convert_binary_encoding(binary_config.encoding);
-        let query_encoding = Self::convert_binary_query_encoding(binary_config.query_encoding);
+        let encoding = Self::convert_binary_encoding_config(binary_config.encoding);
+        let query_encoding = Self::convert_binary_query_encoding_config(binary_config.query_encoding);
         let quantized_vector_size =
             EncodedVectorsBin::<u128, QuantizedMmapStorage>::get_quantized_vector_size_from_params(
                 vector_parameters.dim,
@@ -1058,8 +1058,8 @@ impl QuantizedVectors {
         on_disk_vector_storage: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
-        let encoding = Self::convert_binary_encoding(binary_config.encoding);
-        let query_encoding = Self::convert_binary_query_encoding(binary_config.query_encoding);
+        let encoding = Self::convert_binary_encoding_config(binary_config.encoding);
+        let query_encoding = Self::convert_binary_query_encoding_config(binary_config.query_encoding);
         let quantized_vector_size =
             EncodedVectorsBin::<u8, QuantizedMmapStorage>::get_quantized_vector_size_from_params(
                 vector_parameters.dim,
@@ -1117,7 +1117,7 @@ impl QuantizedVectors {
         !on_disk_vector_storage || always_ram == Some(true)
     }
 
-    fn convert_binary_encoding(
+    fn convert_binary_encoding_config(
         encoding: Option<BinaryQuantizationEncoding>,
     ) -> quantization::encoded_vectors_binary::Encoding {
         match encoding {
@@ -1134,7 +1134,7 @@ impl QuantizedVectors {
         }
     }
 
-    fn convert_binary_query_encoding(
+    fn convert_binary_query_encoding_config(
         query_encoding: Option<BinaryQuantizationQueryEncoding>,
     ) -> quantization::encoded_vectors_binary::QueryEncoding {
         match query_encoding {
