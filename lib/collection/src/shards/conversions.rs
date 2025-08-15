@@ -18,7 +18,8 @@ use tonic::Status;
 use crate::operations::conversions::write_ordering_to_proto;
 use crate::operations::payload_ops::{DeletePayloadOp, SetPayloadOp};
 use crate::operations::point_ops::{
-    PointInsertOperationsInternal, PointSyncOperation, WriteOrdering,
+    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointSyncOperation,
+    WriteOrdering,
 };
 use crate::operations::types::CollectionResult;
 use crate::operations::vector_ops::UpdateVectorsOp;
@@ -78,6 +79,40 @@ pub fn internal_upsert_points(
             },
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
+            update_filter: None,
+        }),
+    })
+}
+
+pub fn internal_conditional_upsert_points(
+    shard_id: Option<ShardId>,
+    clock_tag: Option<ClockTag>,
+    collection_name: String,
+    point_condition_upsert_operations: ConditionalInsertOperationInternal,
+    wait: bool,
+    ordering: Option<WriteOrdering>,
+) -> CollectionResult<UpsertPointsInternal> {
+    let ConditionalInsertOperationInternal {
+        points_op: point_insert_operations,
+        condition,
+    } = point_condition_upsert_operations;
+
+    Ok(UpsertPointsInternal {
+        shard_id,
+        clock_tag: clock_tag.map(Into::into),
+        upsert_points: Some(UpsertPoints {
+            collection_name,
+            wait: Some(wait),
+            points: match point_insert_operations {
+                PointInsertOperationsInternal::PointsBatch(batch) => TryFrom::try_from(batch)?,
+                PointInsertOperationsInternal::PointsList(list) => list
+                    .into_iter()
+                    .map(api::grpc::qdrant::PointStruct::try_from)
+                    .collect::<Result<Vec<_>, Status>>()?,
+            },
+            ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
+            update_filter: Some(api::grpc::Filter::from(condition)),
         }),
     })
 }
@@ -138,7 +173,10 @@ pub fn internal_update_vectors(
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> CollectionResult<UpdateVectorsInternal> {
-    let UpdateVectorsOp { points } = update_vectors;
+    let UpdateVectorsOp {
+        points,
+        update_filter,
+    } = update_vectors;
     let points: Result<Vec<_>, _> = points
         .into_iter()
         .map(|point| {
@@ -158,6 +196,7 @@ pub fn internal_update_vectors(
             points: points?,
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
+            update_filter: update_filter.map(api::grpc::Filter::from),
         }),
     })
 }

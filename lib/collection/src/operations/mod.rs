@@ -440,7 +440,10 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            let update = Self::UpdateVectors(UpdateVectorsOp { points: Vec::new() });
+            let update = Self::UpdateVectors(UpdateVectorsOp {
+                points: Vec::new(),
+                update_filter: None,
+            });
 
             let delete = Self::DeleteVectors(
                 PointIdsList {

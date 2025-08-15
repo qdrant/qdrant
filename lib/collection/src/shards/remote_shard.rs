@@ -41,7 +41,8 @@ use tonic::transport::{Channel, Uri};
 use url::Url;
 
 use super::conversions::{
-    internal_delete_vectors, internal_delete_vectors_by_filter, internal_update_vectors,
+    internal_conditional_upsert_points, internal_delete_vectors, internal_delete_vectors_by_filter,
+    internal_update_vectors,
 };
 use super::local_shard::clock_map::RecoveryPoint;
 use super::replica_set::ReplicaState;
@@ -252,6 +253,17 @@ impl RemoteShard {
                             ordering,
                         )?;
 
+                        Update::Upsert(request)
+                    }
+                    PointOperations::UpsertPointsConditional(conditional_upsert) => {
+                        let request = internal_conditional_upsert_points(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            conditional_upsert,
+                            wait,
+                            ordering,
+                        )?;
                         Update::Upsert(request)
                     }
                     PointOperations::DeletePoints { ids } => {
@@ -488,6 +500,21 @@ impl RemoteShard {
                         operation.clock_tag,
                         collection_name,
                         point_insert_operations,
+                        wait,
+                        ordering,
+                    )?;
+                    self.with_points_client(|mut client| async move {
+                        client.upsert(tonic::Request::new(request.clone())).await
+                    })
+                    .await?
+                    .into_inner()
+                }
+                PointOperations::UpsertPointsConditional(conditional_upsert) => {
+                    let request = &internal_conditional_upsert_points(
+                        shard_id,
+                        operation.clock_tag,
+                        collection_name,
+                        conditional_upsert,
                         wait,
                         ordering,
                     )?;

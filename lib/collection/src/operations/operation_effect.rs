@@ -50,6 +50,9 @@ impl EstimateOperationEffectArea for point_ops::PointOperations {
             point_ops::PointOperations::UpsertPoints(insert_operations) => {
                 insert_operations.estimate_effect_area()
             }
+            point_ops::PointOperations::UpsertPointsConditional(conditional_upsert) => {
+                conditional_upsert.points_op.estimate_effect_area()
+            }
             point_ops::PointOperations::DeletePoints { ids } => {
                 OperationEffectArea::Points(Cow::Borrowed(ids))
             }
