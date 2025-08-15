@@ -101,6 +101,14 @@ pub struct LocalShard {
     pub(super) search_runtime: Handle,
     disk_usage_watcher: DiskUsageWatcher,
     read_rate_limiter: Option<ParkingMutex<RateLimiter>>,
+
+    /// Scroll read lock
+    /// The lock, which must prevent updates during scroll + retrieve operations
+    /// Consistency of scroll operations is especially important for internal processes like
+    /// re-sharding and shard transfer, so explicit lock for those operations is required.
+    ///
+    /// Write lock must be held for updates, while read lock must be held for scroll
+    pub(super) scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -184,6 +192,8 @@ impl LocalShard {
         )
         .await;
 
+        let scroll_read_lock = Arc::new(tokio::sync::RwLock::new(()));
+
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
             payload_index_schema.clone(),
@@ -198,6 +208,7 @@ impl LocalShard {
             config.optimizer_config.max_optimization_threads,
             clocks.clone(),
             shard_path.into(),
+            scroll_read_lock.clone(),
         );
 
         let (update_sender, update_receiver) =
@@ -232,6 +243,7 @@ impl LocalShard {
             total_optimized_points,
             disk_usage_watcher,
             read_rate_limiter,
+            scroll_read_lock,
         }
     }
 
@@ -645,6 +657,7 @@ impl LocalShard {
                 segments,
                 op_num,
                 update.operation,
+                self.scroll_read_lock.clone(),
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
             ) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {

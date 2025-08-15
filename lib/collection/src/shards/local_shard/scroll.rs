@@ -153,14 +153,8 @@ impl LocalShard {
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments.clone();
 
-        let (non_appendable, appendable, scroll_lock) = {
-            let segments_read = segments.read();
-            let (non_appendable, appendable) = segments_read.split_segments();
-            let scroll_lock = segments_read.scroll_read_lock.clone();
-            (non_appendable, appendable, scroll_lock)
-        };
-
-        let scroll_lock = scroll_lock.read().await;
+        let (non_appendable, appendable) = segments.read().split_segments();
+        let scroll_lock = self.scroll_read_lock.read().await;
 
         let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
             let filter = filter.cloned();
@@ -244,14 +238,8 @@ impl LocalShard {
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments.clone();
 
-        let (non_appendable, appendable, scroll_lock) = {
-            let segments_read = segments.read();
-            let (non_appendable, appendable) = segments_read.split_segments();
-            let scroll_lock = segments_read.scroll_read_lock.clone();
-            (non_appendable, appendable, scroll_lock)
-        };
-
-        let scroll_lock = scroll_lock.read().await;
+        let (non_appendable, appendable) = segments.read().split_segments();
+        let scroll_lock = self.scroll_read_lock.read().await;
 
         let read_ordered_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
             let is_stopped = stopping_guard.get_is_stopped();
@@ -349,14 +337,8 @@ impl LocalShard {
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments.clone();
 
-        let (non_appendable, appendable, scroll_lock) = {
-            let segments_read = segments.read();
-            let (non_appendable, appendable) = segments_read.split_segments();
-            let scroll_lock = segments_read.scroll_read_lock.clone();
-            (non_appendable, appendable, scroll_lock)
-        };
-
-        let scroll_lock = scroll_lock.read().await;
+        let (non_appendable, appendable) = segments.read().split_segments();
+        let scroll_lock = self.scroll_read_lock.read().await;
 
         let read_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
             let is_stopped = stopping_guard.get_is_stopped();
