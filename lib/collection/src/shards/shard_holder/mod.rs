@@ -543,18 +543,16 @@ impl ShardHolder {
         shard_key: &'a ShardKey,
     ) -> CollectionResult<(Option<&'a ShardKey>, HashSet<ShardId>)> {
         match self.get_shard_ids_by_key(shard_key) {
-            Ok(ids) => {
-                return Ok((Some(shard_key), ids));
-            }
+            Ok(ids) => Ok((Some(shard_key), ids)),
             Err(err) => {
                 if let Some(fallback_shard_key) = &self.fallback_shard_key {
                     if let Ok(fallback_ids) = self.get_shard_ids_by_key(fallback_shard_key) {
-                        return Ok((Some(fallback_shard_key), fallback_ids));
+                        Ok((Some(fallback_shard_key), fallback_ids))
                     } else {
-                        return Err(err); // Return the original error if fallback also fails
+                        Err(err) // Return the original error if fallback also fails
                     }
                 } else {
-                    return Err(err); // Return the original error if no fallback key is set
+                    Err(err) // Return the original error if no fallback key is set
                 }
             }
         }
