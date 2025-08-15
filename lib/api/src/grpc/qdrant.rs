@@ -832,6 +832,9 @@ pub struct CollectionParamsDiff {
     /// Fan-out every read request to these many additional remote nodes (and return first available response)
     #[prost(uint32, optional, tag = "4")]
     pub read_fan_out_factor: ::core::option::Option<u32>,
+    /// Fallback shard key to use if provided shard key is not found
+    #[prost(message, optional, tag = "5")]
+    pub fallback_shard_key: ::core::option::Option<ShardKey>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

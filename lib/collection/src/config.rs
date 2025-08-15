@@ -11,7 +11,9 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, ShardKey, SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype, VectorStorageType
+    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, ShardKey,
+    SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf,
+    VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

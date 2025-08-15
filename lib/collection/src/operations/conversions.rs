@@ -307,6 +307,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
             write_consistency_factor,
             read_fan_out_factor,
             on_disk_payload,
+            fallback_shard_key,
         } = value;
         Ok(Self {
             replication_factor: replication_factor
@@ -323,6 +324,12 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
                 })
                 .transpose()?,
             read_fan_out_factor,
+            fallback_shard_key: fallback_shard_key
+                .map(|shard_key| {
+                    convert_shard_key_from_grpc(shard_key)
+                        .ok_or_else(|| Status::invalid_argument("Fallback shard key is malformed"))
+                })
+                .transpose()?,
             on_disk_payload,
         })
     }

@@ -6,7 +6,8 @@ use api::rest::MaxOptimizationThreads;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::types::{
-    BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization, StrictModeConfig,
+    BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization, ShardKey,
+    StrictModeConfig,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -107,6 +108,8 @@ pub struct WalConfigDiff {
 pub struct CollectionParamsDiff {
     /// Number of replicas for each shard
     pub replication_factor: Option<NonZeroU32>,
+    /// Fallback shard to use if specific shard doesn't exist
+    pub fallback_shard_key: Option<ShardKey>,
     /// Minimal number successful responses from replicas to consider operation successful
     pub write_consistency_factor: Option<NonZeroU32>,
     /// Fan-out every read request to these many additional remote nodes (and return first available response)

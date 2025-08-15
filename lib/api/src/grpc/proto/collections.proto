@@ -449,6 +449,7 @@ message CollectionParamsDiff {
   optional uint32 write_consistency_factor = 2; // How many replicas should apply the operation for us to consider it successful
   optional bool on_disk_payload = 3; // If true - point's payload will not be stored in memory
   optional uint32 read_fan_out_factor = 4; // Fan-out every read request to these many additional remote nodes (and return first available response)
+  optional ShardKey fallback_shard_key = 5; // Fallback shard key to use if provided shard key is not found
 }
 
 message CollectionConfig {
