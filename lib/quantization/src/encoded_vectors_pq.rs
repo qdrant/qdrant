@@ -436,8 +436,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     }
 
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
-        self.encoded_vectors
-            .get_vector_data(i, self.metadata.vector_division.len())
+        self.encoded_vectors.get_vector_data(i)
     }
 
     pub fn layout(&self) -> Layout {
@@ -511,10 +510,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let centroids = self
-            .encoded_vectors
-            .get_vector_data(i, self.metadata.vector_division.len());
-
+        let centroids = self.encoded_vectors.get_vector_data(i);
         self.score_point_vs_bytes(query, centroids, hw_counter)
     }
 
@@ -527,12 +523,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         j: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let centroids_i = self
-            .encoded_vectors
-            .get_vector_data(i, self.metadata.vector_division.len());
-        let centroids_j = self
-            .encoded_vectors
-            .get_vector_data(j, self.metadata.vector_division.len());
+        let centroids_i = self.encoded_vectors.get_vector_data(i);
+        let centroids_j = self.encoded_vectors.get_vector_data(j);
 
         hw_counter
             .vector_io_read()
@@ -580,22 +572,22 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         None
     }
 
-    fn push_vector(
+    fn upsert_vector(
         &mut self,
+        _id: PointOffsetType,
         _vector: &[f32],
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        debug_assert!(false, "PQ does not support push_vector",);
+        debug_assert!(false, "PQ does not support update_vector",);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            "PQ does not support push_vector",
+            "PQ does not support update_vector",
         ))
     }
 
     fn vectors_count(&self) -> usize {
         // `vector_division` size is equal to quantized vector size because each chunk is replaced by one `u8` centroid index.
-        self.encoded_vectors
-            .vectors_count(self.metadata.vector_division.len())
+        self.encoded_vectors.vectors_count()
     }
 
     fn flusher(&self) -> MmapFlusher {

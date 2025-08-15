@@ -23,9 +23,11 @@ mod tests {
         };
         let vector_data: Vec<Vec<f32>> = Default::default();
 
+        let quantized_vector_size =
+            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(quantized_vector_size),
             &vector_parameters,
             vectors_count,
             None,
@@ -61,9 +63,14 @@ mod tests {
         };
         let vector_data: Vec<Vec<f32>> = Default::default();
 
+        let quantized_vector_size =
+            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                2,
+            );
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(quantized_vector_size),
             &vector_parameters,
             vectors_count,
             2,
@@ -99,9 +106,14 @@ mod tests {
         };
         let vector_data: Vec<Vec<f32>> = Default::default();
 
+        let quantized_vector_size =
+            EncodedVectorsBin::<u8, TestEncodedStorage>::get_quantized_vector_size_from_params(
+                vector_dim,
+                quantization::encoded_vectors_binary::Encoding::OneBit,
+            );
         let encoded = EncodedVectorsBin::<u8, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(quantized_vector_size),
             &vector_parameters,
             quantization::encoded_vectors_binary::Encoding::OneBit,
             QueryEncoding::SameAsStorage,
