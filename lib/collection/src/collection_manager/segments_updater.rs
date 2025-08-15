@@ -605,7 +605,7 @@ fn select_excluded_by_filter_ids(
 ) -> CollectionResult<AHashSet<PointIdType>> {
     // Filter for points that doesn't match the condition, and have matching
     let non_match_filter =
-        Filter::new_must_not(Condition::Filter(filter)).merge_with_ids(point_ids);
+        Filter::new_must_not(Condition::Filter(filter)).with_point_ids(point_ids);
 
     Ok(points_by_filter(segments, &non_match_filter, hw_counter)?
         .into_iter()

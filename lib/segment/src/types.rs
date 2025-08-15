@@ -3298,7 +3298,7 @@ impl Filter {
     }
 
     /// Create an extended filtering condition, which would also include filter by given list of IDs.
-    pub fn merge_with_ids(self, ids: impl IntoIterator<Item = PointIdType>) -> Filter {
+    pub fn with_point_ids(self, ids: impl IntoIterator<Item = PointIdType>) -> Filter {
         let has_id_condition: HasIdCondition = ids.into_iter().collect();
 
         let Filter {

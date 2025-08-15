@@ -642,7 +642,7 @@ impl PointInsertOperationsInternal {
                                 SetPayloadOp {
                                     points: None,
                                     payload,
-                                    filter: Some(update_filter.merge_with_ids(vec![id])),
+                                    filter: Some(update_filter.with_point_ids(vec![id])),
                                     key: None,
                                 }
                             } else {
@@ -682,7 +682,7 @@ impl PointInsertOperationsInternal {
                             SetPayloadOp {
                                 points: None,
                                 payload,
-                                filter: Some(update_filter.merge_with_ids(vec![point.id])),
+                                filter: Some(update_filter.with_point_ids(vec![point.id])),
                                 key: None,
                             }
                         } else {
