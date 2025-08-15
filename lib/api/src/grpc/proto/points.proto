@@ -669,8 +669,16 @@ message Mmr {
     optional uint32 candidates_limit = 3;
 }
 
-message ReciprocalRankFusion {
-    uint32 k = 1;
+// Parameterized reciprocal rank fusion
+message RrfParams {
+    optional uint32 k = 1; // K parameter for reciprocal rank fusion
+}
+
+// Parameterized fusion of multiple prefetches.
+message FusionParams {
+    oneof variant {
+        RrfParams rrf = 1; // Reciprocal Rank Fusion
+    }
 }
 
 message Query {
@@ -684,7 +692,7 @@ message Query {
     Sample sample = 7; // Sample points from the collection.
     Formula formula = 8; // Score boosting via an arbitrary formula
     NearestInputWithMmr nearest_with_mmr = 9; // Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm.
-    ReciprocalRankFusion rrf_custom = 10; // Reciprocal Rank Fusion with custom `k` parameter.
+    FusionParams fusion_params = 10; // Parameterized fusion of multiple prefetches.
   }
 }
 

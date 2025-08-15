@@ -360,6 +360,24 @@ impl TryFrom<i32> for FusionInternal {
     }
 }
 
+impl TryFrom<grpc::FusionParams> for FusionInternal {
+    type Error = tonic::Status;
+
+    fn try_from(fusion_params: grpc::FusionParams) -> Result<Self, Self::Error> {
+        let variant = fusion_params
+            .variant
+            .ok_or_else(|| tonic::Status::invalid_argument("missing field: variant"))?;
+
+        let fusion_internal = match variant {
+            grpc::fusion_params::Variant::Rrf(grpc::RrfParams { k }) => {
+                FusionInternal::RrfK(k.map(|k| k as usize).unwrap_or(DEFAULT_RRF_K))
+            }
+        };
+
+        Ok(fusion_internal)
+    }
+}
+
 impl TryFrom<i32> for SampleInternal {
     type Error = tonic::Status;
 
@@ -544,13 +562,18 @@ impl From<api::grpc::qdrant::Fusion> for FusionInternal {
 
 impl From<FusionInternal> for api::grpc::qdrant::Query {
     fn from(fusion: FusionInternal) -> Self {
+        use api::grpc::qdrant::fusion_params::Variant as FusionParamsVariant;
         use api::grpc::qdrant::query::Variant as QueryVariant;
-        use api::grpc::qdrant::{Fusion, Query, ReciprocalRankFusion};
+        use api::grpc::qdrant::{Fusion, FusionParams, Query, RrfParams};
 
         match fusion {
+            // Avoid breaking rolling upgrade by keeping case of k==2 as Fusion::Rrf
+            FusionInternal::RrfK(k) if k == DEFAULT_RRF_K => Query {
+                variant: Some(QueryVariant::Fusion(i32::from(Fusion::Rrf))),
+            },
             FusionInternal::RrfK(k) => Query {
-                variant: Some(QueryVariant::RrfCustom(ReciprocalRankFusion {
-                    k: k as u32,
+                variant: Some(QueryVariant::FusionParams(FusionParams {
+                    variant: Some(FusionParamsVariant::Rrf(RrfParams { k: Some(k as u32) })),
                 })),
             },
             FusionInternal::Dbsf => Query {
@@ -562,13 +585,20 @@ impl From<FusionInternal> for api::grpc::qdrant::Query {
 
 impl From<FusionInternal> for api::grpc::qdrant::query_shard_points::Query {
     fn from(fusion: FusionInternal) -> Self {
+        use api::grpc::qdrant::fusion_params::Variant as FusionParamsVariant;
         use api::grpc::qdrant::query_shard_points::Query;
         use api::grpc::qdrant::query_shard_points::query::Score;
-        use api::grpc::qdrant::{Fusion, ReciprocalRankFusion};
+        use api::grpc::qdrant::{Fusion, FusionParams, RrfParams};
 
         match fusion {
+            // Avoid breaking rolling upgrade by keeping case of k==2 as Fusion::Rrf
+            FusionInternal::RrfK(k) if k == DEFAULT_RRF_K => Query {
+                score: Some(Score::Fusion(i32::from(Fusion::Rrf))),
+            },
             FusionInternal::RrfK(k) => Query {
-                score: Some(Score::RrfCustom(ReciprocalRankFusion { k: k as u32 })),
+                score: Some(Score::FusionParams(FusionParams {
+                    variant: Some(FusionParamsVariant::Rrf(RrfParams { k: Some(k as u32) })),
+                })),
             },
             FusionInternal::Dbsf => Query {
                 score: Some(Score::Fusion(i32::from(Fusion::Dbsf))),
@@ -608,8 +638,8 @@ impl ScoringQuery {
             grpc::query_shard_points::query::Score::Fusion(fusion) => {
                 ScoringQuery::Fusion(FusionInternal::try_from(fusion)?)
             }
-            grpc::query_shard_points::query::Score::RrfCustom(grpc::ReciprocalRankFusion { k }) => {
-                ScoringQuery::Fusion(FusionInternal::RrfK(k as usize))
+            grpc::query_shard_points::query::Score::FusionParams(fusion_params) => {
+                ScoringQuery::Fusion(FusionInternal::try_from(fusion_params)?)
             }
             grpc::query_shard_points::query::Score::OrderBy(order_by) => {
                 ScoringQuery::OrderBy(OrderBy::try_from(order_by)?)
