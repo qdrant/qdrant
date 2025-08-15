@@ -7,7 +7,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
-use crate::vector_storage::query_scorer::{QueryScorer, QueryScorerBytes};
+use crate::vector_storage::query_scorer::QueryScorer;
 
 pub struct QuantizedQueryScorer<'a, TEncodedVectors>
 where
@@ -101,15 +101,5 @@ where
     fn score_bytes(&self, enabled: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
         self.quantized_data
             .score_bytes(enabled, &self.query, bytes, &self.hardware_counter)
-    }
-}
-
-impl<TEncodedVectors> QueryScorerBytes for QuantizedQueryScorer<'_, TEncodedVectors>
-where
-    TEncodedVectors: quantization::EncodedVectorsBytes,
-{
-    fn score_bytes(&self, bytes: &[u8]) -> ScoreType {
-        self.quantized_data
-            .score_point_vs_bytes(&self.query, bytes, &self.hardware_counter)
     }
 }
