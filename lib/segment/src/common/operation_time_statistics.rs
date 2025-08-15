@@ -74,10 +74,8 @@ pub struct OperationDurationsAggregator {
     buckets: SmallVec<[usize; 16]>,
 }
 
-pub const DEFAULT_BUCKET_BOUNDARIES_MICROS: [f32; 16] = [
+pub const DEFAULT_BUCKET_BOUNDARIES_MICROS: [f32; 14] = [
     // Microseconds
-    1.0,
-    5.0,
     10.0,
     50.0,
     100.0,
@@ -352,16 +350,12 @@ fn convert_histogram(
     let mut prev = None;
     for (idx, &le) in le_boundaries.iter().enumerate() {
         let count = counts.get(idx).copied().unwrap_or(0);
-        if count == 0 {
-            prev = Some(le);
-        } else {
-            if let Some(prev) = prev {
-                result.push((prev, cumulative_count));
-            }
-            cumulative_count += count;
-            result.push((le, cumulative_count));
-            prev = None;
+        if let Some(prev) = prev {
+            result.push((prev, cumulative_count));
         }
+        cumulative_count += count;
+        result.push((le, cumulative_count));
+        prev = None;
     }
     if let Some(prev) = prev
         && cumulative_count != total_count
