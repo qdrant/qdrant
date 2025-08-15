@@ -174,7 +174,7 @@ impl Collection {
             .shards_holder
             .read()
             .await
-            .get_shard_ids_by_key(&shard_key)
+            .get_shard_ids_by_key(&shard_key) // also touched. double check if change is required.
         {
             Ok(shard_ids) => self.invalidate_clean_local_shards(shard_ids).await,
             Err(err) => {
