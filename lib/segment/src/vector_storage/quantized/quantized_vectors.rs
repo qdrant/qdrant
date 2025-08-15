@@ -1246,7 +1246,7 @@ impl QuantizedVectors {
         Box::new(move || flusher().map_err(OperationError::from))
     }
 
-    pub fn update_vector(
+    pub fn upsert_vector(
         &mut self,
         id: PointOffsetType,
         vector: VectorRef,
@@ -1254,65 +1254,65 @@ impl QuantizedVectors {
     ) -> OperationResult<()> {
         match &mut self.storage_impl {
             QuantizedVectorStorage::ScalarRam(q) => {
-                Self::update_vector_dense(q, id, vector, hw_counter)
+                Self::upsert_vector_dense(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::ScalarMmap(q) => {
-                Self::update_vector_dense(q, id, vector, hw_counter)
+                Self::upsert_vector_dense(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::PQRam(q) => {
-                Self::update_vector_dense(q, id, vector, hw_counter)
+                Self::upsert_vector_dense(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::PQMmap(q) => {
-                Self::update_vector_dense(q, id, vector, hw_counter)
+                Self::upsert_vector_dense(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::BinaryRam(q) => {
-                Self::update_vector_dense(q, id, vector, hw_counter)
+                Self::upsert_vector_dense(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::BinaryMmap(q) => {
-                Self::update_vector_dense(q, id, vector, hw_counter)
+                Self::upsert_vector_dense(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::ScalarRamMulti(q) => {
-                Self::update_vector_multi(q, id, vector, hw_counter)
+                Self::upsert_vector_multi(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::ScalarMmapMulti(q) => {
-                Self::update_vector_multi(q, id, vector, hw_counter)
+                Self::upsert_vector_multi(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::PQRamMulti(q) => {
-                Self::update_vector_multi(q, id, vector, hw_counter)
+                Self::upsert_vector_multi(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::PQMmapMulti(q) => {
-                Self::update_vector_multi(q, id, vector, hw_counter)
+                Self::upsert_vector_multi(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::BinaryRamMulti(q) => {
-                Self::update_vector_multi(q, id, vector, hw_counter)
+                Self::upsert_vector_multi(q, id, vector, hw_counter)
             }
             QuantizedVectorStorage::BinaryMmapMulti(q) => {
-                Self::update_vector_multi(q, id, vector, hw_counter)
+                Self::upsert_vector_multi(q, id, vector, hw_counter)
             }
         }
     }
 
-    fn update_vector_dense(
+    fn upsert_vector_dense(
         quantization_storage: &mut impl quantization::EncodedVectors,
         id: PointOffsetType,
         vector: VectorRef,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if let VectorRef::Dense(vector) = vector {
-            Ok(quantization_storage.update_vector(id, vector, hw_counter)?)
+            Ok(quantization_storage.upsert_vector(id, vector, hw_counter)?)
         } else {
             Err(OperationError::WrongMulti)
         }
     }
 
-    fn update_vector_multi(
+    fn upsert_vector_multi(
         quantization_storage: &mut impl quantization::EncodedVectors,
         id: PointOffsetType,
         vector: VectorRef,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if let VectorRef::MultiDense(vector) = vector {
-            Ok(quantization_storage.update_vector(id, vector.flattened_vectors, hw_counter)?)
+            Ok(quantization_storage.upsert_vector(id, vector.flattened_vectors, hw_counter)?)
         } else {
             Err(OperationError::WrongMulti)
         }

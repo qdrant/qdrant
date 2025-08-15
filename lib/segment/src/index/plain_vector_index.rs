@@ -242,7 +242,7 @@ impl VectorIndex for PlainVectorIndex {
 
             let mut quantized_vectors = self.quantized_vectors.borrow_mut();
             if let Some(quantized_vectors) = quantized_vectors.as_mut() {
-                quantized_vectors.update_vector(id, vector, hw_counter)?;
+                quantized_vectors.upsert_vector(id, vector, hw_counter)?;
             }
         } else {
             if id as usize >= vector_storage.total_vector_count() {
