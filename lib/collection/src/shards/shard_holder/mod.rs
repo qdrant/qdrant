@@ -63,7 +63,6 @@ pub struct ShardHolder {
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access, does not use locking
     shard_id_to_key_mapping: HashMap<ShardId, ShardKey>,
-    fallback_shard_key: Option<ShardKey>,
 }
 
 pub type LockedShardHolder = RwLock<ShardHolder>;
@@ -104,7 +103,6 @@ impl ShardHolder {
             rings,
             key_mapping,
             shard_id_to_key_mapping,
-            fallback_shard_key: None, // Some(ShardKey::Keyword("fallback".into())), // ToDo: Take from collection params
         })
     }
 
@@ -143,6 +141,23 @@ impl ShardHolder {
             .write_optional(move |_| Some(shard_key_mapping))?;
 
         self.shard_id_to_key_mapping = shard_id_to_key_mapping;
+
+        Ok(())
+    }
+
+    pub fn get_fallback_shard_key<'a>(&'a self) -> Option<&'a ShardKey> {
+        self.key_mapping.read().fallback_shard_key.as_ref()
+    }
+
+    pub fn set_fallback_shard_key(
+        &mut self,
+        fallback_shard_key: Option<ShardKey>,
+    ) -> CollectionResult<()> {
+        self.key_mapping.write_optional(|key_mapping| {
+            let mut key_mapping = key_mapping.clone();
+            key_mapping.fallback_shard_key = fallback_shard_key;
+            Some(key_mapping)
+        })?;
 
         Ok(())
     }
@@ -553,7 +568,7 @@ impl ShardHolder {
         match self.get_shard_ids_by_key_opt(shard_key) {
             Some(ids) => Ok((Some(shard_key), ids)),
             None => {
-                if let Some(fallback_shard_key) = &self.fallback_shard_key {
+                if let Some(fallback_shard_key) = self.get_fallback_shard_key() {
                     if let Ok(fallback_ids) = self.get_shard_ids_by_key(fallback_shard_key) {
                         Ok((Some(fallback_shard_key), fallback_ids))
                     } else {

@@ -809,6 +809,9 @@ pub struct CollectionParams {
     /// Configuration for sparse vectors
     #[prost(message, optional, tag = "10")]
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
+    /// Fallback shard key to use if provided shard key is not found
+    #[prost(message, optional, tag = "11")]
+    pub fallback_shard_key: ::core::option::Option<ShardKey>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

@@ -11,9 +11,7 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SparseVectorDataConfig,
-    StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype,
-    VectorStorageType,
+    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, ShardKey, SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype, VectorStorageType
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -100,6 +98,9 @@ pub struct CollectionParams {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sharding_method: Option<ShardingMethod>,
+    /// Fallback shard key to use if specified shard key is not found
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_shard_key: Option<ShardKey>,
     /// Number of replicas for each shard
     #[serde(default = "default_replication_factor")]
     #[anonymize(false)]
@@ -156,6 +157,7 @@ impl CollectionParams {
             vectors,
             shard_number: _, // Maybe be updated by resharding, assume local shards needs to be dropped
             sharding_method, // Not changeable
+            fallback_shard_key: _, // Maybe be changed
             replication_factor: _, // May be changed
             write_consistency_factor: _, // May be changed
             read_fan_out_factor: _, // May be changed
@@ -276,6 +278,7 @@ impl CollectionParams {
             vectors: Default::default(),
             shard_number: default_shard_number(),
             sharding_method: None,
+            fallback_shard_key: None,
             replication_factor: default_replication_factor(),
             write_consistency_factor: default_write_consistency_factor(),
             read_fan_out_factor: None,

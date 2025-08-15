@@ -441,6 +441,7 @@ message CollectionParams {
   optional uint32 read_fan_out_factor = 8; // Fan-out every read request to these many additional remote nodes (and return first available response)
   optional ShardingMethod sharding_method = 9; // Sharding method
   optional SparseVectorConfig sparse_vectors_config = 10; // Configuration for sparse vectors
+  optional ShardKey fallback_shard_key = 11; // Fallback shard key to use if provided shard key is not found
 }
 
 message CollectionParamsDiff {
