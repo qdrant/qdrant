@@ -42,31 +42,33 @@ impl CollectionUpdater {
         operation: CollectionUpdateOperations,
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<usize> {
-        // Allow only one update at a time, ensure no data races between segments.
-        // let _lock = self.update_lock.lock().unwrap();
-        let scroll_lock = segments.read().scroll_read_lock.clone();
-
         // Use block_in_place here to avoid blocking the current async executor
-        let _scroll_lock = tokio::task::block_in_place(|| scroll_lock.blocking_write());
+        tokio::task::block_in_place(|| {
+            // Allow only one update at a time, ensure no data races between segments.
+            // let _lock = self.update_lock.lock().unwrap();
 
-        let operation_result = match operation {
-            CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(segments, op_num, point_operation, hw_counter)
-            }
-            CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                process_vector_operation(segments, op_num, vector_operation, hw_counter)
-            }
-            CollectionUpdateOperations::PayloadOperation(payload_operation) => {
-                process_payload_operation(segments, op_num, payload_operation, hw_counter)
-            }
-            CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
-                process_field_index_operation(segments, op_num, &index_operation, hw_counter)
-            }
-        };
+            let scroll_lock = segments.read().scroll_read_lock.clone();
+            let _scroll_lock = scroll_lock.blocking_write();
 
-        CollectionUpdater::handle_update_result(segments, op_num, &operation_result);
+            let operation_result = match operation {
+                CollectionUpdateOperations::PointOperation(point_operation) => {
+                    process_point_operation(segments, op_num, point_operation, hw_counter)
+                }
+                CollectionUpdateOperations::VectorOperation(vector_operation) => {
+                    process_vector_operation(segments, op_num, vector_operation, hw_counter)
+                }
+                CollectionUpdateOperations::PayloadOperation(payload_operation) => {
+                    process_payload_operation(segments, op_num, payload_operation, hw_counter)
+                }
+                CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
+                    process_field_index_operation(segments, op_num, &index_operation, hw_counter)
+                }
+            };
 
-        operation_result
+            CollectionUpdater::handle_update_result(segments, op_num, &operation_result);
+
+            operation_result
+        })
     }
 }
 
