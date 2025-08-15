@@ -15005,34 +15005,58 @@
         ],
         "properties": {
           "fusion": {
-            "$ref": "#/components/schemas/Fusion"
+            "$ref": "#/components/schemas/FusionInterface"
           }
         }
       },
-      "Fusion": {
-        "description": "Fusion algorithm allows to combine results of multiple prefetches.\n\nAvailable fusion algorithms:\n\n* `rrf` - Reciprocal Rank Fusion * `dbsf` - Distribution-Based Score Fusion",
-        "oneOf": [
+      "FusionInterface": {
+        "anyOf": [
           {
-            "type": "string",
-            "enum": [
-              "rrf",
-              "dbsf"
-            ]
+            "$ref": "#/components/schemas/Fusion"
           },
           {
-            "type": "object",
-            "required": [
-              "rrf_k"
-            ],
-            "properties": {
-              "rrf_k": {
-                "type": "integer",
-                "format": "uint",
-                "minimum": 0
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/FusionParams"
           }
+        ]
+      },
+      "Fusion": {
+        "description": "Fusion algorithm allows to combine results of multiple prefetches.\n\nAvailable fusion algorithms:\n\n* `rrf` - Reciprocal Rank Fusion * `dbsf` - Distribution-Based Score Fusion",
+        "type": "string",
+        "enum": [
+          "rrf",
+          "dbsf"
+        ]
+      },
+      "FusionParams": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RrfParams"
+          }
+        ]
+      },
+      "RrfParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/RrfType"
+          },
+          "k": {
+            "description": "K parameter for reciprocal rank fusion",
+            "default": null,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
+      "RrfType": {
+        "type": "string",
+        "enum": [
+          "rrf"
         ]
       },
       "FormulaQuery": {
