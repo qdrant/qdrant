@@ -301,7 +301,6 @@ impl Collection {
             let target_shards = shards_holder.select_shards(shard_selection)?;
 
             let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
-                let shard_key = shard_key.cloned();
                 shard
                     .scroll_by(
                         id_offset,
@@ -452,7 +451,7 @@ impl Collection {
                     }
 
                     for point in &mut records {
-                        point.shard_key.clone_from(&shard_key.cloned());
+                        point.shard_key.clone_from(&shard_key);
                     }
 
                     CollectionResult::Ok(records)

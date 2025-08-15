@@ -132,6 +132,8 @@ pub struct CreateCollection {
     /// Custom - points are distributed across shards according to shard key
     #[serde(default)]
     pub sharding_method: Option<ShardingMethod>,
+    /// Fallback shard key to use when specified shard key doesn't exist.
+    pub fallback_shard_key: Option<ShardKey>,
     /// Number of shards replicas.
     /// Default is 1
     /// Minimum is 1
@@ -432,6 +434,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             vectors,
             shard_number,
             sharding_method,
+            fallback_shard_key,
             replication_factor,
             write_consistency_factor,
             read_fan_out_factor: _,
@@ -443,6 +446,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             vectors,
             shard_number: Some(shard_number.get()),
             sharding_method,
+            fallback_shard_key,
             replication_factor: Some(replication_factor.get()),
             write_consistency_factor: Some(write_consistency_factor.get()),
             on_disk_payload: Some(on_disk_payload),

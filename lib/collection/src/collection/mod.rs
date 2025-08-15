@@ -122,6 +122,7 @@ impl Collection {
 
         let mut shard_holder = ShardHolder::new(path)?;
         shard_holder.set_shard_key_mappings(shard_key_mapping.clone().unwrap_or_default())?;
+        shard_holder.set_fallback_shard_key(collection_config.params.fallback_shard_key.clone())?;
 
         let payload_index_schema = Arc::new(Self::load_payload_index_schema(path)?);
 

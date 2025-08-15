@@ -307,6 +307,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
             write_consistency_factor,
             read_fan_out_factor,
             on_disk_payload,
+            fallback_shard_key,
         } = value;
         Ok(Self {
             replication_factor: replication_factor
@@ -323,6 +324,12 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
                 })
                 .transpose()?,
             read_fan_out_factor,
+            fallback_shard_key: fallback_shard_key
+                .map(|shard_key| {
+                    convert_shard_key_from_grpc(shard_key)
+                        .ok_or_else(|| Status::invalid_argument("Fallback shard key is malformed"))
+                })
+                .transpose()?,
             on_disk_payload,
         })
     }
@@ -432,6 +439,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             write_consistency_factor,
             read_fan_out_factor,
             sharding_method,
+            fallback_shard_key,
             sparse_vectors,
         } = params;
 
@@ -496,6 +504,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                                 .collect(),
                         }
                     }),
+                    fallback_shard_key: fallback_shard_key.map(convert_shard_key_to_grpc),
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(m as u64),
@@ -2022,8 +2031,10 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         write_consistency_factor,
                         read_fan_out_factor,
                         sharding_method,
+                        fallback_shard_key,
                         sparse_vectors_config,
                     } = params;
+
                     CollectionParams {
                         vectors: match vectors_config {
                             None => {
@@ -2078,6 +2089,13 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         read_fan_out_factor,
                         sharding_method: sharding_method
                             .map(sharding_method_from_proto)
+                            .transpose()?,
+                        fallback_shard_key: fallback_shard_key
+                            .map(|shard_key| {
+                                convert_shard_key_from_grpc(shard_key).ok_or_else(|| {
+                                    Status::invalid_argument("Fallback shard key is malformed")
+                                })
+                            })
                             .transpose()?,
                     }
                 }

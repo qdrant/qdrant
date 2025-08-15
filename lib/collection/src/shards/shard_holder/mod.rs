@@ -63,7 +63,6 @@ pub struct ShardHolder {
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access, does not use locking
     shard_id_to_key_mapping: HashMap<ShardId, ShardKey>,
-    fallback_shard_key: Option<ShardKey>,
 }
 
 pub type LockedShardHolder = RwLock<ShardHolder>;
@@ -104,7 +103,6 @@ impl ShardHolder {
             rings,
             key_mapping,
             shard_id_to_key_mapping,
-            fallback_shard_key: None, // Some(ShardKey::Keyword("fallback".into())), // ToDo: Take from collection params
         })
     }
 
@@ -143,6 +141,23 @@ impl ShardHolder {
             .write_optional(move |_| Some(shard_key_mapping))?;
 
         self.shard_id_to_key_mapping = shard_id_to_key_mapping;
+
+        Ok(())
+    }
+
+    pub fn get_fallback_shard_key(&self) -> Option<ShardKey> {
+        self.key_mapping.read().fallback_shard_key.clone()
+    }
+
+    pub fn set_fallback_shard_key(
+        &mut self,
+        fallback_shard_key: Option<ShardKey>,
+    ) -> CollectionResult<()> {
+        self.key_mapping.write_optional(|key_mapping| {
+            let mut key_mapping = key_mapping.clone();
+            key_mapping.fallback_shard_key = fallback_shard_key;
+            Some(key_mapping)
+        })?;
 
         Ok(())
     }
@@ -331,7 +346,7 @@ impl ShardHolder {
 
         // If shard key is specified but no matching ring was found
         // Check if there is a fallback ring
-        if let Some(fallback_shard_key) = &self.fallback_shard_key {
+        if let Some(fallback_shard_key) = self.get_fallback_shard_key() {
             // Use the fallback shard key if it exists
             return if let Some(fallback_ring) = self.rings.get(&Some(fallback_shard_key.clone())) {
                 Ok(fallback_ring)
@@ -546,15 +561,15 @@ impl ShardHolder {
         }
     }
 
-    pub fn get_shard_ids_by_key_with_fallback<'a>(
-        &'a self,
-        shard_key: &'a ShardKey,
-    ) -> CollectionResult<(Option<&'a ShardKey>, HashSet<ShardId>)> {
+    pub fn get_shard_ids_by_key_with_fallback(
+        &self,
+        shard_key: &ShardKey,
+    ) -> CollectionResult<(Option<ShardKey>, HashSet<ShardId>)> {
         match self.get_shard_ids_by_key_opt(shard_key) {
-            Some(ids) => Ok((Some(shard_key), ids)),
+            Some(ids) => Ok((Some(shard_key.clone()), ids)),
             None => {
-                if let Some(fallback_shard_key) = &self.fallback_shard_key {
-                    if let Ok(fallback_ids) = self.get_shard_ids_by_key(fallback_shard_key) {
+                if let Some(fallback_shard_key) = self.get_fallback_shard_key() {
+                    if let Ok(fallback_ids) = self.get_shard_ids_by_key(&fallback_shard_key) {
                         Ok((Some(fallback_shard_key), fallback_ids))
                     } else {
                         Err(CollectionError::bad_request(format!(
@@ -573,7 +588,7 @@ impl ShardHolder {
     pub fn select_shards<'a>(
         &'a self,
         shard_selector: &'a ShardSelectorInternal,
-    ) -> CollectionResult<Vec<(&'a ShardReplicaSet, Option<&'a ShardKey>)>> {
+    ) -> CollectionResult<Vec<(&'a ShardReplicaSet, Option<ShardKey>)>> {
         let mut res = Vec::new();
 
         match shard_selector {
@@ -595,7 +610,7 @@ impl ShardHolder {
                     }
 
                     let shard_key = self.shard_id_to_key_mapping.get(&shard_id);
-                    res.push((shard, shard_key));
+                    res.push((shard, shard_key.cloned()));
                 }
             }
             ShardSelectorInternal::ShardKey(shard_key) => {
@@ -604,7 +619,7 @@ impl ShardHolder {
 
                 for shard_id in shard_ids {
                     if let Some(replica_set) = self.shards.get(&shard_id) {
-                        res.push((replica_set, selected_shard_key));
+                        res.push((replica_set, selected_shard_key.clone()));
                     } else {
                         debug_assert!(false, "Shard id {shard_id} not found")
                     }
@@ -617,7 +632,7 @@ impl ShardHolder {
 
                     for shard_id in shard_ids {
                         if let Some(replica_set) = self.shards.get(&shard_id) {
-                            res.push((replica_set, selected_shard_key));
+                            res.push((replica_set, selected_shard_key.clone()));
                         } else {
                             debug_assert!(false, "Shard id {shard_id} not found")
                         }
@@ -626,7 +641,10 @@ impl ShardHolder {
             }
             ShardSelectorInternal::ShardId(shard_id) => {
                 if let Some(replica_set) = self.shards.get(shard_id) {
-                    res.push((replica_set, self.shard_id_to_key_mapping.get(shard_id)));
+                    res.push((
+                        replica_set,
+                        self.shard_id_to_key_mapping.get(shard_id).cloned(),
+                    ));
                 } else {
                     return Err(shard_not_found_error(*shard_id));
                 }

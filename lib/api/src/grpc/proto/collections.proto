@@ -406,6 +406,7 @@ message CreateCollection {
   optional ShardingMethod sharding_method = 15; // Sharding method
   optional SparseVectorConfig sparse_vectors_config = 16; // Configuration for sparse vectors
   optional StrictModeConfig strict_mode_config = 17; // Configuration for strict mode
+  optional ShardKey fallback_shard_key = 18; // Fallback shard key to use if provided shard key is not found
 }
 
 message UpdateCollection {
@@ -441,6 +442,7 @@ message CollectionParams {
   optional uint32 read_fan_out_factor = 8; // Fan-out every read request to these many additional remote nodes (and return first available response)
   optional ShardingMethod sharding_method = 9; // Sharding method
   optional SparseVectorConfig sparse_vectors_config = 10; // Configuration for sparse vectors
+  optional ShardKey fallback_shard_key = 11; // Fallback shard key to use if provided shard key is not found
 }
 
 message CollectionParamsDiff {
@@ -448,6 +450,7 @@ message CollectionParamsDiff {
   optional uint32 write_consistency_factor = 2; // How many replicas should apply the operation for us to consider it successful
   optional bool on_disk_payload = 3; // If true - point's payload will not be stored in memory
   optional uint32 read_fan_out_factor = 4; // Fan-out every read request to these many additional remote nodes (and return first available response)
+  optional ShardKey fallback_shard_key = 5; // Fallback shard key to use if provided shard key is not found
 }
 
 message CollectionConfig {

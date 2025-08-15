@@ -158,7 +158,6 @@ impl Collection {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.select_shards(shard_selection)?;
             let all_searches = target_shards.into_iter().map(|(shard, shard_key)| {
-                let shard_key = shard_key.cloned();
                 shard
                     .core_search(
                         request.clone(),

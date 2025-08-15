@@ -48,6 +48,10 @@ pub async fn handle_existing_collections(
                 sparse_vectors: collection_state.config.params.sparse_vectors,
                 shard_number: Some(shards_number),
                 sharding_method,
+                fallback_shard_key: collection_state
+                    .shards_key_mapping
+                    .fallback_shard_key
+                    .clone(),
                 replication_factor: Some(collection_state.config.params.replication_factor.get()),
                 write_consistency_factor: Some(
                     collection_state

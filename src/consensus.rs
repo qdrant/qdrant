@@ -1536,6 +1536,7 @@ mod tests {
                                 init_from: None,
                                 quantization_config: None,
                                 sharding_method: None,
+                                fallback_shard_key: None,
                                 strict_mode_config: None,
                                 uuid: None,
                             },

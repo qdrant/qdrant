@@ -12,6 +12,7 @@ use crate::shards::shard::ShardId;
 #[serde(from = "SerdeHelper", into = "SerdeHelper")]
 pub struct ShardKeyMapping {
     shard_key_to_shard_ids: HashMap<ShardKey, HashSet<ShardId>>,
+    pub fallback_shard_key: Option<ShardKey>,
 }
 
 impl ops::Deref for ShardKeyMapping {
@@ -84,6 +85,7 @@ impl From<SerdeHelper> for ShardKeyMapping {
 
         Self {
             shard_key_to_shard_ids,
+            fallback_shard_key: None, // ToDo: How to deserialize fallback shard key?
         }
     }
 }
