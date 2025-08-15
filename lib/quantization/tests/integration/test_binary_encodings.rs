@@ -70,7 +70,7 @@ mod tests {
             .map(|&encoding| {
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
                     vector_data.iter(),
-                    TestEncodedStorageBuilder::new(),
+                    TestEncodedStorageBuilder::new(None),
                     &VectorParameters {
                         dim: vector_dim,
                         deprecated_count: None,
@@ -79,6 +79,7 @@ mod tests {
                     },
                     encoding,
                     QueryEncoding::SameAsStorage,
+                    None,
                     &AtomicBool::new(false),
                 )
                 .unwrap()
@@ -166,7 +167,7 @@ mod tests {
             .map(|query_encoding| {
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
                     vector_data.iter(),
-                    TestEncodedStorageBuilder::new(),
+                    TestEncodedStorageBuilder::new(None),
                     &VectorParameters {
                         dim: vector_dim,
                         deprecated_count: None,
@@ -175,6 +176,7 @@ mod tests {
                     },
                     encoding,
                     query_encoding,
+                    None,
                     &AtomicBool::new(false),
                 )
                 .unwrap()
