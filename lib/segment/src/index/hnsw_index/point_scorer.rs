@@ -12,7 +12,6 @@ use crate::payload_storage::FilterContext;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::query_scorer::QueryScorerBytes;
 use crate::vector_storage::{
     RawScorer, VectorStorage, VectorStorageEnum, check_deleted_condition, new_raw_scorer,
 };
@@ -37,12 +36,8 @@ use crate::vector_storage::{
 ///                                                              - Scoring logic
 ///                                                              - Complex queries
 /// ```
-pub type FilteredScorer<'a> = FilteredScorerImpl<'a, Box<dyn RawScorer + 'a>>;
-
-pub type FilteredQuantizedScorer<'a> = FilteredScorerImpl<'a, Box<dyn QueryScorerBytes + 'a>>;
-
-pub struct FilteredScorerImpl<'a, TScorer> {
-    raw_scorer: TScorer,
+pub struct FilteredScorer<'a> {
+    raw_scorer: Box<dyn RawScorer + 'a>,
     filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
     /// Point deleted flags should be explicitly present as `false`
     /// for each existing point in the segment.
@@ -55,55 +50,7 @@ pub struct FilteredScorerImpl<'a, TScorer> {
     scores_buffer: Vec<ScoreType>,
 }
 
-impl<'a, TScorer> FilteredScorerImpl<'a, TScorer> {
-    /// Return true if vector satisfies current search context for given point:
-    /// exists, not deleted, and satisfies filter context.
-    pub fn check_vector(&self, point_id: PointOffsetType) -> bool {
-        check_deleted_condition(point_id, self.vec_deleted, self.point_deleted)
-            && self
-                .filter_context
-                .as_ref()
-                .is_none_or(|f| f.check(point_id))
-    }
-}
-
-impl<'a> FilteredScorerImpl<'a, Box<dyn QueryScorerBytes + 'a>> {
-    pub fn new_quantized(
-        query: QueryVector,
-        vectors: &'a VectorStorageEnum,
-        quantized_vectors: &'a QuantizedVectors,
-        filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
-        point_deleted: &'a BitSlice,
-        hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Self> {
-        let query_scorer = quantized_vectors.query_scorer_bytes(query, hardware_counter)?;
-        Ok(FilteredQuantizedScorer {
-            raw_scorer: query_scorer,
-            filter_context,
-            point_deleted,
-            vec_deleted: vectors.deleted_vector_bitslice(),
-            scores_buffer: Vec::new(),
-        })
-    }
-
-    pub fn score_points(
-        &self,
-        points: &mut Vec<(PointOffsetType, &[u8])>,
-        limit: usize,
-    ) -> impl Iterator<Item = ScoredPointOffset> {
-        points.retain(|(point_id, _)| self.check_vector(*point_id));
-        if limit != 0 {
-            points.truncate(limit);
-        }
-
-        points.iter().map(|&(idx, bytes)| ScoredPointOffset {
-            idx,
-            score: self.raw_scorer.score_bytes(bytes),
-        })
-    }
-}
-
-impl<'a> FilteredScorerImpl<'a, Box<dyn RawScorer + 'a>> {
+impl<'a> FilteredScorer<'a> {
     /// Create a new filtered scorer.
     ///
     /// If present, `quantized_vectors` will be used for scoring, otherwise `vectors` will be used.
@@ -197,6 +144,16 @@ impl<'a> FilteredScorerImpl<'a, Box<dyn RawScorer + 'a>> {
             point_deleted,
             vector_storage.deleted_vector_bitslice(),
         )
+    }
+
+    /// Return true if vector satisfies current search context for given point:
+    /// exists, not deleted, and satisfies filter context.
+    pub fn check_vector(&self, point_id: PointOffsetType) -> bool {
+        check_deleted_condition(point_id, self.vec_deleted, self.point_deleted)
+            && self
+                .filter_context
+                .as_ref()
+                .is_none_or(|f| f.check(point_id))
     }
 
     /// Filters and calculates scores for the given slice of points IDs.
