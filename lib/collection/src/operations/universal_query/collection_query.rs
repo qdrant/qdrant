@@ -718,8 +718,28 @@ mod from_rest {
         fn from(value: rest::Fusion) -> Self {
             match value {
                 rest::Fusion::Rrf => FusionInternal::RrfK(DEFAULT_RRF_K),
-                rest::Fusion::RrfK(k) => FusionInternal::RrfK(k),
                 rest::Fusion::Dbsf => FusionInternal::Dbsf,
+            }
+        }
+    }
+
+    impl From<rest::FusionParams> for FusionInternal {
+        fn from(value: rest::FusionParams) -> Self {
+            match value {
+                rest::FusionParams::Rrf(rest::RrfParams { r#type: _, k }) => {
+                    FusionInternal::RrfK(k.unwrap_or(DEFAULT_RRF_K))
+                }
+            }
+        }
+    }
+
+    impl From<rest::FusionInterface> for FusionInternal {
+        fn from(value: rest::FusionInterface) -> Self {
+            match value {
+                rest::FusionInterface::Fusion(fusion) => FusionInternal::from(fusion),
+                rest::FusionInterface::FusionParams(fusion_params) => {
+                    FusionInternal::from(fusion_params)
+                }
             }
         }
     }

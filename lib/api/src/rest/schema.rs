@@ -514,9 +514,38 @@ pub enum OrderByInterface {
 #[serde(rename_all = "snake_case")]
 pub enum Fusion {
     Rrf,
-    #[validate(range(min = 1))]
-    RrfK(usize),
     Dbsf,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum FusionParams {
+    Rrf(RrfParams),
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RrfType {
+    #[default]
+    Rrf,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct RrfParams {
+    pub r#type: RrfType,
+
+    /// K parameter for reciprocal rank fusion
+    #[validate(range(min = 1))]
+    #[serde(default)]
+    pub k: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum FusionInterface {
+    Fusion(Fusion),
+    FusionParams(FusionParams),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -676,7 +705,7 @@ pub struct OrderByQuery {
 #[serde(rename_all = "snake_case")]
 pub struct FusionQuery {
     #[validate(nested)]
-    pub fusion: Fusion,
+    pub fusion: FusionInterface,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

@@ -9,7 +9,7 @@ use super::{
     Batch, ContextInput, Expression, FormulaQuery, Fusion, OrderByInterface, PointVectors, Query,
     QueryInterface, RecommendInput, Sample, VectorInput,
 };
-use crate::rest::NamedVectorStruct;
+use crate::rest::{FusionInterface, FusionParams, NamedVectorStruct};
 
 impl Validate for NamedVectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
@@ -96,7 +96,24 @@ impl Validate for ContextInput {
 impl Validate for Fusion {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
-            Fusion::Rrf | Fusion::RrfK(_) | Fusion::Dbsf => Ok(()),
+            Fusion::Rrf | Fusion::Dbsf => Ok(()),
+        }
+    }
+}
+
+impl Validate for FusionParams {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            FusionParams::Rrf(params) => params.validate(),
+        }
+    }
+}
+
+impl Validate for FusionInterface {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            FusionInterface::Fusion(fusion) => fusion.validate(),
+            FusionInterface::FusionParams(fusion_params) => fusion_params.validate(),
         }
     }
 }
