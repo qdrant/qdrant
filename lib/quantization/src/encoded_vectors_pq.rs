@@ -17,9 +17,7 @@ use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
-use crate::encoded_vectors::{
-    EncodedVectors, EncodedVectorsBytes, VectorParameters, validate_vector_parameters,
-};
+use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::kmeans::kmeans;
 use crate::{ConditionalVariable, EncodingError};
 
@@ -530,7 +528,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
             .encoded_vectors
             .get_vector_data(i, self.metadata.vector_division.len());
 
-        self.score_point_vs_bytes(query, centroids, hw_counter)
+        self.score_bytes(True, query, centroids, hw_counter)
     }
 
     /// Score two points inside endoded data by their indexes
@@ -621,31 +619,6 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     fn score_bytes(
         &self,
         _: Self::SupportsBytes,
-        query: &Self::EncodedQuery,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        hw_counter
-            .cpu_counter()
-            .incr_delta(self.metadata.vector_division.len());
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("sse4.1") {
-            return unsafe { self.score_point_sse(query, bytes) };
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        if std::arch::is_aarch64_feature_detected!("neon") {
-            return unsafe { self.score_point_neon(query, bytes) };
-        }
-
-        self.score_point_simple(query, bytes)
-    }
-}
-
-impl<TStorage: EncodedStorage> EncodedVectorsBytes for EncodedVectorsPQ<TStorage> {
-    fn score_point_vs_bytes(
-        &self,
         query: &Self::EncodedQuery,
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,

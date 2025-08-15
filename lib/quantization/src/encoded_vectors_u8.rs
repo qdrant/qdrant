@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{
-    DistanceType, EncodedVectors, EncodedVectorsBytes, VectorParameters, validate_vector_parameters,
+    DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
 
@@ -425,7 +425,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         let vector_data_size = self.metadata.actual_dim + std::mem::size_of::<f32>();
         let bytes = self.encoded_vectors.get_vector_data(i, vector_data_size);
 
-        self.score_point_vs_bytes(query, bytes, hw_counter)
+        self.score_bytes(True, query, bytes, hw_counter)
     }
 
     fn score_internal(
@@ -568,81 +568,6 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     fn score_bytes(
         &self,
         _: Self::SupportsBytes,
-        query: &Self::EncodedQuery,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        hw_counter
-            .cpu_counter()
-            .incr_delta(self.metadata.vector_parameters.dim);
-
-        debug_assert!(bytes.len() >= std::mem::size_of::<f32>() + self.metadata.actual_dim);
-
-        let (vector_offset, v_ptr) = Self::parse_vec_data(bytes);
-        let q_ptr = query.encoded_query.as_ptr();
-
-        #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + query.offset + vector_offset;
-            }
-        }
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("sse4.1") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + query.offset + vector_offset;
-            }
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        if std::arch::is_aarch64_feature_detected!("neon") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + query.offset + vector_offset;
-            }
-        }
-
-        let score = match self.metadata.vector_parameters.distance_type {
-            DistanceType::Dot | DistanceType::L2 => {
-                impl_score_dot(q_ptr, v_ptr, self.metadata.actual_dim)
-            }
-            DistanceType::L1 => impl_score_l1(q_ptr, v_ptr, self.metadata.actual_dim),
-        };
-
-        self.metadata.multiplier * score as f32 + query.offset + vector_offset
-    }
-}
-
-impl<TStorage: EncodedStorage> EncodedVectorsBytes for EncodedVectorsU8<TStorage> {
-    fn score_point_vs_bytes(
-        &self,
         query: &Self::EncodedQuery,
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,

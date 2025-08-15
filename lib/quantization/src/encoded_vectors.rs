@@ -82,15 +82,6 @@ pub trait EncodedVectors: Sized {
     ) -> f32;
 }
 
-pub trait EncodedVectorsBytes: EncodedVectors {
-    fn score_point_vs_bytes(
-        &self,
-        query: &Self::EncodedQuery,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32;
-}
-
 impl DistanceType {
     pub fn distance(&self, a: &[f32], b: &[f32]) -> f32 {
         match self {
