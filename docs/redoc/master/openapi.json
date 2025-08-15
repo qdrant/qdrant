@@ -15005,9 +15005,19 @@
         ],
         "properties": {
           "fusion": {
-            "$ref": "#/components/schemas/Fusion"
+            "$ref": "#/components/schemas/FusionInterface"
           }
         }
+      },
+      "FusionInterface": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Fusion"
+          },
+          {
+            "$ref": "#/components/schemas/FusionParams"
+          }
+        ]
       },
       "Fusion": {
         "description": "Fusion algorithm allows to combine results of multiple prefetches.\n\nAvailable fusion algorithms:\n\n* `rrf` - Reciprocal Rank Fusion * `dbsf` - Distribution-Based Score Fusion",
@@ -15015,6 +15025,38 @@
         "enum": [
           "rrf",
           "dbsf"
+        ]
+      },
+      "FusionParams": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RrfParams"
+          }
+        ]
+      },
+      "RrfParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/RrfType"
+          },
+          "k": {
+            "description": "K parameter for reciprocal rank fusion",
+            "default": null,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
+      "RrfType": {
+        "type": "string",
+        "enum": [
+          "rrf"
         ]
       },
       "FormulaQuery": {

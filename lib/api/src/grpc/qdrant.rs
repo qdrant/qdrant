@@ -5628,12 +5628,42 @@ pub struct Mmr {
     #[validate(range(max = 16_384))]
     pub candidates_limit: ::core::option::Option<u32>,
 }
+/// Parameterized reciprocal rank fusion
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RrfParams {
+    /// K parameter for reciprocal rank fusion
+    #[prost(uint32, optional, tag = "1")]
+    #[validate(range(min = 1))]
+    pub k: ::core::option::Option<u32>,
+}
+/// Parameterized fusion of multiple prefetches.
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FusionParams {
+    #[prost(oneof = "fusion_params::Variant", tags = "1")]
+    pub variant: ::core::option::Option<fusion_params::Variant>,
+}
+/// Nested message and enum types in `FusionParams`.
+pub mod fusion_params {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        /// Reciprocal Rank Fusion
+        #[prost(message, tag = "1")]
+        Rrf(super::RrfParams),
+    }
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
@@ -5670,6 +5700,9 @@ pub mod query {
         /// Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm.
         #[prost(message, tag = "9")]
         NearestWithMmr(super::NearestInputWithMmr),
+        /// Parameterized fusion of multiple prefetches.
+        #[prost(message, tag = "10")]
+        FusionParams(super::FusionParams),
     }
 }
 #[derive(validator::Validate)]
@@ -7106,7 +7139,7 @@ impl RecommendStrategy {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Fusion {
-    /// Reciprocal Rank Fusion
+    /// Reciprocal Rank Fusion (with k=2)
     Rrf = 0,
     /// Distribution-Based Score Fusion
     Dbsf = 1,
@@ -10161,7 +10194,7 @@ pub mod query_shard_points {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Query {
-        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6")]
+        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7")]
         pub score: ::core::option::Option<query::Score>,
     }
     /// Nested message and enum types in `Query`.
@@ -10188,6 +10221,9 @@ pub mod query_shard_points {
             /// Maximal Marginal Relevance
             #[prost(message, tag = "6")]
             Mmr(super::super::MmrInternal),
+            /// Parameterized fusion of multiple prefetches.
+            #[prost(message, tag = "7")]
+            FusionParams(super::super::FusionParams),
         }
     }
     #[derive(serde::Serialize)]

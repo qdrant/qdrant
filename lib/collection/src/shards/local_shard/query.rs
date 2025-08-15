@@ -406,7 +406,7 @@ impl LocalShard {
         limit: usize,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let fused = match fusion {
-            FusionInternal::Rrf => rrf_scoring(sources),
+            FusionInternal::RrfK(k) => rrf_scoring(sources, k),
             FusionInternal::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
         };
 

@@ -9,11 +9,11 @@ use ordered_float::OrderedFloat;
 use crate::types::{ExtendedPointId, ScoredPoint};
 
 /// Mitigates the impact of high rankings by outlier systems
-const RFF_RANKING_K: f32 = 2.0;
+pub const DEFAULT_RRF_K: usize = 2;
 
 /// Compute the RRF score for a given position.
-fn position_score(position: usize) -> f32 {
-    1.0 / (position as f32 + RFF_RANKING_K)
+fn position_score(position: usize, k: usize) -> f32 {
+    1.0 / (position as f32 + k as f32)
 }
 
 /// Compute RRF scores for multiple results from different sources.
@@ -22,13 +22,16 @@ fn position_score(position: usize) -> f32 {
 ///
 /// The output is a single sorted list of ScoredPoint.
 /// Does not break ties.
-pub fn rrf_scoring(responses: impl IntoIterator<Item = Vec<ScoredPoint>>) -> Vec<ScoredPoint> {
+pub fn rrf_scoring(
+    responses: impl IntoIterator<Item = Vec<ScoredPoint>>,
+    k: usize,
+) -> Vec<ScoredPoint> {
     // track scored points by id
     let mut points_by_id: AHashMap<ExtendedPointId, ScoredPoint> = AHashMap::new();
 
     for response in responses {
         for (pos, mut point) in response.into_iter().enumerate() {
-            let rrf_score = position_score(pos);
+            let rrf_score = position_score(pos, k);
             match points_by_id.entry(point.id) {
                 Entry::Occupied(mut entry) => {
                     // accumulate score
@@ -72,14 +75,14 @@ mod tests {
     #[test]
     fn test_rrf_scoring_empty() {
         let responses = vec![];
-        let scored_points = rrf_scoring(responses);
+        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K);
         assert_eq!(scored_points.len(), 0);
     }
 
     #[test]
     fn test_rrf_scoring_one() {
         let responses = vec![vec![make_scored_point(1, 0.9)]];
-        let scored_points = rrf_scoring(responses);
+        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K);
         assert_eq!(scored_points.len(), 1);
         assert_eq!(scored_points[0].id, 1.into());
         assert_eq!(scored_points[0].score, 0.5); // 1 / (0 + 2)
@@ -102,7 +105,7 @@ mod tests {
         ];
 
         // top 10
-        let scored_points = rrf_scoring(responses);
+        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K);
         assert_eq!(scored_points.len(), 4);
         // assert that the list is sorted
         assert!(scored_points.windows(2).all(|w| w[0].score >= w[1].score));
