@@ -77,7 +77,9 @@ impl quantization::EncodedStorageBuilder for QuantizedRamStorageBuilder {
     type Storage = QuantizedRamStorage;
 
     fn build(self) -> std::io::Result<QuantizedRamStorage> {
-        self.path.parent().map(std::fs::create_dir_all);
+        if let Some(dir) = self.path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
         let mut buffer = BufWriter::new(File::create(&self.path)?);
         for i in 0..self.vectors.len() {
             buffer.write_all(self.vectors.get(i))?;
