@@ -152,24 +152,6 @@ impl<'a> FilteredScorer<'a> {
         })
     }
 
-    /// Create a new filtered scorer from a raw scorer.
-    #[cfg(feature = "testing")]
-    pub fn new_from_raw(
-        raw_scorer: Box<dyn RawScorer + 'a>,
-        point_deleted: &'a BitSlice,
-        vec_deleted: &'a BitSlice,
-    ) -> Self {
-        FilteredScorer {
-            raw_scorer,
-            filters: Filters {
-                filter_context: None,
-                point_deleted,
-                vec_deleted,
-            },
-            scores_buffer: Vec::new(),
-        }
-    }
-
     /// Create a new filtered scorer for testing purposes.
     ///
     /// # Panics
@@ -181,13 +163,15 @@ impl<'a> FilteredScorer<'a> {
         vector_storage: &'a VectorStorageEnum,
         point_deleted: &'a BitSlice,
     ) -> Self {
-        let raw_scorer =
-            new_raw_scorer(vector, vector_storage, HardwareCounterCell::new()).unwrap();
-        FilteredScorer::new_from_raw(
-            raw_scorer,
-            point_deleted,
-            vector_storage.deleted_vector_bitslice(),
-        )
+        FilteredScorer {
+            raw_scorer: new_raw_scorer(vector, vector_storage, HardwareCounterCell::new()).unwrap(),
+            filters: Filters {
+                filter_context: None,
+                point_deleted,
+                vec_deleted: vector_storage.deleted_vector_bitslice(),
+            },
+            scores_buffer: Vec::new(),
+        }
     }
 
     /// Return true if vector satisfies current search context for given point:
