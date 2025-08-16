@@ -56,6 +56,22 @@ pub struct OperationDurationStatistics {
     pub duration_micros_histogram: Vec<(f32, usize)>,
 }
 
+pub const DEFAULT_BUCKET_BOUNDARIES_MICROS: [f32; 11] = [
+    // Milliseconds
+    1_000.0,
+    5_000.0,
+    10_000.0,
+    20_000.0,
+    50_000.0,
+    100_000.0,
+    500_000.0,
+    // Seconds
+    1_000_000.0,
+    5_000_000.0,
+    10_000_000.0,
+    50_000_000.0,
+];
+
 #[derive(Debug)]
 pub struct OperationDurationsAggregator {
     ok_count: usize,
@@ -73,26 +89,6 @@ pub struct OperationDurationsAggregator {
     /// not stored in this vector, and `ok_count` should be used instead.
     buckets: SmallVec<[usize; 16]>,
 }
-
-pub const DEFAULT_BUCKET_BOUNDARIES_MICROS: [f32; 14] = [
-    // Microseconds
-    10.0,
-    50.0,
-    100.0,
-    500.0,
-    // Milliseconds
-    1_000.0,
-    5_000.0,
-    10_000.0,
-    50_000.0,
-    100_000.0,
-    500_000.0,
-    // Seconds
-    1_000_000.0,
-    5_000_000.0,
-    10_000_000.0,
-    50_000_000.0,
-];
 
 /// A wrapper around [`OperationDurationsAggregator`] that calls
 /// [`OperationDurationsAggregator::add_operation_result()`] on drop.
@@ -287,11 +283,7 @@ impl OperationDurationsAggregator {
                 cumulative_count += count;
                 duration_micros_histogram.push((le, cumulative_count));
             }
-            convert_histogram(
-                &DEFAULT_BUCKET_BOUNDARIES_MICROS,
-                &self.buckets,
-                self.ok_count,
-            )
+            convert_histogram(&DEFAULT_BUCKET_BOUNDARIES_MICROS, &self.buckets)
         } else {
             Vec::new()
         };
@@ -334,13 +326,8 @@ impl OperationDurationsAggregator {
     }
 }
 
-/// Convert a fixed-size non-cumulative histogram to a sparse cumulative histogram.
-/// Omit repeated values to reduce the size of the histogram.
-fn convert_histogram(
-    le_boundaries: &[f32],
-    counts: &[usize],
-    total_count: usize,
-) -> Vec<(f32, usize)> {
+/// Convert a fixed-size non-cumulative histogram to a cumulative histogram.
+fn convert_histogram(le_boundaries: &[f32], counts: &[usize]) -> Vec<(f32, usize)> {
     let rough_len_estimation = std::cmp::min(
         le_boundaries.len(),
         counts.iter().filter(|&&c| c != 0).count() * 2,
@@ -357,9 +344,7 @@ fn convert_histogram(
         result.push((le, cumulative_count));
         prev = None;
     }
-    if let Some(prev) = prev
-        && cumulative_count != total_count
-    {
+    if let Some(prev) = prev {
         result.push((prev, cumulative_count));
     }
     result
@@ -430,26 +415,34 @@ mod tests {
     fn test_convert_histogram() {
         // With all zeroes
         assert_eq!(
-            convert_histogram(&[0., 1., 2., 3., 4., 5.], &[0, 0, 0, 0, 0, 0], 0),
-            vec![],
+            convert_histogram(&[0., 1., 2., 3., 4., 5.], &[0, 0, 0, 0, 0, 0]),
+            vec![(0., 0), (1., 0), (2., 0), (3., 0), (4., 0), (5., 0)],
         );
 
         // With all zeroes except the total count
         assert_eq!(
-            convert_histogram(&[0., 1., 2., 3., 4., 5.], &[0, 0, 0, 0, 0, 0], 100),
-            vec![(5., 0)],
+            convert_histogram(&[0., 1., 2., 3., 4., 5.], &[0, 0, 0, 0, 0, 0]),
+            vec![(0., 0), (1., 0), (2., 0), (3., 0), (4., 0), (5., 0)],
         );
 
         // Full
         assert_eq!(
-            convert_histogram(&[0., 1., 2., 3.], &[1, 20, 300, 4000], 5000),
+            convert_histogram(&[0., 1., 2., 3.], &[1, 20, 300, 4000]),
             vec![(0., 1), (1., 21), (2., 321), (3., 4321)],
         );
 
         // Sparse
         assert_eq!(
-            convert_histogram(&[0., 1., 2., 3., 4., 5., 6.], &[0, 0, 1, 0, 0, 1, 0], 1),
-            vec![(1.0, 0), (2.0, 1), (4.0, 1), (5.0, 2), (6.0, 2)],
+            convert_histogram(&[0., 1., 2., 3., 4., 5., 6.], &[0, 0, 1, 0, 0, 1, 0]),
+            vec![
+                (0.0, 0),
+                (1.0, 0),
+                (2.0, 1),
+                (3.0, 1),
+                (4.0, 1),
+                (5.0, 2),
+                (6.0, 2)
+            ],
         );
     }
 
@@ -498,15 +491,14 @@ mod tests {
         fn case(a: &[usize], b: &[usize], total_a: usize, total_b: usize) {
             assert_eq!(
                 merge_histograms(
-                    &convert_histogram(&DEFAULT_BUCKET_BOUNDARIES_MICROS, a, total_a),
-                    &convert_histogram(&DEFAULT_BUCKET_BOUNDARIES_MICROS, b, total_b),
+                    &convert_histogram(&DEFAULT_BUCKET_BOUNDARIES_MICROS, a),
+                    &convert_histogram(&DEFAULT_BUCKET_BOUNDARIES_MICROS, b),
                     total_a,
                     total_b,
                 ),
                 convert_histogram(
                     &DEFAULT_BUCKET_BOUNDARIES_MICROS,
                     &std::iter::zip(a, b).map(|(a, b)| a + b).collect::<Vec<_>>(),
-                    total_a + total_b
                 ),
             );
         }
