@@ -26,7 +26,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -34,6 +34,7 @@ mod tests {
                 invert: false,
             },
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -63,7 +64,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -71,6 +72,7 @@ mod tests {
                 invert: false,
             },
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -104,7 +106,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -112,6 +114,7 @@ mod tests {
                 invert: false,
             },
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -141,7 +144,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -149,6 +152,7 @@ mod tests {
                 invert: true,
             },
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -178,7 +182,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -186,6 +190,7 @@ mod tests {
                 invert: true,
             },
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -219,7 +224,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -227,6 +232,7 @@ mod tests {
                 invert: true,
             },
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -255,7 +261,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -263,6 +269,7 @@ mod tests {
                 invert: false,
             },
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -291,7 +298,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -299,6 +306,7 @@ mod tests {
                 invert: true,
             },
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -328,7 +336,7 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
+            TestEncodedStorageBuilder::new(None),
             &VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
@@ -337,6 +345,7 @@ mod tests {
             },
             vectors_count,
             Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -367,7 +376,7 @@ mod tests {
         for distance_type in [DistanceType::Dot, DistanceType::L2] {
             let encoded = EncodedVectorsU8::encode(
                 vector_data.iter(),
-                TestEncodedStorageBuilder::new(),
+                TestEncodedStorageBuilder::new(None),
                 &VectorParameters {
                     dim: vector_dim,
                     deprecated_count: None,
@@ -376,6 +385,7 @@ mod tests {
                 },
                 vectors_count,
                 Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
+                None,
                 &AtomicBool::new(false),
             )
             .unwrap();

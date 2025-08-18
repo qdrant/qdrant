@@ -3,6 +3,8 @@ use std::fs::File;
 #[cfg(feature = "testing")]
 use std::io::{Read, Write};
 use std::path::Path;
+#[cfg(feature = "testing")]
+use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -16,8 +18,6 @@ pub trait EncodedStorage {
     fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self>
     where
         Self: Sized;
-
-    fn save_to_file(&self, path: &Path) -> std::io::Result<()>;
 
     fn is_on_disk(&self) -> bool;
 
@@ -70,13 +70,6 @@ impl EncodedStorage for TestEncodedStorage {
         Ok(Self { data: buffer })
     }
 
-    fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
-        let mut buffer = File::create(path)?;
-        buffer.write_all(self.data.as_slice())?;
-        buffer.sync_all()?;
-        Ok(())
-    }
-
     fn is_on_disk(&self) -> bool {
         false
     }
@@ -96,19 +89,16 @@ impl EncodedStorage for TestEncodedStorage {
 #[cfg(feature = "testing")]
 pub struct TestEncodedStorageBuilder {
     data: Vec<u8>,
+    path: Option<PathBuf>,
 }
 
 #[cfg(feature = "testing")]
 impl TestEncodedStorageBuilder {
-    pub fn new() -> Self {
-        Self { data: Vec::new() }
-    }
-}
-
-#[cfg(feature = "testing")]
-impl Default for TestEncodedStorageBuilder {
-    fn default() -> Self {
-        Self::new()
+    pub fn new(path: Option<&std::path::Path>) -> Self {
+        Self {
+            data: Vec::new(),
+            path: path.map(PathBuf::from),
+        }
     }
 }
 
@@ -117,6 +107,19 @@ impl EncodedStorageBuilder for TestEncodedStorageBuilder {
     type Storage = TestEncodedStorage;
 
     fn build(self) -> std::io::Result<Self::Storage> {
+        if let Some(path) = &self.path {
+            path.parent()
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Path must have a parent directory",
+                    )
+                })
+                .and_then(std::fs::create_dir_all)?;
+            let mut file = File::create(path)?;
+            file.write_all(&self.data)?;
+            file.sync_all()?;
+        }
         Ok(TestEncodedStorage { data: self.data })
     }
 
