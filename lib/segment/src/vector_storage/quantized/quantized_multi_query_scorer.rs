@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -94,5 +95,10 @@ where
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.quantized_multivector_storage
             .score_internal(point_a, point_b, &self.hardware_counter)
+    }
+
+    type SupportsBytes = False;
+    fn score_bytes(&self, enabled: Self::SupportsBytes, _: &[u8]) -> ScoreType {
+        match enabled {}
     }
 }

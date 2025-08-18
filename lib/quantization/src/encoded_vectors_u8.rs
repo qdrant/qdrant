@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::True;
 use common::types::PointOffsetType;
 use io::file_operations::atomic_save_json;
 use memory::mmap_type::MmapFlusher;
@@ -11,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{
-    DistanceType, EncodedVectors, EncodedVectorsBytes, VectorParameters, validate_vector_parameters,
+    DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
 
@@ -424,7 +425,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         let vector_data_size = self.metadata.actual_dim + std::mem::size_of::<f32>();
         let bytes = self.encoded_vectors.get_vector_data(i, vector_data_size);
 
-        self.score_point_vs_bytes(query, bytes, hw_counter)
+        self.score_bytes(True, query, bytes, hw_counter)
     }
 
     fn score_internal(
@@ -562,11 +563,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     fn flusher(&self) -> MmapFlusher {
         self.encoded_vectors.flusher()
     }
-}
 
-impl<TStorage: EncodedStorage> EncodedVectorsBytes for EncodedVectorsU8<TStorage> {
-    fn score_point_vs_bytes(
+    type SupportsBytes = True;
+    fn score_bytes(
         &self,
+        _: Self::SupportsBytes,
         query: &Self::EncodedQuery,
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,
