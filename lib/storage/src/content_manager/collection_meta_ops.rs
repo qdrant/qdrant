@@ -133,6 +133,7 @@ pub struct CreateCollection {
     #[serde(default)]
     pub sharding_method: Option<ShardingMethod>,
     /// Fallback shard key to use when specified shard key doesn't exist.
+    /// Can be set only if `sharding_method` is set to Custom.
     pub fallback_shard_key: Option<ShardKey>,
     /// Number of shards replicas.
     /// Default is 1

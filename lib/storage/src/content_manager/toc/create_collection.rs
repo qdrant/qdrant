@@ -117,6 +117,12 @@ impl TableOfContent {
                 }
             }
         };
+        
+        if fallback_shard_key.is_some() && sharding_method != Some(ShardingMethod::Custom) {
+            return Err(StorageError::bad_input(
+                "Fallback shard key can be set only if sharding method is Custom",
+            ));
+        }
 
         let replication_factor = replication_factor
             .or_else(|| collection_defaults_config.and_then(|i| i.replication_factor))
