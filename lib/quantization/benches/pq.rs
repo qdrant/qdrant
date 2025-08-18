@@ -21,7 +21,7 @@ fn encode_bench(c: &mut Criterion) {
 
     let pq_encoded = EncodedVectorsPQ::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
-        TestEncodedStorageBuilder::new(),
+        TestEncodedStorageBuilder::new(None),
         &VectorParameters {
             dim: vector_dim,
             deprecated_count: None,
@@ -31,6 +31,7 @@ fn encode_bench(c: &mut Criterion) {
         vectors_count,
         2,
         2,
+        None,
         &AtomicBool::new(false),
     )
     .unwrap();

@@ -1,6 +1,5 @@
-use std::fs::canonicalize;
 use std::ops::DerefMut;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
@@ -27,8 +26,6 @@ pub trait MultivectorOffsets {
 pub trait MultivectorOffsetsStorage: Sized {
     fn load(path: &Path) -> OperationResult<Self>;
 
-    fn save(&self, path: &Path) -> OperationResult<()>;
-
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
 
     fn len(&self) -> usize;
@@ -52,10 +49,6 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
         let mut offsets_mmap_type =
             unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
         Ok(offsets_mmap_type.deref_mut().iter().copied().collect())
-    }
-
-    fn save(&self, path: &Path) -> OperationResult<()> {
-        create_offsets_file_from_iter(path, self.len(), self.iter().copied())
     }
 
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
@@ -83,7 +76,6 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
 
 #[derive(Debug)]
 pub struct MultivectorOffsetsStorageMmap {
-    path: PathBuf,
     offsets: MmapSlice<MultivectorOffset>,
 }
 
@@ -95,19 +87,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
             .open(path)?;
         let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
         let offsets = unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
-        Ok(Self {
-            path: path.to_path_buf(),
-            offsets,
-        })
-    }
-
-    fn save(&self, path: &Path) -> OperationResult<()> {
-        if canonicalize(path)? != canonicalize(&self.path)? {
-            create_offsets_file_from_iter(path, self.offsets.len(), self.offsets.iter().copied())
-        } else {
-            // no need to flush, as the mmap is immutable
-            Ok(())
-        }
+        Ok(Self { offsets })
     }
 
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
@@ -165,16 +145,6 @@ where
             dim,
             multi_vector_config,
         }
-    }
-
-    pub fn save_multi(
-        &self,
-        data_path: &Path,
-        meta_path: &Path,
-        offsets_path: &Path,
-    ) -> OperationResult<()> {
-        self.offsets.save(offsets_path)?;
-        Ok(self.quantized_storage.save(data_path, meta_path)?)
     }
 
     pub fn load_multi(
@@ -270,10 +240,6 @@ where
 {
     // TODO(colbert): refactor `EncodedVectors` to support multi vector storage after quantization migration
     type EncodedQuery = Vec<QuantizedStorage::EncodedQuery>;
-
-    fn save(&self, _data_path: &Path, _meta_path: &Path) -> std::io::Result<()> {
-        unreachable!("multivector quantized storage should be saved using `self.save_multi` method")
-    }
 
     // TODO(colbert): refactor `EncodedVectors` to support multi vector storage after quantization migration
     fn load(
@@ -395,7 +361,14 @@ pub(super) fn create_offsets_file_from_iter(
     count: usize,
     iter: impl Iterator<Item = MultivectorOffset>,
 ) -> OperationResult<()> {
-    path.parent().map(std::fs::create_dir_all);
+    path.parent()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Path must have a parent directory",
+            )
+        })
+        .and_then(std::fs::create_dir_all)?;
 
     let offsets_file_size = count * std::mem::size_of::<MultivectorOffset>();
     let offsets_file = std::fs::OpenOptions::new()

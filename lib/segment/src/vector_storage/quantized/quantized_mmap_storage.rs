@@ -49,11 +49,6 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
         Ok(Self { mmap })
     }
 
-    fn save_to_file(&self, _path: &Path) -> std::io::Result<()> {
-        // do nothing because mmap is already saved
-        Ok(())
-    }
-
     fn is_on_disk(&self) -> bool {
         true
     }
@@ -89,8 +84,21 @@ impl QuantizedMmapStorageBuilder {
         vectors_count: usize,
         quantized_vector_size: usize,
     ) -> std::io::Result<Self> {
+        if quantized_vector_size == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "quantized_vector_size must be > 0",
+            ));
+        }
         let encoded_storage_size = quantized_vector_size * vectors_count;
-        path.parent().map(std::fs::create_dir_all);
+        path.parent()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Path must have a parent directory",
+                )
+            })
+            .and_then(std::fs::create_dir_all)?;
 
         let file = std::fs::OpenOptions::new()
             .read(true)
