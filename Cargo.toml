@@ -118,6 +118,7 @@ cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
 segment = { path = "lib/segment", default-features = false }
+shard = { path = "lib/shard" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
@@ -307,12 +308,13 @@ required-features = ["service_debug"]
 [workspace]
 members = [
     "lib/api",
-    "lib/gridstore",
     "lib/collection",
     "lib/common/*",
+    "lib/gridstore",
     "lib/macros",
     "lib/posting_list",
     "lib/segment",
+    "lib/shard",
     "lib/sparse",
     "lib/storage",
 ]
