@@ -6036,8 +6036,11 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "api",
+ "bitvec",
  "common",
  "itertools 0.14.0",
+ "log",
+ "parking_lot",
  "proptest",
  "rand 0.9.2",
  "schemars",
@@ -6047,6 +6050,8 @@ dependencies = [
  "serde_json",
  "sparse",
  "strum",
+ "tar",
+ "tempfile",
  "tonic 0.11.0",
  "validator",
 ]
