@@ -2035,7 +2035,9 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         sparse_vectors_config,
                     } = params;
 
-                    if fallback_shard_key.is_some() && sharding_method != Some(api::grpc::qdrant::ShardingMethod::Custom.into()) {
+                    if fallback_shard_key.is_some()
+                        && sharding_method != Some(api::grpc::qdrant::ShardingMethod::Custom.into())
+                    {
                         return Err(Status::invalid_argument(
                             "Fallback shard key can be set only if sharding method is Custom",
                         ));
