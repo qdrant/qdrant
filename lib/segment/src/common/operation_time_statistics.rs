@@ -419,12 +419,6 @@ mod tests {
             vec![(0., 0), (1., 0), (2., 0), (3., 0), (4., 0), (5., 0)],
         );
 
-        // With all zeroes except the total count
-        assert_eq!(
-            convert_histogram(&[0., 1., 2., 3., 4., 5.], &[0, 0, 0, 0, 0, 0]),
-            vec![(0., 0), (1., 0), (2., 0), (3., 0), (4., 0), (5., 0)],
-        );
-
         // Full
         assert_eq!(
             convert_histogram(&[0., 1., 2., 3.], &[1, 20, 300, 4000]),
