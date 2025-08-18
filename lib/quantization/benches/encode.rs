@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use permutation_iterator::Permutor;
-use quantization::encoded_storage::TestEncodedStorageBuilder;
+use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 use quantization::encoded_vectors_u8::EncodedVectorsU8;
 use rand::Rng;
@@ -19,15 +19,18 @@ fn encode_dot_bench(c: &mut Criterion) {
         list.extend_from_slice(&vector);
     }
 
+    let vector_parameters = VectorParameters {
+        dim: vector_dim,
+        deprecated_count: None,
+        distance_type: DistanceType::Dot,
+        invert: false,
+    };
+    let quantized_vector_size =
+        EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
-        TestEncodedStorageBuilder::new(None),
-        &VectorParameters {
-            dim: vector_dim,
-            deprecated_count: None,
-            distance_type: DistanceType::Dot,
-            invert: false,
-        },
+        TestEncodedStorageBuilder::new(None, quantized_vector_size),
+        &vector_parameters,
         vectors_count,
         None,
         None,
@@ -114,15 +117,18 @@ fn encode_l1_bench(c: &mut Criterion) {
         list.extend_from_slice(&vector);
     }
 
+    let vector_parameters = VectorParameters {
+        dim: vector_dim,
+        deprecated_count: None,
+        distance_type: DistanceType::L1,
+        invert: true,
+    };
+    let quantized_vector_size =
+        EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
-        TestEncodedStorageBuilder::new(None),
-        &VectorParameters {
-            dim: vector_dim,
-            deprecated_count: None,
-            distance_type: DistanceType::L1,
-            invert: true,
-        },
+        TestEncodedStorageBuilder::new(None, quantized_vector_size),
+        &vector_parameters,
         vectors_count,
         None,
         None,
