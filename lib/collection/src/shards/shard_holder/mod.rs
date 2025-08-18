@@ -353,14 +353,14 @@ impl ShardHolder {
             } else {
                 // If no fallback ring, error out
                 Err(CollectionError::bad_request(format!(
-                    "fallback shard `{fallback_shard_key}` is not created"
+                    "fallback shard {fallback_shard_key} is not created"
                 )))
             };
         }
 
         if let Some(shard_key) = shard_key {
             Err(CollectionError::bad_input(format!(
-                "Shard key `{shard_key}` not found. Create fallback or pass valid shard key"
+                "Shard key {shard_key} not found. Create fallback shard key or pass valid shard key"
             )))
         } else {
             Err(CollectionError::bad_input("No shards exist".to_string()))
