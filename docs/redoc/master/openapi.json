@@ -9608,7 +9608,7 @@
             ]
           },
           "fallback_shard_key": {
-            "description": "Fallback shard key to use when specified shard key doesn't exist.",
+            "description": "Fallback shard key to use when specified shard key doesn't exist. Can be set only if `sharding_method` is set to Custom.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ShardKey"
