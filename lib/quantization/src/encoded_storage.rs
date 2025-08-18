@@ -100,9 +100,14 @@ impl EncodedStorageBuilder for TestEncodedStorageBuilder {
 
     fn build(self) -> std::io::Result<Self::Storage> {
         if let Some(path) = &self.path {
-            if let Some(dir) = path.parent() {
-                std::fs::create_dir_all(dir)?;
-            }
+            path.parent()
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Path must have a parent directory",
+                    )
+                })
+                .and_then(std::fs::create_dir_all)?;
             let mut file = File::create(path)?;
             file.write_all(&self.data)?;
             file.sync_all()?;

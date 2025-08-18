@@ -337,7 +337,14 @@ pub(super) fn create_offsets_file_from_iter(
     count: usize,
     iter: impl Iterator<Item = MultivectorOffset>,
 ) -> OperationResult<()> {
-    path.parent().map(std::fs::create_dir_all);
+    path.parent()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Path must have a parent directory",
+            )
+        })
+        .and_then(std::fs::create_dir_all)?;
 
     let offsets_file_size = count * std::mem::size_of::<MultivectorOffset>();
     let offsets_file = std::fs::OpenOptions::new()

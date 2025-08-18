@@ -84,9 +84,14 @@ impl QuantizedMmapStorageBuilder {
             ));
         }
         let encoded_storage_size = quantized_vector_size * vectors_count;
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
+        path.parent()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Path must have a parent directory",
+                )
+            })
+            .and_then(std::fs::create_dir_all)?;
 
         let file = std::fs::OpenOptions::new()
             .read(true)

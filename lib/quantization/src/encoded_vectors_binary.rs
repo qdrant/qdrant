@@ -413,9 +413,15 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             query_encoding,
             vector_stats: None,
         };
-        if let Some(meta_path_directory) = meta_path.parent() {
-            std::fs::create_dir_all(meta_path_directory)?;
-        }
+        meta_path
+            .parent()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Path must have a parent directory",
+                )
+            })
+            .and_then(std::fs::create_dir_all)?;
         atomic_save_json(meta_path, &metadata)?;
         Ok(Self {
             encoded_vectors,
@@ -474,13 +480,20 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             vector_stats,
         };
         if let Some(meta_path) = meta_path {
-            if let Some(dir) = meta_path.parent() {
-                std::fs::create_dir_all(dir).map_err(|e| {
+            meta_path
+                .parent()
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Path must have a parent directory",
+                    )
+                })
+                .and_then(std::fs::create_dir_all)
+                .map_err(|e| {
                     EncodingError::EncodingError(format!(
-                        "Failed to create metadata parent dir: {e}"
+                        "Failed to create metadata directory: {e}",
                     ))
                 })?;
-            }
             atomic_save_json(meta_path, &metadata).map_err(|e| {
                 EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
             })?;
