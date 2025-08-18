@@ -2,6 +2,7 @@ use std::ops::DerefMut;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use memmap2::MmapMut;
 use memory::mmap_type::{MmapFlusher, MmapSlice};
@@ -342,6 +343,17 @@ where
             offsets_flusher()?;
             Ok(())
         })
+    }
+
+    type SupportsBytes = False;
+    fn score_bytes(
+        &self,
+        enabled: Self::SupportsBytes,
+        _: &Self::EncodedQuery,
+        _: &[u8],
+        _: &HardwareCounterCell,
+    ) -> f32 {
+        match enabled {}
     }
 }
 

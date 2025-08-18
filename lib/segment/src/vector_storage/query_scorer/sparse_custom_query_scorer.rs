@@ -1,4 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
@@ -84,5 +85,10 @@ impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScor
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer can compare against multiple vectors, not just one")
+    }
+
+    type SupportsBytes = False;
+    fn score_bytes(&self, enabled: Self::SupportsBytes, _: &[u8]) -> ScoreType {
+        match enabled {}
     }
 }

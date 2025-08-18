@@ -1,4 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 
@@ -88,5 +89,10 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
             .expect("Sparse vector not found");
 
         self.score_sparse(&v1, &v2)
+    }
+
+    type SupportsBytes = False;
+    fn score_bytes(&self, enabled: Self::SupportsBytes, _: &[u8]) -> ScoreType {
+        match enabled {}
     }
 }

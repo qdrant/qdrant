@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::TBool;
 use common::types::PointOffsetType;
 use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
@@ -70,11 +71,11 @@ pub trait EncodedVectors: Sized {
     fn vectors_count(&self) -> usize;
 
     fn flusher(&self) -> MmapFlusher;
-}
 
-pub trait EncodedVectorsBytes: EncodedVectors {
-    fn score_point_vs_bytes(
+    type SupportsBytes: TBool;
+    fn score_bytes(
         &self,
+        enabled: Self::SupportsBytes,
         query: &Self::EncodedQuery,
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,

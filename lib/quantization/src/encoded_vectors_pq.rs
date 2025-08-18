@@ -10,15 +10,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::True;
 use common::types::PointOffsetType;
 use io::file_operations::atomic_save_json;
 use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
-use crate::encoded_vectors::{
-    EncodedVectors, EncodedVectorsBytes, VectorParameters, validate_vector_parameters,
-};
+use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::kmeans::kmeans;
 use crate::{ConditionalVariable, EncodingError};
 
@@ -529,7 +528,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
             .encoded_vectors
             .get_vector_data(i, self.metadata.vector_division.len());
 
-        self.score_point_vs_bytes(query, centroids, hw_counter)
+        self.score_bytes(True, query, centroids, hw_counter)
     }
 
     /// Score two points inside endoded data by their indexes
@@ -615,11 +614,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     fn flusher(&self) -> MmapFlusher {
         self.encoded_vectors.flusher()
     }
-}
 
-impl<TStorage: EncodedStorage> EncodedVectorsBytes for EncodedVectorsPQ<TStorage> {
-    fn score_point_vs_bytes(
+    type SupportsBytes = True;
+    fn score_bytes(
         &self,
+        _: Self::SupportsBytes,
         query: &Self::EncodedQuery,
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,

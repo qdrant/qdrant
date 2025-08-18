@@ -1,3 +1,5 @@
+use bytemuck::TransparentWrapper;
+use common::typelevel::{TBool, TOption};
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -35,10 +37,31 @@ pub trait QueryScorer {
     fn score(&self, v2: &Self::TVector) -> ScoreType;
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
+
+    type SupportsBytes: TBool;
+    fn score_bytes(&self, _: Self::SupportsBytes, bytes: &[u8]) -> ScoreType;
 }
 
 pub trait QueryScorerBytes {
     fn score_bytes(&self, bytes: &[u8]) -> ScoreType;
+}
+
+#[derive(TransparentWrapper)]
+#[repr(transparent)]
+pub struct QueryScorerBytesImpl<TQueryScorer: QueryScorer>(
+    <TQueryScorer::SupportsBytes as TBool>::TOption<TQueryScorer>,
+);
+
+impl<TQueryScorer: QueryScorer> QueryScorerBytesImpl<TQueryScorer> {
+    pub fn new(query_scorer: &TQueryScorer) -> Option<&Self> {
+        TQueryScorer::SupportsBytes::then_some_ref(query_scorer).map(Self::wrap_ref)
+    }
+}
+
+impl<TQueryScorer: QueryScorer> QueryScorerBytes for QueryScorerBytesImpl<TQueryScorer> {
+    fn score_bytes(&self, bytes: &[u8]) -> ScoreType {
+        self.0.get().score_bytes(self.0.is_some(), bytes)
+    }
 }
 
 /// Colbert MaxSim metric, metric for multi-dense vectors
