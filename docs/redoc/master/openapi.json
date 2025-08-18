@@ -6739,6 +6739,17 @@
               }
             ]
           },
+          "fallback_shard_key": {
+            "description": "Fallback shard key to use if specified shard key is not found",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "replication_factor": {
             "description": "Number of replicas for each shard",
             "default": 1,
@@ -7089,6 +7100,20 @@
         "enum": [
           "auto",
           "custom"
+        ]
+      },
+      "ShardKey": {
+        "anyOf": [
+          {
+            "type": "string",
+            "example": "region_1"
+          },
+          {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "example": 12
+          }
         ]
       },
       "SparseVectorParams": {
@@ -7978,20 +8003,6 @@
             "items": {
               "$ref": "#/components/schemas/ShardKey"
             }
-          }
-        ]
-      },
-      "ShardKey": {
-        "anyOf": [
-          {
-            "type": "string",
-            "example": "region_1"
-          },
-          {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0,
-            "example": 12
           }
         ]
       },
@@ -9596,6 +9607,17 @@
               }
             ]
           },
+          "fallback_shard_key": {
+            "description": "Fallback shard key to use when specified shard key doesn't exist.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "replication_factor": {
             "description": "Number of shards replicas. Default is 1 Minimum is 1",
             "default": null,
@@ -10137,6 +10159,17 @@
             "format": "uint32",
             "minimum": 1,
             "nullable": true
+          },
+          "fallback_shard_key": {
+            "description": "Fallback shard to use if specific shard doesn't exist",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "write_consistency_factor": {
             "description": "Minimal number successful responses from replicas to consider operation successful",
