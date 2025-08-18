@@ -4,7 +4,7 @@ use std::iter;
 
 use api::conversions::json::payload_to_proto;
 use api::rest::{
-    DenseVector, MultiDenseVector, Record, ShardKeySelector, VectorOutput, VectorStructOutput,
+    DenseVector, MultiDenseVector, ShardKeySelector, VectorOutput, VectorStructOutput,
 };
 use common::validation::validate_multi_vector;
 use itertools::Itertools as _;
@@ -26,106 +26,19 @@ use super::payload_ops::*;
 use super::vector_ops::*;
 use super::*;
 
-/// Single vector data, as it is persisted in WAL
-/// Unlike [`api::rest::Vector`], this struct only stores raw vectors, inferenced or resolved.
-/// Unlike [`VectorInternal`], is not optimized for search
-#[derive(Clone, PartialEq, Deserialize, Serialize)]
-#[serde(untagged, rename_all = "snake_case")]
-pub enum VectorPersisted {
-    Dense(DenseVector),
-    Sparse(sparse::common::sparse_vector::SparseVector),
-    MultiDense(MultiDenseVector),
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct PointIdsList {
+    pub points: Vec<PointIdType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
 }
 
-impl VectorPersisted {
-    pub fn new_sparse(indices: Vec<DimId>, values: Vec<DimWeight>) -> Self {
-        Self::Sparse(sparse::common::sparse_vector::SparseVector { indices, values })
-    }
-
-    pub fn empty_sparse() -> Self {
-        Self::new_sparse(vec![], vec![])
-    }
-}
-
-impl Debug for VectorPersisted {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VectorPersisted::Dense(vector) => {
-                let first_elements = vector.iter().take(4).join(", ");
-                write!(f, "Dense([{}, ... x {}])", first_elements, vector.len())
-            }
-            VectorPersisted::Sparse(vector) => {
-                let first_elements = vector
-                    .indices
-                    .iter()
-                    .zip(vector.values.iter())
-                    .take(4)
-                    .map(|(k, v)| format!("{k}->{v}"))
-                    .join(", ");
-                write!(
-                    f,
-                    "Sparse([{}, ... x {})",
-                    first_elements,
-                    vector.indices.len()
-                )
-            }
-            VectorPersisted::MultiDense(vector) => {
-                let first_vectors = vector
-                    .iter()
-                    .take(4)
-                    .map(|v| {
-                        let first_elements = v.iter().take(4).join(", ");
-                        format!("[{}, ... x {}]", first_elements, v.len())
-                    })
-                    .join(", ");
-                write!(f, "MultiDense([{}, ... x {})", first_vectors, vector.len())
-            }
-        }
-    }
-}
-
-impl Validate for VectorPersisted {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            VectorPersisted::Dense(_) => Ok(()),
-            VectorPersisted::Sparse(v) => v.validate(),
-            VectorPersisted::MultiDense(m) => validate_multi_vector(m),
-        }
-    }
-}
-
-impl From<VectorInternal> for VectorPersisted {
-    fn from(value: VectorInternal) -> Self {
-        match value {
-            VectorInternal::Dense(vector) => VectorPersisted::Dense(vector),
-            VectorInternal::Sparse(vector) => VectorPersisted::Sparse(vector),
-            VectorInternal::MultiDense(vector) => {
-                VectorPersisted::MultiDense(vector.into_multi_vectors())
-            }
-        }
-    }
-}
-
-impl From<VectorOutput> for VectorPersisted {
-    fn from(value: VectorOutput) -> Self {
-        match value {
-            VectorOutput::Dense(vector) => VectorPersisted::Dense(vector),
-            VectorOutput::Sparse(vector) => VectorPersisted::Sparse(vector),
-            VectorOutput::MultiDense(vector) => VectorPersisted::MultiDense(vector),
-        }
-    }
-}
-
-impl From<VectorPersisted> for VectorInternal {
-    fn from(value: VectorPersisted) -> Self {
-        match value {
-            VectorPersisted::Dense(vector) => VectorInternal::Dense(vector),
-            VectorPersisted::Sparse(vector) => VectorInternal::Sparse(vector),
-            VectorPersisted::MultiDense(vector) => {
-                // the REST vectors have been validated already
-                // we can use an internal constructor
-                VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(vector))
-            }
+impl From<Vec<PointIdType>> for PointIdsList {
+    fn from(points: Vec<PointIdType>) -> Self {
+        Self {
+            points,
+            shard_key: None,
         }
     }
 }
@@ -175,252 +88,57 @@ impl From<VectorPersisted> for VectorInternal {
 //                                  ▼
 //                              gPRC Response
 
-/// Data structure for point vectors, as it is persisted in WAL
-#[derive(Clone, PartialEq, Deserialize, Serialize)]
-#[serde(untagged, rename_all = "snake_case")]
-pub enum VectorStructPersisted {
-    Single(DenseVector),
-    MultiDense(MultiDenseVector),
-    Named(HashMap<VectorNameBuf, VectorPersisted>),
-}
-
-impl Debug for VectorStructPersisted {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VectorStructPersisted::Single(vector) => {
-                let first_elements = vector.iter().take(4).join(", ");
-                write!(f, "Single([{}, ... x {}])", first_elements, vector.len())
-            }
-            VectorStructPersisted::MultiDense(vector) => {
-                let first_vectors = vector
-                    .iter()
-                    .take(4)
-                    .map(|v| {
-                        let first_elements = v.iter().take(4).join(", ");
-                        format!("[{}, ... x {}]", first_elements, v.len())
-                    })
-                    .join(", ");
-                write!(f, "MultiDense([{}, ... x {})", first_vectors, vector.len())
-            }
-            VectorStructPersisted::Named(vectors) => write!(f, "Named(( ")
-                .and_then(|_| {
-                    for (name, vector) in vectors {
-                        write!(f, "{name}: {vector:?}, ")?;
-                    }
-                    Ok(())
-                })
-                .and_then(|_| write!(f, "))")),
-        }
-    }
-}
-
-impl VectorStructPersisted {
-    /// Check if this vector struct is empty.
-    pub fn is_empty(&self) -> bool {
-        match self {
-            VectorStructPersisted::Single(vector) => vector.is_empty(),
-            VectorStructPersisted::MultiDense(vector) => vector.is_empty(),
-            VectorStructPersisted::Named(vectors) => vectors.values().all(|v| match v {
-                VectorPersisted::Dense(vector) => vector.is_empty(),
-                VectorPersisted::Sparse(vector) => vector.indices.is_empty(),
-                VectorPersisted::MultiDense(vector) => vector.is_empty(),
-            }),
-        }
-    }
-}
-
-impl Validate for VectorStructPersisted {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            VectorStructPersisted::Single(_) => Ok(()),
-            VectorStructPersisted::MultiDense(v) => validate_multi_vector(v),
-            VectorStructPersisted::Named(v) => common::validation::validate_iter(v.values()),
-        }
-    }
-}
-
-impl From<DenseVector> for VectorStructPersisted {
-    fn from(value: DenseVector) -> Self {
-        VectorStructPersisted::Single(value)
-    }
-}
-
-impl From<VectorStructInternal> for VectorStructPersisted {
-    fn from(value: VectorStructInternal) -> Self {
-        match value {
-            VectorStructInternal::Single(vector) => VectorStructPersisted::Single(vector),
-            VectorStructInternal::MultiDense(vector) => {
-                VectorStructPersisted::MultiDense(vector.into_multi_vectors())
-            }
-            VectorStructInternal::Named(vectors) => VectorStructPersisted::Named(
-                vectors
-                    .into_iter()
-                    .map(|(k, v)| (k, VectorPersisted::from(v)))
-                    .collect(),
-            ),
-        }
-    }
-}
-
-impl From<VectorStructOutput> for VectorStructPersisted {
-    fn from(value: VectorStructOutput) -> Self {
-        match value {
-            VectorStructOutput::Single(vector) => VectorStructPersisted::Single(vector),
-            VectorStructOutput::MultiDense(vector) => VectorStructPersisted::MultiDense(vector),
-            VectorStructOutput::Named(vectors) => VectorStructPersisted::Named(
-                vectors
-                    .into_iter()
-                    .map(|(k, v)| (k, VectorPersisted::from(v)))
-                    .collect(),
-            ),
-        }
-    }
-}
-
-impl TryFrom<VectorStructPersisted> for VectorStructInternal {
-    type Error = OperationError;
-    fn try_from(value: VectorStructPersisted) -> Result<Self, Self::Error> {
-        let vector_struct = match value {
-            VectorStructPersisted::Single(vector) => VectorStructInternal::Single(vector),
-            VectorStructPersisted::MultiDense(vector) => {
-                VectorStructInternal::MultiDense(MultiDenseVectorInternal::try_from(vector)?)
-            }
-            VectorStructPersisted::Named(vectors) => VectorStructInternal::Named(
-                vectors
-                    .into_iter()
-                    .map(|(k, v)| (k, VectorInternal::from(v)))
-                    .collect(),
-            ),
-        };
-        Ok(vector_struct)
-    }
-}
-
-impl From<VectorStructPersisted> for NamedVectors<'_> {
-    fn from(value: VectorStructPersisted) -> Self {
-        match value {
-            VectorStructPersisted::Single(vector) => {
-                NamedVectors::from_pairs([(DEFAULT_VECTOR_NAME.to_owned(), vector)])
-            }
-            VectorStructPersisted::MultiDense(vector) => {
-                let mut named_vector = NamedVectors::default();
-                let multivec = MultiDenseVectorInternal::new_unchecked(vector);
-
-                named_vector.insert(
-                    DEFAULT_VECTOR_NAME.to_owned(),
-                    segment::data_types::vectors::VectorInternal::from(multivec),
-                );
-                named_vector
-            }
-            VectorStructPersisted::Named(vectors) => {
-                let mut named_vector = NamedVectors::default();
-                for (name, vector) in vectors {
-                    named_vector.insert(
-                        name,
-                        segment::data_types::vectors::VectorInternal::from(vector),
-                    );
-                }
-                named_vector
-            }
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 #[serde(rename_all = "snake_case")]
-pub struct PointStructPersisted {
-    /// Point id
-    pub id: PointIdType,
-    /// Vectors
-    pub vector: VectorStructPersisted,
-    /// Payload values (optional)
-    pub payload: Option<Payload>,
+pub enum PointOperations {
+    /// Insert or update points
+    UpsertPoints(PointInsertOperationsInternal),
+    /// Insert points, or update existing points if condition matches
+    UpsertPointsConditional(ConditionalInsertOperationInternal),
+    /// Delete point if exists
+    DeletePoints { ids: Vec<PointIdType> },
+    /// Delete points by given filter criteria
+    DeletePointsByFilter(Filter),
+    /// Points Sync
+    SyncPoints(PointSyncOperation),
 }
 
-impl PointStructPersisted {
-    pub fn get_vectors(&self) -> NamedVectors<'_> {
-        let mut named_vectors = NamedVectors::default();
-        match &self.vector {
-            VectorStructPersisted::Single(vector) => named_vectors.insert(
-                DEFAULT_VECTOR_NAME.to_owned(),
-                VectorInternal::from(vector.clone()),
-            ),
-            VectorStructPersisted::MultiDense(vector) => named_vectors.insert(
-                DEFAULT_VECTOR_NAME.to_owned(),
-                VectorInternal::from(MultiDenseVectorInternal::new_unchecked(vector.clone())),
-            ),
-            VectorStructPersisted::Named(vectors) => {
-                for (name, vector) in vectors {
-                    named_vectors.insert(name.clone(), VectorInternal::from(vector.clone()));
-                }
+impl PointOperations {
+    pub fn is_write_operation(&self) -> bool {
+        match self {
+            PointOperations::UpsertPoints(_) => true,
+            PointOperations::UpsertPointsConditional(_) => true,
+            PointOperations::DeletePoints { .. } => false,
+            PointOperations::DeletePointsByFilter(_) => false,
+            PointOperations::SyncPoints(_) => true,
+        }
+    }
+
+    pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
+        match self {
+            Self::UpsertPoints(op) => Some(op.point_ids()),
+            Self::UpsertPointsConditional(op) => Some(op.points_op.point_ids()),
+            Self::DeletePoints { ids } => Some(ids.clone()),
+            Self::DeletePointsByFilter(_) => None,
+            Self::SyncPoints(op) => Some(op.points.iter().map(|point| point.id).collect()),
+        }
+    }
+
+    pub fn retain_point_ids<F>(&mut self, filter: F)
+    where
+        F: Fn(&PointIdType) -> bool,
+    {
+        match self {
+            Self::UpsertPoints(op) => op.retain_point_ids(filter),
+            Self::UpsertPointsConditional(op) => {
+                op.points_op.retain_point_ids(filter);
             }
-        }
-        named_vectors
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(untagged, rename_all = "snake_case")]
-pub enum BatchVectorStructPersisted {
-    Single(Vec<DenseVector>),
-    MultiDense(Vec<MultiDenseVector>),
-    Named(HashMap<VectorNameBuf, Vec<VectorPersisted>>),
-}
-
-impl From<BatchVectorStructPersisted> for BatchVectorStructInternal {
-    fn from(value: BatchVectorStructPersisted) -> Self {
-        match value {
-            BatchVectorStructPersisted::Single(vector) => BatchVectorStructInternal::Single(vector),
-            BatchVectorStructPersisted::MultiDense(vectors) => {
-                BatchVectorStructInternal::MultiDense(
-                    vectors
-                        .into_iter()
-                        .map(MultiDenseVectorInternal::new_unchecked)
-                        .collect(),
-                )
-            }
-            BatchVectorStructPersisted::Named(vectors) => BatchVectorStructInternal::Named(
-                vectors
-                    .into_iter()
-                    .map(|(k, v)| (k, v.into_iter().map(VectorInternal::from).collect()))
-                    .collect(),
-            ),
+            Self::DeletePoints { ids } => ids.retain(filter),
+            Self::DeletePointsByFilter(_) => (),
+            Self::SyncPoints(op) => op.points.retain(|point| filter(&point.id)),
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub struct BatchPersisted {
-    pub ids: Vec<PointIdType>,
-    pub vectors: BatchVectorStructPersisted,
-    pub payloads: Option<Vec<Option<Payload>>>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
-pub struct PointIdsList {
-    pub points: Vec<PointIdType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shard_key: Option<ShardKeySelector>,
-}
-
-impl From<Vec<PointIdType>> for PointIdsList {
-    fn from(points: Vec<PointIdType>) -> Self {
-        Self {
-            points,
-            shard_key: None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-pub struct PointSyncOperation {
-    /// Minimal id of the sync range
-    pub from_id: Option<PointIdType>,
-    /// Maximal id og
-    pub to_id: Option<PointIdType>,
-    pub points: Vec<PointStructPersisted>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
@@ -433,13 +151,6 @@ pub enum PointInsertOperationsInternal {
     /// Insert points from a list
     #[serde(rename = "points")]
     PointsList(Vec<PointStructPersisted>),
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-pub struct ConditionalInsertOperationInternal {
-    pub points_op: PointInsertOperationsInternal,
-    /// Condition to check, if the point already exists
-    pub condition: Filter,
 }
 
 impl PointInsertOperationsInternal {
@@ -664,19 +375,6 @@ impl PointInsertOperationsInternal {
     }
 }
 
-fn retain_with_index<T, F>(vec: &mut Vec<T>, mut filter: F)
-where
-    F: FnMut(usize, &T) -> bool,
-{
-    let mut index = 0;
-
-    vec.retain(|item| {
-        let retain = filter(index, item);
-        index += 1;
-        retain
-    });
-}
-
 impl From<BatchPersisted> for PointInsertOperationsInternal {
     fn from(batch: BatchPersisted) -> Self {
         PointInsertOperationsInternal::PointsBatch(batch)
@@ -689,84 +387,28 @@ impl From<Vec<PointStructPersisted>> for PointInsertOperationsInternal {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
-#[strum_discriminants(derive(EnumIter))]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct ConditionalInsertOperationInternal {
+    pub points_op: PointInsertOperationsInternal,
+    /// Condition to check, if the point already exists
+    pub condition: Filter,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct PointSyncOperation {
+    /// Minimal id of the sync range
+    pub from_id: Option<PointIdType>,
+    /// Maximal id og
+    pub to_id: Option<PointIdType>,
+    pub points: Vec<PointStructPersisted>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PointOperations {
-    /// Insert or update points
-    UpsertPoints(PointInsertOperationsInternal),
-    /// Insert points, or update existing points if condition matches
-    UpsertPointsConditional(ConditionalInsertOperationInternal),
-    /// Delete point if exists
-    DeletePoints { ids: Vec<PointIdType> },
-    /// Delete points by given filter criteria
-    DeletePointsByFilter(Filter),
-    /// Points Sync
-    SyncPoints(PointSyncOperation),
-}
-
-impl PointOperations {
-    pub fn is_write_operation(&self) -> bool {
-        match self {
-            PointOperations::UpsertPoints(_) => true,
-            PointOperations::UpsertPointsConditional(_) => true,
-            PointOperations::DeletePoints { .. } => false,
-            PointOperations::DeletePointsByFilter(_) => false,
-            PointOperations::SyncPoints(_) => true,
-        }
-    }
-
-    pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
-        match self {
-            Self::UpsertPoints(op) => Some(op.point_ids()),
-            Self::UpsertPointsConditional(op) => Some(op.points_op.point_ids()),
-            Self::DeletePoints { ids } => Some(ids.clone()),
-            Self::DeletePointsByFilter(_) => None,
-            Self::SyncPoints(op) => Some(op.points.iter().map(|point| point.id).collect()),
-        }
-    }
-
-    pub fn retain_point_ids<F>(&mut self, filter: F)
-    where
-        F: Fn(&PointIdType) -> bool,
-    {
-        match self {
-            Self::UpsertPoints(op) => op.retain_point_ids(filter),
-            Self::UpsertPointsConditional(op) => {
-                op.points_op.retain_point_ids(filter);
-            }
-            Self::DeletePoints { ids } => ids.retain(filter),
-            Self::DeletePointsByFilter(_) => (),
-            Self::SyncPoints(op) => op.points.retain(|point| filter(&point.id)),
-        }
-    }
-}
-
-impl TryFrom<PointStructPersisted> for api::grpc::qdrant::PointStruct {
-    type Error = Status;
-
-    fn try_from(value: PointStructPersisted) -> Result<Self, Self::Error> {
-        let PointStructPersisted {
-            id,
-            vector,
-            payload,
-        } = value;
-
-        let vectors_internal = VectorStructInternal::try_from(vector)
-            .map_err(|e| Status::invalid_argument(format!("Failed to convert vectors: {e}")))?;
-
-        let vectors = api::grpc::qdrant::Vectors::from(vectors_internal);
-        let converted_payload = match payload {
-            None => HashMap::new(),
-            Some(payload) => payload_to_proto(payload),
-        };
-
-        Ok(Self {
-            id: Some(id.into()),
-            vectors: Some(vectors),
-            payload: converted_payload,
-        })
-    }
+pub struct BatchPersisted {
+    pub ids: Vec<PointIdType>,
+    pub vectors: BatchVectorStructPersisted,
+    pub payloads: Option<Vec<Option<Payload>>>,
 }
 
 impl TryFrom<BatchPersisted> for Vec<api::grpc::qdrant::PointStruct> {
@@ -804,11 +446,74 @@ impl TryFrom<BatchPersisted> for Vec<api::grpc::qdrant::PointStruct> {
     }
 }
 
-impl TryFrom<Record> for PointStructPersisted {
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum BatchVectorStructPersisted {
+    Single(Vec<DenseVector>),
+    MultiDense(Vec<MultiDenseVector>),
+    Named(HashMap<VectorNameBuf, Vec<VectorPersisted>>),
+}
+
+impl From<BatchVectorStructPersisted> for BatchVectorStructInternal {
+    fn from(value: BatchVectorStructPersisted) -> Self {
+        match value {
+            BatchVectorStructPersisted::Single(vector) => BatchVectorStructInternal::Single(vector),
+            BatchVectorStructPersisted::MultiDense(vectors) => {
+                BatchVectorStructInternal::MultiDense(
+                    vectors
+                        .into_iter()
+                        .map(MultiDenseVectorInternal::new_unchecked)
+                        .collect(),
+                )
+            }
+            BatchVectorStructPersisted::Named(vectors) => BatchVectorStructInternal::Named(
+                vectors
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into_iter().map(VectorInternal::from).collect()))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct PointStructPersisted {
+    /// Point id
+    pub id: PointIdType,
+    /// Vectors
+    pub vector: VectorStructPersisted,
+    /// Payload values (optional)
+    pub payload: Option<Payload>,
+}
+
+impl PointStructPersisted {
+    pub fn get_vectors(&self) -> NamedVectors<'_> {
+        let mut named_vectors = NamedVectors::default();
+        match &self.vector {
+            VectorStructPersisted::Single(vector) => named_vectors.insert(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorInternal::from(vector.clone()),
+            ),
+            VectorStructPersisted::MultiDense(vector) => named_vectors.insert(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorInternal::from(MultiDenseVectorInternal::new_unchecked(vector.clone())),
+            ),
+            VectorStructPersisted::Named(vectors) => {
+                for (name, vector) in vectors {
+                    named_vectors.insert(name.clone(), VectorInternal::from(vector.clone()));
+                }
+            }
+        }
+        named_vectors
+    }
+}
+
+impl TryFrom<api::rest::schema::Record> for PointStructPersisted {
     type Error = String;
 
-    fn try_from(record: Record) -> Result<Self, Self::Error> {
-        let Record {
+    fn try_from(record: api::rest::schema::Record) -> Result<Self, Self::Error> {
+        let api::rest::schema::Record {
             id,
             payload,
             vector,
@@ -826,4 +531,299 @@ impl TryFrom<Record> for PointStructPersisted {
             vector: VectorStructPersisted::from(vector.unwrap()),
         })
     }
+}
+
+impl TryFrom<PointStructPersisted> for api::grpc::qdrant::PointStruct {
+    type Error = Status;
+
+    fn try_from(value: PointStructPersisted) -> Result<Self, Self::Error> {
+        let PointStructPersisted {
+            id,
+            vector,
+            payload,
+        } = value;
+
+        let vectors_internal = VectorStructInternal::try_from(vector)
+            .map_err(|e| Status::invalid_argument(format!("Failed to convert vectors: {e}")))?;
+
+        let vectors = api::grpc::qdrant::Vectors::from(vectors_internal);
+        let converted_payload = match payload {
+            None => HashMap::new(),
+            Some(payload) => payload_to_proto(payload),
+        };
+
+        Ok(Self {
+            id: Some(id.into()),
+            vectors: Some(vectors),
+            payload: converted_payload,
+        })
+    }
+}
+
+/// Data structure for point vectors, as it is persisted in WAL
+#[derive(Clone, PartialEq, Deserialize, Serialize)]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum VectorStructPersisted {
+    Single(DenseVector),
+    MultiDense(MultiDenseVector),
+    Named(HashMap<VectorNameBuf, VectorPersisted>),
+}
+
+impl Debug for VectorStructPersisted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VectorStructPersisted::Single(vector) => {
+                let first_elements = vector.iter().take(4).join(", ");
+                write!(f, "Single([{}, ... x {}])", first_elements, vector.len())
+            }
+            VectorStructPersisted::MultiDense(vector) => {
+                let first_vectors = vector
+                    .iter()
+                    .take(4)
+                    .map(|v| {
+                        let first_elements = v.iter().take(4).join(", ");
+                        format!("[{}, ... x {}]", first_elements, v.len())
+                    })
+                    .join(", ");
+                write!(f, "MultiDense([{}, ... x {})", first_vectors, vector.len())
+            }
+            VectorStructPersisted::Named(vectors) => write!(f, "Named(( ")
+                .and_then(|_| {
+                    for (name, vector) in vectors {
+                        write!(f, "{name}: {vector:?}, ")?;
+                    }
+                    Ok(())
+                })
+                .and_then(|_| write!(f, "))")),
+        }
+    }
+}
+
+impl VectorStructPersisted {
+    /// Check if this vector struct is empty.
+    pub fn is_empty(&self) -> bool {
+        match self {
+            VectorStructPersisted::Single(vector) => vector.is_empty(),
+            VectorStructPersisted::MultiDense(vector) => vector.is_empty(),
+            VectorStructPersisted::Named(vectors) => vectors.values().all(|v| match v {
+                VectorPersisted::Dense(vector) => vector.is_empty(),
+                VectorPersisted::Sparse(vector) => vector.indices.is_empty(),
+                VectorPersisted::MultiDense(vector) => vector.is_empty(),
+            }),
+        }
+    }
+}
+
+impl Validate for VectorStructPersisted {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            VectorStructPersisted::Single(_) => Ok(()),
+            VectorStructPersisted::MultiDense(v) => validate_multi_vector(v),
+            VectorStructPersisted::Named(v) => common::validation::validate_iter(v.values()),
+        }
+    }
+}
+
+impl From<DenseVector> for VectorStructPersisted {
+    fn from(value: DenseVector) -> Self {
+        VectorStructPersisted::Single(value)
+    }
+}
+
+impl From<VectorStructInternal> for VectorStructPersisted {
+    fn from(value: VectorStructInternal) -> Self {
+        match value {
+            VectorStructInternal::Single(vector) => VectorStructPersisted::Single(vector),
+            VectorStructInternal::MultiDense(vector) => {
+                VectorStructPersisted::MultiDense(vector.into_multi_vectors())
+            }
+            VectorStructInternal::Named(vectors) => VectorStructPersisted::Named(
+                vectors
+                    .into_iter()
+                    .map(|(k, v)| (k, VectorPersisted::from(v)))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+impl From<VectorStructOutput> for VectorStructPersisted {
+    fn from(value: VectorStructOutput) -> Self {
+        match value {
+            VectorStructOutput::Single(vector) => VectorStructPersisted::Single(vector),
+            VectorStructOutput::MultiDense(vector) => VectorStructPersisted::MultiDense(vector),
+            VectorStructOutput::Named(vectors) => VectorStructPersisted::Named(
+                vectors
+                    .into_iter()
+                    .map(|(k, v)| (k, VectorPersisted::from(v)))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+impl TryFrom<VectorStructPersisted> for VectorStructInternal {
+    type Error = OperationError;
+    fn try_from(value: VectorStructPersisted) -> Result<Self, Self::Error> {
+        let vector_struct = match value {
+            VectorStructPersisted::Single(vector) => VectorStructInternal::Single(vector),
+            VectorStructPersisted::MultiDense(vector) => {
+                VectorStructInternal::MultiDense(MultiDenseVectorInternal::try_from(vector)?)
+            }
+            VectorStructPersisted::Named(vectors) => VectorStructInternal::Named(
+                vectors
+                    .into_iter()
+                    .map(|(k, v)| (k, VectorInternal::from(v)))
+                    .collect(),
+            ),
+        };
+        Ok(vector_struct)
+    }
+}
+
+impl From<VectorStructPersisted> for NamedVectors<'_> {
+    fn from(value: VectorStructPersisted) -> Self {
+        match value {
+            VectorStructPersisted::Single(vector) => {
+                NamedVectors::from_pairs([(DEFAULT_VECTOR_NAME.to_owned(), vector)])
+            }
+            VectorStructPersisted::MultiDense(vector) => {
+                let mut named_vector = NamedVectors::default();
+                let multivec = MultiDenseVectorInternal::new_unchecked(vector);
+
+                named_vector.insert(
+                    DEFAULT_VECTOR_NAME.to_owned(),
+                    segment::data_types::vectors::VectorInternal::from(multivec),
+                );
+                named_vector
+            }
+            VectorStructPersisted::Named(vectors) => {
+                let mut named_vector = NamedVectors::default();
+                for (name, vector) in vectors {
+                    named_vector.insert(
+                        name,
+                        segment::data_types::vectors::VectorInternal::from(vector),
+                    );
+                }
+                named_vector
+            }
+        }
+    }
+}
+
+/// Single vector data, as it is persisted in WAL
+/// Unlike [`api::rest::Vector`], this struct only stores raw vectors, inferenced or resolved.
+/// Unlike [`VectorInternal`], is not optimized for search
+#[derive(Clone, PartialEq, Deserialize, Serialize)]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum VectorPersisted {
+    Dense(DenseVector),
+    Sparse(sparse::common::sparse_vector::SparseVector),
+    MultiDense(MultiDenseVector),
+}
+
+impl VectorPersisted {
+    pub fn new_sparse(indices: Vec<DimId>, values: Vec<DimWeight>) -> Self {
+        Self::Sparse(sparse::common::sparse_vector::SparseVector { indices, values })
+    }
+
+    pub fn empty_sparse() -> Self {
+        Self::new_sparse(vec![], vec![])
+    }
+}
+
+impl Debug for VectorPersisted {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VectorPersisted::Dense(vector) => {
+                let first_elements = vector.iter().take(4).join(", ");
+                write!(f, "Dense([{}, ... x {}])", first_elements, vector.len())
+            }
+            VectorPersisted::Sparse(vector) => {
+                let first_elements = vector
+                    .indices
+                    .iter()
+                    .zip(vector.values.iter())
+                    .take(4)
+                    .map(|(k, v)| format!("{k}->{v}"))
+                    .join(", ");
+                write!(
+                    f,
+                    "Sparse([{}, ... x {})",
+                    first_elements,
+                    vector.indices.len()
+                )
+            }
+            VectorPersisted::MultiDense(vector) => {
+                let first_vectors = vector
+                    .iter()
+                    .take(4)
+                    .map(|v| {
+                        let first_elements = v.iter().take(4).join(", ");
+                        format!("[{}, ... x {}]", first_elements, v.len())
+                    })
+                    .join(", ");
+                write!(f, "MultiDense([{}, ... x {})", first_vectors, vector.len())
+            }
+        }
+    }
+}
+
+impl Validate for VectorPersisted {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            VectorPersisted::Dense(_) => Ok(()),
+            VectorPersisted::Sparse(v) => v.validate(),
+            VectorPersisted::MultiDense(m) => validate_multi_vector(m),
+        }
+    }
+}
+
+impl From<VectorInternal> for VectorPersisted {
+    fn from(value: VectorInternal) -> Self {
+        match value {
+            VectorInternal::Dense(vector) => VectorPersisted::Dense(vector),
+            VectorInternal::Sparse(vector) => VectorPersisted::Sparse(vector),
+            VectorInternal::MultiDense(vector) => {
+                VectorPersisted::MultiDense(vector.into_multi_vectors())
+            }
+        }
+    }
+}
+
+impl From<VectorOutput> for VectorPersisted {
+    fn from(value: VectorOutput) -> Self {
+        match value {
+            VectorOutput::Dense(vector) => VectorPersisted::Dense(vector),
+            VectorOutput::Sparse(vector) => VectorPersisted::Sparse(vector),
+            VectorOutput::MultiDense(vector) => VectorPersisted::MultiDense(vector),
+        }
+    }
+}
+
+impl From<VectorPersisted> for VectorInternal {
+    fn from(value: VectorPersisted) -> Self {
+        match value {
+            VectorPersisted::Dense(vector) => VectorInternal::Dense(vector),
+            VectorPersisted::Sparse(vector) => VectorInternal::Sparse(vector),
+            VectorPersisted::MultiDense(vector) => {
+                // the REST vectors have been validated already
+                // we can use an internal constructor
+                VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(vector))
+            }
+        }
+    }
+}
+
+fn retain_with_index<T, F>(vec: &mut Vec<T>, mut filter: F)
+where
+    F: FnMut(usize, &T) -> bool,
+{
+    let mut index = 0;
+
+    vec.retain(|item| {
+        let retain = filter(index, item);
+        index += 1;
+        retain
+    });
 }
