@@ -642,6 +642,7 @@
 | read_fan_out_factor | [uint32](#uint32) | optional | Fan-out every read request to these many additional remote nodes (and return first available response) |
 | sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
 | sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | Configuration for sparse vectors |
+| fallback_shard_key | [ShardKey](#qdrant-ShardKey) | optional | Fallback shard key to use if provided shard key is not found |
 
 
 
@@ -660,6 +661,7 @@
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
 | on_disk_payload | [bool](#bool) | optional | If true - point&#39;s payload will not be stored in memory |
 | read_fan_out_factor | [uint32](#uint32) | optional | Fan-out every read request to these many additional remote nodes (and return first available response) |
+| fallback_shard_key | [ShardKey](#qdrant-ShardKey) | optional | Fallback shard key to use if provided shard key is not found |
 
 
 
@@ -705,6 +707,7 @@
 | sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
 | sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | Configuration for sparse vectors |
 | strict_mode_config | [StrictModeConfig](#qdrant-StrictModeConfig) | optional | Configuration for strict mode |
+| fallback_shard_key | [ShardKey](#qdrant-ShardKey) | optional | Fallback shard key to use if provided shard key is not found |
 
 
 
