@@ -16,6 +16,9 @@ pub struct PointVectorsPersisted {
 pub struct UpdateVectorsOp {
     /// Points with named vectors
     pub points: Vec<PointVectorsPersisted>,
+    /// Condition to check before updating vectors
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_filter: Option<Filter>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
