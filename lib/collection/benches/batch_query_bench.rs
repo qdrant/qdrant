@@ -32,7 +32,7 @@ use tokio::sync::RwLock;
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-fn setup() -> (TempDir, LocalShard) {
+fn setup() -> (TempDir, LocalShard, Runtime) {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
     let runtime = Runtime::new().unwrap();
@@ -99,7 +99,7 @@ fn setup() -> (TempDir, LocalShard) {
         .block_on(shard.update(rnd_batch.into(), true, HwMeasurementAcc::new()))
         .unwrap();
 
-    (storage_dir, shard)
+    (storage_dir, shard, runtime)
 }
 
 fn create_rnd_batch() -> CollectionUpdateOperations {
@@ -146,9 +146,8 @@ fn some_filters() -> Vec<Option<Filter>> {
 
 /// Compare nearest neighbors query vs normal search
 fn batch_search_bench(c: &mut Criterion) {
-    let (_tempdir, shard) = setup();
+    let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime = Runtime::new().unwrap();
     let search_runtime_handle = search_runtime.handle();
 
     let mut group = c.benchmark_group("batch-search-bench");
@@ -223,9 +222,8 @@ fn batch_search_bench(c: &mut Criterion) {
 }
 
 fn batch_rrf_query_bench(c: &mut Criterion) {
-    let (_tempdir, shard) = setup();
+    let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime = Runtime::new().unwrap();
     let search_runtime_handle = search_runtime.handle();
 
     let mut group = c.benchmark_group("batch-rrf-bench");
@@ -287,9 +285,8 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
 }
 
 fn batch_rescore_bench(c: &mut Criterion) {
-    let (_tempdir, shard) = setup();
+    let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime = Runtime::new().unwrap();
     let search_runtime_handle = search_runtime.handle();
 
     let mut group = c.benchmark_group("batch-rescore-bench");
