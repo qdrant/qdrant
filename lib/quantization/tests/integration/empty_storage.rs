@@ -29,7 +29,7 @@ mod tests {
             EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
         let _encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            TestEncodedStorageBuilder::new(Some(data_path.as_path()), quantized_vector_size),
             &vector_parameters,
             vectors_count,
             None,
@@ -69,7 +69,7 @@ mod tests {
             );
         let _encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            TestEncodedStorageBuilder::new(Some(data_path.as_path()), quantized_vector_size),
             &vector_parameters,
             vectors_count,
             2,
@@ -109,7 +109,7 @@ mod tests {
             );
         let _encoded = EncodedVectorsBin::<u8, _>::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            TestEncodedStorageBuilder::new(Some(data_path.as_path()), quantized_vector_size),
             &vector_parameters,
             quantization::encoded_vectors_binary::Encoding::OneBit,
             QueryEncoding::SameAsStorage,
