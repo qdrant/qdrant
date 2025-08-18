@@ -18,19 +18,20 @@ pub struct QuantizedRamStorage {
 }
 
 impl quantization::EncodedStorage for QuantizedRamStorage {
-    fn get_vector_data(&self, index: PointOffsetType, _vector_size: usize) -> &[u8] {
+    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
         self.vectors.get(index as VectorOffsetType)
     }
 
-    fn push_vector(
+    fn upsert_vector(
         &mut self,
+        id: PointOffsetType,
         vector: &[u8],
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
         self.vectors
-            .push(vector)
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::OutOfMemory, err.to_string()))?;
+            .insert(id as usize, vector)
+            .map_err(|err| std::io::Error::other(err.to_string()))?;
         Ok(())
     }
 
@@ -55,7 +56,7 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         false
     }
 
-    fn vectors_count(&self, _quantized_vector_size: usize) -> usize {
+    fn vectors_count(&self) -> usize {
         self.vectors.len()
     }
 

@@ -62,8 +62,9 @@ pub trait EncodedVectors: Sized {
     /// Some implementations may not support this, in which case they should return `None`.
     fn encode_internal_vector(&self, id: PointOffsetType) -> Option<Self::EncodedQuery>;
 
-    fn push_vector(
+    fn upsert_vector(
         &mut self,
+        id: PointOffsetType,
         vector: &[f32],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()>;

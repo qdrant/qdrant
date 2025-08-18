@@ -4,7 +4,7 @@ mod tests {
     use std::time::Duration;
 
     use common::counter::hardware_counter::HardwareCounterCell;
-    use quantization::encoded_storage::TestEncodedStorageBuilder;
+    use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_pq::EncodedVectorsPQ;
     use rand::{Rng, SeedableRng};
@@ -24,15 +24,21 @@ mod tests {
         }
         let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                1,
+            );
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(None),
-            &VectorParameters {
-                dim: VECTOR_DIM,
-                deprecated_count: None,
-                distance_type: DistanceType::Dot,
-                invert: false,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             VECTORS_COUNT,
             1,
             1,
@@ -59,15 +65,21 @@ mod tests {
         }
         let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L2,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                1,
+            );
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(None),
-            &VectorParameters {
-                dim: VECTOR_DIM,
-                deprecated_count: None,
-                distance_type: DistanceType::L2,
-                invert: false,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             VECTORS_COUNT,
             1,
             1,
@@ -94,15 +106,21 @@ mod tests {
         }
         let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L1,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                1,
+            );
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(None),
-            &VectorParameters {
-                dim: VECTOR_DIM,
-                deprecated_count: None,
-                distance_type: DistanceType::L1,
-                invert: false,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             VECTORS_COUNT,
             1,
             1,
@@ -129,15 +147,21 @@ mod tests {
         }
         let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                1,
+            );
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(None),
-            &VectorParameters {
-                dim: VECTOR_DIM,
-                deprecated_count: None,
-                distance_type: DistanceType::Dot,
-                invert: true,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             VECTORS_COUNT,
             1,
             1,
@@ -164,15 +188,21 @@ mod tests {
         }
         let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L2,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                1,
+            );
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(None),
-            &VectorParameters {
-                dim: VECTOR_DIM,
-                deprecated_count: None,
-                distance_type: DistanceType::L2,
-                invert: true,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             VECTORS_COUNT,
             1,
             1,
@@ -199,15 +229,21 @@ mod tests {
         }
         let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::L1,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                1,
+            );
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(None),
-            &VectorParameters {
-                dim: VECTOR_DIM,
-                deprecated_count: None,
-                distance_type: DistanceType::L1,
-                invert: true,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             VECTORS_COUNT,
             1,
             1,
@@ -233,15 +269,21 @@ mod tests {
             vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
         }
 
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                1,
+            );
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(None),
-            &VectorParameters {
-                dim: VECTOR_DIM,
-                deprecated_count: None,
-                distance_type: DistanceType::Dot,
-                invert: false,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             VECTORS_COUNT,
             1,
             1,
@@ -266,15 +308,21 @@ mod tests {
             vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
         }
 
+        let vector_parameters = VectorParameters {
+            dim: VECTOR_DIM,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
+                &vector_parameters,
+                1,
+            );
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(None),
-            &VectorParameters {
-                dim: VECTOR_DIM,
-                deprecated_count: None,
-                distance_type: DistanceType::Dot,
-                invert: true,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             VECTORS_COUNT,
             1,
             1,
@@ -309,6 +357,19 @@ mod tests {
 
             let start_num_threads = num_threads::num_threads();
             let vector_data = vector_data.clone();
+
+            let vector_parameters = VectorParameters {
+                dim: VECTOR_DIM,
+                deprecated_count: None,
+                distance_type: DistanceType::Dot,
+                invert: false,
+            };
+            let quantized_vector_size =
+                EncodedVectorsPQ::<TestEncodedStorage>::get_quantized_vector_size(
+                    &vector_parameters,
+                    1,
+                );
+
             let result = std::thread::spawn(move || {
                 EncodedVectorsPQ::encode(
                     vector_data.iter().inspect(|_| {
@@ -321,13 +382,8 @@ mod tests {
                             std::thread::sleep(Duration::from_micros(100));
                         }
                     }),
-                    TestEncodedStorageBuilder::new(None),
-                    &VectorParameters {
-                        dim: VECTOR_DIM,
-                        deprecated_count: None,
-                        distance_type: DistanceType::Dot,
-                        invert: false,
-                    },
+                    TestEncodedStorageBuilder::new(None, quantized_vector_size),
+                    &vector_parameters,
                     VECTORS_COUNT,
                     1,
                     5,
