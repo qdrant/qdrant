@@ -50,7 +50,6 @@ use crate::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
     WalConfigDiff,
 };
-use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{FilterSelector, PointIdsList, PointsSelector, WriteOrdering};
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
@@ -891,7 +890,7 @@ pub fn try_points_selector_from_grpc(
     match points_selector_one_of {
         Some(api::grpc::qdrant::points_selector::PointsSelectorOneOf::Points(points)) => {
             let api::grpc::qdrant::PointsIdsList { ids } = points;
-            Ok(PointIdsSelector(PointIdsList {
+            Ok(PointsSelector::PointIdsSelector(PointIdsList {
                 points: ids
                     .into_iter()
                     .map(|p| p.try_into())

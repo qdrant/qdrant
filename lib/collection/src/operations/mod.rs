@@ -26,6 +26,32 @@ pub use shard::operations::*;
 use crate::hash_ring::{HashRingRouter, ShardIds};
 use crate::shards::shard::ShardId;
 
+/// Trait for Operation enums to split them by shard.
+pub trait SplitByShard {
+    fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self>
+    where
+        Self: Sized;
+}
+
+impl SplitByShard for CollectionUpdateOperations {
+    fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
+        match self {
+            CollectionUpdateOperations::PointOperation(operation) => operation
+                .split_by_shard(ring)
+                .map(CollectionUpdateOperations::PointOperation),
+            CollectionUpdateOperations::VectorOperation(operation) => operation
+                .split_by_shard(ring)
+                .map(CollectionUpdateOperations::VectorOperation),
+            CollectionUpdateOperations::PayloadOperation(operation) => operation
+                .split_by_shard(ring)
+                .map(CollectionUpdateOperations::PayloadOperation),
+            operation @ CollectionUpdateOperations::FieldIndexOperation(_) => {
+                OperationToShard::to_all(operation)
+            }
+        }
+    }
+}
+
 /// A mapping of operation to shard.
 /// Is a result of splitting one operation into several shards by corresponding PointIds
 pub enum OperationToShard<O> {
@@ -59,23 +85,6 @@ impl<O> OperationToShard<O> {
     }
 }
 
-/// Get the shards for a point ID
-///
-/// Normally returns a single shard ID. Might return multiple if resharding is currently in
-/// progress.
-///
-/// # Panics
-///
-/// Panics if the hash ring is empty and there is no shard for the given point ID.
-fn point_to_shards(point_id: &ExtendedPointId, ring: &HashRingRouter) -> ShardIds {
-    let shard_ids = ring.get(point_id);
-    assert!(
-        !shard_ids.is_empty(),
-        "Hash ring is guaranteed to be non-empty",
-    );
-    shard_ids
-}
-
 /// Split iterator of items that have point ids by shard
 fn split_iter_by_shard<I, F, O: Clone>(
     iter: I,
@@ -98,28 +107,19 @@ where
     OperationToShard::by_shard(op_vec_by_shard)
 }
 
-/// Trait for Operation enums to split them by shard.
-pub trait SplitByShard {
-    fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self>
-    where
-        Self: Sized;
-}
-
-impl SplitByShard for CollectionUpdateOperations {
-    fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
-        match self {
-            CollectionUpdateOperations::PointOperation(operation) => operation
-                .split_by_shard(ring)
-                .map(CollectionUpdateOperations::PointOperation),
-            CollectionUpdateOperations::VectorOperation(operation) => operation
-                .split_by_shard(ring)
-                .map(CollectionUpdateOperations::VectorOperation),
-            CollectionUpdateOperations::PayloadOperation(operation) => operation
-                .split_by_shard(ring)
-                .map(CollectionUpdateOperations::PayloadOperation),
-            operation @ CollectionUpdateOperations::FieldIndexOperation(_) => {
-                OperationToShard::to_all(operation)
-            }
-        }
-    }
+/// Get the shards for a point ID
+///
+/// Normally returns a single shard ID. Might return multiple if resharding is currently in
+/// progress.
+///
+/// # Panics
+///
+/// Panics if the hash ring is empty and there is no shard for the given point ID.
+fn point_to_shards(point_id: &ExtendedPointId, ring: &HashRingRouter) -> ShardIds {
+    let shard_ids = ring.get(point_id);
+    assert!(
+        !shard_ids.is_empty(),
+        "Hash ring is guaranteed to be non-empty",
+    );
+    shard_ids
 }
