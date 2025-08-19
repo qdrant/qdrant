@@ -284,7 +284,7 @@ def main():
       - Parse CLI args (host/port/query/user/topk).
       - Load docs, ensure collection, upsert points.
       - Build pre-filter from user claims (tenant + sensitivity).
-      - Run vector search via query_points(..., filter=...).
+      - Run vector search via query_points(..., query_filter=...).
       - Rank the same allowed set with a keyword score.
       - Fuse with RRF; apply postcheck; print top-k.
       - Compute tiny metrics (hits@k / precision@k / recall@k).
