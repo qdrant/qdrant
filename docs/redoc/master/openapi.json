@@ -8626,6 +8626,9 @@
             "$ref": "#/components/schemas/MatchText"
           },
           {
+            "$ref": "#/components/schemas/MatchTextAny"
+          },
+          {
             "$ref": "#/components/schemas/MatchPhrase"
           },
           {
@@ -8670,6 +8673,18 @@
         ],
         "properties": {
           "text": {
+            "type": "string"
+          }
+        }
+      },
+      "MatchTextAny": {
+        "description": "Full-text match of at least one token of the string.",
+        "type": "object",
+        "required": [
+          "text_any"
+        ],
+        "properties": {
+          "text_any": {
             "type": "string"
           }
         }

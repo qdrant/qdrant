@@ -6685,7 +6685,7 @@ pub struct FieldCondition {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -6721,6 +6721,9 @@ pub mod r#match {
         /// Match phrase text
         #[prost(string, tag = "9")]
         Phrase(::prost::alloc::string::String),
+        /// Match any word in the text
+        #[prost(string, tag = "10")]
+        TextAny(::prost::alloc::string::String),
     }
 }
 #[derive(serde::Serialize)]

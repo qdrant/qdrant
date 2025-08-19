@@ -306,6 +306,21 @@ impl FullTextIndex {
         Some(ParsedQuery::AllTokens(tokens))
     }
 
+    pub fn parse_text_any_query(
+        &self,
+        text: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ParsedQuery> {
+        let mut tokens = AHashSet::new();
+        self.get_tokenizer().tokenize_query(text, |token| {
+            if let Some(token_id) = self.get_token(token.as_ref(), hw_counter) {
+                tokens.insert(token_id);
+            }
+        });
+        let tokens = tokens.into_iter().collect::<TokenSet>();
+        Some(ParsedQuery::AnyTokens(tokens))
+    }
+
     pub fn parse_tokenset(&self, text: &str, hw_counter: &HardwareCounterCell) -> TokenSet {
         let mut tokenset = AHashSet::new();
         self.get_tokenizer().tokenize_doc(text, |token| {

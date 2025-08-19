@@ -1114,6 +1114,7 @@ message Match {
     RepeatedIntegers except_integers = 7; // Match any other value except those integers
     RepeatedStrings except_keywords = 8; // Match any other value except those keywords
     string phrase = 9; // Match phrase text
+    string text_any = 10; // Match any word in the text
   }
 }
 
