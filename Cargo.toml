@@ -229,7 +229,7 @@ memmap2 = "0.9.7"
 nix = { version = "0.29", features = ["fs"] }
 num-traits = "0.2.19"
 ordered-float = { version = "5.0.0", features = ["serde", "schemars"] }
-rayon = "1.10.0"
+rayon = "1.11.0"
 parking_lot = { version = "0.12.4", features = ["deadlock_detection", "serde"] }
 ph = "0.8.5"
 pprof = { version = "0.14.1", features = ["flamegraph", "prost-codec"] }
