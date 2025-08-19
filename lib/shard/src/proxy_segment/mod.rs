@@ -55,7 +55,10 @@ impl ProxySegment {
                 let already_deleted = raw_segment_guard.get_deleted_points_bitvec();
                 Some(already_deleted)
             }
-            LockedSegment::Proxy(_) => None,
+            LockedSegment::Proxy(_) => {
+                log::debug!("Double proxy segment creation");
+                None
+            }
         };
         let wrapped_config = segment.get().read().config().clone();
         ProxySegment {
