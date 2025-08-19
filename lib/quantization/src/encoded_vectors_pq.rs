@@ -5,7 +5,7 @@ use std::arch::aarch64::*;
 use std::arch::x86_64::*;
 use std::iter::repeat_with;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -29,6 +29,7 @@ pub const CENTROIDS_COUNT: usize = 256;
 pub struct EncodedVectorsPQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
+    metadata_path: Option<PathBuf>,
 }
 
 /// PQ lookup table
@@ -129,6 +130,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
             Ok(Self {
                 encoded_vectors,
                 metadata,
+                metadata_path: meta_path.map(PathBuf::from),
             })
         } else {
             Err(EncodingError::Stopped)
@@ -485,6 +487,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         let result = Self {
             encoded_vectors,
             metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
         };
         Ok(result)
     }
@@ -606,6 +609,22 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
 
     fn flusher(&self) -> MmapFlusher {
         self.encoded_vectors.flusher()
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = self.encoded_vectors.files();
+        if let Some(meta_path) = &self.metadata_path {
+            files.push(meta_path.clone());
+        }
+        files
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = self.encoded_vectors.immutable_files();
+        if let Some(meta_path) = &self.metadata_path {
+            files.push(meta_path.clone());
+        }
+        files
     }
 
     type SupportsBytes = True;

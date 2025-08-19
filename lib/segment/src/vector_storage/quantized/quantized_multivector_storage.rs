@@ -1,5 +1,5 @@
 use std::ops::DerefMut;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::False;
@@ -39,9 +39,32 @@ pub trait MultivectorOffsetsStorage: Sized {
     ) -> std::io::Result<()>;
 
     fn flusher(&self) -> MmapFlusher;
+
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf>;
 }
 
-impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
+pub struct MultivectorOffsetsStorageRam {
+    offsets: Vec<MultivectorOffset>,
+    path: PathBuf,
+}
+
+impl MultivectorOffsetsStorageRam {
+    pub fn create(
+        path: &Path,
+        offsets: impl Iterator<Item = MultivectorOffset>,
+    ) -> OperationResult<Self> {
+        let offsets: Vec<_> = offsets.collect();
+        create_offsets_file_from_iter(path, offsets.len(), offsets.iter().cloned())?;
+        Ok(MultivectorOffsetsStorageRam {
+            path: path.to_path_buf(),
+            offsets,
+        })
+    }
+}
+
+impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
     fn load(path: &Path) -> OperationResult<Self> {
         let offsets_file = std::fs::OpenOptions::new()
             .read(true)
@@ -50,15 +73,18 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
         let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
         let mut offsets_mmap_type =
             unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
-        Ok(offsets_mmap_type.deref_mut().iter().copied().collect())
+        Ok(MultivectorOffsetsStorageRam {
+            offsets: offsets_mmap_type.deref_mut().iter().copied().collect(),
+            path: path.to_path_buf(),
+        })
     }
 
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
-        self[idx as usize]
+        self.offsets[idx as usize]
     }
 
     fn len(&self) -> usize {
-        self.len()
+        self.offsets.len()
     }
 
     fn upsert_offset(
@@ -69,20 +95,41 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
     ) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
         if id as usize >= self.len() {
-            self.resize(id as usize + 1, MultivectorOffset::default());
+            self.offsets
+                .resize(id as usize + 1, MultivectorOffset::default());
         }
-        self[id as usize] = offset;
+        self.offsets[id as usize] = offset;
         Ok(())
     }
 
     fn flusher(&self) -> MmapFlusher {
         Box::new(|| Ok(()))
     }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
 }
 
 #[derive(Debug)]
 pub struct MultivectorOffsetsStorageMmap {
     offsets: MmapSlice<MultivectorOffset>,
+    path: PathBuf,
+}
+
+impl MultivectorOffsetsStorageMmap {
+    pub fn create(
+        path: &Path,
+        offsets: impl Iterator<Item = MultivectorOffset>,
+        count: usize,
+    ) -> OperationResult<Self> {
+        create_offsets_file_from_iter(path, count, offsets)?;
+        MultivectorOffsetsStorageMmap::load(path)
+    }
 }
 
 impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
@@ -93,7 +140,10 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
             .open(path)?;
         let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
         let offsets = unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
-        Ok(Self { offsets })
+        Ok(Self {
+            offsets,
+            path: path.to_path_buf(),
+        })
     }
 
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
@@ -119,6 +169,14 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
     fn flusher(&self) -> MmapFlusher {
         // Mmap storage does not need a flusher, as it is non-appendable and already backed by a file.
         Box::new(|| Ok(()))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
     }
 }
 
@@ -375,6 +433,18 @@ where
         })
     }
 
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = self.quantized_storage.files();
+        files.extend(self.offsets.files());
+        files
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = self.quantized_storage.immutable_files();
+        files.extend(self.offsets.immutable_files());
+        files
+    }
+
     type SupportsBytes = False;
     fn score_bytes(
         &self,
@@ -398,7 +468,7 @@ where
     }
 }
 
-pub(super) fn create_offsets_file_from_iter(
+fn create_offsets_file_from_iter(
     path: &Path,
     count: usize,
     iter: impl Iterator<Item = MultivectorOffset>,
