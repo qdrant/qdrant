@@ -539,8 +539,10 @@ where
     T: IntoIterator<Item = &'a PointStructPersisted>,
 {
     let points_map: AHashMap<PointIdType, _> = points.into_iter().map(|p| (p.id, p)).collect();
-    let ids: Vec<PointIdType> = points_map.keys().copied().collect();
-
+    let mut ids: Vec<PointIdType> = points_map.keys().copied().collect();
+    // sort ids for determinism
+    ids.sort_unstable();
+    log::trace!("Upsert points op {op_num} with {ids:?}");
     // Update points in writable segments
     let updated_points = segments.apply_points_with_conditional_move(
         op_num,
