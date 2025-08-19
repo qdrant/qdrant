@@ -11,7 +11,6 @@ use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::tar_ext;
-use futures::future::try_join_all;
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
@@ -1321,15 +1320,15 @@ impl SegmentHolder {
     /// Checks all segments and removes duplicated and outdated points.
     /// If two points have the same id, the point with the highest version is kept.
     /// If two points have the same id and version, one of them is kept.
-    pub async fn deduplicate_points(&self) -> OperationResult<usize> {
+    pub fn deduplicate_points_task(&self) -> Vec<impl Fn() -> OperationResult<usize> + 'static> {
         let points_to_remove = self.find_duplicated_points();
 
-        // Create (blocking) task per segment for points to delete so we can parallelize
-        let tasks = points_to_remove
+        points_to_remove
             .into_iter()
             .map(|(segment_id, points)| {
                 let locked_segment = self.get(segment_id).unwrap().clone();
-                tokio::task::spawn_blocking(move || {
+
+                move || {
                     let mut removed_points = 0;
                     let segment_arc = locked_segment.get();
                     let mut write_segment = segment_arc.write();
@@ -1346,22 +1345,9 @@ impl SegmentHolder {
                     log::trace!("Deleted {removed_points} points from segment {segment_id} to deduplicate: {points:?}");
 
                     OperationResult::Ok(removed_points)
-                })
+                }
             })
-            .collect::<Vec<_>>();
-
-        // Join and sum results in parallel
-        let removed_points = try_join_all(tasks)
-            .await
-            .map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to join task that removes duplicate points from segment: {err}"
-                ))
-            })?
-            .into_iter()
-            .sum::<Result<_, _>>()?;
-
-        Ok(removed_points)
+            .collect::<Vec<_>>()
     }
 
     fn find_duplicated_points(&self) -> AHashMap<SegmentId, Vec<PointIdType>> {
@@ -1752,8 +1738,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_points_deduplication() {
+    #[test]
+    fn test_points_deduplication() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
         let mut segment1 = build_segment_1(dir.path());
@@ -1780,7 +1766,7 @@ mod tests {
         let sid1 = holder.add_new(segment1);
         let sid2 = holder.add_new(segment2);
 
-        let res = holder.deduplicate_points().await.unwrap();
+        let res = deduplicate_points_sync(&holder).unwrap();
 
         assert_eq!(5, res);
 
@@ -1798,8 +1784,8 @@ mod tests {
     /// Unit test for a specific bug we caught before.
     ///
     /// See: <https://github.com/qdrant/qdrant/pull/5585>
-    #[tokio::test]
-    async fn test_points_deduplication_bug() {
+    #[test]
+    fn test_points_deduplication_bug() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
         let mut segment1 = empty_segment(dir.path());
@@ -1853,7 +1839,7 @@ mod tests {
             .sum::<usize>();
         assert_eq!(2, duplicate_count);
 
-        let removed_count = holder.deduplicate_points().await.unwrap();
+        let removed_count = deduplicate_points_sync(&holder).unwrap();
         assert_eq!(2, removed_count);
 
         assert!(!holder.get(sid1).unwrap().get().read().has_point(10.into()));
@@ -1882,8 +1868,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_points_deduplication_randomized() {
+    #[test]
+    fn test_points_deduplication_randomized() {
         const POINT_COUNT: usize = 1000;
 
         let mut rand = rand::rng();
@@ -1931,7 +1917,7 @@ mod tests {
             .sum::<usize>();
         assert_eq!(POINT_COUNT * (segment_ids.len() - 1), duplicate_count);
 
-        let removed_count = holder.deduplicate_points().await.unwrap();
+        let removed_count = deduplicate_points_sync(&holder).unwrap();
         assert_eq!(POINT_COUNT * (segment_ids.len() - 1), removed_count);
 
         // Assert points after deduplication
@@ -1962,6 +1948,16 @@ mod tests {
                 "point version must be maximum known version",
             );
         }
+    }
+
+    fn deduplicate_points_sync(holder: &SegmentHolder) -> OperationResult<usize> {
+        let mut removed_points = 0;
+
+        for task in holder.deduplicate_points_task() {
+            removed_points += task()?;
+        }
+
+        Ok(removed_points)
     }
 
     #[test]
