@@ -165,10 +165,12 @@ impl ValueChecker for Match {
                     _ => false,
                 }
             }
-            Match::TextAny(MatchTextAny { text_any: _ }) => {
-                debug_assert!(false, "MatchTextAny should require text index");
-                false
-            }
+            Match::TextAny(MatchTextAny { text_any }) => match payload {
+                Value::String(stored) => text_any
+                    .split_whitespace()
+                    .any(|token| stored.contains(token)),
+                _ => false,
+            },
             Match::Any(MatchAny { any }) => match (payload, any) {
                 (Value::String(stored), AnyVariants::Strings(list)) => {
                     if list.len() < INDEXSET_ITER_THRESHOLD {
