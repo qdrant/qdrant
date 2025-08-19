@@ -419,10 +419,10 @@ impl LocalShard {
                 "Shard has no appendable segments, this should never happen. Creating new appendable segment now",
             );
             let segments_path = LocalShard::segments_path(shard_path);
-            let collection_params = collection_config.read().await.params.clone();
+            let segment_config = collection_config.read().await.params.to_segment_config()?;
             segment_holder.create_appendable_segment(
                 &segments_path,
-                &collection_params,
+                segment_config,
                 payload_index_schema.clone(),
             )?;
         }
@@ -874,9 +874,14 @@ impl LocalShard {
         }
 
         let segments_path = Self::segments_path(&self.path);
-        let collection_params = self.collection_config.read().await.params.clone();
-        let temp_path = temp_path.to_owned();
+        let segment_config = self
+            .collection_config
+            .read()
+            .await
+            .params
+            .to_segment_config()?;
         let payload_index_schema = self.payload_index_schema.clone();
+        let temp_path = temp_path.to_owned();
 
         let tar_c = tar.clone();
         tokio::task::spawn_blocking(move || {
@@ -884,7 +889,7 @@ impl LocalShard {
             SegmentHolder::snapshot_all_segments(
                 segments.clone(),
                 &segments_path,
-                Some(&collection_params),
+                Some(segment_config),
                 payload_index_schema.clone(),
                 &temp_path,
                 &tar_c.descend(Path::new(SEGMENTS_PATH))?,

@@ -30,7 +30,6 @@ use smallvec::{SmallVec, smallvec};
 use super::proxy_segment::{LockedIndexChanges, LockedRmSet};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
-use crate::config::CollectionParams;
 use crate::operations::types::CollectionError;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::update_tracker::UpdateTracker;
@@ -901,7 +900,7 @@ impl SegmentHolder {
     pub fn proxy_all_segments_and_apply<F>(
         segments: LockedSegmentHolder,
         segments_path: &Path,
-        collection_params: Option<&CollectionParams>,
+        segment_config: Option<SegmentConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         mut operation: F,
     ) -> OperationResult<()>
@@ -915,7 +914,7 @@ impl SegmentHolder {
         let (mut proxies, tmp_segment, mut segments_lock) = Self::proxy_all_segments(
             segments_lock,
             segments_path,
-            collection_params,
+            segment_config,
             payload_index_schema,
         )?;
 
@@ -978,12 +977,12 @@ impl SegmentHolder {
     pub fn create_appendable_segment(
         &mut self,
         segments_path: &Path,
-        collection_params: &CollectionParams,
+        segment_config: SegmentConfig,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<LockedSegment> {
         let segment = self.build_tmp_segment(
             segments_path,
-            Some(collection_params),
+            Some(segment_config),
             payload_index_schema,
             true,
         )?;
@@ -1011,31 +1010,26 @@ impl SegmentHolder {
     fn build_tmp_segment(
         &self,
         segments_path: &Path,
-        collection_params: Option<&CollectionParams>,
+        segment_config: Option<SegmentConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         save_version: bool,
     ) -> OperationResult<LockedSegment> {
-        let config = match collection_params {
+        let config = match segment_config {
             // Base config on collection params
-            Some(collection_params) => SegmentConfig {
-                vector_data: collection_params
-                    .to_base_vector_data()
-                    .map_err(|err| OperationError::service_error(format!("Failed to source dense vector configuration from collection parameters: {err:?}")))?,
-                sparse_vector_data: collection_params
-                    .to_sparse_vector_data()
-                    .map_err(|err| OperationError::service_error(format!("Failed to source sparse vector configuration from collection parameters: {err:?}")))?,
-                payload_storage_type: collection_params.payload_storage_type(),
-            },
+            Some(config) => config,
+
             // Fall back: base config on existing appendable segment
-            None => {
-                self
-                    .random_appendable_segment()
-                    .ok_or_else(|| OperationError::service_error("No existing segment to source temporary segment configuration from"))?
-                    .get()
-                    .read()
-                    .config()
-                    .clone()
-            }
+            None => self
+                .random_appendable_segment()
+                .ok_or_else(|| {
+                    OperationError::service_error(
+                        "No existing segment to source temporary segment configuration from",
+                    )
+                })?
+                .get()
+                .read()
+                .config()
+                .clone(),
         };
 
         let mut segment = build_segment(segments_path, &config, save_version)?;
@@ -1056,7 +1050,7 @@ impl SegmentHolder {
     fn proxy_all_segments<'a>(
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segments_path: &Path,
-        collection_params: Option<&CollectionParams>,
+        segment_config: Option<SegmentConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<(
         Vec<(SegmentId, SegmentId, LockedSegment)>,
@@ -1070,7 +1064,7 @@ impl SegmentHolder {
         // Create temporary appendable segment to direct all proxy writes into
         let tmp_segment = segments_lock.build_tmp_segment(
             segments_path,
-            collection_params,
+            segment_config,
             payload_index_schema,
             false,
         )?;
@@ -1274,7 +1268,7 @@ impl SegmentHolder {
     pub fn snapshot_all_segments(
         segments: LockedSegmentHolder,
         segments_path: &Path,
-        collection_params: Option<&CollectionParams>,
+        segment_config: Option<SegmentConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         temp_dir: &Path,
         tar: &tar_ext::BuilderExt,
@@ -1289,7 +1283,7 @@ impl SegmentHolder {
         Self::proxy_all_segments_and_apply(
             segments,
             segments_path,
-            collection_params,
+            segment_config,
             payload_index_schema,
             |segment| {
                 let read_segment = segment.read();

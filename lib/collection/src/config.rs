@@ -11,9 +11,9 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SparseVectorDataConfig,
-    StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype,
-    VectorStorageType,
+    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SegmentConfig,
+    SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf,
+    VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -522,5 +522,29 @@ impl CollectionParams {
         } else {
             Ok(Default::default())
         }
+    }
+
+    pub fn to_segment_config(&self) -> CollectionResult<SegmentConfig> {
+        let vector_data = self.to_base_vector_data().map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to source dense vector configuration from collection parameters: {err:?}"
+            ))
+        })?;
+
+        let sparse_vector_data = self.to_sparse_vector_data().map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to source sparse vector configuration from collection parameters: {err:?}"
+            ))
+        })?;
+
+        let payload_storage_type = self.payload_storage_type();
+
+        let segment_config = SegmentConfig {
+            vector_data,
+            sparse_vector_data,
+            payload_storage_type,
+        };
+
+        Ok(segment_config)
     }
 }
