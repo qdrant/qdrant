@@ -240,7 +240,7 @@ impl ProxySegment {
     /// This is required if making both the wrapped segment and the writable segment available in a
     /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
     /// required.
-    pub(super) fn propagate_to_wrapped(&self) -> OperationResult<()> {
+    pub fn propagate_to_wrapped(&self) -> OperationResult<()> {
         // Important: we must not keep a write lock on the wrapped segment for the duration of this
         // function to prevent a deadlock. The search functions conflict with it trying to take a
         // read lock on the wrapped segment as well while already holding the deleted points lock
