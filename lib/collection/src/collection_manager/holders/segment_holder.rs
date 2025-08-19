@@ -13,7 +13,7 @@ use common::iterator_ext::IteratorExt;
 use common::tar_ext;
 use futures::future::try_join_all;
 use io::storage_version::StorageVersion;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SnapshotManifest;
@@ -73,6 +73,9 @@ pub struct SegmentHolder {
 
     /// Holds the first uncorrected error happened with optimizer
     pub optimizer_errors: Option<CollectionError>,
+
+    /// Snapshot segments lock
+    pub snapshot_lock: Arc<Mutex<()>>,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -911,6 +914,10 @@ impl SegmentHolder {
     {
         let segments_lock = segments.upgradable_read();
 
+        let snapshot_lock = segments_lock.snapshot_lock.clone();
+        log::debug!("Trying to acquire snapshot lock for segments snapshot");
+        let snapshot_guard = snapshot_lock.lock();
+
         // Proxy all segments
         log::trace!("Proxying all shard segments to apply function");
         let (mut proxies, tmp_segment, mut segments_lock) = Self::proxy_all_segments(
@@ -969,7 +976,8 @@ impl SegmentHolder {
         // Always do this to prevent leaving proxy segments behind
         log::trace!("Unproxying all shard segments after function is applied");
         Self::unproxy_all_segments(segments_lock, proxies, tmp_segment)?;
-
+        log::debug!("Dropping snapshot lock for segment snapshot");
+        drop(snapshot_guard);
         result
     }
 

@@ -702,13 +702,19 @@ pub trait SegmentOptimizer {
 
         // Replace proxy segments with new optimized segment
         let point_count = optimized_segment.available_point_count();
+        // Make sure no snapshots are ongoing while we swap segments
+        log::debug!("Trying to acquire snapshot lock for segment swap");
+        let snapshot_lock = write_segments_guard.snapshot_lock.clone();
+        let snapshot_guard = snapshot_lock.lock();
+        log::debug!("Swapping segments {proxy_ids:?} with new optimized segment");
         let (_, proxies) = write_segments_guard.swap_new(optimized_segment, &proxy_ids);
         debug_assert_eq!(
             proxies.len(),
             proxy_ids.len(),
             "swapped different number of proxies on unwrap, missing or incorrect segment IDs?",
         );
-
+        log::debug!("Dropping snapshot lock for segment swap");
+        drop(snapshot_guard);
         let has_appendable_segments = write_segments_guard.has_appendable_segment();
 
         // Release reference counter for each optimized segment
