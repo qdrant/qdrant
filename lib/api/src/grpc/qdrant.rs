@@ -563,6 +563,33 @@ pub mod quantization_config_diff {
         Binary(super::BinaryQuantization),
     }
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FallbackShardKey {
+    /// Fallback shard key to use if provided shard key is not found
+    #[prost(message, optional, tag = "1")]
+    pub key: ::core::option::Option<ShardKey>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FallbackShardKeyDiff {
+    #[prost(oneof = "fallback_shard_key_diff::Fallback", tags = "1, 2")]
+    pub fallback: ::core::option::Option<fallback_shard_key_diff::Fallback>,
+}
+/// Nested message and enum types in `FallbackShardKeyDiff`.
+pub mod fallback_shard_key_diff {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Fallback {
+        #[prost(message, tag = "1")]
+        Disabled(super::Disabled),
+        #[prost(message, tag = "2")]
+        Enabled(super::FallbackShardKey),
+    }
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -837,7 +864,7 @@ pub struct CollectionParamsDiff {
     pub read_fan_out_factor: ::core::option::Option<u32>,
     /// Fallback shard key to use if provided shard key is not found
     #[prost(message, optional, tag = "5")]
-    pub fallback_shard_key: ::core::option::Option<ShardKey>,
+    pub fallback_shard_key: ::core::option::Option<FallbackShardKeyDiff>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

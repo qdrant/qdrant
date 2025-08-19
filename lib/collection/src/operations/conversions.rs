@@ -7,6 +7,7 @@ use api::grpc::conversions::{
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
     from_grpc_dist,
 };
+use api::grpc::fallback_shard_key_diff::Fallback;
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::{
     Operation as ClusterOperationsPb, Operation,
@@ -49,8 +50,8 @@ use crate::operations::cluster_ops::{
     RestartTransfer, RestartTransferOperation,
 };
 use crate::operations::config_diff::{
-    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
-    WalConfigDiff,
+    CollectionParamsDiff, FallbackShardKeyDiff, HnswConfigDiff, OptimizersConfigDiff,
+    QuantizationConfigDiff, WalConfigDiff,
 };
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
@@ -309,6 +310,25 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
             on_disk_payload,
             fallback_shard_key,
         } = value;
+
+        let fallback_shard_key = fallback_shard_key
+            .and_then(|fallback_shard_key| fallback_shard_key.fallback)
+            .map(|fallback| match fallback {
+                Fallback::Enabled(shard_key) => {
+                    let Some(shard_key) = shard_key.key else {
+                        return Err(Status::invalid_argument(
+                            "Fallback shard key cannot be enabled without specifying shard key",
+                        ));
+                    };
+
+                    convert_shard_key_from_grpc(shard_key)
+                        .map(FallbackShardKeyDiff::new_enabled)
+                        .ok_or_else(|| Status::invalid_argument("Fallback shard key is malformed"))
+                }
+                Fallback::Disabled(_) => Ok(FallbackShardKeyDiff::new_disabled()),
+            })
+            .transpose()?;
+
         Ok(Self {
             replication_factor: replication_factor
                 .map(|factor| {
@@ -324,12 +344,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
                 })
                 .transpose()?,
             read_fan_out_factor,
-            fallback_shard_key: fallback_shard_key
-                .map(|shard_key| {
-                    convert_shard_key_from_grpc(shard_key)
-                        .ok_or_else(|| Status::invalid_argument("Fallback shard key is malformed"))
-                })
-                .transpose()?,
+            fallback_shard_key,
             on_disk_payload,
         })
     }

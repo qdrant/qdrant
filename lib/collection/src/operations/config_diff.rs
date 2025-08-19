@@ -104,12 +104,42 @@ pub struct WalConfigDiff {
     pub wal_retain_closed: Option<usize>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct FallbackShardKey {
+    pub key: ShardKey,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+#[serde(rename_all = "snake_case")]
+pub enum FallbackShardKeyDiff {
+    Key(FallbackShardKey),
+    Disabled(Disabled),
+}
+
+impl FallbackShardKeyDiff {
+    pub fn new_disabled() -> Self {
+        FallbackShardKeyDiff::Disabled(Disabled::Disabled)
+    }
+
+    pub fn new_enabled(key: ShardKey) -> Self {
+        FallbackShardKeyDiff::Key(FallbackShardKey { key })
+    }
+}
+
+// impl Merge for FallbackShardKeyDiff {
+//     fn merge(&mut self, other: FallbackShardKeyDiff) {
+//         *self = other;
+//     }
+// }
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 pub struct CollectionParamsDiff {
     /// Number of replicas for each shard
     pub replication_factor: Option<NonZeroU32>,
     /// Fallback shard to use if specific shard doesn't exist
-    pub fallback_shard_key: Option<ShardKey>,
+    pub fallback_shard_key: Option<FallbackShardKeyDiff>,
     /// Minimal number successful responses from replicas to consider operation successful
     pub write_consistency_factor: Option<NonZeroU32>,
     /// Fan-out every read request to these many additional remote nodes (and return first available response)

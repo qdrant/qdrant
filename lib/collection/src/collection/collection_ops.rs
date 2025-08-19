@@ -34,7 +34,18 @@ impl Collection {
     ) -> CollectionResult<()> {
         {
             let mut config = self.collection_config.write().await;
+            let fallback_shard_key = params_diff.fallback_shard_key.clone();
             config.params = params_diff.update(&config.params)?;
+
+            match fallback_shard_key {
+                Some(FallbackShardKeyDiff::Key(fallback)) => {
+                    config.params.fallback_shard_key = Some(fallback.key);
+                }
+                Some(FallbackShardKeyDiff::Disabled(_)) => {
+                    config.params.fallback_shard_key = None;
+                }
+                None => {}
+            }
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
