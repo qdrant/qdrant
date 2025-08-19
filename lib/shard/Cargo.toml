@@ -12,7 +12,7 @@ edition = "2024"
 [dependencies]
 api = { path = "../api" }
 common = { path = "../common/common" }
-segment = { path = "../segment" }
+segment = { path = "../segment", default-features = false }
 sparse = { path = "../sparse" }
 
 ahash = { workspace = true }
