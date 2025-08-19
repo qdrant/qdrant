@@ -128,13 +128,13 @@ impl FallbackShardKeyDiff {
     }
 }
 
-// impl Merge for FallbackShardKeyDiff {
-//     fn merge(&mut self, other: FallbackShardKeyDiff) {
-//         *self = other;
-//     }
-// }
+impl Merge for FallbackShardKeyDiff {
+    fn merge(&mut self, other: FallbackShardKeyDiff) {
+        *self = other;
+    }
+}
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge, PartialEq, Eq, Hash)]
 pub struct CollectionParamsDiff {
     /// Number of replicas for each shard
     pub replication_factor: Option<NonZeroU32>,

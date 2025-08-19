@@ -35,6 +35,8 @@
     - [DeleteShardKeyRequest](#qdrant-DeleteShardKeyRequest)
     - [DeleteShardKeyResponse](#qdrant-DeleteShardKeyResponse)
     - [Disabled](#qdrant-Disabled)
+    - [FallbackShardKey](#qdrant-FallbackShardKey)
+    - [FallbackShardKeyDiff](#qdrant-FallbackShardKeyDiff)
     - [FloatIndexParams](#qdrant-FloatIndexParams)
     - [GeoIndexParams](#qdrant-GeoIndexParams)
     - [GetCollectionInfoRequest](#qdrant-GetCollectionInfoRequest)
@@ -661,7 +663,7 @@
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
 | on_disk_payload | [bool](#bool) | optional | If true - point&#39;s payload will not be stored in memory |
 | read_fan_out_factor | [uint32](#uint32) | optional | Fan-out every read request to these many additional remote nodes (and return first available response) |
-| fallback_shard_key | [ShardKey](#qdrant-ShardKey) | optional | Fallback shard key to use if provided shard key is not found |
+| fallback_shard_key | [FallbackShardKeyDiff](#qdrant-FallbackShardKeyDiff) | optional | Fallback shard key to use if provided shard key is not found |
 
 
 
@@ -862,6 +864,37 @@
 
 ### Disabled
 
+
+
+
+
+
+
+<a name="qdrant-FallbackShardKey"></a>
+
+### FallbackShardKey
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [ShardKey](#qdrant-ShardKey) |  | Fallback shard key to use if provided shard key is not found |
+
+
+
+
+
+
+<a name="qdrant-FallbackShardKeyDiff"></a>
+
+### FallbackShardKeyDiff
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| disabled | [Disabled](#qdrant-Disabled) |  |  |
+| enabled | [FallbackShardKey](#qdrant-FallbackShardKey) |  |  |
 
 
 

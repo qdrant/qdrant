@@ -10164,7 +10164,7 @@
             "description": "Fallback shard to use if specific shard doesn't exist",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ShardKey"
+                "$ref": "#/components/schemas/FallbackShardKeyDiff"
               },
               {
                 "nullable": true
@@ -10190,6 +10190,27 @@
             "default": null,
             "type": "boolean",
             "nullable": true
+          }
+        }
+      },
+      "FallbackShardKeyDiff": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/FallbackShardKey"
+          },
+          {
+            "$ref": "#/components/schemas/Disabled"
+          }
+        ]
+      },
+      "FallbackShardKey": {
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/ShardKey"
           }
         }
       },
@@ -12360,13 +12381,6 @@
       "SparseVectorStorageType": {
         "oneOf": [
           {
-            "description": "Storage on disk (rocksdb storage)",
-            "type": "string",
-            "enum": [
-              "on_disk"
-            ]
-          },
-          {
             "description": "Storage in memory maps (gridstore storage)",
             "type": "string",
             "enum": [
@@ -12378,34 +12392,6 @@
       "PayloadStorageType": {
         "description": "Type of payload storage",
         "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "in_memory"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "on_disk"
-                ]
-              }
-            }
-          },
           {
             "type": "object",
             "required": [
