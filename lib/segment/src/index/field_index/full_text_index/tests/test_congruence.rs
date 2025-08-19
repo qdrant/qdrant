@@ -203,7 +203,7 @@ pub fn to_parsed_query(
     let tokens = query.iter().map(|token| token_to_id(token.as_str()));
 
     let parsed = match is_phrase {
-        false => ParsedQuery::Tokens(tokens.collect::<Option<TokenSet>>()?),
+        false => ParsedQuery::AllTokens(tokens.collect::<Option<TokenSet>>()?),
         true => ParsedQuery::Phrase(tokens.collect::<Option<Document>>()?),
     };
 

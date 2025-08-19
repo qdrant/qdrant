@@ -12,7 +12,9 @@ use super::mmap_inverted_index::MmapInvertedIndex;
 use super::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::positions::Positions;
-use super::postings_iterator::intersect_compressed_postings_iterator;
+use super::postings_iterator::{
+    intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
+};
 use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::inverted_index::postings_iterator::{
@@ -93,6 +95,45 @@ impl ImmutableInvertedIndex {
         }
     }
 
+    /// Iterate over point ids whose documents contain at least one of the given tokens
+    fn filter_has_any<'a>(
+        &'a self,
+        tokens: TokenSet,
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        // in case of immutable index, deleted documents are still in the postings
+        let filter = move |idx| {
+            self.point_to_tokens_count
+                .get(idx as usize)
+                .is_some_and(|x| *x > 0)
+        };
+
+        fn merge<'a, V: PostingValue>(
+            postings: &'a [PostingList<V>],
+            tokens: TokenSet,
+            filter: impl Fn(PointOffsetType) -> bool + 'a,
+        ) -> impl Iterator<Item = PointOffsetType> + 'a {
+            let postings: Vec<_> = tokens
+                .tokens()
+                .iter()
+                .filter_map(|&token_id| postings.get(token_id as usize).map(PostingList::view))
+                .collect();
+
+            // Query must not be empty
+            if postings.is_empty() {
+                return Either::Left(std::iter::empty());
+            };
+
+            Either::Right(merge_compressed_postings_iterator(postings, filter))
+        }
+
+        match &self.postings {
+            ImmutablePostings::Ids(postings) => Either::Left(merge(postings, tokens, filter)),
+            ImmutablePostings::WithPositions(postings) => {
+                Either::Right(merge(postings, tokens, filter))
+            }
+        }
+    }
+
     fn check_has_subset(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
         if tokens.is_empty() {
             return false;
@@ -120,6 +161,34 @@ impl ImmutableInvertedIndex {
             ImmutablePostings::WithPositions(postings) => {
                 check_intersection(postings, tokens, point_id)
             }
+        }
+    }
+
+    fn check_has_any(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
+        if tokens.is_empty() {
+            return false;
+        }
+
+        // check presence of the document
+        if self.values_is_empty(point_id) {
+            return false;
+        }
+
+        fn check_any<V: PostingValue>(
+            postings: &[PostingList<V>],
+            tokens: &TokenSet,
+            point_id: PointOffsetType,
+        ) -> bool {
+            // Check that at least one token is in document
+            tokens.tokens().iter().any(|token_id| {
+                let posting_list = &postings[*token_id as usize];
+                posting_list.visitor().contains(point_id)
+            })
+        }
+
+        match &self.postings {
+            ImmutablePostings::Ids(postings) => check_any(postings, tokens, point_id),
+            ImmutablePostings::WithPositions(postings) => check_any(postings, tokens, point_id),
         }
     }
 
@@ -213,8 +282,9 @@ impl InvertedIndex for ImmutableInvertedIndex {
         _hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match query {
-            ParsedQuery::Tokens(tokens) => Box::new(self.filter_has_subset(tokens)),
+            ParsedQuery::AllTokens(tokens) => Box::new(self.filter_has_subset(tokens)),
             ParsedQuery::Phrase(tokens) => Box::new(self.filter_has_phrase(tokens)),
+            ParsedQuery::AnyTokens(tokens) => Box::new(self.filter_has_any(tokens)),
         }
     }
 
@@ -232,8 +302,9 @@ impl InvertedIndex for ImmutableInvertedIndex {
 
     fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
         match parsed_query {
-            ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id),
+            ParsedQuery::AllTokens(tokens) => self.check_has_subset(tokens, point_id),
             ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id),
+            ParsedQuery::AnyTokens(tokens) => self.check_has_any(tokens, point_id),
         }
     }
 
@@ -376,21 +447,21 @@ fn create_compressed_postings_with_positions(
         .collect::<Vec<_>>();
 
     (0u32..)
-        .zip(postings)
-        .map(|(token, posting)| {
-            posting
-                .iter()
-                .map(|id| {
-                    let positions = point_to_tokens_positions[id as usize]
-                        .remove(&token)
-                        .expect(
-                        "If id is this token's posting list, it should have at least one position",
-                    );
-                    (id, positions)
-                })
-                .collect()
-        })
-        .collect()
+            .zip(postings)
+            .map(|(token, posting)| {
+                posting
+                    .iter()
+                    .map(|id| {
+                        let positions = point_to_tokens_positions[id as usize]
+                            .remove(&token)
+                            .expect(
+                                "If id is this token's posting list, it should have at least one position",
+                            );
+                        (id, positions)
+                    })
+                    .collect()
+            })
+            .collect()
 }
 
 impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {

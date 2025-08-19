@@ -16,7 +16,9 @@ use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
 use super::positions::Positions;
-use super::postings_iterator::intersect_compressed_postings_iterator;
+use super::postings_iterator::{
+    intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
+};
 use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
@@ -209,6 +211,41 @@ impl MmapInvertedIndex {
         }
     }
 
+    /// Iterate over point ids whose documents contain at least one of the given tokens
+    fn filter_has_any<'a>(
+        &'a self,
+        tokens: TokenSet,
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        // in case of immutable index, deleted documents are still in the postings
+        let filter = move |idx| self.is_active(idx);
+
+        fn merge<'a, V: MmapPostingValue>(
+            postings: &'a MmapPostings<V>,
+            tokens: TokenSet,
+            filter: impl Fn(PointOffsetType) -> bool + 'a,
+        ) -> impl Iterator<Item = PointOffsetType> + 'a {
+            let postings: Vec<_> = tokens
+                .tokens()
+                .iter()
+                .filter_map(|&token_id| postings.get(token_id))
+                .collect();
+
+            // Query must not be empty
+            if postings.is_empty() {
+                return Either::Left(std::iter::empty());
+            };
+
+            Either::Right(merge_compressed_postings_iterator(postings, filter))
+        }
+
+        match &self.storage.postings {
+            MmapPostingsEnum::Ids(postings) => Either::Left(merge(postings, tokens, filter)),
+            MmapPostingsEnum::WithPositions(postings) => {
+                Either::Right(merge(postings, tokens, filter))
+            }
+        }
+    }
+
     fn check_has_subset(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
         // check non-empty query
         if tokens.is_empty() {
@@ -241,6 +278,34 @@ impl MmapInvertedIndex {
             MmapPostingsEnum::WithPositions(postings) => {
                 check_intersection(postings, tokens, point_id)
             }
+        }
+    }
+
+    fn check_has_any(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
+        if tokens.is_empty() {
+            return false;
+        }
+
+        // check presence of the document
+        if self.values_is_empty(point_id) {
+            return false;
+        }
+
+        fn check_any<V: MmapPostingValue>(
+            postings: &MmapPostings<V>,
+            tokens: &TokenSet,
+            point_id: PointOffsetType,
+        ) -> bool {
+            // Check that at least one token is in document
+            tokens.tokens().iter().any(|token_id| {
+                let posting_list = postings.get(*token_id).unwrap();
+                posting_list.visitor().contains(point_id)
+            })
+        }
+
+        match &self.storage.postings {
+            MmapPostingsEnum::Ids(postings) => check_any(postings, tokens, point_id),
+            MmapPostingsEnum::WithPositions(postings) => check_any(postings, tokens, point_id),
         }
     }
 
@@ -381,8 +446,9 @@ impl InvertedIndex for MmapInvertedIndex {
         _hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match query {
-            ParsedQuery::Tokens(tokens) => self.filter_has_subset(tokens),
+            ParsedQuery::AllTokens(tokens) => self.filter_has_subset(tokens),
             ParsedQuery::Phrase(phrase) => Box::new(self.filter_has_phrase(phrase)),
+            ParsedQuery::AnyTokens(tokens) => Box::new(self.filter_has_any(tokens)),
         }
     }
 
@@ -405,8 +471,9 @@ impl InvertedIndex for MmapInvertedIndex {
 
     fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
         match parsed_query {
-            ParsedQuery::Tokens(tokens) => self.check_has_subset(tokens, point_id),
+            ParsedQuery::AllTokens(tokens) => self.check_has_subset(tokens, point_id),
             ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id),
+            ParsedQuery::AnyTokens(tokens) => self.check_has_any(tokens, point_id),
         }
     }
 

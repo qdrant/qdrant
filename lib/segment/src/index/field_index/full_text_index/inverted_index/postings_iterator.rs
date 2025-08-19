@@ -1,5 +1,5 @@
 use common::types::PointOffsetType;
-use itertools::Either;
+use itertools::{Either, Itertools};
 use posting_list::{PostingIterator, PostingListView, PostingValue};
 
 use super::posting_list::PostingList;
@@ -22,6 +22,15 @@ pub fn intersect_postings_iterator<'a>(
     smallest_posting
         .iter()
         .filter(move |doc_id| postings.iter().all(|posting| posting.contains(*doc_id)))
+}
+
+pub fn merge_postings_iterator<'a>(
+    postings: Vec<&'a PostingList>,
+) -> impl Iterator<Item = PointOffsetType> + 'a {
+    postings
+        .into_iter()
+        .map(PostingList::iter)
+        .kmerge_by(|a, b| a < b)
 }
 
 pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
@@ -58,6 +67,22 @@ pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
         })
 }
 
+pub fn merge_compressed_postings_iterator<'a, V: PostingValue + 'a>(
+    postings: Vec<PostingListView<'a, V>>,
+    is_active: impl Fn(PointOffsetType) -> bool + 'a,
+) -> impl Iterator<Item = PointOffsetType> + 'a {
+    postings
+        .into_iter()
+        .map(PostingListView::into_iter)
+        .kmerge_by(|a, b| a.id < b.id)
+        .filter_map(move |elem| {
+            if is_active(elem.id) {
+                Some(elem.id)
+            } else {
+                None
+            }
+        })
+}
 /// Returns an iterator over the points that match the given phrase query.
 pub fn intersect_compressed_postings_phrase_iterator<'a>(
     phrase: Document,
