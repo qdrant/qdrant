@@ -321,7 +321,11 @@ impl UpdateHandler {
                     break;
                 }
 
-                debug!("Optimizing segments: {:?}", &nonoptimal_segment_ids);
+                debug!(
+                    "Optimizer '{}' running on segments: {:?}",
+                    optimizer.name(),
+                    &nonoptimal_segment_ids
+                );
 
                 // Determine how many Resources we prefer for optimization task, acquire permit for it
                 // And use same amount of IO threads as CPUs
@@ -331,7 +335,7 @@ impl UpdateHandler {
                     // If there is no Resource budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up
                     // our optimization worker to try again later, otherwise it could get stuck
-                    log::trace!(
+                    trace!(
                         "No available IO permit for {} optimizer, postponing",
                         optimizer.name(),
                     );
@@ -340,7 +344,7 @@ impl UpdateHandler {
                     }
                     break 'outer;
                 };
-                log::trace!(
+                trace!(
                     "Acquired {} IO permit for {} optimizer",
                     permit.num_io,
                     optimizer.name(),
