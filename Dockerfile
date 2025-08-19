@@ -117,7 +117,7 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
 # To workaround this limitation, we use a multi-stage build with a different base images which have equal name to ARG value.
 
 # Base image for Qdrant.
-FROM debian:12-slim AS qdrant-cpu
+FROM debian:13-slim AS qdrant-cpu
 
 
 # Base images for Qdrant with nvidia GPU support.
