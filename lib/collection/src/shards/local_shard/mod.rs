@@ -1182,7 +1182,7 @@ fn deduplicate_points_async(
     holder: &SegmentHolder,
 ) -> impl Future<Output = CollectionResult<usize>> + 'static {
     let mut tasks: FuturesUnordered<_> = holder
-        .deduplicate_points_task()
+        .deduplicate_points_tasks()
         .into_iter()
         .map(tokio::task::spawn_blocking)
         .collect();

@@ -1320,7 +1320,7 @@ impl SegmentHolder {
     /// Checks all segments and removes duplicated and outdated points.
     /// If two points have the same id, the point with the highest version is kept.
     /// If two points have the same id and version, one of them is kept.
-    pub fn deduplicate_points_task(&self) -> Vec<impl Fn() -> OperationResult<usize> + 'static> {
+    pub fn deduplicate_points_tasks(&self) -> Vec<impl Fn() -> OperationResult<usize> + 'static> {
         let points_to_remove = self.find_duplicated_points();
 
         points_to_remove
@@ -1953,7 +1953,7 @@ mod tests {
     fn deduplicate_points_sync(holder: &SegmentHolder) -> OperationResult<usize> {
         let mut removed_points = 0;
 
-        for task in holder.deduplicate_points_task() {
+        for task in holder.deduplicate_points_tasks() {
             removed_points += task()?;
         }
 
