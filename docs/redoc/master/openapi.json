@@ -15015,7 +15015,7 @@
             "$ref": "#/components/schemas/Fusion"
           },
           {
-            "$ref": "#/components/schemas/FusionParams"
+            "$ref": "#/components/schemas/Rrf"
           }
         ]
       },
@@ -15027,14 +15027,7 @@
           "dbsf"
         ]
       },
-      "FusionParams": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/RrfParams"
-          }
-        ]
-      },
-      "RrfParams": {
+      "Rrf": {
         "type": "object",
         "required": [
           "type"
