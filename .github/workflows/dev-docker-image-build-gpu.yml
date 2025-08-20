@@ -11,6 +11,7 @@ jobs:
           with:
             ref: ${{ github.ref.name }}
         - uses: ./.github/actions/branch-build-and-push
-          env:
-            DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-            ARCH: gpu
+          with:
+            ghcr-password: ${{ secrets.GITHUB_TOKEN }}
+            push-to-ghcr: true
+            build-gpu: true
