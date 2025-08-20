@@ -206,6 +206,38 @@ impl SegmentHolder {
         (new_id, self.remove(remove_ids))
     }
 
+    /// Replace an existing segment
+    ///
+    /// # Arguments
+    ///
+    /// * `segment_id` - segment ID to replace
+    /// * `segment` - segment to replace with
+    ///
+    /// # Result
+    ///
+    /// Returns the replaced segment. Errors if the segment ID did not exist.
+    pub fn replace<T>(
+        &mut self,
+        segment_id: SegmentId,
+        segment: T,
+    ) -> OperationResult<LockedSegment>
+    where
+        T: Into<LockedSegment>,
+    {
+        // Remove existing segment, check precondition
+        let mut removed = self.remove(&[segment_id]);
+        if removed.is_empty() {
+            return Err(OperationError::service_error(
+                "cannot replace segment with ID {segment_id}, it does not exists",
+            ));
+        }
+        debug_assert_eq!(removed.len(), 1);
+
+        self.add_existing(segment_id, segment);
+
+        Ok(removed.pop().unwrap())
+    }
+
     /// Replace old segments with a new one
     ///
     /// # Arguments
@@ -1108,8 +1140,7 @@ impl SegmentHolder {
             }
 
             // We must keep existing segment IDs because ongoing optimizations might depend on the mapping being the same
-            let segments = write_segments.swap_existing(segment_id, proxy, &[segment_id]);
-            debug_assert_eq!(segments.len(), 1);
+            write_segments.replace(segment_id, proxy)?;
             let locked_proxy_segment = write_segments
                 .get(segment_id)
                 .cloned()
@@ -1173,8 +1204,7 @@ impl SegmentHolder {
             }
             proxy_segment.wrapped_segment.clone()
         };
-        let segments = write_segments.swap_existing(segment_id, wrapped_segment, &[segment_id]);
-        debug_assert_eq!(segments.len(), 1);
+        write_segments.replace(segment_id, wrapped_segment).unwrap();
 
         // Downgrade write lock to read and give it back
         Ok(RwLockWriteGuard::downgrade_to_upgradable(write_segments))
@@ -1224,9 +1254,7 @@ impl SegmentHolder {
                         }
                         proxy_segment.wrapped_segment.clone()
                     };
-                    let segments =
-                        write_segments.swap_existing(segment_id, wrapped_segment, &[segment_id]);
-                    debug_assert_eq!(segments.len(), 1);
+                    write_segments.replace(segment_id, wrapped_segment)?;
                 }
                 // If already unproxied, do nothing
                 LockedSegment::Original(_) => {}
