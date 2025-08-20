@@ -13,7 +13,7 @@ use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
-use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::collection::payload_index_schema::{self, PayloadIndexSchema};
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -66,11 +66,11 @@ async fn test_payload_missing_index_check() {
 
     // No index yet => Filter has unindexed field
     assert_eq!(
-        shard
-            .payload_index_schema
-            .read()
-            .one_unindexed_filter_key(&geo_filter)
-            .map(|(x, _)| x),
+        payload_index_schema::one_unindexed_filter_key(
+            &shard.payload_index_schema.read(),
+            &geo_filter
+        )
+        .map(|(x, _)| x),
         Some(JsonPath::from_str("location").unwrap())
     );
 
@@ -85,10 +85,10 @@ async fn test_payload_missing_index_check() {
 
     // Index created => Filter shouldn't have any unindexed field anymore
     assert_eq!(
-        shard
-            .payload_index_schema
-            .read()
-            .one_unindexed_filter_key(&geo_filter),
+        payload_index_schema::one_unindexed_filter_key(
+            &shard.payload_index_schema.read(),
+            &geo_filter
+        ),
         None
     );
 
@@ -108,11 +108,11 @@ async fn test_payload_missing_index_check() {
     // Index only exists for 'location' but not 'location.lat'
     // so we expect it to be detected as unindexed
     assert_eq!(
-        shard
-            .payload_index_schema
-            .read()
-            .one_unindexed_filter_key(&num_filter)
-            .map(|(x, _)| x),
+        payload_index_schema::one_unindexed_filter_key(
+            &shard.payload_index_schema.read(),
+            &num_filter
+        )
+        .map(|(x, _)| x),
         Some("location.lat".parse().unwrap())
     );
 
@@ -127,20 +127,20 @@ async fn test_payload_missing_index_check() {
 
     // Nested field also gets detected as indexed and unindexed fields in the query are empty.
     assert_eq!(
-        shard
-            .payload_index_schema
-            .read()
-            .one_unindexed_filter_key(&num_filter),
+        payload_index_schema::one_unindexed_filter_key(
+            &shard.payload_index_schema.read(),
+            &num_filter
+        ),
         None,
     );
 
     // Filters combined also completely indexed!
     let combined_filter = geo_filter.merge(&num_filter);
     assert_eq!(
-        shard
-            .payload_index_schema
-            .read()
-            .one_unindexed_filter_key(&combined_filter),
+        payload_index_schema::one_unindexed_filter_key(
+            &shard.payload_index_schema.read(),
+            &combined_filter
+        ),
         None,
     );
 }

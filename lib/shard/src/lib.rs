@@ -1,5 +1,6 @@
 pub mod locked_segment;
 pub mod operations;
+pub mod payload_index_schema;
 pub mod proxy_segment;
 
 #[cfg(test)]
