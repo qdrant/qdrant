@@ -50,7 +50,7 @@ impl ImmutableInvertedIndex {
     }
 
     /// Iterate over point ids whose documents contain all given tokens
-    fn filter_has_subset<'a>(
+    fn filter_has_all<'a>(
         &'a self,
         tokens: TokenSet,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
@@ -101,7 +101,7 @@ impl ImmutableInvertedIndex {
         tokens: TokenSet,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         // in case of immutable index, deleted documents are still in the postings
-        let filter = move |idx| {
+        let is_active = move |idx| {
             self.point_to_tokens_count
                 .get(idx as usize)
                 .is_some_and(|x| *x > 0)
@@ -110,7 +110,7 @@ impl ImmutableInvertedIndex {
         fn merge<'a, V: PostingValue>(
             postings: &'a [PostingList<V>],
             tokens: TokenSet,
-            filter: impl Fn(PointOffsetType) -> bool + 'a,
+            is_active: impl Fn(PointOffsetType) -> bool + 'a,
         ) -> impl Iterator<Item = PointOffsetType> + 'a {
             let postings: Vec<_> = tokens
                 .tokens()
@@ -123,13 +123,13 @@ impl ImmutableInvertedIndex {
                 return Either::Left(std::iter::empty());
             };
 
-            Either::Right(merge_compressed_postings_iterator(postings, filter))
+            Either::Right(merge_compressed_postings_iterator(postings, is_active))
         }
 
         match &self.postings {
-            ImmutablePostings::Ids(postings) => Either::Left(merge(postings, tokens, filter)),
+            ImmutablePostings::Ids(postings) => Either::Left(merge(postings, tokens, is_active)),
             ImmutablePostings::WithPositions(postings) => {
-                Either::Right(merge(postings, tokens, filter))
+                Either::Right(merge(postings, tokens, is_active))
             }
         }
     }
@@ -282,7 +282,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         _hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match query {
-            ParsedQuery::AllTokens(tokens) => Box::new(self.filter_has_subset(tokens)),
+            ParsedQuery::AllTokens(tokens) => Box::new(self.filter_has_all(tokens)),
             ParsedQuery::Phrase(tokens) => Box::new(self.filter_has_phrase(tokens)),
             ParsedQuery::AnyTokens(tokens) => Box::new(self.filter_has_any(tokens)),
         }

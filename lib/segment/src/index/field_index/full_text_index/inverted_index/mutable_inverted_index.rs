@@ -55,7 +55,7 @@ impl MutableInvertedIndex {
     }
 
     /// Iterate over point ids whose documents contain all given tokens
-    fn filter_has_subset(&self, tokens: TokenSet) -> impl Iterator<Item = PointOffsetType> + '_ {
+    fn filter_has_all(&self, tokens: TokenSet) -> impl Iterator<Item = PointOffsetType> + '_ {
         let postings_opt: Option<Vec<_>> = tokens
             .tokens()
             .iter()
@@ -108,7 +108,7 @@ impl MutableInvertedIndex {
         };
 
         let iter = self
-            .filter_has_subset(phrase.to_token_set())
+            .filter_has_all(phrase.to_token_set())
             .filter(move |id| {
                 let doc = point_to_doc[*id as usize]
                     .as_ref()
@@ -228,7 +228,7 @@ impl InvertedIndex for MutableInvertedIndex {
         _hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         match query {
-            ParsedQuery::AllTokens(tokens) => Box::new(self.filter_has_subset(tokens)),
+            ParsedQuery::AllTokens(tokens) => Box::new(self.filter_has_all(tokens)),
             ParsedQuery::Phrase(phrase) => self.filter_has_phrase(phrase),
             ParsedQuery::AnyTokens(tokens) => Box::new(self.filter_has_any(tokens)),
         }

@@ -171,7 +171,7 @@ impl MmapInvertedIndex {
     }
 
     /// Iterate over point ids whose documents contain all given tokens
-    pub fn filter_has_subset<'a>(
+    pub fn filter_has_all<'a>(
         &'a self,
         tokens: TokenSet,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
@@ -217,12 +217,12 @@ impl MmapInvertedIndex {
         tokens: TokenSet,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         // in case of immutable index, deleted documents are still in the postings
-        let filter = move |idx| self.is_active(idx);
+        let is_active = move |idx| self.is_active(idx);
 
         fn merge<'a, V: MmapPostingValue>(
             postings: &'a MmapPostings<V>,
             tokens: TokenSet,
-            filter: impl Fn(PointOffsetType) -> bool + 'a,
+            is_active: impl Fn(PointOffsetType) -> bool + 'a,
         ) -> impl Iterator<Item = PointOffsetType> + 'a {
             let postings: Vec<_> = tokens
                 .tokens()
@@ -235,13 +235,13 @@ impl MmapInvertedIndex {
                 return Either::Left(std::iter::empty());
             };
 
-            Either::Right(merge_compressed_postings_iterator(postings, filter))
+            Either::Right(merge_compressed_postings_iterator(postings, is_active))
         }
 
         match &self.storage.postings {
-            MmapPostingsEnum::Ids(postings) => Either::Left(merge(postings, tokens, filter)),
+            MmapPostingsEnum::Ids(postings) => Either::Left(merge(postings, tokens, is_active)),
             MmapPostingsEnum::WithPositions(postings) => {
-                Either::Right(merge(postings, tokens, filter))
+                Either::Right(merge(postings, tokens, is_active))
             }
         }
     }
@@ -446,7 +446,7 @@ impl InvertedIndex for MmapInvertedIndex {
         _hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match query {
-            ParsedQuery::AllTokens(tokens) => self.filter_has_subset(tokens),
+            ParsedQuery::AllTokens(tokens) => self.filter_has_all(tokens),
             ParsedQuery::Phrase(phrase) => Box::new(self.filter_has_phrase(phrase)),
             ParsedQuery::AnyTokens(tokens) => Box::new(self.filter_has_any(tokens)),
         }

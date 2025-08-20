@@ -31,6 +31,7 @@ pub fn merge_postings_iterator<'a>(
         .into_iter()
         .map(PostingList::iter)
         .kmerge_by(|a, b| a < b)
+        .dedup()
 }
 
 pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
@@ -61,6 +62,8 @@ pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
                     //
                     // This means that the other iterators can remember the last id they returned to avoid extra work
                     posting_iterator
+                        // potential optimization: Make posting iterator of just ids, without values (a.k.a. positions).
+                        //                         We are discarding them here, thus unnecessarily reading them from the tails of the posting lists.
                         .advance_until_greater_or_equal(*id)
                         .is_some_and(|elem| elem.id == *id)
                 })
@@ -73,16 +76,14 @@ pub fn merge_compressed_postings_iterator<'a, V: PostingValue + 'a>(
 ) -> impl Iterator<Item = PointOffsetType> + 'a {
     postings
         .into_iter()
-        .map(PostingListView::into_iter)
-        .kmerge_by(|a, b| a.id < b.id)
-        .filter_map(move |elem| {
-            if is_active(elem.id) {
-                Some(elem.id)
-            } else {
-                None
-            }
-        })
+        // potential optimization: Make posting iterator of just ids, without values (a.k.a. positions).
+        //                         We are discarding them here, thus unnecessarily reading them from the tails of the posting lists.
+        .map(|view| view.into_iter().map(|elem| elem.id))
+        .kmerge_by(|a, b| a < b)
+        .dedup()
+        .filter(move |id| is_active(*id))
 }
+
 /// Returns an iterator over the points that match the given phrase query.
 pub fn intersect_compressed_postings_phrase_iterator<'a>(
     phrase: Document,
