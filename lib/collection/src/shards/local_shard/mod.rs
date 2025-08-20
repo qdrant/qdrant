@@ -23,6 +23,8 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::rate_limiting::RateLimiter;
 use common::{panic, tar_ext};
+use futures::StreamExt as _;
+use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
@@ -388,7 +390,7 @@ impl LocalShard {
             segment_holder.add_new(segment);
         }
 
-        let res = segment_holder.deduplicate_points().await?;
+        let res = deduplicate_points_async(&segment_holder).await?;
         if res > 0 {
             log::debug!("Deduplicated {res} points");
         }
@@ -1173,6 +1175,38 @@ impl Drop for LocalShard {
                 });
             handle.expect("Failed to create thread for shard drop");
         })
+    }
+}
+
+fn deduplicate_points_async(
+    holder: &SegmentHolder,
+) -> impl Future<Output = CollectionResult<usize>> + 'static {
+    let mut tasks: FuturesUnordered<_> = holder
+        .deduplicate_points_tasks()
+        .into_iter()
+        .map(tokio::task::spawn_blocking)
+        .collect();
+
+    async move {
+        let mut total_removed_points = 0;
+
+        while let Some(res) = tasks.next().await {
+            let removed_points = res
+                .map_err(|join_err| {
+                    CollectionError::service_error(format!(
+                        "failed to deduplicate points: {join_err}"
+                    ))
+                })?
+                .map_err(|dedup_err| {
+                    CollectionError::service_error(format!(
+                        "failed to deduplicate points: {dedup_err}"
+                    ))
+                })?;
+
+            total_removed_points += removed_points;
+        }
+
+        Ok(total_removed_points)
     }
 }
 
