@@ -63,17 +63,26 @@ pub fn adjust_to_available_vectors(
         max,
     }
 }
-/// What this function does:
+
+/// Combine cardinality of multiple estimations in an OR fashion by using the complement rule.
+/// Assumes that the estimations are independent.
 ///
-/// * For each condition, it calculates the probability that an item does not match it: ((total - x) / total).
+/// Formula is  `(1 - ∏(1-pᵢ)) * total`:
+/// * For each condition, it calculates the probability that an item does not match it: `1 - (x / total)`.
 /// * It multiplies these probabilities to get the probability that an item matches none of the conditions.
 /// * Subtracts this from 1 to get the probability that an item matches at least one condition.
 /// * Multiplies this probability by the total number of items and rounds to get the expected count.
 pub fn expected_should_estimation(estimations: impl Iterator<Item = usize>, total: usize) -> usize {
+    if total == 0 {
+        return 0;
+    }
+
     let element_not_hit_prob: f64 = estimations
-        .map(|x| (total - x) as f64 / (total as f64))
+        .map(|x| 1.0 - (x as f64 / total as f64))
         .product();
+
     let element_hit_prob = 1.0 - element_not_hit_prob;
+
     (element_hit_prob * (total as f64)).round() as usize
 }
 
