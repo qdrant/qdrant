@@ -247,6 +247,7 @@
     - [RepeatedStrings](#qdrant-RepeatedStrings)
     - [RetrievedPoint](#qdrant-RetrievedPoint)
     - [RetrievedPoint.PayloadEntry](#qdrant-RetrievedPoint-PayloadEntry)
+    - [Rrf](#qdrant-Rrf)
     - [ScoredPoint](#qdrant-ScoredPoint)
     - [ScoredPoint.PayloadEntry](#qdrant-ScoredPoint-PayloadEntry)
     - [ScrollPoints](#qdrant-ScrollPoints)
@@ -4011,6 +4012,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | sample | [Sample](#qdrant-Sample) |  | Sample points from the collection. |
 | formula | [Formula](#qdrant-Formula) |  | Score boosting via an arbitrary formula |
 | nearest_with_mmr | [NearestInputWithMmr](#qdrant-NearestInputWithMmr) |  | Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm. |
+| rrf | [Rrf](#qdrant-Rrf) |  | Parameterized reciprocal rank fusion |
 
 
 
@@ -4391,6 +4393,21 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
 | value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
+<a name="qdrant-Rrf"></a>
+
+### Rrf
+Parameterized reciprocal rank fusion
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| k | [uint32](#uint32) | optional | K parameter for reciprocal rank fusion |
 
 
 
@@ -5216,7 +5233,7 @@ Vector type to be used in queries. Ids will be substituted with their correspond
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| RRF | 0 | Reciprocal Rank Fusion |
+| RRF | 0 | Reciprocal Rank Fusion (with default parameters) |
 | DBSF | 1 | Distribution-Based Score Fusion |
 
 

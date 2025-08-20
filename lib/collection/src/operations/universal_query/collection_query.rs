@@ -710,15 +710,23 @@ impl CollectionQueryRequest {
 
 mod from_rest {
     use api::rest::schema as rest;
+    use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 
     use super::*;
 
     impl From<rest::Fusion> for FusionInternal {
         fn from(value: rest::Fusion) -> Self {
             match value {
-                rest::Fusion::Rrf => FusionInternal::Rrf,
+                rest::Fusion::Rrf => FusionInternal::RrfK(DEFAULT_RRF_K),
                 rest::Fusion::Dbsf => FusionInternal::Dbsf,
             }
+        }
+    }
+
+    impl From<rest::Rrf> for FusionInternal {
+        fn from(value: rest::Rrf) -> Self {
+            let rest::Rrf { k } = value;
+            FusionInternal::RrfK(k.unwrap_or(DEFAULT_RRF_K))
         }
     }
 
