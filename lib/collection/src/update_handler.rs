@@ -11,7 +11,7 @@ use common::panic;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
-use segment::common::operation_error::OperationResult;
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
@@ -477,9 +477,14 @@ impl UpdateHandler {
 
         if no_segment_with_capacity {
             log::debug!("Creating new appendable segment, all existing segments are over capacity");
+
+            let segment_config = collection_params
+                .to_segment_config()
+                .map_err(|err| OperationError::service_error(err.to_string()))?;
+
             segments.write().create_appendable_segment(
                 segments_path,
-                collection_params,
+                segment_config,
                 payload_index_schema,
             )?;
         }
