@@ -725,17 +725,8 @@ mod from_rest {
 
     impl From<rest::Rrf> for FusionInternal {
         fn from(value: rest::Rrf) -> Self {
-            let rest::Rrf { r#type: _, k } = value;
+            let rest::Rrf { k } = value;
             FusionInternal::RrfK(k.unwrap_or(DEFAULT_RRF_K))
-        }
-    }
-
-    impl From<rest::FusionInterface> for FusionInternal {
-        fn from(value: rest::FusionInterface) -> Self {
-            match value {
-                rest::FusionInterface::Fusion(fusion) => FusionInternal::from(fusion),
-                rest::FusionInterface::Rrf(rrf) => FusionInternal::from(rrf),
-            }
         }
     }
 
