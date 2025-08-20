@@ -246,7 +246,7 @@ reqwest = { version = "0.12.23", default-features = false, features = [
     "rustls-tls",
     "blocking",
 ] }
-rstest = { version = "0.24.0", default-features = false }
+rstest = { version = "0.26.1", default-features = false }
 schemars = { version = "0.8.22", features = [
     "uuid1",
     "preserve_order",
