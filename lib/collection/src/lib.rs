@@ -11,7 +11,6 @@ pub mod operations;
 pub mod optimizers_builder;
 pub mod problems;
 pub mod recommendations;
-pub mod save_on_disk;
 pub mod shards;
 pub mod telemetry;
 mod update_handler;

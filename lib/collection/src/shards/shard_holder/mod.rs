@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
+use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
@@ -42,7 +43,6 @@ use crate::operations::types::{
 };
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::optimizers_builder::OptimizersConfig;
-use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};

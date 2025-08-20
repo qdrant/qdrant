@@ -10,6 +10,7 @@ use std::time::Duration;
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
+use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
@@ -31,7 +32,6 @@ use super::proxy_segment::{LockedIndexChanges, LockedRmSet};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::operations::types::CollectionError;
-use crate::save_on_disk::SaveOnDisk;
 use crate::shards::update_tracker::UpdateTracker;
 
 pub type SegmentId = usize;

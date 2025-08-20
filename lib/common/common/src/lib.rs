@@ -19,6 +19,7 @@ pub mod mmap_hashmap;
 pub mod num_traits;
 pub mod panic;
 pub mod rate_limiting;
+pub mod save_on_disk;
 pub mod small_uint;
 pub mod stable_hash;
 pub mod tar_ext;

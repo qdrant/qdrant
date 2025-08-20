@@ -11,11 +11,11 @@ use api::rest::{
     BaseGroupRequest, LookupLocation, OrderByInterface, RecommendStrategy,
     SearchGroupsRequestInternal, SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
-use common::defaults;
 use common::ext::OptionExt;
 use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
+use common::{defaults, save_on_disk};
 use io::file_operations::FileStorageError;
 use issues::IssueRecord;
 use merge::Merge;
@@ -55,7 +55,6 @@ use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 use crate::optimizers_builder::OptimizersConfig;
-use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::transfer::ShardTransferMethod;

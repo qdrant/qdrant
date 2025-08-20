@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::save_on_disk::SaveOnDisk;
 use futures::future::join_all;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
@@ -37,7 +38,6 @@ use crate::collection_manager::optimizers::segment_optimizer::OptimizerThreshold
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
-use crate::save_on_disk::SaveOnDisk;
 use crate::update_handler::{Optimizer, UpdateHandler};
 
 #[tokio::test]

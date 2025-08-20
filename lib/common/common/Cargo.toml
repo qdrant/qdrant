@@ -37,6 +37,9 @@ thiserror = { workspace = true }
 zerocopy = { workspace = true }
 log = { workspace = true }
 walkdir = { workspace = true }
+atomicwrites = { workspace = true }
+parking_lot = { workspace = true }
+serde_json = { workspace = true }
 
 memory = { path = "../memory" }
 
