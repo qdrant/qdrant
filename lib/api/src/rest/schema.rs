@@ -516,13 +516,6 @@ pub enum Fusion {
     Rrf,
     Dbsf,
 }
-
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
-pub enum FusionParams {
-    Rrf(RrfParams),
-}
-
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RrfType {
@@ -532,7 +525,7 @@ pub enum RrfType {
 
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
-pub struct RrfParams {
+pub struct Rrf {
     pub r#type: RrfType,
 
     /// K parameter for reciprocal rank fusion
@@ -545,7 +538,7 @@ pub struct RrfParams {
 #[serde(untagged)]
 pub enum FusionInterface {
     Fusion(Fusion),
-    FusionParams(FusionParams),
+    RRF(Rrf),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

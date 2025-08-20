@@ -279,7 +279,7 @@ message QueryShardPoints {
       Sample sample = 4; // Sample points
       Formula formula = 5; // Use an arbitrary formula to rescore points
       MmrInternal mmr = 6; // Maximal Marginal Relevance
-      FusionParams fusion_params = 7; // Parameterized fusion of multiple prefetches.
+      Rrf rrf = 7; // Parameterized RRF fusion
     }
   }
 
