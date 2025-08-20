@@ -19,6 +19,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rng;
+use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{
@@ -258,7 +259,7 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
                                     score_threshold: None,
                                 },
                             ],
-                            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
+                            query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
                             filter: filter.clone(),
                             params: None,
                             limit: 10,

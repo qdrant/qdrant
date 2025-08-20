@@ -14811,6 +14811,9 @@
             "$ref": "#/components/schemas/FusionQuery"
           },
           {
+            "$ref": "#/components/schemas/RrfQuery"
+          },
+          {
             "$ref": "#/components/schemas/FormulaQuery"
           },
           {
@@ -15010,12 +15013,37 @@
         }
       },
       "Fusion": {
-        "description": "Fusion algorithm allows to combine results of multiple prefetches.\n\nAvailable fusion algorithms:\n\n* `rrf` - Reciprocal Rank Fusion * `dbsf` - Distribution-Based Score Fusion",
+        "description": "Fusion algorithm allows to combine results of multiple prefetches.\n\nAvailable fusion algorithms:\n\n* `rrf` - Reciprocal Rank Fusion (with default parameters) * `dbsf` - Distribution-Based Score Fusion",
         "type": "string",
         "enum": [
           "rrf",
           "dbsf"
         ]
+      },
+      "RrfQuery": {
+        "type": "object",
+        "required": [
+          "rrf"
+        ],
+        "properties": {
+          "rrf": {
+            "$ref": "#/components/schemas/Rrf"
+          }
+        }
+      },
+      "Rrf": {
+        "description": "Parameters for Reciprocal Rank Fusion",
+        "type": "object",
+        "properties": {
+          "k": {
+            "description": "K parameter for reciprocal rank fusion",
+            "default": null,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          }
+        }
       },
       "FormulaQuery": {
         "type": "object",

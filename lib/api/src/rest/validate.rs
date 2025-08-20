@@ -4,12 +4,10 @@ use common::validation::validate_multi_vector;
 use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::schema::BatchVectorStruct;
 use super::{
-    Batch, ContextInput, Expression, FormulaQuery, Fusion, OrderByInterface, PointVectors, Query,
-    QueryInterface, RecommendInput, Sample, VectorInput,
+    Batch, BatchVectorStruct, ContextInput, Expression, FormulaQuery, Fusion, NamedVectorStruct,
+    OrderByInterface, PointVectors, Query, QueryInterface, RecommendInput, Sample, VectorInput,
 };
-use crate::rest::NamedVectorStruct;
 
 impl Validate for NamedVectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
@@ -38,6 +36,7 @@ impl Validate for Query {
             Query::Discover(discover) => discover.validate(),
             Query::Context(context) => context.validate(),
             Query::Fusion(fusion) => fusion.validate(),
+            Query::Rrf(rrf) => rrf.validate(),
             Query::Formula(formula) => formula.validate(),
             Query::OrderBy(order_by) => order_by.validate(),
             Query::Sample(sample) => sample.validate(),

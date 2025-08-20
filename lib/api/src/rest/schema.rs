@@ -508,13 +508,23 @@ pub enum OrderByInterface {
 ///
 /// Available fusion algorithms:
 ///
-/// * `rrf` - Reciprocal Rank Fusion
+/// * `rrf` - Reciprocal Rank Fusion (with default parameters)
 /// * `dbsf` - Distribution-Based Score Fusion
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Fusion {
     Rrf,
     Dbsf,
+}
+
+/// Parameters for Reciprocal Rank Fusion
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct Rrf {
+    /// K parameter for reciprocal rank fusion
+    #[validate(range(min = 1))]
+    #[serde(default)]
+    pub k: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -623,6 +633,9 @@ pub enum Query {
     /// Fuse the results of multiple prefetches.
     Fusion(FusionQuery),
 
+    /// Apply reciprocal rank fusion to multiple prefetches
+    Rrf(RrfQuery),
+
     /// Score boosting via an arbitrary formula
     Formula(FormulaQuery),
 
@@ -675,6 +688,13 @@ pub struct OrderByQuery {
 pub struct FusionQuery {
     #[validate(nested)]
     pub fusion: Fusion,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct RrfQuery {
+    #[validate(nested)]
+    pub rrf: Rrf,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
