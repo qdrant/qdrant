@@ -508,7 +508,7 @@ pub enum OrderByInterface {
 ///
 /// Available fusion algorithms:
 ///
-/// * `rrf` - Reciprocal Rank Fusion (with k=2)
+/// * `rrf` - Reciprocal Rank Fusion (with default parameters)
 /// * `dbsf` - Distribution-Based Score Fusion
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
