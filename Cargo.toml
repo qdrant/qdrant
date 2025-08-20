@@ -204,7 +204,7 @@ bytemuck = { version = "1.23.2", features = [
 bytes = "1.10.1"
 chrono = { version = "0.4.41", features = ["serde"] }
 clap = { version = "4.5.45", features = ["derive", "env"] }
-criterion = "0.6.0"
+criterion = "0.7.0"
 data-encoding = "2.9.0"
 delegate = "0.13.4"
 ecow = { version = "0.2.6", features = ["serde"] }
@@ -232,7 +232,7 @@ ordered-float = { version = "5.0.0", features = ["serde", "schemars"] }
 rayon = "1.11.0"
 parking_lot = { version = "0.12.4", features = ["deadlock_detection", "serde"] }
 ph = "0.8.5"
-pprof = { version = "0.14.1", features = ["flamegraph", "prost-codec"] }
+pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
 proptest = { version = "1.7.0", default-features = false, features = ["std"] }
 prost = "0.12.6"
 prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
@@ -246,7 +246,7 @@ reqwest = { version = "0.12.23", default-features = false, features = [
     "rustls-tls",
     "blocking",
 ] }
-rstest = { version = "0.24.0", default-features = false }
+rstest = { version = "0.26.1", default-features = false }
 schemars = { version = "0.8.22", features = [
     "uuid1",
     "preserve_order",
