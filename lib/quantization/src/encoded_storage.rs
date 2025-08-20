@@ -4,9 +4,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 #[cfg(feature = "testing")]
 use std::num::NonZeroUsize;
-use std::path::Path;
-#[cfg(feature = "testing")]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -33,6 +31,10 @@ pub trait EncodedStorage {
     fn vectors_count(&self) -> usize;
 
     fn flusher(&self) -> MmapFlusher;
+
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf>;
 }
 
 pub trait EncodedStorageBuilder {
@@ -47,6 +49,7 @@ pub trait EncodedStorageBuilder {
 pub struct TestEncodedStorage {
     data: Vec<u8>,
     quantized_vector_size: NonZeroUsize,
+    path: Option<PathBuf>,
 }
 
 #[cfg(feature = "testing")]
@@ -113,6 +116,7 @@ impl EncodedStorage for TestEncodedStorage {
         Ok(Self {
             data: buffer,
             quantized_vector_size,
+            path: Some(path.to_path_buf()),
         })
     }
 
@@ -126,6 +130,18 @@ impl EncodedStorage for TestEncodedStorage {
 
     fn flusher(&self) -> MmapFlusher {
         Box::new(|| Ok(()))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        if let Some(ref path) = self.path {
+            vec![path.clone()]
+        } else {
+            vec![]
+        }
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.files()
     }
 }
 
@@ -170,6 +186,7 @@ impl EncodedStorageBuilder for TestEncodedStorageBuilder {
         Ok(TestEncodedStorage {
             data: self.data,
             quantized_vector_size: self.quantized_vector_size,
+            path: self.path,
         })
     }
 
