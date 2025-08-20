@@ -218,7 +218,8 @@ impl SegmentHolder {
     ///
     /// Pair of (id of newly inserted segment, Vector of replaced segments)
     ///
-    /// The inserted segment uses the provided segment ID, which must not be in the segment holder yet.
+    /// The inserted segment uses the provided segment ID. The segment ID must must not be in the
+    /// segment holder yet, or it must be one we also remove.
     pub fn swap_existing<T>(
         &mut self,
         segment_id: SegmentId,
@@ -228,8 +229,9 @@ impl SegmentHolder {
     where
         T: Into<LockedSegment>,
     {
+        let removed = self.remove(remove_ids);
         self.add_existing(segment_id, segment);
-        self.remove(remove_ids)
+        removed
     }
 
     pub fn get(&self, id: SegmentId) -> Option<&LockedSegment> {
