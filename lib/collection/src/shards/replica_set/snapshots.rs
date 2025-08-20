@@ -2,13 +2,13 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::{fs, io};
 
+use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use segment::data_types::manifest::{SegmentManifest, SnapshotManifest};
 use segment::types::SnapshotFormat;
 
 use super::{REPLICA_STATE_FILE, ReplicaSetState, ReplicaState, ShardReplicaSet};
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::save_on_disk::SaveOnDisk;
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard::{PeerId, Shard};

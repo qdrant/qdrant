@@ -6,9 +6,10 @@ use std::time::Duration;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use atomicwrites::{AtomicFile, Error as AtomicWriteError};
-use common::tar_ext;
 use parking_lot::{Condvar, Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 use serde::{Deserialize, Serialize};
+
+use crate::tar_ext;
 
 /// Functions as a smart pointer which gives a write guard and saves data on disk
 /// when write guard is dropped.

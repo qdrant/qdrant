@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::save_on_disk::SaveOnDisk;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use tempfile::Builder;
@@ -13,7 +14,6 @@ use crate::operations::types::CollectionError;
 use crate::operations::universal_query::shard_query::{
     FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
-use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::tests::fixtures::*;

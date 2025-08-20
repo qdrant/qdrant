@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::save_on_disk::SaveOnDisk;
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, FieldCondition, Filter, GeoPoint, GeoRadius, PayloadFieldSchema, PayloadSchemaType,
@@ -14,7 +15,6 @@ use tokio::sync::RwLock;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
-use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::tests::fixtures::{create_collection_config, upsert_operation};

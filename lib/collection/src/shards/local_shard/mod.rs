@@ -22,6 +22,7 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::rate_limiting::RateLimiter;
+use common::save_on_disk::SaveOnDisk;
 use common::{panic, tar_ext};
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
@@ -62,7 +63,6 @@ use crate::operations::types::{
     check_sparse_compatible_with_segment_config,
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
-use crate::save_on_disk::SaveOnDisk;
 use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
