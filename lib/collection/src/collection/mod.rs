@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
+use common::save_on_disk::SaveOnDisk;
 use common::types::{DetailsLevel, TelemetryDetail};
 use io::storage_version::StorageVersion;
 use segment::types::ShardKey;
@@ -39,7 +40,6 @@ use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType, OptimizersStatus};
 use crate::optimizers_builder::OptimizersConfig;
-use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::clock_map::RecoveryPoint;

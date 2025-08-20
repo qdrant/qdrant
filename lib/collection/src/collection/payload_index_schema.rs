@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::save_on_disk::SaveOnDisk;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType};
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,6 @@ use crate::operations::types::{CollectionResult, UpdateResult};
 use crate::operations::universal_query::formula::ExpressionInternal;
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::problems::unindexed_field;
-use crate::save_on_disk::SaveOnDisk;
 
 pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "payload_index.json";
 

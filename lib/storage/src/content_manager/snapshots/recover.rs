@@ -4,11 +4,11 @@ use collection::common::sha_256::{hash_file, hashes_equal};
 use collection::config::CollectionConfigInternal;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::operations::verification::new_unchecked_verification_pass;
-use collection::save_on_disk::SaveOnDisk;
 use collection::shards::check_shard_path;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::{PeerId, ShardId};
+use common::save_on_disk::SaveOnDisk;
 
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
