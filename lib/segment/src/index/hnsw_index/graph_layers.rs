@@ -221,6 +221,7 @@ impl GraphLayersWithVectors for GraphLayers {
     {
         self.links
             .links_with_vectors(point_id, level)
+            .1
             .for_each(|(point_id, vector)| f(point_id, vector));
     }
 }

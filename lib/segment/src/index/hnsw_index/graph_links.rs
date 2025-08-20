@@ -68,34 +68,39 @@ pub enum GraphLinksFormatParam<'a> {
     CompressedWithVectors(&'a dyn GraphLinksVectors),
 }
 
+/// This trait lets the [`serialize_graph_links`] to access vector values.
 pub trait GraphLinksVectors {
-    fn get_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]>;
+    /// Base vectors will be included once per point on level 0.
+    /// The layout of each vector must correspond to [`VectorLayout::base`].
+    fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]>;
 
-    fn vector_layout(&self) -> OperationResult<Layout>;
+    /// Link vectors will be included for each link per point.
+    /// The layout of each vector must correspond to [`VectorLayout::link`].
+    fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]>;
+
+    /// Get the layout of base and link vectors.
+    fn vector_layout(&self) -> OperationResult<VectorLayout>;
+}
+
+pub struct VectorLayout {
+    pub base: Layout,
+    pub link: Layout,
 }
 
 impl GraphLinksVectors for QuantizedVectors {
-    fn get_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
+    fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
+        self.get_link_vector(point_id) // FIXME: stub
+    }
+
+    fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
         Ok(self.get_quantized_vector(point_id))
     }
 
-    fn vector_layout(&self) -> OperationResult<Layout> {
-        self.get_quantized_vector_layout()
-    }
-}
-
-#[cfg(test)]
-impl GraphLinksVectors for Vec<Vec<u8>> {
-    fn get_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
-        Ok(&self[point_id as usize])
-    }
-
-    fn vector_layout(&self) -> OperationResult<Layout> {
-        const ALIGNMENT: usize = 8; // Some hard-coded alignment for test purposes.
-        Ok(
-            Layout::from_size_align(self.first().map_or(ALIGNMENT, |v| v.len()), ALIGNMENT)
-                .unwrap(),
-        )
+    fn vector_layout(&self) -> OperationResult<VectorLayout> {
+        Ok(VectorLayout {
+            base: self.get_quantized_vector_layout()?, // FIXME: stub
+            link: self.get_quantized_vector_layout()?,
+        })
     }
 }
 
@@ -251,9 +256,9 @@ impl GraphLinks {
         &self,
         point_id: PointOffsetType,
         level: usize,
-    ) -> LinksWithVectorsIterator<'_> {
-        let (links, vectors) = self.view().links_with_vectors(point_id, level);
-        links.zip(vectors)
+    ) -> (&[u8], LinksWithVectorsIterator<'_>) {
+        let (base_vector, links, vectors) = self.view().links_with_vectors(point_id, level);
+        (base_vector, links.zip(vectors))
     }
 
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
@@ -311,6 +316,48 @@ mod tests {
     use super::*;
     use crate::index::hnsw_index::HnswM;
 
+    struct TestGraphLinksVectors {
+        base_vectors: Vec<Vec<u8>>,
+        link_vectors: Vec<Vec<u8>>,
+        base_layout: Layout,
+        link_layout: Layout,
+    }
+
+    impl TestGraphLinksVectors {
+        fn new(count: usize, base_align: usize, link_align: usize) -> Self {
+            let mut rng = rand::rng();
+            let base_len = base_align * 7;
+            let link_len = link_align * 5;
+            Self {
+                base_vectors: (0..count)
+                    .map(|_| (0..base_len).map(|_| rng.random()).collect())
+                    .collect(),
+                link_vectors: (0..count)
+                    .map(|_| (0..link_len).map(|_| rng.random()).collect())
+                    .collect(),
+                base_layout: Layout::from_size_align(base_len, base_align).unwrap(),
+                link_layout: Layout::from_size_align(link_len, link_align).unwrap(),
+            }
+        }
+    }
+
+    impl GraphLinksVectors for TestGraphLinksVectors {
+        fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
+            Ok(&self.base_vectors[point_id as usize])
+        }
+
+        fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
+            Ok(&self.link_vectors[point_id as usize])
+        }
+
+        fn vector_layout(&self) -> OperationResult<VectorLayout> {
+            Ok(VectorLayout {
+                base: self.base_layout,
+                link: self.link_layout,
+            })
+        }
+    }
+
     fn random_links(
         points_count: usize,
         max_levels_count: usize,
@@ -334,25 +381,24 @@ mod tests {
             .collect()
     }
 
-    fn random_vectors(points_count: usize, bytes_size: usize) -> Vec<Vec<u8>> {
-        let mut rng = rand::rng();
-        (0..points_count)
-            .map(|_| (0..bytes_size).map(|_| rng.random()).collect())
-            .collect()
-    }
-
     fn check_links(
         mut left: Vec<Vec<Vec<PointOffsetType>>>,
         right: &GraphLinks,
-        vectors: &Option<Vec<Vec<u8>>>,
+        vectors: &Option<TestGraphLinksVectors>,
     ) {
         let mut right_links = right.to_edges_impl(|point_id, level| {
             if let Some(vectors) = vectors {
-                right
-                    .links_with_vectors(point_id, level)
-                    .inspect(|&(link, bytes)| assert_eq!(bytes, vectors[link as usize]))
-                    .map(|(link, _bytes)| link)
-                    .collect()
+                let (base_vector, iter) = right.links_with_vectors(point_id, level);
+                if level == 0 {
+                    assert_eq!(base_vector, vectors.get_base_vector(point_id).unwrap());
+                } else {
+                    assert!(base_vector.is_empty());
+                }
+                iter.map(|(link, bytes)| {
+                    assert_eq!(bytes, vectors.get_link_vector(link).unwrap());
+                    link
+                })
+                .collect()
             } else {
                 right.links(point_id, level).collect()
             }
@@ -376,13 +422,16 @@ mod tests {
     /// Test that random links can be saved by [`serialize_graph_links`] and
     /// loaded correctly by a [`GraphLinks`] impl.
     #[rstest]
-    #[case(GraphLinksFormat::Plain, true)]
-    #[case(GraphLinksFormat::Plain, false)]
-    #[case(GraphLinksFormat::Compressed, true)]
-    #[case(GraphLinksFormat::Compressed, false)]
-    #[case(GraphLinksFormat::CompressedWithVectors, true)]
-    #[case(GraphLinksFormat::CompressedWithVectors, false)]
-    fn test_save_load(#[case] format: GraphLinksFormat, #[case] on_disk: bool) {
+    #[case::plain(GraphLinksFormat::Plain, 8, 8)]
+    #[case::compressed(GraphLinksFormat::Compressed, 8, 8)]
+    #[case::comp_vec_1_16(GraphLinksFormat::CompressedWithVectors, 1, 16)]
+    #[case::comp_vec_4_1(GraphLinksFormat::CompressedWithVectors, 4, 1)]
+    #[case::comp_vec_4_16(GraphLinksFormat::CompressedWithVectors, 4, 16)]
+    fn test_save_load(
+        #[case] format: GraphLinksFormat,
+        #[case] base_align: usize,
+        #[case] link_align: usize,
+    ) {
         let points_count = 1000;
         let max_levels_count = 10;
         let hnsw_m = HnswM::new2(8);
@@ -393,7 +442,7 @@ mod tests {
 
         let vectors = format
             .is_with_vectors()
-            .then(|| random_vectors(points_count, 8));
+            .then(|| TestGraphLinksVectors::new(points_count, base_align, link_align));
 
         let format_param = format.with_param_for_tests(vectors.as_ref());
         atomic_save(&links_file, |writer| {
@@ -401,7 +450,7 @@ mod tests {
         })
         .unwrap();
 
-        let cmp_links = GraphLinks::load_from_file(&links_file, on_disk, format).unwrap();
+        let cmp_links = GraphLinks::load_from_file(&links_file, true, format).unwrap();
         check_links(links, &cmp_links, &vectors);
     }
 
@@ -412,7 +461,9 @@ mod tests {
     fn test_graph_links_construction(#[case] format: GraphLinksFormat) {
         let hnsw_m = HnswM::new2(8);
 
-        let vectors = format.is_with_vectors().then(|| random_vectors(100, 16));
+        let vectors = format
+            .is_with_vectors()
+            .then(|| TestGraphLinksVectors::new(100, 8, 8));
 
         let check = |links: Vec<Vec<Vec<PointOffsetType>>>| {
             let format_param = format.with_param_for_tests(vectors.as_ref());

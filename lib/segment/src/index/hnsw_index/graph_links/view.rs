@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::iter::{Copied, Zip};
 use std::num::NonZero;
 
@@ -76,26 +77,32 @@ pub(super) enum CompressionInfo<'a> {
     CompressedWithVectors {
         /// Compressed links with vectors.
         ///
-        /// Similar to [`CompressionInfo::Compressed`], but each `u32` value is
-        /// accompanied by a fixed-size vector.
+        /// Similar to [`CompressionInfo::Compressed`], but includes vectors.
+        /// - Each node on level 0 has a fixed-size "base" vector.
+        /// - Each link is accompanied by a fixed-size "link" vector.
         ///
         /// ```text
-        /// [Ncccccccccc__VVVVVVV][Ncccccccccc__VVVVVVV][Ncccccccccc__VVVVVVV]
+        /// [BBBB#ccccccc_LLLLLL_][BBBB#ccccccc_LLLLLL_][BBBB#ccccccc_LLLLLL_]
         /// [neighbors for node 0][neighbors for node 1][neighbors for node 2]...
         /// ```
         /// Where:
-        /// 1. `N` is a varint-encoded length.
-        ///    This value == number of links == number of vectors.
-        /// 2. `c` are compressed links (i.e. a compressed form of `Vec<u32>`).
-        /// 3. `_` is a padding to make vectors aligned.
-        /// 4. `V` are encoded vectors, one per link (i.e. `Vec<Vec<u8>>`).
+        /// 1. `B` is a base vector (i.e. `Vec<u8>` of fixed size).
+        ///    Only present on level 0, omitted on higher levels.
+        /// 2. `#` is a varint-encoded length.
+        ///    This value == number of links == number of link vectors.
+        /// 3. `c` are compressed links (i.e. a compressed form of `Vec<u32>`).
+        /// 4. `_` is a padding to make link vectors aligned.
+        /// 5. `L` are encoded link vectors, one per link (i.e. `Vec<Vec<u8>>`).
+        /// 6. `_` is a padding to make the next base vector aligned.
+        ///    Only present on level 0, omitted on higher levels.
         neighbors: &'a [u8],
         offsets: bitpacking_ordered::Reader<'a>,
         hnsw_m: HnswM,
         bits_per_unsorted: u8,
+        base_vector_layout: Layout,
         /// `NonZero` to avoid handling unlikely corner cases.
-        vector_size_bytes: NonZero<usize>,
-        vector_alignment: u8,
+        link_vector_size: NonZero<usize>,
+        link_vector_alignment: u8,
     },
 }
 
@@ -164,8 +171,10 @@ impl GraphLinksView<'_> {
         let (header, data) = HeaderCompressedWithVectors::ref_from_prefix(data)
             .map_err(|_| error_unsufficent_size())?;
         debug_assert_eq!(header.version.get(), HEADER_VERSION_COMPRESSED_WITH_VECTORS);
-        let vector_alignment = header.vector_alignment;
-        if !vector_alignment.is_power_of_two() {
+
+        // Check alignment of link vectors. Alignment of base vectors is checked
+        // in `Layout::from_size_align` later.
+        if !header.link_vector_layout.alignment.is_power_of_two() {
             return Err(OperationError::service_error(
                 "In GraphLinks file, vector alignment should be a power of two",
             ));
@@ -179,7 +188,11 @@ impl GraphLinksView<'_> {
         let (reindex, data) = get_slice::<PointOffsetType>(data, header.point_count.get())?;
         let (_, data) = get_slice::<u8>(data, {
             let pos = total_len - data.len();
-            (pos.next_multiple_of(vector_alignment as usize) - pos) as u64
+            let alignment = std::cmp::max(
+                header.link_vector_layout.alignment,
+                header.base_vector_layout.alignment,
+            );
+            (pos.next_multiple_of(alignment as usize) - pos) as u64
         })?;
         let (neighbors, data) = get_slice::<u8>(data, header.total_neighbors_bytes.get())?;
         let (offsets, _bytes) = bitpacking_ordered::Reader::new(header.offsets_parameters, data)
@@ -197,11 +210,18 @@ impl GraphLinksView<'_> {
                         OperationError::service_error("Too many points in GraphLinks file")
                     })?,
                 )),
-                vector_size_bytes: NonZero::try_from(header.vector_size_bytes.get() as usize)
+                base_vector_layout: Layout::from_size_align(
+                    header.base_vector_layout.size.get() as usize,
+                    header.base_vector_layout.alignment as usize,
+                )
+                .map_err(|_| {
+                    OperationError::service_error("Invalid base vector layout in GraphLinks file")
+                })?,
+                link_vector_size: NonZero::try_from(header.link_vector_layout.size.get() as usize)
                     .map_err(|_| {
                         OperationError::service_error("Zero vector size in GraphLinks file")
                     })?,
-                vector_alignment,
+                link_vector_alignment: header.link_vector_layout.alignment,
             },
             level_offsets,
         })
@@ -235,12 +255,17 @@ impl GraphLinksView<'_> {
             }
             CompressionInfo::CompressedWithVectors { .. } => {
                 // Not intended to be used outside of tests.
-                Either::Right(self.links_with_vectors(point_id, level).0)
+                Either::Right(self.links_with_vectors(point_id, level).1)
             }
         }
     }
 
-    /// Returns two iterators of the same length that could be combined into
+    /// Returns a tuple of three elements:
+    /// - Base vector (only on level 0, empty slice on higher levels).
+    /// - Links iterator.
+    /// - Link vectors iterator.
+    ///
+    /// Both iterators have same length and can be combined into
     /// [`LinksWithVectorsIterator`].
     ///
     /// # Panics
@@ -250,7 +275,11 @@ impl GraphLinksView<'_> {
         &self,
         point_id: PointOffsetType,
         level: usize,
-    ) -> (PackedLinksIterator<'_>, std::slice::ChunksExact<'_, u8>) {
+    ) -> (
+        &[u8],
+        PackedLinksIterator<'_>,
+        std::slice::ChunksExact<'_, u8>,
+    ) {
         let idx = if level == 0 {
             point_id as usize
         } else {
@@ -265,20 +294,31 @@ impl GraphLinksView<'_> {
                 ref offsets,
                 ref hnsw_m,
                 bits_per_unsorted,
-                vector_size_bytes,
-                vector_alignment,
+                base_vector_layout,
+                link_vector_size,
+                link_vector_alignment,
             } => {
                 let start = offsets.get(idx).unwrap() as usize;
                 let end = offsets.get(idx + 1).unwrap() as usize;
 
                 memory::madvise::will_need_multiple_pages(&neighbors[start..end]);
 
-                // 1. The varint-encoded length (`N` in the doc).
-                let (neighbors_count, neighbors_count_size) =
-                    u64::decode_var(&neighbors[start..end]).unwrap();
+                let mut pos = start;
 
-                // 2. Compressed links (`c` in the doc).
-                let mut pos = start + neighbors_count_size;
+                // 1. Base vector (`B` in the doc, only on level 0).
+                let mut base_vector: &[u8] = &[];
+                if level == 0 {
+                    base_vector = &neighbors[pos..pos + base_vector_layout.size()];
+                    debug_assert_eq!(base_vector.as_ptr().addr() % base_vector_layout.align(), 0);
+                    pos += base_vector_layout.size();
+                }
+
+                // 2. The varint-encoded length (`#` in the doc).
+                let (neighbors_count, neighbors_count_size) =
+                    u64::decode_var(&neighbors[pos..end]).unwrap();
+                pos += neighbors_count_size;
+
+                // 3. Compressed links (`c` in the doc).
                 let links_size = packed_links_size(
                     &neighbors[pos..end],
                     bits_per_unsorted,
@@ -292,14 +332,18 @@ impl GraphLinksView<'_> {
                 );
                 pos += links_size;
 
-                // 3. Padding to align vectors (`_` in the doc).
-                pos = pos.next_multiple_of(vector_alignment as usize);
+                // 4. Padding to align link vectors (`_` in the doc).
+                pos = pos.next_multiple_of(link_vector_alignment as usize);
 
-                // 4. Vectors (`V` in the doc).
+                // 5. Link vectors (`L` in the doc).
                 let vectors = &neighbors[pos..end];
-                debug_assert!(vectors.as_ptr().addr() % vector_alignment as usize == 0);
+                debug_assert_eq!(vectors.as_ptr().addr() % link_vector_alignment as usize, 0);
 
-                (links, vectors.chunks_exact(vector_size_bytes.get()))
+                (
+                    base_vector,
+                    links,
+                    vectors.chunks_exact(link_vector_size.get()),
+                )
             }
         }
     }
