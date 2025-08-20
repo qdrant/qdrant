@@ -1,6 +1,6 @@
 use std::alloc::Layout;
 use std::marker::PhantomData;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -22,6 +22,7 @@ use crate::{
 pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
+    metadata_path: Option<PathBuf>,
     bits_store_type: PhantomData<TBitsStoreType>,
 }
 
@@ -429,6 +430,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         Ok(Self {
             encoded_vectors,
             metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
             bits_store_type: PhantomData,
         })
     }
@@ -505,6 +507,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         Ok(Self {
             encoded_vectors,
             metadata,
+            metadata_path: meta_path.map(PathBuf::from),
             bits_store_type: PhantomData,
         })
     }
@@ -841,6 +844,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
         let result = Self {
             metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
             encoded_vectors,
             bits_store_type: PhantomData,
         };
@@ -930,6 +934,22 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
     fn flusher(&self) -> MmapFlusher {
         self.encoded_vectors.flusher()
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = self.encoded_vectors.files();
+        if let Some(meta_path) = &self.metadata_path {
+            files.push(meta_path.clone());
+        }
+        files
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = self.encoded_vectors.immutable_files();
+        if let Some(meta_path) = &self.metadata_path {
+            files.push(meta_path.clone());
+        }
+        files
     }
 
     type SupportsBytes = True;

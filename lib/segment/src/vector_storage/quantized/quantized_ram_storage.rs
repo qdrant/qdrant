@@ -15,6 +15,7 @@ use crate::vector_storage::chunked_vectors::ChunkedVectors;
 #[derive(Debug)]
 pub struct QuantizedRamStorage {
     vectors: ChunkedVectors<u8>,
+    path: PathBuf,
 }
 
 impl quantization::EncodedStorage for QuantizedRamStorage {
@@ -49,7 +50,10 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
             })?;
         }
         reader.into_inner().drop_cache()?;
-        Ok(QuantizedRamStorage { vectors })
+        Ok(QuantizedRamStorage {
+            vectors,
+            path: path.to_path_buf(),
+        })
     }
 
     fn is_on_disk(&self) -> bool {
@@ -62,6 +66,14 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
 
     fn flusher(&self) -> MmapFlusher {
         Box::new(|| Ok(()))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
     }
 }
 
@@ -99,6 +111,7 @@ impl quantization::EncodedStorageBuilder for QuantizedRamStorageBuilder {
 
         Ok(QuantizedRamStorage {
             vectors: self.vectors,
+            path: self.path,
         })
     }
 

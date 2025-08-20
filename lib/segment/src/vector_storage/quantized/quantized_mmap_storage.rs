@@ -1,5 +1,5 @@
 use std::num::NonZeroUsize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -12,6 +12,7 @@ use memory::mmap_type::MmapFlusher;
 pub struct QuantizedMmapStorage {
     mmap: Mmap,
     quantized_vector_size: NonZeroUsize,
+    path: PathBuf,
 }
 
 impl QuantizedMmapStorage {
@@ -24,6 +25,7 @@ pub struct QuantizedMmapStorageBuilder {
     mmap: MmapMut,
     cursor_pos: usize,
     quantized_vector_size: NonZeroUsize,
+    path: PathBuf,
 }
 
 impl quantization::EncodedStorage for QuantizedMmapStorage {
@@ -72,6 +74,7 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
         Ok(Self {
             mmap,
             quantized_vector_size,
+            path: path.to_path_buf(),
         })
     }
 
@@ -87,6 +90,14 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
         // Mmap storage does not need a flusher, as it is non-appendable and already backed by a file.
         Box::new(|| Ok(()))
     }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
 }
 
 impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
@@ -98,6 +109,7 @@ impl quantization::EncodedStorageBuilder for QuantizedMmapStorageBuilder {
         Ok(QuantizedMmapStorage {
             mmap,
             quantized_vector_size: self.quantized_vector_size,
+            path: self.path,
         })
     }
 
@@ -149,6 +161,7 @@ impl QuantizedMmapStorageBuilder {
                     "`quantized_vector_size` must be non-zero",
                 )
             })?,
+            path: path.to_path_buf(),
         })
     }
 }
