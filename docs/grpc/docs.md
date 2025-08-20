@@ -4012,7 +4012,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | sample | [Sample](#qdrant-Sample) |  | Sample points from the collection. |
 | formula | [Formula](#qdrant-Formula) |  | Score boosting via an arbitrary formula |
 | nearest_with_mmr | [NearestInputWithMmr](#qdrant-NearestInputWithMmr) |  | Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm. |
-| rrf | [Rrf](#qdrant-Rrf) |  | Parameterized RRF fusion |
+| rrf | [Rrf](#qdrant-Rrf) |  | Parameterized reciprocal rank fusion |
 
 
 

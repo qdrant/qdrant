@@ -105,7 +105,7 @@ impl Validate for FusionInterface {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
             FusionInterface::Fusion(fusion) => fusion.validate(),
-            FusionInterface::RRF(rrf) => rrf.validate(),
+            FusionInterface::Rrf(rrf) => rrf.validate(),
         }
     }
 }

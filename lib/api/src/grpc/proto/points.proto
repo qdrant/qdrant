@@ -685,7 +685,7 @@ message Query {
     Sample sample = 7; // Sample points from the collection.
     Formula formula = 8; // Score boosting via an arbitrary formula
     NearestInputWithMmr nearest_with_mmr = 9; // Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm.
-    Rrf rrf = 10; // Parameterized RRF fusion
+    Rrf rrf = 10; // Parameterized reciprocal rank fusion
   }
 }
 

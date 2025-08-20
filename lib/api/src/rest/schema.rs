@@ -538,7 +538,7 @@ pub struct Rrf {
 #[serde(untagged)]
 pub enum FusionInterface {
     Fusion(Fusion),
-    RRF(Rrf),
+    Rrf(Rrf),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

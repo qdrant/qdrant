@@ -5681,7 +5681,7 @@ pub mod query {
         /// Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm.
         #[prost(message, tag = "9")]
         NearestWithMmr(super::NearestInputWithMmr),
-        /// Parameterized RRF fusion
+        /// Parameterized reciprocal rank fusion
         #[prost(message, tag = "10")]
         Rrf(super::Rrf),
     }

@@ -734,7 +734,7 @@ mod from_rest {
         fn from(value: rest::FusionInterface) -> Self {
             match value {
                 rest::FusionInterface::Fusion(fusion) => FusionInternal::from(fusion),
-                rest::FusionInterface::RRF(rrf) => FusionInternal::from(rrf),
+                rest::FusionInterface::Rrf(rrf) => FusionInternal::from(rrf),
             }
         }
     }
