@@ -36,7 +36,17 @@ impl SegmentEntry for ProxySegment {
             .get()
             .read()
             .point_version(point_id)
-            .or_else(|| self.wrapped_segment.get().read().point_version(point_id))
+            .or_else(|| {
+                // Ignore point from wrapped segment if already marked for deletion
+                // By `point_version` semantics we don't expect to get a version if the point
+                // is deleted. This also prevents `move_if_exists` from moving an old point
+                // into the write segment again.
+                if self.deleted_points.read().contains_key(&point_id) {
+                    return None;
+                }
+
+                self.wrapped_segment.get().read().point_version(point_id)
+            })
     }
 
     fn search_batch(
