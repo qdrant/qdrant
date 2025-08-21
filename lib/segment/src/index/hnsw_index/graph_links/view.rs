@@ -28,7 +28,7 @@ pub(super) struct GraphLinksView<'a> {
     pub(super) compression: CompressionInfo<'a>,
     /// Level offsets, copied into RAM for faster access.
     /// Has at least two elements:
-    /// - [`super::GraphLinksSerializer`] always writes `0` as the first element.
+    /// - [`super::serialize_graph_links`] always writes `0` as the first element.
     /// - Additional element is added during deserialization.
     pub(super) level_offsets: Vec<u64>,
 }
