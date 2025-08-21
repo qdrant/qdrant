@@ -7,24 +7,30 @@ use atomicwrites::{AtomicFile, OverwriteBehavior};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-pub fn atomic_save_bin<T: Serialize>(path: &Path, object: &T) -> Result<()> {
+pub fn atomic_save<E, F>(path: &Path, write: F) -> Result<(), E>
+where
+    E: From<io::Error>,
+    F: FnOnce(&mut BufWriter<&mut File>) -> Result<(), E>,
+{
     let af = AtomicFile::new(path, OverwriteBehavior::AllowOverwrite);
     af.write(|f| {
         let mut writer = BufWriter::new(f);
-        bincode::serialize_into(&mut writer, object)?;
-        writer.flush().map_err(bincode::Error::from)
-    })?;
-    Ok(())
+        write(&mut writer)?;
+        writer.flush()?;
+        Ok(())
+    })
+    .map_err(|e| match e {
+        atomicwrites::Error::Internal(err) => E::from(err),
+        atomicwrites::Error::User(err) => err,
+    })
+}
+
+pub fn atomic_save_bin<T: Serialize>(path: &Path, object: &T) -> Result<()> {
+    atomic_save(path, |writer| Ok(bincode::serialize_into(writer, object)?))
 }
 
 pub fn atomic_save_json<T: Serialize>(path: &Path, object: &T) -> Result<()> {
-    let af = AtomicFile::new(path, OverwriteBehavior::AllowOverwrite);
-    af.write(|f| {
-        let mut writer = BufWriter::new(f);
-        serde_json::to_writer(&mut writer, object)?;
-        writer.flush()
-    })?;
-    Ok(())
+    atomic_save(path, |writer| Ok(serde_json::to_writer(writer, object)?))
 }
 
 pub fn read_bin<T: DeserializeOwned>(path: &Path) -> Result<T> {
