@@ -854,7 +854,7 @@ impl QuantizedVectors {
         let data_path = Self::get_data_path(path);
         let meta_path = Self::get_meta_path(path);
         if Self::is_ram(binary_config.always_ram, on_disk_vector_storage) {
-            let quantized_vector_size = 
+            let quantized_vector_size =
                 EncodedVectorsBin::<u128, QuantizedRamStorage>::get_quantized_vector_size_from_params(
                     config.vector_parameters.dim,
                     Self::convert_binary_encoding(binary_config.encoding),
