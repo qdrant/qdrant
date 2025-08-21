@@ -68,7 +68,7 @@ pub struct SegmentHolder {
     pub failed_operation: BTreeSet<SeqNumberType>,
 
     /// Holds the first uncorrected error happened with optimizer
-    pub optimizer_errors: Option<CollectionError>,
+    pub optimizer_errors: Option<String>,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -1304,11 +1304,11 @@ impl SegmentHolder {
         )
     }
 
-    pub fn report_optimizer_error<E: Into<CollectionError>>(&mut self, error: E) {
+    pub fn report_optimizer_error<E: ToString>(&mut self, error: E) {
         // Save only the first error
         // If is more likely to be the real cause of all further problems
         if self.optimizer_errors.is_none() {
-            self.optimizer_errors = Some(error.into());
+            self.optimizer_errors = Some(error.to_string());
         }
     }
 
