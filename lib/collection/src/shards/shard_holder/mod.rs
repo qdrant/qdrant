@@ -1258,6 +1258,7 @@ impl ShardHolder {
     ) -> CollectionResult<()> {
         if key_mapping.read().was_old_format {
             // We automatically migrate to the new format when writing once, which we do here.
+            log::debug!("Migrating persisted shard key mapping to new format");
             key_mapping.write(|i| {
                 // Also set this to true for consistency. However it should never be read.
                 i.was_old_format = false;
