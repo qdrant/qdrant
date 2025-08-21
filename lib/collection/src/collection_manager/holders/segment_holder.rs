@@ -32,7 +32,6 @@ use super::proxy_segment::{LockedIndexChanges, LockedRmSet};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::operations::types::CollectionError;
-use crate::shards::update_tracker::UpdateTracker;
 
 pub type SegmentId = usize;
 
@@ -59,8 +58,6 @@ impl PartialOrd for DedupPoint {
 pub struct SegmentHolder {
     appendable_segments: AHashMap<SegmentId, LockedSegment>,
     non_appendable_segments: AHashMap<SegmentId, LockedSegment>,
-
-    update_tracker: UpdateTracker,
 
     /// Source for unique (virtual) IDs for newly added segments
     id_source: AtomicUsize,
@@ -104,10 +101,6 @@ impl SegmentHolder {
 
     pub fn is_empty(&self) -> bool {
         self.appendable_segments.is_empty() && self.non_appendable_segments.is_empty()
-    }
-
-    pub fn update_tracker(&self) -> UpdateTracker {
-        self.update_tracker.clone()
     }
 
     fn generate_new_key(&self) -> SegmentId {
