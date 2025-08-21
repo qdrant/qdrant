@@ -113,6 +113,9 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
 
+RUN xx-cargo install cargo-sbom && \
+    cargo sbom > qdrant.spdx.json
+
 # Dockerfile does not support conditional `FROM` directly.
 # To workaround this limitation, we use a multi-stage build with a different base images which have equal name to ARG value.
 
@@ -198,6 +201,7 @@ RUN if [ "$USER_ID" != 0 ]; then \
     fi
 
 COPY --from=builder --chown=$USER_ID:$USER_ID /qdrant/qdrant "$APP"/qdrant
+COPY --from=builder --chown=$USER_ID:$USER_ID /qdrant/qdrant.spdx.json "$APP"/qdrant.spdx.json
 COPY --from=builder --chown=$USER_ID:$USER_ID /qdrant/config "$APP"/config
 COPY --from=builder --chown=$USER_ID:$USER_ID /qdrant/tools/entrypoint.sh "$APP"/entrypoint.sh
 COPY --from=builder --chown=$USER_ID:$USER_ID /static "$APP"/static
