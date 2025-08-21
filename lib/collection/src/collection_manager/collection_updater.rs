@@ -8,6 +8,7 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::segments_updater::*;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::types::CollectionResult;
+use crate::shards::update_tracker::UpdateTracker;
 
 /// Implementation of the update operation
 #[derive(Default)]
@@ -43,26 +44,30 @@ impl CollectionUpdater {
         op_num: SeqNumberType,
         operation: CollectionUpdateOperations,
         scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<usize> {
         // Allow only one update at a time, ensure no data races between segments.
         // let _lock = self.update_lock.lock().unwrap();
 
-        // Use block_in_place here to avoid blocking the current async executor
-        let _scroll_lock = tokio::task::block_in_place(|| scroll_lock.blocking_write());
+        let operation_result = {
+            // Use block_in_place here to avoid blocking the current async executor
+            let _scroll_lock = tokio::task::block_in_place(|| scroll_lock.blocking_write());
+            let _update_guard = update_tracker.update();
 
-        let operation_result = match operation {
-            CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(segments, op_num, point_operation, hw_counter)
-            }
-            CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                process_vector_operation(segments, op_num, vector_operation, hw_counter)
-            }
-            CollectionUpdateOperations::PayloadOperation(payload_operation) => {
-                process_payload_operation(segments, op_num, payload_operation, hw_counter)
-            }
-            CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
-                process_field_index_operation(segments, op_num, &index_operation, hw_counter)
+            match operation {
+                CollectionUpdateOperations::PointOperation(point_operation) => {
+                    process_point_operation(segments, op_num, point_operation, hw_counter)
+                }
+                CollectionUpdateOperations::VectorOperation(vector_operation) => {
+                    process_vector_operation(segments, op_num, vector_operation, hw_counter)
+                }
+                CollectionUpdateOperations::PayloadOperation(payload_operation) => {
+                    process_payload_operation(segments, op_num, payload_operation, hw_counter)
+                }
+                CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
+                    process_field_index_operation(segments, op_num, &index_operation, hw_counter)
+                }
             }
         };
 

@@ -32,7 +32,6 @@ use super::proxy_segment::{LockedIndexChanges, LockedRmSet};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::operations::types::CollectionError;
-use crate::shards::update_tracker::UpdateTracker;
 
 pub type SegmentId = usize;
 
@@ -59,8 +58,6 @@ impl PartialOrd for DedupPoint {
 pub struct SegmentHolder {
     appendable_segments: AHashMap<SegmentId, LockedSegment>,
     non_appendable_segments: AHashMap<SegmentId, LockedSegment>,
-
-    update_tracker: UpdateTracker,
 
     /// Source for unique (virtual) IDs for newly added segments
     id_source: AtomicUsize,
@@ -104,10 +101,6 @@ impl SegmentHolder {
 
     pub fn is_empty(&self) -> bool {
         self.appendable_segments.is_empty() && self.non_appendable_segments.is_empty()
-    }
-
-    pub fn update_tracker(&self) -> UpdateTracker {
-        self.update_tracker.clone()
     }
 
     fn generate_new_key(&self) -> SegmentId {
@@ -479,8 +472,6 @@ impl SegmentHolder {
             &mut RwLockUpgradableReadGuard<dyn SegmentEntry + 'static>,
         ) -> OperationResult<bool>,
     {
-        let _update_guard = self.update_tracker.update();
-
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
             let is_applied = f(&mut segment.get().upgradable_read())?;
@@ -496,8 +487,6 @@ impl SegmentHolder {
             SegmentId,
         ) -> OperationResult<bool>,
     {
-        let _update_guard = self.update_tracker.update();
-
         loop {
             let mut did_apply = false;
 
@@ -547,8 +536,6 @@ impl SegmentHolder {
             &T,
         ) -> OperationResult<bool>,
     {
-        let _update_guard = self.update_tracker.update();
-
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
 
         // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly
@@ -685,8 +672,6 @@ impl SegmentHolder {
         for<'n, 'o, 'p> H: FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload),
         G: FnMut(&dyn SegmentEntry) -> bool,
     {
-        let _update_guard = self.update_tracker.update();
-
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments_ids();
 
