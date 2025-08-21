@@ -35,6 +35,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::LocalShardClocks;
+use crate::shards::update_tracker::UpdateTracker;
 use crate::wal::WalError;
 use crate::wal_delta::LockedWal;
 
@@ -134,6 +135,8 @@ pub struct UpdateHandler {
     ///
     /// Write lock must be held for updates, while read lock must be held for scroll
     scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
+
+    update_tracker: UpdateTracker,
 }
 
 impl UpdateHandler {
@@ -153,6 +156,7 @@ impl UpdateHandler {
         clocks: LocalShardClocks,
         shard_path: PathBuf,
         scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
@@ -176,6 +180,7 @@ impl UpdateHandler {
             shard_path,
             has_triggered_optimizers: Default::default(),
             scroll_read_lock,
+            update_tracker,
         }
     }
 
@@ -195,6 +200,7 @@ impl UpdateHandler {
             self.has_triggered_optimizers.clone(),
             self.payload_index_schema.clone(),
             self.scroll_read_lock.clone(),
+            self.update_tracker.clone(),
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
             update_receiver,
@@ -202,6 +208,7 @@ impl UpdateHandler {
             self.wal.clone(),
             self.segments.clone(),
             self.scroll_read_lock.clone(),
+            self.update_tracker.clone(),
         )));
         let (flush_tx, flush_rx) = oneshot::channel();
         self.flush_worker = Some(self.runtime_handle.spawn(Self::flush_worker(
@@ -260,6 +267,7 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         wal: LockedWal,
         scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
     ) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
         let first_failed_operation_option = segments.read().failed_operation.iter().cloned().min();
@@ -273,6 +281,7 @@ impl UpdateHandler {
                         op_num,
                         operation.operation,
                         scroll_lock.clone(),
+                        update_tracker.clone(),
                         &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
                     )?;
                 }
@@ -589,6 +598,7 @@ impl UpdateHandler {
         has_triggered_optimizers: Arc<AtomicBool>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
     ) {
         let max_handles = max_handles.unwrap_or(usize::MAX);
         let max_indexing_threads = optimizers
@@ -659,9 +669,14 @@ impl UpdateHandler {
                 continue;
             }
 
-            if Self::try_recover(segments.clone(), wal.clone(), scroll_lock.clone())
-                .await
-                .is_err()
+            if Self::try_recover(
+                segments.clone(),
+                wal.clone(),
+                scroll_lock.clone(),
+                update_tracker.clone(),
+            )
+            .await
+            .is_err()
             {
                 continue;
             }
@@ -717,6 +732,7 @@ impl UpdateHandler {
         wal: LockedWal,
         segments: LockedSegmentHolder,
         scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
     ) {
         while let Some(signal) = receiver.recv().await {
             match signal {
@@ -743,6 +759,7 @@ impl UpdateHandler {
                             op_num,
                             operation,
                             scroll_lock.clone(),
+                            update_tracker.clone(),
                             &hw_measurements.get_counter_cell(),
                         )
                     });

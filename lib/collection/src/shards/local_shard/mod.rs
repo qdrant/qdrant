@@ -195,6 +195,7 @@ impl LocalShard {
         .await;
 
         let scroll_read_lock = Arc::new(tokio::sync::RwLock::new(()));
+        let update_tracker = UpdateTracker::default();
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
@@ -211,13 +212,12 @@ impl LocalShard {
             clocks.clone(),
             shard_path.into(),
             scroll_read_lock.clone(),
+            update_tracker.clone(),
         );
 
         let (update_sender, update_receiver) =
             mpsc::channel(shared_storage_config.update_queue_size);
         update_handler.run_workers(update_receiver);
-
-        let update_tracker = segment_holder.read().update_tracker();
 
         let read_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
             strict_mode
@@ -660,6 +660,7 @@ impl LocalShard {
                 op_num,
                 update.operation,
                 self.scroll_read_lock.clone(),
+                self.update_tracker.clone(),
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
             ) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
