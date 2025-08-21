@@ -16,7 +16,7 @@ pub struct ShardKeyMapping {
     /// `true` if the ShardKeyMapping was specified in the old format.
     /// TODO(shardkey): Remove once all keys are migrated.
     #[serde(skip)]
-    pub was_old_format: bool,
+    pub(crate) was_old_format: bool,
 }
 
 impl ops::Deref for ShardKeyMapping {
