@@ -4,7 +4,9 @@ use std::fs::File;
 use std::io::{Read, Write};
 #[cfg(feature = "testing")]
 use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "testing")]
+use std::path::Path;
+use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
