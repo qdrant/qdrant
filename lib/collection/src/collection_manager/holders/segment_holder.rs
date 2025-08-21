@@ -479,8 +479,6 @@ impl SegmentHolder {
             &mut RwLockUpgradableReadGuard<dyn SegmentEntry + 'static>,
         ) -> OperationResult<bool>,
     {
-        let _update_guard = self.update_tracker.update();
-
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
             let is_applied = f(&mut segment.get().upgradable_read())?;
@@ -496,8 +494,6 @@ impl SegmentHolder {
             SegmentId,
         ) -> OperationResult<bool>,
     {
-        let _update_guard = self.update_tracker.update();
-
         loop {
             let mut did_apply = false;
 
@@ -547,8 +543,6 @@ impl SegmentHolder {
             &T,
         ) -> OperationResult<bool>,
     {
-        let _update_guard = self.update_tracker.update();
-
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
 
         // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly
@@ -685,8 +679,6 @@ impl SegmentHolder {
         for<'n, 'o, 'p> H: FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload),
         G: FnMut(&dyn SegmentEntry) -> bool,
     {
-        let _update_guard = self.update_tracker.update();
-
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments_ids();
 
