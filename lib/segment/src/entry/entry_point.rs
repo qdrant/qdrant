@@ -32,6 +32,8 @@ pub trait SegmentEntry: SnapshotEntry {
     fn version(&self) -> SeqNumberType;
 
     /// Get version of specified point
+    ///
+    /// Returns `None` if point does not exist or is soft-deleted.
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType>;
 
     #[allow(clippy::too_many_arguments)]
