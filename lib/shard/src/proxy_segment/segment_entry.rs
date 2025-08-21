@@ -31,27 +31,28 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
-        // Write version is always higher if present
-        self.write_segment
-            .get()
+        // Use write segment version if present, we assume it's always higher
+        if let Some(version) = self.write_segment.get().read().point_version(point_id) {
+            return Some(version);
+        }
+
+        // Use wrapped segment version, if absent we have no version at all
+        let wrapped_version = self.wrapped_segment.get().read().point_version(point_id)?;
+
+        // Ignore point from wrapped segment if already marked for deletion with newer version
+        // By `point_version` semantics we don't expect to get a version if the point
+        // is deleted. This also prevents `move_if_exists` from moving an old point
+        // into the write segment again.
+        if self
+            .deleted_points
             .read()
-            .point_version(point_id)
-            .or_else(|| {
-                self.wrapped_segment
-                    .get()
-                    .read()
-                    .point_version(point_id)
-                    // Ignore point from wrapped segment if already marked for deletion
-                    // By `point_version` semantics we don't expect to get a version if the point
-                    // is deleted. This also prevents `move_if_exists` from moving an old point
-                    // into the write segment again.
-                    .filter(|version| {
-                        self.deleted_points
-                            .read()
-                            .get(&point_id)
-                            .is_none_or(|delete| version > &delete.local_version)
-                    })
-            })
+            .get(&point_id)
+            .is_some_and(|delete| wrapped_version <= delete.local_version)
+        {
+            return None;
+        }
+
+        Some(wrapped_version)
     }
 
     fn search_batch(
