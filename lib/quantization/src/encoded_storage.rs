@@ -15,10 +15,6 @@ use memory::mmap_type::MmapFlusher;
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> &[u8];
 
-    fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self>
-    where
-        Self: Sized;
-
     fn is_on_disk(&self) -> bool;
 
     fn upsert_vector(
@@ -50,6 +46,37 @@ pub struct TestEncodedStorage {
     data: Vec<u8>,
     quantized_vector_size: NonZeroUsize,
     path: Option<PathBuf>,
+}
+
+#[cfg(feature = "testing")]
+impl TestEncodedStorage {
+    pub fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
+        let mut file = OneshotFile::open(path)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        file.drop_cache()?;
+        if !buffer.len().is_multiple_of(quantized_vector_size) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "TestEncodedStorage: buffer size ({}) not divisible by quantized_vector_size ({})",
+                    buffer.len(),
+                    quantized_vector_size,
+                ),
+            ));
+        }
+        let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "`quantized_vector_size` must be non-zero",
+            )
+        })?;
+        Ok(Self {
+            data: buffer,
+            quantized_vector_size,
+            path: Some(path.to_path_buf()),
+        })
+    }
 }
 
 #[cfg(feature = "testing")]
@@ -90,34 +117,6 @@ impl EncodedStorage for TestEncodedStorage {
         }
         self.data[offset..offset + self.quantized_vector_size.get()].copy_from_slice(vector);
         Ok(())
-    }
-
-    fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
-        let mut file = OneshotFile::open(path)?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
-        file.drop_cache()?;
-        if !buffer.len().is_multiple_of(quantized_vector_size) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "TestEncodedStorage: buffer size ({}) not divisible by quantized_vector_size ({})",
-                    buffer.len(),
-                    quantized_vector_size,
-                ),
-            ));
-        }
-        let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "`quantized_vector_size` must be non-zero",
-            )
-        })?;
-        Ok(Self {
-            data: buffer,
-            quantized_vector_size,
-            path: Some(path.to_path_buf()),
-        })
     }
 
     fn is_on_disk(&self) -> bool {
