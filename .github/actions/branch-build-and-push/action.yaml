@@ -42,27 +42,31 @@ runs:
 
         branch_tmp=$(git rev-parse --abbrev-ref HEAD)
         branch=${branch_tmp//\//-} # replace all / with -
-        echo "Building branch $branch"
+        echo "Building branch ${branch}"
 
         # Create build container
         docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
         docker buildx create --use
 
         # Authenticate on registries
-        [ "${{ inputs.push-to-ghcr }}" = true ] && docker login ghcr.io -u qdrant --password "${{ inputs.ghcr-password }}"
-        [ "${{ inputs.push-to-dockerhub }}" = true ] && docker login docker.io -u qdrant --password "${{ inputs.dockerhub-password }}"
+        if [ "${{ inputs.push-to-ghcr }}" = "true" ]; then
+          docker login ghcr.io -u qdrant --password "${{ inputs.ghcr-password }}"
+        fi
+        if [ "${{ inputs.push-to-dockerhub }}" = "true" ]; then
+          docker login docker.io -u qdrant --password "${{ inputs.dockerhub-password }}"
+        fi
 
         GIT_COMMIT_ID="$(git rev-parse HEAD)"
 
         # Build base tags array
         tags=()
-        if  [ "${{ inputs.push-to-ghcr }}" = true ]; then
-          tags+=("ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID}")
-          tags+=("ghcr.io/qdrant/qdrant:$branch")
+        if [ "${{ inputs.push-to-ghcr }}" = "true" ]; then
+          tags+=("ghcr.io/qdrant/qdrant:${branch}-${GIT_COMMIT_ID}")
+          tags+=("ghcr.io/qdrant/qdrant:${branch}")
         fi
-        if [ "${{ inputs.push-to-dockerhub }}" == "true" ]; then
-          tags+=("qdrant/qdrant:$branch-${GIT_COMMIT_ID}")
-          tags+=("qdrant/qdrant:$branch")
+        if [ "${{ inputs.push-to-dockerhub }}" = "true" ]; then
+          tags+=("qdrant/qdrant:${branch}-${GIT_COMMIT_ID}")
+          tags+=("qdrant/qdrant:${branch}")
         fi
 
         # Exit if no tags to build
@@ -79,20 +83,21 @@ runs:
 
           # Create modified tags with suffix
           local build_tags=()
+          local tag
           for tag in "${tags[@]}"; do
             build_tags+=("-t" "${tag}${suffix}")
           done
 
           echo "Building with tags: ${build_tags[*]}"
           docker buildx build --platform="$platform" \
-            --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} \
+            --build-arg GIT_COMMIT_ID="${GIT_COMMIT_ID}" \
             $build_args \
             "${build_tags[@]}" \
-            --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
+            --push --label "org.opencontainers.image.revision"="${GIT_COMMIT_ID}" .
         }
 
         # Build images based on type
-        if [ "${{ inputs.build-gpu }}" == "true" ]; then
+        if [ "${{ inputs.build-gpu }}" = "true" ]; then
           echo "Building GPU images"
           build_image "-gpu-nvidia" "linux/amd64" "--build-arg GPU=nvidia"
           build_image "-gpu-amd" "linux/amd64" "--build-arg GPU=amd"
