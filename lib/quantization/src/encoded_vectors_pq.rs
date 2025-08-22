@@ -137,6 +137,17 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         }
     }
 
+    pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
+        let contents = std::fs::read_to_string(meta_path)?;
+        let metadata: Metadata = serde_json::from_str(&contents)?;
+        let result = Self {
+            encoded_vectors,
+            metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
+        };
+        Ok(result)
+    }
+
     pub fn get_quantized_vector_size(
         vector_parameters: &VectorParameters,
         chunk_size: usize,
@@ -474,23 +485,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     type EncodedQuery = EncodedQueryPQ;
-
-    fn load(
-        data_path: &Path,
-        meta_path: &Path,
-        _vector_parameters: &VectorParameters,
-    ) -> std::io::Result<Self> {
-        let contents = std::fs::read_to_string(meta_path)?;
-        let metadata: Metadata = serde_json::from_str(&contents)?;
-        let quantized_vector_size = metadata.vector_division.len();
-        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size)?;
-        let result = Self {
-            encoded_vectors,
-            metadata,
-            metadata_path: Some(meta_path.to_path_buf()),
-        };
-        Ok(result)
-    }
 
     fn is_on_disk(&self) -> bool {
         self.encoded_vectors.is_on_disk()

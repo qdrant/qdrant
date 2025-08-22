@@ -28,26 +28,8 @@ pub struct QuantizedMmapStorageBuilder {
     path: PathBuf,
 }
 
-impl quantization::EncodedStorage for QuantizedMmapStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
-        let start = self.quantized_vector_size.get() * index as usize;
-        let end = self.quantized_vector_size.get() * (index + 1) as usize;
-        self.mmap.get(start..end).unwrap_or(&[])
-    }
-
-    fn upsert_vector(
-        &mut self,
-        _id: PointOffsetType,
-        _vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "Cannot upsert vector in mmap storage",
-        ))
-    }
-
-    fn from_file(
+impl QuantizedMmapStorage {
+    pub fn from_file(
         path: &Path,
         quantized_vector_size: usize,
     ) -> std::io::Result<QuantizedMmapStorage> {
@@ -76,6 +58,26 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
             quantized_vector_size,
             path: path.to_path_buf(),
         })
+    }
+}
+
+impl quantization::EncodedStorage for QuantizedMmapStorage {
+    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
+        let start = self.quantized_vector_size.get() * index as usize;
+        let end = self.quantized_vector_size.get() * (index + 1) as usize;
+        self.mmap.get(start..end).unwrap_or(&[])
+    }
+
+    fn upsert_vector(
+        &mut self,
+        _id: PointOffsetType,
+        _vector: &[u8],
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Cannot upsert vector in mmap storage",
+        ))
     }
 
     fn is_on_disk(&self) -> bool {

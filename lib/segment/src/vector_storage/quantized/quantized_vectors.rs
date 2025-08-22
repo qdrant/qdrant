@@ -277,6 +277,10 @@ impl QuantizedVectors {
         }
     }
 
+    fn get_config_path(path: &Path) -> PathBuf {
+        path.join(QUANTIZED_CONFIG_PATH)
+    }
+
     fn get_data_path(path: &Path) -> PathBuf {
         path.join(QUANTIZED_DATA_PATH)
     }
@@ -615,137 +619,50 @@ impl QuantizedVectors {
     }
 
     pub fn load(vector_storage: &VectorStorageEnum, path: &Path) -> OperationResult<Self> {
-        let on_disk_vector_storage = vector_storage.is_on_disk();
-        let distance = vector_storage.distance();
-        let datatype = vector_storage.datatype();
-
-        let data_path = path.join(QUANTIZED_DATA_PATH);
-        let meta_path = path.join(QUANTIZED_META_PATH);
-        let config_path = path.join(QUANTIZED_CONFIG_PATH);
+        let config_path = Self::get_config_path(path);
         let config: QuantizedVectorsConfig = read_json(&config_path)?;
         let quantized_store = if let Some(multivector_config) =
             vector_storage.try_multi_vector_config()
         {
-            let offsets_path = path.join(QUANTIZED_OFFSETS_PATH);
             match &config.quantization_config {
                 QuantizationConfig::Scalar(ScalarQuantization { scalar }) => {
-                    if Self::is_ram(scalar.always_ram, on_disk_vector_storage) {
-                        QuantizedVectorStorage::ScalarRamMulti(
-                            QuantizedMultivectorStorage::load_multi(
-                                &data_path,
-                                &meta_path,
-                                &offsets_path,
-                                &config.vector_parameters,
-                                multivector_config,
-                            )?,
-                        )
-                    } else {
-                        QuantizedVectorStorage::ScalarMmapMulti(
-                            QuantizedMultivectorStorage::load_multi(
-                                &data_path,
-                                &meta_path,
-                                &offsets_path,
-                                &config.vector_parameters,
-                                multivector_config,
-                            )?,
-                        )
-                    }
+                    Self::load_scalar_multi(
+                        vector_storage,
+                        path,
+                        &config,
+                        scalar,
+                        multivector_config,
+                    )?
                 }
-                QuantizationConfig::Product(ProductQuantization { product: pq }) => {
-                    if Self::is_ram(pq.always_ram, on_disk_vector_storage) {
-                        QuantizedVectorStorage::PQRamMulti(QuantizedMultivectorStorage::load_multi(
-                            &data_path,
-                            &meta_path,
-                            &offsets_path,
-                            &config.vector_parameters,
-                            multivector_config,
-                        )?)
-                    } else {
-                        QuantizedVectorStorage::PQMmapMulti(
-                            QuantizedMultivectorStorage::load_multi(
-                                &data_path,
-                                &meta_path,
-                                &offsets_path,
-                                &config.vector_parameters,
-                                multivector_config,
-                            )?,
-                        )
-                    }
+                QuantizationConfig::Product(ProductQuantization { product }) => {
+                    Self::load_pq_multi(vector_storage, path, &config, product, multivector_config)?
                 }
                 QuantizationConfig::Binary(BinaryQuantization { binary }) => {
-                    if Self::is_ram(binary.always_ram, on_disk_vector_storage) {
-                        QuantizedVectorStorage::BinaryRamMulti(
-                            QuantizedMultivectorStorage::load_multi(
-                                &data_path,
-                                &meta_path,
-                                &offsets_path,
-                                &config.vector_parameters,
-                                multivector_config,
-                            )?,
-                        )
-                    } else {
-                        QuantizedVectorStorage::BinaryMmapMulti(
-                            QuantizedMultivectorStorage::load_multi(
-                                &data_path,
-                                &meta_path,
-                                &offsets_path,
-                                &config.vector_parameters,
-                                multivector_config,
-                            )?,
-                        )
-                    }
+                    Self::load_binary_multi(
+                        vector_storage,
+                        path,
+                        &config,
+                        binary,
+                        multivector_config,
+                    )?
                 }
             }
         } else {
             match &config.quantization_config {
                 QuantizationConfig::Scalar(ScalarQuantization { scalar }) => {
-                    if Self::is_ram(scalar.always_ram, on_disk_vector_storage) {
-                        QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::load(
-                            &data_path,
-                            &meta_path,
-                            &config.vector_parameters,
-                        )?)
-                    } else {
-                        QuantizedVectorStorage::ScalarMmap(EncodedVectorsU8::load(
-                            &data_path,
-                            &meta_path,
-                            &config.vector_parameters,
-                        )?)
-                    }
+                    Self::load_scalar(vector_storage, path, &config, scalar)?
                 }
-                QuantizationConfig::Product(ProductQuantization { product: pq }) => {
-                    if Self::is_ram(pq.always_ram, on_disk_vector_storage) {
-                        QuantizedVectorStorage::PQRam(EncodedVectorsPQ::load(
-                            &data_path,
-                            &meta_path,
-                            &config.vector_parameters,
-                        )?)
-                    } else {
-                        QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::load(
-                            &data_path,
-                            &meta_path,
-                            &config.vector_parameters,
-                        )?)
-                    }
+                QuantizationConfig::Product(ProductQuantization { product }) => {
+                    Self::load_pq(vector_storage, path, &config, product)?
                 }
                 QuantizationConfig::Binary(BinaryQuantization { binary }) => {
-                    if Self::is_ram(binary.always_ram, on_disk_vector_storage) {
-                        QuantizedVectorStorage::BinaryRam(EncodedVectorsBin::load(
-                            &data_path,
-                            &meta_path,
-                            &config.vector_parameters,
-                        )?)
-                    } else {
-                        QuantizedVectorStorage::BinaryMmap(EncodedVectorsBin::load(
-                            &data_path,
-                            &meta_path,
-                            &config.vector_parameters,
-                        )?)
-                    }
+                    Self::load_binary(vector_storage, path, &config, binary)?
                 }
             }
         };
 
+        let distance = vector_storage.distance();
+        let datatype = vector_storage.datatype();
         Ok(QuantizedVectors {
             storage_impl: quantized_store,
             config,
@@ -753,6 +670,264 @@ impl QuantizedVectors {
             distance,
             datatype,
         })
+    }
+
+    fn load_scalar(
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+        config: &QuantizedVectorsConfig,
+        scalar_config: &ScalarQuantizationConfig,
+    ) -> OperationResult<QuantizedVectorStorage> {
+        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let data_path = Self::get_data_path(path);
+        let meta_path = Self::get_meta_path(path);
+        if Self::is_ram(scalar_config.always_ram, on_disk_vector_storage) {
+            let quantized_vector_size =
+                EncodedVectorsU8::<QuantizedRamStorage>::get_quantized_vector_size(
+                    &config.vector_parameters,
+                );
+            let quantized_vector_size =
+                QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            Ok(QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::load(
+                quantized_vector_size,
+                &meta_path,
+            )?))
+        } else {
+            let quantized_vector_size =
+                EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(
+                    &config.vector_parameters,
+                );
+            let quantized_vector_size =
+                QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            Ok(QuantizedVectorStorage::ScalarMmap(EncodedVectorsU8::load(
+                quantized_vector_size,
+                &meta_path,
+            )?))
+        }
+    }
+
+    fn load_scalar_multi(
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+        config: &QuantizedVectorsConfig,
+        scalar_config: &ScalarQuantizationConfig,
+        multivector_config: &MultiVectorConfig,
+    ) -> OperationResult<QuantizedVectorStorage> {
+        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let data_path = Self::get_data_path(path);
+        let meta_path = Self::get_meta_path(path);
+        let offsets_path = Self::get_offsets_path(path);
+        if Self::is_ram(scalar_config.always_ram, on_disk_vector_storage) {
+            let quantized_vector_size =
+                EncodedVectorsU8::<QuantizedRamStorage>::get_quantized_vector_size(
+                    &config.vector_parameters,
+                );
+            let inner_vectors_storage =
+                QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            let inner_vectors_storage = EncodedVectorsU8::load(inner_vectors_storage, &meta_path)?;
+            let offsets = MultivectorOffsetsStorageRam::load(&offsets_path)?;
+            Ok(QuantizedVectorStorage::ScalarRamMulti(
+                QuantizedMultivectorStorage::new(
+                    config.vector_parameters.dim,
+                    inner_vectors_storage,
+                    offsets,
+                    *multivector_config,
+                ),
+            ))
+        } else {
+            let quantized_vector_size =
+                EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(
+                    &config.vector_parameters,
+                );
+            let inner_vectors_storage =
+                QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            let inner_vectors_storage = EncodedVectorsU8::load(inner_vectors_storage, &meta_path)?;
+            let offsets = MultivectorOffsetsStorageMmap::load(&offsets_path)?;
+            Ok(QuantizedVectorStorage::ScalarMmapMulti(
+                QuantizedMultivectorStorage::new(
+                    config.vector_parameters.dim,
+                    inner_vectors_storage,
+                    offsets,
+                    *multivector_config,
+                ),
+            ))
+        }
+    }
+
+    fn load_pq(
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+        config: &QuantizedVectorsConfig,
+        pq_config: &ProductQuantizationConfig,
+    ) -> OperationResult<QuantizedVectorStorage> {
+        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let data_path = Self::get_data_path(path);
+        let meta_path = Self::get_meta_path(path);
+        if Self::is_ram(pq_config.always_ram, on_disk_vector_storage) {
+            let bucket_size = Self::get_bucket_size(pq_config.compression);
+            let quantized_vector_size =
+                EncodedVectorsPQ::<QuantizedRamStorage>::get_quantized_vector_size(
+                    &config.vector_parameters,
+                    bucket_size,
+                );
+            let quantized_vectors_storage =
+                QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            Ok(QuantizedVectorStorage::PQRam(EncodedVectorsPQ::load(
+                quantized_vectors_storage,
+                &meta_path,
+            )?))
+        } else {
+            let bucket_size = Self::get_bucket_size(pq_config.compression);
+            let quantized_vector_size =
+                EncodedVectorsPQ::<QuantizedMmapStorage>::get_quantized_vector_size(
+                    &config.vector_parameters,
+                    bucket_size,
+                );
+            let quantized_vectors_storage =
+                QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            Ok(QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::load(
+                quantized_vectors_storage,
+                &meta_path,
+            )?))
+        }
+    }
+
+    fn load_pq_multi(
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+        config: &QuantizedVectorsConfig,
+        pq_config: &ProductQuantizationConfig,
+        multivector_config: &MultiVectorConfig,
+    ) -> OperationResult<QuantizedVectorStorage> {
+        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let data_path = Self::get_data_path(path);
+        let meta_path = Self::get_meta_path(path);
+        let offsets_path = Self::get_offsets_path(path);
+        if Self::is_ram(pq_config.always_ram, on_disk_vector_storage) {
+            let bucket_size = Self::get_bucket_size(pq_config.compression);
+            let quantized_vector_size =
+                EncodedVectorsPQ::<QuantizedRamStorage>::get_quantized_vector_size(
+                    &config.vector_parameters,
+                    bucket_size,
+                );
+            let inner_vectors_storage =
+                QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            let inner_vectors_storage = EncodedVectorsPQ::load(inner_vectors_storage, &meta_path)?;
+            let offsets = MultivectorOffsetsStorageRam::load(&offsets_path)?;
+            Ok(QuantizedVectorStorage::PQRamMulti(
+                QuantizedMultivectorStorage::new(
+                    config.vector_parameters.dim,
+                    inner_vectors_storage,
+                    offsets,
+                    *multivector_config,
+                ),
+            ))
+        } else {
+            let bucket_size = Self::get_bucket_size(pq_config.compression);
+            let quantized_vector_size =
+                EncodedVectorsPQ::<QuantizedMmapStorage>::get_quantized_vector_size(
+                    &config.vector_parameters,
+                    bucket_size,
+                );
+            let inner_vectors_storage =
+                QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            let inner_vectors_storage = EncodedVectorsPQ::load(inner_vectors_storage, &meta_path)?;
+            let offsets = MultivectorOffsetsStorageMmap::load(&offsets_path)?;
+            Ok(QuantizedVectorStorage::PQMmapMulti(
+                QuantizedMultivectorStorage::new(
+                    config.vector_parameters.dim,
+                    inner_vectors_storage,
+                    offsets,
+                    *multivector_config,
+                ),
+            ))
+        }
+    }
+
+    fn load_binary(
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+        config: &QuantizedVectorsConfig,
+        binary_config: &BinaryQuantizationConfig,
+    ) -> OperationResult<QuantizedVectorStorage> {
+        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let data_path = Self::get_data_path(path);
+        let meta_path = Self::get_meta_path(path);
+        if Self::is_ram(binary_config.always_ram, on_disk_vector_storage) {
+            let quantized_vector_size =
+                EncodedVectorsBin::<u128, QuantizedRamStorage>::get_quantized_vector_size_from_params(
+                    config.vector_parameters.dim,
+                    Self::convert_binary_encoding(binary_config.encoding),
+                );
+            let quantized_vectors_storage =
+                QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            Ok(QuantizedVectorStorage::BinaryRam(EncodedVectorsBin::load(
+                quantized_vectors_storage,
+                &meta_path,
+            )?))
+        } else {
+            let quantized_vector_size =
+                EncodedVectorsBin::<u128, QuantizedMmapStorage>::get_quantized_vector_size_from_params(
+                    config.vector_parameters.dim,
+                    Self::convert_binary_encoding(binary_config.encoding),
+                );
+            let quantized_vectors_storage =
+                QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            Ok(QuantizedVectorStorage::BinaryMmap(EncodedVectorsBin::load(
+                quantized_vectors_storage,
+                &meta_path,
+            )?))
+        }
+    }
+
+    fn load_binary_multi(
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+        config: &QuantizedVectorsConfig,
+        binary_config: &BinaryQuantizationConfig,
+        multivector_config: &MultiVectorConfig,
+    ) -> OperationResult<QuantizedVectorStorage> {
+        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let data_path = Self::get_data_path(path);
+        let meta_path = Self::get_meta_path(path);
+        let offsets_path = Self::get_offsets_path(path);
+        if Self::is_ram(binary_config.always_ram, on_disk_vector_storage) {
+            let quantized_vector_size =
+                EncodedVectorsBin::<u8, QuantizedRamStorage>::get_quantized_vector_size_from_params(
+                    config.vector_parameters.dim,
+                    Self::convert_binary_encoding(binary_config.encoding),
+                );
+            let inner_vectors_storage =
+                QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            let inner_vectors_storage = EncodedVectorsBin::load(inner_vectors_storage, &meta_path)?;
+            let offsets = MultivectorOffsetsStorageRam::load(&offsets_path)?;
+            Ok(QuantizedVectorStorage::BinaryRamMulti(
+                QuantizedMultivectorStorage::new(
+                    config.vector_parameters.dim,
+                    inner_vectors_storage,
+                    offsets,
+                    *multivector_config,
+                ),
+            ))
+        } else {
+            let quantized_vector_size =
+                EncodedVectorsBin::<u8, QuantizedMmapStorage>::get_quantized_vector_size_from_params(
+                    config.vector_parameters.dim,
+                    Self::convert_binary_encoding(binary_config.encoding),
+                );
+            let inner_vectors_storage =
+                QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+            let inner_vectors_storage = EncodedVectorsBin::load(inner_vectors_storage, &meta_path)?;
+            let offsets = MultivectorOffsetsStorageMmap::load(&offsets_path)?;
+            Ok(QuantizedVectorStorage::BinaryMmapMulti(
+                QuantizedMultivectorStorage::new(
+                    config.vector_parameters.dim,
+                    inner_vectors_storage,
+                    offsets,
+                    *multivector_config,
+                ),
+            ))
+        }
     }
 
     fn create_scalar<'a>(

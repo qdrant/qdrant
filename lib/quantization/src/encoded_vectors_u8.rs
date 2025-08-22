@@ -199,6 +199,17 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         })
     }
 
+    pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
+        let contents = std::fs::read_to_string(meta_path)?;
+        let metadata: Metadata = serde_json::from_str(&contents)?;
+        let result = Self {
+            encoded_vectors,
+            metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
+        };
+        Ok(result)
+    }
+
     pub fn score_point_simple(&self, query: &EncodedQueryU8, i: u32) -> f32 {
         let (vector_offset, v_ptr) = self.get_vec_ptr(i);
 
@@ -352,23 +363,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     type EncodedQuery = EncodedQueryU8;
-
-    fn load(
-        data_path: &Path,
-        meta_path: &Path,
-        vector_parameters: &VectorParameters,
-    ) -> std::io::Result<Self> {
-        let contents = std::fs::read_to_string(meta_path)?;
-        let metadata: Metadata = serde_json::from_str(&contents)?;
-        let quantized_vector_size = Self::get_quantized_vector_size(vector_parameters);
-        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size)?;
-        let result = Self {
-            encoded_vectors,
-            metadata,
-            metadata_path: Some(meta_path.to_path_buf()),
-        };
-        Ok(result)
-    }
 
     fn is_on_disk(&self) -> bool {
         self.encoded_vectors.is_on_disk()

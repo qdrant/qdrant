@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::TBool;
@@ -30,12 +30,6 @@ pub struct VectorParameters {
 
 pub trait EncodedVectors: Sized {
     type EncodedQuery;
-
-    fn load(
-        data_path: &Path,
-        meta_path: &Path,
-        vector_parameters: &VectorParameters,
-    ) -> std::io::Result<Self>;
 
     fn is_on_disk(&self) -> bool;
 
