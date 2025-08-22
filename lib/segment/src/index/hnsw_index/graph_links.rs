@@ -1,4 +1,5 @@
 use std::alloc::Layout;
+use std::io::Cursor;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -8,13 +9,14 @@ use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops::open_read_mmap;
 
 use crate::common::operation_error::OperationResult;
+use crate::index::hnsw_index::HnswM;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 mod header;
 mod serializer;
 mod view;
 
-pub use serializer::GraphLinksSerializer;
+pub use serializer::serialize_graph_links;
 pub use view::LinksIterator;
 use view::{CompressionInfo, GraphLinksView, LinksWithVectorsIterator};
 
@@ -173,12 +175,11 @@ enum GraphLinksEnum {
 }
 
 impl GraphLinksEnum {
-    fn load_view(&self, format: GraphLinksFormat) -> OperationResult<GraphLinksView<'_>> {
-        let data = match self {
+    fn as_bytes(&self) -> &[u8] {
+        match self {
             GraphLinksEnum::Ram(data) => data.as_slice(),
             GraphLinksEnum::Mmap(mmap) => &mmap[..],
-        };
-        GraphLinksView::load(data, format)
+        }
     }
 }
 
@@ -191,12 +192,30 @@ impl GraphLinks {
         let populate = !on_disk;
         let mmap = open_read_mmap(path, AdviceSetting::Advice(Advice::Random), populate)?;
         Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| {
-            x.load_view(format)
+            GraphLinksView::load(x.as_bytes(), format)
+        })
+    }
+
+    pub fn new_from_edges(
+        edges: Vec<Vec<Vec<PointOffsetType>>>,
+        format_param: GraphLinksFormatParam<'_>,
+        hnsw_m: HnswM,
+    ) -> OperationResult<Self> {
+        let mut cursor = Cursor::new(Vec::<u8>::new());
+        serialize_graph_links(edges, format_param, hnsw_m, &mut cursor)?;
+        let mut bytes = cursor.into_inner();
+        bytes.shrink_to_fit();
+        Self::try_new(GraphLinksEnum::Ram(bytes), |x| {
+            GraphLinksView::load(x.as_bytes(), format_param.as_format())
         })
     }
 
     fn view(&self) -> &GraphLinksView<'_> {
         self.borrow_dependent()
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.borrow_owner().as_bytes()
     }
 
     pub fn format(&self) -> GraphLinksFormat {
@@ -246,7 +265,7 @@ impl GraphLinks {
     }
 
     /// Convert the graph links to a vector of edges, suitable for passing into
-    /// [`GraphLinksSerializer::new`] or using in tests.
+    /// [`serialize_graph_links`] or using in tests.
     pub fn to_edges(&self) -> Vec<Vec<Vec<PointOffsetType>>> {
         self.to_edges_impl(|point_id, level| self.links(point_id, level).collect())
     }
@@ -288,6 +307,7 @@ pub(super) fn normalize_links(m: usize, mut links: Vec<PointOffsetType>) -> Vec<
 
 #[cfg(test)]
 mod tests {
+    use io::file_operations::atomic_save;
     use rand::Rng;
     use rstest::rstest;
     use tempfile::Builder;
@@ -357,7 +377,7 @@ mod tests {
         assert_eq!(left, right_links);
     }
 
-    /// Test that random links can be saved by [`GraphLinksSerializer`] and
+    /// Test that random links can be saved by [`serialize_graph_links`] and
     /// loaded correctly by a [`GraphLinks`] impl.
     #[rstest]
     #[case(GraphLinksFormat::Plain, true)]
@@ -379,14 +399,12 @@ mod tests {
             .is_with_vectors()
             .then(|| random_vectors(points_count, 8));
 
-        GraphLinksSerializer::new(
-            links.clone(),
-            format.with_param_for_tests(vectors.as_ref()),
-            hnsw_m,
-        )
-        .unwrap()
-        .save_as(&links_file)
+        let format_param = format.with_param_for_tests(vectors.as_ref());
+        atomic_save(&links_file, |writer| {
+            serialize_graph_links(links.clone(), format_param, hnsw_m, writer)
+        })
         .unwrap();
+
         let cmp_links = GraphLinks::load_from_file(&links_file, on_disk, format).unwrap();
         check_links(links, &cmp_links, &vectors);
     }
@@ -401,13 +419,9 @@ mod tests {
         let vectors = format.is_with_vectors().then(|| random_vectors(100, 16));
 
         let check = |links: Vec<Vec<Vec<PointOffsetType>>>| {
-            let cmp_links = GraphLinksSerializer::new(
-                links.clone(),
-                format.with_param_for_tests(vectors.as_ref()),
-                hnsw_m,
-            )
-            .unwrap()
-            .to_graph_links_ram();
+            let format_param = format.with_param_for_tests(vectors.as_ref());
+            let cmp_links =
+                GraphLinks::new_from_edges(links.clone(), format_param, hnsw_m).unwrap();
             check_links(links, &cmp_links, &vectors);
         };
 
