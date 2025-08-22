@@ -1,12 +1,13 @@
 use std::borrow::Cow;
 use std::cmp::{max, min};
+use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use bitvec::prelude::BitVec;
 use common::ext::BitSliceExt;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use io::file_operations::atomic_save_bin;
+use io::file_operations::{atomic_save, atomic_save_bin};
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::Rng;
 use rand::distr::Uniform;
@@ -18,7 +19,7 @@ use super::links_container::{ItemsBuffer, LinksContainer};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase};
-use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
+use crate::index::hnsw_index::graph_links::serialize_graph_links;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
@@ -189,15 +190,19 @@ impl GraphLayersBuilder {
     ) -> OperationResult<GraphLayers> {
         let links_path = GraphLayers::get_links_path(path, format_param.as_format());
 
-        let serializer =
-            Self::links_layers_to_serializer(self.links_layers, format_param, self.hnsw_m)?;
-        serializer.save_as(&links_path)?;
-
-        let links = if on_disk {
-            GraphLinks::load_from_file(&links_path, true, format_param.as_format())?
+        let edges = Self::links_layers_to_edges(self.links_layers);
+        let links;
+        if on_disk {
+            // Save memory by serializing directly to disk, then re-loading as mmap.
+            atomic_save(&links_path, |writer| {
+                serialize_graph_links(edges, format_param, self.hnsw_m, writer)
+            })?;
+            links = GraphLinks::load_from_file(&links_path, true, format_param.as_format())?;
         } else {
-            serializer.to_graph_links_ram()
-        };
+            // Since we'll keep it in the RAM anyway, we can afford to build in the RAM too.
+            links = GraphLinks::new_from_edges(edges, format_param, self.hnsw_m)?;
+            atomic_save(&links_path, |writer| writer.write_all(links.as_bytes()))?;
+        }
 
         let entry_points = self.entry_points.into_inner();
 
@@ -219,26 +224,20 @@ impl GraphLayersBuilder {
 
     #[cfg(feature = "testing")]
     pub fn into_graph_layers_ram(self, format_param: GraphLinksFormatParam<'_>) -> GraphLayers {
+        let edges = Self::links_layers_to_edges(self.links_layers);
         GraphLayers {
             hnsw_m: self.hnsw_m,
-            links: Self::links_layers_to_serializer(self.links_layers, format_param, self.hnsw_m)
-                .unwrap()
-                .to_graph_links_ram(),
+            links: GraphLinks::new_from_edges(edges, format_param, self.hnsw_m).unwrap(),
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
         }
     }
 
-    fn links_layers_to_serializer(
-        link_layers: Vec<LockedLayersContainer>,
-        format_param: GraphLinksFormatParam,
-        hnsw_m: HnswM,
-    ) -> OperationResult<GraphLinksSerializer> {
-        let edges = link_layers
+    fn links_layers_to_edges(link_layers: Vec<LockedLayersContainer>) -> Vec<Vec<Vec<u32>>> {
+        link_layers
             .into_iter()
             .map(|l| l.into_iter().map(|l| l.into_inner().into_vec()).collect())
-            .collect();
-        GraphLinksSerializer::new(edges, format_param, hnsw_m)
+            .collect()
     }
 
     #[cfg(feature = "gpu")]

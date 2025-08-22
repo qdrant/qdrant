@@ -5,18 +5,18 @@ use std::sync::atomic::AtomicBool;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use io::file_operations::read_bin;
+use io::file_operations::{atomic_save, read_bin};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use super::HnswM;
 use super::entry_points::{EntryPoint, EntryPoints};
-use super::graph_links::{GraphLinks, GraphLinksFormat, GraphLinksSerializer};
+use super::graph_links::{GraphLinks, GraphLinksFormat};
 use crate::common::operation_error::{
     CancellableResult, OperationError, OperationResult, check_process_stopped,
 };
 use crate::common::utils::rev_range;
-use crate::index::hnsw_index::graph_links::GraphLinksFormatParam;
+use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, serialize_graph_links};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
@@ -371,8 +371,10 @@ impl GraphLayers {
 
         let links = GraphLinks::load_from_file(&plain_path, true, GraphLinksFormat::Plain)?;
         let original_size = plain_path.metadata()?.len();
-        GraphLinksSerializer::new(links.to_edges(), GraphLinksFormatParam::Compressed, hnsw_m)?
-            .save_as(&compressed_path)?;
+        atomic_save(&compressed_path, |writer| {
+            let edges = links.to_edges();
+            serialize_graph_links(edges, GraphLinksFormatParam::Compressed, hnsw_m, writer)
+        })?;
         let new_size = compressed_path.metadata()?.len();
 
         // Remove the original file
@@ -391,20 +393,17 @@ impl GraphLayers {
 
     #[cfg(feature = "testing")]
     pub fn compress_ram(&mut self) {
-        use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
         assert_eq!(self.links.format(), GraphLinksFormat::Plain);
         let dummy =
-            GraphLinksSerializer::new(Vec::new(), GraphLinksFormatParam::Plain, HnswM::new(0, 0))
-                .unwrap()
-                .to_graph_links_ram();
+            GraphLinks::new_from_edges(Vec::new(), GraphLinksFormatParam::Plain, HnswM::new2(0))
+                .unwrap();
         let links = std::mem::replace(&mut self.links, dummy);
-        self.links = GraphLinksSerializer::new(
+        self.links = GraphLinks::new_from_edges(
             links.to_edges(),
             GraphLinksFormatParam::Compressed,
             self.hnsw_m,
         )
-        .unwrap()
-        .to_graph_links_ram();
+        .unwrap();
     }
 
     pub fn populate(&self) -> OperationResult<()> {
@@ -423,7 +422,6 @@ mod tests {
     use super::*;
     use crate::data_types::vectors::VectorElementType;
     use crate::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
-    use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
     use crate::index::hnsw_index::tests::{
         create_graph_layer_builder_fixture, create_graph_layer_fixture,
     };
@@ -471,15 +469,10 @@ mod tests {
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
 
+        let format_param = format.with_param_for_tests(vector_holder.quantized_vectors());
         let graph_layers = GraphLayers {
             hnsw_m,
-            links: GraphLinksSerializer::new(
-                graph_links.clone(),
-                format.with_param_for_tests(vector_holder.quantized_vectors()),
-                hnsw_m,
-            )
-            .unwrap()
-            .to_graph_links_ram(),
+            links: GraphLinks::new_from_edges(graph_links.clone(), format_param, hnsw_m).unwrap(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
         };
