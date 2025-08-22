@@ -6,7 +6,7 @@ use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use memmap2::MmapMut;
 use memory::mmap_type::{MmapFlusher, MmapSlice};
-use quantization::{EncodedVectors, VectorParameters};
+use quantization::EncodedVectors;
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::OperationResult;
@@ -25,8 +25,6 @@ pub trait MultivectorOffsets {
 
 #[allow(clippy::len_without_is_empty)]
 pub trait MultivectorOffsetsStorage: Sized {
-    fn load(path: &Path) -> OperationResult<Self>;
-
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
 
     fn len(&self) -> usize;
@@ -64,8 +62,8 @@ impl MultivectorOffsetsStorageRam {
     }
 }
 
-impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
-    fn load(path: &Path) -> OperationResult<Self> {
+impl MultivectorOffsetsStorageRam {
+    pub fn load(path: &Path) -> OperationResult<Self> {
         let offsets_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -78,7 +76,9 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
             path: path.to_path_buf(),
         })
     }
+}
 
+impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets[idx as usize]
     }
@@ -132,8 +132,8 @@ impl MultivectorOffsetsStorageMmap {
     }
 }
 
-impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
-    fn load(path: &Path) -> OperationResult<Self> {
+impl MultivectorOffsetsStorageMmap {
+    pub fn load(path: &Path) -> OperationResult<Self> {
         let offsets_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -145,7 +145,9 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
             path: path.to_path_buf(),
         })
     }
+}
 
+impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets[idx as usize]
     }
@@ -213,23 +215,6 @@ where
             dim,
             multi_vector_config,
         }
-    }
-
-    pub fn load_multi(
-        data_path: &Path,
-        meta_path: &Path,
-        offsets_path: &Path,
-        vector_parameters: &VectorParameters,
-        multi_vector_config: &MultiVectorConfig,
-    ) -> OperationResult<Self> {
-        let offsets = TMultivectorOffsetsStorage::load(offsets_path)?;
-        let quantized_storage = QuantizedStorage::load(data_path, meta_path, vector_parameters)?;
-        Ok(Self {
-            dim: vector_parameters.dim,
-            quantized_storage,
-            offsets,
-            multi_vector_config: *multi_vector_config,
-        })
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors
@@ -308,17 +293,6 @@ where
 {
     // TODO(colbert): refactor `EncodedVectors` to support multi vector storage after quantization migration
     type EncodedQuery = Vec<QuantizedStorage::EncodedQuery>;
-
-    // TODO(colbert): refactor `EncodedVectors` to support multi vector storage after quantization migration
-    fn load(
-        _data_path: &Path,
-        _meta_path: &Path,
-        _vector_parameters: &quantization::VectorParameters,
-    ) -> std::io::Result<Self> {
-        unreachable!(
-            "multivector quantized storage should be loaded using `self.load_multi` method"
-        )
-    }
 
     fn is_on_disk(&self) -> bool {
         self.quantized_storage.is_on_disk()

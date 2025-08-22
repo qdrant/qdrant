@@ -512,6 +512,18 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         })
     }
 
+    pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
+        let contents = std::fs::read_to_string(meta_path)?;
+        let metadata: Metadata = serde_json::from_str(&contents)?;
+        let result = Self {
+            metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
+            encoded_vectors,
+            bits_store_type: PhantomData,
+        };
+        Ok(result)
+    }
+
     fn encode_vector(
         vector: &[f32],
         vector_stats: &Option<VectorStats>,
@@ -830,26 +842,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     for EncodedVectorsBin<TBitsStoreType, TStorage>
 {
     type EncodedQuery = EncodedQueryBQ<TBitsStoreType>;
-
-    fn load(
-        data_path: &Path,
-        meta_path: &Path,
-        vector_parameters: &VectorParameters,
-    ) -> std::io::Result<Self> {
-        let contents = std::fs::read_to_string(meta_path)?;
-        let metadata: Metadata = serde_json::from_str(&contents)?;
-        let quantized_vector_size =
-            Self::get_quantized_vector_size_from_params(vector_parameters.dim, metadata.encoding);
-        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size)?;
-
-        let result = Self {
-            metadata,
-            metadata_path: Some(meta_path.to_path_buf()),
-            encoded_vectors,
-            bits_store_type: PhantomData,
-        };
-        Ok(result)
-    }
 
     fn is_on_disk(&self) -> bool {
         self.encoded_vectors.is_on_disk()
