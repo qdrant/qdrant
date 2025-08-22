@@ -12,6 +12,7 @@ jobs:
     # Run build on our self-hosted runner, we had trouble with shared runners
     runs-on: [self-hosted, linux, x64]
     permissions:
+      contents: read
       id-token: write # needed for cosign keyless signing with OIDC
     steps:
     - uses: actions/checkout@v5
@@ -79,6 +80,7 @@ jobs:
   build-gpu:
     runs-on: [self-hosted, linux, x64]
     permissions:
+      contents: read
       id-token: write # needed for cosign keyless signing with OIDC
     steps:
     - uses: actions/checkout@v5
