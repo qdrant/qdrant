@@ -18,6 +18,36 @@ pub fn dir_size(path: impl Into<PathBuf>) -> std::io::Result<u64> {
     dir_size(std::fs::read_dir(path.into())?)
 }
 
+const BLOCK_SIZE: u64 = 512; // 512 bytes per block, aka DEV_BSIZE
+
+/// How many bytes a directory takes on disk.
+/// Notes:
+/// - on non-unix systems, this is the same as `dir_size`
+pub fn dir_disk_size(path: impl Into<PathBuf>) -> std::io::Result<u64> {
+    fn dir_disk_size(mut dir: std::fs::ReadDir) -> std::io::Result<u64> {
+        dir.try_fold(0, |acc, file| {
+            let file = file?;
+            let metadata = file.metadata()?;
+            let size = if metadata.is_dir() {
+                dir_disk_size(std::fs::read_dir(file.path())?)?
+            } else {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    metadata.blocks() * BLOCK_SIZE
+                }
+                #[cfg(not(unix))]
+                {
+                    metadata.len()
+                }
+            };
+            Ok(acc + size)
+        })
+    }
+
+    dir_disk_size(std::fs::read_dir(path.into())?)
+}
+
 /// List all files in the given directory recursively.
 ///
 /// Notes:
