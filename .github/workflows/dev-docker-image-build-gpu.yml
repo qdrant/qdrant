@@ -9,7 +9,7 @@ jobs:
     steps:
         - uses: actions/checkout@v4
           with:
-            ref: ${{ github.ref.name }}
+            ref: ${{ github.ref_name }}
         - uses: ./.github/actions/branch-build-and-push
           with:
             ghcr-password: ${{ secrets.GITHUB_TOKEN }}
