@@ -427,6 +427,17 @@ mod tests {
         Some(ParsedQuery::AllTokens(tokens))
     }
 
+    fn to_parsed_query_any(
+        query: Vec<String>,
+        token_to_id: impl Fn(String) -> Option<TokenId>,
+    ) -> Option<ParsedQuery> {
+        let tokens = query
+            .into_iter()
+            .map(token_to_id)
+            .collect::<Option<TokenSet>>()?;
+        Some(ParsedQuery::AnyTokens(tokens))
+    }
+
     fn mutable_inverted_index(
         indexed_count: u32,
         deleted_count: u32,
@@ -593,21 +604,38 @@ mod tests {
         let mut_parsed_queries: Vec<_> = queries
             .iter()
             .cloned()
-            .map(|query| to_parsed_query(query, |token| mut_index.vocab.get(&token).copied()))
+            .flat_map(|query| {
+                vec![
+                    to_parsed_query(query.clone(), |token| mut_index.vocab.get(&token).copied()),
+                    to_parsed_query_any(query, |token| mut_index.vocab.get(&token).copied()),
+                ]
+            })
             .collect();
         let mmap_parsed_queries: Vec<_> = queries
             .iter()
             .cloned()
-            .map(|query| {
-                to_parsed_query(query, |token| mmap_index.get_token_id(&token, &hw_counter))
+            .flat_map(|query| {
+                vec![
+                    to_parsed_query(query.clone(), |token| {
+                        mmap_index.get_token_id(&token, &hw_counter)
+                    }),
+                    to_parsed_query_any(query, |token| {
+                        mmap_index.get_token_id(&token, &hw_counter)
+                    }),
+                ]
             })
             .collect();
         let imm_mmap_parsed_queries: Vec<_> = queries
             .into_iter()
-            .map(|query| {
-                to_parsed_query(query, |token| {
-                    imm_mmap_index.get_token_id(&token, &hw_counter)
-                })
+            .flat_map(|query| {
+                vec![
+                    to_parsed_query(query.clone(), |token| {
+                        imm_mmap_index.get_token_id(&token, &hw_counter)
+                    }),
+                    to_parsed_query_any(query, |token| {
+                        imm_mmap_index.get_token_id(&token, &hw_counter)
+                    }),
+                ]
             })
             .collect();
 
