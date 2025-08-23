@@ -175,21 +175,6 @@ def basic_collection_setup(
     )
     assert response.ok
 
-    # Create index
-    response = request_with_validation(
-        api='/collections/{collection_name}/index',
-        method="PUT",
-        path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
-        body={
-            "field_name": "title",
-            "field_schema": {
-                "type": "text",
-                "tokenizer": "prefix",
-            }
-        }
-    )
-    assert response.ok
 
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -303,6 +288,22 @@ def test_match_any(collection_name):
 
 
 def test_scroll_with_prefix(collection_name):
+    # Create index
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "title",
+            "field_schema": {
+                "type": "text",
+                "tokenizer": "prefix",
+            }
+        }
+    )
+    assert response.ok
+
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
         method="POST",
