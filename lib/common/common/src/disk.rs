@@ -2,24 +2,6 @@ use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
 
-/// How many bytes a directory takes.
-pub fn dir_size(path: impl Into<PathBuf>) -> std::io::Result<u64> {
-    fn dir_size(mut dir: std::fs::ReadDir) -> std::io::Result<u64> {
-        dir.try_fold(0, |acc, file| {
-            let file = file?;
-            let size = match file.metadata()? {
-                data if data.is_dir() => dir_size(std::fs::read_dir(file.path())?)?,
-                data => data.len(),
-            };
-            Ok(acc + size)
-        })
-    }
-
-    dir_size(std::fs::read_dir(path.into())?)
-}
-
-const BLOCK_SIZE: u64 = 512; // 512 bytes per block, aka DEV_BSIZE
-
 /// How many bytes a directory takes on disk.
 /// Notes:
 /// - on non-unix systems, this is the same as `dir_size`
@@ -33,6 +15,7 @@ pub fn dir_disk_size(path: impl Into<PathBuf>) -> std::io::Result<u64> {
             } else {
                 #[cfg(unix)]
                 {
+                    const BLOCK_SIZE: u64 = 512; // aka DEV_BSIZE
                     use std::os::unix::fs::MetadataExt;
                     metadata.blocks() * BLOCK_SIZE
                 }
