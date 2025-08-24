@@ -4,7 +4,7 @@ use std::sync::Arc;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::{TryStreamExt as _, future};
 use lazy_static::lazy_static;
-use segment::types::{QuantizationConfig, StrictModeConfig};
+use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
 use semver::Version;
 
 use super::Collection;
@@ -160,6 +160,20 @@ impl Collection {
             }
         }
         self.collection_config.read().await.save(&self.path)?;
+        Ok(())
+    }
+
+    pub async fn update_metadata(&self, metadata: Payload) -> CollectionResult<()> {
+        let mut collection_config_guard: tokio::sync::RwLockWriteGuard<
+            '_,
+            crate::config::CollectionConfigInternal,
+        > = self.collection_config.write().await;
+
+        if let Some(current_metadata) = collection_config_guard.metadata.as_mut() {
+            current_metadata.merge(&metadata);
+        } else {
+            collection_config_guard.metadata = Some(metadata);
+        }
         Ok(())
     }
 

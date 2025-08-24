@@ -136,6 +136,7 @@ pub mod consensus_ops {
                     quantization_config: None,
                     sparse_vectors: None,
                     strict_mode_config: None,
+                    metadata: None,
                 },
             );
             operation

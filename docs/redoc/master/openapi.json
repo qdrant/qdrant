@@ -6721,6 +6721,17 @@
                 "nullable": true
               }
             ]
+          },
+          "metadata": {
+            "description": "Arbitrary JSON metadata for the collection This can be used to store application-specific information such as creation time, migration data, inference model info, etc.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Payload"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7476,6 +7487,14 @@
           }
         }
       },
+      "Payload": {
+        "type": "object",
+        "additionalProperties": true,
+        "example": {
+          "city": "London",
+          "color": "green"
+        }
+      },
       "PayloadIndexInfo": {
         "description": "Display payload field type & index information",
         "type": "object",
@@ -8153,14 +8172,6 @@
               }
             ]
           }
-        }
-      },
-      "Payload": {
-        "type": "object",
-        "additionalProperties": true,
-        "example": {
-          "city": "London",
-          "color": "green"
         }
       },
       "VectorStructOutput": {
@@ -9720,6 +9731,17 @@
                 "nullable": true
               }
             ]
+          },
+          "metadata": {
+            "description": "Arbitrary JSON metadata for the collection This can be used to store application-specific information such as creation time, migration data, inference model info, etc.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Payload"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -10085,6 +10107,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/StrictModeConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "metadata": {
+            "description": "Metadata to update for the collection. If provided, this will merge with existing metadata. To remove metadata, set it to an empty object.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Payload"
               },
               {
                 "nullable": true
@@ -11938,6 +11971,17 @@
             "type": "string",
             "format": "uuid",
             "nullable": true
+          },
+          "metadata": {
+            "description": "Arbitrary JSON metadata for the collection",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Payload"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

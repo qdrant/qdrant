@@ -511,6 +511,7 @@ mod test {
             quantization_config: Default::default(),
             strict_mode_config: Some(strict_mode_config.clone()),
             uuid: None,
+            metadata: None,
         };
 
         let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();

@@ -50,6 +50,7 @@ pub fn create_collection_config_with_dim(dim: usize) -> CollectionConfigInternal
         quantization_config: Default::default(),
         strict_mode_config: Default::default(),
         uuid: None,
+        metadata: None,
     }
 }
 
