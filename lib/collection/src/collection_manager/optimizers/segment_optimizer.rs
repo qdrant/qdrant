@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::disk::dir_size;
+use common::disk::dir_disk_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
@@ -117,7 +117,7 @@ pub trait SegmentOptimizer {
             let locked_segment = segment.read();
 
             space_occupied =
-                space_occupied.and_then(|acc| match dir_size(locked_segment.data_path()) {
+                space_occupied.and_then(|acc| match dir_disk_size(locked_segment.data_path()) {
                     Ok(size) => Some(size + acc),
                     Err(err) => {
                         log::debug!(
@@ -157,10 +157,13 @@ pub trait SegmentOptimizer {
 
         match (space_available, space_needed) {
             (Some(space_available), Some(space_needed)) => {
+                log::debug!(
+                    "Available space: {space_available}, needed for optimization: {space_needed}",
+                );
                 if space_available < space_needed {
-                    return Err(CollectionError::service_error(
-                        "Not enough space available for optimization".to_string(),
-                    ));
+                    return Err(CollectionError::service_error(format!(
+                        "Not enough space available for optimization, needed: {space_needed}, available: {space_available}"
+                    )));
                 }
             }
             _ => {
