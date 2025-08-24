@@ -64,6 +64,28 @@ pub fn adjust_to_available_vectors(
     }
 }
 
+/// Combine cardinality of multiple estimations in an OR fashion by using the complement rule.
+/// Assumes that the estimations are independent.
+///
+/// Formula is  `(1 - ∏(1-pᵢ)) * total`:
+/// * For each condition, it calculates the probability that an item does not match it: `1 - (x / total)`.
+/// * It multiplies these probabilities to get the probability that an item matches none of the conditions.
+/// * Subtracts this from 1 to get the probability that an item matches at least one condition.
+/// * Multiplies this probability by the total number of items and rounds to get the expected count.
+pub fn expected_should_estimation(estimations: impl Iterator<Item = usize>, total: usize) -> usize {
+    if total == 0 {
+        return 0;
+    }
+
+    let element_not_hit_prob: f64 = estimations
+        .map(|x| 1.0 - (x as f64 / total as f64))
+        .product();
+
+    let element_hit_prob = 1.0 - element_not_hit_prob;
+
+    (element_hit_prob * (total as f64)).round() as usize
+}
+
 pub fn combine_should_estimations(
     estimations: &[CardinalityEstimation],
     total: usize,
@@ -78,12 +100,7 @@ pub fn combine_should_estimations(
         }
         clauses.append(&mut estimation.primary_clauses.clone());
     }
-    let element_not_hit_prob: f64 = estimations
-        .iter()
-        .map(|x| (total - x.exp) as f64 / (total as f64))
-        .product();
-    let element_hit_prob = 1.0 - element_not_hit_prob;
-    let expected_count = (element_hit_prob * (total as f64)).round() as usize;
+    let expected_count = expected_should_estimation(estimations.iter().map(|x| x.exp), total);
     CardinalityEstimation {
         primary_clauses: clauses,
         min: estimations.iter().map(|x| x.min).max().unwrap_or(0),
