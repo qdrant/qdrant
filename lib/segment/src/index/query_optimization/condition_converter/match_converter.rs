@@ -7,7 +7,8 @@ use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::types::{
-    AnyVariants, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchValue, ValueVariants,
+    AnyVariants, Match, MatchAny, MatchExcept, MatchPhrase, MatchText, MatchTextAny, MatchValue,
+    ValueVariants,
 };
 
 pub fn get_match_checkers(
@@ -17,9 +18,14 @@ pub fn get_match_checkers(
 ) -> Option<ConditionCheckerFn<'_>> {
     match cond_match {
         Match::Value(MatchValue { value }) => get_match_value_checker(value, index, hw_acc),
-        Match::Text(MatchText { text }) => get_match_text_checker::<false>(text, index, hw_acc),
+        Match::Text(MatchText { text }) => {
+            get_match_text_checker(text, TextQueryType::Text, index, hw_acc)
+        }
+        Match::TextAny(MatchTextAny { text_any }) => {
+            get_match_text_checker(text_any, TextQueryType::TextAny, index, hw_acc)
+        }
         Match::Phrase(MatchPhrase { phrase }) => {
-            get_match_text_checker::<true>(phrase, index, hw_acc)
+            get_match_text_checker(phrase, TextQueryType::Phrase, index, hw_acc)
         }
         Match::Any(MatchAny { any }) => get_match_any_checker(any, index, hw_acc),
         Match::Except(MatchExcept { except }) => get_match_except_checker(except, index, hw_acc),
@@ -249,18 +255,25 @@ fn get_match_except_checker(
     checker
 }
 
-fn get_match_text_checker<const IS_PHRASE: bool>(
+enum TextQueryType {
+    Phrase,
+    Text,
+    TextAny,
+}
+
+fn get_match_text_checker(
     text: String,
+    query_type: TextQueryType,
     index: &FieldIndex,
     hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn<'_>> {
     let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::FullTextIndex(full_text_index) => {
-            let query_opt = if IS_PHRASE {
-                full_text_index.parse_phrase_query(&text, &hw_counter)
-            } else {
-                full_text_index.parse_text_query(&text, &hw_counter)
+            let query_opt = match query_type {
+                TextQueryType::Phrase => full_text_index.parse_phrase_query(&text, &hw_counter),
+                TextQueryType::Text => full_text_index.parse_text_query(&text, &hw_counter),
+                TextQueryType::TextAny => full_text_index.parse_text_any_query(&text, &hw_counter),
             };
 
             let Some(parsed_query) = query_opt else {

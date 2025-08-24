@@ -303,7 +303,22 @@ impl FullTextIndex {
             tokens.insert(self.get_token(token.as_ref(), hw_counter));
         });
         let tokens = tokens.into_iter().collect::<Option<TokenSet>>()?;
-        Some(ParsedQuery::Tokens(tokens))
+        Some(ParsedQuery::AllTokens(tokens))
+    }
+
+    pub fn parse_text_any_query(
+        &self,
+        text: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ParsedQuery> {
+        let mut tokens = AHashSet::new();
+        self.get_tokenizer().tokenize_query(text, |token| {
+            if let Some(token_id) = self.get_token(token.as_ref(), hw_counter) {
+                tokens.insert(token_id);
+            }
+        });
+        let tokens = tokens.into_iter().collect::<TokenSet>();
+        Some(ParsedQuery::AnyTokens(tokens))
     }
 
     pub fn parse_tokenset(&self, text: &str, hw_counter: &HardwareCounterCell) -> TokenSet {
@@ -358,13 +373,17 @@ impl FullTextIndex {
         FullTextIndex::get_values(payload_value)
             .iter()
             .any(|value| match &query {
-                ParsedQuery::Tokens(query) => {
+                ParsedQuery::AllTokens(query) => {
                     let tokenset = self.parse_tokenset(value, hw_counter);
                     tokenset.has_subset(query)
                 }
                 ParsedQuery::Phrase(query) => {
                     let document = self.parse_document(value, hw_counter);
                     document.has_phrase(query)
+                }
+                ParsedQuery::AnyTokens(query) => {
+                    let tokenset = self.parse_tokenset(value, hw_counter);
+                    tokenset.has_any(query)
                 }
             })
     }

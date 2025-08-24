@@ -1,5 +1,5 @@
 use common::types::PointOffsetType;
-use itertools::Either;
+use itertools::{Either, Itertools};
 use posting_list::{PostingIterator, PostingListView, PostingValue};
 
 use super::posting_list::PostingList;
@@ -22,6 +22,16 @@ pub fn intersect_postings_iterator<'a>(
     smallest_posting
         .iter()
         .filter(move |doc_id| postings.iter().all(|posting| posting.contains(*doc_id)))
+}
+
+pub fn merge_postings_iterator<'a>(
+    postings: Vec<&'a PostingList>,
+) -> impl Iterator<Item = PointOffsetType> + 'a {
+    postings
+        .into_iter()
+        .map(PostingList::iter)
+        .kmerge_by(|a, b| a < b)
+        .dedup()
 }
 
 pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
@@ -52,10 +62,26 @@ pub fn intersect_compressed_postings_iterator<'a, V: PostingValue + 'a>(
                     //
                     // This means that the other iterators can remember the last id they returned to avoid extra work
                     posting_iterator
+                        // potential optimization: Make posting iterator of just ids, without values (a.k.a. positions).
+                        //                         We are discarding them here, thus unnecessarily reading them from the tails of the posting lists.
                         .advance_until_greater_or_equal(*id)
                         .is_some_and(|elem| elem.id == *id)
                 })
         })
+}
+
+pub fn merge_compressed_postings_iterator<'a, V: PostingValue + 'a>(
+    postings: Vec<PostingListView<'a, V>>,
+    is_active: impl Fn(PointOffsetType) -> bool + 'a,
+) -> impl Iterator<Item = PointOffsetType> + 'a {
+    postings
+        .into_iter()
+        // potential optimization: Make posting iterator of just ids, without values (a.k.a. positions).
+        //                         We are discarding them here, thus unnecessarily reading them from the tails of the posting lists.
+        .map(|view| view.into_iter().map(|elem| elem.id))
+        .kmerge_by(|a, b| a < b)
+        .dedup()
+        .filter(move |id| is_active(*id))
 }
 
 /// Returns an iterator over the points that match the given phrase query.

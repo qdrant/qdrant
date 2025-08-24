@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 use itertools::Either;
 
 use super::posting_list::PostingList;
-use super::postings_iterator::intersect_postings_iterator;
+use super::postings_iterator::{intersect_postings_iterator, merge_postings_iterator};
 use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::operation_error::OperationResult;
 
@@ -55,7 +55,7 @@ impl MutableInvertedIndex {
     }
 
     /// Iterate over point ids whose documents contain all given tokens
-    fn filter_has_subset(&self, tokens: TokenSet) -> impl Iterator<Item = PointOffsetType> + '_ {
+    fn filter_has_all(&self, tokens: TokenSet) -> impl Iterator<Item = PointOffsetType> + '_ {
         let postings_opt: Option<Vec<_>> = tokens
             .tokens()
             .iter()
@@ -79,6 +79,25 @@ impl MutableInvertedIndex {
         Either::Right(intersect_postings_iterator(postings))
     }
 
+    fn filter_has_any(&self, tokens: TokenSet) -> impl Iterator<Item = PointOffsetType> + '_ {
+        let postings_opt: Vec<_> = tokens
+            .tokens()
+            .iter()
+            .filter_map(|&token_id| {
+                // if a ParsedQuery token was given an index, then it must exist in the vocabulary
+                // dictionary. Posting list entry can be None but it exists.
+                self.postings.get(token_id as usize)
+            })
+            .collect();
+
+        if postings_opt.is_empty() {
+            // Empty request -> no matches
+            return Either::Left(std::iter::empty());
+        }
+
+        Either::Right(merge_postings_iterator(postings_opt))
+    }
+
     pub fn filter_has_phrase(
         &self,
         phrase: Document,
@@ -89,7 +108,7 @@ impl MutableInvertedIndex {
         };
 
         let iter = self
-            .filter_has_subset(phrase.to_token_set())
+            .filter_has_all(phrase.to_token_set())
             .filter(move |id| {
                 let doc = point_to_doc[*id as usize]
                     .as_ref()
@@ -209,8 +228,9 @@ impl InvertedIndex for MutableInvertedIndex {
         _hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         match query {
-            ParsedQuery::Tokens(tokens) => Box::new(self.filter_has_subset(tokens)),
+            ParsedQuery::AllTokens(tokens) => Box::new(self.filter_has_all(tokens)),
             ParsedQuery::Phrase(phrase) => self.filter_has_phrase(phrase),
+            ParsedQuery::AnyTokens(tokens) => Box::new(self.filter_has_any(tokens)),
         }
     }
 
@@ -228,7 +248,7 @@ impl InvertedIndex for MutableInvertedIndex {
 
     fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
         match parsed_query {
-            ParsedQuery::Tokens(query) => {
+            ParsedQuery::AllTokens(query) => {
                 let Some(doc) = self.get_tokens(point_id) else {
                     return false;
                 };
@@ -243,6 +263,14 @@ impl InvertedIndex for MutableInvertedIndex {
 
                 // Check that all tokens are in document, in order
                 doc.has_phrase(document)
+            }
+            ParsedQuery::AnyTokens(query) => {
+                let Some(doc) = self.get_tokens(point_id) else {
+                    return false;
+                };
+
+                // Check that at least one token is in document
+                doc.has_any(query)
             }
         }
     }

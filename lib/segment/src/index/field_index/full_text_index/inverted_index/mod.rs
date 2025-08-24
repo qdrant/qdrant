@@ -7,6 +7,7 @@ mod positions;
 mod posting_list;
 mod postings_iterator;
 
+use std::cmp::min;
 use std::collections::HashMap;
 
 use ahash::AHashSet;
@@ -16,6 +17,7 @@ use itertools::Itertools;
 
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
+use crate::index::query_estimator::expected_should_estimation;
 use crate::types::{FieldCondition, Match, PayloadKeyType};
 
 pub type TokenId = u32;
@@ -55,6 +57,15 @@ impl TokenSet {
             return false;
         }
         subset.0.iter().all(|token| self.contains(token))
+    }
+
+    /// Checks if the current set contains any of the given tokens.
+    /// Returns false if the subset is empty
+    pub fn has_any(&self, subset: &TokenSet) -> bool {
+        if subset.is_empty() {
+            return false;
+        }
+        subset.0.iter().any(|token| self.contains(token))
     }
 }
 
@@ -143,7 +154,10 @@ pub enum ParsedQuery {
     /// All these tokens must be present in the document, regardless of order.
     ///
     /// In other words this should be a subset of the document's token set.
-    Tokens(TokenSet),
+    AllTokens(TokenSet),
+
+    /// At least one of these tokens must be present in the document.
+    AnyTokens(TokenSet),
 
     /// All these tokens must be present in the document, in the same order as this query.
     Phrase(Document),
@@ -212,11 +226,14 @@ pub trait InvertedIndex {
         hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
         match query {
-            ParsedQuery::Tokens(tokens) => {
+            ParsedQuery::AllTokens(tokens) => {
                 self.estimate_has_subset_cardinality(tokens, condition, hw_counter)
             }
             ParsedQuery::Phrase(phrase) => {
                 self.estimate_has_phrase_cardinality(phrase, condition, hw_counter)
+            }
+            ParsedQuery::AnyTokens(tokens) => {
+                self.estimate_has_any_cardinality(tokens, condition, hw_counter)
             }
         }
     }
@@ -263,6 +280,46 @@ pub trait InvertedIndex {
             min: 0, // ToDo: make better estimation
             exp,
             max: smallest_posting,
+        }
+    }
+
+    fn estimate_has_any_cardinality(
+        &self,
+        tokens: &TokenSet,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
+        let points_count = self.points_count();
+
+        let posting_lengths: Vec<_> = tokens
+            .tokens()
+            .iter()
+            .filter_map(|&vocab_idx| self.get_posting_len(vocab_idx, hw_counter))
+            .collect();
+
+        if posting_lengths.is_empty() {
+            // Empty request -> no matches
+            return CardinalityEstimation::exact(0)
+                .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));
+        }
+
+        // At least one posting is the largest possible cardinality
+        let largest_posting = posting_lengths.iter().max().copied().unwrap();
+
+        if posting_lengths.len() == 1 {
+            return CardinalityEstimation::exact(largest_posting)
+                .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));
+        }
+
+        let sum: usize = posting_lengths.iter().sum();
+
+        let exp = expected_should_estimation(posting_lengths.into_iter(), points_count);
+
+        CardinalityEstimation {
+            primary_clauses: vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
+            min: largest_posting,
+            exp,
+            max: min(sum, points_count),
         }
     }
 
@@ -367,7 +424,18 @@ mod tests {
             .into_iter()
             .map(token_to_id)
             .collect::<Option<TokenSet>>()?;
-        Some(ParsedQuery::Tokens(tokens))
+        Some(ParsedQuery::AllTokens(tokens))
+    }
+
+    fn to_parsed_query_any(
+        query: Vec<String>,
+        token_to_id: impl Fn(String) -> Option<TokenId>,
+    ) -> Option<ParsedQuery> {
+        let tokens = query
+            .into_iter()
+            .map(token_to_id)
+            .collect::<Option<TokenSet>>()?;
+        Some(ParsedQuery::AnyTokens(tokens))
     }
 
     fn mutable_inverted_index(
@@ -536,21 +604,38 @@ mod tests {
         let mut_parsed_queries: Vec<_> = queries
             .iter()
             .cloned()
-            .map(|query| to_parsed_query(query, |token| mut_index.vocab.get(&token).copied()))
+            .flat_map(|query| {
+                vec![
+                    to_parsed_query(query.clone(), |token| mut_index.vocab.get(&token).copied()),
+                    to_parsed_query_any(query, |token| mut_index.vocab.get(&token).copied()),
+                ]
+            })
             .collect();
         let mmap_parsed_queries: Vec<_> = queries
             .iter()
             .cloned()
-            .map(|query| {
-                to_parsed_query(query, |token| mmap_index.get_token_id(&token, &hw_counter))
+            .flat_map(|query| {
+                vec![
+                    to_parsed_query(query.clone(), |token| {
+                        mmap_index.get_token_id(&token, &hw_counter)
+                    }),
+                    to_parsed_query_any(query, |token| {
+                        mmap_index.get_token_id(&token, &hw_counter)
+                    }),
+                ]
             })
             .collect();
         let imm_mmap_parsed_queries: Vec<_> = queries
             .into_iter()
-            .map(|query| {
-                to_parsed_query(query, |token| {
-                    imm_mmap_index.get_token_id(&token, &hw_counter)
-                })
+            .flat_map(|query| {
+                vec![
+                    to_parsed_query(query.clone(), |token| {
+                        imm_mmap_index.get_token_id(&token, &hw_counter)
+                    }),
+                    to_parsed_query_any(query, |token| {
+                        imm_mmap_index.get_token_id(&token, &hw_counter)
+                    }),
+                ]
             })
             .collect();
 

@@ -1895,6 +1895,9 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::ExceptKeywords(ints) => {
                     segment::types::Match::Except(ints.strings.into())
                 }
+                MatchValue::TextAny(text_any) => {
+                    segment::types::Match::TextAny(segment::types::MatchTextAny { text_any })
+                }
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
         }
@@ -1935,6 +1938,9 @@ impl From<segment::types::Match> for Match {
                     MatchValue::ExceptIntegers(RepeatedIntegers { integers })
                 }
             },
+            segment::types::Match::TextAny(segment::types::MatchTextAny { text_any }) => {
+                MatchValue::TextAny(text_any)
+            }
         };
         Self {
             match_value: Some(match_value),

@@ -2166,6 +2166,13 @@ pub struct MatchText {
     pub text: String,
 }
 
+/// Full-text match of at least one token of the string.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchTextAny {
+    pub text_any: String,
+}
+
 impl<S: Into<String>> From<S> for MatchText {
     fn from(text: S) -> Self {
         MatchText { text: text.into() }
@@ -2207,6 +2214,7 @@ pub struct MatchExcept {
 pub enum MatchInterface {
     Value(MatchValue),
     Text(MatchText),
+    TextAny(MatchTextAny),
     Phrase(MatchPhrase),
     Any(MatchAny),
     Except(MatchExcept),
@@ -2218,6 +2226,7 @@ pub enum MatchInterface {
 pub enum Match {
     Value(MatchValue),
     Text(MatchText),
+    TextAny(MatchTextAny),
     Phrase(MatchPhrase),
     Any(MatchAny),
     Except(MatchExcept),
@@ -2258,6 +2267,9 @@ impl From<MatchInterface> for Match {
         match value {
             MatchInterface::Value(value) => Self::Value(MatchValue { value: value.value }),
             MatchInterface::Text(text) => Self::Text(MatchText { text: text.text }),
+            MatchInterface::TextAny(text_any) => Self::TextAny(MatchTextAny {
+                text_any: text_any.text_any,
+            }),
             MatchInterface::Any(any) => Self::Any(MatchAny { any: any.any }),
             MatchInterface::Except(except) => Self::Except(MatchExcept {
                 except: except.except,
@@ -2774,6 +2786,7 @@ impl FieldCondition {
             Match::Value(_) => 0,
             Match::Text(_) => 0,
             Match::Phrase(_) => 0,
+            Match::TextAny(_) => 0,
         }
     }
 }
