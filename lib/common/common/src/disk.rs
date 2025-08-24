@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 /// How many bytes a directory takes on disk.
-/// Notes:
-/// - on non-unix systems, this is the same as `dir_size`
+///
+/// Note: on non-unix systems, this function returns the apparent/logical
+/// directory size rather than actual disk usage.
 pub fn dir_disk_size(path: impl Into<PathBuf>) -> std::io::Result<u64> {
     fn dir_disk_size(mut dir: std::fs::ReadDir) -> std::io::Result<u64> {
         dir.try_fold(0, |acc, file| {
