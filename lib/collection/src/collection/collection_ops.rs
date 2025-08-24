@@ -174,6 +174,8 @@ impl Collection {
         } else {
             collection_config_guard.metadata = Some(metadata);
         }
+        drop(collection_config_guard);
+        self.collection_config.read().await.save(&self.path)?;
         Ok(())
     }
 
