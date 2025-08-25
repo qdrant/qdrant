@@ -200,6 +200,8 @@ mod tests {
 
     const TEST_UPDATE_INTERVAL: Duration = Duration::from_millis(100);
 
+    const TEST_IO_SLACK: Duration = Duration::from_millis(300);
+
     #[test]
     fn saves_data() {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
@@ -303,8 +305,10 @@ mod tests {
             });
 
             barrier.wait();
-            // Need enough time for 4 updates with TEST_UPDATE_INTERVAL delays between them
-            assert!(counter.wait_for(|c| *c > 10, TEST_UPDATE_INTERVAL * 5));
+            // Need enough time for 4 updates with TEST_UPDATE_INTERVAL delays between them,
+            // plus I/O slack for atomic disk writes
+            let timeout = TEST_UPDATE_INTERVAL * 4 + TEST_IO_SLACK;
+            assert!(counter.wait_for(|c| *c > 10, timeout));
             assert_eq!(*counter.read(), 16);
         });
     }
