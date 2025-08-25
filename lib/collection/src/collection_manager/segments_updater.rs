@@ -538,8 +538,15 @@ pub(crate) fn upsert_points<'a, T>(
 where
     T: IntoIterator<Item = &'a PointStructPersisted>,
 {
-    let points_map: AHashMap<PointIdType, _> = points.into_iter().map(|p| (p.id, p)).collect();
-    let ids: Vec<PointIdType> = points_map.keys().copied().collect();
+    // Conserve initial order of points
+    let points = points.into_iter();
+    let points_count = points.size_hint().0;
+    let mut ids = Vec::with_capacity(points_count);
+    let mut points_map: AHashMap<PointIdType, _> = AHashMap::with_capacity(points_count);
+    for point in points {
+        ids.push(point.id);
+        points_map.insert(point.id, point);
+    }
 
     // Update points in writable segments
     let updated_points = segments.apply_points_with_conditional_move(
