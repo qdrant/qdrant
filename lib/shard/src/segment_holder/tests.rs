@@ -3,7 +3,7 @@ use std::fs::File;
 use std::str::FromStr;
 
 use rand::Rng;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal, only_default_vector};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -575,4 +575,93 @@ fn test_snapshot_all() {
     let archive_count = tar.entries_with_seek().unwrap().count();
     // one archive produced per concrete segment in the SegmentHolder
     assert_eq!(archive_count, 2);
+}
+
+#[test]
+fn test_double_proxies() {
+    let hw_counter = HardwareCounterCell::disposable();
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segment1 = build_segment_1(dir.path());
+
+    let mut holder = SegmentHolder::default();
+
+    let _sid1 = holder.add_new(segment1);
+
+    let holder = Arc::new(RwLock::new(holder));
+
+    let before_segment_ids = holder
+        .read()
+        .iter()
+        .map(|(id, _)| *id)
+        .collect::<HashSet<_>>();
+
+    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+    let payload_schema_file = dir.path().join("payload.schema");
+    let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
+
+    let (inner_proxies, inner_tmp_segment, inner_segments_lock) =
+        SegmentHolder::proxy_all_segments(
+            holder.upgradable_read(),
+            segments_dir.path(),
+            None,
+            schema.clone(),
+        )
+        .unwrap();
+
+    // check inner proxy contains points
+    let points = inner_proxies[0]
+        .1
+        .get()
+        .read()
+        .read_range(Some(1.into()), None);
+    assert_eq!(&points, &[1.into(), 2.into(), 3.into(), 4.into(), 5.into()]);
+
+    // Writing to inner proxy segment
+    inner_proxies[0]
+        .1
+        .get()
+        .write()
+        .delete_point(10, 1.into(), &hw_counter)
+        .unwrap();
+
+    let (outer_proxies, outer_tmp_segment, outer_segments_lock) =
+        SegmentHolder::proxy_all_segments(inner_segments_lock, segments_dir.path(), None, schema)
+            .unwrap();
+
+    // Writing to outer proxy segment
+    outer_proxies[0]
+        .1
+        .get()
+        .write()
+        .upsert_point(
+            100,
+            1.into(),
+            only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+
+    // Unproxy once
+    SegmentHolder::unproxy_all_segments(outer_segments_lock, outer_proxies, outer_tmp_segment)
+        .unwrap();
+
+    // Unproxy twice
+    SegmentHolder::unproxy_all_segments(holder.upgradable_read(), inner_proxies, inner_tmp_segment)
+        .unwrap();
+
+    let after_segment_ids = holder
+        .read()
+        .iter()
+        .map(|(id, _)| *id)
+        .collect::<HashSet<_>>();
+
+    // Check that we have one new segment
+    let diff: HashSet<_> = after_segment_ids.difference(&before_segment_ids).collect();
+    assert_eq!(
+        diff.len(),
+        1,
+        "There should be one new segment after unproxying"
+    );
 }
