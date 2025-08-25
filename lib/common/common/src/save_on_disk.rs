@@ -318,10 +318,11 @@ mod tests {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
         let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(counter_file).unwrap();
-        let barrier = Barrier::new(6);
+        let readers = 5;
+        let barrier = Barrier::new(readers + 1); // +1 for the writer thread
 
         thread::scope(|s| {
-            for _ in 0..5 {
+            for _ in 0..readers {
                 s.spawn(|| {
                     barrier.wait();
                     assert!(counter.wait_for(|c| *c > 5, TEST_IMMEDIATE_TIMEOUT));
