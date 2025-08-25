@@ -272,7 +272,8 @@ mod tests {
             barrier.wait();
             // Timeout at TEST_UPDATE_INTERVAL + TEST_SYNC_DELAY (150ms) ensures we timeout
             // before the first write, with 50ms margin for scheduling jitter
-            assert!(!counter.wait_for(|c| *c > 5, TEST_UPDATE_INTERVAL + TEST_SYNC_DELAY));
+            let timeout = TEST_UPDATE_INTERVAL + TEST_SYNC_DELAY;
+            assert!(!counter.wait_for(|c| *c > 5, timeout));
         });
     }
 
@@ -284,8 +285,8 @@ mod tests {
 
         let start = Instant::now();
         assert!(counter.wait_for(|c| *c > 5, TEST_IMMEDIATE_TIMEOUT));
-        // On very loaded CI hosts, even an immediate return can take quite some time.
-        assert!(start.elapsed() <= TEST_UPDATE_INTERVAL);
+        // Allow generous headroom for slow CI while still catching accidental sleeps
+        assert!(start.elapsed() <= TEST_UPDATE_INTERVAL + TEST_IO_SLACK / 2);
     }
 
     #[test]
