@@ -31,24 +31,6 @@ pub struct ImmutableInvertedIndex {
 }
 
 impl ImmutableInvertedIndex {
-    pub fn ids_empty() -> Self {
-        Self {
-            postings: ImmutablePostings::Ids(Vec::new()),
-            vocab: HashMap::new(),
-            point_to_tokens_count: Vec::new(),
-            points_count: 0,
-        }
-    }
-
-    pub fn positions_empty() -> Self {
-        Self {
-            postings: ImmutablePostings::WithPositions(Vec::new()),
-            vocab: HashMap::new(),
-            point_to_tokens_count: Vec::new(),
-            points_count: 0,
-        }
-    }
-
     /// Iterate over point ids whose documents contain all given tokens
     fn filter_has_all<'a>(
         &'a self,
