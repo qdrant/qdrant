@@ -228,10 +228,6 @@ impl GraphLinks {
         }
     }
 
-    pub fn on_disk(&self) -> bool {
-        matches!(self.borrow_owner(), GraphLinksEnum::Ram(_))
-    }
-
     pub fn num_points(&self) -> usize {
         self.view().reindex.len()
     }
