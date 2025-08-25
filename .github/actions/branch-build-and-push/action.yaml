@@ -49,11 +49,11 @@ runs:
         docker buildx create --use
 
         # Authenticate on registries
-        if [ "${{ inputs.push-to-ghcr }}" = "true" ]; then
-          docker login ghcr.io -u qdrant --password "${{ inputs.ghcr-password }}"
-        fi
         if [ "${{ inputs.push-to-dockerhub }}" = "true" ]; then
-          docker login docker.io -u qdrant --password "${{ inputs.dockerhub-password }}"
+          echo "${{ inputs.dockerhub-password }}" | docker login -u generall --password-stdin
+        fi
+        if [ "${{ inputs.push-to-ghcr }}" = "true" ]; then
+          echo "${{ inputs.ghcr-password }}" | docker login ghcr.io -u qdrant --password-stdin
         fi
 
         GIT_COMMIT_ID="$(git rev-parse HEAD)"
