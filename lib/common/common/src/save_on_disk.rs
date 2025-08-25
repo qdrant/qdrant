@@ -99,7 +99,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             let notification_guard = self.notification_lock.lock();
             // Based on https://github.com/Amanieu/parking_lot/issues/165
             RwLockReadGuard::unlocked(&mut data_read_guard, || {
-                // Move the guard in so it gets unlocked before we re-lock g
+                // Move the guard in so it gets unlocked before we re-lock the RwLock read guard
                 let mut guard = notification_guard;
                 self.change_notification.wait_for(&mut guard, remaining);
             });
