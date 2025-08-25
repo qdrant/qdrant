@@ -53,7 +53,7 @@ runs:
           docker login ghcr.io -u qdrant --password "${{ inputs.ghcr-password }}"
         fi
         if [ "${{ inputs.push-to-dockerhub }}" = "true" ]; then
-          docker login docker.io -u generall --password "${{ inputs.dockerhub-password }}"
+          docker login -u generall --password "${{ inputs.dockerhub-password }}"
         fi
 
         GIT_COMMIT_ID="$(git rev-parse HEAD)"
