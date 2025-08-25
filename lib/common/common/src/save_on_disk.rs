@@ -85,7 +85,9 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     where
         F: Fn(&T) -> bool,
     {
-        let deadline = std::time::Instant::now() + timeout;
+        let deadline = std::time::Instant::now()
+            .checked_add(timeout)
+            .unwrap_or_else(std::time::Instant::now);
         loop {
             let mut data_read_guard = self.data.read();
             if check(&data_read_guard) {
