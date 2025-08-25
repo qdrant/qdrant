@@ -57,8 +57,9 @@ impl PartialOrd for DedupPoint {
 
 #[derive(Debug, Default)]
 pub struct SegmentHolder {
-    appendable_segments: AHashMap<SegmentId, LockedSegment>,
-    non_appendable_segments: AHashMap<SegmentId, LockedSegment>,
+    /// Keep segments sorted by their ID for deterministic iteration order
+    appendable_segments: BTreeMap<SegmentId, LockedSegment>,
+    non_appendable_segments: BTreeMap<SegmentId, LockedSegment>,
 
     /// Source for unique (virtual) IDs for newly added segments
     id_source: AtomicUsize,
@@ -284,10 +285,12 @@ impl SegmentHolder {
         )
     }
 
+    /// Return appendable segment IDs sorted by IDs
     pub fn appendable_segments_ids(&self) -> Vec<SegmentId> {
         self.appendable_segments.keys().copied().collect()
     }
 
+    /// Return non-appendable segment IDs sorted by IDs
     pub fn non_appendable_segments_ids(&self) -> Vec<SegmentId> {
         self.non_appendable_segments.keys().copied().collect()
     }
