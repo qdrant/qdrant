@@ -172,6 +172,14 @@ impl GpuVectorStorage {
                 None,
                 stopped,
             ),
+            QuantizedVectorStorage::ScalarChunkedMmap(quantized_storage) => Self::new_sq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
             QuantizedVectorStorage::PQRam(quantized_storage) => Self::new_pq(
                 device.clone(),
                 distance,
@@ -181,6 +189,14 @@ impl GpuVectorStorage {
                 stopped,
             ),
             QuantizedVectorStorage::PQMmap(quantized_storage) => Self::new_pq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
+            QuantizedVectorStorage::PQChunkedMmap(quantized_storage) => Self::new_pq(
                 device.clone(),
                 distance,
                 quantized_storage.vectors_count(),
@@ -204,6 +220,14 @@ impl GpuVectorStorage {
                 None,
                 stopped,
             ),
+            QuantizedVectorStorage::BinaryChunkedMmap(quantized_storage) => Self::new_bq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
             QuantizedVectorStorage::ScalarRamMulti(quantized_storage) => Self::new_sq(
                 device.clone(),
                 distance,
@@ -213,6 +237,14 @@ impl GpuVectorStorage {
                 stopped,
             ),
             QuantizedVectorStorage::ScalarMmapMulti(quantized_storage) => Self::new_sq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage.inner_storage(),
+                Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
+                stopped,
+            ),
+            QuantizedVectorStorage::ScalarChunkedMmapMulti(quantized_storage) => Self::new_sq(
                 device.clone(),
                 distance,
                 quantized_storage.vectors_count(),
@@ -236,6 +268,14 @@ impl GpuVectorStorage {
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
             ),
+            QuantizedVectorStorage::PQChunkedMmapMulti(quantized_storage) => Self::new_pq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage.inner_storage(),
+                Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
+                stopped,
+            ),
             QuantizedVectorStorage::BinaryRamMulti(quantized_storage) => Self::new_bq(
                 device.clone(),
                 distance,
@@ -245,6 +285,14 @@ impl GpuVectorStorage {
                 stopped,
             ),
             QuantizedVectorStorage::BinaryMmapMulti(quantized_storage) => Self::new_bq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage.inner_storage(),
+                Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
+                stopped,
+            ),
+            QuantizedVectorStorage::BinaryChunkedMmapMulti(quantized_storage) => Self::new_bq(
                 device.clone(),
                 distance,
                 quantized_storage.vectors_count(),
