@@ -85,24 +85,25 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     where
         F: Fn(&T) -> bool,
     {
-        let start = std::time::Instant::now();
-        while start.elapsed() < timeout {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
             let mut data_read_guard = self.data.read();
             if check(&data_read_guard) {
                 return true;
+            }
+            let now = std::time::Instant::now();
+            let remaining = deadline.saturating_duration_since(now);
+            if remaining.is_zero() {
+                return false;
             }
             let notification_guard = self.notification_lock.lock();
             // Based on https://github.com/Amanieu/parking_lot/issues/165
             RwLockReadGuard::unlocked(&mut data_read_guard, || {
                 // Move the guard in so it gets unlocked before we re-lock g
                 let mut guard = notification_guard;
-                let remaining = timeout.saturating_sub(start.elapsed());
-                if !remaining.is_zero() {
-                    self.change_notification.wait_for(&mut guard, remaining);
-                }
+                self.change_notification.wait_for(&mut guard, remaining);
             });
         }
-        false
     }
 
     /// Perform an operation over the stored data,
