@@ -96,7 +96,10 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             RwLockReadGuard::unlocked(&mut data_read_guard, || {
                 // Move the guard in so it gets unlocked before we re-lock g
                 let mut guard = notification_guard;
-                self.change_notification.wait_for(&mut guard, timeout);
+                let remaining = timeout.saturating_sub(start.elapsed());
+                if !remaining.is_zero() {
+                    self.change_notification.wait_for(&mut guard, remaining);
+                }
             });
         }
         false
@@ -257,6 +260,7 @@ mod tests {
         thread::scope(|s| {
             s.spawn(|| {
                 barrier.wait();
+                // First write happens at 2 * TEST_UPDATE_INTERVAL (200ms)
                 sleep(TEST_UPDATE_INTERVAL * 2);
                 counter.write(|c| *c += 3).unwrap();
                 sleep(TEST_UPDATE_INTERVAL);
@@ -264,6 +268,8 @@ mod tests {
             });
 
             barrier.wait();
+            // Timeout at TEST_UPDATE_INTERVAL + TEST_SYNC_DELAY (150ms) ensures we timeout
+            // before the first write, with 50ms margin for scheduling jitter
             assert!(!counter.wait_for(|c| *c > 5, TEST_UPDATE_INTERVAL + TEST_SYNC_DELAY));
         });
     }
@@ -276,7 +282,8 @@ mod tests {
 
         let start = Instant::now();
         assert!(counter.wait_for(|c| *c > 5, TEST_IMMEDIATE_TIMEOUT));
-        assert!(start.elapsed() < TEST_SYNC_DELAY);
+        // On very loaded CI hosts, even an immediate return can take quite some time.
+        assert!(start.elapsed() <= TEST_UPDATE_INTERVAL);
     }
 
     #[test]
