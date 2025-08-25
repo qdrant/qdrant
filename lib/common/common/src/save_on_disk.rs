@@ -303,7 +303,8 @@ mod tests {
             });
 
             barrier.wait();
-            assert!(counter.wait_for(|c| *c > 10, TEST_IMMEDIATE_TIMEOUT));
+            // Need enough time for 4 updates with TEST_UPDATE_INTERVAL delays between them
+            assert!(counter.wait_for(|c| *c > 10, TEST_UPDATE_INTERVAL * 5));
             assert_eq!(*counter.read(), 16);
         });
     }
