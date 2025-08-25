@@ -10,7 +10,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::panic;
 use common::save_on_disk::SaveOnDisk;
 use itertools::Itertools;
-use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
@@ -227,7 +226,7 @@ impl UpdateHandler {
         if let Some(flush_stop) = self.flush_stop.take()
             && let Err(()) = flush_stop.send(())
         {
-            warn!("Failed to stop flush worker as it is already stopped.");
+            log::warn!("Failed to stop flush worker as it is already stopped.");
         }
     }
 
@@ -330,7 +329,11 @@ impl UpdateHandler {
                     break;
                 }
 
-                debug!("Optimizing segments: {:?}", &nonoptimal_segment_ids);
+                log::debug!(
+                    "Optimizer '{}' running on segments: {:?}",
+                    optimizer.name(),
+                    &nonoptimal_segment_ids
+                );
 
                 // Determine how many Resources we prefer for optimization task, acquire permit for it
                 // And use same amount of IO threads as CPUs
@@ -402,7 +405,7 @@ impl UpdateHandler {
                                 // Handle and report errors
                                 Err(error) => match error {
                                     CollectionError::Cancelled { description } => {
-                                        debug!("Optimization cancelled - {description}");
+                                        log::debug!("Optimization cancelled - {description}");
                                         tracker_handle
                                             .update(TrackerStatus::Cancelled(description));
                                         false
@@ -432,7 +435,7 @@ impl UpdateHandler {
                         let message = panic::downcast_str(&panic_payload).unwrap_or("");
                         let separator = if !message.is_empty() { ": " } else { "" };
 
-                        warn!(
+                        log::warn!(
                             "Optimization task panicked, collection may be in unstable state\
                              {separator}{message}"
                         );
@@ -775,7 +778,7 @@ impl UpdateHandler {
 
                     if let Some(feedback) = sender {
                         feedback.send(res).unwrap_or_else(|_| {
-                            debug!("Can't report operation {op_num} result. Assume already not required");
+                            log::debug!("Can't report operation {op_num} result. Assume already not required");
                         });
                     };
                 }
@@ -783,20 +786,20 @@ impl UpdateHandler {
                     optimize_sender
                         .send(OptimizerSignal::Stop)
                         .await
-                        .unwrap_or_else(|_| debug!("Optimizer already stopped"));
+                        .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
                     break;
                 }
                 UpdateSignal::Nop => optimize_sender
                     .send(OptimizerSignal::Nop)
                     .await
                     .unwrap_or_else(|_| {
-                        info!(
+                        log::info!(
                             "Can't notify optimizers, assume process is dead. Restart is required"
                         );
                     }),
                 UpdateSignal::Plunger(callback_sender) => {
                     callback_sender.send(()).unwrap_or_else(|_| {
-                        debug!("Can't notify sender, assume nobody is waiting anymore");
+                        log::debug!("Can't notify sender, assume nobody is waiting anymore");
                     });
                 }
             }
@@ -805,7 +808,7 @@ impl UpdateHandler {
         optimize_sender
             .send(OptimizerSignal::Stop)
             .await
-            .unwrap_or_else(|_| debug!("Optimizer already stopped"));
+            .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
     }
 
     async fn flush_worker(
@@ -823,16 +826,16 @@ impl UpdateHandler {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(flush_interval_sec)) => {},
                 _ = &mut stop_receiver => {
-                    debug!("Stopping flush worker for shard {}", shard_path.display());
+                    log::debug!("Stopping flush worker for shard {}", shard_path.display());
                     return;
                 }
             }
 
-            trace!("Attempting flushing");
+            log::trace!("Attempting flushing");
             let wal_flash_job = wal.lock().await.flush_async();
 
             if let Err(err) = wal_flash_job.join() {
-                error!("Failed to flush wal: {err:?}");
+                log::error!("Failed to flush wal: {err:?}");
                 segments
                     .write()
                     .report_optimizer_error(WalError::WriteWalError(format!(
@@ -845,7 +848,7 @@ impl UpdateHandler {
             let confirmed_version = match confirmed_version {
                 Ok(version) => version,
                 Err(err) => {
-                    error!("Failed to flush: {err}");
+                    log::error!("Failed to flush: {err}");
                     segments.write().report_optimizer_error(err);
                     continue;
                 }
