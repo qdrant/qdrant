@@ -182,14 +182,20 @@ impl<T> DerefMut for SaveOnDisk<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::Barrier;
     use std::thread::sleep;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use std::{fs, thread};
 
     use tempfile::Builder;
 
     use super::SaveOnDisk;
+
+    const TEST_IMMEDIATE_TIMEOUT: Duration = Duration::from_millis(500);
+
+    const TEST_SYNC_DELAY: Duration = Duration::from_millis(50);
+
+    const TEST_UPDATE_INTERVAL: Duration = Duration::from_millis(100);
 
     #[test]
     fn saves_data() {
@@ -225,37 +231,96 @@ mod tests {
     fn test_wait_for_condition_change() {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
-        let counter: Arc<SaveOnDisk<u32>> =
-            Arc::new(SaveOnDisk::load_or_init_default(counter_file).unwrap());
-        let counter_copy = counter.clone();
-        let handle = thread::spawn(move || {
-            sleep(Duration::from_millis(200));
-            counter_copy.write(|counter| *counter += 3).unwrap();
-            sleep(Duration::from_millis(200));
-            counter_copy.write(|counter| *counter += 7).unwrap();
-            sleep(Duration::from_millis(200));
-        });
+        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(counter_file).unwrap();
+        let barrier = Barrier::new(2);
 
-        assert!(counter.wait_for(|counter| *counter > 5, Duration::from_secs(2)));
-        handle.join().unwrap();
+        thread::scope(|s| {
+            s.spawn(|| {
+                barrier.wait();
+                counter.write(|c| *c += 3).unwrap();
+                sleep(TEST_UPDATE_INTERVAL);
+                counter.write(|c| *c += 7).unwrap();
+            });
+
+            barrier.wait();
+            assert!(counter.wait_for(|c| *c > 5, TEST_IMMEDIATE_TIMEOUT));
+        });
     }
 
     #[test]
     fn test_wait_for_condition_change_timeout() {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
-        let counter: Arc<SaveOnDisk<u32>> =
-            Arc::new(SaveOnDisk::load_or_init_default(counter_file).unwrap());
-        let counter_copy = counter.clone();
-        let handle = thread::spawn(move || {
-            sleep(Duration::from_millis(200));
-            counter_copy.write(|counter| *counter += 3).unwrap();
-            sleep(Duration::from_millis(200));
-            counter_copy.write(|counter| *counter += 7).unwrap();
-            sleep(Duration::from_millis(200));
-        });
+        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(counter_file).unwrap();
+        let barrier = Barrier::new(2);
 
-        assert!(!counter.wait_for(|counter| *counter > 5, Duration::from_millis(300)));
-        handle.join().unwrap();
+        thread::scope(|s| {
+            s.spawn(|| {
+                barrier.wait();
+                sleep(TEST_UPDATE_INTERVAL * 2);
+                counter.write(|c| *c += 3).unwrap();
+                sleep(TEST_UPDATE_INTERVAL);
+                counter.write(|c| *c += 7).unwrap();
+            });
+
+            barrier.wait();
+            assert!(!counter.wait_for(|c| *c > 5, TEST_UPDATE_INTERVAL + TEST_SYNC_DELAY));
+        });
+    }
+
+    #[test]
+    fn test_wait_for_immediate_condition() {
+        let dir = Builder::new().prefix("test").tempdir().unwrap();
+        let counter_file = dir.path().join("counter");
+        let counter: SaveOnDisk<u32> = SaveOnDisk::new(counter_file, 10).unwrap();
+
+        let start = Instant::now();
+        assert!(counter.wait_for(|c| *c > 5, TEST_IMMEDIATE_TIMEOUT));
+        assert!(start.elapsed() < TEST_SYNC_DELAY);
+    }
+
+    #[test]
+    fn test_wait_for_multiple_notifications() {
+        let dir = Builder::new().prefix("test").tempdir().unwrap();
+        let counter_file = dir.path().join("counter");
+        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(counter_file).unwrap();
+        let barrier = Barrier::new(2);
+
+        thread::scope(|s| {
+            s.spawn(|| {
+                barrier.wait();
+                for value in [2, 4, 8, 16] {
+                    sleep(TEST_UPDATE_INTERVAL);
+                    counter.write(|c| *c = value).unwrap();
+                }
+            });
+
+            barrier.wait();
+            assert!(counter.wait_for(|c| *c > 10, TEST_IMMEDIATE_TIMEOUT));
+            assert_eq!(*counter.read(), 16);
+        });
+    }
+
+    #[test]
+    fn test_wait_for_concurrent_readers() {
+        let dir = Builder::new().prefix("test").tempdir().unwrap();
+        let counter_file = dir.path().join("counter");
+        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(counter_file).unwrap();
+        let barrier = Barrier::new(6);
+
+        thread::scope(|s| {
+            for _ in 0..5 {
+                s.spawn(|| {
+                    barrier.wait();
+                    assert!(counter.wait_for(|c| *c > 5, TEST_IMMEDIATE_TIMEOUT));
+                });
+            }
+
+            s.spawn(|| {
+                barrier.wait();
+                sleep(TEST_UPDATE_INTERVAL);
+                counter.write(|c| *c = 10).unwrap();
+            });
+        });
     }
 }
