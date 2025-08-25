@@ -127,55 +127,46 @@ pub trait GraphLayersBase {
         points_scorer: &mut FilteredScorer,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<ScoredPointOffset> {
-        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
-
-        let mut current_point = ScoredPointOffset {
-            idx: entry_point,
-            score: points_scorer.score_point(entry_point),
-        };
+        let mut links_buffer = Vec::new();
+        let mut result = None;
+        let mut level_entry = entry_point;
         for level in rev_range(top_level, target_level) {
             check_process_stopped(is_stopped)?;
-
-            let limit = self.get_m(level);
-
-            let mut changed = true;
-            while changed {
-                changed = false;
-
-                links.clear();
-                self.for_each_link(current_point.idx, level, |link| {
-                    links.push(link);
-                });
-
-                points_scorer
-                    .score_points(&mut links, limit)
-                    .for_each(|score_point| {
-                        if score_point.score > current_point.score {
-                            changed = true;
-                            current_point = score_point;
-                        }
-                    });
-            }
+            let search_result =
+                self.search_entry_on_level(level_entry, level, points_scorer, &mut links_buffer);
+            level_entry = search_result.idx;
+            result = Some(search_result);
         }
-        Ok(current_point)
+        if let Some(result) = result {
+            Ok(result)
+        } else {
+            // If no levels, return the entry point with it's score
+            Ok(ScoredPointOffset {
+                idx: entry_point,
+                score: points_scorer.score_point(entry_point),
+            })
+        }
     }
 
-    #[cfg(test)]
-    #[cfg(feature = "gpu")]
     fn search_entry_on_level(
         &self,
         entry_point: PointOffsetType,
         level: usize,
         points_scorer: &mut FilteredScorer,
+        // Temporary buffer for links to avoid unnecessary allocations.
+        // 'links' is reused if `search_entry_on_level` is called multiple times.
+        links: &mut Vec<PointOffsetType>,
     ) -> ScoredPointOffset {
         let limit = self.get_m(level);
-        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
+
+        links.clear();
+        links.reserve(2 * self.get_m(0));
+
+        let mut changed = true;
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
             score: points_scorer.score_point(entry_point),
         };
-
-        let mut changed = true;
         while changed {
             changed = false;
 
@@ -185,7 +176,7 @@ pub trait GraphLayersBase {
             });
 
             points_scorer
-                .score_points(&mut links, limit)
+                .score_points(links, limit)
                 .for_each(|score_point| {
                     if score_point.score > current_point.score {
                         changed = true;
