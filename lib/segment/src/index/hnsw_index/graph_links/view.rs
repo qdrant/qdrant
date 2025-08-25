@@ -271,6 +271,8 @@ impl GraphLinksView<'_> {
                 let start = offsets.get(idx).unwrap() as usize;
                 let end = offsets.get(idx + 1).unwrap() as usize;
 
+                memory::madvise::will_need_multiple_pages(&neighbors[start..end]);
+
                 // 1. The varint-encoded length (`N` in the doc).
                 let (neighbors_count, neighbors_count_size) =
                     u64::decode_var(&neighbors[start..end]).unwrap();

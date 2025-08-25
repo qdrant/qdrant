@@ -169,3 +169,64 @@ fn populate_simple(slice: &[u8]) {
             .sum::<Wrapping<u8>>(),
     );
 }
+
+/// Trigger readahead for a memory-mapped region by calling
+/// `madvise(MADV_WILLNEED)` on it.
+///
+/// Use-case: the `region` is inside `MADV_RANDOM` memory map, but it spans
+/// across more than one 4KiB page. If you read it in sequence, it will cause
+/// multiple page faults, thus multiple 4KiB I/O operations. Avoid this by
+/// calling this function before reading the region. It will prefetch the whole
+/// region in a single I/O operation. (if possible)
+///
+/// Note: if the region fits within a single page, this function is a no-op.
+#[cfg(unix)]
+pub fn will_need_multiple_pages(region: &[u8]) {
+    let Some(page_mask) = *PAGE_SIZE_MASK else {
+        return;
+    };
+
+    // `madvise()` requires the address to be page-aligned.
+    let addr = region.as_ptr().map_addr(|addr| addr & !page_mask);
+    let length = region.len() + (region.as_ptr().addr() & page_mask);
+
+    if length <= page_mask {
+        // Data fits within a single page, do nothing.
+        return;
+    }
+
+    // Safety: madvise(MADV_WILLNEED) is harmless. If the address is not valid
+    // (not file-baked mmap or even if it is an arbitrary invalid address), it
+    // will return an error, but it won't crash or cause an undefined behavior.
+    let res = unsafe { nix::libc::madvise(addr as *mut _, length, nix::libc::MADV_WILLNEED) };
+    if res != 0 {
+        #[cfg(debug_assertions)]
+        {
+            let err = io::Error::last_os_error();
+            panic!("Failed to call madvise(MADV_WILLNEED): {err}");
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub fn will_need_multiple_pages(_region: &[u8]) {}
+
+/// Page size mask. Typically 0xfff for 4KiB pages.
+#[cfg(unix)]
+static PAGE_SIZE_MASK: std::sync::LazyLock<Option<usize>> =
+    std::sync::LazyLock::new(|| get_page_mask().inspect_err(|err| log::warn!("{err}")).ok());
+
+#[cfg(unix)]
+fn get_page_mask() -> Result<usize, String> {
+    let page_size = nix::unistd::sysconf(nix::unistd::SysconfVar::PAGE_SIZE)
+        .map_err(|err| format!("Failed to get page size: {err}"))?
+        .ok_or_else(|| "sysconf(PAGE_SIZE) returned None".to_string())?;
+    let page_size = usize::try_from(page_size)
+        .map_err(|_| format!("Failed to convert page size {page_size} to usize"))?;
+    if !page_size.is_power_of_two() {
+        // Assuming that page size is a power of two (which is true for all
+        // known platforms) simplifies computations.
+        return Err(format!("Page size {page_size} is not a power of two"));
+    }
+    Ok(page_size - 1)
+}
