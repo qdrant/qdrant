@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use half::f16;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use zerocopy::{Immutable, IntoBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::named_vectors::CowMultiVector;
 use super::vectors::TypedMultiDenseVector;
@@ -14,7 +14,7 @@ pub trait PrimitiveVectorElement
 where
     Self: Copy + Clone + Default + Send + Sync + 'static,
     Self: Serialize + for<'a> Deserialize<'a>,
-    Self: Immutable + IntoBytes,
+    Self: FromBytes + Immutable + IntoBytes + KnownLayout,
 {
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]>;
 
