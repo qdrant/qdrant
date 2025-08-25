@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
+use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
+use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct MultivectorOffset {
@@ -179,6 +181,47 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
+    }
+}
+
+impl MultivectorOffsetsStorage for ChunkedMmapVectors<MultivectorOffset> {
+    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
+        ChunkedVectorStorage::get(self, idx as VectorOffsetType)
+            .and_then(|offsets| offsets.first())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn len(&self) -> usize {
+        ChunkedVectorStorage::len(self)
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        let flusher = ChunkedMmapVectors::flusher(self);
+        Box::new(move || {
+            flusher().map_err(|e| {
+                std::io::Error::other(format!("Failed to flush multivector offsets storage: {e}"))
+            })?;
+            Ok(())
+        })
+    }
+
+    fn upsert_offset(
+        &mut self,
+        id: PointOffsetType,
+        offset: MultivectorOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        ChunkedVectorStorage::insert(self, id as VectorOffsetType, &[offset], hw_counter)
+            .map_err(std::io::Error::other)
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        ChunkedVectorStorage::files(self)
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        ChunkedVectorStorage::immutable_files(self)
     }
 }
 
