@@ -156,7 +156,7 @@ fn reopen_index(
     index: FullTextIndex,
     index_type: IndexType,
     temp_dir: &TempDir,
-    db: &Database,
+    #[allow(unused_variables)] db: &Database,
     phrase_matching: bool,
 ) -> FullTextIndex {
     let config = TextIndexParams {
