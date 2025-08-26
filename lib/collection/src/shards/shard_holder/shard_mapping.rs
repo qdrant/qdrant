@@ -185,6 +185,7 @@ mod test {
             quantization_config: Default::default(),
             strict_mode_config: None,
             uuid: None,
+            metadata: None,
         };
 
         let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();

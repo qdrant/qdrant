@@ -3,6 +3,8 @@ package qdrant;
 
 option csharp_namespace = "Qdrant.Client.Grpc";
 
+import "json_with_int.proto";
+
 enum Datatype {
   Default = 0;
   Float32 = 1;
@@ -408,6 +410,7 @@ message CreateCollection {
   optional ShardingMethod sharding_method = 15; // Sharding method
   optional SparseVectorConfig sparse_vectors_config = 16; // Configuration for sparse vectors
   optional StrictModeConfig strict_mode_config = 17; // Configuration for strict mode
+  map<string, Value> metadata = 18; // Arbitrary JSON metadata for the collection
 }
 
 message UpdateCollection {
@@ -420,6 +423,7 @@ message UpdateCollection {
   optional QuantizationConfigDiff quantization_config = 7; // Quantization configuration of vector
   optional SparseVectorConfig sparse_vectors_config = 8; // New sparse vector parameters
   optional StrictModeConfig strict_mode_config = 9; // New strict mode configuration
+  map<string, Value> metadata = 10; // Arbitrary JSON-like metadata for the collection, will be merged with already stored metadata
 }
 
 message DeleteCollection {
@@ -459,6 +463,7 @@ message CollectionConfig {
   WalConfigDiff wal_config = 4; // Configuration of the Write-Ahead-Log
   optional QuantizationConfig quantization_config = 5; // Configuration of the vector quantization
   optional StrictModeConfig strict_mode_config = 6; // Configuration of strict mode.
+  map<string, Value> metadata = 7; // Arbitrary JSON metadata for the collection
 }
 
 enum TokenizerType {

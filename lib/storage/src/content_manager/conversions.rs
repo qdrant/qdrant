@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use api::conversions::json;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
 };
@@ -81,6 +82,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
             sharding_method,
             sparse_vectors_config,
             strict_mode_config,
+            metadata,
         } = value;
         let op = CreateCollectionOperation::new(
             collection_name,
@@ -108,6 +110,11 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 uuid: None,
                 #[expect(deprecated)]
                 init_from: init_from_collection.map(|v| InitFrom { collection: v }),
+                metadata: if metadata.is_empty() {
+                    None
+                } else {
+                    Some(json::proto_to_payloads(metadata)?)
+                },
             },
         )?;
         Ok(CollectionMetaOperations::CreateCollection(op))
@@ -171,6 +178,7 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
             quantization_config,
             sparse_vectors_config,
             strict_mode_config,
+            metadata,
         } = value;
         Ok(Self::UpdateCollection(UpdateCollectionOperation::new(
             collection_name,
@@ -191,6 +199,11 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
                     .map(SparseVectorsConfig::try_from)
                     .transpose()?,
                 strict_mode_config: strict_mode_config.map(StrictModeConfig::from),
+                metadata: if metadata.is_empty() {
+                    None
+                } else {
+                    Some(json::proto_to_payloads(metadata)?)
+                },
             },
         )))
     }

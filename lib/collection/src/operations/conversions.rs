@@ -395,6 +395,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             wal_config,
             quantization_config,
             strict_mode_config,
+            metadata,
         } = config;
 
         let OptimizersConfig {
@@ -526,6 +527,9 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 quantization_config: quantization_config.map(|x| x.into()),
                 strict_mode_config: strict_mode_config
                     .map(api::grpc::qdrant::StrictModeConfig::from),
+                metadata: metadata
+                    .map(api::conversions::json::payload_to_proto)
+                    .unwrap_or_default(),
             }),
             payload_schema: payload_schema
                 .into_iter()
@@ -1941,6 +1945,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
             wal_config,
             quantization_config,
             strict_mode_config,
+            metadata,
         } = config;
         Ok(Self {
             params: match params {
@@ -2034,6 +2039,11 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                 }
             },
             strict_mode_config: strict_mode_config.map(StrictModeConfigOutput::from),
+            metadata: if metadata.is_empty() {
+                None
+            } else {
+                Some(api::conversions::json::proto_to_payloads(metadata)?)
+            },
         })
     }
 }

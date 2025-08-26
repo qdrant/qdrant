@@ -15,7 +15,7 @@ use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransfe
 use collection::shards::{CollectionId, replica_set};
 use schemars::JsonSchema;
 use segment::types::{
-    PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
+    Payload, PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
     VectorNameBuf,
 };
 use serde::{Deserialize, Serialize};
@@ -182,6 +182,11 @@ pub struct CreateCollection {
     #[serde(default)]
     #[schemars(skip)]
     pub uuid: Option<Uuid>,
+    /// Arbitrary JSON metadata for the collection
+    /// This can be used to store application-specific information
+    /// such as creation time, migration data, inference model info, etc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Payload>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params
@@ -255,6 +260,10 @@ pub struct UpdateCollection {
     pub sparse_vectors: Option<SparseVectorsConfig>,
     #[validate(nested)]
     pub strict_mode_config: Option<StrictModeConfig>,
+    /// Metadata to update for the collection. If provided, this will merge with existing metadata.
+    /// To remove metadata, set it to an empty object.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Payload>,
 }
 
 /// Operation for updating parameters of the existing collection
@@ -278,6 +287,7 @@ impl UpdateCollectionOperation {
                 quantization_config: None,
                 sparse_vectors: None,
                 strict_mode_config: None,
+                metadata: None,
             },
             shard_replica_changes: None,
         }
@@ -426,6 +436,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             quantization_config,
             strict_mode_config,
             uuid,
+            metadata,
         } = value;
 
         let CollectionParams {
@@ -455,6 +466,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             uuid,
             #[expect(deprecated)]
             init_from: None,
+            metadata,
         }
     }
 }
