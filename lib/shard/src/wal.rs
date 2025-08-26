@@ -1,4 +1,3 @@
-use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::path::Path;
 use std::result;
@@ -10,45 +9,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use wal::{Wal, WalOptions};
 
-#[derive(Error, Debug)]
-#[error("{0}")]
-pub enum WalError {
-    #[error("Can't init WAL: {0}")]
-    InitWalError(String),
-    #[error("Can't write WAL: {0}")]
-    WriteWalError(String),
-    #[error("Can't truncate WAL: {0}")]
-    TruncateWalError(String),
-    #[error("Operation rejected by WAL for old clock")]
-    ClockRejected,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-struct TestInternalStruct1 {
-    data: usize,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-struct TestInternalStruct2 {
-    a: i32,
-    b: i32,
-}
-
-pub type Result<T> = result::Result<T, WalError>;
-
-#[derive(Debug, Deserialize, Serialize)]
-struct WalState {
-    pub ack_index: u64,
-}
-
-impl WalState {
-    pub fn new(ack_index: u64) -> Self {
-        Self { ack_index }
-    }
-}
-
 /// Write-Ahead-Log wrapper with built-in type parsing.
 /// Stores sequences of records of type `R` in binary files.
 ///
@@ -57,16 +17,16 @@ impl WalState {
 /// for removing old, no longer required, records.
 #[derive(Debug)]
 pub struct SerdeWal<R> {
-    record: PhantomData<R>,
     wal: Wal,
     options: WalOptions,
     /// First index of our logical WAL.
     first_index: Option<u64>,
+    _record: PhantomData<R>,
 }
 
 const FIRST_INDEX_FILE: &str = "first-index";
 
-impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
+impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     pub fn new(dir: &str, wal_options: WalOptions) -> Result<SerdeWal<R>> {
         let wal = Wal::with_options(dir, &wal_options)
             .map_err(|err| WalError::InitWalError(format!("{err:?}")))?;
@@ -88,10 +48,10 @@ impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         };
 
         Ok(SerdeWal {
-            record: PhantomData,
             wal,
             options: wal_options,
             first_index,
+            _record: PhantomData,
         })
     }
 
@@ -252,6 +212,32 @@ impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct WalState {
+    pub ack_index: u64,
+}
+
+impl WalState {
+    pub fn new(ack_index: u64) -> Self {
+        Self { ack_index }
+    }
+}
+
+pub type Result<T, E = WalError> = result::Result<T, E>;
+
+#[derive(Debug, Error)]
+#[error("{0}")]
+pub enum WalError {
+    #[error("Can't init WAL: {0}")]
+    InitWalError(String),
+    #[error("Can't write WAL: {0}")]
+    WriteWalError(String),
+    #[error("Can't truncate WAL: {0}")]
+    TruncateWalError(String),
+    #[error("Operation rejected by WAL for old clock")]
+    ClockRejected,
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(not(target_os = "windows"))]
@@ -270,6 +256,19 @@ mod tests {
     enum TestRecord {
         Struct1(TestInternalStruct1),
         Struct2(TestInternalStruct2),
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    #[serde(rename_all = "snake_case")]
+    struct TestInternalStruct1 {
+        data: usize,
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    #[serde(rename_all = "snake_case")]
+    struct TestInternalStruct2 {
+        a: i32,
+        b: i32,
     }
 
     #[test]
