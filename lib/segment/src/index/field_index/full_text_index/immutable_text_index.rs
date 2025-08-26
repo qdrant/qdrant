@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 
-use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
 use super::inverted_index::InvertedIndex;
+use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
 #[cfg(feature = "rocksdb")]
 use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::mmap_text_index::MmapFullTextIndex;
@@ -15,10 +15,9 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 #[cfg(feature = "rocksdb")]
 use crate::data_types::index::TextIndexParams;
-use crate::index::field_index::full_text_index::inverted_index::mmap_inverted_index::mmap_postings_enum::MmapPostingsEnum;
-use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 #[cfg(feature = "rocksdb")]
 use crate::index::field_index::full_text_index::mutable_text_index::{self, MutableFullTextIndex};
+use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 use crate::index::payload_config::StorageType;
 
 pub struct ImmutableFullTextIndex {
@@ -67,10 +66,8 @@ impl ImmutableFullTextIndex {
 
     /// Open and load immutable full text index from mmap storage
     pub fn open_mmap(index: MmapFullTextIndex) -> Self {
-        let inverted_index = match index.inverted_index.storage.postings {
-            MmapPostingsEnum::Ids(_) => ImmutableInvertedIndex::ids_empty(),
-            MmapPostingsEnum::WithPositions(_) => ImmutableInvertedIndex::positions_empty(),
-        };
+        let inverted_index = ImmutableInvertedIndex::from(&index.inverted_index);
+
         // ToDo(rocksdb): this is a duplication of tokenizer,
         // ToDo(rocksdb): But once the RocksDB is removed, we can always use the tokenizer from the index.
         let tokenizer = index.tokenizer.clone();
