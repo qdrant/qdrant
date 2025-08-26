@@ -1669,7 +1669,7 @@ fn payload_example() -> Option<Payload> {
     })
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash)]
 #[schemars(example = "payload_example")]
 pub struct Payload(pub Map<String, Value>);
 

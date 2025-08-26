@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::types::{HnswConfig, QuantizationConfig, StrictModeConfigOutput};
+use segment::types::{HnswConfig, Payload, QuantizationConfig, StrictModeConfigOutput};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -86,6 +86,10 @@ pub struct CollectionConfigTelemetry {
     #[serde(default)]
     #[anonymize(value = None)]
     pub uuid: Option<Uuid>,
+    /// Arbitrary JSON metadata for the collection
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[anonymize(value = None)]
+    pub metadata: Option<Payload>,
 }
 
 impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
@@ -98,6 +102,7 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
             quantization_config,
             strict_mode_config,
             uuid,
+            metadata,
         } = config;
         CollectionConfigTelemetry {
             params,
@@ -107,6 +112,7 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
             quantization_config,
             strict_mode_config: strict_mode_config.map(StrictModeConfigOutput::from),
             uuid,
+            metadata,
         }
     }
 }

@@ -177,6 +177,11 @@ pub struct CollectionConfig {
     pub quantization_config: Option<QuantizationConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strict_mode_config: Option<StrictModeConfigOutput>,
+    /// Arbitrary JSON metadata for the collection
+    /// This can be used to store application-specific information
+    /// such as creation time, migration data, inference model info, etc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Payload>,
 }
 
 impl From<CollectionConfigInternal> for CollectionConfig {
@@ -190,6 +195,7 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             strict_mode_config,
             // Internal UUID to identify unique collections in consensus snapshots
             uuid: _,
+            metadata,
         } = config;
 
         CollectionConfig {
@@ -199,6 +205,7 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             wal_config: Some(wal_config),
             quantization_config,
             strict_mode_config: strict_mode_config.map(StrictModeConfigOutput::from),
+            metadata,
         }
     }
 }

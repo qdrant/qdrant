@@ -11,7 +11,7 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SegmentConfig,
+    Distance, HnswConfig, Indexes, Payload, PayloadStorageType, QuantizationConfig, SegmentConfig,
     SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf,
     VectorStorageDatatype, VectorStorageType,
 };
@@ -232,6 +232,11 @@ pub struct CollectionConfigInternal {
     pub strict_mode_config: Option<StrictModeConfig>,
     #[serde(default)]
     pub uuid: Option<Uuid>,
+    /// Arbitrary JSON metadata for the collection
+    /// This can be used to store application-specific information
+    /// such as creation time, migration data, inference model info, etc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Payload>,
 }
 
 impl CollectionConfigInternal {
