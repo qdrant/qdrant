@@ -39,6 +39,14 @@ def test_collection_exists(collection_name):
     assert response.ok
 
     response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="PATCH",
+        path_params={"collection_name": collection_name},
+        body={"metadata": {"new_meta_2": None}}
+    )
+    assert response.ok
+
+    response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
         path_params={'collection_name': collection_name},
@@ -46,4 +54,4 @@ def test_collection_exists(collection_name):
     assert response.ok
     result = response.json()["result"]
 
-    assert result["config"]["metadata"] == {"new_meta": "value3", "new_meta_2": "value2"}
+    assert result["config"]["metadata"] == {"new_meta": "value3"}
