@@ -15,12 +15,6 @@ pub struct QuantizedMmapStorage {
     path: PathBuf,
 }
 
-impl QuantizedMmapStorage {
-    pub fn populate(&self) {
-        self.mmap.populate();
-    }
-}
-
 pub struct QuantizedMmapStorageBuilder {
     mmap: MmapMut,
     cursor_pos: usize,
@@ -58,6 +52,10 @@ impl QuantizedMmapStorage {
             quantized_vector_size,
             path: path.to_path_buf(),
         })
+    }
+
+    pub fn populate(&self) {
+        self.mmap.populate();
     }
 }
 

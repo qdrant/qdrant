@@ -333,7 +333,9 @@ mod tests {
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+    use crate::vector_storage::quantized::quantized_vectors::{
+        QuantizedVectors, QuantizedVectorsStorageType,
+    };
     use crate::vector_storage::{DEFAULT_STOPPED, new_raw_scorer};
 
     #[test]
@@ -745,8 +747,15 @@ mod tests {
 
         let stopped = Arc::new(AtomicBool::new(false));
         let hardware_counter = HardwareCounterCell::new();
-        let quantized_vectors =
-            QuantizedVectors::create(&storage, &config, dir.path(), 1, &stopped).unwrap();
+        let quantized_vectors = QuantizedVectors::create(
+            &storage,
+            &config,
+            QuantizedVectorsStorageType::Immutable,
+            dir.path(),
+            1,
+            &stopped,
+        )
+        .unwrap();
 
         let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into();
 
@@ -771,7 +780,10 @@ mod tests {
         let quantization_files = quantized_vectors.files();
 
         // test save-load
-        let quantized_vectors = QuantizedVectors::load(&storage, dir.path()).unwrap();
+        let quantized_vectors =
+            QuantizedVectors::load(&config, &storage, dir.path(), &false.into())
+                .unwrap()
+                .unwrap();
         assert_eq!(files, storage.files());
         assert_eq!(quantization_files, quantized_vectors.files());
         let hardware_counter = HardwareCounterCell::new();

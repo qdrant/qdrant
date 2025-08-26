@@ -49,7 +49,9 @@ use crate::types::{
     CompactExtendedPointId, ExtendedPointId, HnswGlobalConfig, PayloadFieldSchema, PayloadKeyType,
     SegmentConfig, SegmentState, SeqNumberType, VectorNameBuf,
 };
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
+};
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 /// Structure for constructing segment out of several other segments
@@ -706,15 +708,25 @@ impl SegmentBuilder {
 
             let is_appendable = vector_config.is_appendable();
 
-            // Don't build quantization for appendable vectors
-            if is_appendable {
+            // If appendable quantization feature is not enabled, skip appendable case.
+            if is_appendable && !common::flags::feature_flags().appendable_quantization {
                 continue;
             }
 
             let max_threads = permit.num_cpus as usize;
 
-            if let Some(quantization) = config.quantization_config(vector_name) {
+            if let Some(quantization_config) = config.quantization_config(vector_name) {
+                // Don't build quantization for appendable vectors if quantization method does not support it
+                if is_appendable && !quantization_config.is_appendable() {
+                    continue;
+                }
+
                 let segment_path = temp_path;
+                let quantized_storage_type = if is_appendable {
+                    QuantizedVectorsStorageType::Mutable
+                } else {
+                    QuantizedVectorsStorageType::Immutable
+                };
 
                 check_process_stopped(stopped)?;
 
@@ -722,7 +734,8 @@ impl SegmentBuilder {
 
                 let quantized_vectors = QuantizedVectors::create(
                     &vector_info.vector_storage,
-                    quantization,
+                    quantization_config,
+                    quantized_storage_type,
                     &vector_storage_path,
                     max_threads,
                     stopped,

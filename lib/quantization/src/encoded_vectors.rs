@@ -15,7 +15,7 @@ pub enum DistanceType {
     L2,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct VectorParameters {
     pub dim: usize,
     pub distance_type: DistanceType,
