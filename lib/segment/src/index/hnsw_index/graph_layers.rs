@@ -192,9 +192,9 @@ pub trait GraphLayersWithVectors {
     /// # Panics
     ///
     /// Panics when using a format that does not support vectors.
-    fn for_each_link_with_vector<F>(&self, point_id: PointOffsetType, level: usize, f: F)
+    fn for_each_link_with_vector<'a, F>(&'a self, point_id: PointOffsetType, level: usize, f: F)
     where
-        F: FnMut(PointOffsetType, &[u8]);
+        F: FnMut(PointOffsetType, &'a [u8]);
 }
 
 impl GraphLayersBase for GraphLayers {
@@ -215,9 +215,9 @@ impl GraphLayersBase for GraphLayers {
 }
 
 impl GraphLayersWithVectors for GraphLayers {
-    fn for_each_link_with_vector<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
+    fn for_each_link_with_vector<'a, F>(&'a self, point_id: PointOffsetType, level: usize, mut f: F)
     where
-        F: FnMut(PointOffsetType, &[u8]),
+        F: FnMut(PointOffsetType, &'a [u8]),
     {
         self.links
             .links_with_vectors(point_id, level)

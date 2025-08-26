@@ -14,6 +14,7 @@ use gpu_multivectors::GpuMultivectors;
 use gpu_quantization::GpuQuantization;
 use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
 use quantization::{EncodedStorage, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
+use zerocopy::IntoBytes;
 
 use super::shader_builder::ShaderBuilderParameters;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -717,7 +718,7 @@ impl GpuVectorStorage {
         // fill staging buffer with zeros
         let zero_vector = vec![TElement::default(); gpu_vector_capacity];
         for i in 0..upload_points_count {
-            staging_buffer.upload(TElement::as_bytes(&zero_vector), i * gpu_vector_capacity)?;
+            staging_buffer.upload(zero_vector.as_bytes(), i * gpu_vector_capacity)?;
         }
         log::trace!(
             "GPU staging buffer size {}, `upload_points_count` = {}",
@@ -734,8 +735,7 @@ impl GpuVectorStorage {
 
             for vector in vectors.clone().skip(storage_index).step_by(STORAGES_COUNT) {
                 check_process_stopped(stopped)?;
-                staging_buffer
-                    .upload(TElement::as_bytes(&vector), upload_points * gpu_vector_size)?;
+                staging_buffer.upload(vector.as_bytes(), upload_points * gpu_vector_size)?;
                 upload_size += gpu_vector_size;
                 upload_points += 1;
 
