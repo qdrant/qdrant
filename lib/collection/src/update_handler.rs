@@ -832,15 +832,27 @@ impl UpdateHandler {
             }
 
             log::trace!("Attempting flushing");
-            let wal_flash_job = wal.lock().await.flush_async();
+            let wal_flush_job = wal.lock().await.flush_async();
 
-            if let Err(err) = wal_flash_job.join() {
-                log::error!("Failed to flush wal: {err:?}");
-                segments
-                    .write()
-                    .report_optimizer_error(WalError::WriteWalError(format!(
-                        "WAL flush error: {err:?}"
-                    )));
+            let wal_flush_res = match wal_flush_job.join() {
+                Ok(Ok(())) => Ok(()),
+
+                Ok(Err(err)) => Err(WalError::WriteWalError(format!(
+                    "failed to flush WAL: {err}"
+                ))),
+
+                Err(panic) => {
+                    let message = panic::downcast_str(&panic).unwrap_or("");
+                    let separator = if !message.is_empty() { ": " } else { "" };
+                    Err(WalError::WriteWalError(format!(
+                        "failed to flush WAL: flush task panicked{separator}{message}"
+                    )))
+                }
+            };
+
+            if let Err(err) = wal_flush_res {
+                log::error!("{err}");
+                segments.write().report_optimizer_error(err);
                 continue;
             }
 
