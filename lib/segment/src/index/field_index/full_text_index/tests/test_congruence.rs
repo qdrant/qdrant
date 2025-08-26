@@ -152,6 +152,56 @@ fn create_builder(
     (builder, temp_dir, db)
 }
 
+fn reopen_index(
+    index: FullTextIndex,
+    index_type: IndexType,
+    temp_dir: &TempDir,
+    db: &Database,
+    phrase_matching: bool,
+) -> FullTextIndex {
+    let config = TextIndexParams {
+        phrase_matching: Some(phrase_matching),
+        ..TextIndexParams::default()
+    };
+
+    // Drop the original index to ensure files are flushed
+    drop(index);
+
+    // Reopen based on index type
+    match index_type {
+        #[cfg(feature = "rocksdb")]
+        IndexType::MutableRocksdb => {
+            FullTextIndex::new_rocksdb(db.clone(), config, FIELD_NAME, true, false)
+                .unwrap()
+                .expect("Failed to reopen MutableRocksdb index")
+        }
+        IndexType::MutableGridstore => {
+            FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, false)
+                .unwrap()
+                .expect("Failed to reopen MutableGridstore index")
+        }
+        #[cfg(feature = "rocksdb")]
+        IndexType::ImmRamRocksDb => {
+            FullTextIndex::new_rocksdb(db.clone(), config, FIELD_NAME, false, false)
+                .unwrap()
+                .expect("Failed to reopen ImmRamRocksDb index")
+        }
+        IndexType::ImmMmap => {
+            // Reopen with is_on_disk = true (mmap directly)
+            FullTextIndex::new_mmap(temp_dir.path().to_path_buf(), config, true)
+                .unwrap()
+                .expect("Failed to reopen ImmMmap index")
+        }
+        IndexType::ImmRamMmap => {
+            // Reopen with is_on_disk = false (load into RAM)
+            // This is the path that will call ImmutableFullTextIndex::open_mmap
+            FullTextIndex::new_mmap(temp_dir.path().to_path_buf(), config, false)
+                .unwrap()
+                .expect("Failed to reopen ImmRamMmap index")
+        }
+    }
+}
+
 fn build_random_index(
     num_points: usize,
     num_keywords: usize,
@@ -159,6 +209,7 @@ fn build_random_index(
     index_type: IndexType,
     phrase_matching: bool,
     deleted: bool,
+    reopen: bool,
 ) -> (FullTextIndex, TempDir, Database) {
     let mut rnd = StdRng::seed_from_u64(42);
     let (mut builder, temp_dir, db) = create_builder(index_type, phrase_matching);
@@ -190,6 +241,13 @@ fn build_random_index(
         index.remove_point(200).unwrap();
         index.remove_point(250).unwrap();
     }
+
+    // Reopen the index if requested
+    let index = if reopen {
+        reopen_index(index, index_type, &temp_dir, &db, phrase_matching)
+    } else {
+        index
+    };
 
     (index, temp_dir, db)
 }
@@ -232,6 +290,7 @@ pub fn parse_query(query: &[String], is_phrase: bool, index: &FullTextIndex) -> 
 fn test_congruence(
     #[values(false, true)] deleted: bool,
     #[values(false, true)] phrase_matching: bool,
+    #[values(false, true)] reopen: bool,
 ) {
     const POINT_COUNT: usize = 500;
     const KEYWORD_COUNT: usize = 20;
@@ -250,6 +309,7 @@ fn test_congruence(
                 index_type,
                 phrase_matching,
                 deleted,
+                reopen,
             );
             ((index, index_type), (temp_dir, db))
         })
