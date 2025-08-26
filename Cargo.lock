@@ -6056,7 +6056,7 @@ dependencies = [
  "strum",
  "tar",
  "tempfile",
- "thiserror 2.0.15",
+ "thiserror 2.0.16",
  "tonic 0.11.0",
  "validator",
  "wal",
