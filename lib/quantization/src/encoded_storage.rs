@@ -40,7 +40,7 @@ pub trait EncodedStorageBuilder {
 
     fn build(self) -> std::io::Result<Self::Storage>;
 
-    fn push_vector_data(&mut self, other: &[u8]);
+    fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()>;
 }
 
 #[cfg(feature = "testing")]
@@ -191,8 +191,9 @@ impl EncodedStorageBuilder for TestEncodedStorageBuilder {
         })
     }
 
-    fn push_vector_data(&mut self, other: &[u8]) {
+    fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
         debug_assert_eq!(other.len(), self.quantized_vector_size.get());
         self.data.extend_from_slice(other);
+        Ok(())
     }
 }

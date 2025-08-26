@@ -9,7 +9,9 @@ use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, Ve
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{Distance, ScalarQuantizationConfig};
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
+};
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
@@ -49,6 +51,7 @@ impl TestRawScorerProducer {
                     always_ram: Some(true),
                 }
                 .into(),
+                QuantizedVectorsStorageType::Immutable,
                 // NOTE: In general case, we should keep the temporary directory
                 // as long as the QuantizedVectors instance is alive. But as for
                 // now, for this configuration, QuantizedVectors does not touch

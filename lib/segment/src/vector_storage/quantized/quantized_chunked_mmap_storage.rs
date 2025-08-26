@@ -1,6 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_type::MmapFlusher;
 
 use crate::common::operation_error::OperationResult;
@@ -12,6 +14,21 @@ pub struct QuantizedChunkedMmapStorage {
 }
 
 impl QuantizedChunkedMmapStorage {
+    pub fn new(path: &Path, quantized_vector_size: usize, in_ram: bool) -> OperationResult<Self> {
+        let advice = if in_ram {
+            AdviceSetting::from(Advice::Normal)
+        } else {
+            AdviceSetting::Global
+        };
+        let data = ChunkedMmapVectors::<u8>::open(
+            path,
+            quantized_vector_size,
+            advice,
+            Some(in_ram), // populate
+        )?;
+        Ok(Self { data })
+    }
+
     pub fn populate(&self) -> OperationResult<()> {
         self.data.populate()
     }
@@ -55,5 +72,48 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         ChunkedMmapVectors::immutable_files(&self.data)
+    }
+}
+
+pub struct QuantizedChunkedMmapStorageBuilder {
+    data: ChunkedMmapVectors<u8>,
+    hw_counter: HardwareCounterCell,
+}
+
+impl QuantizedChunkedMmapStorageBuilder {
+    pub fn new(path: &Path, quantized_vector_size: usize, in_ram: bool) -> OperationResult<Self> {
+        let advice = if in_ram {
+            AdviceSetting::from(Advice::Normal)
+        } else {
+            AdviceSetting::Global
+        };
+        let data = ChunkedMmapVectors::<u8>::open(
+            path,
+            quantized_vector_size,
+            advice,
+            Some(in_ram), // populate
+        )?;
+        Ok(Self {
+            data,
+            hw_counter: HardwareCounterCell::disposable(),
+        })
+    }
+}
+
+impl quantization::EncodedStorageBuilder for QuantizedChunkedMmapStorageBuilder {
+    type Storage = QuantizedChunkedMmapStorage;
+
+    fn build(self) -> std::io::Result<QuantizedChunkedMmapStorage> {
+        self.data.flusher()().map_err(|e| {
+            std::io::Error::other(format!("Failed to flush quantization storage: {e}"))
+        })?;
+        Ok(QuantizedChunkedMmapStorage { data: self.data })
+    }
+
+    fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
+        self.data
+            .push(other, &self.hw_counter)
+            .map(|_| ())
+            .map_err(|e| std::io::Error::other(format!("Failed to push vector data: {e}")))
     }
 }
