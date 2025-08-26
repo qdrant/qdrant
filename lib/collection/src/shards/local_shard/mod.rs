@@ -38,6 +38,7 @@ use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
     SnapshotFormat,
 };
+use shard::wal::SerdeWal;
 use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
@@ -67,7 +68,6 @@ use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
-use crate::wal::SerdeWal;
 use crate::wal_delta::{LockedWal, RecoverableWal};
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.

@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::SeqNumberType;
+use shard::wal::WalError;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{Mutex as TokioMutex, oneshot};
@@ -35,7 +36,6 @@ use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::LocalShardClocks;
 use crate::shards::update_tracker::UpdateTracker;
-use crate::wal::WalError;
 use crate::wal_delta::LockedWal;
 
 /// Interval at which the optimizer worker cleans up old optimization handles

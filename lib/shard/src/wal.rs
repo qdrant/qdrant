@@ -36,7 +36,7 @@ struct TestInternalStruct2 {
     b: i32,
 }
 
-pub(super) type Result<T> = result::Result<T, WalError>;
+pub type Result<T> = result::Result<T, WalError>;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct WalState {
@@ -173,7 +173,7 @@ impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     /// # Arguments
     ///
     /// * `until_index` - the newest no longer required record sequence number
-    pub(super) fn ack(&mut self, until_index: u64) -> Result<()> {
+    pub fn ack(&mut self, until_index: u64) -> Result<()> {
         // Truncate WAL
         self.wal
             .prefix_truncate(until_index)
