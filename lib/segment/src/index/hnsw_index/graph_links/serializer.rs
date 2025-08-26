@@ -43,11 +43,11 @@ pub fn serialize_graph_links<W: Write + Seek>(
     };
 
     // create map from index in `offsets` to point_id
-    let mut back_index: Vec<usize> = (0..edges.len()).collect();
+    let mut back_index: Vec<PointOffsetType> = (0..edges.len()).map(|i| i as _).collect();
     // sort by max layer and use this map to build `reindex`
-    back_index.sort_unstable_by_key(|&i| Reverse(edges[i].len()));
+    back_index.sort_unstable_by_key(|&i| Reverse(edges[i as usize].len()));
 
-    let levels_count = back_index.first().map_or(0, |&id| edges[id].len());
+    let levels_count = back_index.first().map_or(0, |&id| edges[id as usize].len());
     let mut point_count_by_level = vec![0; levels_count];
     for point in &edges {
         point_count_by_level[point.len() - 1] += 1;
@@ -76,7 +76,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
     {
         let mut reindex = vec![0; back_index.len()];
         for i in 0..back_index.len() {
-            reindex[back_index[i]] = i as PointOffsetType;
+            reindex[back_index[i] as usize] = i as PointOffsetType;
         }
         writer.write_all(reindex.as_bytes())?;
     }
@@ -95,12 +95,12 @@ pub fn serialize_graph_links<W: Write + Seek>(
     for level in 0..levels_count {
         let count = point_count_by_level.iter().skip(level).sum::<u64>() as usize;
         let (level_m, mut iter) = match level {
-            0 => (hnsw_m.m0, Either::Left(0..count)),
+            0 => (hnsw_m.m0, Either::Left((0..count).map(|x| x as u32))),
             _ => (hnsw_m.m, Either::Right(back_index[..count].iter().copied())),
         };
 
         iter.try_for_each(|id| {
-            let mut raw_links = std::mem::take(&mut edges[id][level]);
+            let mut raw_links = std::mem::take(&mut edges[id as usize][level]);
             match format_param {
                 GraphLinksFormatParam::Plain => {
                     writer.write_all(raw_links.as_bytes())?;
