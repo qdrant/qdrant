@@ -289,7 +289,7 @@ mod tests {
         let start = Instant::now();
         assert!(counter.wait_for(|c| *c > 5, TEST_IMMEDIATE_TIMEOUT));
         // Allow headroom for slow CI while still catching accidental sleeps
-        assert!(start.elapsed() <= TEST_IMMEDIATE_TIMEOUT - TEST_SYNC_DELAY);
+        assert!(start.elapsed() <= TEST_IMMEDIATE_TIMEOUT.saturating_sub(TEST_SYNC_DELAY));
     }
 
     #[test]
