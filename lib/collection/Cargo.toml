@@ -42,7 +42,7 @@ rmp-serde = "~1.3"
 wal = { workspace = true }
 ordered-float = { workspace = true }
 hashring = "0.3.6"
-tinyvec = { version = "1.9.0", features = ["alloc", "latest_stable_rust"] }
+tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
 lazy_static = "1.5.0"
 siphasher = "1.0.1"
 smallvec = { workspace = true }
