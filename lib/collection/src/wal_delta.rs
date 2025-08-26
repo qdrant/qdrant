@@ -1,12 +1,12 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use shard::wal::SerdeWal;
 use thiserror::Error;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::operations::{ClockTag, OperationWithClockTag};
 use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
-use crate::wal::SerdeWal;
 
 pub(crate) type LockedWal = Arc<Mutex<SerdeWal<OperationWithClockTag>>>;
 
@@ -50,7 +50,7 @@ impl RecoverableWal {
     pub async fn lock_and_write(
         &self,
         operation: &mut OperationWithClockTag,
-    ) -> crate::wal::Result<(u64, OwnedMutexGuard<SerdeWal<OperationWithClockTag>>)> {
+    ) -> shard::wal::Result<(u64, OwnedMutexGuard<SerdeWal<OperationWithClockTag>>)> {
         // Update last seen clock map and correct clock tag if necessary
         if let Some(clock_tag) = &mut operation.clock_tag {
             let operation_accepted = self
@@ -60,7 +60,7 @@ impl RecoverableWal {
                 .advance_clock_and_correct_tag(clock_tag);
 
             if !operation_accepted {
-                return Err(crate::wal::WalError::ClockRejected);
+                return Err(shard::wal::WalError::ClockRejected);
             }
         }
 
@@ -129,7 +129,7 @@ impl RecoverableWal {
 
     /// Append records to this WAL from `other`, starting at operation `append_from` in `other`.
     #[cfg(test)]
-    pub async fn append_from(&self, other: &Self, append_from: u64) -> crate::wal::Result<()> {
+    pub async fn append_from(&self, other: &Self, append_from: u64) -> shard::wal::Result<()> {
         let mut operations = other
             .wal
             .lock()
@@ -269,6 +269,7 @@ mod tests {
     use rand::{Rng, SeedableRng};
     use rstest::rstest;
     use segment::data_types::vectors::VectorStructInternal;
+    use shard::wal::SerdeWal;
     use tempfile::{Builder, TempDir};
     use wal::WalOptions;
 
@@ -279,7 +280,6 @@ mod tests {
     use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
     use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
     use crate::shards::replica_set::clock_set::ClockSet;
-    use crate::wal::SerdeWal;
 
     fn fixture_empty_wal() -> (RecoverableWal, TempDir) {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();

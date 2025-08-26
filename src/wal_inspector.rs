@@ -2,7 +2,7 @@ use std::env;
 use std::path::Path;
 
 use collection::operations::OperationWithClockTag;
-use collection::wal::SerdeWal;
+use shard::wal::SerdeWal;
 use storage::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use wal::WalOptions;
