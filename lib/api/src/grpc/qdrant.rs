@@ -752,6 +752,9 @@ pub struct UpdateCollection {
     #[prost(message, optional, tag = "9")]
     #[validate(nested)]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
+    /// New WAL parameters for the collection
+    #[prost(message, optional, tag = "10")]
+    pub wal_config: ::core::option::Option<WalConfigDiff>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

@@ -133,6 +133,7 @@ pub mod consensus_ops {
                     optimizers_config: None,
                     params: None,
                     hnsw_config: None,
+                    wal_config: None,
                     quantization_config: None,
                     sparse_vectors: None,
                     strict_mode_config: None,
