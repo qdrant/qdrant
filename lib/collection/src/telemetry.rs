@@ -86,6 +86,8 @@ pub struct CollectionConfigTelemetry {
     #[serde(default)]
     #[anonymize(value = None)]
     pub uuid: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub properties: Option<serde_json::Value>,
 }
 
 impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
@@ -98,6 +100,7 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
             quantization_config,
             strict_mode_config,
             uuid,
+            properties,
         } = config;
         CollectionConfigTelemetry {
             params,
@@ -107,6 +110,7 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
             quantization_config,
             strict_mode_config: strict_mode_config.map(StrictModeConfigOutput::from),
             uuid,
+            properties,
         }
     }
 }
