@@ -731,30 +731,30 @@ impl QuantizedVectors {
         if config_path.exists() {
             let config: QuantizedVectorsConfig = read_json(&config_path)?;
             if config.storage_type == QuantizedVectorsStorageType::Immutable {
-                Ok(Some(Self::load_immutable(config, vector_storage, path)?))
+                return Ok(Some(Self::load_immutable(config, vector_storage, path)?));
             } else {
-                Ok(Self::load_mutable(config, vector_storage, path)?)
+                return Self::load_mutable(config, vector_storage, path);
             }
-        } else {
-            // No config found. create a new appendable quantization.
-            let Some(dim) = vector_storage.try_vector_dim() else {
-                debug_assert!(false, "Sparse vectors should not be quantized");
-                return Ok(None);
-            };
-            let distance = vector_storage.distance();
-            let vector_parameters = Self::construct_vector_parameters(distance, dim, None);
-            let config = QuantizedVectorsConfig {
-                quantization_config: quantization_config.clone(),
-                vector_parameters,
-                storage_type: QuantizedVectorsStorageType::Mutable,
-            };
+        }
 
-            if let Some(quantized_vectors) = Self::load_mutable(config, vector_storage, path)? {
-                atomic_save_json(&config_path, &quantized_vectors.config)?;
-                Ok(Some(quantized_vectors))
-            } else {
-                Ok(None)
-            }
+        // No config found. create a new appendable quantization.
+        let Some(dim) = vector_storage.try_vector_dim() else {
+            debug_assert!(false, "Sparse vectors should not be quantized");
+            return Ok(None);
+        };
+        let distance = vector_storage.distance();
+        let vector_parameters = Self::construct_vector_parameters(distance, dim, None);
+        let config = QuantizedVectorsConfig {
+            quantization_config: quantization_config.clone(),
+            vector_parameters,
+            storage_type: QuantizedVectorsStorageType::Mutable,
+        };
+
+        if let Some(quantized_vectors) = Self::load_mutable(config, vector_storage, path)? {
+            atomic_save_json(&config_path, &quantized_vectors.config)?;
+            Ok(Some(quantized_vectors))
+        } else {
+            Ok(None)
         }
     }
 
