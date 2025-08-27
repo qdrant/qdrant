@@ -354,4 +354,6 @@ pub trait SegmentEntry: SnapshotEntry {
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
 
     fn fill_query_context(&self, query_context: &mut QueryContext);
+
+    fn bump_segment_version(&mut self, op_num: SeqNumberType);
 }

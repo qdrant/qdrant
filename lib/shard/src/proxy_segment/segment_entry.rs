@@ -21,7 +21,6 @@ use segment::types::*;
 
 use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
-
 impl SegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
         cmp::max(
@@ -956,5 +955,12 @@ impl SegmentEntry for ProxySegment {
             .get()
             .read()
             .fill_query_context(query_context)
+    }
+
+    fn bump_segment_version(&mut self, op_num: SeqNumberType) {
+        self.write_segment
+            .get()
+            .write()
+            .bump_segment_version(op_num);
     }
 }

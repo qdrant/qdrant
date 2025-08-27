@@ -297,12 +297,11 @@ impl SegmentHolder {
 
     /// Bumps the version of a random appendable segment.
     pub fn bump_version_of_random_appendable(&self, op_num: SeqNumberType) {
-        if let Some(segment) = self.random_appendable_segment() {
-            match segment {
-                LockedSegment::Original(rw_lock) => rw_lock.write().bump_segment_version(op_num),
-                LockedSegment::Proxy(rw_lock) => rw_lock.write().bump_version(op_num),
-            }
-        }
+        self.aloha_random_write(&self.appendable_segments_ids(), |_, segment| {
+            segment.bump_segment_version(op_num);
+            Ok(true)
+        })
+        .expect("Failed to bump segment version.");
     }
 
     pub fn segment_ids(&self) -> Vec<SegmentId> {
