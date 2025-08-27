@@ -13,6 +13,7 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
+      packages: write
       id-token: write # needed for cosign keyless signing with OIDC
     steps:
     - uses: actions/checkout@v5
@@ -81,6 +82,7 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
+      packages: write
       id-token: write # needed for cosign keyless signing with OIDC
     steps:
     - uses: actions/checkout@v5
