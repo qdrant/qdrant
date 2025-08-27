@@ -11746,6 +11746,11 @@
             "description": "Migrate RocksDB based payload indices into new format on start.\n\nRebuilds a new payload index from scratch.",
             "default": false,
             "type": "boolean"
+          },
+          "appendable_quantization": {
+            "description": "Use appendable quantization in appendable plain segments.",
+            "default": false,
+            "type": "boolean"
           }
         }
       },

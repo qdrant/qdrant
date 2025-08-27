@@ -737,6 +737,11 @@ impl QuantizedVectors {
             }
         }
 
+        // If we don't have an appendable quantization feature, do not create a new one.
+        if !common::flags::feature_flags().appendable_quantization {
+            return Ok(None);
+        }
+
         // No config found. create a new appendable quantization.
         let Some(dim) = vector_storage.try_vector_dim() else {
             debug_assert!(false, "Sparse vectors should not be quantized");
