@@ -1241,15 +1241,13 @@ impl LocalShardClocks {
     }
 
     /// Persist clock maps to disk
-    pub async fn store_if_changed(&self, shard_path: &Path) -> CollectionResult<()> {
+    pub fn store_if_changed(&self, shard_path: &Path) -> CollectionResult<()> {
         self.oldest_clocks
-            .lock()
-            .await
+            .blocking_lock()
             .store_if_changed(&Self::oldest_clocks_path(shard_path))?;
 
         self.newest_clocks
-            .lock()
-            .await
+            .blocking_lock()
             .store_if_changed(&Self::newest_clocks_path(shard_path))?;
 
         Ok(())
