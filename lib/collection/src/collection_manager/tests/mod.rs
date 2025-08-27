@@ -667,11 +667,14 @@ fn test_delete_by_filter_version_bump() {
     assert_eq!(deleted_count, 0); // Assert no points were deleted.
 
     // Now we should see `DELETE_OP_NUM` as version of one of the appendable segments.
-    assert!(
+    assert_eq!(
         segments
             .read()
             .appendable_segments_ids()
             .into_iter()
-            .any(|i| segments.read().get(i).unwrap().get().read().version() == DELETE_OP_NUM)
+            .filter(|i| segments.read().get(*i).unwrap().get().read().version() == DELETE_OP_NUM)
+            .count(),
+        1,
+        "must have exactly one segment with version {DELETE_OP_NUM}",
     );
 }
