@@ -742,6 +742,13 @@ impl QuantizedVectors {
             debug_assert!(false, "Sparse vectors should not be quantized");
             return Ok(None);
         };
+
+        if vector_storage.total_vector_count() > 0 {
+            // Skip quantization for non-empty vector storage.
+            // We probably want to append all vectors in new quantization storage here.
+            return Ok(None);
+        }
+
         let distance = vector_storage.distance();
         let vector_parameters = Self::construct_vector_parameters(distance, dim, None);
         let config = QuantizedVectorsConfig {
@@ -750,7 +757,7 @@ impl QuantizedVectors {
             storage_type: QuantizedVectorsStorageType::Mutable,
         };
 
-        if let Some(quantized_vectors) = Self::load_mutable(config, vector_storage, path)? {
+        if let Some(quantized_vectors) = Self::create_mutable(config, vector_storage, path)? {
             atomic_save_json(&config_path, &quantized_vectors.config)?;
             Ok(Some(quantized_vectors))
         } else {
@@ -1072,28 +1079,14 @@ impl QuantizedVectors {
         }
     }
 
-    fn load_mutable(
+    fn create_mutable(
         config: QuantizedVectorsConfig,
         vector_storage: &VectorStorageEnum,
         path: &Path,
     ) -> OperationResult<Option<Self>> {
         match config.quantization_config.clone() {
             QuantizationConfig::Binary(BinaryQuantization { binary }) => {
-                match vector_storage.try_multi_vector_config() {
-                    Some(multi_vector_config) => Ok(Some(Self::load_mutable_binary_multi(
-                        binary,
-                        config,
-                        vector_storage,
-                        *multi_vector_config,
-                        path,
-                    )?)),
-                    None => Ok(Some(Self::load_mutable_binary_dense(
-                        binary,
-                        config,
-                        vector_storage,
-                        path,
-                    )?)),
-                }
+                Self::create_mutable_binary(binary, config, vector_storage, path).map(Some)
             }
             _ => {
                 debug_assert!(
@@ -1105,59 +1098,160 @@ impl QuantizedVectors {
         }
     }
 
-    fn load_mutable_binary_dense(
+    fn create_mutable_binary(
         binary_config: BinaryQuantizationConfig,
-        quantization_config: QuantizedVectorsConfig,
+        config: QuantizedVectorsConfig,
         vector_storage: &VectorStorageEnum,
         path: &Path,
     ) -> OperationResult<Self> {
-        let data_path = Self::get_appendable_data_path(path);
+        match vector_storage.try_multi_vector_config() {
+            Some(multi_vector_config) => Self::create_mutable_binary_multi(
+                binary_config,
+                config,
+                *multi_vector_config,
+                vector_storage,
+                path,
+            ),
+            None => Self::create_mutable_binary_dense(binary_config, config, vector_storage, path),
+        }
+    }
+
+    fn create_mutable_binary_dense(
+        binary_config: BinaryQuantizationConfig,
+        config: QuantizedVectorsConfig,
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+    ) -> OperationResult<Self> {
         let meta_path = Self::get_meta_path(path);
-
-        let on_disk_vector_storage = vector_storage.is_on_disk();
-        let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
-        let advice = if in_ram {
-            AdviceSetting::from(Advice::Normal)
-        } else {
-            AdviceSetting::Global
-        };
-
+        let distance = vector_storage.distance();
+        let datatype = vector_storage.datatype();
         let encoding = Self::convert_binary_encoding(binary_config.encoding);
         let query_encoding = Self::convert_binary_query_encoding(binary_config.query_encoding);
-        let quantized_vector_size =
-            EncodedVectorsBin::<u128, QuantizedMmapStorage>::get_quantized_vector_size_from_params(
-                quantization_config.vector_parameters.dim,
-                encoding,
-            );
-        let quantization_storage = ChunkedMmapVectors::<u8>::open(
-            data_path.as_path(),
-            quantized_vector_size,
-            Some(false), // mlock
-            advice,
-            Some(in_ram), // populate
-        )?;
 
-        // If quantization is not present, create a new one
-        let storage_impl = if meta_path.exists() {
-            QuantizedVectorStorage::BinaryChunkedMmap(EncodedVectorsBin::load(
-                quantization_storage,
-                meta_path.as_path(),
-            )?)
-        } else {
+        let quantization_storage = Self::load_mutable_binary_storage::<u128>(
+            &binary_config,
+            &config,
+            vector_storage,
+            path,
+        )?;
+        let storage_impl =
             QuantizedVectorStorage::BinaryChunkedMmap(EncodedVectorsBin::new_empty_appendable(
                 quantization_storage,
-                quantization_config.vector_parameters.clone(),
+                config.vector_parameters.clone(),
                 encoding,
                 query_encoding,
                 meta_path.as_path(),
-            )?)
-        };
-
-        let distance = vector_storage.distance();
-        let datatype = vector_storage.datatype();
+            )?);
         Ok(QuantizedVectors {
             storage_impl,
-            config: quantization_config,
+            config,
+            path: path.to_path_buf(),
+            distance,
+            datatype,
+        })
+    }
+
+    fn create_mutable_binary_multi(
+        binary_config: BinaryQuantizationConfig,
+        config: QuantizedVectorsConfig,
+        multi_vector_config: MultiVectorConfig,
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+    ) -> OperationResult<Self> {
+        let meta_path = Self::get_meta_path(path);
+        let distance = vector_storage.distance();
+        let datatype = vector_storage.datatype();
+        let encoding = Self::convert_binary_encoding(binary_config.encoding);
+        let query_encoding = Self::convert_binary_query_encoding(binary_config.query_encoding);
+
+        let quantization_storage =
+            Self::load_mutable_binary_storage::<u8>(&binary_config, &config, vector_storage, path)?;
+        let inner_storage = EncodedVectorsBin::new_empty_appendable(
+            quantization_storage,
+            config.vector_parameters.clone(),
+            encoding,
+            query_encoding,
+            meta_path.as_path(),
+        )?;
+        let offsets_storage =
+            Self::load_mutable_binary_offsets(&binary_config, vector_storage, path)?;
+
+        let storage_impl =
+            QuantizedVectorStorage::BinaryChunkedMmapMulti(QuantizedMultivectorStorage::new(
+                config.vector_parameters.dim,
+                inner_storage,
+                offsets_storage,
+                multi_vector_config,
+            ));
+        Ok(QuantizedVectors {
+            storage_impl,
+            config,
+            path: path.to_path_buf(),
+            distance,
+            datatype,
+        })
+    }
+
+    fn load_mutable(
+        config: QuantizedVectorsConfig,
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+    ) -> OperationResult<Option<Self>> {
+        match config.quantization_config.clone() {
+            QuantizationConfig::Binary(BinaryQuantization { binary }) => {
+                Self::load_mutable_binary(binary, config, vector_storage, path).map(Some)
+            }
+            _ => {
+                debug_assert!(
+                    false,
+                    "Only binary quantization is supported for mutable quantized vectors"
+                );
+                Ok(None)
+            }
+        }
+    }
+
+    fn load_mutable_binary(
+        binary_config: BinaryQuantizationConfig,
+        config: QuantizedVectorsConfig,
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+    ) -> OperationResult<Self> {
+        match vector_storage.try_multi_vector_config() {
+            Some(multi_vector_config) => Self::load_mutable_binary_multi(
+                binary_config,
+                config,
+                *multi_vector_config,
+                vector_storage,
+                path,
+            ),
+            None => Self::load_mutable_binary_dense(binary_config, config, vector_storage, path),
+        }
+    }
+
+    fn load_mutable_binary_dense(
+        binary_config: BinaryQuantizationConfig,
+        config: QuantizedVectorsConfig,
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+    ) -> OperationResult<Self> {
+        let meta_path = Self::get_meta_path(path);
+        let distance = vector_storage.distance();
+        let datatype = vector_storage.datatype();
+
+        let quantization_storage = Self::load_mutable_binary_storage::<u128>(
+            &binary_config,
+            &config,
+            vector_storage,
+            path,
+        )?;
+        let storage_impl = QuantizedVectorStorage::BinaryChunkedMmap(EncodedVectorsBin::load(
+            quantization_storage,
+            meta_path.as_path(),
+        )?);
+        Ok(QuantizedVectors {
+            storage_impl,
+            config,
             path: path.to_path_buf(),
             distance,
             datatype,
@@ -1166,76 +1260,83 @@ impl QuantizedVectors {
 
     fn load_mutable_binary_multi(
         binary_config: BinaryQuantizationConfig,
-        quantization_config: QuantizedVectorsConfig,
-        vector_storage: &VectorStorageEnum,
+        config: QuantizedVectorsConfig,
         multi_vector_config: MultiVectorConfig,
+        vector_storage: &VectorStorageEnum,
         path: &Path,
     ) -> OperationResult<Self> {
         let meta_path = Self::get_meta_path(path);
-        let data_path = Self::get_appendable_data_path(path);
-        let offsets_path = Self::get_appendable_offsets_path(path);
+        let distance = vector_storage.distance();
+        let datatype = vector_storage.datatype();
 
+        let quantization_storage =
+            Self::load_mutable_binary_storage::<u8>(&binary_config, &config, vector_storage, path)?;
+        let inner_storage = EncodedVectorsBin::load(quantization_storage, meta_path.as_path())?;
+        let offsets_storage =
+            Self::load_mutable_binary_offsets(&binary_config, vector_storage, path)?;
+
+        let storage_impl =
+            QuantizedVectorStorage::BinaryChunkedMmapMulti(QuantizedMultivectorStorage::new(
+                config.vector_parameters.dim,
+                inner_storage,
+                offsets_storage,
+                multi_vector_config,
+            ));
+        Ok(QuantizedVectors {
+            storage_impl,
+            config,
+            path: path.to_path_buf(),
+            distance,
+            datatype,
+        })
+    }
+
+    fn load_mutable_binary_storage<TBitsStoreType>(
+        binary_config: &BinaryQuantizationConfig,
+        quantization_config: &QuantizedVectorsConfig,
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+    ) -> OperationResult<ChunkedMmapVectors<u8>>
+    where
+        TBitsStoreType: quantization::encoded_vectors_binary::BitsStoreType,
+    {
+        let data_path = Self::get_appendable_data_path(path);
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
-        let advice = if in_ram {
-            AdviceSetting::from(Advice::Normal)
-        } else {
-            AdviceSetting::Global
-        };
+        let advice = Self::advice_setting(in_ram);
 
         let encoding = Self::convert_binary_encoding(binary_config.encoding);
-        let query_encoding = Self::convert_binary_query_encoding(binary_config.query_encoding);
         let quantized_vector_size =
-            EncodedVectorsBin::<u8, QuantizedMmapStorage>::get_quantized_vector_size_from_params(
+            EncodedVectorsBin::<TBitsStoreType, QuantizedMmapStorage>::get_quantized_vector_size_from_params(
                 quantization_config.vector_parameters.dim,
                 encoding,
             );
-        let quantization_storage = ChunkedMmapVectors::<u8>::open(
+        ChunkedMmapVectors::<u8>::open(
             data_path.as_path(),
             quantized_vector_size,
             Some(false), // mlock
             advice,
             Some(in_ram), // populate
-        )?;
+        )
+    }
 
-        let inner_storage = if meta_path.exists() {
-            EncodedVectorsBin::load(quantization_storage, meta_path.as_path())?
-        } else {
-            // If quantization is not present, create a new one
-            EncodedVectorsBin::new_empty_appendable(
-                quantization_storage,
-                quantization_config.vector_parameters.clone(),
-                encoding,
-                query_encoding,
-                meta_path.as_path(),
-            )?
-        };
+    fn load_mutable_binary_offsets(
+        binary_config: &BinaryQuantizationConfig,
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+    ) -> OperationResult<ChunkedMmapVectors<MultivectorOffset>> {
+        let offsets_path = Self::get_appendable_offsets_path(path);
+        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
+        let advice = Self::advice_setting(in_ram);
 
-        let offsets_storage = ChunkedMmapVectors::<MultivectorOffset>::open(
+        ChunkedMmapVectors::<MultivectorOffset>::open(
             offsets_path.as_path(),
             1,
-            Some(false),
+            Some(false), // mlock
             advice,
-            Some(in_ram),
-        )?;
-
-        let storage_impl =
-            QuantizedVectorStorage::BinaryChunkedMmapMulti(QuantizedMultivectorStorage::new(
-                quantization_config.vector_parameters.dim,
-                inner_storage,
-                offsets_storage,
-                multi_vector_config,
-            ));
-
-        let distance = vector_storage.distance();
-        let datatype = vector_storage.datatype();
-        Ok(QuantizedVectors {
-            storage_impl,
-            config: quantization_config,
-            path: path.to_path_buf(),
-            distance,
-            datatype,
-        })
+            Some(in_ram), // populate
+        )
     }
 
     fn create_scalar<'a>(
@@ -1625,6 +1726,14 @@ impl QuantizedVectors {
 
     fn is_ram(always_ram: Option<bool>, on_disk_vector_storage: bool) -> bool {
         !on_disk_vector_storage || always_ram == Some(true)
+    }
+
+    fn advice_setting(is_ram: bool) -> AdviceSetting {
+        if is_ram {
+            AdviceSetting::from(Advice::Normal)
+        } else {
+            AdviceSetting::Global
+        }
     }
 
     fn convert_binary_encoding(
