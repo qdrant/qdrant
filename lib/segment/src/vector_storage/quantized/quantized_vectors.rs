@@ -1079,114 +1079,20 @@ impl QuantizedVectors {
     ) -> OperationResult<Option<Self>> {
         match config.quantization_config.clone() {
             QuantizationConfig::Binary(BinaryQuantization { binary }) => {
-                match vector_storage {
-                    #[cfg(feature = "rocksdb")]
-                    VectorStorageEnum::DenseSimple(v) => Ok(Some(Self::load_mutable_binary_dense(
-                        binary, config, v, path,
-                    )?)),
-                    #[cfg(feature = "rocksdb")]
-                    VectorStorageEnum::DenseSimpleByte(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v, path)?,
-                    )),
-                    #[cfg(feature = "rocksdb")]
-                    VectorStorageEnum::DenseSimpleHalf(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v, path)?,
-                    )),
-                    VectorStorageEnum::DenseVolatile(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v, path)?,
-                    )),
-                    #[cfg(test)]
-                    VectorStorageEnum::DenseVolatileByte(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v, path)?,
-                    )),
-                    #[cfg(test)]
-                    VectorStorageEnum::DenseVolatileHalf(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v, path)?,
-                    )),
-                    VectorStorageEnum::DenseMemmap(v) => Ok(Some(Self::load_mutable_binary_dense(
+                match vector_storage.try_multi_vector_config() {
+                    Some(multi_vector_config) => Ok(Some(Self::load_mutable_binary_multi(
                         binary,
                         config,
-                        v.as_ref(),
+                        vector_storage,
+                        *multi_vector_config,
                         path,
                     )?)),
-                    VectorStorageEnum::DenseMemmapByte(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::DenseMemmapHalf(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::DenseAppendableMemmap(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::DenseAppendableMemmapByte(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::DenseAppendableMemmapHalf(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::DenseAppendableInRam(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::DenseAppendableInRamByte(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::DenseAppendableInRamHalf(v) => Ok(Some(
-                        Self::load_mutable_binary_dense(binary, config, v.as_ref(), path)?,
-                    )),
-                    #[cfg(feature = "rocksdb")]
-                    VectorStorageEnum::SparseSimple(_) => {
-                        debug_assert!(false, "Sparse vectors should not be quantized");
-                        Ok(None)
-                    }
-                    VectorStorageEnum::SparseVolatile(_) => {
-                        debug_assert!(false, "Sparse vectors should not be quantized");
-                        Ok(None)
-                    }
-                    VectorStorageEnum::SparseMmap(_) => {
-                        debug_assert!(false, "Sparse vectors should not be quantized");
-                        Ok(None)
-                    }
-                    #[cfg(feature = "rocksdb")]
-                    VectorStorageEnum::MultiDenseSimple(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v, path)?,
-                    )),
-                    #[cfg(feature = "rocksdb")]
-                    VectorStorageEnum::MultiDenseSimpleByte(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v, path)?,
-                    )),
-                    #[cfg(feature = "rocksdb")]
-                    VectorStorageEnum::MultiDenseSimpleHalf(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v, path)?,
-                    )),
-                    VectorStorageEnum::MultiDenseVolatile(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v, path)?,
-                    )),
-                    #[cfg(test)]
-                    VectorStorageEnum::MultiDenseVolatileByte(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v, path)?,
-                    )),
-                    #[cfg(test)]
-                    VectorStorageEnum::MultiDenseVolatileHalf(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v, path)?,
-                    )),
-                    VectorStorageEnum::MultiDenseAppendableMemmap(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::MultiDenseAppendableInRam(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::MultiDenseAppendableInRamByte(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v.as_ref(), path)?,
-                    )),
-                    VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => Ok(Some(
-                        Self::load_mutable_binary_multi(binary, config, v.as_ref(), path)?,
-                    )),
+                    None => Ok(Some(Self::load_mutable_binary_dense(
+                        binary,
+                        config,
+                        vector_storage,
+                        path,
+                    )?)),
                 }
             }
             _ => {
@@ -1199,13 +1105,10 @@ impl QuantizedVectors {
         }
     }
 
-    fn load_mutable_binary_dense<
-        TElement: PrimitiveVectorElement,
-        TVectorStorage: DenseVectorStorage<TElement> + Send + Sync,
-    >(
+    fn load_mutable_binary_dense(
         binary_config: BinaryQuantizationConfig,
         quantization_config: QuantizedVectorsConfig,
-        vector_storage: &TVectorStorage,
+        vector_storage: &VectorStorageEnum,
         path: &Path,
     ) -> OperationResult<Self> {
         let data_path = Self::get_appendable_data_path(path);
@@ -1261,13 +1164,11 @@ impl QuantizedVectors {
         })
     }
 
-    fn load_mutable_binary_multi<
-        TElement: PrimitiveVectorElement + 'static,
-        TVectorStorage: MultiVectorStorage<TElement> + Send + Sync,
-    >(
+    fn load_mutable_binary_multi(
         binary_config: BinaryQuantizationConfig,
         quantization_config: QuantizedVectorsConfig,
-        vector_storage: &TVectorStorage,
+        vector_storage: &VectorStorageEnum,
+        multi_vector_config: MultiVectorConfig,
         path: &Path,
     ) -> OperationResult<Self> {
         let meta_path = Self::get_meta_path(path);
@@ -1323,7 +1224,7 @@ impl QuantizedVectors {
                 quantization_config.vector_parameters.dim,
                 inner_storage,
                 offsets_storage,
-                *vector_storage.multi_vector_config(),
+                multi_vector_config,
             ));
 
         let distance = vector_storage.distance();
