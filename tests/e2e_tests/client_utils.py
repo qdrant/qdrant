@@ -160,7 +160,7 @@ class ClientUtils:
         print(f"After 30s status is not {status}. Stop waiting.")
         return "timeout"
     
-    def insert_points(self, collection_name: str, batch_data: Dict[str, Any], quit_on_ood: bool = False) -> Optional[str]:
+    def insert_points(self, collection_name: str, batch_data: Dict[str, Any], quit_on_ood: bool = False, wait: bool = True) -> Optional[str]:
         """Insert points into the collection."""
         try:
             # Convert dict format to PointStruct if needed
@@ -177,7 +177,7 @@ class ClientUtils:
             self.client.upsert(
                 collection_name=collection_name,
                 points=points,
-                wait=True
+                wait=wait
             )
             
         except Exception as e:
@@ -223,10 +223,10 @@ class ClientUtils:
         except Exception as e:
             raise RuntimeError("Search failed") from e
     
-    def create_snapshot(self, collection_name: str = "test_collection") -> str:
+    def create_snapshot(self, collection_name: str = "test_collection") -> Optional[str]:
         """Create a snapshot of the collection."""
         snapshot_info = self.client.create_snapshot(collection_name=collection_name)
-        return snapshot_info.name
+        return snapshot_info.name if snapshot_info else None
     
     def download_snapshot(self, collection_name: str, snapshot_name: str) -> Tuple[bytes, str]:
         """Download a snapshot and return its content and checksum."""
@@ -323,7 +323,6 @@ class ClientUtils:
         return {
             "result": {
                 "status": collection_info.status,
-                "vectors_count": collection_info.vectors_count,
                 "points_count": collection_info.points_count,
                 "config": collection_info.config
             },

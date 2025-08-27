@@ -70,12 +70,14 @@ class TestSnapshotsRecovery:
         container_info = qdrant_container_factory(config)
         
         client = ClientUtils(host=container_info.host, port=container_info.http_port)
+        client.wait_for_server()
         
         # Create collection and insert points
         collection_config = {"vectors": {"size": 4, "distance": "Dot"}}
         client.create_collection("test_collection", collection_config)
         for points_batch in client.generate_points(2):
-            client.insert_points("test_collection", points_batch)
+            client.insert_points("test_collection", points_batch, wait=True)
+        initial_collection_config = client.get_collection_info_dict("test_collection")["result"]["config"]
 
         # Create collection snapshot
         snapshot_name = client.create_snapshot("test_collection")
@@ -95,8 +97,10 @@ class TestSnapshotsRecovery:
         client.recover_snapshot_from_url("test_collection_recovered_1", snapshot_url, snapshot_checksum)
         
         # Verify recovered collection exists
-        client.verify_collection_exists("test_collection_recovered_1")
-        
+        resp = client.verify_collection_exists("test_collection_recovered_1")
+        assert resp["result"].get("points_count") == 200, "Recovered collection does not have expected number of points"
+        assert resp["result"].get("config") == initial_collection_config, "Recovered collection config does not match"
+
         # Test 2: Upload snapshot as file
         client.upload_snapshot_file("test_collection_recovered_2", snapshot_content)
         
@@ -126,5 +130,9 @@ class TestSnapshotsRecovery:
         
         # Final verification - ensure all collections are accessible
         for collection_name in ["test_collection_recovered_1", "test_collection_recovered_2"]:
-            collection_info = client.verify_collection_exists(collection_name)
-            assert collection_info["result"]["status"] == "green", f"Collection {collection_name} is not in green status"
+            resp = client.verify_collection_exists(collection_name)
+            assert resp["result"]["status"] == "green", f"Collection {collection_name} is not in green status"
+            assert resp["result"].get(
+                "points_count") == 200, "Recovered collection does not have expected number of points"
+            assert resp["result"].get(
+                "config") == initial_collection_config, "Recovered collection config does not match"
