@@ -365,6 +365,52 @@ impl VectorStorageEnum {
         }
     }
 
+    pub(crate) fn try_vector_dim(&self) -> Option<usize> {
+        match self {
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::DenseSimple(v) => Some(v.vector_dim()),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::DenseSimpleByte(v) => Some(v.vector_dim()),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::DenseSimpleHalf(v) => Some(v.vector_dim()),
+            VectorStorageEnum::DenseVolatile(v) => Some(v.vector_dim()),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(v) => Some(v.vector_dim()),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(v) => Some(v.vector_dim()),
+            VectorStorageEnum::DenseMemmap(v) => Some(v.vector_dim()),
+            VectorStorageEnum::DenseMemmapByte(v) => Some(v.vector_dim()),
+            VectorStorageEnum::DenseMemmapHalf(v) => Some(v.vector_dim()),
+            VectorStorageEnum::DenseAppendableMemmap(v) => Some(v.vector_dim()),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => Some(v.vector_dim()),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => Some(v.vector_dim()),
+            VectorStorageEnum::DenseAppendableInRam(v) => Some(v.vector_dim()),
+            VectorStorageEnum::DenseAppendableInRamByte(v) => Some(v.vector_dim()),
+            VectorStorageEnum::DenseAppendableInRamHalf(v) => Some(v.vector_dim()),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::SparseSimple(_) => None,
+            VectorStorageEnum::SparseVolatile(_) => None,
+            VectorStorageEnum::SparseMmap(_) => None,
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::MultiDenseSimple(v) => Some(v.vector_dim()),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::MultiDenseSimpleByte(v) => Some(v.vector_dim()),
+            #[cfg(feature = "rocksdb")]
+            VectorStorageEnum::MultiDenseSimpleHalf(v) => Some(v.vector_dim()),
+            VectorStorageEnum::MultiDenseVolatile(v) => Some(v.vector_dim()),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(v) => Some(v.vector_dim()),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => Some(v.vector_dim()),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => Some(v.vector_dim()),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => Some(v.vector_dim()),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => Some(v.vector_dim()),
+            VectorStorageEnum::MultiDenseAppendableInRam(v) => Some(v.vector_dim()),
+            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => Some(v.vector_dim()),
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => Some(v.vector_dim()),
+        }
+    }
+
     pub(crate) fn default_vector(&self) -> VectorInternal {
         match self {
             #[cfg(feature = "rocksdb")]
