@@ -320,6 +320,13 @@ impl ProxySegment {
 
         Ok(())
     }
+
+    pub(super) fn bump_version(&mut self, op: SeqNumberType) {
+        match &self.wrapped_segment {
+            LockedSegment::Original(rw_lock) => rw_lock.write().bump_segment_version(op),
+            LockedSegment::Proxy(rw_lock) => rw_lock.write().bump_version(op),
+        }
+    }
 }
 
 /// Point persion information of points to delete from a wrapped proxy segment.

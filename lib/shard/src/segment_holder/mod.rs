@@ -295,6 +295,16 @@ impl SegmentHolder {
         self.non_appendable_segments.keys().copied().collect()
     }
 
+    /// Bumps the version of a random appendable segment.
+    pub fn bump_version_of_random_appendable(&self, op_num: SeqNumberType) {
+        if let Some(segment) = self.random_appendable_segment() {
+            match segment {
+                LockedSegment::Original(rw_lock) => rw_lock.write().bump_segment_version(op_num),
+                LockedSegment::Proxy(rw_lock) => rw_lock.write().bump_version(op_num),
+            }
+        }
+    }
+
     pub fn segment_ids(&self) -> Vec<SegmentId> {
         self.appendable_segments_ids()
             .into_iter()

@@ -942,60 +942,6 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().read().check_error()
     }
 
-    fn delete_filtered<'a>(
-        &'a mut self,
-        op_num: SeqNumberType,
-        filter: &'a Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        let mut deleted_points = 0;
-        // we don’t want to cancel this filtered read
-        let is_stopped = AtomicBool::new(false);
-        let points_to_delete = self.wrapped_segment.get().read().read_filtered(
-            None,
-            None,
-            Some(filter),
-            &is_stopped,
-            hw_counter,
-        );
-        let points_offsets_to_delete = match &self.wrapped_segment {
-            LockedSegment::Original(raw_segment) => {
-                let raw_segment_read = raw_segment.read();
-                points_to_delete
-                    .iter()
-                    .filter_map(|point_id| raw_segment_read.get_internal_id(*point_id))
-                    .collect()
-            }
-            LockedSegment::Proxy(_) => vec![],
-        };
-
-        if !points_to_delete.is_empty() {
-            deleted_points += points_to_delete.len();
-            let mut deleted_points_guard = self.deleted_points.write();
-            deleted_points_guard.extend(points_to_delete.iter().map(|&point_id| {
-                (
-                    point_id,
-                    ProxyDeletedPoint {
-                        local_version: op_num,
-                        operation_version: op_num,
-                    },
-                )
-            }));
-        }
-
-        for point_offset in points_offsets_to_delete {
-            self.set_deleted_offset(Some(point_offset));
-        }
-
-        deleted_points += self
-            .write_segment
-            .get()
-            .write()
-            .delete_filtered(op_num, filter, hw_counter)?;
-
-        Ok(deleted_points)
-    }
-
     fn vector_names(&self) -> HashSet<VectorNameBuf> {
         self.write_segment.get().read().vector_names()
     }
