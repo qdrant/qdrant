@@ -309,7 +309,7 @@ impl GraphLinksView<'_> {
                 let mut base_vector: &[u8] = &[];
                 if level == 0 {
                     base_vector = &neighbors[pos..pos + base_vector_layout.size()];
-                    debug_assert_eq!(base_vector.as_ptr().addr() % base_vector_layout.align(), 0);
+                    debug_assert!(base_vector.as_ptr().addr() % base_vector_layout.align() == 0);
                     pos += base_vector_layout.size();
                 }
 
@@ -336,13 +336,14 @@ impl GraphLinksView<'_> {
                 pos = pos.next_multiple_of(link_vector_alignment as usize);
 
                 // 5. Link vectors (`L` in the doc).
-                let vectors = &neighbors[pos..end];
-                debug_assert_eq!(vectors.as_ptr().addr() % link_vector_alignment as usize, 0);
+                let link_vector_bytes = (neighbors_count as usize) * link_vector_size.get();
+                let link_vectors = &neighbors[pos..pos + link_vector_bytes];
+                debug_assert!(link_vectors.as_ptr().addr() % link_vector_alignment as usize == 0);
 
                 (
                     base_vector,
                     links,
-                    vectors.chunks_exact(link_vector_size.get()),
+                    link_vectors.chunks_exact(link_vector_size.get()),
                 )
             }
         }

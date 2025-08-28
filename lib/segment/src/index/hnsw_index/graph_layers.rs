@@ -461,7 +461,8 @@ mod tests {
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
 
-        let format_param = format.with_param_for_tests(vector_holder.quantized_vectors());
+        let graph_links_vectors = vector_holder.graph_links_vectors();
+        let format_param = format.with_param_for_tests(graph_links_vectors.as_ref());
         let graph_layers = GraphLayers {
             hnsw_m,
             links: GraphLinks::new_from_edges(graph_links.clone(), format_param, hnsw_m).unwrap(),
@@ -527,7 +528,7 @@ mod tests {
         let graph1 = graph_layers_builder
             .into_graph_layers(
                 dir.path(),
-                initial_format.with_param_for_tests(vector_holder.quantized_vectors()),
+                initial_format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
                 true,
             )
             .unwrap();

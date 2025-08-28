@@ -8,9 +8,10 @@ use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops::open_read_mmap;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::HnswM;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::{Sequential, VectorStorageEnum};
 
 mod header;
 mod serializer;
@@ -87,19 +88,31 @@ pub struct VectorLayout {
     pub link: Layout,
 }
 
-impl GraphLinksVectors for QuantizedVectors {
+/// A [`GraphLinksVectors`] implementation that uses real storage.
+pub struct StorageGraphLinksVectors<'a> {
+    pub vector_storage: &'a VectorStorageEnum,
+    pub quantized_vectors: &'a QuantizedVectors,
+}
+
+impl<'a> GraphLinksVectors for StorageGraphLinksVectors<'a> {
     fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
-        self.get_link_vector(point_id) // FIXME: stub
+        self.vector_storage
+            .get_vector_bytes_opt::<Sequential>(point_id)
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Point {point_id} not found in vector storage"
+                ))
+            })
     }
 
     fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
-        Ok(self.get_quantized_vector(point_id))
+        Ok(self.quantized_vectors.get_quantized_vector(point_id))
     }
 
     fn vector_layout(&self) -> OperationResult<VectorLayout> {
         Ok(VectorLayout {
-            base: self.get_quantized_vector_layout()?, // FIXME: stub
-            link: self.get_quantized_vector_layout()?,
+            base: self.vector_storage.get_vector_layout()?,
+            link: self.quantized_vectors.get_quantized_vector_layout()?,
         })
     }
 }
