@@ -3,11 +3,11 @@ use std::sync::Arc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
 use segment::types::SeqNumberType;
+use shard::update::*;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
-use crate::collection_manager::segments_updater::*;
 use crate::operations::CollectionUpdateOperations;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::update_tracker::UpdateTracker;
 
 /// Implementation of the update operation
@@ -71,8 +71,8 @@ impl CollectionUpdater {
             }
         });
 
+        let operation_result = operation_result.map_err(CollectionError::from);
         CollectionUpdater::handle_update_result(segments, op_num, &operation_result);
-
         operation_result
     }
 }
@@ -94,6 +94,7 @@ mod tests {
     use segment::types::PayloadSchemaType::Keyword;
     use segment::types::{Payload, PayloadContainer, PayloadFieldSchema, WithPayload};
     use serde_json::json;
+    use shard::update::upsert_points;
     use tempfile::Builder;
 
     use super::*;
@@ -102,7 +103,6 @@ mod tests {
     };
     use crate::collection_manager::holders::segment_holder::LockedSegment::Original;
     use crate::collection_manager::segments_searcher::SegmentsSearcher;
-    use crate::collection_manager::segments_updater::upsert_points;
     use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
     use crate::operations::point_ops::{
         PointOperations, PointStructPersisted, VectorStructPersisted,

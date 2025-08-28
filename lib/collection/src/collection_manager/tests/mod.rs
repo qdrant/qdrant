@@ -13,17 +13,16 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::types::{ExtendedPointId, PayloadContainer, PointIdType, WithPayload, WithVector};
+use shard::update::{delete_points, set_payload, upsert_points};
 use tempfile::Builder;
 
 use super::holders::proxy_segment;
-use super::segments_updater::delete_points;
 use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
 };
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
-use crate::collection_manager::segments_updater::{set_payload, upsert_points};
 use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use crate::operations::types::RecordInternal;
 
