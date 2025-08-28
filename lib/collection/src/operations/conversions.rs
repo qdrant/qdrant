@@ -13,15 +13,13 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
 };
 use api::rest::schema::ShardKeySelector;
 use api::rest::{BaseGroupRequest, MaxOptimizationThreads};
-use common::types::ScoreType;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
-use segment::data_types::vectors::{NamedQuery, VectorInternal, VectorStructInternal};
+use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use segment::types::{
-    Distance, Filter, HnswConfig, MultiVectorConfig, QuantizationConfig, SearchParams,
-    StrictModeConfigOutput, WithPayloadInterface, WithVector,
+    Distance, HnswConfig, MultiVectorConfig, QuantizationConfig, StrictModeConfigOutput,
+    WithPayloadInterface,
 };
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::{SparseVector, validate_sparse_vector_impl};
 use tonic::Status;
 
@@ -51,7 +49,6 @@ use crate::operations::config_diff::{
     WalConfigDiff,
 };
 use crate::operations::point_ops::{FilterSelector, PointIdsList, PointsSelector, WriteOrdering};
-use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
@@ -1011,106 +1008,6 @@ impl From<CountResult> for api::grpc::qdrant::CountResult {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
-    type Error = Status;
-    fn try_from(value: api::grpc::qdrant::SearchPoints) -> Result<Self, Self::Error> {
-        let api::grpc::qdrant::SearchPoints {
-            collection_name: _,
-            vector,
-            filter,
-            limit,
-            with_payload,
-            params,
-            score_threshold,
-            offset,
-            vector_name,
-            with_vectors,
-            read_consistency: _,
-            timeout: _,
-            shard_key_selector: _,
-            sparse_indices,
-        } = value;
-
-        if let Some(sparse_indices) = &sparse_indices {
-            let api::grpc::qdrant::SparseIndices { data } = sparse_indices;
-            validate_sparse_vector_impl(data, &vector).map_err(|e| {
-                Status::invalid_argument(format!(
-                    "Sparse indices does not match sparse vector conditions: {e}"
-                ))
-            })?;
-        }
-
-        let vector_struct =
-            api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
-
-        Ok(Self {
-            query: QueryEnum::Nearest(NamedQuery::from(vector_struct)),
-            filter: filter.map(Filter::try_from).transpose()?,
-            params: params.map(SearchParams::from),
-            limit: limit as usize,
-            offset: offset.map(|v| v as usize).unwrap_or_default(),
-            with_payload: with_payload
-                .map(WithPayloadInterface::try_from)
-                .transpose()?,
-            with_vector: with_vectors.map(WithVector::from),
-            score_threshold: score_threshold.map(|s| s as ScoreType),
-        })
-    }
-}
-
-impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
-    fn from(value: QueryEnum) -> Self {
-        match value {
-            QueryEnum::Nearest(vector) => api::grpc::qdrant::QueryEnum {
-                query: Some(api::grpc::qdrant::query_enum::Query::NearestNeighbors(
-                    api::grpc::qdrant::Vector::from(vector.query),
-                )),
-            },
-            QueryEnum::RecommendBestScore(named) => api::grpc::qdrant::QueryEnum {
-                query: Some(api::grpc::qdrant::query_enum::Query::RecommendBestScore(
-                    named.query.into(),
-                )),
-            },
-            QueryEnum::RecommendSumScores(named) => api::grpc::qdrant::QueryEnum {
-                query: Some(api::grpc::qdrant::query_enum::Query::RecommendSumScores(
-                    named.query.into(),
-                )),
-            },
-            QueryEnum::Discover(named) => api::grpc::qdrant::QueryEnum {
-                query: Some(api::grpc::qdrant::query_enum::Query::Discover(
-                    api::grpc::qdrant::DiscoveryQuery {
-                        target: Some(named.query.target.into()),
-                        context: named
-                            .query
-                            .pairs
-                            .into_iter()
-                            .map(|pair| api::grpc::qdrant::ContextPair {
-                                positive: { Some(pair.positive.into()) },
-                                negative: { Some(pair.negative.into()) },
-                            })
-                            .collect(),
-                    },
-                )),
-            },
-            QueryEnum::Context(named) => api::grpc::qdrant::QueryEnum {
-                query: Some(api::grpc::qdrant::query_enum::Query::Context(
-                    api::grpc::qdrant::ContextQuery {
-                        context: named
-                            .query
-                            .pairs
-                            .into_iter()
-                            .map(|pair| api::grpc::qdrant::ContextPair {
-                                positive: { Some(pair.positive.into()) },
-                                negative: { Some(pair.negative.into()) },
-                            })
-                            .collect(),
-                    },
-                )),
-            },
-        }
-    }
-}
-
 impl<'a> From<CollectionCoreSearchRequest<'a>> for api::grpc::qdrant::CoreSearchPoints {
     fn from(value: CollectionCoreSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
@@ -1181,102 +1078,6 @@ impl TryFrom<api::grpc::qdrant::TargetVector> for RecommendExample {
                     Ok(vector_example.try_into()?)
                 }
             })
-    }
-}
-
-fn try_context_pair_from_grpc(
-    pair: api::grpc::qdrant::ContextPair,
-) -> Result<ContextPair<VectorInternal>, Status> {
-    let api::grpc::qdrant::ContextPair { positive, negative } = pair;
-    match (positive, negative) {
-        (Some(positive), Some(negative)) => Ok(ContextPair {
-            positive: positive.try_into()?,
-            negative: negative.try_into()?,
-        }),
-        _ => Err(Status::invalid_argument(
-            "All context pairs must have both positive and negative parts",
-        )),
-    }
-}
-
-impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
-    type Error = Status;
-
-    fn try_from(value: api::grpc::qdrant::CoreSearchPoints) -> Result<Self, Self::Error> {
-        let query = value
-            .query
-            .and_then(|query| query.query)
-            .map(|query| {
-                Ok(match query {
-                    api::grpc::qdrant::query_enum::Query::NearestNeighbors(vector) => {
-                        QueryEnum::Nearest(NamedQuery::from(
-                            api::grpc::conversions::into_named_vector_struct(
-                                value.vector_name,
-                                vector.data,
-                                vector.indices,
-                            )?,
-                        ))
-                    }
-                    api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
-                        QueryEnum::RecommendBestScore(NamedQuery {
-                            query: RecoQuery::try_from(query)?,
-                            using: value.vector_name,
-                        })
-                    }
-                    api::grpc::qdrant::query_enum::Query::RecommendSumScores(query) => {
-                        QueryEnum::RecommendSumScores(NamedQuery {
-                            query: RecoQuery::try_from(query)?,
-                            using: value.vector_name,
-                        })
-                    }
-                    api::grpc::qdrant::query_enum::Query::Discover(query) => {
-                        let Some(target) = query.target else {
-                            return Err(Status::invalid_argument("Target is not specified"));
-                        };
-
-                        let pairs = query
-                            .context
-                            .into_iter()
-                            .map(try_context_pair_from_grpc)
-                            .try_collect()?;
-
-                        QueryEnum::Discover(NamedQuery {
-                            query: DiscoveryQuery::new(target.try_into()?, pairs),
-                            using: value.vector_name,
-                        })
-                    }
-                    api::grpc::qdrant::query_enum::Query::Context(query) => {
-                        let pairs = query
-                            .context
-                            .into_iter()
-                            .map(try_context_pair_from_grpc)
-                            .try_collect()?;
-
-                        QueryEnum::Context(NamedQuery {
-                            query: ContextQuery::new(pairs),
-                            using: value.vector_name,
-                        })
-                    }
-                })
-            })
-            .transpose()?
-            .ok_or_else(|| Status::invalid_argument("Query is not specified"))?;
-
-        Ok(Self {
-            query,
-            filter: value.filter.map(|f| f.try_into()).transpose()?,
-            params: value.params.map(|p| p.into()),
-            limit: value.limit as usize,
-            offset: value.offset.unwrap_or_default() as usize,
-            with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: Some(
-                value
-                    .with_vectors
-                    .map(|with_vectors| with_vectors.into())
-                    .unwrap_or_default(),
-            ),
-            score_threshold: value.score_threshold,
-        })
     }
 }
 
