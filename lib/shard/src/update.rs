@@ -24,7 +24,7 @@ use crate::operations::point_ops::{
 use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
 use crate::segment_holder::SegmentHolder;
 
-pub fn check_unprocessed_points(
+fn check_unprocessed_points(
     points: &[PointIdType],
     processed: &AHashSet<PointIdType>,
 ) -> OperationResult<usize> {
@@ -569,7 +569,7 @@ where
 
     {
         let default_write_segment = segments.smallest_appendable_segment().ok_or_else(|| {
-            OperationError::service_error("No appendable segments exists, expected at least one")
+            OperationError::service_error("No appendable segments exist, expected at least one")
         })?;
 
         let segment_arc = default_write_segment.get();
