@@ -1,3 +1,4 @@
+mod appendable_quantization_test;
 mod batch_search_test;
 mod byte_storage_hnsw_test;
 mod byte_storage_quantization_test;
