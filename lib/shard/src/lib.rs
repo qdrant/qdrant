@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+#![feature(unsigned_is_multiple_of)]
 pub mod locked_segment;
 pub mod operations;
 pub mod payload_index_schema;

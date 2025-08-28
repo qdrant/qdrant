@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 mod builder;
 mod iterator;
 mod posting_list;
