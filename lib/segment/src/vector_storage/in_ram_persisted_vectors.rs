@@ -19,7 +19,6 @@ impl<T: Sized + Copy + Clone + Default + 'static> InRamPersistedVectors<T> {
         let mmap_storage = ChunkedMmapVectors::open(
             directory,
             dim,
-            Some(false),
             AdviceSetting::from(Advice::Normal),
             Some(true),
         )?;
