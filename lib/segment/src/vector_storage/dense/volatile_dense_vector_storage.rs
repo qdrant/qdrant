@@ -16,7 +16,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{AccessPattern, DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 /// In-memory vector storage that is volatile
 ///
@@ -80,11 +80,7 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorSto
         self.dim
     }
 
-    fn get_dense(&self, key: PointOffsetType) -> &[T] {
-        self.vectors.get(key as VectorOffsetType)
-    }
-
-    fn get_dense_sequential(&self, key: PointOffsetType) -> &[T] {
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
         self.vectors.get(key as VectorOffsetType)
     }
 }
@@ -106,17 +102,13 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> 
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt(key).expect("vector not found")
-    }
-
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
-        // In memory so no optimization to be done here.
-        self.get_vector(key)
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key).expect("vector not found")
     }
 
     /// Get vector by key, if it exists.
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+        // In memory so no optimization to be done for access pattern
         self.vectors
             .get_opt(key as VectorOffsetType)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))

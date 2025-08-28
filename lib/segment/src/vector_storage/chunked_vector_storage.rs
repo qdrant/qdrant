@@ -5,6 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::vector_storage::AccessPattern;
 
 /// In case of simple vector storage, vector offset is the same as PointOffsetType.
 /// But in case of multivectors, it requires an additional lookup.
@@ -16,9 +17,9 @@ pub trait ChunkedVectorStorage<T> {
 
     fn dim(&self) -> usize;
 
-    fn get(&self, key: VectorOffsetType) -> Option<&[T]>;
-
-    fn get_sequential(&self, key: VectorOffsetType) -> Option<&[T]>;
+    fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<&[T]>
+    where
+        Self: Sized;
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -48,10 +49,7 @@ pub trait ChunkedVectorStorage<T> {
     ) -> OperationResult<()>;
 
     /// Returns `count` flattened vectors starting from key. if chunk boundary is crossed, returns None
-    fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]>;
-
-    /// Returns `count` flattened vectors starting from key. if chunk boundary is crossed, returns None
-    fn get_many_sequential(&self, key: VectorOffsetType, count: usize) -> Option<&[T]>;
+    fn get_many<P: AccessPattern>(&self, key: VectorOffsetType, count: usize) -> Option<&[T]>;
 
     /// Returns batch of vectors by keys.
     /// Underlying storage might apply some optimizations to prefetch vectors.

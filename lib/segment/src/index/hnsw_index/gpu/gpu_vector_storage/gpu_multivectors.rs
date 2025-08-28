@@ -11,10 +11,10 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::index::hnsw_index::gpu::GPU_TIMEOUT;
 use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilderParameters;
-use crate::vector_storage::MultiVectorStorage;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
     MultivectorOffsetsStorage, QuantizedMultivectorStorage,
 };
+use crate::vector_storage::{MultiVectorStorage, Random};
 
 // Multivector shader binding is after vectot data and quantization data bindings.
 const START_MULTIVECTORS_BINDING: usize = STORAGES_COUNT + MAX_QUANTIZATION_BINDINGS;
@@ -89,7 +89,7 @@ impl GpuMultivectors {
                 // map ID to count of vectors in multivector
                 .map(|id| {
                     vector_storage
-                        .get_multi(id as PointOffsetType)
+                        .get_multi::<Random>(id as PointOffsetType)
                         .vectors_count()
                 })
                 // Map count of vectors to start and count of vectors in multivector.

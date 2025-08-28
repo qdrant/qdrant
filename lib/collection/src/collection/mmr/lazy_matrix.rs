@@ -2,7 +2,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{PointOffsetType, ScoreType};
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 #[cfg(debug_assertions)]
-use segment::vector_storage::VectorStorage;
+use segment::vector_storage::{Random, VectorStorage};
 use segment::vector_storage::{RawScorer, VectorStorageEnum, new_raw_scorer};
 
 use crate::operations::types::CollectionResult;
@@ -33,7 +33,7 @@ impl<'storage> LazyMatrix<'storage> {
         #[cfg(debug_assertions)]
         {
             for (i, vector) in vectors.iter().enumerate() {
-                let stored_vector = storage.get_vector(i as u32);
+                let stored_vector = storage.get_vector::<Random>(i as u32);
                 assert_eq!(stored_vector.to_owned(), *vector);
             }
         }

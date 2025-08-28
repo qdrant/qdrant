@@ -20,7 +20,9 @@ use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::common::StoredRecord;
-use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    AccessPattern, Random, SparseVectorStorage, VectorStorage, VectorStorageEnum,
+};
 
 type StoredSparseVector = StoredRecord<SparseVector>;
 
@@ -145,7 +147,8 @@ impl SimpleSparseVectorStorage {
 }
 
 impl SparseVectorStorage for SimpleSparseVectorStorage {
-    fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
+    fn get_sparse<P: AccessPattern>(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
+        // Already in memory, so no sequential optimizations available.
         let bin_key = bincode::serialize(&key)
             .map_err(|_| OperationError::service_error("Cannot serialize sparse vector key"))?;
         let data = self.db_wrapper.get(bin_key)?;
@@ -155,12 +158,11 @@ impl SparseVectorStorage for SimpleSparseVectorStorage {
         Ok(record.vector)
     }
 
-    fn get_sparse_sequential(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
+    fn get_sparse_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> OperationResult<Option<SparseVector>> {
         // Already in memory, so no sequential optimizations available.
-        self.get_sparse(key)
-    }
-
-    fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
         let bin_key = bincode::serialize(&key)
             .map_err(|_| OperationError::service_error("Cannot serialize sparse vector key"))?;
         if let Some(data) = self.db_wrapper.get_opt(bin_key)? {
@@ -195,21 +197,17 @@ impl VectorStorage for SimpleSparseVectorStorage {
         self.total_vector_count
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
-        let vector = self.get_vector_opt(key);
-        vector.unwrap_or_else(CowVector::default_sparse)
-    }
-
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         // In memory, so no sequential read optimization.
-        self.get_vector(key)
+        let vector = self.get_vector_opt::<P>(key);
+        vector.unwrap_or_else(CowVector::default_sparse)
     }
 
     /// Get vector by key, if it exists.
     ///
     /// ignore any error
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        match self.get_sparse_opt(key) {
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+        match self.get_sparse_opt::<P>(key) {
             Ok(Some(vector)) => Some(CowVector::from(vector)),
             _ => None,
         }
@@ -259,7 +257,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
-            let old_vector = self.get_sparse_opt(key).ok().flatten();
+            let old_vector = self.get_sparse_opt::<Random>(key).ok().flatten();
             self.update_stored(
                 key,
                 true,
@@ -293,6 +291,7 @@ mod tests {
     use super::*;
     use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::segment_constructor::migrate_rocksdb_sparse_vector_storage_to_mmap;
+    use crate::vector_storage::Sequential;
 
     const RAND_SEED: u64 = 42;
 
@@ -355,7 +354,7 @@ mod tests {
             assert_eq!(deleted, rng.random_bool(DELETE_PROBABILITY));
             if !deleted {
                 assert_eq!(
-                    new_storage.get_vector_sequential(internal_id),
+                    new_storage.get_vector::<Sequential>(internal_id),
                     CowVector::from(vector),
                 );
             }

@@ -9,9 +9,9 @@ use common::types::{PointOffsetType, ScoreType};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
-use crate::vector_storage::DenseVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::{DenseVectorStorage, Random};
 
 pub struct MetricQueryScorer<
     'a,
@@ -70,7 +70,7 @@ impl<
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
         self.hardware_counter.vector_io_read().incr();
-        TMetric::similarity(&self.query, self.vector_storage.get_dense(idx))
+        TMetric::similarity(&self.query, self.vector_storage.get_dense::<Random>(idx))
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
@@ -98,8 +98,8 @@ impl<
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
-        let v1 = self.vector_storage.get_dense(point_a);
-        let v2 = self.vector_storage.get_dense(point_b);
+        let v1 = self.vector_storage.get_dense::<Random>(point_a);
+        let v2 = self.vector_storage.get_dense::<Random>(point_b);
         TMetric::similarity(v1, v2)
     }
 

@@ -20,7 +20,7 @@ use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorS
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
-use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{DEFAULT_STOPPED, Random, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points: Vec<SparseVector> = vec![
@@ -51,7 +51,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
 
     // Check that all points are inserted
     for (i, vec) in points.iter().enumerate() {
-        let stored_vec = storage.get_vector(i as PointOffsetType);
+        let stored_vec = storage.get_vector::<Random>(i as PointOffsetType);
         let sparse: &SparseVector = stored_vec.as_vec_ref().try_into().unwrap();
         assert_eq!(sparse, vec);
     }
@@ -150,7 +150,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
 
         let mut iter = (0..points.len()).map(|i| {
             let i = i as PointOffsetType;
-            let vec = storage2.get_vector(i);
+            let vec = storage2.get_vector::<Random>(i);
             let deleted = storage2.is_deleted_vector(i);
             (vec, deleted)
         });
@@ -244,15 +244,15 @@ fn do_test_persistence(open: impl Fn(&Path) -> VectorStorageEnum) {
 
     // Check deleted vectors are still marked as deleted
     assert!(storage.is_deleted_vector(1));
-    assert!(storage.get_vector_opt(1).is_none());
+    assert!(storage.get_vector_opt::<Random>(1).is_none());
 
     assert!(storage.is_deleted_vector(3));
-    assert!(storage.get_vector_opt(3).is_none());
+    assert!(storage.get_vector_opt::<Random>(3).is_none());
 
     // Check non-deleted vectors still have correct data
     let verify_idx = [0, 2, 4];
     for idx in verify_idx {
-        let stored = storage.get_vector(idx);
+        let stored = storage.get_vector::<Random>(idx);
         let sparse: &SparseVector = stored.as_vec_ref().try_into().unwrap();
         assert_eq!(sparse, &points[idx as usize]);
     }

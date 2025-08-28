@@ -4,6 +4,7 @@ use common::types::PointOffsetType;
 use memory::mmap_type::MmapFlusher;
 
 use crate::common::operation_error::OperationResult;
+use crate::vector_storage::Random;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 
@@ -19,7 +20,8 @@ impl QuantizedChunkedMmapStorage {
 
 impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
-        ChunkedVectorStorage::get(&self.data, index as VectorOffsetType).unwrap_or_default()
+        ChunkedVectorStorage::get::<Random>(&self.data, index as VectorOffsetType)
+            .unwrap_or_default()
     }
 
     fn upsert_vector(
