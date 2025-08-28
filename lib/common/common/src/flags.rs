@@ -73,7 +73,7 @@ impl Default for FeatureFlags {
             migrate_rocksdb_vector_storage: false,
             migrate_rocksdb_payload_storage: false,
             migrate_rocksdb_payload_indices: false,
-            appendable_quantization: false,
+            appendable_quantization: true,
         }
     }
 }
