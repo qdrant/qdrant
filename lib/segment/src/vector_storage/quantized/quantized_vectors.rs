@@ -730,7 +730,7 @@ impl QuantizedVectors {
         let config_path = Self::get_config_path(path);
         if config_path.exists() {
             let config: QuantizedVectorsConfig = read_json(&config_path)?;
-            if config.storage_type == QuantizedVectorsStorageType::Immutable {
+            if config.storage_type.is_immutable() {
                 return Ok(Some(Self::load_immutable(config, vector_storage, path)?));
             } else {
                 return Self::load_mutable(config, vector_storage, path);
