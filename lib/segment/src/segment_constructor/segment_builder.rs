@@ -705,15 +705,14 @@ impl SegmentBuilder {
             };
 
             let is_appendable = vector_config.is_appendable();
-
-            // Don't build quantization for appendable vectors
-            if is_appendable {
-                continue;
-            }
-
             let max_threads = permit.num_cpus as usize;
 
-            if let Some(quantization) = config.quantization_config(vector_name) {
+            if let Some(quantization_config) = config.quantization_config(vector_name) {
+                if is_appendable && !quantization_config.is_appendable() {
+                    // Don't build quantization for appendable vectors if quantization method does not support it
+                    continue;
+                }
+
                 let segment_path = temp_path;
 
                 check_process_stopped(stopped)?;
@@ -722,7 +721,7 @@ impl SegmentBuilder {
 
                 let quantized_vectors = QuantizedVectors::create(
                     &vector_info.vector_storage,
-                    quantization,
+                    quantization_config,
                     &vector_storage_path,
                     max_threads,
                     stopped,
