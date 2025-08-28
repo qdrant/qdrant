@@ -471,7 +471,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             let encoded_vector = Self::encode_vector(vector.as_ref(), &vector_stats, encoding);
             let encoded_vector_slice = encoded_vector.encoded_vector.as_slice();
             let bytes = transmute_to_u8_slice(encoded_vector_slice);
-            storage_builder.push_vector_data(bytes);
+            storage_builder.push_vector_data(bytes).map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to push encoded vector: {e}",))
+            })?;
         }
 
         let encoded_vectors = storage_builder
