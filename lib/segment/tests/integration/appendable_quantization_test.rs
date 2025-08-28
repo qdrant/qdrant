@@ -1,19 +1,21 @@
 use std::collections::{BTreeSet, HashMap};
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
 use segment::data_types::vectors::{
-    only_default_multi_vector, only_default_vector, MultiDenseVectorInternal, QueryVector, DEFAULT_VECTOR_NAME
+    DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, QueryVector, only_default_multi_vector,
+    only_default_vector,
 };
-use segment::types::QuantizationConfig;
 use segment::entry::entry_point::SegmentEntry;
-use segment::fixtures::payload_fixtures::random_multi_vector;
-use segment::fixtures::payload_fixtures::random_vector;
+use segment::fixtures::payload_fixtures::{random_multi_vector, random_vector};
 use segment::fixtures::query_fixtures::QueryVariant;
 use segment::segment_constructor::build_segment;
-use segment::types::{BinaryQuantizationQueryEncoding, BinaryQuantizationEncoding,
-    BinaryQuantizationConfig, Distance, Indexes, MultiVectorConfig, QuantizationSearchParams, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType
+use segment::types::{
+    BinaryQuantizationConfig, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding,
+    Distance, Indexes, MultiVectorConfig, QuantizationConfig, QuantizationSearchParams,
+    ScoredPoint, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
 use tempfile::Builder;
 
@@ -48,40 +50,22 @@ fn sames_count(a: &[ScoredPoint], b: &[ScoredPoint]) -> usize {
 }
 
 #[rstest]
-#[case::appendable_ram(
-    250,
-    false,
-    15.,
-    None,
-    None,
-)]
-#[case::appendable_mmap(
-    200,
-    true,
-    15.,
-    None,
-    None,
-)]
-#[case::encoding_2bit(
-    200,
-    true,
-    15.,
-    Some(BinaryQuantizationEncoding::TwoBits),
-    None,
-)]
+#[case::appendable_ram(250, false, 15., None, None)]
+#[case::appendable_mmap(200, true, 15., None, None)]
+#[case::encoding_2bit(200, true, 15., Some(BinaryQuantizationEncoding::TwoBits), None)]
 #[case::query_encoding_8bit(
     200,
     true,
     15.,
     None,
-    Some(BinaryQuantizationQueryEncoding::Scalar8Bits),
+    Some(BinaryQuantizationQueryEncoding::Scalar8Bits)
 )]
 fn test_appendable_quantization_dense(
     #[case] dim: usize,
     #[case] on_disk: bool,
     #[case] min_acc: f64, // min_acc out of 100
     #[case] encoding: Option<BinaryQuantizationEncoding>,
-    #[case] query_encoding: Option<BinaryQuantizationQueryEncoding>
+    #[case] query_encoding: Option<BinaryQuantizationQueryEncoding>,
 ) {
     let distance = Distance::Dot;
     let num_vectors: u64 = 300;
@@ -145,42 +129,50 @@ fn test_appendable_quantization_dense(
     for _ in 0..attempts {
         let query = random_query(&mut rng, dim);
 
-        let search_result = segment.search(
-            DEFAULT_VECTOR_NAME,
-            &query,
-            &Default::default(),
-            &Default::default(),
-            None,
-            top,
-            Some(&SearchParams {
-                quantization: Some(QuantizationSearchParams {
-                    oversampling: None,
-                    rescore: Some(false),
+        let search_result = segment
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query,
+                &Default::default(),
+                &Default::default(),
+                None,
+                top,
+                Some(&SearchParams {
+                    quantization: Some(QuantizationSearchParams {
+                        oversampling: None,
+                        rescore: Some(false),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }),
-                ..Default::default()
-            }),
-        ).unwrap();
+            )
+            .unwrap();
 
-        let plain_result = segment.search(
-            DEFAULT_VECTOR_NAME,
-            &query,
-            &Default::default(),
-            &Default::default(),
-            None,
-            top,
-            Some(&SearchParams {
+        let plain_result = segment
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query,
+                &Default::default(),
+                &Default::default(),
+                None,
+                top,
+                Some(&SearchParams {
                     quantization: Some(QuantizationSearchParams {
                         ignore: true,
                         ..Default::default()
                     }),
                     ..Default::default()
-            }),
-        ).unwrap();
+                }),
+            )
+            .unwrap();
 
         sames += sames_count(&plain_result, &search_result);
     }
-    assert_ne!(sames, attempts * top, "All results are the same, not expected because binary quantization must have an acc loss");
+    assert_ne!(
+        sames,
+        attempts * top,
+        "All results are the same, not expected because binary quantization must have an acc loss"
+    );
 
     let acc = 100.0 * sames as f64 / (attempts * top) as f64;
     println!("sames = {sames}, attempts = {attempts}, top = {top}, acc = {acc}");
@@ -188,40 +180,22 @@ fn test_appendable_quantization_dense(
 }
 
 #[rstest]
-#[case::appendable_ram(
-    250,
-    false,
-    15.,
-    None,
-    None,
-)]
-#[case::appendable_mmap(
-    200,
-    true,
-    15.,
-    None,
-    None,
-)]
-#[case::encoding_2bit(
-    200,
-    true,
-    15.,
-    Some(BinaryQuantizationEncoding::TwoBits),
-    None,
-)]
+#[case::appendable_ram(250, false, 15., None, None)]
+#[case::appendable_mmap(200, true, 15., None, None)]
+#[case::encoding_2bit(200, true, 15., Some(BinaryQuantizationEncoding::TwoBits), None)]
 #[case::query_encoding_8bit(
     200,
     true,
     15.,
     None,
-    Some(BinaryQuantizationQueryEncoding::Scalar8Bits),
+    Some(BinaryQuantizationQueryEncoding::Scalar8Bits)
 )]
 fn test_appendable_quantization_multi(
     #[case] dim: usize,
     #[case] on_disk: bool,
     #[case] min_acc: f64, // min_acc out of 100
     #[case] encoding: Option<BinaryQuantizationEncoding>,
-    #[case] query_encoding: Option<BinaryQuantizationQueryEncoding>
+    #[case] query_encoding: Option<BinaryQuantizationQueryEncoding>,
 ) {
     let distance = Distance::Dot;
     let num_vectors: u64 = 300;
@@ -285,42 +259,50 @@ fn test_appendable_quantization_multi(
     for _ in 0..attempts {
         let query = random_query_multi(&mut rng, dim);
 
-        let search_result = segment.search(
-            DEFAULT_VECTOR_NAME,
-            &query,
-            &Default::default(),
-            &Default::default(),
-            None,
-            top,
-            Some(&SearchParams {
-                quantization: Some(QuantizationSearchParams {
-                    oversampling: None,
-                    rescore: Some(false),
+        let search_result = segment
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query,
+                &Default::default(),
+                &Default::default(),
+                None,
+                top,
+                Some(&SearchParams {
+                    quantization: Some(QuantizationSearchParams {
+                        oversampling: None,
+                        rescore: Some(false),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }),
-                ..Default::default()
-            }),
-        ).unwrap();
+            )
+            .unwrap();
 
-        let plain_result = segment.search(
-            DEFAULT_VECTOR_NAME,
-            &query,
-            &Default::default(),
-            &Default::default(),
-            None,
-            top,
-            Some(&SearchParams {
+        let plain_result = segment
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query,
+                &Default::default(),
+                &Default::default(),
+                None,
+                top,
+                Some(&SearchParams {
                     quantization: Some(QuantizationSearchParams {
                         ignore: true,
                         ..Default::default()
                     }),
                     ..Default::default()
-            }),
-        ).unwrap();
+                }),
+            )
+            .unwrap();
 
         sames += sames_count(&plain_result, &search_result);
     }
-    assert_ne!(sames, attempts * top, "All results are the same, not expected because binary quantization must have an acc loss");
+    assert_ne!(
+        sames,
+        attempts * top,
+        "All results are the same, not expected because binary quantization must have an acc loss"
+    );
 
     let acc = 100.0 * sames as f64 / (attempts * top) as f64;
     println!("sames = {sames}, attempts = {attempts}, top = {top}, acc = {acc}");
