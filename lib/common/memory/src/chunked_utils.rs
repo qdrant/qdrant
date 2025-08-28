@@ -59,7 +59,6 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
 
 pub fn read_mmaps<T: Sized>(
     directory: &Path,
-    mlock: bool,
     populate: bool,
     advice: AdviceSetting,
 ) -> Result<Vec<UniversalMmapChunk<T>>, MmapError> {
@@ -93,17 +92,6 @@ pub fn read_mmaps<T: Sized>(
         let mmap_seq =
             open_read_mmap(&mmap_file, AdviceSetting::Advice(Advice::Sequential), false)?;
 
-        // If unix, lock the memory
-        #[cfg(unix)]
-        if mlock {
-            mmap.lock()?;
-        }
-        // If not, log warning and continue
-        #[cfg(not(unix))]
-        if mlock {
-            log::warn!("Can't lock vectors in RAM, is not supported on this platform");
-        }
-
         let chunk = unsafe {
             UniversalMmapChunk {
                 mmap: MmapSlice::try_from(mmap)?,
@@ -125,7 +113,6 @@ pub fn create_chunk<T: Sized>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
-    mlock: bool,
 ) -> Result<UniversalMmapChunk<T>, MmapError> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
@@ -140,16 +127,6 @@ pub fn create_chunk<T: Sized>(
         AdviceSetting::Advice(Advice::Sequential),
         false,
     )?;
-
-    #[cfg(unix)]
-    if mlock {
-        mmap.lock()?;
-    }
-    // If not, log warning and continue
-    #[cfg(not(unix))]
-    if mlock {
-        log::warn!("Can't lock vectors in RAM, is not supported on this platform");
-    }
 
     let chunk = unsafe {
         UniversalMmapChunk {

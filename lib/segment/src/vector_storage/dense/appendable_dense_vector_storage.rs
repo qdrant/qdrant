@@ -266,13 +266,8 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
 
     let populate = false;
 
-    let vectors = ChunkedMmapVectors::<T>::open(
-        &vectors_path,
-        dim,
-        Some(false),
-        AdviceSetting::Global,
-        Some(populate),
-    )?;
+    let vectors =
+        ChunkedMmapVectors::<T>::open(&vectors_path, dim, AdviceSetting::Global, Some(populate))?;
 
     let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
     let deleted_count = deleted.count_trues();

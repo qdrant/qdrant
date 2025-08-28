@@ -435,20 +435,10 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
 
     let populate = false;
 
-    let vectors = ChunkedMmapVectors::open(
-        &vectors_path,
-        dim,
-        Some(false),
-        AdviceSetting::Global,
-        Some(populate),
-    )?;
-    let offsets = ChunkedMmapVectors::open(
-        &offsets_path,
-        1,
-        Some(false),
-        AdviceSetting::Global,
-        Some(populate),
-    )?;
+    let vectors =
+        ChunkedMmapVectors::open(&vectors_path, dim, AdviceSetting::Global, Some(populate))?;
+    let offsets =
+        ChunkedMmapVectors::open(&offsets_path, 1, AdviceSetting::Global, Some(populate))?;
 
     let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
     let deleted_count = deleted.count_trues();

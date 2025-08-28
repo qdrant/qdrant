@@ -36,8 +36,6 @@ struct ChunkedMmapConfig {
     chunk_size_vectors: usize,
     dim: usize,
     #[serde(default)]
-    mlock: Option<bool>,
-    #[serde(default)]
     populate: Option<bool>,
 }
 
@@ -76,7 +74,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     fn ensure_config(
         directory: &Path,
         dim: usize,
-        mlock: Option<bool>,
         populate: Option<bool>,
     ) -> OperationResult<ChunkedMmapConfig> {
         let config_file = Self::config_file(directory);
@@ -92,10 +89,10 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
                     )))
                 }
             }
-            Ok(None) => Self::create_config(&config_file, dim, mlock, populate),
+            Ok(None) => Self::create_config(&config_file, dim, populate),
             Err(e) => {
                 log::error!("Failed to deserialize config file {:?}: {e}", &config_file);
-                Self::create_config(&config_file, dim, mlock, populate)
+                Self::create_config(&config_file, dim, populate)
             }
         }
     }
@@ -113,7 +110,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     fn create_config(
         config_file: &Path,
         dim: usize,
-        mlock: Option<bool>,
         populate: Option<bool>,
     ) -> OperationResult<ChunkedMmapConfig> {
         let chunk_size_bytes = CHUNK_SIZE;
@@ -125,7 +121,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             chunk_size_bytes: corrected_chunk_size_bytes,
             chunk_size_vectors,
             dim,
-            mlock,
             populate,
         };
         atomic_save_json(config_file, &config)?;
@@ -135,7 +130,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     pub fn open(
         directory: &Path,
         dim: usize,
-        mlock: Option<bool>,
         advice: AdviceSetting,
         populate: Option<bool>,
     ) -> OperationResult<Self> {
@@ -143,13 +137,8 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         let status_mmap = Self::ensure_status_file(directory)?;
         let status = unsafe { MmapType::from(status_mmap) };
 
-        let config = Self::ensure_config(directory, dim, mlock, populate)?;
-        let chunks = read_mmaps(
-            directory,
-            config.mlock.unwrap_or_default(),
-            populate.unwrap_or_default(),
-            advice,
-        )?;
+        let config = Self::ensure_config(directory, dim, populate)?;
+        let chunks = read_mmaps(directory, populate.unwrap_or_default(), advice)?;
         let vectors = Self {
             status,
             config,
@@ -188,7 +177,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             &self.directory,
             self.chunks.len(),
             self.config.chunk_size_bytes,
-            self.config.mlock.unwrap_or_default(),
         )?;
 
         self.chunks.push(chunk);
@@ -486,14 +474,9 @@ mod tests {
             .collect();
 
         {
-            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> = ChunkedMmapVectors::open(
-                dir.path(),
-                dim,
-                Some(false),
-                AdviceSetting::Global,
-                Some(true),
-            )
-            .unwrap();
+            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> =
+                ChunkedMmapVectors::open(dir.path(), dim, AdviceSetting::Global, Some(true))
+                    .unwrap();
 
             for vec in &vectors {
                 chunked_mmap.push(vec, &hw_counter).unwrap();
