@@ -890,7 +890,7 @@ impl SegmentHolder {
                     .ok_or_else(|| {
                         OperationError::service_error(format!("No segment with ID {segment_id}"))
                     })
-                    .map(LockedSegment::get)
+                    .map(LockedSegment::get_cloned)
             })
             .collect()
     }
@@ -947,7 +947,7 @@ impl SegmentHolder {
             // Get segment to snapshot
             let segment = match proxy_segment {
                 LockedSegment::Proxy(proxy_segment) => {
-                    proxy_segment.read().wrapped_segment.clone().get()
+                    proxy_segment.read().wrapped_segment.clone().get_cloned()
                 }
                 // All segments to snapshot should be proxy, warn if this is not the case
                 LockedSegment::Original(segment) => {

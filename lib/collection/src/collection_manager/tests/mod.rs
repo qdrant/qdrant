@@ -241,7 +241,7 @@ fn test_upsert_points_in_smallest_segment() {
 
     // Segment 1 and 2 are over capacity, we expect to have the new points in segment 3
     {
-        let segment3 = segments.read().get(sid3).unwrap().get();
+        let segment3 = segments.read().get(sid3).unwrap().get_cloned();
         let segment3_read = segment3.read();
         for point_id in 1000..1010 {
             assert!(segment3_read.has_point(point_id.into()));
