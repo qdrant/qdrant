@@ -7,6 +7,7 @@ use sparse::common::sparse_vector::SparseVector;
 use tonic::Status;
 
 use crate::grpc::qdrant as grpc;
+use crate::grpc::vector::Vector;
 use crate::rest::schema as rest;
 
 fn convert_to_plain_multi_vector(
@@ -410,6 +411,8 @@ impl TryFrom<grpc::VectorsOutput> for VectorStructInternal {
 
 impl From<VectorInternal> for grpc::Vector {
     fn from(vector: VectorInternal) -> Self {
+        // ToDo: before deprecating `data`, `indices`, and `vectors_count`, ensure
+        // ToDo: that `vector` field is generated here.
         match vector {
             VectorInternal::Dense(vector) => Self {
                 data: vector,
@@ -482,8 +485,35 @@ impl TryFrom<grpc::Vector> for VectorInternal {
             data,
             indices,
             vectors_count,
-            vector: _,
+            vector,
         } = vector;
+
+        if let Some(vector) = vector {
+            return match vector {
+                Vector::Dense(dense) => {
+                    let grpc::DenseVector { data } = dense;
+                    Ok(VectorInternal::Dense(data))
+                }
+                Vector::Sparse(sparse) => Ok(VectorInternal::Sparse(
+                    sparse::common::sparse_vector::SparseVector::from(sparse),
+                )),
+                Vector::MultiDense(multi_dense) => Ok(VectorInternal::MultiDense(
+                    MultiDenseVectorInternal::try_from_matrix(multi_dense.into_matrix()).map_err(
+                        |e| Status::invalid_argument(format!("Malformed multi-dense vector: {e}")),
+                    )?,
+                )),
+                Vector::Document(_) => Err(Status::invalid_argument(
+                    "Document can't be converted to VectorInternal".to_string(),
+                )),
+                Vector::Image(_) => Err(Status::invalid_argument(
+                    "Image can't be converted to VectorInternal".to_string(),
+                )),
+                Vector::Object(_) => Err(Status::invalid_argument(
+                    "Object can't be converted to VectorInternal".to_string(),
+                )),
+            };
+        }
+
         // sparse vector
         if let Some(indices) = indices {
             let grpc::SparseIndices { data: data_indices } = indices;
