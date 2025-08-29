@@ -25,7 +25,9 @@ use crate::vector_storage::VectorStorageEnum;
 #[cfg(target_os = "linux")]
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
+};
 use crate::vector_storage::vector_storage_base::VectorStorage;
 
 const DIMS: usize = 128;
@@ -154,6 +156,7 @@ fn scoring_equivalency(
         Some(QuantizedVectors::create(
             &other_storage,
             config,
+            QuantizedVectorsStorageType::Immutable,
             quant_dir.path(),
             4,
             &AtomicBool::new(false),

@@ -1033,7 +1033,6 @@ impl SegmentHolder {
         let config = match segment_config {
             // Base config on collection params
             Some(config) => config,
-
             // Fall back: base config on existing appendable segment
             None => self
                 .random_appendable_segment()

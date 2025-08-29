@@ -29,6 +29,7 @@ common = { path = "../common/common" }
 io = { path = "../common/io" }
 strum = { workspace = true }
 bytemuck = { workspace = true }
+parking_lot = { workspace = true }
 
 [dev-dependencies]
 quantization = { path = ".", features = ["testing"] }

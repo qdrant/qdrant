@@ -17,7 +17,9 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendab
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_full_vector_storage;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
+};
 use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
@@ -289,8 +291,15 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
 
     let stopped = AtomicBool::new(false);
 
-    let quantized_vectors =
-        QuantizedVectors::create(storage, &config, dir.path(), 1, &stopped).unwrap();
+    let quantized_vectors = QuantizedVectors::create(
+        storage,
+        &config,
+        QuantizedVectorsStorageType::Immutable,
+        dir.path(),
+        1,
+        &stopped,
+    )
+    .unwrap();
 
     let query: QueryVector = vec![0.5, 0.5, 0.5, 0.5].into();
     let scorer_quant = quantized_vectors
@@ -311,7 +320,9 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
     let quantization_files = quantized_vectors.files();
 
     // test save-load
-    let quantized_vectors = QuantizedVectors::load(storage, dir.path()).unwrap();
+    let quantized_vectors = QuantizedVectors::load(&config, storage, dir.path(), &false.into())
+        .unwrap()
+        .unwrap();
     assert_eq!(files, storage.files());
     assert_eq!(quantization_files, quantized_vectors.files());
 

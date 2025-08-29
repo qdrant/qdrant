@@ -117,9 +117,10 @@ impl quantization::EncodedStorageBuilder for QuantizedRamStorageBuilder {
         })
     }
 
-    fn push_vector_data(&mut self, other: &[u8]) {
-        // Memory for ChunkedVectors are already pre-allocated,
-        // so we do not expect any errors here.
-        self.vectors.push(other).unwrap();
+    fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
+        self.vectors
+            .push(other)
+            .map(|_| ())
+            .map_err(|e| std::io::Error::other(format!("Failed to push vector data: {e}")))
     }
 }

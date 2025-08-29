@@ -28,6 +28,7 @@ use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
     open_simple_multi_dense_vector_storage_byte, open_simple_multi_dense_vector_storage_full,
     open_simple_multi_dense_vector_storage_half,
 };
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsStorageType;
 use crate::vector_storage::{RawScorer, new_raw_scorer_for_test};
 
 #[derive(Debug, Clone, Copy)]
@@ -732,8 +733,15 @@ fn test_gpu_vector_storage_impl(
     let storage = create_vector_storage(dir.path(), storage_type, num_vectors, dim, distance);
 
     let quantized_vectors = quantization_config.as_ref().map(|quantization_config| {
-        QuantizedVectors::create(&storage, quantization_config, dir.path(), 1, &false.into())
-            .unwrap()
+        QuantizedVectors::create(
+            &storage,
+            quantization_config,
+            QuantizedVectorsStorageType::Immutable,
+            dir.path(),
+            1,
+            &false.into(),
+        )
+        .unwrap()
     });
 
     let instance = gpu::GPU_TEST_INSTANCE.clone();
