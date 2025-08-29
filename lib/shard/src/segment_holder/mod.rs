@@ -875,11 +875,16 @@ impl SegmentHolder {
             }
         }
 
-        if let Some(art_seg_version) = self
+        // Overwrite max_persisted_version with our artificial segment version, to acknowledge for some requests, that didn't hit any point in WAL.
+        // See the documentation of `max_persisted_segment_version_overwrite` for more information about this value.
+        if let Some(max_persisted_segment_version_overwrite) = self
             .max_persisted_segment_version_overwrite
             .load(Ordering::Relaxed)
         {
-            max_persisted_version = max(max_persisted_version, art_seg_version);
+            max_persisted_version = max(
+                max_persisted_version,
+                max_persisted_segment_version_overwrite,
+            );
         }
 
         drop(proxy_segments);
