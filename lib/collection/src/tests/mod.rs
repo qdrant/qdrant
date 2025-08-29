@@ -262,6 +262,7 @@ async fn test_new_segment_when_all_over_capacity() {
         &segments,
         dir.path(),
         &collection_params,
+        None,
         &optimizer_thresholds,
         payload_index_schema.clone(),
     )
@@ -273,6 +274,7 @@ async fn test_new_segment_when_all_over_capacity() {
         &segments,
         dir.path(),
         &collection_params,
+        None,
         &optimizer_thresholds,
         payload_index_schema.clone(),
     )
@@ -318,6 +320,7 @@ async fn test_new_segment_when_all_over_capacity() {
         &segments,
         dir.path(),
         &collection_params,
+        None,
         &optimizer_thresholds,
         payload_index_schema,
     )

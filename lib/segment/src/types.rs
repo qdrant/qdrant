@@ -774,6 +774,10 @@ impl QuantizationConfig {
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         self != other
     }
+
+    pub fn is_appendable(&self) -> bool {
+        matches!(self, QuantizationConfig::Binary(_))
+    }
 }
 
 impl Validate for QuantizationConfig {

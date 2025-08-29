@@ -273,6 +273,11 @@ impl CollectionConfigInternal {
             validation::warn_validation_errors("Collection configuration file", errs);
         }
     }
+
+    pub fn to_base_segment_config(&self) -> CollectionResult<SegmentConfig> {
+        self.params
+            .to_base_segment_config(self.quantization_config.as_ref())
+    }
 }
 
 impl CollectionParams {
@@ -467,7 +472,16 @@ impl CollectionParams {
     /// based on threshold configurations.
     pub fn to_base_vector_data(
         &self,
+        collection_quantization: Option<&QuantizationConfig>,
     ) -> CollectionResult<HashMap<VectorNameBuf, VectorDataConfig>> {
+        let quantization_fn = |quantization_config: Option<&QuantizationConfig>| {
+            quantization_config
+                // Only if there is no `quantization_config` we may start using `collection_quantization` (to avoid mixing quantizations between segments)
+                .or(collection_quantization)
+                .filter(|c| c.is_appendable())
+                .cloned()
+        };
+
         Ok(self
             .vectors
             .params_iter()
@@ -479,8 +493,11 @@ impl CollectionParams {
                         distance: params.distance,
                         // Plain (disabled) index
                         index: Indexes::Plain {},
-                        // Disabled quantization
-                        quantization_config: None,
+                        // Quantizaton config in appendable segment if runtime feature flag is set
+                        quantization_config: common::flags::feature_flags()
+                            .appendable_quantization
+                            .then(|| quantization_fn(params.quantization_config.as_ref()))
+                            .flatten(),
                         // Default to in memory storage
                         storage_type: if params.on_disk.unwrap_or_default() {
                             VectorStorageType::ChunkedMmap
@@ -529,12 +546,21 @@ impl CollectionParams {
         }
     }
 
-    pub fn to_segment_config(&self) -> CollectionResult<SegmentConfig> {
-        let vector_data = self.to_base_vector_data().map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to source dense vector configuration from collection parameters: {err:?}"
-            ))
-        })?;
+    /// Convert into unoptimized segment config
+    ///
+    /// It is the job of the segment optimizer to change this configuration with optimized settings
+    /// based on threshold configurations.
+    pub fn to_base_segment_config(
+        &self,
+        collection_quantization: Option<&QuantizationConfig>,
+    ) -> CollectionResult<SegmentConfig> {
+        let vector_data = self
+            .to_base_vector_data(collection_quantization)
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to source dense vector configuration from collection parameters: {err:?}"
+                ))
+            })?;
 
         let sparse_vector_data = self.to_sparse_vector_data().map_err(|err| {
             CollectionError::service_error(format!(
