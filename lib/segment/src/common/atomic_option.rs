@@ -43,6 +43,20 @@ impl AtomicOptionU64 {
     }
 }
 
+impl std::fmt::Debug for AtomicOptionU64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.load(Ordering::Relaxed))
+    }
+}
+
+impl Default for AtomicOptionU64 {
+    fn default() -> Self {
+        Self {
+            inner: AtomicU64::new(NONE_VALUE),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -65,19 +79,5 @@ mod test {
         // Assert setting to none with Value.
         val.store(None, Ordering::Relaxed);
         assert_eq!(val.load(Ordering::Relaxed), None);
-    }
-}
-
-impl std::fmt::Debug for AtomicOptionU64 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.load(Ordering::Relaxed))
-    }
-}
-
-impl Default for AtomicOptionU64 {
-    fn default() -> Self {
-        Self {
-            inner: AtomicU64::new(NONE_VALUE),
-        }
     }
 }
