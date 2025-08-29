@@ -96,6 +96,7 @@ impl TryFrom<rest::VectorStructOutput> for grpc::VectorsOutput {
 }
 
 impl From<VectorInternal> for grpc::VectorOutput {
+    #[allow(deprecated)]
     fn from(vector: VectorInternal) -> Self {
         match vector {
             VectorInternal::Dense(vector) => Self {
@@ -304,6 +305,7 @@ impl grpc::MultiDenseVector {
 impl TryFrom<grpc::VectorOutput> for VectorInternal {
     type Error = OperationError;
 
+    #[allow(deprecated)]
     fn try_from(vector: grpc::VectorOutput) -> Result<Self, Self::Error> {
         let grpc::VectorOutput {
             data,
@@ -347,6 +349,8 @@ impl TryFrom<grpc::VectorOutput> for VectorInternal {
 
 impl TryFrom<grpc::VectorsOutput> for VectorStructInternal {
     type Error = OperationError;
+
+    #[allow(deprecated)]
     fn try_from(vectors_output: grpc::VectorsOutput) -> Result<Self, Self::Error> {
         let grpc::VectorsOutput { vectors_options } = vectors_output;
         match vectors_options {
