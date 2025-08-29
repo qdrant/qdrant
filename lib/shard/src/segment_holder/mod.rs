@@ -579,7 +579,7 @@ impl SegmentHolder {
     /// Try to acquire read lock over the given segment with increasing wait time.
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
     fn aloha_lock_segment_read(
-        segment: &'_ Arc<RwLock<dyn SegmentEntry>>,
+        segment: &'_ RwLock<dyn SegmentEntry>,
     ) -> RwLockReadGuard<'_, dyn SegmentEntry> {
         let mut interval = Duration::from_nanos(100);
         loop {
@@ -882,7 +882,7 @@ impl SegmentHolder {
     fn segment_locks(
         &self,
         segment_ids: impl IntoIterator<Item = SegmentId>,
-    ) -> OperationResult<Vec<Arc<RwLock<dyn SegmentEntry>>>> {
+    ) -> OperationResult<Vec<&RwLock<dyn SegmentEntry>>> {
         segment_ids
             .into_iter()
             .map(|segment_id| {
@@ -947,7 +947,7 @@ impl SegmentHolder {
             // Get segment to snapshot
             let segment = match proxy_segment {
                 LockedSegment::Proxy(proxy_segment) => {
-                    proxy_segment.read().wrapped_segment.clone().get()
+                    proxy_segment.read().wrapped_segment.get_cloned()
                 }
                 // All segments to snapshot should be proxy, warn if this is not the case
                 LockedSegment::Original(segment) => {

@@ -49,7 +49,18 @@ impl LockedSegment {
         segment.into()
     }
 
-    pub fn get(&self) -> Arc<RwLock<dyn SegmentEntry>> {
+    /// Get reference to the locked segment
+    pub fn get(&self) -> &RwLock<dyn SegmentEntry> {
+        match self {
+            LockedSegment::Original(segment) => segment.as_ref(),
+            LockedSegment::Proxy(proxy) => proxy.as_ref(),
+        }
+    }
+
+    /// Get cloned Arc to the locked segment
+    ///
+    /// Use [`get()`] if possible.
+    pub fn get_cloned(&self) -> Arc<RwLock<dyn SegmentEntry>> {
         match self {
             LockedSegment::Original(segment) => segment.clone(),
             LockedSegment::Proxy(proxy) => proxy.clone(),
