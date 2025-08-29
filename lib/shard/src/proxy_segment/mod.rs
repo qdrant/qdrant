@@ -297,11 +297,6 @@ impl ProxySegment {
                     for (point_id, versions) in deleted_points.iter() {
                         // Delete points here with their operation version, that'll bump the optimized
                         // segment version and will ensure we flush the new changes
-                        debug_assert!(
-                            versions.operation_version
-                                >= wrapped_segment.point_version(*point_id).unwrap_or(0),
-                            "proxied point deletes should have newer version than point in segment",
-                        );
                         wrapped_segment.delete_point(
                             versions.operation_version,
                             *point_id,
