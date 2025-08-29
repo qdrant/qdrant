@@ -771,7 +771,9 @@ mod tests {
         let quantization_files = quantized_vectors.files();
 
         // test save-load
-        let quantized_vectors = QuantizedVectors::load(&storage, dir.path()).unwrap();
+        let quantized_vectors = QuantizedVectors::load(&config, &storage, dir.path())
+            .unwrap()
+            .unwrap();
         assert_eq!(files, storage.files());
         assert_eq!(quantization_files, quantized_vectors.files());
         let hardware_counter = HardwareCounterCell::new();

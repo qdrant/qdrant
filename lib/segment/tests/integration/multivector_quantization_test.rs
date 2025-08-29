@@ -293,9 +293,13 @@ fn test_multivector_quantization_hnsw(
             .unwrap();
         }
         // test persistence, load quantized vectors
-        let quantized_vectors =
-            QuantizedVectors::load(&vector_storage.vector_storage.borrow(), quantized_data_path)
-                .unwrap();
+        let quantized_vectors = QuantizedVectors::load(
+            &quantization_config,
+            &vector_storage.vector_storage.borrow(),
+            quantized_data_path,
+        )
+        .unwrap()
+        .unwrap();
         vector_storage.quantized_vectors = Arc::new(AtomicRefCell::new(Some(quantized_vectors)));
     });
 
