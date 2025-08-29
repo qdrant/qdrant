@@ -908,9 +908,4 @@ impl SegmentEntry for Segment {
             }
         }
     }
-
-    fn bump_segment_version(&mut self, op_num: SeqNumberType) {
-        self.version
-            .replace(std::cmp::max(op_num, self.version.unwrap_or(0)));
-    }
 }

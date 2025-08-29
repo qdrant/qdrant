@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
@@ -296,6 +297,10 @@ impl Segment {
         }
 
         Ok(applied)
+    }
+
+    fn bump_segment_version(&mut self, op_num: SeqNumberType) {
+        self.version.replace(max(op_num, self.version.unwrap_or(0)));
     }
 
     pub fn get_internal_id(&self, point_id: PointIdType) -> Option<PointOffsetType> {

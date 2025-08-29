@@ -956,11 +956,4 @@ impl SegmentEntry for ProxySegment {
             .read()
             .fill_query_context(query_context)
     }
-
-    fn bump_segment_version(&mut self, op_num: SeqNumberType) {
-        self.write_segment
-            .get()
-            .write()
-            .bump_segment_version(op_num);
-    }
 }
