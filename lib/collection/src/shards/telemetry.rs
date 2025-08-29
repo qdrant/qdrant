@@ -29,7 +29,7 @@ pub struct ReplicaSetTelemetry {
 pub struct RemoteShardTelemetry {
     #[anonymize(false)]
     pub shard_id: ShardId,
-    #[anonymize(value = None)]
+    #[anonymize(false)]
     pub peer_id: Option<PeerId>,
     pub searches: OperationDurationStatistics,
     pub updates: OperationDurationStatistics,
