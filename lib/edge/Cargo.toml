@@ -1,0 +1,18 @@
+[package]
+name = "edge"
+version = "0.1.0"
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2024"
+
+
+[dependencies]
+common = { path = "../common/common" }
+segment = { path = "../segment", default-features = false }
+shard = { path = "../shard" }
+
+parking_lot = { workspace = true }
+thiserror = { workspace = true }

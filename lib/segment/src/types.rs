@@ -3133,22 +3133,28 @@ impl From<bool> for WithPayload {
     }
 }
 
-impl From<&WithPayloadInterface> for WithPayload {
-    fn from(interface: &WithPayloadInterface) -> Self {
+impl From<WithPayloadInterface> for WithPayload {
+    fn from(interface: WithPayloadInterface) -> Self {
         match interface {
-            WithPayloadInterface::Bool(x) => WithPayload {
-                enable: *x,
+            WithPayloadInterface::Bool(enable) => WithPayload {
+                enable,
                 payload_selector: None,
             },
-            WithPayloadInterface::Fields(x) => WithPayload {
+            WithPayloadInterface::Fields(fields) => WithPayload {
                 enable: true,
-                payload_selector: Some(PayloadSelector::new_include(x.clone())),
+                payload_selector: Some(PayloadSelector::new_include(fields)),
             },
-            WithPayloadInterface::Selector(x) => WithPayload {
+            WithPayloadInterface::Selector(selector) => WithPayload {
                 enable: true,
-                payload_selector: Some(x.clone()),
+                payload_selector: Some(selector),
             },
         }
+    }
+}
+
+impl From<&WithPayloadInterface> for WithPayload {
+    fn from(interface: &WithPayloadInterface) -> Self {
+        interface.clone().into()
     }
 }
 
