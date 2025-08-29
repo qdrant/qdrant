@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
@@ -70,6 +70,11 @@ pub struct SegmentHolder {
 
     /// Holds the first uncorrected error happened with optimizer
     pub optimizer_errors: Option<String>,
+
+    /// A special segment version that is usually used to keep track of manually bumped segment versions.
+    /// An example for this are operations that don't modify any points but could be expensive to recover from during WAL recovery.
+    /// To acknowledge them in WAL, we overwrite the max_persisted value in `Self::flush_all` with the segment version stored here.
+    max_persisted_segment_version_overwrite: AtomicU64,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -293,6 +298,14 @@ impl SegmentHolder {
     /// Return non-appendable segment IDs sorted by IDs
     pub fn non_appendable_segments_ids(&self) -> Vec<SegmentId> {
         self.non_appendable_segments.keys().copied().collect()
+    }
+
+    /// Suggests a new maximum persisted segment version when calling `flush_all`. This can be used to make WAL acknowledge no-op operations,
+    /// so we don't replay them on startup. This is especially helpful if the no-op operation is computational expensive and could cause
+    /// WAL replay, and thus Qdrant startup, take a significant amount of time.
+    pub fn suggest_max_persisted_segment_version(&self, op_num: SeqNumberType) {
+        self.max_persisted_segment_version_overwrite
+            .store(op_num, Ordering::Relaxed);
     }
 
     pub fn segment_ids(&self) -> Vec<SegmentId> {
@@ -862,6 +875,17 @@ impl SegmentHolder {
                 SegmentType::Special => proxy_segments.push(read_segment),
             }
         }
+
+        // Overwrite max_persisted_version with our artificial segment version, to acknowledge for some requests, that didn't hit any point in WAL.
+        // See the documentation of `max_persisted_segment_version_overwrite` for more information about this value.
+        let max_persisted_segment_version_overwrite = self
+            .max_persisted_segment_version_overwrite
+            .load(Ordering::Relaxed);
+
+        max_persisted_version = max(
+            max_persisted_version,
+            max_persisted_segment_version_overwrite,
+        );
 
         drop(proxy_segments);
 

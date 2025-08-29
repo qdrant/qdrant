@@ -859,21 +859,6 @@ impl SegmentEntry for Segment {
         self.error_status.clone()
     }
 
-    fn delete_filtered<'a>(
-        &'a mut self,
-        op_num: SeqNumberType,
-        filter: &'a Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        let mut deleted_points = 0;
-        let is_stopped = AtomicBool::new(false);
-        for point_id in self.read_filtered(None, None, Some(filter), &is_stopped, hw_counter) {
-            deleted_points += usize::from(self.delete_point(op_num, point_id, hw_counter)?);
-        }
-
-        Ok(deleted_points)
-    }
-
     fn vector_names(&self) -> HashSet<VectorNameBuf> {
         self.vector_data.keys().cloned().collect()
     }
