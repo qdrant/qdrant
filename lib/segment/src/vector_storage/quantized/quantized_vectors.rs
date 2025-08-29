@@ -25,12 +25,13 @@ use crate::types::{
     ProductQuantization, ProductQuantizationConfig, QuantizationConfig, ScalarQuantization,
     ScalarQuantizationConfig, VectorStorageDatatype,
 };
-use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
-use crate::vector_storage::chunked_vector_storage::ChunkedVectorStorage;
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedMmapStorage;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
 };
-use crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffsetsStorageRam;
+use crate::vector_storage::quantized::quantized_multivector_storage::{
+    MultivectorOffsetsStorageChunkedMmap, MultivectorOffsetsStorageRam,
+};
 use crate::vector_storage::quantized::quantized_query_scorer::{
     InternalScorerUnsupported, QuantizedQueryScorer,
 };
@@ -65,57 +66,54 @@ type ScalarRamMulti = QuantizedMultivectorStorage<
     EncodedVectorsU8<QuantizedRamStorage>,
     MultivectorOffsetsStorageRam,
 >;
-
 type ScalarMmapMulti = QuantizedMultivectorStorage<
     EncodedVectorsU8<QuantizedMmapStorage>,
     MultivectorOffsetsStorageMmap,
 >;
 
 type ScalarChunkedMmapMulti = QuantizedMultivectorStorage<
-    EncodedVectorsU8<ChunkedMmapVectors<u8>>,
-    ChunkedMmapVectors<MultivectorOffset>,
+    EncodedVectorsU8<QuantizedChunkedMmapStorage>,
+    MultivectorOffsetsStorageChunkedMmap,
 >;
 
 type PQRamMulti = QuantizedMultivectorStorage<
     EncodedVectorsPQ<QuantizedRamStorage>,
     MultivectorOffsetsStorageRam,
 >;
-
 type PQMmapMulti = QuantizedMultivectorStorage<
     EncodedVectorsPQ<QuantizedMmapStorage>,
     MultivectorOffsetsStorageMmap,
 >;
 
 type PQChunkedMmapMulti = QuantizedMultivectorStorage<
-    EncodedVectorsPQ<ChunkedMmapVectors<u8>>,
-    ChunkedMmapVectors<MultivectorOffset>,
+    EncodedVectorsPQ<QuantizedChunkedMmapStorage>,
+    MultivectorOffsetsStorageChunkedMmap,
 >;
 
 type BinaryRamMulti = QuantizedMultivectorStorage<
     EncodedVectorsBin<u8, QuantizedRamStorage>,
     MultivectorOffsetsStorageRam,
 >;
-
 type BinaryMmapMulti = QuantizedMultivectorStorage<
     EncodedVectorsBin<u8, QuantizedMmapStorage>,
     MultivectorOffsetsStorageMmap,
 >;
 
 type BinaryChunkedMmapMulti = QuantizedMultivectorStorage<
-    EncodedVectorsBin<u8, ChunkedMmapVectors<u8>>,
-    ChunkedMmapVectors<MultivectorOffset>,
+    EncodedVectorsBin<u8, QuantizedChunkedMmapStorage>,
+    MultivectorOffsetsStorageChunkedMmap,
 >;
 
 pub enum QuantizedVectorStorage {
     ScalarRam(EncodedVectorsU8<QuantizedRamStorage>),
     ScalarMmap(EncodedVectorsU8<QuantizedMmapStorage>),
-    ScalarChunkedMmap(EncodedVectorsU8<ChunkedMmapVectors<u8>>),
+    ScalarChunkedMmap(EncodedVectorsU8<QuantizedChunkedMmapStorage>),
     PQRam(EncodedVectorsPQ<QuantizedRamStorage>),
     PQMmap(EncodedVectorsPQ<QuantizedMmapStorage>),
-    PQChunkedMmap(EncodedVectorsPQ<ChunkedMmapVectors<u8>>),
+    PQChunkedMmap(EncodedVectorsPQ<QuantizedChunkedMmapStorage>),
     BinaryRam(EncodedVectorsBin<u128, QuantizedRamStorage>),
     BinaryMmap(EncodedVectorsBin<u128, QuantizedMmapStorage>),
-    BinaryChunkedMmap(EncodedVectorsBin<u128, ChunkedMmapVectors<u8>>),
+    BinaryChunkedMmap(EncodedVectorsBin<u128, QuantizedChunkedMmapStorage>),
     ScalarRamMulti(ScalarRamMulti),
     ScalarMmapMulti(ScalarMmapMulti),
     ScalarChunkedMmapMulti(ScalarChunkedMmapMulti),
@@ -1471,37 +1469,39 @@ impl QuantizedVectors {
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(_) => {} // not mmap
             QuantizedVectorStorage::ScalarMmap(storage) => storage.storage().populate(),
-            QuantizedVectorStorage::ScalarChunkedMmap(storage) => {
-                ChunkedVectorStorage::populate(storage.storage())?
-            }
+            QuantizedVectorStorage::ScalarChunkedMmap(storage) => storage.storage().populate()?,
             QuantizedVectorStorage::PQRam(_) => {}
             QuantizedVectorStorage::PQMmap(storage) => storage.storage().populate(),
-            QuantizedVectorStorage::PQChunkedMmap(storage) => {
-                ChunkedVectorStorage::populate(storage.storage())?
-            }
+            QuantizedVectorStorage::PQChunkedMmap(storage) => storage.storage().populate()?,
             QuantizedVectorStorage::BinaryRam(_) => {}
             QuantizedVectorStorage::BinaryMmap(storage) => storage.storage().populate(),
-            QuantizedVectorStorage::BinaryChunkedMmap(storage) => {
-                ChunkedVectorStorage::populate(storage.storage())?
-            }
+            QuantizedVectorStorage::BinaryChunkedMmap(storage) => storage.storage().populate()?,
             QuantizedVectorStorage::ScalarRamMulti(_) => {}
             QuantizedVectorStorage::ScalarMmapMulti(storage) => {
-                storage.storage().storage().populate()
+                storage.storage().storage().populate();
+                storage.offsets_storage().populate()?;
             }
             QuantizedVectorStorage::ScalarChunkedMmapMulti(storage) => {
-                ChunkedVectorStorage::populate(storage.storage().storage())?
+                storage.storage().storage().populate()?;
+                storage.offsets_storage().populate()?;
             }
             QuantizedVectorStorage::PQRamMulti(_) => {}
-            QuantizedVectorStorage::PQMmapMulti(storage) => storage.storage().storage().populate(),
+            QuantizedVectorStorage::PQMmapMulti(storage) => {
+                storage.storage().storage().populate();
+                storage.offsets_storage().populate()?;
+            }
             QuantizedVectorStorage::PQChunkedMmapMulti(storage) => {
-                ChunkedVectorStorage::populate(storage.storage().storage())?
+                storage.storage().storage().populate()?;
+                storage.offsets_storage().populate()?;
             }
             QuantizedVectorStorage::BinaryRamMulti(_) => {}
             QuantizedVectorStorage::BinaryMmapMulti(storage) => {
-                storage.storage().storage().populate()
+                storage.storage().storage().populate();
+                storage.offsets_storage().populate()?;
             }
             QuantizedVectorStorage::BinaryChunkedMmapMulti(storage) => {
-                ChunkedVectorStorage::populate(storage.storage().storage())?
+                storage.storage().storage().populate()?;
+                storage.offsets_storage().populate()?;
             }
         }
         Ok(())

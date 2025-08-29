@@ -132,9 +132,7 @@ impl MultivectorOffsetsStorageMmap {
         create_offsets_file_from_iter(path, count, offsets)?;
         MultivectorOffsetsStorageMmap::load(path)
     }
-}
 
-impl MultivectorOffsetsStorageMmap {
     pub fn load(path: &Path) -> OperationResult<Self> {
         let offsets_file = std::fs::OpenOptions::new()
             .read(true)
@@ -146,6 +144,10 @@ impl MultivectorOffsetsStorageMmap {
             offsets,
             path: path.to_path_buf(),
         })
+    }
+
+    pub fn populate(&self) -> std::io::Result<()> {
+        self.offsets.populate()
     }
 }
 
@@ -184,20 +186,30 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
     }
 }
 
-impl MultivectorOffsetsStorage for ChunkedMmapVectors<MultivectorOffset> {
+pub struct MultivectorOffsetsStorageChunkedMmap {
+    data: ChunkedMmapVectors<MultivectorOffset>,
+}
+
+impl MultivectorOffsetsStorageChunkedMmap {
+    pub fn populate(&self) -> OperationResult<()> {
+        self.data.populate()
+    }
+}
+
+impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
-        ChunkedVectorStorage::get(self, idx as VectorOffsetType)
+        ChunkedVectorStorage::get(&self.data, idx as VectorOffsetType)
             .and_then(|offsets| offsets.first())
             .cloned()
             .unwrap_or_default()
     }
 
     fn len(&self) -> usize {
-        ChunkedVectorStorage::len(self)
+        ChunkedVectorStorage::len(&self.data)
     }
 
     fn flusher(&self) -> MmapFlusher {
-        let flusher = ChunkedMmapVectors::flusher(self);
+        let flusher = ChunkedMmapVectors::flusher(&self.data);
         Box::new(move || {
             flusher().map_err(|e| {
                 std::io::Error::other(format!("Failed to flush multivector offsets storage: {e}"))
@@ -212,16 +224,21 @@ impl MultivectorOffsetsStorage for ChunkedMmapVectors<MultivectorOffset> {
         offset: MultivectorOffset,
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        ChunkedVectorStorage::insert(self, id as VectorOffsetType, &[offset], hw_counter)
-            .map_err(std::io::Error::other)
+        ChunkedVectorStorage::insert(
+            &mut self.data,
+            id as VectorOffsetType,
+            &[offset],
+            hw_counter,
+        )
+        .map_err(std::io::Error::other)
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        ChunkedVectorStorage::files(self)
+        ChunkedVectorStorage::files(&self.data)
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        ChunkedVectorStorage::immutable_files(self)
+        ChunkedVectorStorage::immutable_files(&self.data)
     }
 }
 
@@ -244,6 +261,10 @@ where
 {
     pub fn storage(&self) -> &QuantizedStorage {
         &self.quantized_storage
+    }
+
+    pub fn offsets_storage(&self) -> &TMultivectorOffsetsStorage {
+        &self.offsets
     }
 
     pub fn new(
