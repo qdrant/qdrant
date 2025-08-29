@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
@@ -18,7 +18,6 @@ use common::tar_ext;
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
-use segment::common::atomic_option::AtomicOptionU64;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SnapshotManifest;
 use segment::data_types::named_vectors::NamedVectors;
@@ -75,7 +74,7 @@ pub struct SegmentHolder {
     /// A special segment version that is usually used to keep track of manually bumped segment versions.
     /// An example for this are operations that don't modify any points but could be expensive to recover from during WAL recovery.
     /// To acknowledge them in WAL, we overwrite the max_persisted value in `Self::flush_all` with the segment version stored here.
-    max_persisted_segment_version_overwrite: AtomicOptionU64,
+    max_persisted_segment_version_overwrite: AtomicU64,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -304,7 +303,7 @@ impl SegmentHolder {
     /// Bumps the version of a random appendable segment.
     pub fn bump_version_of_random_appendable(&self, op_num: SeqNumberType) {
         self.max_persisted_segment_version_overwrite
-            .store(Some(op_num), Ordering::Relaxed);
+            .store(op_num, Ordering::Relaxed);
     }
 
     pub fn segment_ids(&self) -> Vec<SegmentId> {
@@ -877,15 +876,14 @@ impl SegmentHolder {
 
         // Overwrite max_persisted_version with our artificial segment version, to acknowledge for some requests, that didn't hit any point in WAL.
         // See the documentation of `max_persisted_segment_version_overwrite` for more information about this value.
-        if let Some(max_persisted_segment_version_overwrite) = self
+        let max_persisted_segment_version_overwrite = self
             .max_persisted_segment_version_overwrite
-            .load(Ordering::Relaxed)
-        {
-            max_persisted_version = max(
-                max_persisted_version,
-                max_persisted_segment_version_overwrite,
-            );
-        }
+            .load(Ordering::Relaxed);
+
+        max_persisted_version = max(
+            max_persisted_version,
+            max_persisted_segment_version_overwrite,
+        );
 
         drop(proxy_segments);
 
