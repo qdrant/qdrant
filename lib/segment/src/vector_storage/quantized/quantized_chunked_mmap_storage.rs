@@ -88,13 +88,13 @@ impl QuantizedChunkedMmapStorageBuilder {
 }
 
 impl quantization::EncodedStorageBuilder for QuantizedChunkedMmapStorageBuilder {
-    type Storage = ChunkedMmapVectors<u8>;
+    type Storage = QuantizedChunkedMmapStorage;
 
-    fn build(self) -> std::io::Result<ChunkedMmapVectors<u8>> {
+    fn build(self) -> std::io::Result<QuantizedChunkedMmapStorage> {
         self.data.flusher()().map_err(|e| {
             std::io::Error::other(format!("Failed to flush quantization storage: {e}"))
         })?;
-        Ok(self.data)
+        Ok(QuantizedChunkedMmapStorage { data: self.data })
     }
 
     fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
