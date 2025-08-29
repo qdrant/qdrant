@@ -13,6 +13,7 @@ use segment::data_types::index::{
     BoolIndexType, DatetimeIndexType, FloatIndexType, GeoIndexType, IntegerIndexType,
     KeywordIndexType, SnowballLanguage, TextIndexType, UuidIndexType,
 };
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedMultiDenseVector, VectorInternal};
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
@@ -29,7 +30,7 @@ use super::qdrant::{
     FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
     KeywordIndexParams, LookupLocation, MaxOptimizationThreads, MultiVectorComparator,
     MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
-    SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
+    SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, StartFrom,
     StrictModeMultivector, StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig,
     UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
@@ -2470,30 +2471,43 @@ pub fn from_grpc_dist(dist: i32) -> Result<segment::types::Distance, Status> {
 
 pub fn into_named_vector_struct(
     vector_name: Option<String>,
-    vector: segment_vectors::DenseVector,
-    indices: Option<SparseIndices>,
+    vector_internal: VectorInternal,
 ) -> Result<segment_vectors::NamedVectorStruct, Status> {
     use segment_vectors::{NamedSparseVector, NamedVector, NamedVectorStruct};
     use sparse::common::sparse_vector::SparseVector;
-    Ok(match indices {
-        Some(indices) => NamedVectorStruct::Sparse(NamedSparseVector {
-            name: vector_name
-                .ok_or_else(|| Status::invalid_argument("Sparse vector must have a name"))?,
-            vector: SparseVector::new(indices.data, vector).map_err(|e| {
-                Status::invalid_argument(format!(
-                    "Sparse indices does not match sparse vector conditions: {e}"
-                ))
-            })?,
-        }),
-        None => {
-            if let Some(vector_name) = vector_name {
-                NamedVectorStruct::Dense(NamedVector {
-                    name: vector_name,
-                    vector,
-                })
+
+    Ok(match vector_internal {
+        VectorInternal::Dense(vector) => {
+            if let Some(name) = vector_name {
+                NamedVectorStruct::Dense(NamedVector { name, vector })
             } else {
                 NamedVectorStruct::Default(vector)
             }
+        }
+        VectorInternal::Sparse(sparse) => {
+            if let Some(name) = vector_name {
+                let sparse_vector =
+                    SparseVector::new(sparse.indices, sparse.values).map_err(|e| {
+                        Status::invalid_argument(format!(
+                            "Sparse indices does not match sparse vector conditions: {e}"
+                        ))
+                    })?;
+                NamedVectorStruct::Sparse(NamedSparseVector {
+                    name,
+                    vector: sparse_vector,
+                })
+            } else {
+                return Err(Status::invalid_argument(
+                    "Sparse vector must have a name specified",
+                ));
+            }
+        }
+        VectorInternal::MultiDense(multi_vector) => {
+            let vector_name = vector_name.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string());
+            NamedVectorStruct::MultiDense(NamedMultiDenseVector {
+                name: vector_name,
+                vector: multi_vector,
+            })
         }
     })
 }
@@ -2638,12 +2652,12 @@ impl TryFrom<RecoQuery> for segment_query::RecoQuery<segment_vectors::VectorInte
             positives: request
                 .positives
                 .into_iter()
-                .map(TryFrom::try_from)
+                .map(segment_vectors::VectorInternal::try_from)
                 .collect::<Result<_, _>>()?,
             negatives: request
                 .negatives
                 .into_iter()
-                .map(TryFrom::try_from)
+                .map(segment_vectors::VectorInternal::try_from)
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -2761,7 +2775,11 @@ impl TryFrom<SearchPoints> for rest::SearchRequestInternal {
             shard_key_selector: _,
             sparse_indices,
         } = value;
-        let named_struct = into_named_vector_struct(vector_name, vector, sparse_indices)?;
+
+        let vector_internal =
+            VectorInternal::from_vector_and_indices(vector, sparse_indices.map(|v| v.data));
+
+        let named_struct = into_named_vector_struct(vector_name, vector_internal)?;
         let vector = match named_struct {
             segment_vectors::NamedVectorStruct::Default(v) => rest::NamedVectorStruct::Default(v),
             segment_vectors::NamedVectorStruct::Dense(v) => rest::NamedVectorStruct::Dense(v),
