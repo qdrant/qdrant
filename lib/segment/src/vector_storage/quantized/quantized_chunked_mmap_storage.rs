@@ -91,10 +91,16 @@ impl quantization::EncodedStorageBuilder for QuantizedChunkedMmapStorageBuilder 
     type Storage = QuantizedChunkedMmapStorage;
 
     fn build(self) -> std::io::Result<QuantizedChunkedMmapStorage> {
-        self.data.flusher()().map_err(|e| {
+        let Self {
+            data,
+            hw_counter: _,
+        } = self;
+
+        data.flusher()().map_err(|e| {
             std::io::Error::other(format!("Failed to flush quantization storage: {e}"))
         })?;
-        Ok(QuantizedChunkedMmapStorage { data: self.data })
+
+        Ok(QuantizedChunkedMmapStorage { data })
     }
 
     fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
