@@ -6,14 +6,15 @@ use std::arch::x86_64::*;
 use std::iter::repeat_with;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::True;
 use common::types::PointOffsetType;
 use io::file_operations::atomic_save_json;
 use memory::mmap_type::MmapFlusher;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
@@ -202,8 +203,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
                     max_threads,
                     stopped,
                 )
-            });
-        Ok(())
+            })
     }
 
     /// Encode whole storage inside rayon context
@@ -216,7 +216,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         centroids: &'b [Vec<f32>],
         max_threads: usize,
         stopped: &'b AtomicBool,
-    ) {
+    ) -> Result<(), EncodingError> {
         let storage_builder = Arc::new(Mutex::new(storage_builder));
 
         // Synchronization between threads. Use conditional variable for
@@ -228,12 +228,14 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
             repeat_with(Default::default).take(max_threads).collect();
         condvars[0].notify(); // Allow first thread to use storage
 
+        let error = Arc::new(Mutex::new(None));
         for thread_index in 0..max_threads {
             // Thread process vectors `N` that `(N + thread_index) % max_threads == 0`.
             let data = data.clone().skip(thread_index);
             let storage_builder = storage_builder.clone();
             let condvar = condvars[thread_index].clone();
             let next_condvar = condvars[(thread_index + 1) % max_threads].clone();
+            let error = error.clone();
 
             scope.spawn(move |_| {
                 let mut encoded_vector = Vec::with_capacity(vector_division.len());
@@ -251,10 +253,19 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
                     // wait for permission from prev thread to use storage
                     let is_disconnected = condvar.wait();
                     // push encoded vector to storage
-                    storage_builder
-                        .lock()
-                        .unwrap()
-                        .push_vector_data(&encoded_vector);
+                    let insert_result = storage_builder.lock().push_vector_data(&encoded_vector);
+
+                    // Check for errors
+                    if let Err(e) = insert_result {
+                        let mut error = error.lock();
+                        *error = Some(EncodingError::EncodingError(format!(
+                            "Failed to push encoded vector: {e}",
+                        )));
+                        // Notify next thread to allow them to exit
+                        next_condvar.notify();
+                        return;
+                    }
+
                     // Notify next thread to use storage
                     next_condvar.notify();
                     if is_disconnected {
@@ -265,6 +276,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         }
         // free condvars to allow threads to exit when panicking
         condvars.clear();
+
+        if let Some(error) = error.lock().take() {
+            Err(error)
+        } else {
+            Ok(())
+        }
     }
 
     /// Encode single vector from `&[f32]` into `&[u8]`.

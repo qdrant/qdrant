@@ -148,7 +148,11 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             };
             encoded_vector[0..std::mem::size_of::<f32>()]
                 .copy_from_slice(&vector_offset.to_ne_bytes());
-            storage_builder.push_vector_data(&encoded_vector);
+            storage_builder
+                .push_vector_data(&encoded_vector)
+                .map_err(|e| {
+                    EncodingError::EncodingError(format!("Failed to push encoded vector: {e}",))
+                })?;
         }
         let multiplier = match vector_parameters.distance_type {
             DistanceType::Dot => alpha * alpha,
