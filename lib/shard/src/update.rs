@@ -3,7 +3,6 @@
 use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
-use api::grpc::PointsUpdateOperation;
 use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -857,5 +856,70 @@ fn check_unprocessed_points(
     match first_missed_point {
         None => Ok(processed.len()),
         Some(missed_point_id) => Err(OperationError::PointIdError { missed_point_id }),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use parking_lot::RwLock;
+    use segment::types::{Condition, FieldCondition, Filter, Match, MatchValue, ValueVariants};
+    use tempfile::Builder;
+
+    use crate::fixtures::{build_segment_1, build_segment_2};
+    use crate::segment_holder::SegmentHolder;
+    use crate::update::delete_points_by_filter;
+
+    #[test]
+    fn test_delete_by_filter_version_bump() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let segment1 = build_segment_1(dir.path());
+        let segment2 = build_segment_2(dir.path());
+
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut holder = SegmentHolder::default();
+
+        let _sid1 = holder.add_new(segment1);
+        let _sid2 = holder.add_new(segment2);
+
+        const DELETE_OP_NUM: u64 = 16;
+
+        assert!(
+            holder
+                .iter()
+                .all(|i| i.1.get().read().version() < DELETE_OP_NUM)
+        );
+
+        let old_version = holder
+            .flush_all(true, false)
+            .expect("Failed to flush test segment holder");
+
+        let segments = Arc::new(RwLock::new(holder));
+
+        // A filter that matches no points.
+        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            "color".parse().unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::String("white".to_string()),
+            }),
+        )));
+
+        let deleted_count =
+            delete_points_by_filter(&segments.read(), DELETE_OP_NUM, &filter, &hw_counter).unwrap();
+        assert_eq!(deleted_count, 0);
+
+        let new_version = segments
+            .read()
+            .flush_all(true, false)
+            .expect("Failed to flush test segment holder");
+
+        // Flushing again inrceases by 1 and is now equal to `DELETE_OP_NUM` as we want to acknowledge the empty
+        // delete operation in WAL.
+        assert_eq!(old_version + 1, new_version);
+        assert_eq!(new_version, DELETE_OP_NUM);
     }
 }
