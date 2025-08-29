@@ -568,7 +568,15 @@ pub fn delete_vectors_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    delete_vectors(segments, op_num, &affected_points, vector_names)
+    let vectors_deleted = delete_vectors(segments, op_num, &affected_points, vector_names)?;
+
+    if vectors_deleted == 0 {
+        // In case we didn't hit any points, we bump the segments version to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_version_of_random_appendable(op_num);
+    }
+
+    Ok(vectors_deleted)
 }
 
 /// Batch size when modifying payload
@@ -617,7 +625,15 @@ pub fn set_payload_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    set_payload(segments, op_num, payload, &affected_points, key, hw_counter)
+    let points_updated = set_payload(segments, op_num, payload, &affected_points, key, hw_counter)?;
+
+    if points_updated == 0 {
+        // In case we didn't hit any points, we bump the segments version to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_version_of_random_appendable(op_num);
+    }
+
+    Ok(points_updated)
 }
 
 pub fn delete_payload(
@@ -713,7 +729,15 @@ pub fn clear_payload_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let points_to_clear = points_by_filter(segments, filter, hw_counter)?;
-    clear_payload(segments, op_num, &points_to_clear, hw_counter)
+    let points_cleared = clear_payload(segments, op_num, &points_to_clear, hw_counter)?;
+
+    if points_cleared == 0 {
+        // In case we didn't hit any points, we bump the segments version to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_version_of_random_appendable(op_num);
+    }
+
+    Ok(points_cleared)
 }
 
 pub fn overwrite_payload(
