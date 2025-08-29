@@ -1,4 +1,5 @@
 pub mod anonymize;
+pub mod atomic_option;
 pub mod error_logging;
 pub mod flags;
 pub mod macros;

@@ -18,6 +18,7 @@ use common::tar_ext;
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
+use segment::common::atomic_option::AtomicOptionU64;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SnapshotManifest;
 use segment::data_types::named_vectors::NamedVectors;
@@ -70,6 +71,11 @@ pub struct SegmentHolder {
 
     /// Holds the first uncorrected error happened with optimizer
     pub optimizer_errors: Option<String>,
+
+    /// A special segment version that is usually used to keep track of manually bumped segment versions.
+    /// An example for this are operations that don't modify any points but could be expensive to recover from during WAL recovery.
+    /// To acknowledge them in WAL, we overwrite the max_persisted value in `Self::flush_all` with the segment version stored here.
+    max_persisted_segment_version_overwrite: AtomicOptionU64,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -297,11 +303,8 @@ impl SegmentHolder {
 
     /// Bumps the version of a random appendable segment.
     pub fn bump_version_of_random_appendable(&self, op_num: SeqNumberType) {
-        self.aloha_random_write(&self.appendable_segments_ids(), |_, segment| {
-            segment.bump_segment_version(op_num);
-            Ok(true)
-        })
-        .expect("Failed to bump segment version.");
+        self.max_persisted_segment_version_overwrite
+            .store(Some(op_num), Ordering::Relaxed);
     }
 
     pub fn segment_ids(&self) -> Vec<SegmentId> {
@@ -870,6 +873,13 @@ impl SegmentHolder {
                 // Prevent new updates from changing write segment on yet-to-be-flushed proxies
                 SegmentType::Special => proxy_segments.push(read_segment),
             }
+        }
+
+        if let Some(art_seg_version) = self
+            .max_persisted_segment_version_overwrite
+            .load(Ordering::Relaxed)
+        {
+            max_persisted_version = max(max_persisted_version, art_seg_version);
         }
 
         drop(proxy_segments);
