@@ -264,9 +264,9 @@ pub fn conditional_upsert(
     let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter)?;
 
     if upserted_points == 0 {
-        // In case we didn't hit any points, we bump the segments version to make WAL acknowledge this operation.
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.bump_version_of_random_appendable(op_num);
+        segments.suggest_max_persisted_segment_version(op_num);
     }
 
     Ok(upserted_points)
@@ -372,9 +372,9 @@ pub fn delete_points_by_filter(
     })?;
 
     if total_deleted == 0 {
-        // In case we didn't hit any points, we bump the segments version to make WAL acknowledge this operation.
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.bump_version_of_random_appendable(op_num);
+        segments.suggest_max_persisted_segment_version(op_num);
     }
 
     Ok(total_deleted)
@@ -571,9 +571,9 @@ pub fn delete_vectors_by_filter(
     let vectors_deleted = delete_vectors(segments, op_num, &affected_points, vector_names)?;
 
     if vectors_deleted == 0 {
-        // In case we didn't hit any points, we bump the segments version to make WAL acknowledge this operation.
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.bump_version_of_random_appendable(op_num);
+        segments.suggest_max_persisted_segment_version(op_num);
     }
 
     Ok(vectors_deleted)
@@ -628,9 +628,9 @@ pub fn set_payload_by_filter(
     let points_updated = set_payload(segments, op_num, payload, &affected_points, key, hw_counter)?;
 
     if points_updated == 0 {
-        // In case we didn't hit any points, we bump the segments version to make WAL acknowledge this operation.
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.bump_version_of_random_appendable(op_num);
+        segments.suggest_max_persisted_segment_version(op_num);
     }
 
     Ok(points_updated)
@@ -689,9 +689,9 @@ pub fn delete_payload_by_filter(
     let points_updated = delete_payload(segments, op_num, &affected_points, keys, hw_counter)?;
 
     if points_updated == 0 {
-        // In case we didn't hit any points, we bump the segments version to make WAL acknowledge this operation.
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.bump_version_of_random_appendable(op_num);
+        segments.suggest_max_persisted_segment_version(op_num);
     }
 
     Ok(points_updated)
@@ -732,9 +732,9 @@ pub fn clear_payload_by_filter(
     let points_cleared = clear_payload(segments, op_num, &points_to_clear, hw_counter)?;
 
     if points_cleared == 0 {
-        // In case we didn't hit any points, we bump the segments version to make WAL acknowledge this operation.
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.bump_version_of_random_appendable(op_num);
+        segments.suggest_max_persisted_segment_version(op_num);
     }
 
     Ok(points_cleared)
@@ -780,9 +780,9 @@ pub fn overwrite_payload_by_filter(
         overwrite_payload(segments, op_num, payload, &affected_points, hw_counter)?;
 
     if points_updated == 0 {
-        // In case we didn't hit any points, we bump the segments version to make WAL acknowledge this operation.
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.bump_version_of_random_appendable(op_num);
+        segments.suggest_max_persisted_segment_version(op_num);
     }
 
     Ok(points_updated)

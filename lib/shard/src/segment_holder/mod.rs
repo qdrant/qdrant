@@ -300,8 +300,10 @@ impl SegmentHolder {
         self.non_appendable_segments.keys().copied().collect()
     }
 
-    /// Bumps the version of a random appendable segment.
-    pub fn bump_version_of_random_appendable(&self, op_num: SeqNumberType) {
+    /// Suggests a new maximum persisted segment version when calling `flush_all`. This can be used to make WAL acknowledge no-op operations,
+    /// so we don't replay them on startup. This is especially helpful if the no-op operation is computational expensive and could cause
+    /// WAL replay, and thus Qdrant startup, take a significant amount of time.
+    pub fn suggest_max_persisted_segment_version(&self, op_num: SeqNumberType) {
         self.max_persisted_segment_version_overwrite
             .store(op_num, Ordering::Relaxed);
     }
