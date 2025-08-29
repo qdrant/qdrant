@@ -20,7 +20,8 @@ pub fn is_quantized_search(
         .and_then(|p| p.quantization)
         .map(|q| q.ignore)
         .unwrap_or(default_quantization_ignore_value());
-    quantized_storage.is_some() && !ignore_quantization
+    let exact = params.map(|p| p.exact).unwrap_or(false);
+    quantized_storage.is_some() && !ignore_quantization && !exact
 }
 
 pub fn get_oversampled_top(
