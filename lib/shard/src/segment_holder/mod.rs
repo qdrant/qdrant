@@ -939,6 +939,9 @@ impl SegmentHolder {
             payload_index_schema,
         )?;
 
+        // Release proxies in reverse order
+        proxies.reverse();
+
         // Apply provided function
         log::trace!("Applying function on all proxied shard segments");
         let mut result = Ok(());
