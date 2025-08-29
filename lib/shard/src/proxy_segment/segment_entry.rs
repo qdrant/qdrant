@@ -368,7 +368,10 @@ impl SegmentEntry for ProxySegment {
             .chain(config.sparse_vector_data.keys())
             .cloned()
             .collect();
+
+        // Must drop wrapped guard to prevent self-deadlock in `vector()` function below
         drop(wrapped_guard);
+
         for vector_name in vector_names {
             if let Some(vector) = self.vector(&vector_name, point_id, hw_counter)? {
                 result.insert(vector_name, vector);
