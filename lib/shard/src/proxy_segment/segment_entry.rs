@@ -359,28 +359,22 @@ impl SegmentEntry for ProxySegment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<NamedVectors<'_>> {
         let mut result = NamedVectors::default();
-        for vector_name in self
-            .wrapped_segment
-            .get()
-            .read()
-            .config()
+        let wrapped = self.wrapped_segment.get();
+        let wrapped_guard = wrapped.read();
+        let config = wrapped_guard.config();
+        let vector_names: Vec<_> = config
             .vector_data
             .keys()
-        {
-            if let Some(vector) = self.vector(vector_name, point_id, hw_counter)? {
-                result.insert(vector_name.clone(), vector);
-            }
-        }
-        for vector_name in self
-            .wrapped_segment
-            .get()
-            .read()
-            .config()
-            .sparse_vector_data
-            .keys()
-        {
-            if let Some(vector) = self.vector(vector_name, point_id, hw_counter)? {
-                result.insert(vector_name.clone(), vector);
+            .chain(config.sparse_vector_data.keys())
+            .cloned()
+            .collect();
+
+        // Must drop wrapped guard to prevent self-deadlock in `vector()` function below
+        drop(wrapped_guard);
+
+        for vector_name in vector_names {
+            if let Some(vector) = self.vector(&vector_name, point_id, hw_counter)? {
+                result.insert(vector_name, vector);
             }
         }
         Ok(result)
