@@ -815,12 +815,13 @@ mod tests {
                 );
 
                 storage.put_value(0, &payload, hw_counter_ref).unwrap();
+
                 assert_eq!(storage.pages.len(), 1);
                 assert_eq!(storage.tracker.read().mapping_len(), 1);
 
-                let page_mapping = storage.get_pointer(0).unwrap();
-                assert_eq!(page_mapping.page_id, 0); // first page
-                assert_eq!(page_mapping.block_offset, expected_block_offset);
+                let pointer = storage.get_pointer(0).unwrap();
+                assert_eq!(pointer.page_id, 0); // first page
+                assert_eq!(pointer.block_offset, expected_block_offset);
 
                 let hw_counter = HardwareCounterCell::new();
                 let stored_payload = storage.get_value(0, &hw_counter);
