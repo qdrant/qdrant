@@ -947,7 +947,7 @@ impl SegmentHolder {
             // Get segment to snapshot
             let segment = match proxy_segment {
                 LockedSegment::Proxy(proxy_segment) => {
-                    proxy_segment.read().wrapped_segment.clone().get_cloned()
+                    proxy_segment.read().wrapped_segment.get_cloned()
                 }
                 // All segments to snapshot should be proxy, warn if this is not the case
                 LockedSegment::Original(segment) => {
