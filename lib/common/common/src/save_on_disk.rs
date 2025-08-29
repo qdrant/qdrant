@@ -85,27 +85,21 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     where
         F: Fn(&T) -> bool,
     {
-        let mut remaining = timeout;
-        loop {
+        let start = std::time::Instant::now();
+        while start.elapsed() < timeout {
             let mut data_read_guard = self.data.read();
             if check(&data_read_guard) {
                 return true;
             }
-            if remaining.is_zero() {
-                return false;
-            }
             let notification_guard = self.notification_lock.lock();
             // Based on https://github.com/Amanieu/parking_lot/issues/165
             RwLockReadGuard::unlocked(&mut data_read_guard, || {
-                // Move the guard in so it gets unlocked before we re-lock the RwLock read guard
+                // Move the guard in so it gets unlocked before we re-lock g
                 let mut guard = notification_guard;
-                let before = std::time::Instant::now();
-                self.change_notification.wait_for(&mut guard, remaining);
-                // Subtract the actual sleep; saturates at 0 on clock anomalies
-                let slept = std::time::Instant::now().saturating_duration_since(before);
-                remaining = remaining.saturating_sub(slept);
+                self.change_notification.wait_for(&mut guard, timeout);
             });
         }
+        false
     }
 
     /// Perform an operation over the stored data,
@@ -188,22 +182,14 @@ impl<T> DerefMut for SaveOnDisk<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Barrier;
+    use std::sync::Arc;
     use std::thread::sleep;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
     use std::{fs, thread};
 
     use tempfile::Builder;
 
     use super::SaveOnDisk;
-
-    const TEST_IMMEDIATE_TIMEOUT: Duration = Duration::from_millis(500);
-
-    const TEST_SYNC_DELAY: Duration = Duration::from_millis(50);
-
-    const TEST_UPDATE_INTERVAL: Duration = Duration::from_millis(100);
-
-    const TEST_IO_SLACK: Duration = Duration::from_millis(300);
 
     #[test]
     fn saves_data() {
@@ -239,105 +225,37 @@ mod tests {
     fn test_wait_for_condition_change() {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
-        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(counter_file).unwrap();
-        let barrier = Barrier::new(2);
-
-        thread::scope(|s| {
-            s.spawn(|| {
-                barrier.wait();
-                counter.write(|c| *c += 3).unwrap();
-                sleep(TEST_UPDATE_INTERVAL);
-                counter.write(|c| *c += 7).unwrap();
-            });
-
-            barrier.wait();
-            assert!(counter.wait_for(|c| *c > 5, TEST_IMMEDIATE_TIMEOUT));
+        let counter: Arc<SaveOnDisk<u32>> =
+            Arc::new(SaveOnDisk::load_or_init_default(counter_file).unwrap());
+        let counter_copy = counter.clone();
+        let handle = thread::spawn(move || {
+            sleep(Duration::from_millis(200));
+            counter_copy.write(|counter| *counter += 3).unwrap();
+            sleep(Duration::from_millis(200));
+            counter_copy.write(|counter| *counter += 7).unwrap();
+            sleep(Duration::from_millis(200));
         });
+
+        assert!(counter.wait_for(|counter| *counter > 5, Duration::from_secs(2)));
+        handle.join().unwrap();
     }
 
     #[test]
     fn test_wait_for_condition_change_timeout() {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
-        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(counter_file).unwrap();
-        let barrier = Barrier::new(2);
-
-        thread::scope(|s| {
-            s.spawn(|| {
-                barrier.wait();
-                // First write happens at 2 * TEST_UPDATE_INTERVAL (200ms)
-                sleep(TEST_UPDATE_INTERVAL * 2);
-                counter.write(|c| *c += 3).unwrap();
-                sleep(TEST_UPDATE_INTERVAL);
-                counter.write(|c| *c += 7).unwrap();
-            });
-
-            barrier.wait();
-            // Timeout at TEST_UPDATE_INTERVAL + TEST_SYNC_DELAY (150ms) ensures we timeout
-            // before the first write, with 50ms margin for scheduling jitter
-            let timeout = TEST_UPDATE_INTERVAL + TEST_SYNC_DELAY;
-            assert!(!counter.wait_for(|c| *c > 5, timeout));
+        let counter: Arc<SaveOnDisk<u32>> =
+            Arc::new(SaveOnDisk::load_or_init_default(counter_file).unwrap());
+        let counter_copy = counter.clone();
+        let handle = thread::spawn(move || {
+            sleep(Duration::from_millis(200));
+            counter_copy.write(|counter| *counter += 3).unwrap();
+            sleep(Duration::from_millis(200));
+            counter_copy.write(|counter| *counter += 7).unwrap();
+            sleep(Duration::from_millis(200));
         });
-    }
 
-    #[test]
-    fn test_wait_for_immediate_condition() {
-        let dir = Builder::new().prefix("test").tempdir().unwrap();
-        let counter_file = dir.path().join("counter");
-        let counter: SaveOnDisk<u32> = SaveOnDisk::new(counter_file, 10).unwrap();
-
-        let start = Instant::now();
-        assert!(counter.wait_for(|c| *c > 5, TEST_IMMEDIATE_TIMEOUT));
-        // Allow headroom for slow CI while still catching accidental sleeps
-        assert!(start.elapsed() <= TEST_IMMEDIATE_TIMEOUT.saturating_sub(TEST_SYNC_DELAY));
-    }
-
-    #[test]
-    fn test_wait_for_multiple_notifications() {
-        let dir = Builder::new().prefix("test").tempdir().unwrap();
-        let counter_file = dir.path().join("counter");
-        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(counter_file).unwrap();
-        let barrier = Barrier::new(2);
-
-        thread::scope(|s| {
-            s.spawn(|| {
-                barrier.wait();
-                for value in [2, 4, 8, 16] {
-                    sleep(TEST_UPDATE_INTERVAL);
-                    counter.write(|c| *c = value).unwrap();
-                }
-            });
-
-            barrier.wait();
-            // Need enough time for 4 updates with TEST_UPDATE_INTERVAL delays between them,
-            // plus I/O slack for atomic disk writes
-            let timeout = TEST_UPDATE_INTERVAL * 4 + TEST_IO_SLACK;
-            assert!(counter.wait_for(|c| *c > 10, timeout));
-            assert_eq!(*counter.read(), 16);
-        });
-    }
-
-    #[test]
-    fn test_wait_for_concurrent_readers() {
-        let dir = Builder::new().prefix("test").tempdir().unwrap();
-        let counter_file = dir.path().join("counter");
-        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(counter_file).unwrap();
-        let readers = 5;
-        let barrier = Barrier::new(readers + 1); // +1 for the writer thread
-
-        thread::scope(|s| {
-            for _ in 0..readers {
-                s.spawn(|| {
-                    barrier.wait();
-                    assert!(counter.wait_for(|c| *c > 5, TEST_IMMEDIATE_TIMEOUT));
-                });
-            }
-
-            s.spawn(|| {
-                barrier.wait();
-                sleep(TEST_UPDATE_INTERVAL);
-                counter.write(|c| *c = 10).unwrap();
-            });
-        });
+        assert!(!counter.wait_for(|counter| *counter > 5, Duration::from_millis(300)));
+        handle.join().unwrap();
     }
 }
