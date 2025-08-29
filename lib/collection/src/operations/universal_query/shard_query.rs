@@ -297,55 +297,53 @@ impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
     }
 }
 
-impl QueryEnum {
-    fn try_from_grpc_raw_query(
-        raw_query: grpc::RawQuery,
-        using: Option<VectorNameBuf>,
-    ) -> Result<Self, Status> {
-        use grpc::raw_query::Variant;
+fn query_enum_from_grpc_raw_query(
+    raw_query: grpc::RawQuery,
+    using: Option<VectorNameBuf>,
+) -> Result<QueryEnum, Status> {
+    use grpc::raw_query::Variant;
 
-        let variant = raw_query
-            .variant
-            .ok_or_else(|| Status::invalid_argument("missing field: variant"))?;
+    let variant = raw_query
+        .variant
+        .ok_or_else(|| Status::invalid_argument("missing field: variant"))?;
 
-        let query_enum = match variant {
-            Variant::Nearest(nearest) => {
-                let vector = VectorInternal::try_from(nearest)?;
-                let name = match (using, &vector) {
-                    (None, VectorInternal::Sparse(_)) => {
-                        return Err(Status::invalid_argument("Sparse vector must have a name"));
-                    }
-                    (
-                        Some(name),
-                        VectorInternal::MultiDense(_)
-                        | VectorInternal::Sparse(_)
-                        | VectorInternal::Dense(_),
-                    ) => name,
-                    (None, VectorInternal::MultiDense(_) | VectorInternal::Dense(_)) => {
-                        DEFAULT_VECTOR_NAME.to_owned()
-                    }
-                };
-                let named_vector = NamedQuery::new_from_vector(vector, name);
-                QueryEnum::Nearest(named_vector)
-            }
-            Variant::RecommendBestScore(recommend) => QueryEnum::RecommendBestScore(
-                NamedQuery::new(RecoQuery::try_from(recommend)?, using),
-            ),
-            Variant::RecommendSumScores(recommend) => QueryEnum::RecommendSumScores(
-                NamedQuery::new(RecoQuery::try_from(recommend)?, using),
-            ),
-            Variant::Discover(discovery) => QueryEnum::Discover(NamedQuery {
-                query: DiscoveryQuery::try_from(discovery)?,
-                using,
-            }),
-            Variant::Context(context) => QueryEnum::Context(NamedQuery {
-                query: ContextQuery::try_from(context)?,
-                using,
-            }),
-        };
+    let query_enum = match variant {
+        Variant::Nearest(nearest) => {
+            let vector = VectorInternal::try_from(nearest)?;
+            let name = match (using, &vector) {
+                (None, VectorInternal::Sparse(_)) => {
+                    return Err(Status::invalid_argument("Sparse vector must have a name"));
+                }
+                (
+                    Some(name),
+                    VectorInternal::MultiDense(_)
+                    | VectorInternal::Sparse(_)
+                    | VectorInternal::Dense(_),
+                ) => name,
+                (None, VectorInternal::MultiDense(_) | VectorInternal::Dense(_)) => {
+                    DEFAULT_VECTOR_NAME.to_owned()
+                }
+            };
+            let named_vector = NamedQuery::new_from_vector(vector, name);
+            QueryEnum::Nearest(named_vector)
+        }
+        Variant::RecommendBestScore(recommend) => {
+            QueryEnum::RecommendBestScore(NamedQuery::new(RecoQuery::try_from(recommend)?, using))
+        }
+        Variant::RecommendSumScores(recommend) => {
+            QueryEnum::RecommendSumScores(NamedQuery::new(RecoQuery::try_from(recommend)?, using))
+        }
+        Variant::Discover(discovery) => QueryEnum::Discover(NamedQuery {
+            query: DiscoveryQuery::try_from(discovery)?,
+            using,
+        }),
+        Variant::Context(context) => QueryEnum::Context(NamedQuery {
+            query: ContextQuery::try_from(context)?,
+            using,
+        }),
+    };
 
-        Ok(query_enum)
-    }
+    Ok(query_enum)
 }
 
 impl TryFrom<i32> for FusionInternal {
@@ -620,7 +618,7 @@ impl ScoringQuery {
             .ok_or_else(|| Status::invalid_argument("missing field: score"))?;
         let scoring_query = match score {
             grpc::query_shard_points::query::Score::Vector(query) => {
-                ScoringQuery::Vector(QueryEnum::try_from_grpc_raw_query(query, using)?)
+                ScoringQuery::Vector(query_enum_from_grpc_raw_query(query, using)?)
             }
             grpc::query_shard_points::query::Score::Fusion(fusion) => {
                 ScoringQuery::Fusion(FusionInternal::try_from(fusion)?)
@@ -660,29 +658,25 @@ impl ScoringQuery {
     }
 }
 
-impl From<QueryEnum> for grpc::RawQuery {
-    fn from(value: QueryEnum) -> Self {
-        use api::grpc::qdrant::raw_query::Variant;
+fn query_enum_into_grpc_raw_query(query: QueryEnum) -> grpc::RawQuery {
+    use api::grpc::qdrant::raw_query::Variant;
 
-        let variant = match value {
-            QueryEnum::Nearest(named) => Variant::Nearest(grpc::RawVector::from(named.query)),
-            QueryEnum::RecommendBestScore(named) => {
-                Variant::RecommendBestScore(grpc::raw_query::Recommend::from(named.query))
-            }
-            QueryEnum::RecommendSumScores(named) => {
-                Variant::RecommendSumScores(grpc::raw_query::Recommend::from(named.query))
-            }
-            QueryEnum::Discover(named) => {
-                Variant::Discover(grpc::raw_query::Discovery::from(named.query))
-            }
-            QueryEnum::Context(named) => {
-                Variant::Context(grpc::raw_query::Context::from(named.query))
-            }
-        };
-
-        Self {
-            variant: Some(variant),
+    let variant = match query {
+        QueryEnum::Nearest(named) => Variant::Nearest(grpc::RawVector::from(named.query)),
+        QueryEnum::RecommendBestScore(named) => {
+            Variant::RecommendBestScore(grpc::raw_query::Recommend::from(named.query))
         }
+        QueryEnum::RecommendSumScores(named) => {
+            Variant::RecommendSumScores(grpc::raw_query::Recommend::from(named.query))
+        }
+        QueryEnum::Discover(named) => {
+            Variant::Discover(grpc::raw_query::Discovery::from(named.query))
+        }
+        QueryEnum::Context(named) => Variant::Context(grpc::raw_query::Context::from(named.query)),
+    };
+
+    grpc::RawQuery {
+        variant: Some(variant),
     }
 }
 
@@ -692,7 +686,7 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
 
         match value {
             ScoringQuery::Vector(query) => Self {
-                score: Some(Score::Vector(grpc::RawQuery::from(query))),
+                score: Some(Score::Vector(query_enum_into_grpc_raw_query(query))),
             },
             ScoringQuery::Fusion(fusion) => Self::from(fusion),
             ScoringQuery::OrderBy(order_by) => Self {

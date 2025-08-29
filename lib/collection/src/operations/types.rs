@@ -25,7 +25,7 @@ use segment::common::operation_error::{CancelledError, OperationError};
 use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::{OrderBy, OrderValue};
 use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct, QueryVector, VectorRef,
+    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct, VectorRef,
     VectorStructInternal,
 };
 use segment::types::{
@@ -38,6 +38,7 @@ use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::{Error as JsonError, Map, Value};
+pub use shard::search::CoreSearchRequest;
 use shard::wal::WalError;
 use sparse::common::sparse_vector::SparseVector;
 use thiserror::Error;
@@ -580,27 +581,6 @@ pub struct SearchRequest {
 pub struct SearchRequestBatch {
     #[validate(nested)]
     pub searches: Vec<SearchRequest>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CoreSearchRequest {
-    /// Every kind of query that can be performed on segment level
-    pub query: QueryEnum,
-    /// Look only for points which satisfies this conditions
-    pub filter: Option<Filter>,
-    /// Additional search params
-    pub params: Option<SearchParams>,
-    /// Max number of result to return
-    pub limit: usize,
-    /// Offset of the first result to return.
-    /// May be used to paginate results.
-    /// Note: large offset values may cause performance issues.
-    pub offset: usize,
-    /// Select which payload to return with the response. Default is false.
-    pub with_payload: Option<WithPayloadInterface>,
-    /// Options for specifying which vectors to include into response. Default is false.
-    pub with_vector: Option<WithVector>,
-    pub score_threshold: Option<ScoreType>,
 }
 
 #[derive(Debug, Clone)]
@@ -2013,31 +1993,6 @@ pub enum NodeType {
     Listener,
 }
 
-impl From<SearchRequestInternal> for CoreSearchRequest {
-    fn from(request: SearchRequestInternal) -> Self {
-        let SearchRequestInternal {
-            vector,
-            filter,
-            score_threshold,
-            limit,
-            offset,
-            params,
-            with_vector,
-            with_payload,
-        } = request;
-        Self {
-            query: QueryEnum::Nearest(NamedQuery::from(NamedVectorStruct::from(vector))),
-            filter,
-            params,
-            limit,
-            offset: offset.unwrap_or_default(),
-            with_payload,
-            with_vector,
-            score_threshold,
-        }
-    }
-}
-
 impl From<SearchRequestInternal> for ShardQueryRequest {
     fn from(value: SearchRequestInternal) -> Self {
         let SearchRequestInternal {
@@ -2090,18 +2045,6 @@ impl From<CoreSearchRequest> for ShardQueryRequest {
             params,
             with_vector: with_vector.unwrap_or_default(),
             with_payload: with_payload.unwrap_or_default(),
-        }
-    }
-}
-
-impl From<QueryEnum> for QueryVector {
-    fn from(query: QueryEnum) -> Self {
-        match query {
-            QueryEnum::Nearest(named) => QueryVector::Nearest(named.query),
-            QueryEnum::RecommendBestScore(named) => QueryVector::RecommendBestScore(named.query),
-            QueryEnum::RecommendSumScores(named) => QueryVector::RecommendSumScores(named.query),
-            QueryEnum::Discover(named) => QueryVector::Discovery(named.query),
-            QueryEnum::Context(named) => QueryVector::Context(named.query),
         }
     }
 }
