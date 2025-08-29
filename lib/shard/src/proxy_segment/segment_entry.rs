@@ -180,6 +180,11 @@ impl SegmentEntry for ProxySegment {
         vectors: NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
+        log::debug!(
+            "Upsert_point in ProxySegment: op_num={}, point_id={}",
+            op_num,
+            point_id
+        );
         self.move_if_exists(op_num, point_id, hw_counter)?;
         self.write_segment
             .get()
@@ -194,9 +199,13 @@ impl SegmentEntry for ProxySegment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
-
         let point_offset = match &self.wrapped_segment {
             LockedSegment::Original(raw_segment) => {
+                log::debug!(
+                    "delete_point in ProxySegment: op_num={}, point_id={}",
+                    op_num,
+                    point_id
+                );
                 let point_offset = raw_segment.read().get_internal_id(point_id);
                 if point_offset.is_some() {
                     was_deleted = self
@@ -214,7 +223,13 @@ impl SegmentEntry for ProxySegment {
                 point_offset
             }
             LockedSegment::Proxy(proxy) => {
-                if proxy.read().has_point(point_id) {
+                log::debug!(
+                    "delete_point in double ProxySegment op_num={}, point_id={}",
+                    op_num,
+                    point_id
+                );
+                let proxy_read = proxy.read();
+                if proxy_read.has_point(point_id) {
                     was_deleted = self
                         .deleted_points
                         .write()
@@ -233,6 +248,11 @@ impl SegmentEntry for ProxySegment {
 
         self.set_deleted_offset(point_offset);
 
+        log::debug!(
+            "delete_point to write segment: op_num={}, point_id={}",
+            op_num,
+            point_id
+        );
         let was_deleted_in_writable = self
             .write_segment
             .get()
@@ -367,7 +387,10 @@ impl SegmentEntry for ProxySegment {
             .vector_data
             .keys()
         {
-            if let Some(vector) = self.vector(vector_name, point_id, hw_counter)? {
+            if let Some(vector) = self
+                .vector(vector_name, point_id, hw_counter)
+                .inspect_err(|_| log::debug!("could not find vector {vector_name}"))?
+            {
                 result.insert(vector_name.clone(), vector);
             }
         }
@@ -379,7 +402,10 @@ impl SegmentEntry for ProxySegment {
             .sparse_vector_data
             .keys()
         {
-            if let Some(vector) = self.vector(vector_name, point_id, hw_counter)? {
+            if let Some(vector) = self
+                .vector(vector_name, point_id, hw_counter)
+                .inspect_err(|_| log::debug!("could not find sparse vector {vector_name}"))?
+            {
                 result.insert(vector_name.clone(), vector);
             }
         }
@@ -396,18 +422,24 @@ impl SegmentEntry for ProxySegment {
                 .get()
                 .read()
                 .payload(point_id, hw_counter)
+                .inspect_err(|_| log::debug!("Error reading payload from write segment"))
         } else {
             {
                 let write_segment = self.write_segment.get();
                 let segment_guard = write_segment.read();
                 if segment_guard.has_point(point_id) {
-                    return segment_guard.payload(point_id, hw_counter);
+                    return segment_guard
+                        .payload(point_id, hw_counter)
+                        .inspect_err(|_| {
+                            log::debug!("Error reading payload from write segment (bis)")
+                        });
                 }
             }
             self.wrapped_segment
                 .get()
                 .read()
                 .payload(point_id, hw_counter)
+                .inspect_err(|_| log::debug!("Error reading payload from wrapped segment"))
         }
     }
 

@@ -109,6 +109,7 @@ impl SegmentEntry for Segment {
         mut vectors: NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
+        log::trace!("Upserting point_id:{point_id} op_num:{op_num}");
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
@@ -132,6 +133,7 @@ impl SegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        log::trace!("Deleting point_id:{point_id} point_offset:{internal_id:?} op_num:{op_num}");
         match internal_id {
             // Point does already not exist anymore
             None => Ok(false),
