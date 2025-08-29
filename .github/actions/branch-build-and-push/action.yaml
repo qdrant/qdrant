@@ -65,7 +65,7 @@ runs:
           tags+=("ghcr.io/qdrant/qdrant:${branch}")
         fi
         if [ "${{ inputs.push-to-dockerhub }}" = "true" ]; then
-          tags+=("qdrant/qdrant:${branch}-${GIT_COMMIT_ID}")
+          # Don't push commit tag to Docker Hub to avoid excessive image creation
           tags+=("qdrant/qdrant:${branch}")
         fi
 
