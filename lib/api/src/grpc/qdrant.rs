@@ -4260,12 +4260,15 @@ pub mod vector {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorOutput {
     /// Vector data (flatten for multi vectors), deprecated
-    #[prost(float, repeated, tag = "1")]
+    #[deprecated]
+    #[prost(float, repeated, packed = "false", tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
     /// Sparse indices for sparse vectors, deprecated
+    #[deprecated]
     #[prost(message, optional, tag = "2")]
     pub indices: ::core::option::Option<SparseIndices>,
     /// Number of vectors per multi vector, deprecated
+    #[deprecated]
     #[prost(uint32, optional, tag = "3")]
     pub vectors_count: ::core::option::Option<u32>,
     #[prost(oneof = "vector_output::Vector", tags = "101, 102, 103")]

@@ -5125,9 +5125,9 @@ Vector type to be used in queries. Ids will be substituted with their correspond
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| data | [float](#float) | repeated | Vector data (flatten for multi vectors), deprecated |
-| indices | [SparseIndices](#qdrant-SparseIndices) | optional | Sparse indices for sparse vectors, deprecated |
-| vectors_count | [uint32](#uint32) | optional | Number of vectors per multi vector, deprecated |
+| data | [float](#float) | repeated | **Deprecated.** Vector data (flatten for multi vectors), deprecated |
+| indices | [SparseIndices](#qdrant-SparseIndices) | optional | **Deprecated.** Sparse indices for sparse vectors, deprecated |
+| vectors_count | [uint32](#uint32) | optional | **Deprecated.** Number of vectors per multi vector, deprecated |
 | dense | [DenseVector](#qdrant-DenseVector) |  | Dense vector |
 | sparse | [SparseVector](#qdrant-SparseVector) |  | Sparse vector |
 | multi_dense | [MultiDenseVector](#qdrant-MultiDenseVector) |  | Multi dense vector |
