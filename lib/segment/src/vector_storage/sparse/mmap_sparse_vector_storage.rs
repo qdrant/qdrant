@@ -19,7 +19,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::VectorStorageDatatype;
 use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
-use crate::vector_storage::{SparseVectorStorage, VectorStorage};
+use crate::vector_storage::{AccessPattern, SparseVectorStorage, VectorStorage};
 
 const DELETED_DIRNAME: &str = "deleted";
 const STORAGE_DIRNAME: &str = "store";
@@ -177,26 +177,22 @@ impl MmapSparseVectorStorage {
 }
 
 impl SparseVectorStorage for MmapSparseVectorStorage {
-    fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
-        self.get_sparse_opt(key)?
+    fn get_sparse<P: AccessPattern>(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
+        self.get_sparse_opt::<P>(key)?
             .ok_or_else(|| OperationError::service_error(format!("Key {key} not found")))
     }
 
-    fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
-        self.storage
-            .read()
-            .get_value(key, &HardwareCounterCell::disposable()) // Vector storage read IO not measured
-            .map(SparseVector::try_from)
-            .transpose()
-    }
-
-    fn get_sparse_sequential(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
-        let stored_sparse = self
-            .storage
-            .read()
-            .get_value_sequential(key, &HardwareCounterCell::disposable())
-            .ok_or_else(|| OperationError::service_error(format!("Key {key} not found")))?;
-        SparseVector::try_from(stored_sparse)
+    fn get_sparse_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> OperationResult<Option<SparseVector>> {
+        let storage = self.storage.read();
+        let result = if P::IS_SEQUENTIAL {
+            storage.get_value::<true>(key, &HardwareCounterCell::disposable()) // Vector storage read IO not measured
+        } else {
+            storage.get_value::<false>(key, &HardwareCounterCell::disposable())
+        };
+        result.map(SparseVector::try_from).transpose()
     }
 }
 
@@ -217,22 +213,16 @@ impl VectorStorage for MmapSparseVectorStorage {
         self.next_point_offset
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
-        let vector = self.get_vector_opt(key);
-        vector.unwrap_or_else(CowVector::default_sparse)
-    }
-
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_sparse_sequential(key)
-            .map(CowVector::from)
-            .unwrap_or_else(|_| CowVector::default_sparse())
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key)
+            .unwrap_or_else(CowVector::default_sparse)
     }
 
     /// Get vector by key, if it exists.
     ///
     /// Ignore any error
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        match self.get_sparse_opt(key) {
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+        match self.get_sparse_opt::<P>(key) {
             Ok(Some(vector)) => Some(CowVector::from(vector)),
             _ => None,
         }
@@ -351,10 +341,10 @@ mod test {
     use tempfile::Builder;
 
     use super::*;
-    use crate::vector_storage::VectorStorage;
     use crate::vector_storage::sparse::mmap_sparse_vector_storage::{
         MmapSparseVectorStorage, VectorRef,
     };
+    use crate::vector_storage::{Random, VectorStorage};
 
     const RAND_SEED: u64 = 42;
 
@@ -422,7 +412,7 @@ mod test {
         }
 
         let storage = MmapSparseVectorStorage::open(tmp_dir.path()).unwrap();
-        let result_vector = storage.get_vector(0);
+        let result_vector = storage.get_vector::<Random>(0);
 
         match result_vector {
             crate::data_types::named_vectors::CowVector::Sparse(sparse) => {

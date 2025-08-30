@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
+use crate::vector_storage::Random;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 
@@ -198,7 +199,7 @@ impl MultivectorOffsetsStorageChunkedMmap {
 
 impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
-        ChunkedVectorStorage::get(&self.data, idx as VectorOffsetType)
+        ChunkedVectorStorage::get::<Random>(&self.data, idx as VectorOffsetType)
             .and_then(|offsets| offsets.first())
             .cloned()
             .unwrap_or_default()

@@ -17,7 +17,7 @@ use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::CHUNK_SIZE;
-use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{AccessPattern, MultiVectorStorage, VectorStorage, VectorStorageEnum};
 
 /// All fields are counting vectors and not dimensions.
 #[derive(Debug, Clone, Default)]
@@ -181,12 +181,16 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
     }
 
     /// Panics if key is out of bounds
-    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<'_, T> {
-        self.get_multi_opt(key).expect("vector not found")
+    fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<'_, T> {
+        self.get_multi_opt::<P>(key).expect("vector not found")
     }
 
     /// None if key is out of bounds
-    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<'_, T>> {
+    fn get_multi_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> Option<TypedMultiDenseVectorRef<'_, T>> {
+        // No sequential optimizations available for in memory storage.
         self.vectors_metadata.get(key as usize).map(|metadata| {
             let flattened_vectors = self
                 .vectors
@@ -197,14 +201,6 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
                 dim: self.dim,
             }
         })
-    }
-
-    fn get_multi_opt_sequential(
-        &self,
-        key: PointOffsetType,
-    ) -> Option<TypedMultiDenseVectorRef<'_, T>> {
-        // No sequential optimizations available for in memory storage.
-        self.get_multi_opt(key)
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
@@ -246,16 +242,12 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileMultiDenseVectorStorag
         self.vectors_metadata.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key).expect("vector not found")
     }
 
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector(key)
-    }
-
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        self.get_multi_opt(key).map(|multi_dense_vector| {
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+        self.get_multi_opt::<P>(key).map(|multi_dense_vector| {
             CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
                 multi_dense_vector,
             )))

@@ -19,7 +19,9 @@ use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
-use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    AccessPattern, MultiVectorStorage, Random, Sequential, VectorStorage, VectorStorageEnum,
+};
 
 const VECTORS_DIR_PATH: &str = "vectors";
 const OFFSETS_DIR_PATH: &str = "offsets";
@@ -105,37 +107,20 @@ impl<
     }
 
     /// Panics if key is not found
-    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<'_, T> {
-        self.get_multi_opt(key).expect("vector not found")
+    fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<'_, T> {
+        self.get_multi_opt::<P>(key).expect("vector not found")
     }
 
     /// Returns None if key is not found
-    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<'_, T>> {
-        self.offsets
-            .get(key as VectorOffsetType)
-            .and_then(|mmap_offset| {
-                let mmap_offset = mmap_offset.first().expect("mmap_offset must not be empty");
-                self.vectors.get_many(
-                    mmap_offset.offset as VectorOffsetType,
-                    mmap_offset.count as usize,
-                )
-            })
-            .map(|flattened_vectors| TypedMultiDenseVectorRef {
-                flattened_vectors,
-                dim: self.vectors.dim(),
-            })
-    }
-
-    /// Returns None if key is not found
-    fn get_multi_opt_sequential(
+    fn get_multi_opt<P: AccessPattern>(
         &self,
         key: PointOffsetType,
     ) -> Option<TypedMultiDenseVectorRef<'_, T>> {
         self.offsets
-            .get_sequential(key as VectorOffsetType)
+            .get::<P>(key as VectorOffsetType)
             .and_then(|mmap_offset| {
                 let mmap_offset = mmap_offset.first().expect("mmap_offset must not be empty");
-                self.vectors.get_many_sequential(
+                self.vectors.get_many::<P>(
                     mmap_offset.offset as VectorOffsetType,
                     mmap_offset.count as usize,
                 )
@@ -150,13 +135,13 @@ impl<
         (0..self.total_vector_count()).flat_map(|key| {
             let mmap_offset = self
                 .offsets
-                .get(key as VectorOffsetType)
+                .get::<Sequential>(key as VectorOffsetType)
                 .unwrap()
                 .first()
                 .unwrap();
             (0..mmap_offset.count).map(|i| {
                 self.vectors
-                    .get_sequential((mmap_offset.offset + i) as VectorOffsetType)
+                    .get::<Sequential>((mmap_offset.offset + i) as VectorOffsetType)
                     .unwrap()
             })
         })
@@ -199,22 +184,12 @@ impl<
         self.offsets.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key).expect("vector not found")
     }
 
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_multi_opt_sequential(key)
-            .map(|multi_dense_vector| {
-                CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
-                    multi_dense_vector,
-                )))
-            })
-            .expect("vector not found")
-    }
-
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        self.get_multi_opt(key).map(|multi_dense_vector| {
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+        self.get_multi_opt::<P>(key).map(|multi_dense_vector| {
             CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
                 multi_dense_vector,
             )))
@@ -242,7 +217,7 @@ impl<
 
         let mut offset = self
             .offsets
-            .get(key as VectorOffsetType)
+            .get::<Random>(key as VectorOffsetType)
             .map(|x| x.first().copied().unwrap_or_default())
             .unwrap_or_default();
 

@@ -321,7 +321,7 @@ impl MutableFullTextIndex {
             }
             Storage::Gridstore(gridstore) => gridstore
                 .read()
-                .get_value(idx, &HardwareCounterCell::disposable())
+                .get_value::<false>(idx, &HardwareCounterCell::disposable())
                 .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),
         }
     }

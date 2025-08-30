@@ -106,7 +106,7 @@ impl PayloadStorage for MmapPayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let mut guard = self.storage.write();
-        match guard.get_value(point_id, hw_counter) {
+        match guard.get_value::<false>(point_id, hw_counter) {
             Some(mut point_payload) => {
                 point_payload.merge(payload);
                 guard
@@ -134,7 +134,7 @@ impl PayloadStorage for MmapPayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let mut guard = self.storage.write();
-        match guard.get_value(point_id, hw_counter) {
+        match guard.get_value::<false>(point_id, hw_counter) {
             Some(mut point_payload) => {
                 point_payload.merge_by_key(payload, key);
                 guard
@@ -165,7 +165,7 @@ impl PayloadStorage for MmapPayloadStorage {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        match self.storage.read().get_value(point_id, hw_counter) {
+        match self.storage.read().get_value::<false>(point_id, hw_counter) {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
@@ -176,11 +176,7 @@ impl PayloadStorage for MmapPayloadStorage {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        match self
-            .storage
-            .read()
-            .get_value_sequential(point_id, hw_counter)
-        {
+        match self.storage.read().get_value::<true>(point_id, hw_counter) {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
@@ -193,7 +189,7 @@ impl PayloadStorage for MmapPayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
         let mut guard = self.storage.write();
-        match guard.get_value(point_id, hw_counter) {
+        match guard.get_value::<false>(point_id, hw_counter) {
             Some(mut payload) => {
                 let res = payload.remove(key);
                 if !res.is_empty() {

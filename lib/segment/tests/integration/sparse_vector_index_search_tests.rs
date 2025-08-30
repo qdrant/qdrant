@@ -30,7 +30,7 @@ use segment::types::{
     SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType, VectorName,
     VectorStorageDatatype,
 };
-use segment::vector_storage::VectorStorage;
+use segment::vector_storage::{Random, VectorStorage};
 use segment::{fixture_for_all_indices, payload_json};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
@@ -147,14 +147,13 @@ fn sparse_vector_index_fallback_plain_search() {
 }
 
 /// Checks that the sparse vector index is consistent with the underlying storage
-#[cfg(test)]
 fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &SparseVectorIndex<T>) {
     let borrowed_vector_storage = sparse_vector_index.vector_storage().borrow();
     let point_count = borrowed_vector_storage.available_vector_count();
     let hw_counter = HardwareCounterCell::disposable();
     for id in 0..point_count as PointOffsetType {
         // assuming no deleted points
-        let vector = borrowed_vector_storage.get_vector(id);
+        let vector = borrowed_vector_storage.get_vector::<Random>(id);
         let vector: &SparseVector = vector.as_vec_ref().try_into().unwrap();
         let remapped_vector = sparse_vector_index
             .indices_tracker()

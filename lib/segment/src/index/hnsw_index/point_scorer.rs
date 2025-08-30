@@ -14,7 +14,7 @@ use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsu
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query_scorer::QueryScorerBytes;
 use crate::vector_storage::{
-    RawScorer, VectorStorage, VectorStorageEnum, check_deleted_condition, new_raw_scorer,
+    Random, RawScorer, VectorStorage, VectorStorageEnum, check_deleted_condition, new_raw_scorer,
 };
 
 /// Scorers composition:
@@ -126,7 +126,7 @@ impl<'a> FilteredScorer<'a> {
         // This is a fallback function, which is used if quantized vector storage
         // is not capable of reconstructing the query vector.
         let original_query_fn = || {
-            let query = vectors.get_vector(point_id);
+            let query = vectors.get_vector::<Random>(point_id);
             let query: QueryVector = query.as_vec_ref().into();
             query
         };

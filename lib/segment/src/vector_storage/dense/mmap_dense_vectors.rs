@@ -23,6 +23,7 @@ use crate::vector_storage::async_io::UringReader;
 use crate::vector_storage::async_io_mock::UringReader;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient_points;
+use crate::vector_storage::{AccessPattern, Random, Sequential};
 
 const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
@@ -129,32 +130,26 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         self.dim * size_of::<T>()
     }
 
-    fn raw_vector_offset(&self, offset: usize) -> &[T] {
-        let byte_slice = &self.mmap[offset..(offset + self.raw_size())];
-        let arr: &[T] = unsafe { transmute(byte_slice) };
-        &arr[0..self.dim]
-    }
-
-    fn raw_vector_offset_sequential(&self, offset: usize) -> &[T] {
-        let byte_slice = &self.mmap_sequential[offset..(offset + self.raw_size())];
+    fn raw_vector_offset<P: AccessPattern>(&self, offset: usize) -> &[T] {
+        let mmap = if P::IS_SEQUENTIAL {
+            &self.mmap_sequential
+        } else {
+            &self.mmap
+        };
+        let byte_slice = &mmap[offset..(offset + self.raw_size())];
         let arr: &[T] = unsafe { transmute(byte_slice) };
         &arr[0..self.dim]
     }
 
     /// Returns reference to vector data by key
-    fn get_vector(&self, key: PointOffsetType) -> &[T] {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
+        self.get_vector_opt::<P>(key).expect("vector not found")
     }
 
     /// Returns an optional reference to vector data by key
-    pub fn get_vector_opt(&self, key: PointOffsetType) -> Option<&[T]> {
+    pub fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<&[T]> {
         self.data_offset(key)
-            .map(|offset| self.raw_vector_offset(offset))
-    }
-
-    pub fn get_vector_opt_sequential(&self, key: PointOffsetType) -> Option<&[T]> {
-        self.data_offset(key)
-            .map(|offset| self.raw_vector_offset_sequential(offset))
+            .map(|offset| self.raw_vector_offset::<P>(offset))
     }
 
     pub fn get_vectors<'a>(
@@ -165,14 +160,11 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         debug_assert_eq!(keys.len(), vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
         if is_read_with_prefetch_efficient_points(keys) {
-            maybe_uninit_fill_from(
-                vectors,
-                keys.iter()
-                    .map(|key| self.get_vector_opt_sequential(*key).unwrap_or(&[])),
-            )
-            .0
+            let iter = keys.iter().map(|key| self.get_vector::<Sequential>(*key));
+            maybe_uninit_fill_from(vectors, iter).0
         } else {
-            maybe_uninit_fill_from(vectors, keys.iter().map(|key| self.get_vector(*key))).0
+            let iter = keys.iter().map(|key| self.get_vector::<Random>(*key));
+            maybe_uninit_fill_from(vectors, iter).0
         }
     }
 
@@ -219,7 +211,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) {
         for (idx, point) in points.enumerate() {
-            let vector = self.get_vector(point);
+            let vector = self.get_vector::<Random>(point);
             callback(idx, point, vector);
         }
     }
