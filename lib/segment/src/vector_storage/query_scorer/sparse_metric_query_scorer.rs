@@ -3,9 +3,9 @@ use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 
-use crate::vector_storage::SparseVectorStorage;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
+use crate::vector_storage::{Random, SparseVectorStorage};
 
 pub struct SparseMetricQueryScorer<'a> {
     vector_storage: &'a VolatileSparseVectorStorage,
@@ -54,7 +54,7 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self
             .vector_storage
-            .get_sparse(idx)
+            .get_sparse::<Random>(idx)
             .expect("Sparse vector not found");
 
         self.score_ref(&stored)
@@ -72,7 +72,7 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
             scores[idx] = self.score_ref(
                 &self
                     .vector_storage
-                    .get_sparse(ids[idx])
+                    .get_sparse::<Random>(ids[idx])
                     .expect("Sparse vector not found"),
             );
         }
@@ -81,11 +81,11 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let v1 = self
             .vector_storage
-            .get_sparse(point_a)
+            .get_sparse::<Random>(point_a)
             .expect("Sparse vector not found");
         let v2 = self
             .vector_storage
-            .get_sparse(point_b)
+            .get_sparse::<Random>(point_b)
             .expect("Sparse vector not found");
 
         self.score_sparse(&v1, &v2)

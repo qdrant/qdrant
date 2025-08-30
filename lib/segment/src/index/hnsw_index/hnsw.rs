@@ -46,6 +46,7 @@ use crate::index::hnsw_index::gpu::{get_gpu_groups_count, gpu_graph_builder::bui
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
+use crate::index::hnsw_index::graph_links::StorageGraphLinksVectors;
 use crate::index::hnsw_index::point_scorer::{BoxCow, FilteredScorer};
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
@@ -612,11 +613,17 @@ impl HNSWIndex {
         // as it will be discarded anyway
         let is_on_disk = true;
 
-        let graph: GraphLayers = graph_layers_builder.into_graph_layers(
-            path,
-            LINK_COMPRESSION_FORMAT.with_param(quantized_vectors_ref.as_ref()),
-            is_on_disk,
-        )?;
+        let combined_provider =
+            quantized_vectors_ref
+                .as_ref()
+                .map(|quantized_vectors| StorageGraphLinksVectors {
+                    vector_storage: &vector_storage_ref,
+                    quantized_vectors,
+                });
+        let format_param = LINK_COMPRESSION_FORMAT.with_param(combined_provider.as_ref());
+
+        let graph: GraphLayers =
+            graph_layers_builder.into_graph_layers(path, format_param, is_on_disk)?;
 
         #[cfg(debug_assertions)]
         {

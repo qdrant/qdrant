@@ -4,9 +4,9 @@ use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
-use crate::vector_storage::SparseVectorStorage;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::{Random, SparseVectorStorage};
 
 pub struct SparseCustomQueryScorer<
     'a,
@@ -60,7 +60,7 @@ impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScor
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self
             .vector_storage
-            .get_sparse(idx)
+            .get_sparse::<Random>(idx)
             .expect("Failed to get sparse vector");
 
         // not exactly correct for Gridstore where the indices are compressed into u8

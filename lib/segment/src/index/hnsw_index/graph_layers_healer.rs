@@ -12,7 +12,7 @@ use crate::index::hnsw_index::graph_layers_builder::{GraphLayersBuilder, LockedL
 use crate::index::hnsw_index::links_container::{ItemsBuffer, LinksContainer};
 use crate::index::visited_pool::VisitedPool;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer};
+use crate::vector_storage::{Random, RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer};
 
 pub struct GraphLayersHealer<'a> {
     links_layers: Vec<LockedLayersContainer>,
@@ -217,7 +217,10 @@ impl<'a> GraphLayersHealer<'a> {
                 .try_for_each(|(offset, level)| {
                     // Internal operation. No measurements needed.
                     let internal_hardware_counter = HardwareCounterCell::disposable();
-                    let query = vector_storage.get_vector(offset).as_vec_ref().into();
+                    let query = vector_storage
+                        .get_vector::<Random>(offset)
+                        .as_vec_ref()
+                        .into();
                     let scorer = if let Some(quantized_vectors) = quantized_vectors {
                         quantized_vectors.raw_scorer(query, internal_hardware_counter)?
                     } else {

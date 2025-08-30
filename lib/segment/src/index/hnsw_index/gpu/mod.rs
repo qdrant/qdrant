@@ -108,7 +108,7 @@ mod tests {
     use crate::index::hnsw_index::graph_links::GraphLinksFormatParam;
     use crate::types::Distance;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
+    use crate::vector_storage::{DEFAULT_STOPPED, Random, VectorStorage, VectorStorageEnum};
 
     pub struct GpuGraphTestData {
         pub vector_storage: VectorStorageEnum,
@@ -132,7 +132,7 @@ mod tests {
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Cosine);
         for idx in 0..num_vectors as PointOffsetType {
-            let v = vector_holder.storage().get_vector(idx);
+            let v = vector_holder.storage().get_vector::<Random>(idx);
             storage
                 .insert_vector(idx, v.as_vec_ref(), &HardwareCounterCell::new())
                 .unwrap();

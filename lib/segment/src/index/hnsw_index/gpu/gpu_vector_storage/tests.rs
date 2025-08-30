@@ -846,7 +846,7 @@ fn test_gpu_vector_storage_impl(
 
     let gpu_scores = staging_buffer.download_vec(0, num_vectors).unwrap();
 
-    let query = QueryVector::Nearest(storage.get_vector(test_point_id).to_owned());
+    let query = QueryVector::Nearest(storage.get_vector::<Random>(test_point_id).to_owned());
 
     let hardware_counter = HardwareCounterCell::new();
     let scorer: Box<dyn RawScorer> = if let Some(quantized_vectors) = quantized_vectors.as_ref() {

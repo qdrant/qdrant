@@ -11,10 +11,10 @@ use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTracker;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::Distance;
-use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
+use crate::vector_storage::{Random, VectorStorageEnum};
 
 #[test]
 fn async_raw_scorer_cosine() -> Result<()> {
@@ -66,7 +66,7 @@ fn test_async_raw_scorer(
 
         let mut iter = (0..points).map(|i| {
             let i = i as PointOffsetType;
-            let vec = volatile_storage.get_vector(i);
+            let vec = volatile_storage.get_vector::<Random>(i);
             let deleted = volatile_storage.is_deleted_vector(i);
             (vec, deleted)
         });

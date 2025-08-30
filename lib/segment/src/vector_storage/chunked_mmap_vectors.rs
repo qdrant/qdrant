@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::vector_storage::AccessPattern;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::common::{CHUNK_SIZE, PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient_vectors;
@@ -346,12 +347,8 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     #[inline]
-    fn get(&self, key: VectorOffsetType) -> Option<&[T]> {
-        ChunkedMmapVectors::get(self, key, false)
-    }
-
-    fn get_sequential(&self, key: VectorOffsetType) -> Option<&[T]> {
-        ChunkedMmapVectors::get(self, key, true)
+    fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<&[T]> {
+        ChunkedMmapVectors::get(self, key, P::IS_SEQUENTIAL)
     }
 
     #[inline]
@@ -400,13 +397,8 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     #[inline]
-    fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
-        ChunkedMmapVectors::get_many(self, key, count, false)
-    }
-
-    #[inline]
-    fn get_many_sequential(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
-        ChunkedMmapVectors::get_many(self, key, count, true)
+    fn get_many<P: AccessPattern>(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
+        ChunkedMmapVectors::get_many(self, key, count, P::IS_SEQUENTIAL)
     }
 
     #[inline]

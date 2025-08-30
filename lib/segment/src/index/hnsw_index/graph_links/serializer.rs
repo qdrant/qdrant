@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::cmp::Reverse;
 use std::io::{Seek, Write};
 
@@ -16,7 +17,7 @@ use super::header::{HEADER_VERSION_COMPRESSED, HeaderCompressed, HeaderPlain};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph_links::header::{
-    HEADER_VERSION_COMPRESSED_WITH_VECTORS, HeaderCompressedWithVectors,
+    HEADER_VERSION_COMPRESSED_WITH_VECTORS, HeaderCompressedWithVectors, PackedVectorLayout,
 };
 
 pub fn serialize_graph_links<W: Write + Seek>(
@@ -33,7 +34,12 @@ pub fn serialize_graph_links<W: Write + Seek>(
         GraphLinksFormatParam::Compressed => None,
         GraphLinksFormatParam::CompressedWithVectors(v) => {
             let vector_layout = v.vector_layout()?;
-            if vector_layout.size() % vector_layout.align() != 0 {
+            if vector_layout.base.size() % vector_layout.base.align() != 0 {
+                return Err(OperationError::service_error(
+                    "Vector size must be a multiple of its alignment",
+                ));
+            }
+            if vector_layout.link.size() % vector_layout.link.align() != 0 {
                 return Err(OperationError::service_error(
                     "Vector size must be a multiple of its alignment",
                 ));
@@ -82,9 +88,10 @@ pub fn serialize_graph_links<W: Write + Seek>(
     }
 
     // 4. Write neighbors padding (if applicable)
-    if let Some(vector_layout) = vector_layout {
+    if let Some(vector_layout) = vector_layout.as_ref() {
         let pos = writer.stream_position()? as usize;
-        writer.write_zeros(pos.next_multiple_of(vector_layout.align()) - pos)?;
+        let alignment = vector_layout.base.align().max(vector_layout.link.align());
+        writer.write_zeros(pos.next_multiple_of(alignment) - pos)?;
     }
 
     // 5. Write neighbors (and calculate `offsets`)
@@ -113,31 +120,48 @@ pub fn serialize_graph_links<W: Write + Seek>(
                 }
                 GraphLinksFormatParam::CompressedWithVectors(vectors) => {
                     // Unwrap safety: `vector_layout` is `Some` for `CompressedWithVectors`.
-                    let vector_layout = vector_layout.unwrap();
+                    let vector_layout = vector_layout.as_ref().unwrap();
 
-                    // 1. The varint-encoded length (`N` in the doc).
-                    writer.write_varint(raw_links.len() as u64)?;
-                    offset += VarInt::required_space(raw_links.len() as u64);
-
-                    // 2. Compressed links (`c` in the doc)
-                    pack_links(&mut links_buf, &mut raw_links, bits_per_unsorted, level_m);
-                    writer.write_all(&links_buf)?;
-                    offset += links_buf.len();
-
-                    // 3. Padding to align vectors (`_` in the doc).
-                    let padding = offset.next_multiple_of(vector_layout.align()) - offset;
-                    writer.write_zeros(padding)?;
-                    offset += padding;
-
-                    // 4. Vectors (`V` in the doc).
-                    // Write them in the same order as `raw_links`.
-                    for i in raw_links {
-                        let vector = vectors.get_vector(i)?;
-                        if vector.len() != vector_layout.size() {
+                    // 1. Base vector (`B` in the doc, only on level 0).
+                    if level == 0 {
+                        let vector = vectors.get_base_vector(id)?;
+                        if vector.len() != vector_layout.base.size() {
                             return Err(OperationError::service_error("Vector size mismatch"));
                         }
                         writer.write_all(vector)?;
                         offset += vector.len();
+                    }
+
+                    // 2. The varint-encoded length (`#` in the doc).
+                    writer.write_varint(raw_links.len() as u64)?;
+                    offset += VarInt::required_space(raw_links.len() as u64);
+
+                    // 3. Compressed links (`c` in the doc)
+                    pack_links(&mut links_buf, &mut raw_links, bits_per_unsorted, level_m);
+                    writer.write_all(&links_buf)?;
+                    offset += links_buf.len();
+
+                    // 4. Padding to align link vectors (`_` in the doc).
+                    let padding = offset.next_multiple_of(vector_layout.link.align()) - offset;
+                    writer.write_zeros(padding)?;
+                    offset += padding;
+
+                    // 5. Link vectors (`L` in the doc).
+                    // Write them in the same order as `raw_links`.
+                    for i in raw_links {
+                        let vector = vectors.get_link_vector(i)?;
+                        if vector.len() != vector_layout.link.size() {
+                            return Err(OperationError::service_error("Vector size mismatch"));
+                        }
+                        writer.write_all(vector)?;
+                        offset += vector.len();
+                    }
+
+                    // 6. Padding to align the next base vector (`_` in the doc).
+                    if level == 0 {
+                        let padding = offset.next_multiple_of(vector_layout.base.align()) - offset;
+                        writer.write_zeros(padding)?;
+                        offset += padding;
                     }
                 }
             }
@@ -192,7 +216,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
             writer.write_all(header.as_bytes())?;
         }
         GraphLinksFormatParam::CompressedWithVectors(_) => {
-            let vector_layout = vector_layout.unwrap();
+            let vector_layout = vector_layout.as_ref().unwrap();
             let header = HeaderCompressedWithVectors {
                 version: LittleU64::from(HEADER_VERSION_COMPRESSED_WITH_VECTORS),
                 point_count: LittleU64::new(edges.len() as u64),
@@ -201,14 +225,20 @@ pub fn serialize_graph_links<W: Write + Seek>(
                 levels_count: LittleU64::new(levels_count as u64),
                 m: LittleU64::new(hnsw_m.m as u64),
                 m0: LittleU64::new(hnsw_m.m0 as u64),
-                vector_size_bytes: LittleU64::new(vector_layout.size() as u64),
-                vector_alignment: u8::try_from(vector_layout.align())
-                    .expect("Alignment must fit in u8"),
-                zero_padding: [0; 4],
+                base_vector_layout: pack_layout(&vector_layout.base),
+                link_vector_layout: pack_layout(&vector_layout.link),
+                zero_padding: [0; 3],
             };
             writer.write_all(header.as_bytes())?;
         }
     };
 
     Ok(())
+}
+
+fn pack_layout(layout: &Layout) -> PackedVectorLayout {
+    PackedVectorLayout {
+        size: LittleU64::new(layout.size() as u64),
+        alignment: u8::try_from(layout.align()).expect("Alignment must fit in u8"),
+    }
 }

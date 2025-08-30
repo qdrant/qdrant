@@ -19,7 +19,7 @@ use crate::vector_storage::common::CHUNK_SIZE;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage_full;
 use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
 use crate::vector_storage::{
-    DEFAULT_STOPPED, MultiVectorStorage, VectorStorage, VectorStorageEnum,
+    DEFAULT_STOPPED, MultiVectorStorage, Random, VectorStorage, VectorStorageEnum,
 };
 
 #[derive(Clone, Copy)]
@@ -67,7 +67,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     }
     // Check that all points are inserted
     for (i, vec) in points.iter().enumerate() {
-        let stored_vec = storage.get_vector(i as PointOffsetType);
+        let stored_vec = storage.get_vector::<Random>(i as PointOffsetType);
         let multi_dense: TypedMultiDenseVectorRef<_> = stored_vec.as_vec_ref().try_into().unwrap();
         assert_eq!(multi_dense.to_owned(), vec.clone());
     }
@@ -223,7 +223,7 @@ fn do_test_update_from_delete_points(
         }
         let mut iter = (0..points.len()).map(|i| {
             let i = i as PointOffsetType;
-            let vec = storage2.get_vector(i);
+            let vec = storage2.get_vector::<Random>(i);
             let deleted = storage2.is_deleted_vector(i);
             (vec, deleted)
         });
@@ -318,7 +318,11 @@ fn test_delete_points_in_multi_dense_vector_storage(#[case] storage_type: MultiD
     );
     // retrieve all vectors from storage
     for id in 0..total_vector_count {
-        assert!(storage.get_vector_opt(id as PointOffsetType).is_some());
+        assert!(
+            storage
+                .get_vector_opt::<Random>(id as PointOffsetType)
+                .is_some()
+        );
     }
 }
 
@@ -346,7 +350,11 @@ fn test_update_from_delete_points_multi_dense_vector_storage(
     );
     // retrieve all vectors from storage
     for id in 0..total_vector_count {
-        assert!(storage.get_vector_opt(id as PointOffsetType).is_some());
+        assert!(
+            storage
+                .get_vector_opt::<Random>(id as PointOffsetType)
+                .is_some()
+        );
     }
 }
 
@@ -389,7 +397,11 @@ fn test_delete_points_in_volatile_multi_dense_vector_storage() {
 
     // retrieve all vectors from storage
     for id in 0..storage.total_vector_count() {
-        assert!(storage.get_vector_opt(id as PointOffsetType).is_some());
+        assert!(
+            storage
+                .get_vector_opt::<Random>(id as PointOffsetType)
+                .is_some()
+        );
     }
 }
 
@@ -406,7 +418,11 @@ fn test_update_from_delete_points_volatile_multi_dense_vector_storage() {
 
     // retrieve all vectors from storage
     for id in 0..storage.total_vector_count() {
-        assert!(storage.get_vector_opt(id as PointOffsetType).is_some());
+        assert!(
+            storage
+                .get_vector_opt::<Random>(id as PointOffsetType)
+                .is_some()
+        );
     }
 }
 

@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
@@ -23,7 +24,7 @@ use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::{CHUNK_SIZE, StoredRecord};
-use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{AccessPattern, MultiVectorStorage, VectorStorage, VectorStorageEnum};
 
 type StoredMultiDenseVector<T> = StoredRecord<TypedMultiDenseVector<T>>;
 
@@ -335,12 +336,16 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
     }
 
     /// Panics if key is out of bounds
-    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<'_, T> {
-        self.get_multi_opt(key).expect("vector not found")
+    fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<'_, T> {
+        self.get_multi_opt::<P>(key).expect("vector not found")
     }
 
     /// None if key is out of bounds
-    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<'_, T>> {
+    fn get_multi_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> Option<TypedMultiDenseVectorRef<'_, T>> {
+        // No sequential optimizations available for in memory storage.
         self.vectors_metadata.get(key as usize).map(|metadata| {
             let flattened_vectors = self
                 .vectors
@@ -351,14 +356,6 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
                 dim: self.dim,
             }
         })
-    }
-
-    fn get_multi_opt_sequential(
-        &self,
-        key: PointOffsetType,
-    ) -> Option<TypedMultiDenseVectorRef<'_, T>> {
-        // No sequential optimizations available for in memory storage.
-        self.get_multi_opt(key)
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
@@ -400,20 +397,27 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
         self.vectors_metadata.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key).expect("vector not found")
     }
 
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector(key)
-    }
-
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        self.get_multi_opt(key).map(|multi_dense_vector| {
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+        self.get_multi_opt::<P>(key).map(|multi_dense_vector| {
             CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
                 multi_dense_vector,
             )))
         })
+    }
+
+    fn get_vector_bytes_opt<P: AccessPattern>(&self, _key: PointOffsetType) -> Option<&[u8]> {
+        None // not implemented
+    }
+
+    fn get_vector_layout(&self) -> OperationResult<Layout> {
+        // Multi-dense vectors don't have a fixed layout as they can vary in size
+        Err(OperationError::service_error(
+            "Multi-dense vectors do not have a fixed layout",
+        ))
     }
 
     fn insert_vector(
@@ -487,6 +491,7 @@ mod tests {
     use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::data_types::vectors::MultiDenseVectorInternal;
     use crate::segment_constructor::migrate_rocksdb_multi_dense_vector_storage_to_mmap;
+    use crate::vector_storage::Sequential;
 
     const RAND_SEED: u64 = 42;
 
@@ -576,7 +581,7 @@ mod tests {
             .collect::<Vec<Vec<_>>>();
             let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
             assert_eq!(
-                new_storage.get_vector_sequential(internal_id),
+                new_storage.get_vector::<Sequential>(internal_id),
                 CowVector::from(&multivec),
             );
             assert_eq!(

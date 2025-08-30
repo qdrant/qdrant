@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::borrow::Cow;
 use std::fs::create_dir_all;
 use std::mem::MaybeUninit;
@@ -10,6 +11,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
+use zerocopy::IntoBytes;
 
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
@@ -23,7 +25,7 @@ use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{AccessPattern, DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
@@ -85,15 +87,9 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
         self.vectors.dim()
     }
 
-    fn get_dense(&self, key: PointOffsetType) -> &[T] {
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
         self.vectors
-            .get(key as VectorOffsetType)
-            .expect("mmap vector not found")
-    }
-
-    fn get_dense_sequential(&self, key: PointOffsetType) -> &[T] {
-        self.vectors
-            .get_sequential(key as VectorOffsetType)
+            .get::<P>(key as VectorOffsetType)
             .expect("mmap vector not found")
     }
 
@@ -131,21 +127,27 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt(key).expect("vector not found")
-    }
-
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.vectors
-            .get_sequential(key as VectorOffsetType)
+            .get::<P>(key as VectorOffsetType)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
             .expect("Vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.vectors
-            .get(key as VectorOffsetType)
+            .get::<P>(key as VectorOffsetType)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
+    }
+
+    fn get_vector_bytes_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<&[u8]> {
+        self.vectors
+            .get::<P>(key as VectorOffsetType)
+            .map(|slice| slice.as_bytes())
+    }
+
+    fn get_vector_layout(&self) -> OperationResult<Layout> {
+        Ok(Layout::array::<T>(self.vectors.dim()).unwrap())
     }
 
     fn insert_vector(

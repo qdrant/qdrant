@@ -36,7 +36,7 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter, SearchParams};
 use crate::vector_storage::query::TransformInto;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum, check_deleted_condition};
+use crate::vector_storage::{Random, VectorStorage, VectorStorageEnum, check_deleted_condition};
 
 /// Whether to use the new compressed format.
 pub const USE_COMPRESSED: bool = true;
@@ -211,7 +211,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             // Because:
             // - the `id_tracker` is flushed before the `vector_storage`
             // - the sparse index is built *before* recovering the WAL when loading a segment
-            match borrowed_vector_storage.get_vector_opt(id) {
+            match borrowed_vector_storage.get_vector_opt::<Random>(id) {
                 None => {
                     // the vector was lost in a crash but will be recovered by the WAL
                     let point_id = borrowed_id_tracker.external_id(id);
@@ -630,7 +630,9 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     ) -> OperationResult<()> {
         let (old_vector, new_vector) = {
             let mut vector_storage = self.vector_storage.borrow_mut();
-            let old_vector = vector_storage.get_vector_opt(id).map(CowVector::to_owned);
+            let old_vector = vector_storage
+                .get_vector_opt::<Random>(id)
+                .map(CowVector::to_owned);
             let new_vector = if let Some(vector) = vector {
                 vector_storage.insert_vector(id, vector, hw_counter)?;
                 vector.to_owned()

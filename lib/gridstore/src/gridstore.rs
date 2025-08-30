@@ -235,31 +235,13 @@ impl<V: Blob> Gridstore<V> {
         raw_sections
     }
 
-    /// Get the value for a given point offset, from the random mmap
-    pub fn get_value(
-        &self,
-        point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<V> {
-        self.read_value::<false>(point_offset, hw_counter)
-    }
-
-    /// Get the value for a given point offset, from the sequential mmap
-    pub fn get_value_sequential(
-        &self,
-        point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<V> {
-        self.read_value::<true>(point_offset, hw_counter)
-    }
-
-    /// Read a value from the page
+    /// Get the value for a given point offset
     ///
     /// # Arguments
     /// - point_offset: The ID of the value.
     /// - hw_counter: The hardware counter cell.
     /// - READ_SEQUENTIAL: Whether to read mmap pages ahead to optimize sequential access
-    fn read_value<const READ_SEQUENTIAL: bool>(
+    pub fn get_value<const READ_SEQUENTIAL: bool>(
         &self,
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
@@ -644,7 +626,7 @@ mod tests {
     fn test_empty_payload_storage() {
         let hw_counter = HardwareCounterCell::new();
         let (_dir, storage) = empty_storage();
-        let payload = storage.get_value(0, &hw_counter);
+        let payload = storage.get_value::<false>(0, &hw_counter);
         assert!(payload.is_none());
         assert_eq!(storage.get_storage_size_bytes(), 0);
     }
@@ -663,7 +645,7 @@ mod tests {
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
         let hw_counter = HardwareCounterCell::new();
-        let stored_payload = storage.get_value(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), Payload::default());
         assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
@@ -691,7 +673,7 @@ mod tests {
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
         let hw_counter = HardwareCounterCell::new();
-        let stored_payload = storage.get_value(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
         assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
@@ -751,7 +733,7 @@ mod tests {
                 .put_value(*point_offset, payload, hw_counter_ref)
                 .unwrap();
 
-            let stored_payload = storage.get_value(*point_offset, &hw_counter);
+            let stored_payload = storage.get_value::<false>(*point_offset, &hw_counter);
             assert!(stored_payload.is_some());
             assert_eq!(&stored_payload.unwrap(), payload);
         }
@@ -759,7 +741,7 @@ mod tests {
         // read randomly
         payloads.shuffle(rng);
         for (point_offset, payload) in payloads.iter() {
-            let stored_payload = storage.get_value(*point_offset, &hw_counter);
+            let stored_payload = storage.get_value::<false>(*point_offset, &hw_counter);
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload.clone());
         }
@@ -784,7 +766,7 @@ mod tests {
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let stored_payload = storage.get_value(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter);
         assert_eq!(stored_payload, Some(payload));
         assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
 
@@ -794,7 +776,7 @@ mod tests {
         assert_eq!(storage.pages.len(), 1);
 
         // get payload again
-        let stored_payload = storage.get_value(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter);
         assert!(stored_payload.is_none());
         storage.flush().unwrap();
         assert_eq!(storage.get_storage_size_bytes(), 0);
@@ -823,7 +805,7 @@ mod tests {
                 assert_eq!(page_mapping.block_offset, expected_block_offset);
 
                 let hw_counter = HardwareCounterCell::new();
-                let stored_payload = storage.get_value(0, &hw_counter);
+                let stored_payload = storage.get_value::<false>(0, &hw_counter);
                 assert!(stored_payload.is_some());
                 assert_eq!(stored_payload.unwrap(), payload);
             };
@@ -941,7 +923,7 @@ mod tests {
 
         // validate storage and model_hashmap are the same
         for point_offset in 0..=max_point_offset {
-            let stored_payload = storage.get_value(point_offset, &hw_counter);
+            let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
             let model_payload = model_hashmap.get(&point_offset);
             assert_eq!(stored_payload.as_ref(), model_payload);
         }
@@ -962,7 +944,7 @@ mod tests {
 
         // validate storage and model_hashmap are the same
         for point_offset in 0..=max_point_offset {
-            let stored_payload = storage.get_value(point_offset, &hw_counter);
+            let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
             let model_payload = model_hashmap.get(&point_offset);
             assert_eq!(
                 stored_payload.as_ref(),
@@ -997,7 +979,7 @@ mod tests {
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let stored_payload = storage.get_value(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
 
@@ -1015,7 +997,7 @@ mod tests {
             assert!(deleted.is_some());
             assert_eq!(storage.pages.len(), 2);
 
-            assert!(storage.get_value(0, &hw_counter).is_none());
+            assert!(storage.get_value::<false>(0, &hw_counter).is_none());
         }
     }
 
@@ -1041,7 +1023,7 @@ mod tests {
             assert_eq!(page_mapping.page_id, 0); // first page
             assert_eq!(page_mapping.block_offset, 0); // first cell
 
-            let stored_payload = storage.get_value(0, &hw_counter);
+            let stored_payload = storage.get_value::<false>(0, &hw_counter);
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload);
 
@@ -1053,7 +1035,7 @@ mod tests {
         let storage = Gridstore::<Payload>::open(path).unwrap();
         assert_eq!(storage.pages.len(), 1);
 
-        let stored_payload = storage.get_value(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
     }
@@ -1110,9 +1092,11 @@ mod tests {
                 let record = result.unwrap();
                 // apply shift offset
                 let storage_index = row_index as u32 + right_shift_offset;
-                let first = storage.get_value(storage_index, &hw_counter).unwrap();
+                let first = storage
+                    .get_value::<false>(storage_index, &hw_counter)
+                    .unwrap();
                 let second = storage
-                    .get_value(storage_index + EXPECTED_LEN as u32, &hw_counter)
+                    .get_value::<false>(storage_index + EXPECTED_LEN as u32, &hw_counter)
                     .unwrap();
                 // assert the two payloads are equal
                 assert_eq!(first, second);
@@ -1163,7 +1147,7 @@ mod tests {
         // loop from the end to the beginning to avoid overwriting
         let offset: u32 = 1;
         for i in (0..EXPECTED_LEN).rev() {
-            let payload = storage.get_value(i as u32, &hw_counter).unwrap();
+            let payload = storage.get_value::<false>(i as u32, &hw_counter).unwrap();
             // move first write to the right
             storage
                 .put_value(i as u32 + offset, &payload, hw_counter_ref)

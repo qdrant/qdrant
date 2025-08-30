@@ -757,8 +757,9 @@ mod tests {
             reference_top.push(ScoredPointOffset { idx, score });
         }
 
-        let graph = graph_layers_builder
-            .into_graph_layers_ram(format.with_param_for_tests(vector_holder.quantized_vectors()));
+        let graph = graph_layers_builder.into_graph_layers_ram(
+            format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
+        );
 
         let scorer = vector_holder.scorer(query);
         let ef = 16;
@@ -862,8 +863,9 @@ mod tests {
             reference_top.push(ScoredPointOffset { idx, score });
         }
 
-        let graph = graph_layers_builder
-            .into_graph_layers_ram(format.with_param_for_tests(vector_holder.quantized_vectors()));
+        let graph = graph_layers_builder.into_graph_layers_ram(
+            format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
+        );
 
         let scorer = vector_holder.scorer(query);
         let ef = 16;
@@ -901,8 +903,9 @@ mod tests {
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);
         }
-        let graph_layers = graph_layers_builder
-            .into_graph_layers_ram(format.with_param_for_tests(vector_holder.quantized_vectors()));
+        let graph_layers = graph_layers_builder.into_graph_layers_ram(
+            format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
+        );
 
         let num_points = graph_layers.links.num_points();
         eprintln!("number_points = {num_points:#?}");

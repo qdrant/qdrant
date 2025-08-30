@@ -42,10 +42,18 @@ pub(super) struct HeaderCompressedWithVectors {
     pub(super) offsets_parameters: bitpacking_ordered::Parameters,
     pub(super) m: LittleU64,
     pub(super) m0: LittleU64,
-    pub(super) vector_size_bytes: LittleU64,
-    pub(super) vector_alignment: u8,
-    pub(super) zero_padding: [u8; 4],
+    pub(super) base_vector_layout: PackedVectorLayout,
+    pub(super) link_vector_layout: PackedVectorLayout,
+    pub(super) zero_padding: [u8; 3],
 }
 
 pub(super) const HEADER_VERSION_COMPRESSED: u64 = 0xFFFF_FFFF_FFFF_FF01;
 pub(super) const HEADER_VERSION_COMPRESSED_WITH_VECTORS: u64 = 0xFFFF_FFFF_FFFF_FF02;
+
+#[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[repr(C)]
+/// Packed representation of [`std::alloc::Layout`].
+pub(super) struct PackedVectorLayout {
+    pub(super) size: LittleU64,
+    pub(super) alignment: u8,
+}

@@ -87,8 +87,9 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
         })
         .collect_vec();
 
-    let graph_layers = graph_layers_builder
-        .into_graph_layers_ram(format.with_param_for_tests(vector_holder.quantized_vectors()));
+    let graph_layers = graph_layers_builder.into_graph_layers_ram(
+        format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
+    );
 
     let results = queries
         .iter()

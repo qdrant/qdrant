@@ -12,10 +12,10 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
 };
 use crate::spaces::metric::Metric;
-use crate::vector_storage::MultiVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::{MultiVectorStorage, Random};
 
 pub struct MultiCustomQueryScorer<
     'a,
@@ -117,7 +117,7 @@ impl<
 
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self.vector_storage.get_multi(idx);
+        let stored = self.vector_storage.get_multi::<Random>(idx);
         self.hardware_counter
             .vector_io_read()
             .incr_delta(stored.vectors_count());

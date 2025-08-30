@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::borrow::Cow;
 use std::fs::{File, OpenOptions, create_dir_all};
 use std::io::{self, BufWriter, Write};
@@ -11,6 +12,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use memory::fadvise::clear_disk_cache;
 use memory::mmap_ops;
+use zerocopy::IntoBytes;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -20,7 +22,7 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{AccessPattern, DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_PATH: &str = "matrix.dat";
 const DELETED_PATH: &str = "deleted.dat";
@@ -144,19 +146,11 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
         self.mmap_store.as_ref().unwrap().dim
     }
 
-    fn get_dense(&self, key: PointOffsetType) -> &[T] {
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
         self.mmap_store
             .as_ref()
             .unwrap()
-            .get_vector_opt(key)
-            .unwrap_or_else(|| panic!("vector not found: {key}"))
-    }
-
-    fn get_dense_sequential(&self, key: PointOffsetType) -> &[T] {
-        self.mmap_store
-            .as_ref()
-            .unwrap()
-            .get_vector_opt_sequential(key)
+            .get_vector_opt::<P>(key)
             .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
 
@@ -187,25 +181,33 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         self.mmap_store.as_ref().unwrap().num_vectors
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt(key).expect("vector not found")
-    }
-
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.mmap_store
             .as_ref()
             .unwrap()
-            .get_vector_opt_sequential(key)
+            .get_vector_opt::<P>(key)
             .map(|vector| T::slice_to_float_cow(vector.into()).into())
             .expect("Vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.mmap_store
             .as_ref()
             .unwrap()
-            .get_vector_opt(key)
+            .get_vector_opt::<P>(key)
             .map(|vector| T::slice_to_float_cow(vector.into()).into())
+    }
+
+    fn get_vector_bytes_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<&[u8]> {
+        self.mmap_store
+            .as_ref()
+            .unwrap()
+            .get_vector_opt::<P>(key)
+            .map(|vector| vector.as_bytes())
+    }
+
+    fn get_vector_layout(&self) -> OperationResult<Layout> {
+        Ok(Layout::array::<T>(self.vector_dim()).unwrap())
     }
 
     fn insert_vector(
@@ -334,7 +336,7 @@ mod tests {
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-    use crate::vector_storage::{DEFAULT_STOPPED, new_raw_scorer};
+    use crate::vector_storage::{DEFAULT_STOPPED, Random, new_raw_scorer};
 
     #[test]
     fn test_basic_persistence() {
@@ -377,7 +379,7 @@ mod tests {
             }
             let mut iter = (0..3).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -386,7 +388,7 @@ mod tests {
 
         assert_eq!(storage.total_vector_count(), 3);
 
-        let vector = storage.get_vector(1).to_owned();
+        let vector = storage.get_vector::<Random>(1).to_owned();
         let vector: DenseVector = vector.try_into().unwrap();
 
         assert_eq!(points[1], vector);
@@ -405,7 +407,7 @@ mod tests {
             }
             let mut iter = (0..2).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -466,7 +468,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -585,7 +587,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -655,7 +657,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -729,7 +731,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });

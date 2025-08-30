@@ -18,7 +18,9 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendab
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_full_vector_storage;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer};
+use crate::vector_storage::{
+    DEFAULT_STOPPED, Random, VectorStorage, VectorStorageEnum, new_raw_scorer,
+};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points = [
@@ -136,7 +138,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         }
         let mut iter = (0..points.len()).map(|i| {
             let i = i as PointOffsetType;
-            let vec = storage2.get_vector(i);
+            let vec = storage2.get_vector::<Random>(i);
             let deleted = storage2.is_deleted_vector(i);
             (vec, deleted)
         });
