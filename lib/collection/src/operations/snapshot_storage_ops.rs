@@ -73,13 +73,13 @@ pub async fn get_snapshot_description(
 ///   TODO: It looks like Azure Storage has different limits for different service versions.
 pub async fn get_appropriate_chunk_size(local_source_path: &Path) -> CollectionResult<usize> {
     const DEFAULT_CHUNK_SIZE: usize = 50 * 1024 * 1024;
-    const MAX_PART_NUMBER: usize = 10000;
+    const MAX_PART_NUMBER: u64 = 10000;
     /// 5TB as maximum object size.
     /// Source: <https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html>
-    const MAX_UPLOAD_SIZE: usize = 5 * 1024 * 1024 * 1024 * 1024;
+    const MAX_UPLOAD_SIZE: u64 = 5 * 1024 * 1024 * 1024 * 1024;
 
     let file_meta = tokio::fs::metadata(local_source_path).await?;
-    let file_size = file_meta.len() as usize;
+    let file_size = file_meta.len();
 
     // check if the file size exceeds the maximum upload size
     if file_size > MAX_UPLOAD_SIZE {
@@ -90,9 +90,9 @@ pub async fn get_appropriate_chunk_size(local_source_path: &Path) -> CollectionR
 
     // check if the file size exceeds the maximum part number
     // if so, adjust the chunk size to fit the maximum part number
-    if file_size > DEFAULT_CHUNK_SIZE * MAX_PART_NUMBER {
+    if file_size > DEFAULT_CHUNK_SIZE as u64 * MAX_PART_NUMBER {
         let chunk_size = ((file_size - 1) / MAX_PART_NUMBER) + 1; // ceil((file_size) / MAX_PART_NUMBER)
-        return Ok(chunk_size);
+        return Ok(chunk_size as usize);
     }
     Ok(DEFAULT_CHUNK_SIZE)
 }

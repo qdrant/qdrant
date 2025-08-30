@@ -1,0 +1,8 @@
+[build]
+pre-build = [
+    "apt-get update && apt-get install -y zip wget",
+    "wget https://github.com/protocolbuffers/protobuf/releases/download/v22.2/protoc-22.2-linux-x86_64.zip",
+    "unzip protoc-22.2-linux-x86_64.zip",
+    "cp -r include/google /usr/include/google",
+    "protoc --version",
+]

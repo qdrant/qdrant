@@ -33,10 +33,10 @@ fn main() {
         builder.flag("-O3");
         // Use popcnt instruction
         builder.flag("-mpopcnt");
+        builder.compile("simd_utils");
     } else if target_arch == "aarch64" && target_feature.split(',').any(|feat| feat == "neon") {
         builder.file("cpp/neon.c");
         builder.flag("-O3");
+        builder.compile("simd_utils");
     }
-
-    builder.compile("simd_utils");
 }
