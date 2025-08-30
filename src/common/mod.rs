@@ -1,13 +1,11 @@
 pub mod auth;
 pub mod collections;
-pub mod debugger;
 pub mod error_reporting;
 pub mod health;
 pub mod helpers;
 pub mod http_client;
 pub mod inference;
 pub mod metrics;
-pub mod pyroscope_state;
 pub mod query;
 pub mod snapshots;
 pub mod stacktrace;
