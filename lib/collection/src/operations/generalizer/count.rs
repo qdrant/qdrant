@@ -4,6 +4,16 @@ use crate::operations::types::CountRequestInternal;
 
 impl Generalizer for CountRequestInternal {
     fn generalize(&self, level: GeneralizationLevel) -> Value {
-        todo!()
+        let CountRequestInternal { filter, exact } = self;
+
+        let mut result = serde_json::json!({
+            "exact": exact,
+        });
+
+        if let Some(filter) = filter {
+            result["filter"] = filter.generalize(level);
+        }
+
+        result
     }
 }

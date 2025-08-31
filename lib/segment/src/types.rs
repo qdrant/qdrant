@@ -1715,6 +1715,10 @@ impl Payload {
     pub fn contains_key(&self, key: &str) -> bool {
         self.0.contains_key(key)
     }
+
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.keys()
+    }
 }
 
 impl PayloadContainer for Map<String, Value> {
