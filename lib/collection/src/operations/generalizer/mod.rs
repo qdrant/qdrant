@@ -1,10 +1,10 @@
-mod filter;
-mod placeholders;
-mod query;
 mod count;
 mod facet;
-mod points;
+mod filter;
 mod matrix;
+mod placeholders;
+mod points;
+mod query;
 mod query_group;
 mod update;
 

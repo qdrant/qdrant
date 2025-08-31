@@ -1,4 +1,5 @@
 use serde_json::Value;
+
 use crate::operations::generalizer::placeholders::size_value_placeholder;
 use crate::operations::generalizer::{GeneralizationLevel, Generalizer};
 use crate::operations::types::{PointRequestInternal, ScrollRequestInternal};
@@ -61,7 +62,10 @@ impl Generalizer for PointRequestInternal {
 
         match level {
             GeneralizationLevel::OnlyVector => {
-                let ids_repr: Vec<_> = ids.iter().map(|_| serde_json::json!({"type": "point_id"})).collect();
+                let ids_repr: Vec<_> = ids
+                    .iter()
+                    .map(|_| serde_json::json!({"type": "point_id"}))
+                    .collect();
                 result["ids"] = serde_json::Value::Array(ids_repr);
             }
             GeneralizationLevel::VectorAndValues => {

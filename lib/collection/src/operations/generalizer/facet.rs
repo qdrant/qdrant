@@ -1,5 +1,6 @@
-use serde_json::Value;
 use api::rest::FacetRequestInternal;
+use serde_json::Value;
+
 use crate::operations::generalizer::placeholders::size_value_placeholder;
 use crate::operations::generalizer::{GeneralizationLevel, Generalizer};
 

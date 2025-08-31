@@ -6,8 +6,8 @@ use std::time::Duration;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::Future;
 use itertools::Itertools;
-use serde::Serialize;
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
+use serde::Serialize;
 use tokio::sync::RwLockReadGuard;
 use types::PseudoId;
 

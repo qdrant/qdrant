@@ -1,12 +1,13 @@
-use crate::operations::generalizer::placeholders::{size_value_placeholder, text_placeholder};
-use crate::operations::generalizer::{GeneralizationLevel, Generalizer};
-use crate::operations::vector_ops::DeleteVectors;
 use api::rest::{
     Batch, BatchVectorStruct, Document, Image, InferenceObject, PointInsertOperations,
     PointVectors, PointsBatch, PointsList, UpdateVectors, Vector, VectorStruct,
 };
 use serde_json::{Value, json};
 use shard::operations::payload_ops::{DeletePayload, SetPayload};
+
+use crate::operations::generalizer::placeholders::{size_value_placeholder, text_placeholder};
+use crate::operations::generalizer::{GeneralizationLevel, Generalizer};
+use crate::operations::vector_ops::DeleteVectors;
 
 impl Generalizer for DeleteVectors {
     fn generalize(&self, level: GeneralizationLevel) -> Value {

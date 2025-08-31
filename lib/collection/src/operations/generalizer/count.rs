@@ -1,4 +1,5 @@
 use serde_json::Value;
+
 use crate::operations::generalizer::{GeneralizationLevel, Generalizer};
 use crate::operations::types::CountRequestInternal;
 
