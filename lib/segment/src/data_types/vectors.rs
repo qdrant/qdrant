@@ -297,6 +297,10 @@ impl<T> TypedMultiDenseVector<T> {
 pub type MultiDenseVectorInternal = TypedMultiDenseVector<VectorElementType>;
 
 impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
+    pub fn num_vectors(&self) -> usize {
+        self.flattened_vectors.len() / self.dim
+    }
+
     pub fn new(flattened_vectors: TypedDenseVector<T>, dim: usize) -> Self {
         debug_assert_eq!(flattened_vectors.len() % dim, 0, "Invalid vector length");
         Self {

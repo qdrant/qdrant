@@ -14,6 +14,7 @@ use segment::types::{
     WithVector,
 };
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
+use serde::Serialize;
 use tonic::Status;
 
 use crate::config::CollectionParams;
@@ -54,7 +55,7 @@ impl ShardQueryRequest {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum FusionInternal {
     /// Reciprocal Rank Fusion
     RrfK(usize),
@@ -62,7 +63,7 @@ pub enum FusionInternal {
     Dbsf,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum SampleInternal {
     Random,
 }

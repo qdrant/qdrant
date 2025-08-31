@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use common::types::ScoreType;
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -70,7 +71,7 @@ pub enum ParsedExpression {
     },
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize)]
 pub enum DecayKind {
     /// Linear decay function
     Lin,
@@ -80,7 +81,7 @@ pub enum DecayKind {
     Exp,
 }
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize)]
 pub enum VariableId {
     /// Score index
     Score(usize),

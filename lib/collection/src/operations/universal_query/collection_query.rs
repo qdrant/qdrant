@@ -11,6 +11,7 @@ use segment::types::{
     VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use serde::Serialize;
 
 use super::formula::FormulaInternal;
 use super::shard_query::{
@@ -186,7 +187,7 @@ pub struct NearestWithMmr<T> {
     pub mmr: Mmr,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Mmr {
     pub diversity: Option<f32>,
     pub candidates_limit: Option<usize>,

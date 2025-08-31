@@ -3,6 +3,7 @@ pub mod config_diff;
 pub mod consistency_params;
 pub mod conversions;
 pub mod conversions_rest;
+pub mod generalizer;
 pub mod operation_effect;
 pub mod payload_ops;
 pub mod point_ops;

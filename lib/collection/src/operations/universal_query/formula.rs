@@ -9,17 +9,18 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::{
 };
 use segment::json_path::JsonPath;
 use segment::types::{Condition, GeoPoint};
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::operations::types::{CollectionError, CollectionResult};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct FormulaInternal {
     pub formula: ExpressionInternal,
     pub defaults: HashMap<String, Value>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum ExpressionInternal {
     Constant(f32),
     Variable(String),
