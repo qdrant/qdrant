@@ -1,9 +1,9 @@
-use crate::operations::generalizer::{GeneralizationLevel, Generalizer};
+pub(crate) use crate::operations::generalizer::{GeneralizationLevel, Generalizer};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use std::time::Duration;
 
 #[derive(serde::Serialize, PartialEq, Eq, Clone)]
-struct LogEntry {
+pub struct LogEntry {
     collection_name: String,
     duration: Duration,
     request_name: String,
@@ -22,7 +22,7 @@ impl Ord for LogEntry {
     }
 }
 
-struct SlowRequestsLog {
+pub struct SlowRequestsLog {
     log_priority_queue: FixedLengthPriorityQueue<LogEntry>,
     generalization_level: GeneralizationLevel,
 }

@@ -39,7 +39,7 @@ pub fn process_point_operation(
         PointOperations::UpsertPointsConditional(operation) => {
             conditional_upsert(&segments.read(), op_num, operation, hw_counter)
         }
-        PointOperations::DeletePoints { ids, .. } => {
+        PointOperations::DeletePoints { ids } => {
             delete_points(&segments.read(), op_num, &ids, hw_counter)
         }
         PointOperations::DeletePointsByFilter(filter) => {

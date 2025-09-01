@@ -19,4 +19,6 @@ pub mod wal_delta;
 pub mod events;
 #[cfg(test)]
 mod tests;
+
+#[allow(dead_code)]
 mod profiling;
