@@ -321,10 +321,10 @@ mod tests {
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::{DEFAULT_STOPPED, Random, new_raw_scorer};
     use crate::vector_storage::quantized::quantized_vectors::{
         QuantizedVectors, QuantizedVectorsStorageType,
     };
+    use crate::vector_storage::{DEFAULT_STOPPED, Random, new_raw_scorer};
 
     #[test]
     fn test_basic_persistence() {

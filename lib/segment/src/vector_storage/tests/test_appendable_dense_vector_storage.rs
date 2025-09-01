@@ -17,11 +17,11 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendab
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_full_vector_storage;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-use crate::vector_storage::{
-    DEFAULT_STOPPED, Random, VectorStorage, VectorStorageEnum, new_raw_scorer,
-};
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
+};
+use crate::vector_storage::{
+    DEFAULT_STOPPED, Random, VectorStorage, VectorStorageEnum, new_raw_scorer,
 };
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
