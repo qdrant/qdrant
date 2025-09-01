@@ -26,7 +26,9 @@ use segment::types::{
     QuantizationSearchParams, Range, ScalarQuantizationConfig, SearchParams, SegmentConfig,
     SeqNumberType, VectorDataConfig, VectorStorageType,
 };
-use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use segment::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
+};
 use tempfile::Builder;
 
 const MAX_VECTORS_COUNT: usize = 3;
@@ -286,6 +288,7 @@ fn test_multivector_quantization_hnsw(
             QuantizedVectors::create(
                 &vector_storage.vector_storage.borrow(),
                 &quantization_config,
+                QuantizedVectorsStorageType::Immutable,
                 quantized_data_path,
                 4,
                 &stopped,
@@ -293,9 +296,14 @@ fn test_multivector_quantization_hnsw(
             .unwrap();
         }
         // test persistence, load quantized vectors
-        let quantized_vectors =
-            QuantizedVectors::load(&vector_storage.vector_storage.borrow(), quantized_data_path)
-                .unwrap();
+        let quantized_vectors = QuantizedVectors::load(
+            &quantization_config,
+            &vector_storage.vector_storage.borrow(),
+            quantized_data_path,
+            &stopped,
+        )
+        .unwrap()
+        .unwrap();
         vector_storage.quantized_vectors = Arc::new(AtomicRefCell::new(Some(quantized_vectors)));
     });
 

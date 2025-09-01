@@ -28,7 +28,9 @@ use segment::types::{
     Indexes, ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
     ScalarQuantizationConfig, SearchParams,
 };
-use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use segment::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
+};
 use tempfile::Builder;
 
 use crate::fixtures::segment::build_segment_1;
@@ -98,6 +100,7 @@ fn hnsw_quantized_search_test(
         let quantized_vectors = QuantizedVectors::create(
             &vector_storage.vector_storage.borrow(),
             &quantization_config,
+            QuantizedVectorsStorageType::Immutable,
             quantized_data_path,
             4,
             &stopped,

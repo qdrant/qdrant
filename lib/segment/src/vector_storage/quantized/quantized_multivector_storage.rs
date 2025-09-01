@@ -5,6 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use memmap2::MmapMut;
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_type::{MmapFlusher, MmapSlice};
 use quantization::EncodedVectors;
 use serde::{Deserialize, Serialize};
@@ -63,9 +64,7 @@ impl MultivectorOffsetsStorageRam {
             offsets,
         })
     }
-}
 
-impl MultivectorOffsetsStorageRam {
     pub fn load(path: &Path) -> OperationResult<Self> {
         let offsets_file = std::fs::OpenOptions::new()
             .read(true)
@@ -192,6 +191,35 @@ pub struct MultivectorOffsetsStorageChunkedMmap {
 }
 
 impl MultivectorOffsetsStorageChunkedMmap {
+    pub fn create(
+        path: &Path,
+        offsets: impl Iterator<Item = MultivectorOffset>,
+        in_ram: bool,
+    ) -> OperationResult<Self> {
+        let hw_counter = HardwareCounterCell::disposable();
+        let mut offsets_storage = Self::load(path, in_ram)?;
+        for (id, offset) in offsets.enumerate() {
+            offsets_storage.upsert_offset(id as PointOffsetType, offset, &hw_counter)?;
+        }
+        offsets_storage.flusher()()?;
+        Ok(offsets_storage)
+    }
+
+    pub fn load(path: &Path, in_ram: bool) -> OperationResult<Self> {
+        let advice = if in_ram {
+            AdviceSetting::from(Advice::Normal)
+        } else {
+            AdviceSetting::Global
+        };
+        let data = ChunkedMmapVectors::<MultivectorOffset>::open(
+            path,
+            1,
+            advice,
+            Some(in_ram), // populate
+        )?;
+        Ok(Self { data })
+    }
+
     pub fn populate(&self) -> OperationResult<()> {
         self.data.populate()
     }

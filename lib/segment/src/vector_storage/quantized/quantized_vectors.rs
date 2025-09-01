@@ -25,7 +25,9 @@ use crate::types::{
     ProductQuantization, ProductQuantizationConfig, QuantizationConfig, ScalarQuantization,
     ScalarQuantizationConfig, VectorStorageDatatype,
 };
-use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedMmapStorage;
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
+    QuantizedChunkedMmapStorage, QuantizedChunkedMmapStorageBuilder,
+};
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
 };
@@ -43,15 +45,23 @@ use crate::vector_storage::{
     VectorStorage, VectorStorageEnum,
 };
 
+// todo: remove this const and use feature flags
+pub const ENABLE_APPENDABLE_QUANTIZATION: bool = false;
+
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
 pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
+pub const QUANTIZED_APPENDABLE_DATA_PATH: &str = "quantized_data";
 pub const QUANTIZED_META_PATH: &str = "quantized.meta.json";
 pub const QUANTIZED_OFFSETS_PATH: &str = "quantized.offsets.data";
+pub const QUANTIZED_APPENDABLE_OFFSETS_PATH: &str = "quantized_offsets_data";
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct QuantizedVectorsConfig {
     pub quantization_config: QuantizationConfig,
     pub vector_parameters: quantization::VectorParameters,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "QuantizedVectorsStorageType::is_immutable")]
+    pub storage_type: QuantizedVectorsStorageType,
 }
 
 impl fmt::Debug for QuantizedVectorsConfig {
@@ -59,6 +69,19 @@ impl fmt::Debug for QuantizedVectorsConfig {
         f.debug_struct("QuantizedVectorsConfig")
             .field("quantization_config", &self.quantization_config)
             .finish_non_exhaustive()
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, Eq, PartialEq, Default)]
+pub enum QuantizedVectorsStorageType {
+    #[default]
+    Immutable,
+    Mutable,
+}
+
+impl QuantizedVectorsStorageType {
+    pub fn is_immutable(&self) -> bool {
+        matches!(self, QuantizedVectorsStorageType::Immutable)
     }
 }
 
@@ -346,16 +369,22 @@ impl QuantizedVectors {
         path.join(QUANTIZED_CONFIG_PATH)
     }
 
-    fn get_data_path(path: &Path) -> PathBuf {
-        path.join(QUANTIZED_DATA_PATH)
+    fn get_data_path(path: &Path, storage_type: QuantizedVectorsStorageType) -> PathBuf {
+        match storage_type {
+            QuantizedVectorsStorageType::Immutable => path.join(QUANTIZED_DATA_PATH),
+            QuantizedVectorsStorageType::Mutable => path.join(QUANTIZED_APPENDABLE_DATA_PATH),
+        }
     }
 
     fn get_meta_path(path: &Path) -> PathBuf {
         path.join(QUANTIZED_META_PATH)
     }
 
-    fn get_offsets_path(path: &Path) -> PathBuf {
-        path.join(QUANTIZED_OFFSETS_PATH)
+    fn get_offsets_path(path: &Path, storage_type: QuantizedVectorsStorageType) -> PathBuf {
+        match storage_type {
+            QuantizedVectorsStorageType::Immutable => path.join(QUANTIZED_OFFSETS_PATH),
+            QuantizedVectorsStorageType::Mutable => path.join(QUANTIZED_APPENDABLE_OFFSETS_PATH),
+        }
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
@@ -411,106 +440,242 @@ impl QuantizedVectors {
     pub fn create(
         vector_storage: &VectorStorageEnum,
         quantization_config: &QuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         match vector_storage {
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimple(v) => {
-                Self::create_impl(v, quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::DenseSimple(v) => Self::create_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleByte(v) => {
-                Self::create_impl(v, quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::DenseSimpleByte(v) => Self::create_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleHalf(v) => {
-                Self::create_impl(v, quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseVolatile(v) => {
-                Self::create_impl(v, quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::DenseSimpleHalf(v) => Self::create_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseVolatile(v) => Self::create_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => {
-                Self::create_impl(v, quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::DenseVolatileByte(v) => Self::create_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => {
-                Self::create_impl(v, quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseMemmap(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseMemmapByte(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseMemmapHalf(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableMemmap(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableInRam(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableInRamByte(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableInRamHalf(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::DenseVolatileHalf(v) => Self::create_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseMemmap(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseMemmapByte(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseMemmapHalf(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseAppendableMemmap(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseAppendableInRam(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseAppendableInRamByte(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseAppendableInRamHalf(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::SparseVolatile(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::SparseMmap(_) => Err(OperationError::WrongSparse),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimple(v) => {
-                Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::MultiDenseSimple(v) => Self::create_multi_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimpleByte(v) => {
-                Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::MultiDenseSimpleByte(v) => Self::create_multi_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimpleHalf(v) => {
-                Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseVolatile(v) => {
-                Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::MultiDenseSimpleHalf(v) => Self::create_multi_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::MultiDenseVolatile(v) => Self::create_multi_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => {
-                Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::MultiDenseVolatileByte(v) => Self::create_multi_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => {
-                Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableInRam(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => Self::create_multi_impl(
+                v,
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::MultiDenseAppendableInRam(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
         }
     }
 
@@ -520,6 +685,7 @@ impl QuantizedVectors {
     >(
         vector_storage: &TVectorStorage,
         quantization_config: &QuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
@@ -537,7 +703,8 @@ impl QuantizedVectors {
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
-        let vector_parameters = Self::construct_vector_parameters(distance, dim, count);
+        let vector_parameters =
+            Self::construct_vector_parameters(distance, dim, count, storage_type);
 
         let quantized_storage = match quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
@@ -547,6 +714,7 @@ impl QuantizedVectors {
                 &vector_parameters,
                 count,
                 scalar_config,
+                storage_type,
                 path,
                 on_disk_vector_storage,
                 stopped,
@@ -557,6 +725,7 @@ impl QuantizedVectors {
                     &vector_parameters,
                     count,
                     pq_config,
+                    storage_type,
                     path,
                     on_disk_vector_storage,
                     max_threads,
@@ -570,6 +739,7 @@ impl QuantizedVectors {
                 &vector_parameters,
                 count,
                 binary_config,
+                storage_type,
                 path,
                 on_disk_vector_storage,
                 stopped,
@@ -579,6 +749,7 @@ impl QuantizedVectors {
         let quantized_vectors_config = QuantizedVectorsConfig {
             quantization_config: quantization_config.clone(),
             vector_parameters,
+            storage_type,
         };
 
         let quantized_vectors = QuantizedVectors {
@@ -599,6 +770,7 @@ impl QuantizedVectors {
     >(
         vector_storage: &TVectorStorage,
         quantization_config: &QuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
@@ -615,7 +787,7 @@ impl QuantizedVectors {
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
         let vector_parameters =
-            Self::construct_vector_parameters(distance, dim, inner_vectors_count);
+            Self::construct_vector_parameters(distance, dim, inner_vectors_count, storage_type);
 
         let offsets = (0..vectors_count as PointOffsetType)
             .map(|idx| vector_storage.get_multi::<Random>(idx).vectors_count() as PointOffsetType)
@@ -638,6 +810,7 @@ impl QuantizedVectors {
                 vectors_count,
                 inner_vectors_count,
                 scalar_config,
+                storage_type,
                 multi_vector_config,
                 path,
                 on_disk_vector_storage,
@@ -651,6 +824,7 @@ impl QuantizedVectors {
                     vectors_count,
                     inner_vectors_count,
                     pq_config,
+                    storage_type,
                     multi_vector_config,
                     path,
                     on_disk_vector_storage,
@@ -667,6 +841,7 @@ impl QuantizedVectors {
                 vectors_count,
                 inner_vectors_count,
                 binary_config,
+                storage_type,
                 multi_vector_config,
                 path,
                 on_disk_vector_storage,
@@ -677,6 +852,7 @@ impl QuantizedVectors {
         let quantized_vectors_config = QuantizedVectorsConfig {
             quantization_config: quantization_config.clone(),
             vector_parameters,
+            storage_type,
         };
 
         let quantized_vectors = QuantizedVectors {
@@ -691,13 +867,40 @@ impl QuantizedVectors {
         Ok(quantized_vectors)
     }
 
-    pub fn config_exists(path: &Path) -> bool {
-        path.join(QUANTIZED_CONFIG_PATH).exists()
+    pub fn load(
+        quantization_config: &QuantizationConfig,
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Option<Self>> {
+        let config_path = Self::get_config_path(path);
+        if config_path.exists() {
+            let config: QuantizedVectorsConfig = read_json(&config_path)?;
+            return Ok(Some(Self::load_impl(config, vector_storage, path)?));
+        }
+
+        // If we don't have an appendable quantization feature, do not create a new one.
+        if !ENABLE_APPENDABLE_QUANTIZATION {
+            // TODO: use feature flag
+            return Ok(None);
+        }
+
+        let quantized_vectors = Self::create(
+            vector_storage,
+            quantization_config,
+            QuantizedVectorsStorageType::Mutable,
+            path,
+            1,
+            stopped,
+        )?;
+        Ok(Some(quantized_vectors))
     }
 
-    pub fn load(vector_storage: &VectorStorageEnum, path: &Path) -> OperationResult<Self> {
-        let config_path = Self::get_config_path(path);
-        let config: QuantizedVectorsConfig = read_json(&config_path)?;
+    pub fn load_impl(
+        config: QuantizedVectorsConfig,
+        vector_storage: &VectorStorageEnum,
+        path: &Path,
+    ) -> OperationResult<Self> {
         let quantized_store = if let Some(multivector_config) =
             vector_storage.try_multi_vector_config()
         {
@@ -755,18 +958,24 @@ impl QuantizedVectors {
         config: &QuantizedVectorsConfig,
         scalar_config: &ScalarQuantizationConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
+        if !config.storage_type.is_immutable() {
+            return Err(OperationError::service_error(
+                "Mutable quantized storage is not supported for Scalar Quantization",
+            ));
+        }
+
         let on_disk_vector_storage = vector_storage.is_on_disk();
-        let data_path = Self::get_data_path(path);
+        let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
         if Self::is_ram(scalar_config.always_ram, on_disk_vector_storage) {
             let quantized_vector_size =
                 EncodedVectorsU8::<QuantizedRamStorage>::get_quantized_vector_size(
                     &config.vector_parameters,
                 );
-            let quantized_vector_size =
+            let quantized_vectors_storage =
                 QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
             Ok(QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::load(
-                quantized_vector_size,
+                quantized_vectors_storage,
                 &meta_path,
             )?))
         } else {
@@ -774,10 +983,10 @@ impl QuantizedVectors {
                 EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(
                     &config.vector_parameters,
                 );
-            let quantized_vector_size =
+            let quantized_vectors_storage =
                 QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
             Ok(QuantizedVectorStorage::ScalarMmap(EncodedVectorsU8::load(
-                quantized_vector_size,
+                quantized_vectors_storage,
                 &meta_path,
             )?))
         }
@@ -790,10 +999,16 @@ impl QuantizedVectors {
         scalar_config: &ScalarQuantizationConfig,
         multivector_config: &MultiVectorConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
+        if !config.storage_type.is_immutable() {
+            return Err(OperationError::service_error(
+                "Mutable quantized multivector storage is not supported for Scalar Quantization",
+            ));
+        }
+
         let on_disk_vector_storage = vector_storage.is_on_disk();
-        let data_path = Self::get_data_path(path);
+        let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
-        let offsets_path = Self::get_offsets_path(path);
+        let offsets_path = Self::get_offsets_path(path, config.storage_type);
         if Self::is_ram(scalar_config.always_ram, on_disk_vector_storage) {
             let quantized_vector_size =
                 EncodedVectorsU8::<QuantizedRamStorage>::get_quantized_vector_size(
@@ -837,8 +1052,14 @@ impl QuantizedVectors {
         config: &QuantizedVectorsConfig,
         pq_config: &ProductQuantizationConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
+        if !config.storage_type.is_immutable() {
+            return Err(OperationError::service_error(
+                "Mutable quantized storage is not supported for Product Quantization",
+            ));
+        }
+
         let on_disk_vector_storage = vector_storage.is_on_disk();
-        let data_path = Self::get_data_path(path);
+        let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
         if Self::is_ram(pq_config.always_ram, on_disk_vector_storage) {
             let bucket_size = Self::get_bucket_size(pq_config.compression);
@@ -876,10 +1097,16 @@ impl QuantizedVectors {
         pq_config: &ProductQuantizationConfig,
         multivector_config: &MultiVectorConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
+        if !config.storage_type.is_immutable() {
+            return Err(OperationError::service_error(
+                "Mutable quantized multivector storage is not supported for Product Quantization",
+            ));
+        }
+
         let on_disk_vector_storage = vector_storage.is_on_disk();
-        let data_path = Self::get_data_path(path);
+        let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
-        let offsets_path = Self::get_offsets_path(path);
+        let offsets_path = Self::get_offsets_path(path, config.storage_type);
         if Self::is_ram(pq_config.always_ram, on_disk_vector_storage) {
             let bucket_size = Self::get_bucket_size(pq_config.compression);
             let quantized_vector_size =
@@ -928,32 +1155,52 @@ impl QuantizedVectors {
         binary_config: &BinaryQuantizationConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
         let on_disk_vector_storage = vector_storage.is_on_disk();
-        let data_path = Self::get_data_path(path);
+        let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
-        if Self::is_ram(binary_config.always_ram, on_disk_vector_storage) {
-            let quantized_vector_size =
+        let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
+
+        match (in_ram, config.storage_type) {
+            (_, QuantizedVectorsStorageType::Mutable) => {
+                let quantized_vector_size =
+                EncodedVectorsBin::<u128, QuantizedChunkedMmapStorage>::get_quantized_vector_size_from_params(
+                    config.vector_parameters.dim,
+                    Self::convert_binary_encoding(binary_config.encoding),
+                );
+                let quantization_storage = QuantizedChunkedMmapStorage::new(
+                    data_path.as_path(),
+                    quantized_vector_size,
+                    in_ram,
+                )?;
+                Ok(QuantizedVectorStorage::BinaryChunkedMmap(
+                    EncodedVectorsBin::load(quantization_storage, meta_path.as_path())?,
+                ))
+            }
+            (true, QuantizedVectorsStorageType::Immutable) => {
+                let quantized_vector_size =
                 EncodedVectorsBin::<u128, QuantizedRamStorage>::get_quantized_vector_size_from_params(
                     config.vector_parameters.dim,
                     Self::convert_binary_encoding(binary_config.encoding),
                 );
-            let quantized_vectors_storage =
-                QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
-            Ok(QuantizedVectorStorage::BinaryRam(EncodedVectorsBin::load(
-                quantized_vectors_storage,
-                &meta_path,
-            )?))
-        } else {
-            let quantized_vector_size =
+                let quantized_vectors_storage =
+                    QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+                Ok(QuantizedVectorStorage::BinaryRam(EncodedVectorsBin::load(
+                    quantized_vectors_storage,
+                    &meta_path,
+                )?))
+            }
+            (false, QuantizedVectorsStorageType::Immutable) => {
+                let quantized_vector_size =
                 EncodedVectorsBin::<u128, QuantizedMmapStorage>::get_quantized_vector_size_from_params(
                     config.vector_parameters.dim,
                     Self::convert_binary_encoding(binary_config.encoding),
                 );
-            let quantized_vectors_storage =
-                QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
-            Ok(QuantizedVectorStorage::BinaryMmap(EncodedVectorsBin::load(
-                quantized_vectors_storage,
-                &meta_path,
-            )?))
+                let quantized_vectors_storage =
+                    QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+                Ok(QuantizedVectorStorage::BinaryMmap(EncodedVectorsBin::load(
+                    quantized_vectors_storage,
+                    &meta_path,
+                )?))
+            }
         }
     }
 
@@ -965,61 +1212,101 @@ impl QuantizedVectors {
         multivector_config: &MultiVectorConfig,
     ) -> OperationResult<QuantizedVectorStorage> {
         let on_disk_vector_storage = vector_storage.is_on_disk();
-        let data_path = Self::get_data_path(path);
+        let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
-        let offsets_path = Self::get_offsets_path(path);
-        if Self::is_ram(binary_config.always_ram, on_disk_vector_storage) {
-            let quantized_vector_size =
+        let offsets_path = Self::get_offsets_path(path, config.storage_type);
+        let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
+
+        match (in_ram, config.storage_type) {
+            (_, QuantizedVectorsStorageType::Mutable) => {
+                let quantized_vector_size =
+                EncodedVectorsBin::<u8, QuantizedChunkedMmapStorage>::get_quantized_vector_size_from_params(
+                    config.vector_parameters.dim,
+                    Self::convert_binary_encoding(binary_config.encoding),
+                );
+                let quantization_storage = QuantizedChunkedMmapStorage::new(
+                    data_path.as_path(),
+                    quantized_vector_size,
+                    in_ram,
+                )?;
+                let inner_storage =
+                    EncodedVectorsBin::load(quantization_storage, meta_path.as_path())?;
+                let offsets_storage =
+                    MultivectorOffsetsStorageChunkedMmap::load(offsets_path.as_path(), in_ram)?;
+
+                Ok(QuantizedVectorStorage::BinaryChunkedMmapMulti(
+                    QuantizedMultivectorStorage::new(
+                        config.vector_parameters.dim,
+                        inner_storage,
+                        offsets_storage,
+                        *multivector_config,
+                    ),
+                ))
+            }
+            (true, QuantizedVectorsStorageType::Immutable) => {
+                let quantized_vector_size =
                 EncodedVectorsBin::<u8, QuantizedRamStorage>::get_quantized_vector_size_from_params(
                     config.vector_parameters.dim,
                     Self::convert_binary_encoding(binary_config.encoding),
                 );
-            let inner_vectors_storage =
-                QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
-            let inner_vectors_storage = EncodedVectorsBin::load(inner_vectors_storage, &meta_path)?;
-            let offsets = MultivectorOffsetsStorageRam::load(&offsets_path)?;
-            Ok(QuantizedVectorStorage::BinaryRamMulti(
-                QuantizedMultivectorStorage::new(
-                    config.vector_parameters.dim,
-                    inner_vectors_storage,
-                    offsets,
-                    *multivector_config,
-                ),
-            ))
-        } else {
-            let quantized_vector_size =
+                let inner_vectors_storage =
+                    QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+                let inner_vectors_storage =
+                    EncodedVectorsBin::load(inner_vectors_storage, &meta_path)?;
+                let offsets = MultivectorOffsetsStorageRam::load(&offsets_path)?;
+                Ok(QuantizedVectorStorage::BinaryRamMulti(
+                    QuantizedMultivectorStorage::new(
+                        config.vector_parameters.dim,
+                        inner_vectors_storage,
+                        offsets,
+                        *multivector_config,
+                    ),
+                ))
+            }
+            (false, QuantizedVectorsStorageType::Immutable) => {
+                let quantized_vector_size =
                 EncodedVectorsBin::<u8, QuantizedMmapStorage>::get_quantized_vector_size_from_params(
                     config.vector_parameters.dim,
                     Self::convert_binary_encoding(binary_config.encoding),
                 );
-            let inner_vectors_storage =
-                QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
-            let inner_vectors_storage = EncodedVectorsBin::load(inner_vectors_storage, &meta_path)?;
-            let offsets = MultivectorOffsetsStorageMmap::load(&offsets_path)?;
-            Ok(QuantizedVectorStorage::BinaryMmapMulti(
-                QuantizedMultivectorStorage::new(
-                    config.vector_parameters.dim,
-                    inner_vectors_storage,
-                    offsets,
-                    *multivector_config,
-                ),
-            ))
+                let inner_vectors_storage =
+                    QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
+                let inner_vectors_storage =
+                    EncodedVectorsBin::load(inner_vectors_storage, &meta_path)?;
+                let offsets = MultivectorOffsetsStorageMmap::load(&offsets_path)?;
+                Ok(QuantizedVectorStorage::BinaryMmapMulti(
+                    QuantizedMultivectorStorage::new(
+                        config.vector_parameters.dim,
+                        inner_vectors_storage,
+                        offsets,
+                        *multivector_config,
+                    ),
+                ))
+            }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_scalar<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         scalar_config: &ScalarQuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
         path: &Path,
         on_disk_vector_storage: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
+        if !storage_type.is_immutable() {
+            return Err(OperationError::service_error(
+                "Mutable scalar quantization is not supported",
+            ));
+        }
+
         let quantized_vector_size =
             EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(vector_parameters);
         let meta_path = Self::get_meta_path(path);
-        let data_path = Self::get_data_path(path);
+        let data_path = Self::get_data_path(path, storage_type);
         let in_ram = Self::is_ram(scalar_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let storage_builder = QuantizedRamStorageBuilder::new(
@@ -1064,16 +1351,23 @@ impl QuantizedVectors {
         vectors_count: usize,
         inner_vectors_count: usize,
         scalar_config: &ScalarQuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
         multi_vector_config: MultiVectorConfig,
         path: &Path,
         on_disk_vector_storage: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
+        if !storage_type.is_immutable() {
+            return Err(OperationError::service_error(
+                "Mutable scalar quantization is not supported",
+            ));
+        }
+
         let quantized_vector_size =
             EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(vector_parameters);
         let meta_path = Self::get_meta_path(path);
-        let data_path = Self::get_data_path(path);
-        let offsets_path = Self::get_offsets_path(path);
+        let data_path = Self::get_data_path(path, storage_type);
+        let offsets_path = Self::get_offsets_path(path, storage_type);
         let in_ram = Self::is_ram(scalar_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let storage_builder = QuantizedRamStorageBuilder::new(
@@ -1133,11 +1427,18 @@ impl QuantizedVectors {
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         pq_config: &ProductQuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
         path: &Path,
         on_disk_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
+        if !storage_type.is_immutable() {
+            return Err(OperationError::service_error(
+                "Mutable product quantization is not supported",
+            ));
+        }
+
         let bucket_size = Self::get_bucket_size(pq_config.compression);
         let quantized_vector_size =
             EncodedVectorsPQ::<QuantizedMmapStorage>::get_quantized_vector_size(
@@ -1145,7 +1446,7 @@ impl QuantizedVectors {
                 bucket_size,
             );
         let meta_path = Self::get_meta_path(path);
-        let data_path = Self::get_data_path(path);
+        let data_path = Self::get_data_path(path, storage_type);
         let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let storage_builder = QuantizedRamStorageBuilder::new(
@@ -1190,12 +1491,19 @@ impl QuantizedVectors {
         vectors_count: usize,
         inner_vectors_count: usize,
         pq_config: &ProductQuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
         multi_vector_config: MultiVectorConfig,
         path: &Path,
         on_disk_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
+        if !storage_type.is_immutable() {
+            return Err(OperationError::service_error(
+                "Mutable product quantization is not supported",
+            ));
+        }
+
         let bucket_size = Self::get_bucket_size(pq_config.compression);
         let quantized_vector_size =
             EncodedVectorsPQ::<QuantizedMmapStorage>::get_quantized_vector_size(
@@ -1203,8 +1511,8 @@ impl QuantizedVectors {
                 bucket_size,
             );
         let meta_path = Self::get_meta_path(path);
-        let data_path = Self::get_data_path(path);
-        let offsets_path = Self::get_offsets_path(path);
+        let data_path = Self::get_data_path(path, storage_type);
+        let offsets_path = Self::get_offsets_path(path, storage_type);
         let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
         if in_ram {
             let storage_builder = QuantizedRamStorageBuilder::new(
@@ -1260,11 +1568,13 @@ impl QuantizedVectors {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_binary<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         binary_config: &BinaryQuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
         path: &Path,
         on_disk_vector_storage: bool,
         stopped: &AtomicBool,
@@ -1277,42 +1587,64 @@ impl QuantizedVectors {
                 encoding,
             );
         let meta_path = Self::get_meta_path(path);
-        let data_path = Self::get_data_path(path);
+        let data_path = Self::get_data_path(path, storage_type);
         let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
-        if in_ram {
-            let storage_builder = QuantizedRamStorageBuilder::new(
-                data_path.as_path(),
-                vectors_count,
-                quantized_vector_size,
-            )?;
-            Ok(QuantizedVectorStorage::BinaryRam(
-                EncodedVectorsBin::encode(
-                    vectors,
-                    storage_builder,
-                    vector_parameters,
-                    encoding,
-                    query_encoding,
-                    Some(meta_path.as_path()),
-                    stopped,
-                )?,
-            ))
-        } else {
-            let storage_builder = QuantizedMmapStorageBuilder::new(
-                data_path.as_path(),
-                vectors_count,
-                quantized_vector_size,
-            )?;
-            Ok(QuantizedVectorStorage::BinaryMmap(
-                EncodedVectorsBin::encode(
-                    vectors,
-                    storage_builder,
-                    vector_parameters,
-                    encoding,
-                    query_encoding,
-                    Some(meta_path.as_path()),
-                    stopped,
-                )?,
-            ))
+
+        match (in_ram, storage_type) {
+            (_, QuantizedVectorsStorageType::Mutable) => {
+                let storage_builder = QuantizedChunkedMmapStorageBuilder::new(
+                    data_path.as_path(),
+                    quantized_vector_size,
+                    in_ram,
+                )?;
+                Ok(QuantizedVectorStorage::BinaryChunkedMmap(
+                    EncodedVectorsBin::encode(
+                        vectors,
+                        storage_builder,
+                        vector_parameters,
+                        encoding,
+                        query_encoding,
+                        Some(meta_path.as_path()),
+                        stopped,
+                    )?,
+                ))
+            }
+            (true, QuantizedVectorsStorageType::Immutable) => {
+                let storage_builder = QuantizedRamStorageBuilder::new(
+                    data_path.as_path(),
+                    vectors_count,
+                    quantized_vector_size,
+                )?;
+                Ok(QuantizedVectorStorage::BinaryRam(
+                    EncodedVectorsBin::encode(
+                        vectors,
+                        storage_builder,
+                        vector_parameters,
+                        encoding,
+                        query_encoding,
+                        Some(meta_path.as_path()),
+                        stopped,
+                    )?,
+                ))
+            }
+            (false, QuantizedVectorsStorageType::Immutable) => {
+                let storage_builder = QuantizedMmapStorageBuilder::new(
+                    data_path.as_path(),
+                    vectors_count,
+                    quantized_vector_size,
+                )?;
+                Ok(QuantizedVectorStorage::BinaryMmap(
+                    EncodedVectorsBin::encode(
+                        vectors,
+                        storage_builder,
+                        vector_parameters,
+                        encoding,
+                        query_encoding,
+                        Some(meta_path.as_path()),
+                        stopped,
+                    )?,
+                ))
+            }
         }
     }
 
@@ -1324,6 +1656,7 @@ impl QuantizedVectors {
         vectors_count: usize,
         inner_vectors_count: usize,
         binary_config: &BinaryQuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
         multi_vector_config: MultiVectorConfig,
         path: &Path,
         on_disk_vector_storage: bool,
@@ -1337,58 +1670,88 @@ impl QuantizedVectors {
                 encoding,
             );
         let meta_path = Self::get_meta_path(path);
-        let data_path = Self::get_data_path(path);
-        let offsets_path = Self::get_offsets_path(path);
+        let data_path = Self::get_data_path(path, storage_type);
+        let offsets_path = Self::get_offsets_path(path, storage_type);
         let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
-        if in_ram {
-            let storage_builder = QuantizedRamStorageBuilder::new(
-                data_path.as_path(),
-                inner_vectors_count,
-                quantized_vector_size,
-            )?;
-            let quantized_storage = EncodedVectorsBin::encode(
-                vectors,
-                storage_builder,
-                vector_parameters,
-                encoding,
-                query_encoding,
-                Some(meta_path.as_path()),
-                stopped,
-            )?;
-            let offsets = MultivectorOffsetsStorageRam::create(&offsets_path, offsets)?;
-            Ok(QuantizedVectorStorage::BinaryRamMulti(
-                QuantizedMultivectorStorage::new(
-                    vector_parameters.dim,
-                    quantized_storage,
-                    offsets,
-                    multi_vector_config,
-                ),
-            ))
-        } else {
-            let storage_builder = QuantizedMmapStorageBuilder::new(
-                data_path.as_path(),
-                inner_vectors_count,
-                quantized_vector_size,
-            )?;
-            let quantized_storage = EncodedVectorsBin::encode(
-                vectors,
-                storage_builder,
-                vector_parameters,
-                encoding,
-                query_encoding,
-                Some(meta_path.as_path()),
-                stopped,
-            )?;
-            let offsets =
-                MultivectorOffsetsStorageMmap::create(&offsets_path, offsets, vectors_count)?;
-            Ok(QuantizedVectorStorage::BinaryMmapMulti(
-                QuantizedMultivectorStorage::new(
-                    vector_parameters.dim,
-                    quantized_storage,
-                    offsets,
-                    multi_vector_config,
-                ),
-            ))
+
+        match (in_ram, storage_type) {
+            (_, QuantizedVectorsStorageType::Mutable) => {
+                let storage_builder = QuantizedChunkedMmapStorageBuilder::new(
+                    data_path.as_path(),
+                    quantized_vector_size,
+                    in_ram,
+                )?;
+                let quantized_storage = EncodedVectorsBin::encode(
+                    vectors,
+                    storage_builder,
+                    vector_parameters,
+                    encoding,
+                    query_encoding,
+                    Some(meta_path.as_path()),
+                    stopped,
+                )?;
+                let offsets =
+                    MultivectorOffsetsStorageChunkedMmap::create(&offsets_path, offsets, in_ram)?;
+                Ok(QuantizedVectorStorage::BinaryChunkedMmapMulti(
+                    QuantizedMultivectorStorage::new(
+                        vector_parameters.dim,
+                        quantized_storage,
+                        offsets,
+                        multi_vector_config,
+                    ),
+                ))
+            }
+            (true, QuantizedVectorsStorageType::Immutable) => {
+                let storage_builder = QuantizedRamStorageBuilder::new(
+                    data_path.as_path(),
+                    inner_vectors_count,
+                    quantized_vector_size,
+                )?;
+                let quantized_storage = EncodedVectorsBin::encode(
+                    vectors,
+                    storage_builder,
+                    vector_parameters,
+                    encoding,
+                    query_encoding,
+                    Some(meta_path.as_path()),
+                    stopped,
+                )?;
+                let offsets = MultivectorOffsetsStorageRam::create(&offsets_path, offsets)?;
+                Ok(QuantizedVectorStorage::BinaryRamMulti(
+                    QuantizedMultivectorStorage::new(
+                        vector_parameters.dim,
+                        quantized_storage,
+                        offsets,
+                        multi_vector_config,
+                    ),
+                ))
+            }
+            (false, QuantizedVectorsStorageType::Immutable) => {
+                let storage_builder = QuantizedMmapStorageBuilder::new(
+                    data_path.as_path(),
+                    inner_vectors_count,
+                    quantized_vector_size,
+                )?;
+                let quantized_storage = EncodedVectorsBin::encode(
+                    vectors,
+                    storage_builder,
+                    vector_parameters,
+                    encoding,
+                    query_encoding,
+                    Some(meta_path.as_path()),
+                    stopped,
+                )?;
+                let offsets =
+                    MultivectorOffsetsStorageMmap::create(&offsets_path, offsets, vectors_count)?;
+                Ok(QuantizedVectorStorage::BinaryMmapMulti(
+                    QuantizedMultivectorStorage::new(
+                        vector_parameters.dim,
+                        quantized_storage,
+                        offsets,
+                        multi_vector_config,
+                    ),
+                ))
+            }
         }
     }
 
@@ -1436,11 +1799,15 @@ impl QuantizedVectors {
     fn construct_vector_parameters(
         distance: Distance,
         dim: usize,
-        count: usize,
+        deprecated_count: usize,
+        storage_type: QuantizedVectorsStorageType,
     ) -> quantization::VectorParameters {
         quantization::VectorParameters {
             dim,
-            deprecated_count: Some(count),
+            deprecated_count: match storage_type {
+                QuantizedVectorsStorageType::Mutable => None,
+                QuantizedVectorsStorageType::Immutable => Some(deprecated_count),
+            },
             distance_type: match distance {
                 Distance::Cosine => quantization::DistanceType::Dot,
                 Distance::Euclid => quantization::DistanceType::L2,
