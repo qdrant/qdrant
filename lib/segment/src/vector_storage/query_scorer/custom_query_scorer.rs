@@ -9,10 +9,10 @@ use common::types::{PointOffsetType, ScoreType};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector};
 use crate::spaces::metric::Metric;
-use crate::vector_storage::DenseVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::{DenseVectorStorage, Random};
 
 pub struct CustomQueryScorer<
     'a,
@@ -84,7 +84,7 @@ impl<
 
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self.vector_storage.get_dense(idx);
+        let stored = self.vector_storage.get_dense::<Random>(idx);
         self.hardware_counter.vector_io_read().incr();
 
         self.score(stored)

@@ -26,7 +26,7 @@ use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectorStorage, QuantizedVectors,
 };
 use crate::vector_storage::{
-    DenseVectorStorage, MultiVectorStorage, VectorStorage, VectorStorageEnum,
+    DenseVectorStorage, MultiVectorStorage, Random, VectorStorage, VectorStorageEnum,
 };
 
 pub const ELEMENTS_PER_SUBGROUP: usize = 4;
@@ -526,7 +526,7 @@ impl GpuVectorStorage {
                 vector_storage.vector_dim(),
                 (0..vector_storage.total_vector_count()).map(|id| {
                     VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
-                        vector_storage.get_dense(id as PointOffsetType),
+                        vector_storage.get_dense::<Random>(id as PointOffsetType),
                     ))
                 }),
                 None,
@@ -554,7 +554,7 @@ impl GpuVectorStorage {
                 vector_storage.vector_dim(),
                 (0..vector_storage.total_vector_count()).map(|id| {
                     VectorElementTypeHalf::slice_to_float_cow(Cow::Borrowed(
-                        vector_storage.get_dense(id as PointOffsetType),
+                        vector_storage.get_dense::<Random>(id as PointOffsetType),
                     ))
                 }),
                 None,
@@ -576,7 +576,7 @@ impl GpuVectorStorage {
             vector_storage.total_vector_count(),
             vector_storage.vector_dim(),
             (0..vector_storage.total_vector_count())
-                .map(|id| Cow::Borrowed(vector_storage.get_dense(id as PointOffsetType))),
+                .map(|id| Cow::Borrowed(vector_storage.get_dense::<Random>(id as PointOffsetType))),
             None,
             None,
             stopped,
@@ -596,7 +596,7 @@ impl GpuVectorStorage {
                 (0..vector_storage.total_vector_count())
                     .map(|id| {
                         vector_storage
-                            .get_multi(id as PointOffsetType)
+                            .get_multi::<Random>(id as PointOffsetType)
                             .vectors_count()
                     })
                     .sum(),
@@ -628,7 +628,7 @@ impl GpuVectorStorage {
                 (0..vector_storage.total_vector_count())
                     .map(|id| {
                         vector_storage
-                            .get_multi(id as PointOffsetType)
+                            .get_multi::<Random>(id as PointOffsetType)
                             .vectors_count()
                     })
                     .sum(),
@@ -655,7 +655,7 @@ impl GpuVectorStorage {
             (0..vector_storage.total_vector_count())
                 .map(|id| {
                     vector_storage
-                        .get_multi(id as PointOffsetType)
+                        .get_multi::<Random>(id as PointOffsetType)
                         .vectors_count()
                 })
                 .sum(),

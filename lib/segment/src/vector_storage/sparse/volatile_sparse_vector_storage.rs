@@ -14,7 +14,9 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
-use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    AccessPattern, Random, SparseVectorStorage, VectorStorage, VectorStorageEnum,
+};
 
 pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
 
@@ -99,19 +101,18 @@ impl VolatileSparseVectorStorage {
 }
 
 impl SparseVectorStorage for VolatileSparseVectorStorage {
-    fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
+    fn get_sparse<P: AccessPattern>(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
         let vector = self
-            .get_sparse_opt(key)?
+            .get_sparse_opt::<P>(key)?
             .ok_or_else(|| OperationError::service_error("Sparse vector not found in storage"))?;
         Ok(vector)
     }
 
-    fn get_sparse_sequential(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
+    fn get_sparse_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> OperationResult<Option<SparseVector>> {
         // Already in memory, so no sequential optimizations available.
-        self.get_sparse(key)
-    }
-
-    fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
         let opt_vector = self.vectors.get(key as usize).cloned().flatten();
         Ok(opt_vector)
     }
@@ -134,21 +135,17 @@ impl VectorStorage for VolatileSparseVectorStorage {
         self.total_vector_count
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
-        let vector = self.get_vector_opt(key);
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+        let vector = self.get_vector_opt::<P>(key);
         vector.unwrap_or_else(CowVector::default_sparse)
-    }
-
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
-        // In memory, so no sequential read optimization.
-        self.get_vector(key)
     }
 
     /// Get vector by key, if it exists.
     ///
     /// ignore any error
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        match self.get_sparse_opt(key) {
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+        // In memory, so no sequential read optimization.
+        match self.get_sparse_opt::<P>(key) {
             Ok(Some(vector)) => Some(CowVector::from(vector)),
             _ => None,
         }
@@ -197,7 +194,7 @@ impl VectorStorage for VolatileSparseVectorStorage {
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
-            let old_vector = self.get_sparse_opt(key).ok().flatten();
+            let old_vector = self.get_sparse_opt::<Random>(key).ok().flatten();
             self.update_stored(key, true, old_vector.as_ref());
         }
         Ok(is_deleted)

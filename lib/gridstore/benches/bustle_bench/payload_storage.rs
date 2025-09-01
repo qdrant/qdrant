@@ -31,7 +31,8 @@ impl Collection for ArcStorage<PayloadStorage> {
 
 impl SequentialCollectionHandle for PayloadStorage {
     fn get(&self, key: &u32) -> bool {
-        self.get_value(*key, &HardwareCounterCell::new()).is_some() // No measurements needed in benches
+        self.get_value::<false>(*key, &HardwareCounterCell::new()) // No measurements needed in benches
+            .is_some()
     }
 
     fn insert(&mut self, key: u32, payload: &Payload) -> bool {

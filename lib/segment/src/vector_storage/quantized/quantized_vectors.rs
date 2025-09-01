@@ -39,8 +39,8 @@ use crate::vector_storage::quantized::quantized_ram_storage::{
     QuantizedRamStorage, QuantizedRamStorageBuilder,
 };
 use crate::vector_storage::{
-    DenseVectorStorage, MultiVectorStorage, RawScorer, RawScorerImpl, VectorStorage,
-    VectorStorageEnum,
+    DenseVectorStorage, MultiVectorStorage, Random, RawScorer, RawScorerImpl, Sequential,
+    VectorStorage, VectorStorageEnum,
 };
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
@@ -532,7 +532,7 @@ impl QuantizedVectors {
             PrimitiveVectorElement::quantization_preprocess(
                 quantization_config,
                 distance,
-                vector_storage.get_dense_sequential(i),
+                vector_storage.get_dense::<Sequential>(i),
             )
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
@@ -618,7 +618,7 @@ impl QuantizedVectors {
             Self::construct_vector_parameters(distance, dim, inner_vectors_count);
 
         let offsets = (0..vectors_count as PointOffsetType)
-            .map(|idx| vector_storage.get_multi(idx).vectors_count() as PointOffsetType)
+            .map(|idx| vector_storage.get_multi::<Random>(idx).vectors_count() as PointOffsetType)
             .scan(0, |offset_acc, multi_vector_len| {
                 let offset = *offset_acc;
                 *offset_acc += multi_vector_len;
