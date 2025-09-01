@@ -17,7 +17,7 @@ use crate::common::operation_error::{
 };
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, serialize_graph_links};
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::hnsw_index::point_scorer::{FilteredScorer, ScorerFilters};
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 
@@ -237,7 +237,7 @@ impl GraphLayers {
 
     fn get_entry_point(
         &self,
-        points_scorer: &FilteredScorer,
+        filters: &ScorerFilters,
         custom_entry_points: Option<&[PointOffsetType]>,
     ) -> Option<EntryPoint> {
         // Try to get it from custom entry points
@@ -245,7 +245,7 @@ impl GraphLayers {
             .and_then(|custom_entry_points| {
                 custom_entry_points
                     .iter()
-                    .filter(|&&point_id| points_scorer.check_vector(point_id))
+                    .filter(|&&point_id| filters.check_vector(point_id))
                     .map(|&point_id| {
                         let level = self.point_level(point_id);
                         EntryPoint { point_id, level }
@@ -255,7 +255,7 @@ impl GraphLayers {
             .or_else(|| {
                 // Otherwise use normal entry points
                 self.entry_points
-                    .get_entry_point(|point_id| points_scorer.check_vector(point_id))
+                    .get_entry_point(|point_id| filters.check_vector(point_id))
             })
     }
 
@@ -267,7 +267,8 @@ impl GraphLayers {
         custom_entry_points: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<ScoredPointOffset>> {
-        let Some(entry_point) = self.get_entry_point(&points_scorer, custom_entry_points) else {
+        let Some(entry_point) = self.get_entry_point(points_scorer.filters(), custom_entry_points)
+        else {
             return Ok(Vec::default());
         };
 

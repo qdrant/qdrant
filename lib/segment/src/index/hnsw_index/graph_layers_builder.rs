@@ -394,7 +394,7 @@ impl GraphLayersBuilder {
         let entry_point_opt = self
             .entry_points
             .lock()
-            .get_entry_point(|point_id| points_scorer.check_vector(point_id));
+            .get_entry_point(|point_id| points_scorer.filters().check_vector(point_id));
         if let Some(entry_point) = entry_point_opt {
             let mut level_entry = if entry_point.level > level {
                 // The entry point is higher than a new point
@@ -435,7 +435,7 @@ impl GraphLayersBuilder {
         self.entry_points
             .lock()
             .new_point(point_id, level, |point_id| {
-                points_scorer.check_vector(point_id)
+                points_scorer.filters().check_vector(point_id)
             });
     }
 

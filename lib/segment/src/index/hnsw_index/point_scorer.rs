@@ -56,6 +56,8 @@ pub struct ScorerFilters<'a> {
 }
 
 impl<'a> ScorerFilters<'a> {
+    /// Return true if vector satisfies current search context for given point:
+    /// exists, not deleted, and satisfies filter context.
     pub fn check_vector(&self, point_id: PointOffsetType) -> bool {
         check_deleted_condition(point_id, self.vec_deleted, self.point_deleted)
             && self
@@ -182,10 +184,8 @@ impl<'a> FilteredScorer<'a> {
         }
     }
 
-    /// Return true if vector satisfies current search context for given point:
-    /// exists, not deleted, and satisfies filter context.
-    pub fn check_vector(&self, point_id: PointOffsetType) -> bool {
-        self.filters.check_vector(point_id)
+    pub fn filters(&self) -> &ScorerFilters<'a> {
+        &self.filters
     }
 
     /// Return [`FilteredBytesScorer`] if the underlying scorer supports it.
@@ -211,7 +211,7 @@ impl<'a> FilteredScorer<'a> {
         point_ids: &mut Vec<PointOffsetType>,
         limit: usize,
     ) -> impl Iterator<Item = ScoredPointOffset> {
-        point_ids.retain(|point_id| self.check_vector(*point_id));
+        point_ids.retain(|point_id| self.filters.check_vector(*point_id));
         if limit != 0 {
             point_ids.truncate(limit);
         }
@@ -270,7 +270,7 @@ impl<'a> FilteredScorer<'a> {
             let mut chunk_size = 0;
             for point_id in &mut points {
                 check_process_stopped(is_stopped)?;
-                if !self.check_vector(point_id) {
+                if !self.filters.check_vector(point_id) {
                     continue;
                 }
                 chunk[chunk_size] = point_id;
