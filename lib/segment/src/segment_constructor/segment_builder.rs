@@ -718,7 +718,7 @@ impl SegmentBuilder {
 
             if let Some(quantization_config) = config.quantization_config(vector_name) {
                 // Don't build quantization for appendable vectors if quantization method does not support it
-                if is_appendable && !quantization_config.is_appendable() {
+                if is_appendable && !quantization_config.supports_appendable() {
                     continue;
                 }
 

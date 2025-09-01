@@ -775,7 +775,7 @@ impl QuantizationConfig {
         self != other
     }
 
-    pub fn is_appendable(&self) -> bool {
+    pub fn supports_appendable(&self) -> bool {
         matches!(self, QuantizationConfig::Binary(_))
     }
 }
