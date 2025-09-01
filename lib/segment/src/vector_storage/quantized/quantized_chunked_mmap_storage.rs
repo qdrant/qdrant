@@ -15,6 +15,21 @@ pub struct QuantizedChunkedMmapStorage {
 }
 
 impl QuantizedChunkedMmapStorage {
+    pub fn new(path: &Path, quantized_vector_size: usize, in_ram: bool) -> OperationResult<Self> {
+        let advice = if in_ram {
+            AdviceSetting::from(Advice::Normal)
+        } else {
+            AdviceSetting::Global
+        };
+        let data = ChunkedMmapVectors::<u8>::open(
+            path,
+            quantized_vector_size,
+            advice,
+            Some(in_ram), // populate
+        )?;
+        Ok(Self { data })
+    }
+
     pub fn populate(&self) -> OperationResult<()> {
         self.data.populate()
     }
