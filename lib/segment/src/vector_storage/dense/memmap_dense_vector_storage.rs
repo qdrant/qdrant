@@ -325,10 +325,6 @@ mod tests {
         QuantizedVectors, QuantizedVectorsStorageType,
     };
     use crate::vector_storage::{DEFAULT_STOPPED, Random, new_raw_scorer};
-    use crate::vector_storage::quantized::quantized_vectors::{
-        QuantizedVectors, QuantizedVectorsStorageType,
-    };
-    use crate::vector_storage::{DEFAULT_STOPPED, Random, new_raw_scorer};
 
     #[test]
     fn test_basic_persistence() {
