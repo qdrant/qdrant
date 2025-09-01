@@ -404,37 +404,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         &self.encoded_vectors
     }
 
-    pub fn new_empty_appendable(
-        encoded_vectors: TStorage,
-        vector_parameters: VectorParameters,
-        encoding: Encoding,
-        query_encoding: QueryEncoding,
-        meta_path: &Path,
-    ) -> std::io::Result<Self> {
-        let metadata = Metadata {
-            vector_parameters,
-            encoding,
-            query_encoding,
-            vector_stats: None,
-        };
-        meta_path
-            .parent()
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "Path must have a parent directory",
-                )
-            })
-            .and_then(std::fs::create_dir_all)?;
-        atomic_save_json(meta_path, &metadata)?;
-        Ok(Self {
-            encoded_vectors,
-            metadata,
-            metadata_path: Some(meta_path.to_path_buf()),
-            bits_store_type: PhantomData,
-        })
-    }
-
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
