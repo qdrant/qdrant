@@ -24,7 +24,7 @@ use crate::types::{
     SnapshotFormat, VectorName,
 };
 use crate::utils;
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::{Random, VectorStorage};
 
 impl Segment {
     /// Replace vectors in-place
@@ -378,7 +378,7 @@ impl Segment {
                     ),
                 })
             } else {
-                let vector = vector_storage.get_vector(point_offset);
+                let vector = vector_storage.get_vector::<Random>(point_offset);
                 if vector_storage.is_on_disk() {
                     hw_counter
                         .vector_io_read()
@@ -606,7 +606,7 @@ impl Segment {
                 let vector_storage = vector_data.vector_storage.borrow();
                 let is_vector_deleted_storage = vector_storage.is_deleted_vector(internal_id);
                 let is_vector_deleted_tracker = id_tracker.is_deleted_point(internal_id);
-                let vector_stored = vector_storage.get_vector_opt(internal_id);
+                let vector_stored = vector_storage.get_vector_opt::<Random>(internal_id);
                 if !is_vector_deleted_storage
                     && !is_vector_deleted_tracker
                     && vector_stored.is_none()
