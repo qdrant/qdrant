@@ -926,7 +926,7 @@ impl SegmentHolder {
         mut operation: F,
     ) -> OperationResult<()>
     where
-        F: FnMut(Arc<RwLock<dyn SegmentEntry>>) -> OperationResult<()>,
+        F: FnMut(&RwLock<dyn SegmentEntry>) -> OperationResult<()>,
     {
         let segments_lock = segments.upgradable_read();
 
@@ -945,9 +945,12 @@ impl SegmentHolder {
         let mut unproxied_segment_ids = Vec::with_capacity(proxies.len());
         for (segment_id, proxy_segment) in &proxies {
             // Get segment to snapshot
-            let segment = match proxy_segment {
+            let op_result = match proxy_segment {
                 LockedSegment::Proxy(proxy_segment) => {
-                    proxy_segment.read().wrapped_segment.get_cloned()
+                    let guard = proxy_segment.read();
+                    let segment = guard.wrapped_segment.get();
+                    // Call provided function on wrapped segment while holding guard to parent segment
+                    operation(segment)
                 }
                 // All segments to snapshot should be proxy, warn if this is not the case
                 LockedSegment::Original(segment) => {
@@ -955,12 +958,12 @@ impl SegmentHolder {
                         false,
                         "Reached non-proxy segment while applying function to proxies, this should not happen, ignoring",
                     );
-                    segment.clone()
+                    // Call provided function on segment
+                    operation(segment.as_ref())
                 }
             };
 
-            // Call provided function on segment
-            if let Err(err) = operation(segment) {
+            if let Err(err) = op_result {
                 result = Err(OperationError::service_error(format!(
                     "Applying function to a proxied shard segment {segment_id} failed: {err}"
                 )));
