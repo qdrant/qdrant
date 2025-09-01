@@ -266,7 +266,7 @@ pub fn conditional_upsert(
     if upserted_points == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.suggest_max_persisted_segment_version(op_num);
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(upserted_points)
@@ -374,7 +374,7 @@ pub fn delete_points_by_filter(
     if total_deleted == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.suggest_max_persisted_segment_version(op_num);
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(total_deleted)
@@ -573,7 +573,7 @@ pub fn delete_vectors_by_filter(
     if vectors_deleted == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.suggest_max_persisted_segment_version(op_num);
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(vectors_deleted)
@@ -630,7 +630,7 @@ pub fn set_payload_by_filter(
     if points_updated == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.suggest_max_persisted_segment_version(op_num);
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(points_updated)
@@ -691,7 +691,7 @@ pub fn delete_payload_by_filter(
     if points_updated == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.suggest_max_persisted_segment_version(op_num);
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(points_updated)
@@ -734,7 +734,7 @@ pub fn clear_payload_by_filter(
     if points_cleared == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.suggest_max_persisted_segment_version(op_num);
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(points_cleared)
@@ -782,7 +782,7 @@ pub fn overwrite_payload_by_filter(
     if points_updated == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
         // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
-        segments.suggest_max_persisted_segment_version(op_num);
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(points_updated)

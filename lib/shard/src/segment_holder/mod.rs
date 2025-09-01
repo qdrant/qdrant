@@ -303,9 +303,9 @@ impl SegmentHolder {
     /// Suggests a new maximum persisted segment version when calling `flush_all`. This can be used to make WAL acknowledge no-op operations,
     /// so we don't replay them on startup. This is especially helpful if the no-op operation is computational expensive and could cause
     /// WAL replay, and thus Qdrant startup, take a significant amount of time.
-    pub fn suggest_max_persisted_segment_version(&self, op_num: SeqNumberType) {
+    pub fn bump_max_segment_version_overwrite(&self, op_num: SeqNumberType) {
         self.max_persisted_segment_version_overwrite
-            .store(op_num, Ordering::Relaxed);
+            .fetch_max(op_num, Ordering::Relaxed);
     }
 
     pub fn segment_ids(&self) -> Vec<SegmentId> {
