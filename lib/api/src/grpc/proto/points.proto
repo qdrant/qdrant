@@ -1033,6 +1033,7 @@ message UpdateBatchResponse {
 message FacetResponse {
     repeated FacetHit hits = 1;
     double time = 2; // Time spent to process
+    optional Usage usage = 3;
 }
 
 message SearchMatrixPairsResponse {
