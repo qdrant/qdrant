@@ -1004,6 +1004,7 @@ pub async fn facet(
         hits: hits.into_iter().map(From::from).collect(),
         time: timing.elapsed().as_secs_f64(),
         // TDOO(io_measurement): add hw info in response
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
