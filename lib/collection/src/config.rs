@@ -478,7 +478,7 @@ impl CollectionParams {
             quantization_config
                 // Only if there is no `quantization_config` we may start using `collection_quantization` (to avoid mixing quantizations between segments)
                 .or(collection_quantization)
-                .filter(|c| c.is_appendable())
+                .filter(|c| c.supports_appendable())
                 .cloned()
         };
 
