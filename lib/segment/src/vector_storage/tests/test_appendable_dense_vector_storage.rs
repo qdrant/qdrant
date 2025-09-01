@@ -26,6 +26,9 @@ use crate::vector_storage::{
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
+use crate::vector_storage::{
+    DEFAULT_STOPPED, Random, VectorStorage, VectorStorageEnum, new_raw_scorer,
+};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points = [
