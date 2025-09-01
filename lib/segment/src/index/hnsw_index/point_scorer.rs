@@ -39,13 +39,13 @@ use crate::vector_storage::{
 /// ```
 pub struct FilteredScorer<'a> {
     raw_scorer: Box<dyn RawScorer + 'a>,
-    filters: Filters<'a, BoxCow<'a, dyn FilterContext + 'a>>,
+    filters: ScorerFilters<'a>,
     /// Temporary buffer for scores.
     scores_buffer: Vec<ScoreType>,
 }
 
-struct Filters<'a, FilterContextT: Deref<Target = dyn FilterContext + 'a>> {
-    filter_context: Option<FilterContextT>,
+pub struct ScorerFilters<'a> {
+    filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
     /// Point deleted flags should be explicitly present as `false`
     /// for each existing point in the segment.
     /// If there are no flags for some points, they are considered deleted.
@@ -55,7 +55,7 @@ struct Filters<'a, FilterContextT: Deref<Target = dyn FilterContext + 'a>> {
     vec_deleted: &'a BitSlice,
 }
 
-impl<'a, FilterContextT: Deref<Target = dyn FilterContext + 'a>> Filters<'a, FilterContextT> {
+impl<'a> ScorerFilters<'a> {
     pub fn check_vector(&self, point_id: PointOffsetType) -> bool {
         check_deleted_condition(point_id, self.vec_deleted, self.point_deleted)
             && self
@@ -63,14 +63,22 @@ impl<'a, FilterContextT: Deref<Target = dyn FilterContext + 'a>> Filters<'a, Fil
                 .as_ref()
                 .is_none_or(|f| f.check(point_id))
     }
+
+    fn as_borrowed(&'a self) -> Self {
+        ScorerFilters {
+            filter_context: self.filter_context.as_ref().map(BoxCow::as_borrowed),
+            point_deleted: self.point_deleted,
+            vec_deleted: self.vec_deleted,
+        }
+    }
 }
 
-pub struct FilteredQuantizedScorer<'a> {
-    query_scorer_bytes: &'a dyn QueryScorerBytes,
-    filters: Filters<'a, &'a dyn FilterContext>,
+pub struct FilteredBytesScorer<'a> {
+    scorer_bytes: &'a dyn QueryScorerBytes,
+    filters: ScorerFilters<'a>,
 }
 
-impl<'a> FilteredQuantizedScorer<'a> {
+impl<'a> FilteredBytesScorer<'a> {
     pub fn score_points(
         &self,
         points: &mut Vec<(PointOffsetType, &[u8])>,
@@ -83,7 +91,7 @@ impl<'a> FilteredQuantizedScorer<'a> {
 
         points.iter().map(|&(idx, bytes)| ScoredPointOffset {
             idx,
-            score: self.query_scorer_bytes.score_bytes(bytes),
+            score: self.scorer_bytes.score_bytes(bytes),
         })
     }
 }
@@ -106,7 +114,7 @@ impl<'a> FilteredScorer<'a> {
         };
         Ok(FilteredScorer {
             raw_scorer,
-            filters: Filters {
+            filters: ScorerFilters {
                 filter_context,
                 point_deleted,
                 vec_deleted: vectors.deleted_vector_bitslice(),
@@ -143,7 +151,7 @@ impl<'a> FilteredScorer<'a> {
         };
         Ok(FilteredScorer {
             raw_scorer,
-            filters: Filters {
+            filters: ScorerFilters {
                 filter_context,
                 point_deleted,
                 vec_deleted: vectors.deleted_vector_bitslice(),
@@ -165,7 +173,7 @@ impl<'a> FilteredScorer<'a> {
     ) -> Self {
         FilteredScorer {
             raw_scorer: new_raw_scorer(vector, vector_storage, HardwareCounterCell::new()).unwrap(),
-            filters: Filters {
+            filters: ScorerFilters {
                 filter_context: None,
                 point_deleted,
                 vec_deleted: vector_storage.deleted_vector_bitslice(),
@@ -180,16 +188,11 @@ impl<'a> FilteredScorer<'a> {
         self.filters.check_vector(point_id)
     }
 
-    /// Return [`FilteredQuantizedScorer`] if the underlying scorer supports it.
-    pub fn quantized_scorer(&self) -> Option<FilteredQuantizedScorer<'_>> {
-        let query_scorer_bytes = self.raw_scorer.scorer_bytes()?;
-        Some(FilteredQuantizedScorer {
-            query_scorer_bytes,
-            filters: Filters {
-                filter_context: self.filters.filter_context.as_deref(),
-                point_deleted: self.filters.point_deleted,
-                vec_deleted: self.filters.vec_deleted,
-            },
+    /// Return [`FilteredBytesScorer`] if the underlying scorer supports it.
+    pub fn scorer_bytes(&self) -> Option<FilteredBytesScorer<'_>> {
+        Some(FilteredBytesScorer {
+            scorer_bytes: self.raw_scorer.scorer_bytes()?,
+            filters: self.filters.as_borrowed(),
         })
     }
 
@@ -299,6 +302,15 @@ impl<'a> FilteredScorer<'a> {
 pub enum BoxCow<'a, T: ?Sized> {
     Borrowed(&'a T),
     Boxed(Box<T>),
+}
+
+impl<'a, T: ?Sized> BoxCow<'a, T> {
+    pub fn as_borrowed(&'a self) -> Self {
+        match self {
+            BoxCow::Borrowed(t) => BoxCow::Borrowed(t),
+            BoxCow::Boxed(t) => BoxCow::Borrowed(t.as_ref()),
+        }
+    }
 }
 
 impl<T: ?Sized> Deref for BoxCow<'_, T> {
