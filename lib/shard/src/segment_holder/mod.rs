@@ -844,7 +844,13 @@ impl SegmentHolder {
             "Must flush appendable segments first",
         );
 
-        let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
+        // Start with the max_persisted_vesrion at the set overwrite value, which may just be 0
+        // Any of the segments we flush may increase this if they have a higher persisted version
+        // The overwrite is required to ensure we acknowledge no-op operations in WAL that didn't hit any segment
+        let mut max_persisted_version: SeqNumberType = self
+            .max_persisted_segment_version_overwrite
+            .load(Ordering::Relaxed);
+
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
         let mut proxy_segments = vec![];
@@ -875,17 +881,6 @@ impl SegmentHolder {
                 SegmentType::Special => proxy_segments.push(read_segment),
             }
         }
-
-        // Overwrite max_persisted_version with our artificial segment version, to acknowledge for some requests, that didn't hit any point in WAL.
-        // See the documentation of `max_persisted_segment_version_overwrite` for more information about this value.
-        let max_persisted_segment_version_overwrite = self
-            .max_persisted_segment_version_overwrite
-            .load(Ordering::Relaxed);
-
-        max_persisted_version = max(
-            max_persisted_version,
-            max_persisted_segment_version_overwrite,
-        );
 
         drop(proxy_segments);
 
