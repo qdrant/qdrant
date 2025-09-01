@@ -2947,6 +2947,7 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | hits | [FacetHit](#qdrant-FacetHit) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
