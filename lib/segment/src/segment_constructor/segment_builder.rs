@@ -709,8 +709,7 @@ impl SegmentBuilder {
             let is_appendable = vector_config.is_appendable();
 
             // If appendable quantization feature is not enabled, skip appendable case.
-            // TODO: use feature flag
-            if is_appendable && !crate::vector_storage::quantized::quantized_vectors::ENABLE_APPENDABLE_QUANTIZATION {
+            if is_appendable && !common::flags::feature_flags().appendable_quantization {
                 continue;
             }
 
