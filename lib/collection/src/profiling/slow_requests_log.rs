@@ -1,6 +1,8 @@
-pub(crate) use crate::operations::generalizer::{GeneralizationLevel, Generalizer};
-use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use std::time::Duration;
+
+use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+
+pub(crate) use crate::operations::generalizer::{GeneralizationLevel, Generalizer};
 
 #[derive(serde::Serialize, PartialEq, Eq, Clone)]
 pub struct LogEntry {
@@ -83,9 +85,11 @@ impl SlowRequestsLog {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde_json::json;
     use std::time::Duration;
+
+    use serde_json::json;
+
+    use super::*;
 
     struct DummyGeneralizer;
     impl Generalizer for DummyGeneralizer {

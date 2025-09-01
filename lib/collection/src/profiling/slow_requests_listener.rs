@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
+use tokio::sync::RwLock;
+
 use crate::operations::generalizer::GeneralizationLevel;
 use crate::profiling::slow_requests_log::{Generalizer, SlowRequestsLog};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 struct SlowRequestMessage {
     request: Arc<dyn Generalizer>,
