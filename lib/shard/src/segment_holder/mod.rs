@@ -805,6 +805,13 @@ impl SegmentHolder {
         // Grab and keep to segment RwLock's until the end of this function
         let segments = self.segment_locks(lock_order.iter().cloned())?;
 
+        // We can never have zero segments
+        // Having zero segments could permanently corrupt the WAL by acknowledging u64::MAX
+        assert!(
+            !segments.is_empty(),
+            "must always have at least one segment",
+        );
+
         // Read-lock all segments before flushing any, must prevent any writes to any segment
         // That is to prevent any copy-on-write operation on two segments from occurring in between
         // flushing the two segments. If that would happen, segments could end up in an
