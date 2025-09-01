@@ -14,7 +14,7 @@ pub struct LogEntry {
 
 impl PartialOrd for LogEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.duration.cmp(&other.duration))
+        Some(self.cmp(other))
     }
 }
 
