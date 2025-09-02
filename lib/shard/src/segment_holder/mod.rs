@@ -540,15 +540,18 @@ impl SegmentHolder {
             &T,
         ) -> OperationResult<bool>,
     {
-        let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
+        let (mut to_update, to_delete) = self.find_points_to_update_and_delete(ids);
+
+        // Apply point operations to selected segments
+        let mut applied_points = 0;
 
         // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly
-        for (segment_id, points) in to_delete {
+        for (segment_id, points_to_delete) in to_delete {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
 
-            for point_id in points {
+            for point_id in points_to_delete {
                 let version = write_segment.point_version(point_id).unwrap_or_default();
                 write_segment.delete_point(
                     version,
@@ -556,10 +559,19 @@ impl SegmentHolder {
                     &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
                 )?;
             }
+
+            // Apply update on the same segments with the same lock
+            if let Some(points_to_update) = to_update.remove(&segment_id) {
+                let segment_data = segment_data(write_segment.deref());
+                for point_id in points_to_update {
+                    let is_applied =
+                        point_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
+                    applied_points += usize::from(is_applied);
+                }
+            }
         }
 
-        // Apply point operations to selected segments
-        let mut applied_points = 0;
+        // Apply remaining updates
         for (segment_id, points) in to_update {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
