@@ -176,9 +176,8 @@ impl ConfigMismatchOptimizer {
                                 .map(|(current, target)| current.mismatch_requires_rebuild(target))
                                 // Or rebuild if we now change the enabled state on an indexed segment
                                 .unwrap_or_else(|| {
-                                    vector_data.index.is_indexed()
-                                        && (vector_data.quantization_config.is_some()
-                                            != target_quantization.is_some())
+                                    vector_data.quantization_config.is_some()
+                                        != target_quantization.is_some()
                                 })
                         });
 
