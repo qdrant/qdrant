@@ -1,4 +1,3 @@
-use crate::operations::generalizer::{Generalizer, Loggable};
 use segment::types::Payload;
 use serde_json::Value;
 use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
@@ -11,6 +10,8 @@ use shard::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, Vect
 use shard::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
+
+use crate::operations::generalizer::{Generalizer, Loggable};
 
 impl Generalizer for Payload {
     fn remove_vectors_and_payloads(&self) -> Self {

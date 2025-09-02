@@ -1,6 +1,7 @@
+use tokio::sync::RwLock;
+
 use crate::operations::generalizer::Loggable;
 use crate::profiling::slow_requests_log::SlowRequestsLog;
-use tokio::sync::RwLock;
 
 struct SlowRequestMessage {
     request: Box<dyn Loggable + Send + Sync>,

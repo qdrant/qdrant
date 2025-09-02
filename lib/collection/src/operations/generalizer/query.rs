@@ -1,12 +1,13 @@
+use segment::data_types::vectors::{MultiDenseVectorInternal, VectorInternal};
+use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use sparse::common::sparse_vector::SparseVector;
+use sparse::common::types::DimId;
+
 use crate::operations::generalizer::Generalizer;
 use crate::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryRequest, NearestWithMmr, Query, VectorInputInternal,
     VectorQuery,
 };
-use segment::data_types::vectors::{MultiDenseVectorInternal, VectorInternal};
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
-use sparse::common::sparse_vector::SparseVector;
-use sparse::common::types::DimId;
 
 impl Generalizer for CollectionQueryRequest {
     fn remove_vectors_and_payloads(&self) -> Self {
