@@ -1,15 +1,26 @@
 use std::time::Duration;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use itertools::Itertools;
+use schemars::JsonSchema;
+use serde::Serialize;
 
 use crate::operations::generalizer::Loggable;
 
-#[derive(serde::Serialize, PartialEq, Eq, Clone)]
+#[derive(Serialize, PartialEq, Eq, Clone, JsonSchema)]
 pub struct LogEntry {
     collection_name: String,
+    #[serde(serialize_with = "duration_as_seconds")]
     duration: Duration,
     request_name: String,
     request_body: serde_json::Value,
+}
+
+fn duration_as_seconds<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_f64(duration.as_millis() as f64 / 1000.0)
 }
 
 impl PartialOrd for LogEntry {
@@ -75,8 +86,13 @@ impl SlowRequestsLog {
         self.log_priority_queue.push(entry)
     }
 
-    pub fn get_log_entries(&self) -> Vec<LogEntry> {
-        self.log_priority_queue.iter_unsorted().cloned().collect()
+    pub fn get_log_entries(&self, limit: usize) -> Vec<LogEntry> {
+        self.log_priority_queue
+            .iter_unsorted()
+            .sorted_by(|a, b| b.cmp(a))
+            .take(limit)
+            .cloned()
+            .collect()
     }
 }
 
@@ -106,7 +122,7 @@ mod tests {
         log.log_request("col1", Duration::from_secs(1), &request);
         log.log_request("col2", Duration::from_secs(2), &request);
         log.log_request("col3", Duration::from_secs(3), &request);
-        let entries = log.get_log_entries();
+        let entries = log.get_log_entries(10);
         assert_eq!(entries.len(), 3);
 
         let evicted = log.log_request("col4", Duration::from_secs(4), &request);
@@ -114,12 +130,12 @@ mod tests {
         let evicted = evicted.unwrap();
         assert_eq!(evicted.collection_name, "col1");
 
-        let entries = log.get_log_entries();
+        let entries = log.get_log_entries(10);
         assert_eq!(entries.len(), 3);
 
         let evicted = log.log_request("col5", Duration::from_secs(1), &request);
         assert!(evicted.is_none());
-        let entries = log.get_log_entries();
+        let entries = log.get_log_entries(10);
         assert_eq!(entries.len(), 3);
     }
 }
