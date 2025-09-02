@@ -119,7 +119,7 @@ impl Collection {
             let mut new_request = request.clone();
             let request_limit = new_request.limit + new_request.offset;
 
-            let is_exact = request.params.map(|p| p.exact).unwrap_or(false);
+            let is_exact = request.params.as_ref().map(|p| p.exact).unwrap_or(false);
 
             if is_exact || request_limit < Self::SHARD_QUERY_SUBSAMPLING_LIMIT {
                 new_requests.push(new_request);

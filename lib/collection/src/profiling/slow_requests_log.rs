@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 
-pub(crate) use crate::operations::generalizer::{GeneralizationLevel, Generalizer};
+use crate::operations::generalizer::Loggable;
 
 #[derive(serde::Serialize, PartialEq, Eq, Clone)]
 pub struct LogEntry {
@@ -26,14 +26,12 @@ impl Ord for LogEntry {
 
 pub struct SlowRequestsLog {
     log_priority_queue: FixedLengthPriorityQueue<LogEntry>,
-    generalization_level: GeneralizationLevel,
 }
 
 impl SlowRequestsLog {
-    pub fn new(max_entries: usize, generalization_level: GeneralizationLevel) -> Self {
+    pub fn new(max_entries: usize) -> Self {
         SlowRequestsLog {
             log_priority_queue: FixedLengthPriorityQueue::new(max_entries),
-            generalization_level,
         }
     }
 
@@ -47,14 +45,14 @@ impl SlowRequestsLog {
         collection_name: &str,
         duration: Duration,
         request_name: &str,
-        request: &dyn Generalizer,
+        request: &dyn Loggable,
     ) -> Option<LogEntry> {
         if !self.log_priority_queue.is_full() {
             let entry = LogEntry {
                 collection_name: collection_name.to_string(),
                 duration,
                 request_name: request_name.to_string(),
-                request_body: request.generalize(self.generalization_level),
+                request_body: request.to_log_value(),
             };
             return self.log_priority_queue.push(entry);
         }
@@ -72,7 +70,7 @@ impl SlowRequestsLog {
             collection_name: collection_name.to_string(),
             duration,
             request_name: request_name.to_string(),
-            request_body: request.generalize(self.generalization_level),
+            request_body: request.to_log_value(),
         };
 
         self.log_priority_queue.push(entry)
@@ -87,21 +85,21 @@ impl SlowRequestsLog {
 mod tests {
     use std::time::Duration;
 
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use super::*;
 
-    struct DummyGeneralizer;
-    impl Generalizer for DummyGeneralizer {
-        fn generalize(&self, _level: GeneralizationLevel) -> serde_json::Value {
+    struct DummyLoggable;
+    impl Loggable for DummyLoggable {
+        fn to_log_value(&self) -> Value {
             json!({"dummy": true})
         }
     }
 
     #[test]
     fn test_get_slow_requests_returns_all_logged() {
-        let mut log = SlowRequestsLog::new(3, GeneralizationLevel::OnlyVector);
-        let request = DummyGeneralizer;
+        let mut log = SlowRequestsLog::new(3);
+        let request = DummyLoggable;
         log.log_request("col", Duration::from_secs(1), "req1", &request);
         log.log_request("col", Duration::from_secs(2), "req2", &request);
         log.log_request("col", Duration::from_secs(3), "req3", &request);

@@ -1,12 +1,9 @@
-use std::sync::Arc;
-
+use crate::operations::generalizer::Loggable;
+use crate::profiling::slow_requests_log::SlowRequestsLog;
 use tokio::sync::RwLock;
 
-use crate::operations::generalizer::GeneralizationLevel;
-use crate::profiling::slow_requests_log::{Generalizer, SlowRequestsLog};
-
 struct SlowRequestMessage {
-    request: Arc<dyn Generalizer>,
+    request: Box<dyn Loggable + Send + Sync>,
     duration: std::time::Duration,
     collection_name: String,
     request_name: String,
@@ -25,7 +22,7 @@ const QUEUE_CAPACITY: usize = 64;
 
 impl SlowRequestsListener {
     pub fn new() -> Self {
-        let log = SlowRequestsLog::new(MAX_REQUESTS_LOGGED, GeneralizationLevel::VectorAndValues);
+        let log = SlowRequestsLog::new(MAX_REQUESTS_LOGGED);
         let (sender, receiver) = tokio::sync::mpsc::channel(QUEUE_CAPACITY);
 
         SlowRequestsListener {

@@ -1,20 +1,12 @@
-use serde_json::Value;
-
-use crate::operations::generalizer::{GeneralizationLevel, Generalizer};
+use crate::operations::generalizer::Generalizer;
 use crate::operations::types::CountRequestInternal;
 
 impl Generalizer for CountRequestInternal {
-    fn generalize(&self, level: GeneralizationLevel) -> Value {
+    fn remove_vectors_and_payloads(&self) -> Self {
         let CountRequestInternal { filter, exact } = self;
-
-        let mut result = serde_json::json!({
-            "exact": exact,
-        });
-
-        if let Some(filter) = filter {
-            result["filter"] = filter.generalize(level);
+        Self {
+            filter: filter.clone(),
+            exact: *exact,
         }
-
-        result
     }
 }

@@ -1,31 +1,21 @@
 mod count;
 mod facet;
-mod filter;
 mod matrix;
-mod placeholders;
 mod points;
 mod query;
 mod query_group;
-mod update;
+mod update_persisted;
 
-#[derive(Debug, Clone, Copy)]
-pub enum GeneralizationLevel {
-    /// In this mode only vector-specific details are stripped from the request.
-    /// For example, in search request the actual vector values are removed, but other details like
-    /// filter conditions, top, etc are preserved.
-    OnlyVector,
-
-    /// In this mode all request-specific details are stripped, leaving only the operation type
-    /// and general structure.
-    /// For example, exact values of filters, top, etc are replaced with generalized placeholders.
-    VectorAndValues,
+/// A trait, that provides an interface for removing vectors and payloads from a structure.
+/// This is useful for generalizing requests by stripping out vector-specific and payload-specific details,
+/// and essentially making the structure much lighter.
+///
+/// It does create copy of the structure for all other fields except vectors.
+/// Vectors are replaces with length indications, payloads are replaced with keys and length indications.
+pub trait Generalizer {
+    fn remove_vectors_and_payloads(&self) -> Self;
 }
 
-/// This trait provides an interface for generalizing Requests to Qdrant into a more abstract representation.
-/// For example, search request should be stripped of all vector-specific details and represented as a generic "search" operation.
-/// Desired level of detalization is up to each Request type implementation.
-///
-/// This generalized representation is supposed to be used for logging and performance analysis purposes.
-pub trait Generalizer {
-    fn generalize(&self, level: GeneralizationLevel) -> serde_json::Value;
+pub trait Loggable {
+    fn to_log_value(&self) -> serde_json::Value;
 }

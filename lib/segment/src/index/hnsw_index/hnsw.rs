@@ -1251,7 +1251,7 @@ impl VectorIndex for HNSWIndex {
 
         let exact_params = if exact {
             params.map(|params| {
-                let mut params = *params;
+                let mut params = params.clone();
                 params.quantization = Some(QuantizationSearchParams {
                     ignore: true,
                     rescore: Some(false),
