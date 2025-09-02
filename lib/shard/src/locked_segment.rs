@@ -57,16 +57,6 @@ impl LockedSegment {
         }
     }
 
-    /// Get cloned Arc to the locked segment
-    ///
-    /// Use [`get()`] if possible.
-    pub fn get_cloned(&self) -> Arc<RwLock<dyn SegmentEntry>> {
-        match self {
-            LockedSegment::Original(segment) => segment.clone(),
-            LockedSegment::Proxy(proxy) => proxy.clone(),
-        }
-    }
-
     /// Consume the LockedSegment and drop the underlying segment data.
     /// Operation fails if the segment is used by other thread for longer than `timeout`.
     pub fn drop_data(self) -> OperationResult<()> {
