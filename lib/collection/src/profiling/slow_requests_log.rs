@@ -44,14 +44,13 @@ impl SlowRequestsLog {
         &mut self,
         collection_name: &str,
         duration: Duration,
-        request_name: &str,
         request: &dyn Loggable,
     ) -> Option<LogEntry> {
         if !self.log_priority_queue.is_full() {
             let entry = LogEntry {
                 collection_name: collection_name.to_string(),
                 duration,
-                request_name: request_name.to_string(),
+                request_name: request.request_name().to_string(),
                 request_body: request.to_log_value(),
             };
             return self.log_priority_queue.push(entry);
@@ -69,14 +68,14 @@ impl SlowRequestsLog {
         let entry = LogEntry {
             collection_name: collection_name.to_string(),
             duration,
-            request_name: request_name.to_string(),
+            request_name: request.request_name().to_string(),
             request_body: request.to_log_value(),
         };
 
         self.log_priority_queue.push(entry)
     }
 
-    pub fn get_slow_requests(&self) -> Vec<LogEntry> {
+    pub fn get_log_entries(&self) -> Vec<LogEntry> {
         self.log_priority_queue.iter_unsorted().cloned().collect()
     }
 }
@@ -94,29 +93,33 @@ mod tests {
         fn to_log_value(&self) -> Value {
             json!({"dummy": true})
         }
+
+        fn request_name(&self) -> &'static str {
+            "dummy"
+        }
     }
 
     #[test]
     fn test_get_slow_requests_returns_all_logged() {
         let mut log = SlowRequestsLog::new(3);
         let request = DummyLoggable;
-        log.log_request("col", Duration::from_secs(1), "req1", &request);
-        log.log_request("col", Duration::from_secs(2), "req2", &request);
-        log.log_request("col", Duration::from_secs(3), "req3", &request);
-        let entries = log.get_slow_requests();
+        log.log_request("col1", Duration::from_secs(1), &request);
+        log.log_request("col2", Duration::from_secs(2), &request);
+        log.log_request("col3", Duration::from_secs(3), &request);
+        let entries = log.get_log_entries();
         assert_eq!(entries.len(), 3);
 
-        let evicted = log.log_request("col", Duration::from_secs(4), "req4", &request);
+        let evicted = log.log_request("col4", Duration::from_secs(4), &request);
         assert!(evicted.is_some());
         let evicted = evicted.unwrap();
-        assert_eq!(evicted.request_name, "req1");
+        assert_eq!(evicted.collection_name, "col1");
 
-        let entries = log.get_slow_requests();
+        let entries = log.get_log_entries();
         assert_eq!(entries.len(), 3);
 
-        let evicted = log.log_request("col", Duration::from_secs(1), "req5", &request);
+        let evicted = log.log_request("col5", Duration::from_secs(1), &request);
         assert!(evicted.is_none());
-        let entries = log.get_slow_requests();
+        let entries = log.get_log_entries();
         assert_eq!(entries.len(), 3);
     }
 }

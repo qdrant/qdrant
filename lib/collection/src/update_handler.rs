@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::time::Instant;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -32,8 +33,10 @@ use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
 use crate::common::stoppable_task::{StoppableTaskHandle, spawn_stoppable};
 use crate::config::CollectionParams;
 use crate::operations::CollectionUpdateOperations;
+use crate::operations::generalizer::Generalizer;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::profiling::interface::log_request_to_collector;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::wal_delta::LockedWal;
@@ -778,6 +781,12 @@ impl UpdateHandler {
                         Ok(())
                     };
 
+                    let start_time = Instant::now();
+
+                    // This represents the operation without vectors and payloads for logging purposes
+                    // Do not use for anything else
+                    let loggable_operation = operation.remove_vectors_and_payloads();
+
                     let operation_result = flush_res.and_then(|_| {
                         CollectionUpdater::update(
                             &segments,
@@ -788,6 +797,10 @@ impl UpdateHandler {
                             &hw_measurements.get_counter_cell(),
                         )
                     });
+
+                    let duration = start_time.elapsed();
+
+                    log_request_to_collector("placeholder", loggable_operation, duration);
 
                     let res = match operation_result {
                         Ok(update_res) => optimize_sender

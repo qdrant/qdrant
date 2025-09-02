@@ -18,4 +18,6 @@ pub trait Generalizer {
 
 pub trait Loggable {
     fn to_log_value(&self) -> serde_json::Value;
+
+    fn request_name(&self) -> &'static str;
 }

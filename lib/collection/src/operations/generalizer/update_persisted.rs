@@ -28,6 +28,10 @@ impl Loggable for CollectionUpdateOperations {
     fn to_log_value(&self) -> Value {
         serde_json::to_value(self).unwrap_or_default()
     }
+
+    fn request_name(&self) -> &'static str {
+        "points-update"
+    }
 }
 
 impl Generalizer for CollectionUpdateOperations {

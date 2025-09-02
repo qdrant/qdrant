@@ -20,5 +20,4 @@ pub mod events;
 #[cfg(test)]
 mod tests;
 
-#[allow(dead_code)]
-mod profiling;
+pub mod profiling;

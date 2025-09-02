@@ -1,2 +1,3 @@
-mod slow_requests_listener;
-mod slow_requests_log;
+pub mod interface;
+mod slow_requests_collector;
+pub mod slow_requests_log;
