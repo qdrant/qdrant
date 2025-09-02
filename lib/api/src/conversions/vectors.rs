@@ -411,7 +411,7 @@ impl TryFrom<grpc::VectorsOutput> for VectorStructInternal {
 
 impl From<VectorInternal> for grpc::Vector {
     fn from(vector: VectorInternal) -> Self {
-        // ToDo(v1.18): before deprecating `data`, `indices`, and `vectors_count`, ensure
+        // ToDo(v1.17): before deprecating `data`, `indices`, and `vectors_count`, ensure
         //             that `vector` field is generated here.
         match vector {
             VectorInternal::Dense(vector) => Self {
