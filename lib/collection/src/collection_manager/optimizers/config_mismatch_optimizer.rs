@@ -184,6 +184,8 @@ impl ConfigMismatchOptimizer {
                                     let target_quantization_appendable = target_quantization
                                         .map(|q| q.supports_appendable())
                                         .unwrap_or(false);
+                                    // If segment is unindexed, only appendable quantization is applied.
+                                    // So that we check if any config is appendable to avoid infinity loop here.
                                     let unindexed_changed = vector_data_quantization_appendable
                                         || target_quantization_appendable;
                                     (vector_data.quantization_config.is_some()
