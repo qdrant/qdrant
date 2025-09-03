@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use segment::data_types::named_vectors::NamedVectors;
@@ -207,7 +207,7 @@ pub fn build_segment_2(path: &Path) -> Segment {
     segment2
 }
 
-pub fn build_test_holder(path: &Path) -> RwLock<SegmentHolder> {
+pub fn build_test_holder(path: &Path) -> Mutex<SegmentHolder> {
     let segment1 = build_segment_1(path);
     let segment2 = build_segment_2(path);
 
@@ -216,7 +216,7 @@ pub fn build_test_holder(path: &Path) -> RwLock<SegmentHolder> {
     let _sid1 = holder.add_new(segment1);
     let _sid2 = holder.add_new(segment2);
 
-    RwLock::new(holder)
+    Mutex::new(holder)
 }
 
 pub(crate) fn get_merge_optimizer(

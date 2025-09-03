@@ -98,7 +98,7 @@ impl SegmentOptimizer for MergeOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId> {
-        let read_segments = segments.read();
+        let read_segments = segments.lock();
 
         let raw_segments = read_segments
             .iter()
@@ -185,7 +185,7 @@ mod tests {
 
         let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim, None);
 
-        let locked_holder = Arc::new(RwLock::new(holder));
+        let locked_holder = Arc::new(Mutex::new(holder));
 
         merge_optimizer.default_segments_number = 1;
 
@@ -226,7 +226,7 @@ mod tests {
 
         let merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim, None);
 
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<Mutex<_>> = Arc::new(Mutex::new(holder));
 
         let suggested_for_merge =
             merge_optimizer.check_condition(locked_holder.clone(), &Default::default());

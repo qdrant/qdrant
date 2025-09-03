@@ -106,7 +106,7 @@ impl ConfigMismatchOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId> {
-        let segments_read_guard = segments.read();
+        let segments_read_guard = segments.lock();
         let candidates: Vec<_> = segments_read_guard
             .iter()
             // Excluded externally, might already be scheduled for optimization
@@ -325,7 +325,7 @@ mod tests {
         let segment = random_segment(dir.path(), 100, point_count, dim as usize);
 
         let segment_id = holder.add_new(segment);
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<Mutex<_>> = Arc::new(Mutex::new(holder));
 
         let hnsw_config = HnswConfig {
             m: 16,
@@ -485,7 +485,7 @@ mod tests {
         );
 
         let segment_id = holder.add_new(segment);
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<Mutex<_>> = Arc::new(Mutex::new(holder));
 
         let hnsw_config_collection = HnswConfig {
             m: 16,
@@ -660,7 +660,7 @@ mod tests {
         );
 
         let segment_id = holder.add_new(segment);
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<Mutex<_>> = Arc::new(Mutex::new(holder));
 
         let quantization_config_collection =
             QuantizationConfig::Scalar(segment::types::ScalarQuantization {

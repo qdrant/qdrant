@@ -154,7 +154,7 @@ impl LocalShard {
         let segments = self.segments.clone();
 
         let scroll_lock = self.scroll_read_lock.read().await;
-        let (non_appendable, appendable) = segments.read().split_segments();
+        let (non_appendable, appendable) = segments.lock().split_segments();
 
         let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
             let filter = filter.cloned();
@@ -239,7 +239,7 @@ impl LocalShard {
         let segments = self.segments.clone();
 
         let scroll_lock = self.scroll_read_lock.read().await;
-        let (non_appendable, appendable) = segments.read().split_segments();
+        let (non_appendable, appendable) = segments.lock().split_segments();
 
         let read_ordered_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
             let is_stopped = stopping_guard.get_is_stopped();
@@ -338,7 +338,7 @@ impl LocalShard {
         let segments = self.segments.clone();
 
         let scroll_lock = self.scroll_read_lock.read().await;
-        let (non_appendable, appendable) = segments.read().split_segments();
+        let (non_appendable, appendable) = segments.lock().split_segments();
 
         let read_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
             let is_stopped = stopping_guard.get_is_stopped();

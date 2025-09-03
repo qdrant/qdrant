@@ -178,7 +178,7 @@ impl LocalShard {
         update_runtime: Handle,
         search_runtime: Handle,
     ) -> Self {
-        let segment_holder = Arc::new(RwLock::new(segment_holder));
+        let segment_holder = Arc::new(ParkingMutex::new(segment_holder));
         let config = collection_config.read().await;
         let locked_wal = Arc::new(Mutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
@@ -249,7 +249,7 @@ impl LocalShard {
         }
     }
 
-    pub(super) fn segments(&self) -> &RwLock<SegmentHolder> {
+    pub(super) fn segments(&self) -> &ParkingMutex<SegmentHolder> {
         self.segments.deref()
     }
 
@@ -702,7 +702,7 @@ impl LocalShard {
         }
 
         {
-            let segments = self.segments.read();
+            let segments = self.segments.lock();
 
             // Force a flush after re-applying WAL operations, to ensure we maintain on-disk data
             // consistency, if we happened to only apply *past* operations to a segment with newer
@@ -730,7 +730,7 @@ impl LocalShard {
     /// Returns an error at the first inconsistent segment
     pub fn check_data_consistency(&self) -> CollectionResult<()> {
         log::info!("Checking data consistency for shard {:?}", self.path);
-        let segments = self.segments.read();
+        let segments = self.segments.lock();
         for (_idx, segment) in segments.iter() {
             match segment {
                 LockedSegment::Original(raw_segment) => {
@@ -990,7 +990,7 @@ impl LocalShard {
 
     pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         self.segments()
-            .read()
+            .lock()
             .snapshot_manifest()
             .map_err(CollectionError::from)
     }
@@ -1000,7 +1000,7 @@ impl LocalShard {
         filter: Option<&'a Filter>,
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<CardinalityEstimation> {
-        let segments = self.segments().read();
+        let segments = self.segments().lock();
         let cardinality = segments
             .iter()
             .map(|(_id, segment)| {
@@ -1032,7 +1032,7 @@ impl LocalShard {
 
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
         {
-            let segments = self.segments().read();
+            let segments = self.segments().lock();
 
             // Red status on failed operation or optimizer error
             if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
@@ -1086,7 +1086,7 @@ impl LocalShard {
         let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
 
         {
-            let segments = self.segments().read();
+            let segments = self.segments().lock();
             for (_idx, segment) in segments.iter() {
                 segments_count += 1;
 

@@ -3,6 +3,8 @@ use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::thread::sleep;
+use std::time::Duration;
 
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -10,7 +12,7 @@ use common::disk::dir_disk_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
-use parking_lot::{Mutex, RwLockUpgradableReadGuard};
+use parking_lot::{Mutex, MutexGuard, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
@@ -345,7 +347,7 @@ pub trait SegmentOptimizer {
         segments: &LockedSegmentHolder,
         proxy_ids: &[SegmentId],
     ) -> Vec<SegmentId> {
-        let mut segments_lock = segments.write();
+        let mut segments_lock = segments.lock();
         let mut restored_segment_ids = vec![];
         for &proxy_id in proxy_ids {
             if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
@@ -388,7 +390,7 @@ pub trait SegmentOptimizer {
     ) -> OperationResult<()> {
         self.unwrap_proxy(segments, proxy_ids);
         if !temp_segment.get().read().is_empty() {
-            let mut write_segments = segments.write();
+            let mut write_segments = segments.lock();
             write_segments.add_new_locked(temp_segment);
         } else {
             // Temp segment is already removed from proxy, so nobody could write to it in between
@@ -612,7 +614,7 @@ pub trait SegmentOptimizer {
         //
         // On the other hand - we do not want to hold write lock during the segment creation.
         // Solution in the middle - is a upgradable lock. It ensures consistency after the check and allows to perform read operation.
-        let segments_lock = segments.upgradable_read();
+        let segments_lock = segments.lock();
 
         let optimizing_segments: Vec<_> = ids
             .iter()
@@ -669,7 +671,7 @@ pub trait SegmentOptimizer {
 
         let proxy_ids: Vec<_> = {
             // Exclusive lock for the segments operations.
-            let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+            let mut write_segments = segments_lock;
             let mut proxy_ids = Vec::new();
             for (mut proxy, idx) in proxies.into_iter().zip(ids.iter().cloned()) {
                 // replicate_field_indexes for the second time,
@@ -679,8 +681,11 @@ pub trait SegmentOptimizer {
                 proxy.replicate_field_indexes(0, &hw_counter)?; // Slow only in case the index is change in the gap between two calls
                 proxy_ids.push(write_segments.swap_new(proxy, &[idx]).0);
             }
+            drop(write_segments);
             proxy_ids
         };
+
+        sleep(Duration::from_secs(1));
 
         // SLOW PART: create single optimized segment and propagate all new changes to it
         let result = self.optimize_segment_propagate_changes(
@@ -770,10 +775,7 @@ pub trait SegmentOptimizer {
         resource_budget: ResourceBudget,
         stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-    ) -> CollectionResult<(
-        Segment,
-        RwLockWriteGuard<'a, parking_lot::RawRwLock, SegmentHolder>,
-    )> {
+    ) -> CollectionResult<(Segment, MutexGuard<'a, SegmentHolder>)> {
         check_process_stopped(stopped)?;
 
         // ---- SLOW PART -----
@@ -805,7 +807,7 @@ pub trait SegmentOptimizer {
         check_process_stopped(stopped)?;
 
         // This block locks all operations with collection. It should be fast
-        let write_segments_guard = segments.write();
+        let write_segments_guard = segments.lock();
 
         // Apply index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored

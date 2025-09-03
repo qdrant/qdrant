@@ -219,7 +219,7 @@ impl SegmentsSearcher {
             let segments = segments.clone();
 
             tokio::task::spawn_blocking(move || {
-                let segments = segments.read();
+                let segments = segments.lock();
 
                 if segments.is_empty() {
                     return None;
@@ -251,7 +251,7 @@ impl SegmentsSearcher {
         let (locked_segments, searches): (Vec<_>, Vec<_>) = {
             // Unfortunately, we have to do `segments.read()` twice, once in blocking task
             // and once here, due to `Send` bounds :/
-            let segments_lock = segments.read();
+            let segments_lock = segments.lock();
             let segments = segments_lock.non_appendable_then_appendable_segments();
 
             // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
@@ -417,7 +417,7 @@ impl SegmentsSearcher {
         let hw_counter = hw_measurement_acc.get_counter_cell();
 
         segments
-            .read()
+            .lock()
             .read_points(points, is_stopped, |id, segment| {
                 let version = segment.point_version(id).ok_or_else(|| {
                     OperationError::service_error(format!("No version for point {id}"))
@@ -485,7 +485,7 @@ impl SegmentsSearcher {
         runtime_handle
             .spawn_blocking(move || {
                 let is_stopped = stopping_guard.get_is_stopped();
-                let segments = segments.read();
+                let segments = segments.lock();
                 let hw_counter = hw_measurement_acc.get_counter_cell();
                 let all_points: BTreeSet<_> = segments
                     .non_appendable_then_appendable_segments()
@@ -516,7 +516,7 @@ impl SegmentsSearcher {
         let limit = arc_ctx.limit;
 
         let mut futures = {
-            let segments_guard = segments.read();
+            let segments_guard = segments.lock();
             segments_guard
                 .non_appendable_then_appendable_segments()
                 .map(|segment| {
@@ -880,7 +880,7 @@ mod tests {
         let _sid1 = holder.add_new(segment1);
         let _sid2 = holder.add_new(segment2);
 
-        let segment_holder = Arc::new(RwLock::new(holder));
+        let segment_holder = Arc::new(Mutex::new(holder));
 
         let mut rnd = rand::rng();
 

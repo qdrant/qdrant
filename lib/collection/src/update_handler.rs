@@ -289,7 +289,7 @@ impl UpdateHandler {
         update_tracker: UpdateTracker,
     ) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
-        let first_failed_operation_option = segments.read().failed_operation.iter().cloned().min();
+        let first_failed_operation_option = segments.lock().failed_operation.iter().cloned().min();
         match first_failed_operation_option {
             None => {}
             Some(first_failed_op) => {
@@ -431,7 +431,7 @@ impl UpdateHandler {
                                         false
                                     }
                                     _ => {
-                                        segments.write().report_optimizer_error(error.clone());
+                                        segments.lock().report_optimizer_error(error.clone());
 
                                         // Error of the optimization can not be handled by API user
                                         // It is only possible to fix after full restart,
@@ -461,7 +461,7 @@ impl UpdateHandler {
                         );
 
                         segments
-                            .write()
+                            .lock()
                             .report_optimizer_error(CollectionError::service_error(format!(
                                 "Optimization task panicked{separator}{message}"
                             )));
@@ -488,7 +488,7 @@ impl UpdateHandler {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<()> {
         let no_segment_with_capacity = {
-            let segments_read = segments.read();
+            let segments_read = segments.lock();
             segments_read
                 .appendable_segments_ids()
                 .into_iter()
@@ -514,7 +514,7 @@ impl UpdateHandler {
                 .to_segment_config()
                 .map_err(|err| OperationError::service_error(err.to_string()))?;
 
-            segments.write().create_appendable_segment(
+            segments.lock().create_appendable_segment(
                 segments_path,
                 segment_config,
                 payload_index_schema,
@@ -874,7 +874,7 @@ impl UpdateHandler {
 
             if let Err(err) = wal_flush_res {
                 log::error!("{err}");
-                segments.write().report_optimizer_error(err);
+                segments.lock().report_optimizer_error(err);
                 continue;
             }
 
@@ -883,7 +883,7 @@ impl UpdateHandler {
                 Ok(version) => version,
                 Err(err) => {
                     log::error!("Failed to flush: {err}");
-                    segments.write().report_optimizer_error(err);
+                    segments.lock().report_optimizer_error(err);
                     continue;
                 }
             };
@@ -904,12 +904,12 @@ impl UpdateHandler {
 
             if let Err(err) = clocks.store_if_changed(&shard_path) {
                 log::warn!("Failed to store clock maps to disk: {err}");
-                segments.write().report_optimizer_error(err);
+                segments.lock().report_optimizer_error(err);
             }
 
             if let Err(err) = wal.blocking_lock().ack(ack) {
                 log::warn!("Failed to acknowledge WAL version: {err}");
-                segments.write().report_optimizer_error(err);
+                segments.lock().report_optimizer_error(err);
             }
         }
     }
@@ -919,7 +919,7 @@ impl UpdateHandler {
     /// # Errors
     /// Returns an error on flush failure
     fn flush_segments(segments: LockedSegmentHolder) -> OperationResult<SeqNumberType> {
-        let read_segments = segments.read();
+        let read_segments = segments.lock();
         let flushed_version = read_segments.flush_all(false, false)?;
         Ok(match read_segments.failed_operation.iter().cloned().min() {
             None => flushed_version,

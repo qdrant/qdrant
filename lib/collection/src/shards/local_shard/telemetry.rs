@@ -10,7 +10,7 @@ use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
 
 impl LocalShard {
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
-        let segments_read_guard = self.segments.read();
+        let segments_read_guard = self.segments.lock();
 
         let segments: Vec<_> = if detail.level >= DetailsLevel::Level4 {
             segments_read_guard
@@ -66,7 +66,7 @@ impl LocalShard {
     }
 
     pub fn get_optimization_status(&self) -> OptimizersStatus {
-        let segments_read_guard = self.segments.read();
+        let segments_read_guard = self.segments.lock();
         let optimizer_status = match &segments_read_guard.optimizer_errors {
             None => OptimizersStatus::Ok,
             Some(error) => OptimizersStatus::Error(error.to_string()),
@@ -84,7 +84,7 @@ impl LocalShard {
             num_points,
         } = &mut stats;
 
-        let segments_read_guard = self.segments.read();
+        let segments_read_guard = self.segments.lock();
         for (_segment_id, segment) in segments_read_guard.iter() {
             let segment_info = segment.get().read().info();
             *num_vectors += segment_info.num_vectors;

@@ -69,7 +69,7 @@ impl VacuumOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Option<SegmentId> {
-        let segments_read_guard = segments.read();
+        let segments_read_guard = segments.lock();
         segments_read_guard
             .iter()
             // Excluded externally, might already be scheduled for optimization
@@ -316,7 +316,7 @@ mod tests {
                 .unwrap();
         }
 
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<Mutex<_>> = Arc::new(Mutex::new(holder));
 
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
@@ -459,7 +459,7 @@ mod tests {
             .unwrap();
 
         let mut segment_id = holder.add_new(segment);
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<Mutex<_>> = Arc::new(Mutex::new(holder));
 
         let hnsw_config = HnswConfig {
             m: 16,

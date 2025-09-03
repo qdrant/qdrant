@@ -96,7 +96,7 @@ impl IndexingOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId> {
-        let segments_read_guard = segments.read();
+        let segments_read_guard = segments.lock();
         let candidates: Vec<_> = segments_read_guard
             .iter()
             // Excluded externally, might already be scheduled for optimization
@@ -371,7 +371,7 @@ mod tests {
             HnswGlobalConfig::default(),
             Default::default(),
         );
-        let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<Mutex<_>> = Arc::new(Mutex::new(holder));
 
         let excluded_ids = Default::default();
 
@@ -482,7 +482,7 @@ mod tests {
             Default::default(),
         );
 
-        let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<Mutex<_>> = Arc::new(Mutex::new(holder));
 
         let excluded_ids = Default::default();
 
@@ -764,7 +764,7 @@ mod tests {
             .map(|segment| holder.add_new(segment))
             .collect();
 
-        let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<Mutex<_>> = Arc::new(Mutex::new(holder));
 
         let index_optimizer = IndexingOptimizer::new(
             number_of_segments, // Keep the same number of segments
@@ -868,7 +868,7 @@ mod tests {
         let segment = random_segment(dir.path(), 100, point_count, dim as usize);
 
         let segment_id = holder.add_new(segment);
-        let locked_holder: Arc<parking_lot::RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder = Arc::new(Mutex::new(holder));
 
         let hnsw_config = HnswConfig {
             m: 16,

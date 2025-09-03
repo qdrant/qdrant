@@ -16,7 +16,9 @@ use common::iterator_ext::IteratorExt;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use io::storage_version::StorageVersion;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+use parking_lot::{
+    Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard,
+};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SnapshotManifest;
@@ -72,7 +74,7 @@ pub struct SegmentHolder {
     pub optimizer_errors: Option<String>,
 }
 
-pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
+pub type LockedSegmentHolder = Arc<Mutex<SegmentHolder>>;
 
 impl SegmentHolder {
     pub fn snapshot_manifest(&self) -> OperationResult<SnapshotManifest> {
@@ -928,7 +930,7 @@ impl SegmentHolder {
     where
         F: FnMut(&RwLock<dyn SegmentEntry>) -> OperationResult<()>,
     {
-        let segments_lock = segments.upgradable_read();
+        let segments_lock = segments.lock();
 
         // Proxy all segments
         log::trace!("Proxying all shard segments to apply function");
@@ -1067,14 +1069,14 @@ impl SegmentHolder {
     /// Proxy all shard segments for [`Self::proxy_all_segments_and_apply`].
     #[allow(clippy::type_complexity)]
     fn proxy_all_segments<'a>(
-        segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
+        segments_lock: MutexGuard<'a, SegmentHolder>,
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<(
         Vec<(SegmentId, LockedSegment)>,
         LockedSegment,
-        RwLockUpgradableReadGuard<'a, SegmentHolder>,
+        MutexGuard<'a, SegmentHolder>,
     )> {
         // This counter will be used to measure operations on temp segment,
         // which is part of internal process and can be ignored
@@ -1121,7 +1123,7 @@ impl SegmentHolder {
         // Replace all segments with proxies
         // We cannot fail past this point to prevent only having some segments proxified
         let mut proxies = Vec::with_capacity(new_proxies.len());
-        let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+        let mut write_segments = segments_lock;
         for (segment_id, mut proxy) in new_proxies {
             // Replicate field indexes the second time, because optimized segments could have
             // been changed. The probability is small, though, so we can afford this operation
@@ -1139,9 +1141,8 @@ impl SegmentHolder {
                 .expect("failed to get segment from segment holder we just swapped in");
             proxies.push((segment_id, locked_proxy_segment));
         }
-        let segments_lock = RwLockWriteGuard::downgrade_to_upgradable(write_segments);
 
-        Ok((proxies, tmp_segment, segments_lock))
+        Ok((proxies, tmp_segment, write_segments))
     }
 
     /// Try to unproxy a single shard segment for [`Self::proxy_all_segments_and_apply`].
@@ -1151,11 +1152,10 @@ impl SegmentHolder {
     /// If unproxying fails an error is returned with the lock and the proxy is left behind in the
     /// shard holder.
     fn try_unproxy_segment(
-        segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
+        segments_lock: MutexGuard<SegmentHolder>,
         segment_id: SegmentId,
         proxy_segment: LockedSegment,
-    ) -> Result<RwLockUpgradableReadGuard<SegmentHolder>, RwLockUpgradableReadGuard<SegmentHolder>>
-    {
+    ) -> Result<MutexGuard<SegmentHolder>, MutexGuard<SegmentHolder>> {
         // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
         // wrapped segment back into the segment holder. This can be an expensive step if we
         // collected a lot of changes in the proxy, so we do this in two batches to prevent
@@ -1182,7 +1182,7 @@ impl SegmentHolder {
             );
         }
 
-        let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+        let mut write_segments = segments_lock;
 
         // Batch 2: propagate changes to wrapped segment with segment holder write lock
         // Propagate proxied changes to wrapped segment, take it out and swap with proxy
@@ -1199,12 +1199,12 @@ impl SegmentHolder {
         write_segments.replace(segment_id, wrapped_segment).unwrap();
 
         // Downgrade write lock to read and give it back
-        Ok(RwLockWriteGuard::downgrade_to_upgradable(write_segments))
+        Ok(write_segments)
     }
 
     /// Unproxy all shard segments for [`Self::proxy_all_segments_and_apply`].
     fn unproxy_all_segments(
-        segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
+        segments_lock: MutexGuard<SegmentHolder>,
         proxies: Vec<(SegmentId, LockedSegment)>,
         tmp_segment: LockedSegment,
     ) -> OperationResult<()> {
@@ -1231,7 +1231,7 @@ impl SegmentHolder {
 
         // Batch 2: propagate changes to wrapped segment with segment holder write lock
         // Swap out each proxy with wrapped segment once changes are propagated
-        let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+        let mut write_segments = segments_lock;
         for (segment_id, proxy_segment) in proxies {
             match proxy_segment {
                 // Propagate proxied changes to wrapped segment, take it out and swap with proxy
