@@ -4,6 +4,7 @@ pub mod bitpacking_ordered;
 pub mod budget;
 pub mod bytes;
 pub mod counter;
+pub mod cow;
 pub mod cpu;
 pub mod defaults;
 pub mod delta_pack;

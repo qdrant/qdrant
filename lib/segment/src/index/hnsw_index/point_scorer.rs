@@ -1,8 +1,8 @@
-use std::ops::Deref;
 use std::sync::atomic::AtomicBool;
 
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::cow::BoxCow;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
@@ -300,30 +300,5 @@ impl<'a> FilteredScorer<'a> {
         }
 
         Ok(pq.into_sorted_vec())
-    }
-}
-
-pub enum BoxCow<'a, T: ?Sized> {
-    Borrowed(&'a T),
-    Boxed(Box<T>),
-}
-
-impl<'a, T: ?Sized> BoxCow<'a, T> {
-    pub fn as_borrowed(&'a self) -> Self {
-        match self {
-            BoxCow::Borrowed(t) => BoxCow::Borrowed(t),
-            BoxCow::Boxed(t) => BoxCow::Borrowed(t.as_ref()),
-        }
-    }
-}
-
-impl<T: ?Sized> Deref for BoxCow<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            BoxCow::Borrowed(t) => t,
-            BoxCow::Boxed(t) => t,
-        }
     }
 }

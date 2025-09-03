@@ -9,6 +9,7 @@ use atomic_refcell::{AtomicRef, AtomicRefCell};
 use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::cow::BoxCow;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::ext::BitSliceExt as _;
@@ -47,7 +48,7 @@ use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersWithVectors
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::graph_links::StorageGraphLinksVectors;
-use crate::index::hnsw_index::point_scorer::{BoxCow, FilteredScorer};
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -846,7 +847,7 @@ impl HNSWIndex {
                     block_point_id,
                     vector_storage,
                     quantized_vectors.as_ref(),
-                    Some(BoxCow::Boxed(block_condition_checker)),
+                    Some(BoxCow::Owned(block_condition_checker)),
                     id_tracker.deleted_point_bitslice(),
                     hardware_counter,
                 )
@@ -1212,7 +1213,7 @@ impl HNSWIndex {
             vector.to_owned(),
             vector_storage,
             quantization_enabled.then_some(quantized_storage).flatten(),
-            filter_context.map(BoxCow::Boxed),
+            filter_context.map(BoxCow::Owned),
             deleted_points,
             hardware_counter,
         )

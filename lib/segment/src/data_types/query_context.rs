@@ -1,11 +1,11 @@
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::cow::SimpleCow;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
@@ -186,22 +186,6 @@ pub struct VectorQueryContext<'a> {
     deleted_points: Option<&'a BitSlice>,
 
     hardware_counter: HardwareCounterCell,
-}
-
-pub enum SimpleCow<'a, T> {
-    Borrowed(&'a T),
-    Owned(T),
-}
-
-impl<T> Deref for SimpleCow<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            SimpleCow::Borrowed(value) => value,
-            SimpleCow::Owned(value) => value,
-        }
-    }
 }
 
 impl VectorQueryContext<'_> {
