@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fmt::Display;
 use std::future::Future;
 use std::ops::Deref;
+use std::path::Path;
 use std::str;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -107,7 +108,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         persistent_state: Persistent,
         toc: Arc<C>,
         propose_sender: OperationSender,
-        storage_path: &str,
+        storage_path: &Path,
     ) -> Self {
         Self {
             persistent: RwLock::new(persistent_state),
@@ -1188,7 +1189,7 @@ mod tests {
     #[test]
     fn correct_entry_with_offset() {
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let mut wal = ConsensusOpWal::new(dir.path().to_str().unwrap());
+        let mut wal = ConsensusOpWal::new(dir.path());
         wal.append_entries(vec![Entry {
             index: 4,
             ..Default::default()
@@ -1210,7 +1211,7 @@ mod tests {
     #[test]
     fn at_least_1_entry() {
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let mut wal = ConsensusOpWal::new(dir.path().to_str().unwrap());
+        let mut wal = ConsensusOpWal::new(dir.path());
         wal.append_entries(vec![
             Entry {
                 index: 4,
@@ -1269,7 +1270,7 @@ mod tests {
             persistent,
             Arc::new(NoCollections),
             OperationSender::new(sender),
-            path.to_str().unwrap(),
+            path,
         );
         let mem_storage = MemStorage::new();
         mem_storage.wl().append(entries.as_ref()).unwrap();
@@ -1374,7 +1375,7 @@ mod tests {
 
     fn empty_wal() -> (tempfile::TempDir, ConsensusOpWal) {
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let wal = ConsensusOpWal::new(dir.path().to_str().unwrap());
+        let wal = ConsensusOpWal::new(dir.path());
         (dir, wal)
     }
 
