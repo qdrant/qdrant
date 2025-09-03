@@ -650,6 +650,9 @@ pub trait SegmentOptimizer {
             let mut proxy = ProxySegment::new(
                 sg.clone(),
                 tmp_segment.clone(),
+                // In this case, all proxies share their set of deleted points
+                // We can share deletes because they're all propagated to the same optimized
+                // segment, and we unproxy all at the same time
                 Arc::clone(&proxy_deleted_points),
                 Arc::clone(&proxy_index_changes),
             );
