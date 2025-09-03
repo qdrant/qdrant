@@ -677,6 +677,8 @@ fn test_double_proxies() {
 /// - there are at least two layers of two proxies
 /// - one of the outer proxies is unproxied half way
 /// - a new point version is upserted through the unproxied segment (now being the inner proxy)
+///
+/// See: <https://github.com/qdrant/qdrant/pull/7208>
 #[test]
 fn test_proxy_propagate_older_delete_to_wrapped() {
     let hw_counter = HardwareCounterCell::disposable();
