@@ -13,7 +13,7 @@ use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::SeqNumberType;
+use segment::types::{QuantizationConfig, SeqNumberType};
 use shard::wal::WalError;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -484,6 +484,7 @@ impl UpdateHandler {
         segments: &LockedSegmentHolder,
         segments_path: &Path,
         collection_params: &CollectionParams,
+        collection_quantization: Option<&QuantizationConfig>,
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<()> {
@@ -511,7 +512,7 @@ impl UpdateHandler {
             log::debug!("Creating new appendable segment, all existing segments are over capacity");
 
             let segment_config = collection_params
-                .to_segment_config()
+                .to_base_segment_config(collection_quantization)
                 .map_err(|err| OperationError::service_error(err.to_string()))?;
 
             segments.write().create_appendable_segment(
@@ -676,6 +677,7 @@ impl UpdateHandler {
                     &segments,
                     optimizer.segments_path(),
                     &optimizer.collection_params(),
+                    optimizer.quantization_config().as_ref(),
                     optimizer.threshold_config(),
                     payload_index_schema.clone(),
                 );

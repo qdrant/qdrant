@@ -419,7 +419,7 @@ impl LocalShard {
                 "Shard has no appendable segments, this should never happen. Creating new appendable segment now",
             );
             let segments_path = LocalShard::segments_path(shard_path);
-            let segment_config = collection_config.read().await.params.to_segment_config()?;
+            let segment_config = collection_config.read().await.to_base_segment_config()?;
             segment_holder.create_appendable_segment(
                 &segments_path,
                 segment_config,
@@ -527,7 +527,9 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::default();
         let mut build_handlers = vec![];
 
-        let vector_params = config.params.to_base_vector_data()?;
+        let vector_params = config
+            .params
+            .to_base_vector_data(config.quantization_config.as_ref())?;
         let sparse_vector_params = config.params.to_sparse_vector_data()?;
         let segment_number = config.optimizer_config.get_number_segments();
 
@@ -879,8 +881,7 @@ impl LocalShard {
             .collection_config
             .read()
             .await
-            .params
-            .to_segment_config()?;
+            .to_base_segment_config()?;
         let payload_index_schema = self.payload_index_schema.clone();
         let temp_path = temp_path.to_owned();
 
