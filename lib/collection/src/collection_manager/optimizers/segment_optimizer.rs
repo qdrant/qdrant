@@ -86,8 +86,9 @@ pub trait SegmentOptimizer {
     /// Build temp segment
     fn temp_segment(&self, save_version: bool) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
+        let quantization_config = self.quantization_config();
         let config = SegmentConfig {
-            vector_data: collection_params.to_base_vector_data()?,
+            vector_data: collection_params.to_base_vector_data(quantization_config.as_ref())?,
             sparse_vector_data: collection_params.to_sparse_vector_data()?,
             payload_storage_type: collection_params.payload_storage_type(),
         };
@@ -233,13 +234,14 @@ pub trait SegmentOptimizer {
         let threshold_is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold_kb.saturating_mul(BYTES_IN_KB);
 
-        let mut vector_data = collection_params.to_base_vector_data()?;
+        let collection_quantization = self.quantization_config();
+        let mut vector_data =
+            collection_params.to_base_vector_data(collection_quantization.as_ref())?;
         let mut sparse_vector_data = collection_params.to_sparse_vector_data()?;
 
         // If indexing, change to HNSW index and quantization
         if threshold_is_indexed {
             let collection_hnsw = self.hnsw_config();
-            let collection_quantization = self.quantization_config();
             vector_data.iter_mut().for_each(|(vector_name, config)| {
                 // Assign HNSW index
                 let param_hnsw = collection_params

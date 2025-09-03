@@ -45,9 +45,6 @@ use crate::vector_storage::{
     VectorStorage, VectorStorageEnum,
 };
 
-// todo: remove this const and use feature flags
-pub const ENABLE_APPENDABLE_QUANTIZATION: bool = false;
-
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
 pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
 pub const QUANTIZED_APPENDABLE_DATA_PATH: &str = "quantized_data";
@@ -880,8 +877,7 @@ impl QuantizedVectors {
         }
 
         // If we don't have an appendable quantization feature, do not create a new one.
-        if !ENABLE_APPENDABLE_QUANTIZATION {
-            // TODO: use feature flag
+        if !common::flags::feature_flags().appendable_quantization {
             return Ok(None);
         }
 
