@@ -29,22 +29,22 @@ pub fn serialize_graph_links<W: Write + Seek>(
     let bits_per_unsorted =
         packed_bits(u32::try_from(edges.len().saturating_sub(1)).unwrap()).max(MIN_BITS_PER_VALUE);
 
-    let vector_layout = match format_param {
+    let vectors_layout = match format_param {
         GraphLinksFormatParam::Plain => None,
         GraphLinksFormatParam::Compressed => None,
         GraphLinksFormatParam::CompressedWithVectors(v) => {
-            let vector_layout = v.vector_layout()?;
-            if vector_layout.base.size() % vector_layout.base.align() != 0 {
+            let vectors_layout = v.vectors_layout()?;
+            if vectors_layout.base.size() % vectors_layout.base.align() != 0 {
                 return Err(OperationError::service_error(
-                    "Vector size must be a multiple of its alignment",
+                    "Base vector size must be a multiple of its alignment",
                 ));
             }
-            if vector_layout.link.size() % vector_layout.link.align() != 0 {
+            if vectors_layout.link.size() % vectors_layout.link.align() != 0 {
                 return Err(OperationError::service_error(
-                    "Vector size must be a multiple of its alignment",
+                    "Link vector size must be a multiple of its alignment",
                 ));
             }
-            Some(vector_layout)
+            Some(vectors_layout)
         }
     };
 
@@ -88,9 +88,9 @@ pub fn serialize_graph_links<W: Write + Seek>(
     }
 
     // 4. Write neighbors padding (if applicable)
-    if let Some(vector_layout) = vector_layout.as_ref() {
+    if let Some(vectors_layout) = vectors_layout.as_ref() {
         let pos = writer.stream_position()? as usize;
-        let alignment = vector_layout.base.align().max(vector_layout.link.align());
+        let alignment = std::cmp::max(vectors_layout.base.align(), vectors_layout.link.align());
         writer.write_zeros(pos.next_multiple_of(alignment) - pos)?;
     }
 
@@ -119,13 +119,13 @@ pub fn serialize_graph_links<W: Write + Seek>(
                     offset += links_buf.len();
                 }
                 GraphLinksFormatParam::CompressedWithVectors(vectors) => {
-                    // Unwrap safety: `vector_layout` is `Some` for `CompressedWithVectors`.
-                    let vector_layout = vector_layout.as_ref().unwrap();
+                    // Unwrap safety: `vectors_layout` is `Some` for `CompressedWithVectors`.
+                    let vectors_layout = vectors_layout.as_ref().unwrap();
 
                     // 1. Base vector (`B` in the doc, only on level 0).
                     if level == 0 {
                         let vector = vectors.get_base_vector(id)?;
-                        if vector.len() != vector_layout.base.size() {
+                        if vector.len() != vectors_layout.base.size() {
                             return Err(OperationError::service_error("Vector size mismatch"));
                         }
                         writer.write_all(vector)?;
@@ -142,7 +142,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
                     offset += links_buf.len();
 
                     // 4. Padding to align link vectors (`_` in the doc).
-                    let padding = offset.next_multiple_of(vector_layout.link.align()) - offset;
+                    let padding = offset.next_multiple_of(vectors_layout.link.align()) - offset;
                     writer.write_zeros(padding)?;
                     offset += padding;
 
@@ -150,7 +150,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
                     // Write them in the same order as `raw_links`.
                     for i in raw_links {
                         let vector = vectors.get_link_vector(i)?;
-                        if vector.len() != vector_layout.link.size() {
+                        if vector.len() != vectors_layout.link.size() {
                             return Err(OperationError::service_error("Vector size mismatch"));
                         }
                         writer.write_all(vector)?;
@@ -159,7 +159,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
 
                     // 6. Padding to align the next base vector (`_` in the doc).
                     if level == 0 {
-                        let padding = offset.next_multiple_of(vector_layout.base.align()) - offset;
+                        let padding = offset.next_multiple_of(vectors_layout.base.align()) - offset;
                         writer.write_zeros(padding)?;
                         offset += padding;
                     }
@@ -216,7 +216,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
             writer.write_all(header.as_bytes())?;
         }
         GraphLinksFormatParam::CompressedWithVectors(_) => {
-            let vector_layout = vector_layout.as_ref().unwrap();
+            let vectors_layout = vectors_layout.as_ref().unwrap();
             let header = HeaderCompressedWithVectors {
                 version: LittleU64::from(HEADER_VERSION_COMPRESSED_WITH_VECTORS),
                 point_count: LittleU64::new(edges.len() as u64),
@@ -225,8 +225,8 @@ pub fn serialize_graph_links<W: Write + Seek>(
                 levels_count: LittleU64::new(levels_count as u64),
                 m: LittleU64::new(hnsw_m.m as u64),
                 m0: LittleU64::new(hnsw_m.m0 as u64),
-                base_vector_layout: pack_layout(&vector_layout.base),
-                link_vector_layout: pack_layout(&vector_layout.link),
+                base_vector_layout: pack_layout(&vectors_layout.base),
+                link_vector_layout: pack_layout(&vectors_layout.link),
                 zero_padding: [0; 3],
             };
             writer.write_all(header.as_bytes())?;

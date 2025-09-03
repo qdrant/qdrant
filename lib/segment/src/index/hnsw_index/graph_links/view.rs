@@ -172,13 +172,8 @@ impl GraphLinksView<'_> {
             .map_err(|_| error_unsufficent_size())?;
         debug_assert_eq!(header.version.get(), HEADER_VERSION_COMPRESSED_WITH_VECTORS);
 
-        // Check alignment of link vectors. Alignment of base vectors is checked
-        // in `Layout::from_size_align` later.
-        if !header.link_vector_layout.alignment.is_power_of_two() {
-            return Err(OperationError::service_error(
-                "In GraphLinks file, vector alignment should be a power of two",
-            ));
-        }
+        let base_vector_layout = header.base_vector_layout.try_into_layout()?;
+        let link_vector_layout = header.link_vector_layout.try_into_layout()?;
 
         let (level_offsets, data) = read_level_offsets(
             data,
@@ -188,11 +183,8 @@ impl GraphLinksView<'_> {
         let (reindex, data) = get_slice::<PointOffsetType>(data, header.point_count.get())?;
         let (_, data) = get_slice::<u8>(data, {
             let pos = total_len - data.len();
-            let alignment = std::cmp::max(
-                header.link_vector_layout.alignment,
-                header.base_vector_layout.alignment,
-            );
-            (pos.next_multiple_of(alignment as usize) - pos) as u64
+            let alignment = std::cmp::max(link_vector_layout.align(), base_vector_layout.align());
+            (pos.next_multiple_of(alignment) - pos) as u64
         })?;
         let (neighbors, data) = get_slice::<u8>(data, header.total_neighbors_bytes.get())?;
         let (offsets, _bytes) = bitpacking_ordered::Reader::new(header.offsets_parameters, data)
@@ -210,18 +202,11 @@ impl GraphLinksView<'_> {
                         OperationError::service_error("Too many points in GraphLinks file")
                     })?,
                 )),
-                base_vector_layout: Layout::from_size_align(
-                    header.base_vector_layout.size.get() as usize,
-                    header.base_vector_layout.alignment as usize,
-                )
-                .map_err(|_| {
-                    OperationError::service_error("Invalid base vector layout in GraphLinks file")
+                base_vector_layout,
+                link_vector_size: NonZero::try_from(link_vector_layout.size()).map_err(|_| {
+                    OperationError::service_error("Zero link vector size in GraphLinks file")
                 })?,
-                link_vector_size: NonZero::try_from(header.link_vector_layout.size.get() as usize)
-                    .map_err(|_| {
-                        OperationError::service_error("Zero vector size in GraphLinks file")
-                    })?,
-                link_vector_alignment: header.link_vector_layout.alignment,
+                link_vector_alignment: link_vector_layout.align() as u8,
             },
             level_offsets,
         })

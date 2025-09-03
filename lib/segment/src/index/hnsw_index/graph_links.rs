@@ -80,21 +80,24 @@ pub trait GraphLinksVectors {
     fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]>;
 
     /// Get the layout of base and link vectors.
-    fn vector_layout(&self) -> OperationResult<VectorLayout>;
+    fn vectors_layout(&self) -> OperationResult<GraphLinksVectorsLayout>;
 }
 
-pub struct VectorLayout {
+/// Layout of base and link vectors, returned by [`GraphLinksVectors::vectors_layout`].
+pub struct GraphLinksVectorsLayout {
     pub base: Layout,
     pub link: Layout,
 }
 
 /// A [`GraphLinksVectors`] implementation that uses real storage.
 pub struct StorageGraphLinksVectors<'a> {
-    pub vector_storage: &'a VectorStorageEnum,
-    pub quantized_vectors: &'a QuantizedVectors,
+    pub vector_storage: &'a VectorStorageEnum,   // base vectors
+    pub quantized_vectors: &'a QuantizedVectors, // link vectors
 }
 
 impl<'a> GraphLinksVectors for StorageGraphLinksVectors<'a> {
+    /// Note: uses [`Sequential`] because [`serializer::serialize_graph_links`]
+    /// traverses base vectors in a sequential order.
     fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
         self.vector_storage
             .get_vector_bytes_opt::<Sequential>(point_id)
@@ -105,12 +108,13 @@ impl<'a> GraphLinksVectors for StorageGraphLinksVectors<'a> {
             })
     }
 
+    /// Note: unlike base vectors, link vectors are written in a random order.
     fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
         Ok(self.quantized_vectors.get_quantized_vector(point_id))
     }
 
-    fn vector_layout(&self) -> OperationResult<VectorLayout> {
-        Ok(VectorLayout {
+    fn vectors_layout(&self) -> OperationResult<GraphLinksVectorsLayout> {
+        Ok(GraphLinksVectorsLayout {
             base: self.vector_storage.get_vector_layout()?,
             link: self.quantized_vectors.get_quantized_vector_layout()?,
         })
@@ -363,8 +367,8 @@ mod tests {
             Ok(&self.link_vectors[point_id as usize])
         }
 
-        fn vector_layout(&self) -> OperationResult<VectorLayout> {
-            Ok(VectorLayout {
+        fn vectors_layout(&self) -> OperationResult<GraphLinksVectorsLayout> {
+            Ok(GraphLinksVectorsLayout {
                 base: self.base_layout,
                 link: self.link_layout,
             })
