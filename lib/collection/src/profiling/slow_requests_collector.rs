@@ -1,5 +1,6 @@
-use chrono::{DateTime, Utc};
 use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 
 use crate::operations::generalizer::Loggable;

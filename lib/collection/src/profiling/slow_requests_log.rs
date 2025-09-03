@@ -1,9 +1,11 @@
 use std::time::Duration;
+
 use chrono::{DateTime, Utc};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::Serialize;
+
 use crate::operations::generalizer::Loggable;
 
 #[derive(Serialize, PartialEq, Eq, Clone, JsonSchema)]
