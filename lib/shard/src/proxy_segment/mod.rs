@@ -320,10 +320,15 @@ impl ProxySegment {
 
         Ok(())
     }
+
+    #[cfg(test)]
+    pub fn get_deleted_points(&self) -> &LockedRmSet {
+        &self.deleted_points
+    }
 }
 
 /// Point persion information of points to delete from a wrapped proxy segment.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProxyDeletedPoint {
     /// Version the point had in the wrapped segment when the delete was scheduled.
     /// We use it to determine if some other proxy segment should move the point again with
