@@ -752,7 +752,7 @@ fn test_proxy_propagate_older_delete_to_wrapped() {
     // First outer proxy has point deleted, second outer proxy still has it
     assert!(
         !outer_proxies[0].1.get().read().has_point(pid),
-        "first proxy must not have point 1",
+        "first proxy must not have point",
     );
     assert_eq!(
         outer_proxies[1].1.get().read().point_version(pid),
@@ -859,7 +859,6 @@ fn test_proxy_propagate_older_delete_to_wrapped() {
 
     // Last outer proxy still views point version 300
     // Shared inner tmp segment has point version 400 from latest upsert
-    // TODO: should last outer proxy also see point version 400!?
     assert_eq!(
         outer_proxies[0].1.get().read().point_version(pid),
         Some(300),
