@@ -4,7 +4,7 @@ use collection::operations::types::PeerMetadata;
 use collection::shards::shard::PeerId;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
-use segment::common::anonymize::Anonymize;
+use segment::common::anonymize::{Anonymize, anonymize_collection_values_opt};
 use serde::Serialize;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
@@ -60,7 +60,7 @@ pub struct ClusterStatusTelemetry {
     pub pending_operations: usize,
     pub role: Option<StateRole>,
     pub is_voter: bool,
-    #[anonymize(value = None)]
+    #[anonymize(false)]
     pub peer_id: Option<PeerId>,
     pub consensus_thread_status: ConsensusThreadStatus,
 }
@@ -73,7 +73,7 @@ pub struct ClusterTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<ClusterConfigTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[anonymize(false)]
+    #[anonymize(with = anonymize_collection_values_opt)]
     pub peers: Option<HashMap<PeerId, PeerInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
