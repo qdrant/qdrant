@@ -1,10 +1,9 @@
 use std::time::Duration;
-
+use chrono::{DateTime, Utc};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::Serialize;
-
 use crate::operations::generalizer::Loggable;
 
 #[derive(Serialize, PartialEq, Eq, Clone, JsonSchema)]
@@ -12,6 +11,7 @@ pub struct LogEntry {
     collection_name: String,
     #[serde(serialize_with = "duration_as_seconds")]
     duration: Duration,
+    datetime: DateTime<Utc>,
     request_name: String,
     request_body: serde_json::Value,
 }
@@ -55,12 +55,14 @@ impl SlowRequestsLog {
         &mut self,
         collection_name: &str,
         duration: Duration,
+        datetime: DateTime<Utc>,
         request: &dyn Loggable,
     ) -> Option<LogEntry> {
         if !self.log_priority_queue.is_full() {
             let entry = LogEntry {
                 collection_name: collection_name.to_string(),
                 duration,
+                datetime,
                 request_name: request.request_name().to_string(),
                 request_body: request.to_log_value(),
             };
@@ -79,6 +81,7 @@ impl SlowRequestsLog {
         let entry = LogEntry {
             collection_name: collection_name.to_string(),
             duration,
+            datetime,
             request_name: request.request_name().to_string(),
             request_body: request.to_log_value(),
         };

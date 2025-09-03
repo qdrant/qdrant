@@ -1,5 +1,5 @@
+use chrono::{DateTime, Utc};
 use std::sync::Arc;
-
 use tokio::sync::RwLock;
 
 use crate::operations::generalizer::Loggable;
@@ -14,6 +14,7 @@ pub struct RequestProfileMessage {
     request: Box<dyn Loggable + Send + Sync>,
     duration: std::time::Duration,
     collection_name: String,
+    datetime: DateTime<Utc>,
 }
 
 impl RequestProfileMessage {
@@ -26,6 +27,7 @@ impl RequestProfileMessage {
             request,
             duration,
             collection_name,
+            datetime: Utc::now(),
         }
     }
 }
@@ -74,11 +76,12 @@ impl RequestsCollector {
                 request,
                 duration,
                 collection_name,
+                datetime,
             } = message;
 
             log.write()
                 .await
-                .log_request(&collection_name, duration, request.as_ref());
+                .log_request(&collection_name, duration, datetime, request.as_ref());
         }
     }
 }
