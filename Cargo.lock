@@ -1178,6 +1178,7 @@ dependencies = [
  "chrono",
  "collection",
  "common",
+ "count-min-sketch",
  "criterion",
  "env_logger",
  "fnv",
@@ -1406,6 +1407,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b49ba7ef1ad6107f8824dbe97de947cbaac53c44e7f9756a1fba0d37c1eec505"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "count-min-sketch"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fef0a447ef2e9e6bd57e379f88702c58c4a4253ba82fb175bd7db012192311a"
+dependencies = [
+ "rand 0.8.5",
+ "siphasher 1.0.1",
 ]
 
 [[package]]

@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use count_min_sketch::CountMinSketch64;
 use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -15,7 +16,43 @@ pub struct LogEntry {
     duration: Duration,
     datetime: DateTime<Utc>,
     request_name: String,
+    approx_count: usize,
     request_body: serde_json::Value,
+    /// Used for fast comparison and lookup
+    #[serde(skip)]
+    content_hash: u64,
+}
+
+impl LogEntry {
+    pub fn new(
+        collection_name: String,
+        duration: Duration,
+        datetime: DateTime<Utc>,
+        request_name: String,
+        request_body: serde_json::Value,
+    ) -> Self {
+        let content_hash = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            request_body.hash(&mut hasher);
+            request_name.hash(&mut hasher);
+            collection_name.hash(&mut hasher);
+            hasher.finish()
+        };
+        LogEntry {
+            collection_name,
+            duration,
+            datetime,
+            request_name,
+            approx_count: 1,
+            request_body,
+            content_hash,
+        }
+    }
+
+    pub fn upd_counter(&mut self, count: usize) {
+        self.approx_count = count;
+    }
 }
 
 fn duration_as_seconds<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
@@ -39,13 +76,41 @@ impl Ord for LogEntry {
 
 pub struct SlowRequestsLog {
     log_priority_queue: FixedLengthPriorityQueue<LogEntry>,
+    counters: CountMinSketch64<u64>,
 }
 
 impl SlowRequestsLog {
     pub fn new(max_entries: usize) -> Self {
         SlowRequestsLog {
             log_priority_queue: FixedLengthPriorityQueue::new(max_entries),
+            counters: CountMinSketch64::new(1024, 0.95, 0.1).unwrap(), // 95% probability, 10% tolerance
         }
+    }
+
+    /// Try insert an entry into the log in the way, that it is not duplicated by content.
+    fn try_insert_dedup(&mut self, entry: LogEntry) -> Option<LogEntry> {
+        let duplicate = self.log_priority_queue.iter_unsorted().find(|e| {
+            e.content_hash == entry.content_hash // Fast check
+        });
+
+        if let Some(duplicate) = duplicate {
+            if duplicate.duration < entry.duration {
+                // Keep old record
+                None
+            } else {
+                // Remove old record and insert new one
+                self.log_priority_queue
+                    .retain(|e| e.content_hash != entry.content_hash);
+                self.log_priority_queue.push(entry)
+            }
+        } else {
+            // just insert
+            self.log_priority_queue.push(entry)
+        }
+    }
+
+    fn inc_counter(&mut self, entry: &LogEntry) {
+        self.counters.increment(&entry.content_hash);
     }
 
     /// Try to log a request if the log.
@@ -60,15 +125,18 @@ impl SlowRequestsLog {
         datetime: DateTime<Utc>,
         request: &dyn Loggable,
     ) -> Option<LogEntry> {
+        let entry = LogEntry::new(
+            collection_name.to_string(),
+            duration,
+            datetime,
+            request.request_name().to_string(),
+            request.to_log_value(),
+        );
+
+        self.inc_counter(&entry);
+
         if !self.log_priority_queue.is_full() {
-            let entry = LogEntry {
-                collection_name: collection_name.to_string(),
-                duration,
-                datetime,
-                request_name: request.request_name().to_string(),
-                request_body: request.to_log_value(),
-            };
-            return self.log_priority_queue.push(entry);
+            return self.try_insert_dedup(entry);
         }
 
         // Check if we can insert into the queue before actually serializing the request
@@ -80,15 +148,7 @@ impl SlowRequestsLog {
             return None;
         }
 
-        let entry = LogEntry {
-            collection_name: collection_name.to_string(),
-            duration,
-            datetime,
-            request_name: request.request_name().to_string(),
-            request_body: request.to_log_value(),
-        };
-
-        self.log_priority_queue.push(entry)
+        self.try_insert_dedup(entry)
     }
 
     pub fn get_log_entries(&self, limit: usize) -> Vec<LogEntry> {
@@ -97,6 +157,11 @@ impl SlowRequestsLog {
             .sorted_by(|a, b| b.cmp(a))
             .take(limit)
             .cloned()
+            .map(|mut entry| {
+                let approx_count = self.counters.estimate(&entry.content_hash);
+                entry.upd_counter(approx_count as usize);
+                entry
+            })
             .collect()
     }
 }
@@ -124,13 +189,13 @@ mod tests {
     fn test_get_slow_requests_returns_all_logged() {
         let mut log = SlowRequestsLog::new(3);
         let request = DummyLoggable;
-        log.log_request("col1", Duration::from_secs(1), &request);
-        log.log_request("col2", Duration::from_secs(2), &request);
-        log.log_request("col3", Duration::from_secs(3), &request);
+        log.log_request("col1", Duration::from_secs(1), Utc::now(), &request);
+        log.log_request("col2", Duration::from_secs(2), Utc::now(), &request);
+        log.log_request("col3", Duration::from_secs(3), Utc::now(), &request);
         let entries = log.get_log_entries(10);
         assert_eq!(entries.len(), 3);
 
-        let evicted = log.log_request("col4", Duration::from_secs(4), &request);
+        let evicted = log.log_request("col4", Duration::from_secs(4), Utc::now(), &request);
         assert!(evicted.is_some());
         let evicted = evicted.unwrap();
         assert_eq!(evicted.collection_name, "col1");
@@ -138,7 +203,7 @@ mod tests {
         let entries = log.get_log_entries(10);
         assert_eq!(entries.len(), 3);
 
-        let evicted = log.log_request("col5", Duration::from_secs(1), &request);
+        let evicted = log.log_request("col5", Duration::from_secs(1), Utc::now(), &request);
         assert!(evicted.is_none());
         let entries = log.get_log_entries(10);
         assert_eq!(entries.len(), 3);

@@ -63,7 +63,7 @@ impl RequestsCollector {
 
     pub fn send_if_available(&self, message: RequestProfileMessage) {
         self.sender.try_send(message).unwrap_or_else(|err| {
-            log::error!("Failed to send message: {err}");
+            log::warn!("Failed to send message: {err}");
         })
     }
 
