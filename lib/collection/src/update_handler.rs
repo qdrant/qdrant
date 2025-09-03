@@ -37,6 +37,7 @@ use crate::operations::generalizer::Generalizer;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::profiling::interface::log_request_to_collector;
+use crate::shards::CollectionId;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::wal_delta::LockedWal;
@@ -89,6 +90,7 @@ pub enum OptimizerSignal {
 
 /// Structure, which holds object, required for processing updates of the collection
 pub struct UpdateHandler {
+    collection_name: CollectionId,
     shared_storage_config: Arc<SharedStorageConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     /// List of used optimizers
@@ -144,6 +146,7 @@ pub struct UpdateHandler {
 impl UpdateHandler {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        collection_name: CollectionId,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
@@ -161,6 +164,7 @@ impl UpdateHandler {
         update_tracker: UpdateTracker,
     ) -> UpdateHandler {
         UpdateHandler {
+            collection_name,
             shared_storage_config,
             payload_index_schema,
             optimizers,
@@ -210,8 +214,10 @@ impl UpdateHandler {
         let segments = self.segments.clone();
         let scroll_read_lock = self.scroll_read_lock.clone();
         let update_tracker = self.update_tracker.clone();
+        let collection_name = self.collection_name.clone();
         self.update_worker = Some(self.runtime_handle.spawn_blocking(move || {
             Self::update_worker_fn(
+                collection_name,
                 update_receiver,
                 tx,
                 wal,
@@ -755,6 +761,7 @@ impl UpdateHandler {
     }
 
     fn update_worker_fn(
+        collection_name: CollectionId,
         mut receiver: Receiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
         wal: LockedWal,
@@ -800,7 +807,7 @@ impl UpdateHandler {
 
                     let duration = start_time.elapsed();
 
-                    log_request_to_collector("placeholder", loggable_operation, duration);
+                    log_request_to_collector(&collection_name, loggable_operation, duration);
 
                     let res = match operation_result {
                         Ok(update_res) => optimize_sender
