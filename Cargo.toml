@@ -310,6 +310,7 @@ members = [
     "lib/api",
     "lib/collection",
     "lib/common/*",
+    "lib/edge",
     "lib/gridstore",
     "lib/macros",
     "lib/posting_list",
