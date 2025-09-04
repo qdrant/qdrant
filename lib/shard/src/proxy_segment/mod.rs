@@ -295,13 +295,12 @@ impl ProxySegment {
             if !deleted_points.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for (point_id, versions) in deleted_points.iter() {
-                        // Delete points here with their operation version, that'll bump the optimized
-                        // segment version and will ensure we flush the new changes
-                        debug_assert!(
-                            versions.operation_version
-                                >= wrapped_segment.point_version(*point_id).unwrap_or(0),
-                            "proxied point deletes should have newer version than point in segment",
-                        );
+                        // Note:
+                        // Queued deletes may have an older version than what is currently in the
+                        // wrapped segment. Such deletes are ignored because the point in the
+                        // wrapped segment is considered to be newer. This is possible because
+                        // different proxy segments can share state through a common write segment.
+                        // See: <https://github.com/qdrant/qdrant/pull/7208>
                         wrapped_segment.delete_point(
                             versions.operation_version,
                             *point_id,
@@ -320,10 +319,15 @@ impl ProxySegment {
 
         Ok(())
     }
+
+    #[cfg(test)]
+    pub fn get_deleted_points(&self) -> &LockedRmSet {
+        &self.deleted_points
+    }
 }
 
 /// Point persion information of points to delete from a wrapped proxy segment.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProxyDeletedPoint {
     /// Version the point had in the wrapped segment when the delete was scheduled.
     /// We use it to determine if some other proxy segment should move the point again with

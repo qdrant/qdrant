@@ -674,6 +674,18 @@ pub trait SegmentOptimizer {
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
             let mut proxy_ids = Vec::new();
             for (mut proxy, idx) in proxies.into_iter().zip(ids.iter().cloned()) {
+                // During optimization, we expect that logical point data in the wrapped segment is
+                // not changed at all. But this would be possible if we wrap another proxy segment,
+                // because it can share state through it's write segment. To prevent this we assert
+                // here that we only wrap non-proxy segments.
+                // Also helps to ensure the delete propagation behavior in
+                // `optimize_segment_propagate_changes` remains  sound.
+                // See: <https://github.com/qdrant/qdrant/pull/7208>
+                debug_assert!(
+                    matches!(proxy.wrapped_segment, LockedSegment::Original(_)),
+                    "during optimization, wrapped segment in a proxy segment must not be another proxy segment",
+                );
+
                 // replicate_field_indexes for the second time,
                 // because optimized segments could have been changed.
                 // The probability is small, though,
@@ -841,8 +853,11 @@ pub trait SegmentOptimizer {
             .iter()
             .filter(|&(point_id, _version)| !already_remove_points.contains(point_id));
         for (&point_id, &versions) in points_diff {
-            // Delete points here with their operation version, that'll bump the optimized
-            // segment version and will ensure we flush the new changes
+            // In this specific case we're sure logical point data in the wrapped segment is not
+            // changed at all. We ensure this with an assertion at time of proxying, which makes
+            // sure we only wrap original segments. Because we're sure logical data doesn't change,
+            // we also know pending deletes are always newer. Here we assert that's actually the
+            // case.
             debug_assert!(
                 versions.operation_version
                     >= optimized_segment.point_version(point_id).unwrap_or(0),
