@@ -4,6 +4,7 @@ pub mod consistency_params;
 pub mod conversions;
 pub mod conversions_rest;
 pub mod generalizer;
+pub mod loggable;
 pub mod operation_effect;
 pub mod payload_ops;
 pub mod point_ops;
@@ -17,7 +18,6 @@ pub mod validation;
 pub mod vector_ops;
 pub mod vector_params_builder;
 pub mod verification;
-pub mod loggable;
 
 pub mod query_enum {
     pub use shard::search::QueryEnum;
