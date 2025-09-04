@@ -133,7 +133,6 @@ impl GroupRequest {
             group_by: self.group_by,
             group_size: self.group_size,
             groups: self.limit,
-            with_lookup: self.with_lookup,
         })
     }
 }
