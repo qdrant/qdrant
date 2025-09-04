@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
 use std::iter;
 
 use api::conversions::json::payload_to_proto;
@@ -26,7 +27,7 @@ use super::payload_ops::*;
 use super::vector_ops::*;
 use super::*;
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct PointIdsList {
     pub points: Vec<PointIdType>,
@@ -88,7 +89,7 @@ impl From<Vec<PointIdType>> for PointIdsList {
 //                                  ▼
 //                              gPRC Response
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants, Hash)]
 #[strum_discriminants(derive(EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum PointOperations {
@@ -141,7 +142,7 @@ impl PointOperations {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants, Hash)]
 #[strum_discriminants(derive(EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum PointInsertOperationsInternal {
@@ -387,14 +388,14 @@ impl From<Vec<PointStructPersisted>> for PointInsertOperationsInternal {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]
 pub struct ConditionalInsertOperationInternal {
     pub points_op: PointInsertOperationsInternal,
     /// Condition to check, if the point already exists
     pub condition: Filter,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]
 pub struct PointSyncOperation {
     /// Minimal id of the sync range
     pub from_id: Option<PointIdType>,
@@ -403,7 +404,7 @@ pub struct PointSyncOperation {
     pub points: Vec<PointStructPersisted>,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct BatchPersisted {
     pub ids: Vec<PointIdType>,
@@ -454,6 +455,36 @@ pub enum BatchVectorStructPersisted {
     Named(HashMap<VectorNameBuf, Vec<VectorPersisted>>),
 }
 
+impl Hash for BatchVectorStructPersisted {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            BatchVectorStructPersisted::Single(dense) => {
+                for vector in dense {
+                    for v in vector {
+                        state.write_u32(v.to_bits());
+                    }
+                }
+            }
+            BatchVectorStructPersisted::MultiDense(multidense) => {
+                for vector in multidense {
+                    for v in vector {
+                        for element in v {
+                            state.write_u32(element.to_bits());
+                        }
+                    }
+                }
+            }
+            BatchVectorStructPersisted::Named(named) => {
+                let keys: Vec<_> = named.keys().sorted().collect();
+                for key in keys {
+                    key.hash(state);
+                    named.get(key).hash(state);
+                }
+            }
+        }
+    }
+}
+
 impl From<BatchVectorStructPersisted> for BatchVectorStructInternal {
     fn from(value: BatchVectorStructPersisted) -> Self {
         match value {
@@ -476,7 +507,7 @@ impl From<BatchVectorStructPersisted> for BatchVectorStructInternal {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct PointStructPersisted {
     /// Point id
@@ -567,6 +598,32 @@ pub enum VectorStructPersisted {
     Single(DenseVector),
     MultiDense(MultiDenseVector),
     Named(HashMap<VectorNameBuf, VectorPersisted>),
+}
+
+impl std::hash::Hash for VectorStructPersisted {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            VectorStructPersisted::Single(vec) => {
+                for v in vec {
+                    state.write_u32(v.to_bits());
+                }
+            }
+            VectorStructPersisted::MultiDense(multi_vec) => {
+                for vec in multi_vec {
+                    for v in vec {
+                        state.write_u32(v.to_bits());
+                    }
+                }
+            }
+            VectorStructPersisted::Named(map) => {
+                let keys: Vec<_> = map.keys().sorted().collect();
+                for key in keys {
+                    key.hash(state);
+                    map.get(key).hash(state);
+                }
+            }
+        }
+    }
 }
 
 impl Debug for VectorStructPersisted {
@@ -720,6 +777,28 @@ pub enum VectorPersisted {
     Dense(DenseVector),
     Sparse(sparse::common::sparse_vector::SparseVector),
     MultiDense(MultiDenseVector),
+}
+
+impl Hash for VectorPersisted {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            VectorPersisted::Dense(vec) => {
+                for v in vec {
+                    state.write_u32(v.to_bits());
+                }
+            }
+            VectorPersisted::Sparse(sparse) => {
+                sparse.hash(state);
+            }
+            VectorPersisted::MultiDense(multi_vec) => {
+                for vec in multi_vec {
+                    for v in vec {
+                        state.write_u32(v.to_bits());
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl VectorPersisted {

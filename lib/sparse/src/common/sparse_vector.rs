@@ -20,6 +20,17 @@ pub struct SparseVector {
     pub values: Vec<DimWeight>,
 }
 
+impl Hash for SparseVector {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let Self { indices, values } = self;
+        indices.hash(state);
+        for value in values {
+            // Use to_bits to hash the f32 value
+            value.to_bits().hash(state);
+        }
+    }
+}
+
 /// Same as `SparseVector` but with `DimOffset` indices.
 /// Meaning that is uses internal segment-specific indices.
 #[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]

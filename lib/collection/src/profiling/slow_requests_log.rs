@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -7,7 +8,7 @@ use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::operations::generalizer::Loggable;
+use crate::operations::generalizer::loggable::Loggable;
 
 #[derive(Serialize, PartialEq, Eq, Clone, JsonSchema)]
 pub struct LogEntry {
@@ -30,15 +31,8 @@ impl LogEntry {
         datetime: DateTime<Utc>,
         request_name: String,
         request_body: serde_json::Value,
+        content_hash: u64, // Pre-computed content hash
     ) -> Self {
-        let content_hash = {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            request_body.hash(&mut hasher);
-            request_name.hash(&mut hasher);
-            collection_name.hash(&mut hasher);
-            hasher.finish()
-        };
         LogEntry {
             collection_name,
             duration,
@@ -109,8 +103,15 @@ impl SlowRequestsLog {
         }
     }
 
-    fn inc_counter(&mut self, entry: &LogEntry) {
-        self.counters.increment(&entry.content_hash);
+    fn inc_counter(&mut self, content_hash: u64) {
+        self.counters.increment(&content_hash);
+    }
+
+    fn content_hash(request_hash: u64, collection_name: &str) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        request_hash.hash(&mut hasher);
+        collection_name.hash(&mut hasher);
+        hasher.finish()
     }
 
     /// Try to log a request if the log.
@@ -125,17 +126,19 @@ impl SlowRequestsLog {
         datetime: DateTime<Utc>,
         request: &dyn Loggable,
     ) -> Option<LogEntry> {
-        let entry = LogEntry::new(
-            collection_name.to_string(),
-            duration,
-            datetime,
-            request.request_name().to_string(),
-            request.to_log_value(),
-        );
+        let content_hash = Self::content_hash(request.request_hash(), collection_name);
 
-        self.inc_counter(&entry);
+        self.inc_counter(content_hash);
 
         if !self.log_priority_queue.is_full() {
+            let entry = LogEntry::new(
+                collection_name.to_string(),
+                duration,
+                datetime,
+                request.request_name().to_string(),
+                request.to_log_value(),
+                content_hash,
+            );
             return self.try_insert_dedup(entry);
         }
 
@@ -147,6 +150,15 @@ impl SlowRequestsLog {
             // Our queue is already slower than this request
             return None;
         }
+
+        let entry = LogEntry::new(
+            collection_name.to_string(),
+            duration,
+            datetime,
+            request.request_name().to_string(),
+            request.to_log_value(),
+            content_hash,
+        );
 
         self.try_insert_dedup(entry)
     }
@@ -182,6 +194,10 @@ mod tests {
 
         fn request_name(&self) -> &'static str {
             "dummy"
+        }
+
+        fn request_hash(&self) -> u64 {
+            42
         }
     }
 

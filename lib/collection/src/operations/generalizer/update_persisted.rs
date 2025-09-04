@@ -12,7 +12,7 @@ use shard::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
 
-use crate::operations::generalizer::{Generalizer, Loggable};
+use crate::operations::generalizer::Generalizer;
 
 impl Generalizer for Payload {
     fn remove_details(&self) -> Self {
@@ -22,16 +22,6 @@ impl Generalizer for Payload {
             Value::Array(self.keys().cloned().sorted().map(Value::String).collect()),
         );
         stripped_payload
-    }
-}
-
-impl Loggable for CollectionUpdateOperations {
-    fn to_log_value(&self) -> Value {
-        serde_json::to_value(self).unwrap_or_default()
-    }
-
-    fn request_name(&self) -> &'static str {
-        "points-update"
     }
 }
 
@@ -97,7 +87,7 @@ impl Generalizer for PointSyncOperation {
 impl Generalizer for PointStructPersisted {
     fn remove_details(&self) -> Self {
         let Self {
-            id,
+            id: _, // ignore actual id for generalization
             vector,
             payload,
         } = self;
@@ -142,7 +132,7 @@ impl Generalizer for PointInsertOperationsInternal {
 impl Generalizer for BatchPersisted {
     fn remove_details(&self) -> Self {
         let Self {
-            ids,
+            ids: _, // Remove ids for generalization
             vectors,
             payloads,
         } = self;

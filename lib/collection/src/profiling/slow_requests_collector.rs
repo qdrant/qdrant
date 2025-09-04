@@ -3,7 +3,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 
-use crate::operations::generalizer::Loggable;
+use crate::operations::generalizer::loggable::Loggable;
 use crate::profiling::slow_requests_log::SlowRequestsLog;
 
 /// Logger should ignore everything below this threshold

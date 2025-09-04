@@ -20,10 +20,7 @@ impl Generalizer for CollectionQueryGroupsRequest {
         } = self;
 
         Self {
-            prefetch: prefetch
-                .iter()
-                .map(|p| p.remove_details())
-                .collect(),
+            prefetch: prefetch.iter().map(|p| p.remove_details()).collect(),
             query: query.as_ref().map(|q| q.remove_details()),
             using: using.clone(),
             filter: filter.clone(),

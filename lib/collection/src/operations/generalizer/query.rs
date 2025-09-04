@@ -26,10 +26,7 @@ impl Generalizer for CollectionQueryRequest {
         } = self;
 
         Self {
-            prefetch: prefetch
-                .iter()
-                .map(|p| p.remove_details())
-                .collect(),
+            prefetch: prefetch.iter().map(|p| p.remove_details()).collect(),
             query: query.as_ref().map(|q| q.remove_details()),
             using: using.clone(),
             filter: filter.clone(),
@@ -58,10 +55,7 @@ impl Generalizer for CollectionPrefetch {
         } = self;
 
         Self {
-            prefetch: prefetch
-                .iter()
-                .map(|p| p.remove_details())
-                .collect(),
+            prefetch: prefetch.iter().map(|p| p.remove_details()).collect(),
             query: query.as_ref().map(|q| q.remove_details()),
             using: using.clone(),
             filter: filter.clone(),
@@ -116,9 +110,7 @@ impl Generalizer for VectorInternal {
 impl Generalizer for VectorQuery<VectorInputInternal> {
     fn remove_details(&self) -> Self {
         match self {
-            VectorQuery::Nearest(nearest) => {
-                VectorQuery::Nearest(nearest.remove_details())
-            }
+            VectorQuery::Nearest(nearest) => VectorQuery::Nearest(nearest.remove_details()),
             VectorQuery::NearestWithMmr(nearest_with_mmr) => {
                 let NearestWithMmr { nearest, mmr } = nearest_with_mmr;
 
@@ -136,12 +128,8 @@ impl Generalizer for VectorQuery<VectorInputInternal> {
             VectorQuery::RecommendSumScores(recommend) => {
                 VectorQuery::RecommendSumScores(recommend.remove_details())
             }
-            VectorQuery::Discover(discovery) => {
-                VectorQuery::Discover(discovery.remove_details())
-            }
-            VectorQuery::Context(context) => {
-                VectorQuery::Context(context.remove_details())
-            }
+            VectorQuery::Discover(discovery) => VectorQuery::Discover(discovery.remove_details()),
+            VectorQuery::Context(context) => VectorQuery::Context(context.remove_details()),
         }
     }
 }
@@ -150,10 +138,7 @@ impl Generalizer for ContextQuery<VectorInputInternal> {
     fn remove_details(&self) -> Self {
         let ContextQuery { pairs } = self;
         Self {
-            pairs: pairs
-                .iter()
-                .map(|p| p.remove_details())
-                .collect(),
+            pairs: pairs.iter().map(|p| p.remove_details()).collect(),
         }
     }
 }
@@ -175,10 +160,7 @@ impl Generalizer for DiscoveryQuery<VectorInputInternal> {
 
         Self {
             target,
-            pairs: pairs
-                .iter()
-                .map(|p| p.remove_details())
-                .collect(),
+            pairs: pairs.iter().map(|p| p.remove_details()).collect(),
         }
     }
 }
@@ -190,14 +172,8 @@ impl Generalizer for RecoQuery<VectorInputInternal> {
             negatives,
         } = self;
         Self {
-            positives: positives
-                .iter()
-                .map(|p| p.remove_details())
-                .collect(),
-            negatives: negatives
-                .iter()
-                .map(|p| p.remove_details())
-                .collect(),
+            positives: positives.iter().map(|p| p.remove_details()).collect(),
+            negatives: negatives.iter().map(|p| p.remove_details()).collect(),
         }
     }
 }

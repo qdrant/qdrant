@@ -1,5 +1,6 @@
 mod count;
 mod facet;
+pub mod loggable;
 mod matrix;
 mod points;
 mod query;
@@ -14,10 +15,4 @@ mod update_persisted;
 /// Vectors are replaces with length indications, payloads are replaced with keys and length indications.
 pub trait Generalizer {
     fn remove_details(&self) -> Self;
-}
-
-pub trait Loggable {
-    fn to_log_value(&self) -> serde_json::Value;
-
-    fn request_name(&self) -> &'static str;
 }
