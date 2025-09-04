@@ -1098,6 +1098,9 @@ impl SegmentHolder {
             let mut proxy = ProxySegment::new(
                 segment.clone(),
                 tmp_segment.clone(),
+                // In this case, each proxy has their own set of deleted points
+                // We cannot share deletes because they're propagated to different wrapped
+                // segments, and we unproxy at different times
                 LockedRmSet::default(),
                 LockedIndexChanges::default(),
             );
