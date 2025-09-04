@@ -959,57 +959,53 @@ impl HNSWIndex {
             .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
 
         let hw_counter = vector_query_context.hardware_counter();
-        let filter_context = filter.map(|f| payload_index.filter_context(f, &hw_counter));
+        let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
-        // Try to use graph with vectors first.
-        let search_result = 'search_result: {
+        let search_with_vectors = || -> OperationResult<Option<Vec<ScoredPointOffset>>> {
             if !self.graph.has_vectors() || !is_quantized_search(quantized_vectors.as_ref(), params)
             {
-                break 'search_result None;
+                return Ok(None);
             }
             let Some(quantized_vectors) = quantized_vectors.as_ref() else {
-                break 'search_result None;
+                return Ok(None);
             };
 
-            let quantized_scorer_filtered = FilteredScorer::new(
+            // Quantized vectors are "link vectors"
+            let link_scorer_filtered = FilteredScorer::new(
                 vector.to_owned(),
                 &vector_storage,
                 Some(quantized_vectors),
-                filter_context
-                    .as_ref()
-                    .map(|x| BoxCow::Borrowed(x.as_ref())),
+                filter.map(|f| BoxCow::Owned(payload_index.filter_context(f, &hw_counter))),
                 deleted_points,
                 vector_query_context.hardware_counter(),
             )?;
-            let Some(quantized_scorer_filtered_bytes) = quantized_scorer_filtered.scorer_bytes()
-            else {
-                break 'search_result None;
+            let Some(link_scorer_filtered_bytes) = link_scorer_filtered.scorer_bytes() else {
+                return Ok(None);
             };
 
-            let full_scorer = new_raw_scorer(
+            // Full vectors are "base vectors"
+            let base_scorer = new_raw_scorer(
                 vector.to_owned(),
                 &vector_storage,
                 vector_query_context.hardware_counter(),
             )?;
-            let Some(full_scorer_bytes) = full_scorer.scorer_bytes() else {
-                break 'search_result None;
+            let Some(base_scorer_bytes) = base_scorer.scorer_bytes() else {
+                return Ok(None);
             };
 
-            Some(self.graph.search_with_vectors(
+            Ok(Some(self.graph.search_with_vectors(
                 top,
-                ef,
-                &quantized_scorer_filtered,
-                &quantized_scorer_filtered_bytes,
-                full_scorer_bytes,
+                std::cmp::max(ef, oversampled_top),
+                &link_scorer_filtered,
+                &link_scorer_filtered_bytes,
+                base_scorer_bytes,
                 custom_entry_points,
                 &vector_query_context.is_stopped(),
-            )?)
+            )?))
         };
 
-        // If graph with vectors is not available, fallback to normal graph search.
-        let search_result = if let Some(search_result) = search_result {
-            search_result
-        } else {
+        let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
+            let filter_context = filter.map(|f| payload_index.filter_context(f, &hw_counter));
             let points_scorer = Self::construct_search_scorer(
                 vector,
                 &vector_storage,
@@ -1019,7 +1015,6 @@ impl HNSWIndex {
                 vector_query_context.hardware_counter(),
                 filter_context,
             )?;
-            let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
             let search_result = self.graph.search(
                 oversampled_top,
@@ -1038,10 +1033,16 @@ impl HNSWIndex {
                 params,
                 top,
                 vector_query_context.hardware_counter(),
-            )?
+            )
         };
 
-        Ok(search_result)
+        // Try to use graph with vectors first.
+        if let Some(search_result) = search_with_vectors()? {
+            Ok(search_result)
+        } else {
+            // Graph with vectors is not available, fallback to regular graph search.
+            regular_search()
+        }
     }
 
     fn search_vectors_with_graph(
