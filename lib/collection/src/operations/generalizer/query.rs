@@ -10,7 +10,7 @@ use crate::operations::universal_query::collection_query::{
 };
 
 impl Generalizer for CollectionQueryRequest {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let CollectionQueryRequest {
             prefetch,
             query,
@@ -28,9 +28,9 @@ impl Generalizer for CollectionQueryRequest {
         Self {
             prefetch: prefetch
                 .iter()
-                .map(|p| p.remove_vectors_and_payloads())
+                .map(|p| p.remove_details())
                 .collect(),
-            query: query.as_ref().map(|q| q.remove_vectors_and_payloads()),
+            query: query.as_ref().map(|q| q.remove_details()),
             using: using.clone(),
             filter: filter.clone(),
             score_threshold: *score_threshold,
@@ -45,7 +45,7 @@ impl Generalizer for CollectionQueryRequest {
 }
 
 impl Generalizer for CollectionPrefetch {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let CollectionPrefetch {
             prefetch,
             query,
@@ -60,9 +60,9 @@ impl Generalizer for CollectionPrefetch {
         Self {
             prefetch: prefetch
                 .iter()
-                .map(|p| p.remove_vectors_and_payloads())
+                .map(|p| p.remove_details())
                 .collect(),
-            query: query.as_ref().map(|q| q.remove_vectors_and_payloads()),
+            query: query.as_ref().map(|q| q.remove_details()),
             using: using.clone(),
             filter: filter.clone(),
             score_threshold: *score_threshold,
@@ -74,9 +74,9 @@ impl Generalizer for CollectionPrefetch {
 }
 
 impl Generalizer for Query {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         match self {
-            Query::Vector(vector) => Query::Vector(vector.remove_vectors_and_payloads()),
+            Query::Vector(vector) => Query::Vector(vector.remove_details()),
             Query::Fusion(_) => self.clone(),
             Query::OrderBy(_) => self.clone(),
             Query::Formula(_) => self.clone(),
@@ -86,10 +86,10 @@ impl Generalizer for Query {
 }
 
 impl Generalizer for VectorInputInternal {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         match self {
             VectorInputInternal::Vector(vector) => {
-                VectorInputInternal::Vector(vector.remove_vectors_and_payloads())
+                VectorInputInternal::Vector(vector.remove_details())
             }
             VectorInputInternal::Id(id) => VectorInputInternal::Id(*id),
         }
@@ -97,7 +97,7 @@ impl Generalizer for VectorInputInternal {
 }
 
 impl Generalizer for VectorInternal {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         match self {
             VectorInternal::Dense(dense) => VectorInternal::Dense(vec![dense.len() as f32]),
             VectorInternal::Sparse(sparse) => VectorInternal::Sparse(
@@ -114,77 +114,77 @@ impl Generalizer for VectorInternal {
 }
 
 impl Generalizer for VectorQuery<VectorInputInternal> {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         match self {
             VectorQuery::Nearest(nearest) => {
-                VectorQuery::Nearest(nearest.remove_vectors_and_payloads())
+                VectorQuery::Nearest(nearest.remove_details())
             }
             VectorQuery::NearestWithMmr(nearest_with_mmr) => {
                 let NearestWithMmr { nearest, mmr } = nearest_with_mmr;
 
                 VectorQuery::NearestWithMmr(NearestWithMmr {
-                    nearest: nearest.remove_vectors_and_payloads(),
+                    nearest: nearest.remove_details(),
                     mmr: mmr.clone(),
                 })
             }
             VectorQuery::RecommendAverageVector(recommend) => {
-                VectorQuery::RecommendAverageVector(recommend.remove_vectors_and_payloads())
+                VectorQuery::RecommendAverageVector(recommend.remove_details())
             }
             VectorQuery::RecommendBestScore(recommend) => {
-                VectorQuery::RecommendBestScore(recommend.remove_vectors_and_payloads())
+                VectorQuery::RecommendBestScore(recommend.remove_details())
             }
             VectorQuery::RecommendSumScores(recommend) => {
-                VectorQuery::RecommendSumScores(recommend.remove_vectors_and_payloads())
+                VectorQuery::RecommendSumScores(recommend.remove_details())
             }
             VectorQuery::Discover(discovery) => {
-                VectorQuery::Discover(discovery.remove_vectors_and_payloads())
+                VectorQuery::Discover(discovery.remove_details())
             }
             VectorQuery::Context(context) => {
-                VectorQuery::Context(context.remove_vectors_and_payloads())
+                VectorQuery::Context(context.remove_details())
             }
         }
     }
 }
 
 impl Generalizer for ContextQuery<VectorInputInternal> {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let ContextQuery { pairs } = self;
         Self {
             pairs: pairs
                 .iter()
-                .map(|p| p.remove_vectors_and_payloads())
+                .map(|p| p.remove_details())
                 .collect(),
         }
     }
 }
 
 impl Generalizer for ContextPair<VectorInputInternal> {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let ContextPair { positive, negative } = self;
         Self {
-            positive: positive.remove_vectors_and_payloads(),
-            negative: negative.remove_vectors_and_payloads(),
+            positive: positive.remove_details(),
+            negative: negative.remove_details(),
         }
     }
 }
 
 impl Generalizer for DiscoveryQuery<VectorInputInternal> {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let DiscoveryQuery { target, pairs } = self;
-        let target = target.remove_vectors_and_payloads();
+        let target = target.remove_details();
 
         Self {
             target,
             pairs: pairs
                 .iter()
-                .map(|p| p.remove_vectors_and_payloads())
+                .map(|p| p.remove_details())
                 .collect(),
         }
     }
 }
 
 impl Generalizer for RecoQuery<VectorInputInternal> {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let RecoQuery {
             positives,
             negatives,
@@ -192,11 +192,11 @@ impl Generalizer for RecoQuery<VectorInputInternal> {
         Self {
             positives: positives
                 .iter()
-                .map(|p| p.remove_vectors_and_payloads())
+                .map(|p| p.remove_details())
                 .collect(),
             negatives: negatives
                 .iter()
-                .map(|p| p.remove_vectors_and_payloads())
+                .map(|p| p.remove_details())
                 .collect(),
         }
     }

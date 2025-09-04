@@ -13,7 +13,7 @@ mod update_persisted;
 /// It does create copy of the structure for all other fields except vectors.
 /// Vectors are replaces with length indications, payloads are replaced with keys and length indications.
 pub trait Generalizer {
-    fn remove_vectors_and_payloads(&self) -> Self;
+    fn remove_details(&self) -> Self;
 }
 
 pub trait Loggable {

@@ -33,14 +33,13 @@ pub fn log_request_to_collector(
 /// It should be called once during the application startup with a valid Tokio runtime handle
 /// to spawn the listener task.
 pub fn init_requests_profile_collector(runtime: Handle) {
-    let runtime_clone = runtime.clone();
     runtime.spawn(async move {
         REQUESTS_COLLECTOR
             .get_or_init(async || {
                 let (listener, receiver) =
                     crate::profiling::slow_requests_collector::RequestsCollector::new();
                 let log = listener.get_log();
-                runtime_clone.spawn(
+                tokio::spawn(
                     crate::profiling::slow_requests_collector::RequestsCollector::run(
                         log, receiver,
                     ),

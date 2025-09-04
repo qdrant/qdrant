@@ -2,7 +2,7 @@ use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{PointRequestInternal, ScrollRequestInternal};
 
 impl Generalizer for ScrollRequestInternal {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let ScrollRequestInternal {
             offset,
             limit,
@@ -24,7 +24,7 @@ impl Generalizer for ScrollRequestInternal {
 }
 
 impl Generalizer for PointRequestInternal {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let PointRequestInternal {
             ids,
             with_payload,

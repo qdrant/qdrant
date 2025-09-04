@@ -2,7 +2,7 @@ use crate::operations::generalizer::Generalizer;
 use crate::operations::universal_query::collection_query::CollectionQueryGroupsRequest;
 
 impl Generalizer for CollectionQueryGroupsRequest {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let CollectionQueryGroupsRequest {
             prefetch,
             query,
@@ -22,9 +22,9 @@ impl Generalizer for CollectionQueryGroupsRequest {
         Self {
             prefetch: prefetch
                 .iter()
-                .map(|p| p.remove_vectors_and_payloads())
+                .map(|p| p.remove_details())
                 .collect(),
-            query: query.as_ref().map(|q| q.remove_vectors_and_payloads()),
+            query: query.as_ref().map(|q| q.remove_details()),
             using: using.clone(),
             filter: filter.clone(),
             params: params.clone(),

@@ -1,4 +1,5 @@
-use segment::types::Payload;
+use itertools::Itertools;
+use segment::types::{Payload, PointIdType};
 use serde_json::Value;
 use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use shard::operations::point_ops::{
@@ -14,11 +15,11 @@ use sparse::common::types::DimId;
 use crate::operations::generalizer::{Generalizer, Loggable};
 
 impl Generalizer for Payload {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let mut stripped_payload = Payload::default();
         stripped_payload.0.insert(
             "keys".to_string(),
-            Value::Array(self.keys().cloned().map(Value::String).collect()),
+            Value::Array(self.keys().cloned().sorted().map(Value::String).collect()),
         );
         stripped_payload
     }
@@ -35,41 +36,33 @@ impl Loggable for CollectionUpdateOperations {
 }
 
 impl Generalizer for CollectionUpdateOperations {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         match self {
             CollectionUpdateOperations::PointOperation(point_operation) => {
-                CollectionUpdateOperations::PointOperation(
-                    point_operation.remove_vectors_and_payloads(),
-                )
+                CollectionUpdateOperations::PointOperation(point_operation.remove_details())
             }
             CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                CollectionUpdateOperations::VectorOperation(
-                    vector_operation.remove_vectors_and_payloads(),
-                )
+                CollectionUpdateOperations::VectorOperation(vector_operation.remove_details())
             }
             CollectionUpdateOperations::PayloadOperation(payload_operation) => {
-                CollectionUpdateOperations::PayloadOperation(
-                    payload_operation.remove_vectors_and_payloads(),
-                )
+                CollectionUpdateOperations::PayloadOperation(payload_operation.remove_details())
             }
             CollectionUpdateOperations::FieldIndexOperation(field_operation) => {
-                CollectionUpdateOperations::FieldIndexOperation(
-                    field_operation.remove_vectors_and_payloads(),
-                )
+                CollectionUpdateOperations::FieldIndexOperation(field_operation.remove_details())
             }
         }
     }
 }
 
 impl Generalizer for PointOperations {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         match self {
             PointOperations::UpsertPoints(upsert_operation) => {
-                PointOperations::UpsertPoints(upsert_operation.remove_vectors_and_payloads())
+                PointOperations::UpsertPoints(upsert_operation.remove_details())
             }
             PointOperations::UpsertPointsConditional(upsert_conditional_operation) => {
                 PointOperations::UpsertPointsConditional(
-                    upsert_conditional_operation.remove_vectors_and_payloads(),
+                    upsert_conditional_operation.remove_details(),
                 )
             }
             PointOperations::DeletePoints { ids } => {
@@ -79,14 +72,14 @@ impl Generalizer for PointOperations {
                 PointOperations::DeletePointsByFilter(filter.clone())
             }
             PointOperations::SyncPoints(sync_operation) => {
-                PointOperations::SyncPoints(sync_operation.remove_vectors_and_payloads())
+                PointOperations::SyncPoints(sync_operation.remove_details())
             }
         }
     }
 }
 
 impl Generalizer for PointSyncOperation {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let Self {
             from_id,
             to_id,
@@ -96,16 +89,13 @@ impl Generalizer for PointSyncOperation {
         Self {
             from_id: *from_id,
             to_id: *to_id,
-            points: points
-                .iter()
-                .map(|point| point.remove_vectors_and_payloads())
-                .collect(),
+            points: points.iter().map(|point| point.remove_details()).collect(),
         }
     }
 }
 
 impl Generalizer for PointStructPersisted {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let Self {
             id,
             vector,
@@ -113,15 +103,15 @@ impl Generalizer for PointStructPersisted {
         } = self;
 
         Self {
-            id: *id,
-            vector: vector.remove_vectors_and_payloads(),
-            payload: payload.as_ref().map(|p| p.remove_vectors_and_payloads()),
+            id: PointIdType::NumId(0),
+            vector: vector.remove_details(),
+            payload: payload.as_ref().map(|p| p.remove_details()),
         }
     }
 }
 
 impl Generalizer for ConditionalInsertOperationInternal {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let Self {
             points_op,
             condition,
@@ -129,22 +119,20 @@ impl Generalizer for ConditionalInsertOperationInternal {
 
         Self {
             condition: condition.clone(),
-            points_op: points_op.remove_vectors_and_payloads(),
+            points_op: points_op.remove_details(),
         }
     }
 }
 
 impl Generalizer for PointInsertOperationsInternal {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         match self {
             PointInsertOperationsInternal::PointsBatch(batch) => {
-                PointInsertOperationsInternal::PointsBatch(batch.remove_vectors_and_payloads())
+                PointInsertOperationsInternal::PointsBatch(batch.remove_details())
             }
             PointInsertOperationsInternal::PointsList(list) => {
                 PointInsertOperationsInternal::PointsList(
-                    list.iter()
-                        .map(|point| point.remove_vectors_and_payloads())
-                        .collect(),
+                    list.iter().map(|point| point.remove_details()).collect(),
                 )
             }
         }
@@ -152,7 +140,7 @@ impl Generalizer for PointInsertOperationsInternal {
 }
 
 impl Generalizer for BatchPersisted {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let Self {
             ids,
             vectors,
@@ -180,7 +168,7 @@ impl Generalizer for BatchPersisted {
                     .map(|(name, vectors)| {
                         let generalized_vectors = vectors
                             .iter()
-                            .map(|vector| vector.remove_vectors_and_payloads())
+                            .map(|vector| vector.remove_details())
                             .collect();
                         (name.clone(), generalized_vectors)
                     })
@@ -190,11 +178,11 @@ impl Generalizer for BatchPersisted {
         };
 
         Self {
-            ids: ids.clone(),
+            ids: vec![], // Remove ids for generalization
             vectors,
             payloads: payloads.as_ref().map(|pls| {
                 pls.iter()
-                    .map(|payload| payload.as_ref().map(|pl| pl.remove_vectors_and_payloads()))
+                    .map(|payload| payload.as_ref().map(|pl| pl.remove_details()))
                     .collect()
             }),
         }
@@ -202,10 +190,10 @@ impl Generalizer for BatchPersisted {
 }
 
 impl Generalizer for VectorOperations {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         match self {
             VectorOperations::UpdateVectors(update_vectors) => {
-                VectorOperations::UpdateVectors(update_vectors.remove_vectors_and_payloads())
+                VectorOperations::UpdateVectors(update_vectors.remove_details())
             }
             VectorOperations::DeleteVectors(_, _) => self.clone(),
             VectorOperations::DeleteVectorsByFilter(_, _) => self.clone(),
@@ -214,34 +202,31 @@ impl Generalizer for VectorOperations {
 }
 
 impl Generalizer for UpdateVectorsOp {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let UpdateVectorsOp {
             points,
             update_filter,
         } = self;
 
         Self {
-            points: points
-                .iter()
-                .map(|point| point.remove_vectors_and_payloads())
-                .collect(),
+            points: points.iter().map(|point| point.remove_details()).collect(),
             update_filter: update_filter.clone(),
         }
     }
 }
 
 impl Generalizer for PointVectorsPersisted {
-    fn remove_vectors_and_payloads(&self) -> Self {
-        let PointVectorsPersisted { id, vector } = self;
+    fn remove_details(&self) -> Self {
+        let PointVectorsPersisted { id: _, vector } = self;
         Self {
-            id: *id,
-            vector: vector.remove_vectors_and_payloads(),
+            id: PointIdType::NumId(0),
+            vector: vector.remove_details(),
         }
     }
 }
 
 impl Generalizer for VectorStructPersisted {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         match self {
             VectorStructPersisted::Single(dense) => {
                 VectorStructPersisted::Single(vec![dense.len() as f32])
@@ -253,7 +238,7 @@ impl Generalizer for VectorStructPersisted {
             VectorStructPersisted::Named(named) => {
                 let generalized_named = named
                     .iter()
-                    .map(|(name, vector)| (name.clone(), vector.remove_vectors_and_payloads()))
+                    .map(|(name, vector)| (name.clone(), vector.remove_details()))
                     .collect();
                 VectorStructPersisted::Named(generalized_named)
             }
@@ -262,7 +247,7 @@ impl Generalizer for VectorStructPersisted {
 }
 
 impl Generalizer for VectorPersisted {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         match self {
             VectorPersisted::Dense(dense) => VectorPersisted::Dense(vec![dense.len() as f32]),
             VectorPersisted::Sparse(sparse) => VectorPersisted::Sparse(
@@ -277,10 +262,10 @@ impl Generalizer for VectorPersisted {
 }
 
 impl Generalizer for PayloadOps {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         match self {
             PayloadOps::SetPayload(set_payload) => {
-                PayloadOps::SetPayload(set_payload.remove_vectors_and_payloads())
+                PayloadOps::SetPayload(set_payload.remove_details())
             }
             PayloadOps::DeletePayload(delete_payload) => {
                 PayloadOps::DeletePayload(delete_payload.clone())
@@ -292,14 +277,14 @@ impl Generalizer for PayloadOps {
                 PayloadOps::ClearPayloadByFilter(filter.clone())
             }
             PayloadOps::OverwritePayload(overwrite_payload) => {
-                PayloadOps::OverwritePayload(overwrite_payload.remove_vectors_and_payloads())
+                PayloadOps::OverwritePayload(overwrite_payload.remove_details())
             }
         }
     }
 }
 
 impl Generalizer for SetPayloadOp {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let Self {
             payload,
             points,
@@ -308,7 +293,7 @@ impl Generalizer for SetPayloadOp {
         } = self;
 
         Self {
-            payload: payload.remove_vectors_and_payloads(),
+            payload: payload.remove_details(),
             points: points.clone(),
             filter: filter.clone(),
             key: key.clone(),
@@ -317,7 +302,7 @@ impl Generalizer for SetPayloadOp {
 }
 
 impl Generalizer for FieldIndexOperations {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         self.clone()
     }
 }

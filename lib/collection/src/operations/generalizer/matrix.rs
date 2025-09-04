@@ -4,7 +4,7 @@ use crate::collection::distance_matrix::CollectionSearchMatrixRequest;
 use crate::operations::generalizer::Generalizer;
 
 impl Generalizer for SearchMatrixRequestInternal {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let SearchMatrixRequestInternal {
             filter,
             sample,
@@ -22,7 +22,7 @@ impl Generalizer for SearchMatrixRequestInternal {
 }
 
 impl Generalizer for CollectionSearchMatrixRequest {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let CollectionSearchMatrixRequest {
             sample_size,
             limit_per_sample,

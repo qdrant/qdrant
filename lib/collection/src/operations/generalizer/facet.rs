@@ -3,7 +3,7 @@ use api::rest::FacetRequestInternal;
 use crate::operations::generalizer::Generalizer;
 
 impl Generalizer for FacetRequestInternal {
-    fn remove_vectors_and_payloads(&self) -> Self {
+    fn remove_details(&self) -> Self {
         let FacetRequestInternal {
             key,
             limit,

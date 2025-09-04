@@ -792,7 +792,7 @@ impl UpdateHandler {
 
                     // This represents the operation without vectors and payloads for logging purposes
                     // Do not use for anything else
-                    let loggable_operation = operation.remove_vectors_and_payloads();
+                    let loggable_operation = operation.remove_details();
 
                     let operation_result = flush_res.and_then(|_| {
                         CollectionUpdater::update(
