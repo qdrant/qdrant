@@ -23,7 +23,7 @@ fn search_in_builder(
 ) -> Vec<ScoredPointOffset> {
     let Some(entry_point) = builder
         .get_entry_points()
-        .get_entry_point(|point_id| points_scorer.check_vector(point_id))
+        .get_entry_point(|point_id| points_scorer.filters().check_vector(point_id))
     else {
         return vec![];
     };
