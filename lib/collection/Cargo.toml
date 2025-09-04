@@ -36,7 +36,6 @@ ahash = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
-serde_cbor = { workspace = true }
 serde_json = { workspace = true }
 rmp-serde = "~1.3"
 wal = { workspace = true }
@@ -78,7 +77,6 @@ itertools = { workspace = true }
 indicatif = { workspace = true }
 chrono = { workspace = true }
 schemars = { workspace = true }
-tar = { workspace = true }
 fs_extra = "1.3.0"
 semver = { workspace = true }
 tempfile = { workspace = true }
