@@ -1,7 +1,7 @@
 use tokio::runtime::Handle;
 use tokio::sync::OnceCell;
 
-use crate::operations::generalizer::loggable::Loggable;
+use crate::operations::loggable::Loggable;
 use crate::profiling::slow_requests_collector::{MIN_SLOW_REQUEST_DURATION, RequestProfileMessage};
 use crate::profiling::slow_requests_log::LogEntry;
 

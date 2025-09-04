@@ -1,6 +1,5 @@
 mod count;
 mod facet;
-pub mod loggable;
 mod matrix;
 mod points;
 mod query;

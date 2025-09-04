@@ -8,7 +8,7 @@ use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::operations::generalizer::loggable::Loggable;
+use crate::operations::loggable::Loggable;
 
 #[derive(Serialize, PartialEq, Eq, Clone, JsonSchema)]
 pub struct LogEntry {
