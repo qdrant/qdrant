@@ -3,8 +3,9 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::typelevel::False;
+use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
+use zerocopy::FromBytes;
 
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector};
@@ -120,8 +121,8 @@ impl<
         unimplemented!("Custom scorer can compare against multiple vectors, not just one")
     }
 
-    type SupportsBytes = False;
-    fn score_bytes(&self, enabled: Self::SupportsBytes, _: &[u8]) -> ScoreType {
-        match enabled {}
+    type SupportsBytes = True;
+    fn score_bytes(&self, _enabled: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
+        self.score(<[TElement]>::ref_from_bytes(bytes).unwrap())
     }
 }
