@@ -119,7 +119,7 @@ fn hnsw_quantized_search_test(
     };
 
     let permit_cpu_count = 1; // single-threaded for deterministic build
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count));
 
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
@@ -425,7 +425,7 @@ fn test_build_hnsw_using_quantization() {
     });
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count);
     let hw_counter = HardwareCounterCell::new();
 
     let mut builder = SegmentBuilder::new(

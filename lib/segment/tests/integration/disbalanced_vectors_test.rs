@@ -101,7 +101,7 @@ fn test_rebuild_with_removed_vectors() {
     builder.update(&[&segment1, &segment2], &stopped).unwrap();
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count);
     let hw_counter = HardwareCounterCell::new();
 
     let mut rng = rand::rng();

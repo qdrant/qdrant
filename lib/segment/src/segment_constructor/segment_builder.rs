@@ -713,7 +713,7 @@ impl SegmentBuilder {
                 continue;
             }
 
-            let max_threads = permit.num_cpus as usize;
+            let max_threads = permit.acquired().cpu as usize;
 
             if let Some(quantization_config) = config.quantization_config(vector_name) {
                 // Don't build quantization for appendable vectors if quantization method does not support it

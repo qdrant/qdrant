@@ -374,7 +374,7 @@ impl UpdateHandler {
                 };
                 log::trace!(
                     "Acquired {} IO permit for {} optimizer",
-                    permit.num_io,
+                    permit.acquired().io,
                     optimizer.name(),
                 );
 

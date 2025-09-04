@@ -290,7 +290,7 @@ impl HNSWIndex {
         let _ = gpu_device;
         debug!(
             "building HNSW for {total_vector_count} vectors with {} CPUs{gpu_name_postfix}",
-            permit.num_cpus,
+            permit.acquired().cpu,
         );
 
         let num_entries = std::cmp::max(
@@ -310,7 +310,7 @@ impl HNSWIndex {
 
         let pool = rayon::ThreadPoolBuilder::new()
             .thread_name(|idx| format!("hnsw-build-{idx}"))
-            .num_threads(permit.num_cpus as usize)
+            .num_threads(permit.acquired().cpu as usize)
             .spawn_handler(|thread| {
                 let mut b = thread::Builder::new();
                 if let Some(name) = thread.name() {

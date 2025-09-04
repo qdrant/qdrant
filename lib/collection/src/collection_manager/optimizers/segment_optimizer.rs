@@ -522,7 +522,7 @@ pub trait SegmentOptimizer {
 
         // Use same number of threads for indexing as for IO.
         // This ensures that IO is equally distributed between optimization jobs.
-        let desired_cpus = permit.num_io as usize;
+        let desired_cpus = permit.acquired().io;
         let indexing_permit = resource_budget
             .replace_with(permit, desired_cpus, 0, stopped)
             .map_err(|_| CollectionError::Cancelled {

@@ -134,7 +134,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
     };
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count));
 
     HNSWIndex::build(
         HnswIndexOpenArgs {

@@ -77,7 +77,7 @@ fn test_building_new_segment() {
     // Now we finalize building
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count);
     let hw_counter = HardwareCounterCell::new();
 
     let merged_segment: Segment = builder
@@ -163,7 +163,7 @@ fn test_building_new_defragmented_segment() {
     // Now we finalize building
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count);
     let hw_counter = HardwareCounterCell::new();
 
     let merged_segment: Segment = builder
@@ -296,7 +296,7 @@ fn test_building_new_sparse_segment() {
     // Now we finalize building
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count);
     let hw_counter = HardwareCounterCell::new();
 
     let merged_segment: Segment = builder
@@ -372,7 +372,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
     }
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count);
     let hw_counter = HardwareCounterCell::new();
 
     let res = builder.build(permit, &stopped, &mut rng, &hw_counter);
@@ -439,7 +439,7 @@ fn test_building_new_segment_bug_5614() {
     builder.update(&[&segment1, &segment2], &stopped).unwrap();
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count);
     let hw_counter = HardwareCounterCell::new();
 
     let merged_segment: Segment = builder
@@ -582,7 +582,7 @@ fn test_building_new_segment_with_mmap_payload() {
 
     // Now we finalize building
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count);
     let hw_counter = HardwareCounterCell::new();
 
     let new_segment: Segment = builder

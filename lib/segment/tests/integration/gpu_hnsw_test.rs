@@ -121,7 +121,7 @@ fn test_gpu_filterable_hnsw() {
         .unwrap();
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count));
 
     let instance = gpu::GPU_TEST_INSTANCE.clone();
     let device =
