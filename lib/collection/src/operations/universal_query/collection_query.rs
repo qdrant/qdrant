@@ -2,6 +2,7 @@ use ahash::AHashSet;
 use api::rest::LookupLocation;
 use common::types::ScoreType;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal, VectorRef};
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
@@ -426,7 +427,9 @@ impl VectorQuery<VectorInternal> {
                 return Ok(ScoringQuery::Mmr(MmrInternal {
                     vector: nearest,
                     using,
-                    lambda: diversity.map(|x| 1.0 - x).unwrap_or(DEFAULT_MMR_LAMBDA),
+                    lambda: OrderedFloat::from(
+                        diversity.map(|x| 1.0 - x).unwrap_or(DEFAULT_MMR_LAMBDA),
+                    ),
                     candidates_limit: candidates_limit.unwrap_or(request_limit),
                 }));
             }
@@ -442,7 +445,7 @@ pub struct CollectionPrefetch {
     pub query: Option<Query>,
     pub using: VectorNameBuf,
     pub filter: Option<Filter>,
-    pub score_threshold: Option<ScoreType>,
+    pub score_threshold: Option<OrderedFloat<ScoreType>>,
     pub limit: usize,
     /// Search params for when there is no prefetch
     pub params: Option<SearchParams>,
@@ -504,7 +507,7 @@ impl CollectionPrefetch {
             &self.query,
             &self.using,
             &self.prefetch,
-            self.score_threshold,
+            self.score_threshold.map(OrderedFloat::into_inner),
         )?;
 
         let lookup_vector_name = self.get_lookup_vector_name();
@@ -657,7 +660,7 @@ impl CollectionQueryRequest {
             prefetches,
             query,
             filter,
-            score_threshold: self.score_threshold,
+            score_threshold: self.score_threshold.map(OrderedFloat),
             limit: self.limit,
             offset,
             params: self.params,

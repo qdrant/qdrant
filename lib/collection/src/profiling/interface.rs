@@ -10,18 +10,21 @@ static REQUESTS_COLLECTOR: OnceCell<crate::profiling::slow_requests_collector::R
 
 /// This function should be used to log request profiles into the shared log structure.
 /// This structure is later can be read via API.
-pub fn log_request_to_collector(
+pub fn log_request_to_collector<F, L>(
     collection_name: impl Into<String>,
-    request: impl Loggable + Send + Sync + 'static,
     duration: std::time::Duration,
-) {
+    get_request: F,
+) where
+    F: FnOnce() -> L,
+    L: Loggable + Sync + Send + 'static,
+{
     if duration < MIN_SLOW_REQUEST_DURATION {
         return;
     }
 
     if let Some(listener) = REQUESTS_COLLECTOR.get() {
         let message =
-            RequestProfileMessage::new(Box::new(request), duration, collection_name.into());
+            RequestProfileMessage::new(Box::new(get_request()), duration, collection_name.into());
         listener.send_if_available(message);
     } else {
         log::warn!("SlowRequestsListener is not initialized");

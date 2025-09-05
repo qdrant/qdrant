@@ -1,13 +1,15 @@
+use std::hash::Hash;
 use std::iter;
-
-use common::math::scaled_fast_sigmoid;
-use common::types::ScoreType;
-use itertools::Itertools;
 
 use super::context_query::ContextPair;
 use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
+use common::math::scaled_fast_sigmoid;
+use common::types::ScoreType;
+use itertools::Itertools;
+use serde::Serialize;
+use serde::ser::SerializeStruct;
 
 type RankType = i32;
 
@@ -26,6 +28,28 @@ impl<T> ContextPair<T> {
 pub struct DiscoveryQuery<T> {
     pub target: T,
     pub pairs: Vec<ContextPair<T>>,
+}
+
+impl<T: Serialize> Serialize for DiscoveryQuery<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let Self { target, pairs } = self;
+
+        let mut state = serializer.serialize_struct("DiscoveryQuery", 2)?;
+        state.serialize_field("target", target)?;
+        state.serialize_field("pairs", pairs)?;
+        state.end()
+    }
+}
+
+impl<T: Hash> Hash for DiscoveryQuery<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let Self { target, pairs } = self;
+        target.hash(state);
+        pairs.hash(state);
+    }
 }
 
 impl<T> DiscoveryQuery<T> {

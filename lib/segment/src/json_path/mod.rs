@@ -15,13 +15,13 @@ use crate::common::utils::{MultiValue, merge_map};
 
 mod parse;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Anonymize)]
+#[derive(Debug, Clone, PartialEq, Eq, Anonymize, Ord, Hash, PartialOrd)]
 pub struct JsonPath {
     pub first_key: String,
     pub rest: Vec<JsonPathItem>,
 }
 
-#[derive(Debug, PartialEq, Clone, Hash, Eq, Anonymize)]
+#[derive(Debug, PartialEq, Clone, Eq, Anonymize, Ord, Hash, PartialOrd)]
 pub enum JsonPathItem {
     /// A key in a JSON object, e.g. `.foo`
     Key(String),

@@ -1,6 +1,7 @@
 use api::rest::SearchRequestInternal;
 use common::types::ScoreType;
 use itertools::Itertools as _;
+use serde::Serialize;
 use segment::data_types::vectors::{
     DenseVector, Named as _, NamedQuery, NamedVectorStruct, QueryVector, VectorInternal,
 };
@@ -214,7 +215,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
 }
 
 /// Every kind of vector query that can be performed on segment level.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash, Serialize)]
 pub enum QueryEnum {
     Nearest(NamedQuery<VectorInternal>),
     RecommendBestScore(NamedQuery<RecoQuery<VectorInternal>>),

@@ -3,6 +3,7 @@ use api::grpc::conversions::grpc_condition_into_condition;
 use api::grpc::{DecayParamsExpression, qdrant as grpc};
 use common::types::ScoreType;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
@@ -31,12 +32,12 @@ pub type ShardQueryResponse = Vec<Vec<ScoredPoint>>;
 /// Direct translation of the user-facing request, but with all point ids substituted with their corresponding vectors.
 ///
 /// For the case of formula queries, it collects conditions and variables too.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct ShardQueryRequest {
     pub prefetches: Vec<ShardPrefetch>,
     pub query: Option<ScoringQuery>,
     pub filter: Option<Filter>,
-    pub score_threshold: Option<ScoreType>,
+    pub score_threshold: Option<OrderedFloat<ScoreType>>,
     pub limit: usize,
     pub offset: usize,
     /// Search params for when there is no prefetch
@@ -55,7 +56,7 @@ impl ShardQueryRequest {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Hash)]
 pub enum FusionInternal {
     /// Reciprocal Rank Fusion
     RrfK(usize),
@@ -63,26 +64,26 @@ pub enum FusionInternal {
     Dbsf,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Hash)]
 pub enum SampleInternal {
     Random,
 }
 
 /// Maximal Marginal Relevance configuration
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct MmrInternal {
     /// Query vector, used to get the relevance of each point.
     pub vector: VectorInternal,
     /// Vector name to use for similarity computation, defaults to empty string (default vector)
     pub using: VectorNameBuf,
     /// Lambda parameter controlling diversity vs relevance trade-off (0.0 = full diversity, 1.0 = full relevance)
-    pub lambda: f32,
+    pub lambda: OrderedFloat<f32>,
     /// Maximum number of candidates to pre-select using nearest neighbors.
     pub candidates_limit: usize,
 }
 
 /// Same as `Query`, but with the resolved vector references.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum ScoringQuery {
     /// Score points against some vector(s)
     Vector(QueryEnum),
@@ -176,14 +177,14 @@ impl ScoringQuery {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct ShardPrefetch {
     pub prefetches: Vec<ShardPrefetch>,
     pub query: Option<ScoringQuery>,
     pub limit: usize,
     pub params: Option<SearchParams>,
     pub filter: Option<Filter>,
-    pub score_threshold: Option<ScoreType>,
+    pub score_threshold: Option<OrderedFloat<ScoreType>>,
 }
 
 impl ShardPrefetch {
@@ -249,7 +250,7 @@ impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
                 .map(|query| ScoringQuery::try_from_grpc_query(query, using))
                 .transpose()?,
             filter: filter.map(Filter::try_from).transpose()?,
-            score_threshold,
+            score_threshold: score_threshold.map(OrderedFloat),
             limit: limit as usize,
             offset: offset as usize,
             params: params.map(SearchParams::from),
@@ -291,7 +292,7 @@ impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
             limit: limit as usize,
             params: params.map(SearchParams::from),
             filter: filter.map(Filter::try_from).transpose()?,
-            score_threshold,
+            score_threshold: score_threshold.map(OrderedFloat),
         };
 
         Ok(shard_prefetch)
@@ -649,7 +650,7 @@ impl ScoringQuery {
                 ScoringQuery::Mmr(MmrInternal {
                     vector,
                     using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
-                    lambda,
+                    lambda: OrderedFloat::from(lambda),
                     candidates_limit: candidates_limit as usize,
                 })
             }
@@ -707,7 +708,7 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
             }) => Self {
                 score: Some(Score::Mmr(grpc::MmrInternal {
                     vector: Some(grpc::RawVector::from(vector)),
-                    lambda,
+                    lambda: lambda.into_inner(),
                     candidates_limit: candidates_limit as u32,
                 })),
             },
@@ -733,7 +734,7 @@ impl From<ShardPrefetch> for grpc::query_shard_points::Prefetch {
             query: query.map(From::from),
             filter: filter.map(grpc::Filter::from),
             params: params.map(grpc::SearchParams::from),
-            score_threshold,
+            score_threshold: score_threshold.map(OrderedFloat::into_inner),
             limit: limit as u64,
         }
     }
@@ -764,7 +765,7 @@ impl From<ShardQueryRequest> for grpc::QueryShardPoints {
             query: query.map(From::from),
             filter: filter.map(grpc::Filter::from),
             params: params.map(grpc::SearchParams::from),
-            score_threshold,
+            score_threshold: score_threshold.map(OrderedFloat::into_inner),
             limit: limit as u64,
             offset: offset as u64,
             with_payload: Some(grpc::WithPayloadSelector::from(with_payload)),

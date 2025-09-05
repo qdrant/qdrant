@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::slice::ChunksExactMut;
 
 use half::f16;
 use itertools::Itertools;
 use schemars::JsonSchema;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
@@ -19,11 +21,33 @@ use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, Tran
 /// How many dimensions of a sparse vector are considered to be a single unit for cost estimation.
 const SPARSE_DIMS_COST_UNIT: usize = 64;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum VectorInternal {
     Dense(DenseVector),
     Sparse(SparseVector),
     MultiDense(MultiDenseVectorInternal),
+}
+
+impl Hash for VectorInternal {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            VectorInternal::Dense(v) => {
+                for element in v {
+                    element.to_bits().hash(state);
+                }
+            }
+            VectorInternal::Sparse(v) => {
+                let SparseVector { indices, values } = v;
+                indices.hash(state);
+                for value in values {
+                    value.to_bits().hash(state);
+                }
+            }
+            VectorInternal::MultiDense(v) => {
+                v.hash(state);
+            }
+        }
+    }
 }
 
 impl VectorInternal {
@@ -295,6 +319,19 @@ impl<T> TypedMultiDenseVector<T> {
 }
 
 pub type MultiDenseVectorInternal = TypedMultiDenseVector<VectorElementType>;
+
+impl Hash for MultiDenseVectorInternal {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let Self {
+            flattened_vectors,
+            dim,
+        } = self;
+        dim.hash(state);
+        for element in flattened_vectors {
+            element.to_bits().hash(state);
+        }
+    }
+}
 
 impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
     pub fn num_vectors(&self) -> usize {
@@ -772,6 +809,27 @@ impl<T> Named for NamedQuery<T> {
 impl<T: Validate> Validate for NamedQuery<T> {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         self.query.validate()
+    }
+}
+
+impl<T: Serialize> Serialize for NamedQuery<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let Self { query, using } = self;
+        let mut state = serializer.serialize_struct("NamedQuery", 2)?;
+        state.serialize_field("query", query)?;
+        state.serialize_field("using", using)?;
+        state.end()
+    }
+}
+
+impl<T: Hash> Hash for NamedQuery<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let Self { query, using } = self;
+        query.hash(state);
+        using.hash(state);
     }
 }
 

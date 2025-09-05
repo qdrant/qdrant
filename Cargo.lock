@@ -4767,6 +4767,7 @@ dependencies = [
  "memory",
  "mockito",
  "murmur3",
+ "ordered-float 5.0.0",
  "parking_lot",
  "prometheus",
  "prost 0.11.9",

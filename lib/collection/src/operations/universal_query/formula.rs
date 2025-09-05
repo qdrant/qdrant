@@ -5,7 +5,8 @@ use api::rest::GeoDistance;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
+    DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore,
+    PreciseScoreOrdered, VariableId,
 };
 use segment::json_path::JsonPath;
 use segment::types::{Condition, GeoPoint};
@@ -64,7 +65,9 @@ impl ExpressionInternal {
         conditions: &mut Vec<Condition>,
     ) -> CollectionResult<ParsedExpression> {
         let expr = match self {
-            ExpressionInternal::Constant(c) => ParsedExpression::Constant(PreciseScore::from(c)),
+            ExpressionInternal::Constant(c) => {
+                ParsedExpression::Constant(PreciseScoreOrdered::from(PreciseScore::from(c)))
+            }
             ExpressionInternal::Variable(var) => {
                 let var: VariableId = var.parse()?;
                 if let VariableId::Payload(payload_var) = var.clone() {
@@ -157,7 +160,7 @@ impl ExpressionInternal {
                     kind,
                     x: Box::new(x),
                     target,
-                    lambda,
+                    lambda: PreciseScoreOrdered::from(lambda),
                 }
             }
         };

@@ -1,6 +1,7 @@
 //! Types used within `LocalShard` to represent a planned `ShardQueryRequest`
 
 use common::types::ScoreType;
+use ordered_float::OrderedFloat;
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
 
@@ -41,7 +42,7 @@ pub struct RescoreParams {
     pub limit: usize,
 
     /// Keep only points with better score than this threshold
-    pub score_threshold: Option<ScoreType>,
+    pub score_threshold: Option<OrderedFloat<ScoreType>>,
 
     /// Parameters for the rescore search request
     pub params: Option<SearchParams>,
@@ -122,7 +123,7 @@ impl PlannedQuery {
             self.root_plan_without_prefetches(
                 query,
                 filter,
-                score_threshold,
+                score_threshold.map(OrderedFloat::into_inner),
                 with_vector,
                 with_payload,
                 params,
@@ -133,7 +134,7 @@ impl PlannedQuery {
                 prefetches,
                 query,
                 filter,
-                score_threshold,
+                score_threshold.map(OrderedFloat::into_inner),
                 with_vector,
                 with_payload,
                 params,
@@ -211,7 +212,7 @@ impl PlannedQuery {
                         vector, using,
                     ))),
                     limit: candidates_limit,
-                    score_threshold,
+                    score_threshold: score_threshold.map(OrderedFloat),
                     params,
                 };
                 // Although MMR gets computed at collection level, we select top candidates via a nearest rescoring first
@@ -223,7 +224,7 @@ impl PlannedQuery {
             | ScoringQuery::Sample(_)) => Some(RescoreParams {
                 rescore,
                 limit,
-                score_threshold,
+                score_threshold: score_threshold.map(OrderedFloat),
                 params,
             }),
             // We will propagate the intermediate results. Fusion will take place at collection level.
@@ -274,7 +275,7 @@ fn recurse_prefetches(
                 query,
                 limit,
                 params,
-                score_threshold,
+                score_threshold.map(OrderedFloat::into_inner),
                 filter,
             )?
         } else {
@@ -575,7 +576,7 @@ mod tests {
                 NamedQuery::new_from_vector(VectorInternal::Dense(dummy_vector.clone()), "full"),
             ))),
             filter: Some(Filter::default()),
-            score_threshold: Some(0.5),
+            score_threshold: Some(OrderedFloat(0.5)),
             limit: 10,
             offset: 12,
             params: Some(SearchParams::default()),
@@ -764,11 +765,11 @@ mod tests {
                 limit: 37,
                 params: dummy_params.clone(),
                 filter: dummy_filter.clone(),
-                score_threshold: Some(0.1),
+                score_threshold: Some(OrderedFloat(0.1)),
             }],
             query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
             filter: Some(Filter::default()),
-            score_threshold: Some(0.666),
+            score_threshold: Some(OrderedFloat(0.666)),
             limit: 50,
             offset: 49,
 

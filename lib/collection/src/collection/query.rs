@@ -24,12 +24,14 @@ use crate::common::fetch_vectors::{
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::common::transpose_iterator::transposed_iter;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::generalizer::Generalizer;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::CollectionQueryRequest;
 use crate::operations::universal_query::shard_query::{
     FusionInternal, MmrInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
+use crate::profiling::interface::log_request_to_collector;
 
 /// A factor which determines if we need to use the 2-step search or not.
 /// Should be adjusted based on usage statistics.
@@ -173,16 +175,25 @@ impl Collection {
         );
 
         let all_searches = target_shards.iter().map(|(shard, shard_key)| {
+            let start_time = Instant::now();
             let shard_key = shard_key.cloned();
+            let request_clone = Arc::clone(&batch_request);
+            let another_request = batch_request.clone();
+            let collection_id = self.id.clone();
             shard
                 .query_batch(
-                    Arc::clone(&batch_request),
+                    request_clone,
                     read_consistency,
                     shard_selection.is_shard_id(),
                     timeout,
                     hw_measurement_acc.clone(),
                 )
                 .and_then(move |mut shard_responses| async move {
+                    let elapsed = start_time.elapsed();
+                    log_request_to_collector(&collection_id, elapsed, || {
+                        another_request.remove_details()
+                    });
+
                     if shard_key.is_none() {
                         return Ok(shard_responses);
                     }
@@ -366,7 +377,7 @@ impl Collection {
                 if let Some(&score_threshold) = score_threshold.as_ref() {
                     fused = fused
                         .into_iter()
-                        .take_while(|point| point.score >= score_threshold)
+                        .take_while(|point| point.score >= score_threshold.0)
                         .collect();
                 }
                 fused

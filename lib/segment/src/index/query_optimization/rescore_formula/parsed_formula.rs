@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
 use common::types::ScoreType;
+use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -15,6 +18,7 @@ const DEFAULT_DECAY_SCALE: f32 = 1.0;
 
 pub type ConditionId = usize;
 pub type PreciseScore = f64;
+pub type PreciseScoreOrdered = OrderedFloat<PreciseScore>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedFormula {
@@ -31,10 +35,32 @@ pub struct ParsedFormula {
     pub formula: ParsedExpression,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl Hash for ParsedFormula {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let Self {
+            payload_vars,
+            conditions,
+            defaults,
+            formula,
+        } = self;
+
+        payload_vars.iter().sorted().for_each(|v| v.hash(state));
+        conditions.hash(state);
+        defaults
+            .iter()
+            .sorted_by_key(|(k, _)| *k)
+            .for_each(|(k, v)| {
+                k.hash(state);
+                v.hash(state);
+            });
+        formula.hash(state);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum ParsedExpression {
     // Terminal
-    Constant(PreciseScore),
+    Constant(PreciseScoreOrdered),
     Variable(VariableId),
     GeoDistance {
         origin: GeoPoint,
@@ -48,7 +74,7 @@ pub enum ParsedExpression {
     Div {
         left: Box<ParsedExpression>,
         right: Box<ParsedExpression>,
-        by_zero_default: Option<PreciseScore>,
+        by_zero_default: Option<PreciseScoreOrdered>,
     },
     Neg(Box<ParsedExpression>),
     Sqrt(Box<ParsedExpression>),
@@ -67,11 +93,11 @@ pub enum ParsedExpression {
         /// Value at which the decay function is the highest
         target: Option<Box<ParsedExpression>>,
         /// Constant to shape the decay function
-        lambda: PreciseScore,
+        lambda: PreciseScoreOrdered,
     },
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Serialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Hash)]
 pub enum DecayKind {
     /// Linear decay function
     Lin,
@@ -81,7 +107,7 @@ pub enum DecayKind {
     Exp,
 }
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, PartialOrd, Ord)]
 pub enum VariableId {
     /// Score index
     Score(usize),
@@ -101,7 +127,7 @@ impl VariableId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum DatetimeExpression {
     Constant(DateTimePayloadType),
     PayloadVariable(JsonPath),
@@ -116,7 +142,7 @@ impl ParsedExpression {
         ParsedExpression::Div {
             left: Box::new(left),
             right: Box::new(right),
-            by_zero_default,
+            by_zero_default: by_zero_default.map(OrderedFloat),
         }
     }
 

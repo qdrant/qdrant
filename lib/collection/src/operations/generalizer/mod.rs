@@ -3,7 +3,6 @@ mod facet;
 mod matrix;
 mod points;
 mod query;
-mod query_group;
 mod update_persisted;
 
 /// A trait, that provides an interface for removing vectors and payloads from a structure.

@@ -492,6 +492,19 @@ pub struct QuantizationSearchParams {
     pub oversampling: Option<f64>,
 }
 
+impl Hash for QuantizationSearchParams {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let Self {
+            ignore,
+            rescore,
+            oversampling,
+        } = self;
+        ignore.hash(state);
+        rescore.hash(state);
+        oversampling.map(OrderedFloat).hash(state);
+    }
+}
+
 pub const fn default_quantization_ignore_value() -> bool {
     false
 }
@@ -501,7 +514,7 @@ pub const fn default_quantization_oversampling_value() -> Option<f64> {
 }
 
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
@@ -3156,7 +3169,7 @@ pub trait CustomIdCheckerCondition: fmt::Debug {
 }
 
 /// Options for specifying which payload to include or not
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash)]
 #[serde(untagged, rename_all = "snake_case")]
 #[serde(
     expecting = "Expected a boolean, an array of strings, or an object with an include/exclude field"
@@ -3184,7 +3197,7 @@ impl Default for WithPayloadInterface {
 }
 
 /// Options for specifying which vector to include
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged, rename_all = "snake_case")]
 #[serde(expecting = "Expected a boolean, or an array of strings")]
 pub enum WithVector {
@@ -3280,7 +3293,7 @@ impl From<&WithPayloadInterface> for WithPayload {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct PayloadSelectorInclude {
     /// Only include this payload keys
@@ -3293,7 +3306,7 @@ impl PayloadSelectorInclude {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct PayloadSelectorExclude {
     /// Exclude this fields from returning payload
@@ -3307,7 +3320,7 @@ impl PayloadSelectorExclude {
 }
 
 /// Specifies how to treat payload selector
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadSelector {
     /// Include only this fields into response payload

@@ -807,7 +807,9 @@ impl UpdateHandler {
 
                     let duration = start_time.elapsed();
 
-                    log_request_to_collector(&collection_name, loggable_operation, duration);
+                    log_request_to_collector(&collection_name, duration, move || {
+                        loggable_operation
+                    });
 
                     let res = match operation_result {
                         Ok(update_res) => optimize_sender
