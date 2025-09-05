@@ -33,6 +33,39 @@ def assert_points(collection_name, points, nonexisting_ids=None, with_vectors=Fa
         points, key=itemgetter('id')
     )
 
+def test_batch_update_validation(collection_name):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/batch",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={"operations": [
+            {
+                "upsert": {
+                    "points": [
+                        {
+                            "id": 7,
+                            "vector": {
+                                "image": [1.0, 0.0, 9.0],
+                            },
+                            "payload": {},
+                        },
+                    ],
+                    "update_filter": {
+                        "must": [
+                            {
+                                "key": "empty" # empty field conditions are forbidden
+                            }
+                        ]
+                    }
+                }
+            }]
+        },
+        query_params={"wait": "true"}
+    )
+    assert response.status_code == 422
+    error = response.json()["status"]["error"]
+    assert "Validation error in JSON body" in error
+    assert "At least one field condition must be specified" in error
 
 def test_batch_update(collection_name):
     # Upsert and delete points
