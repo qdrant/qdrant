@@ -1,12 +1,12 @@
 use api::rest::SearchRequestInternal;
 use common::types::ScoreType;
 use itertools::Itertools as _;
-use serde::Serialize;
 use segment::data_types::vectors::{
     DenseVector, Named as _, NamedQuery, NamedVectorStruct, QueryVector, VectorInternal,
 };
 use segment::types::{Filter, SearchParams, VectorName, WithPayloadInterface, WithVector};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use serde::Serialize;
 use sparse::common::sparse_vector::{SparseVector, validate_sparse_vector_impl};
 
 #[derive(Clone, Debug, PartialEq)]

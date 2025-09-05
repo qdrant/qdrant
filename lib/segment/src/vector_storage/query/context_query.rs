@@ -1,14 +1,15 @@
 use std::hash::Hash;
 use std::iter::{self, Chain, Once};
 
-use super::{Query, TransformInto};
-use crate::common::operation_error::OperationResult;
-use crate::data_types::vectors::{QueryVector, VectorInternal};
 use common::math::fast_sigmoid;
 use common::types::ScoreType;
 use itertools::Itertools;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
+
+use super::{Query, TransformInto};
+use crate::common::operation_error::OperationResult;
+use crate::data_types::vectors::{QueryVector, VectorInternal};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContextPair<T> {
