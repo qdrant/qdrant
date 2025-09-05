@@ -15796,21 +15796,75 @@
             "minimum": 1,
             "nullable": true
           },
-          "filter": {
-            "description": "Filter conditions - only consider points that satisfy these conditions.",
+          "exact": {
+            "description": "Whether to do a more expensive exact count for each of the values in the facet. Default is false.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "should": {
+            "description": "At least one of those conditions should match",
+            "default": null,
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Filter"
+                "$ref": "#/components/schemas/Condition"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                }
               },
               {
                 "nullable": true
               }
             ]
           },
-          "exact": {
-            "description": "Whether to do a more expensive exact count for each of the values in the facet. Default is false.",
-            "type": "boolean",
-            "nullable": true
+          "min_should": {
+            "description": "At least minimum amount of given conditions should match",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MinShould"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "must": {
+            "description": "All conditions must match",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Condition"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "must_not": {
+            "description": "All conditions must NOT match",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Condition"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
