@@ -6,17 +6,19 @@ use api::rest::{
     SearchMatrixRequestInternal,
 };
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery};
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
     Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint, VectorNameBuf,
-    WithVector,
+    WithPayloadInterface, WithVector,
 };
 
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
-use crate::operations::types::{CollectionResult, CoreSearchRequest, CoreSearchRequestBatch};
+use crate::operations::types::CollectionResult;
+use crate::operations::universal_query::collection_query::{
+    CollectionQueryRequest, Query, VectorInputInternal, VectorQuery,
+};
 use crate::operations::universal_query::shard_query::{
     SampleInternal, ScoringQuery, ShardQueryRequest,
 };
@@ -208,7 +210,8 @@ impl Collection {
         )));
 
         // Perform nearest neighbor search for each sampled point
-        let mut searches = Vec::with_capacity(sampled_points.len());
+        let mut queries = Vec::with_capacity(sampled_points.len());
+
         for point in sampled_points {
             let vector = point
                 .vector
@@ -218,31 +221,38 @@ impl Collection {
                 .expect("Vector not found in the point");
 
             // nearest query on the sample vector
-            let named_vector = NamedQuery::new_from_vector(vector, using.clone());
-            let query = QueryEnum::Nearest(named_vector);
+            let query = Query::Vector(VectorQuery::Nearest(VectorInputInternal::Vector(vector)));
 
-            searches.push(CoreSearchRequest {
-                query,
+            let query_request = CollectionQueryRequest {
+                prefetch: vec![],
+                query: Some(query),
+                using: using.clone(),
                 filter: Some(filter.clone()),
                 score_threshold: None,
                 limit: limit_per_sample + 1, // +1 to exclude the point itself afterward
                 offset: 0,
                 params: None,
-                with_vector: None,
-                with_payload: None,
-            });
+                with_vector: WithVector::Bool(false),
+                with_payload: WithPayloadInterface::Bool(false),
+                lookup_from: None,
+            };
+
+            queries.push((query_request, shard_selection.clone()));
         }
 
         // update timeout
         let timeout = timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
 
+        // We know by construction that lookup_from is not used in the queries
+        // so can use placeholder closure here
+        let collection_by_name = |_name: String| async move { None };
+
         // run batch search request
-        let batch_request = CoreSearchRequestBatch { searches };
         let mut nearest = self
-            .core_search_batch(
-                batch_request,
+            .query_batch(
+                queries,
+                collection_by_name,
                 read_consistency,
-                shard_selection,
                 timeout,
                 hw_measurement_acc,
             )
