@@ -1290,6 +1290,7 @@ pub struct FacetRequestInternal {
     pub limit: Option<usize>,
 
     /// Filter conditions - only consider points that satisfy these conditions.
+    #[validate(nested)]
     pub filter: Option<Filter>,
 
     /// Whether to do a more expensive exact count for each of the values in the facet. Default is false.

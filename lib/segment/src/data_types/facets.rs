@@ -15,6 +15,7 @@ pub struct FacetParams {
 
     #[validate(range(min = 1))]
     pub limit: usize,
+    #[validate(nested)]
     pub filter: Option<Filter>,
     #[serde(default)]
     pub exact: bool,
