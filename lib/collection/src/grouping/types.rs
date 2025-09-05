@@ -3,7 +3,6 @@ use segment::data_types::groups::GroupId;
 use segment::json_path::JsonPath;
 use segment::types::{PointIdType, ScoredPoint};
 
-use crate::lookup::WithLookup;
 use crate::operations::types::PointGroup;
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
 
@@ -56,9 +55,6 @@ pub struct QueryGroupRequest {
 
     /// Limit of groups to return
     pub groups: usize,
-
-    /// Options for specifying how to use the group id to lookup points in another collection
-    pub with_lookup: Option<WithLookup>,
 }
 
 #[cfg(test)]
