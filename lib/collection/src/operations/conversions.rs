@@ -182,7 +182,7 @@ pub fn try_discover_request_from_grpc(
         shard_key_selector,
     } = value;
 
-    let target = target.map(TryInto::try_into).transpose()?;
+    let target = target.map(RecommendExample::try_from).transpose()?;
 
     let context = context
         .into_iter()
@@ -1023,7 +1023,7 @@ impl<'a> From<CollectionCoreSearchRequest<'a>> for api::grpc::qdrant::CoreSearch
         } = request;
         Self {
             collection_name: collection_id,
-            query: Some(query.clone().into()),
+            query: Some(api::grpc::QueryEnum::from(query.clone())),
             filter: filter.clone().map(|f| f.into()),
             limit: *limit as u64,
             with_vectors: with_vector.clone().map(|wv| wv.into()),
@@ -1184,8 +1184,8 @@ impl TryFrom<api::grpc::qdrant::VectorExample> for RecommendExample {
                     let api::grpc::qdrant::Vector {
                         data,
                         indices,
-                        vectors_count: _,
-                        vector: _,
+                        vectors_count: _, // Ignored, since only used in old API
+                        vector: _,        // Ignored, since only used in old API
                     } = vector;
                     match indices {
                         Some(indices) => {
@@ -1233,23 +1233,23 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
         } = value;
         let positive_ids = positive
             .into_iter()
-            .map(TryInto::try_into)
+            .map(RecommendExample::try_from)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
         let positive_vectors = positive_vectors
             .into_iter()
-            .map(TryInto::try_into)
+            .map(RecommendExample::try_from)
             .collect::<Result<_, _>>()?;
         let positive = [positive_ids, positive_vectors].concat();
 
         let negative_ids = negative
             .into_iter()
-            .map(TryInto::try_into)
+            .map(RecommendExample::try_from)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
         let negative_vectors = negative_vectors
             .into_iter()
-            .map(TryInto::try_into)
+            .map(RecommendExample::try_from)
             .collect::<Result<_, _>>()?;
         let negative = [negative_ids, negative_vectors].concat();
 

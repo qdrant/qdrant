@@ -6,6 +6,7 @@ use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
+use sparse::common::types::DimId;
 use validator::Validate;
 
 use super::named_vectors::NamedVectors;
@@ -47,6 +48,17 @@ impl VectorInternal {
                 }
             }
             VectorInternal::MultiDense(_) => {}
+        }
+    }
+
+    pub fn from_vector_and_indices(vector: DenseVector, indices: Option<Vec<DimId>>) -> Self {
+        if let Some(indices) = indices {
+            VectorInternal::Sparse(SparseVector {
+                indices,
+                values: vector,
+            })
+        } else {
+            VectorInternal::Dense(vector)
         }
     }
 }

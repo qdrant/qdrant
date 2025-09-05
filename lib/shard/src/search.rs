@@ -76,11 +76,11 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
             .map(|query| {
                 Ok(match query {
                     api::grpc::qdrant::query_enum::Query::NearestNeighbors(vector) => {
+                        let vector_internal = VectorInternal::try_from(vector)?;
                         QueryEnum::Nearest(NamedQuery::from(
                             api::grpc::conversions::into_named_vector_struct(
                                 value.vector_name,
-                                vector.data,
-                                vector.indices,
+                                vector_internal,
                             )?,
                         ))
                     }
@@ -192,8 +192,11 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             })?;
         }
 
+        let vector_internal =
+            VectorInternal::from_vector_and_indices(vector, sparse_indices.map(|v| v.data));
+
         let vector_struct =
-            api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
+            api::grpc::conversions::into_named_vector_struct(vector_name, vector_internal)?;
 
         Ok(Self {
             query: QueryEnum::Nearest(NamedQuery::from(vector_struct)),
