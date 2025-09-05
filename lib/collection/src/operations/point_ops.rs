@@ -36,6 +36,7 @@ impl Validate for PointsSelector {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct FilterSelector {
+    #[validate(nested)]
     pub filter: Filter,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,

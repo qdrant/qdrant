@@ -54,9 +54,9 @@ impl Validate for Vector {
             Vector::Dense(_) => Ok(()),
             Vector::Sparse(v) => v.validate(),
             Vector::MultiDense(m) => validate_multi_vector(m),
-            Vector::Document(_) => Ok(()),
-            Vector::Image(_) => Ok(()),
-            Vector::Object(_) => Ok(()),
+            Vector::Document(d) => d.validate(),
+            Vector::Image(i) => i.validate(),
+            Vector::Object(o) => o.validate(),
         }
     }
 }
@@ -136,9 +136,9 @@ impl Validate for VectorStruct {
             VectorStruct::Single(_) => Ok(()),
             VectorStruct::MultiDense(v) => validate_multi_vector(v),
             VectorStruct::Named(v) => common::validation::validate_iter(v.values()),
-            VectorStruct::Document(_) => Ok(()),
-            VectorStruct::Image(_) => Ok(()),
-            VectorStruct::Object(_) => Ok(()),
+            VectorStruct::Document(d) => d.validate(),
+            VectorStruct::Image(i) => i.validate(),
+            VectorStruct::Object(o) => o.validate(),
         }
     }
 }
@@ -652,6 +652,7 @@ pub struct NearestQuery {
 
     /// Perform MMR (Maximal Marginal Relevance) reranking after search,
     /// using the same vector in this query to calculate relevance.
+    #[validate(nested)]
     pub mmr: Option<Mmr>,
 }
 
@@ -1290,6 +1291,7 @@ pub struct FacetRequestInternal {
     pub limit: Option<usize>,
 
     /// Filter conditions - only consider points that satisfy these conditions.
+    #[serde(flatten)]
     pub filter: Option<Filter>,
 
     /// Whether to do a more expensive exact count for each of the values in the facet. Default is false.
