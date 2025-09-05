@@ -16,6 +16,7 @@ pub struct DeleteVectors {
     /// Deletes values from each point in this list
     pub points: Option<Vec<PointIdType>>,
     /// Deletes values from points that satisfy this filter condition
+    #[validate(nested)]
     pub filter: Option<Filter>,
     /// Vector names
     #[serde(alias = "vectors")]
