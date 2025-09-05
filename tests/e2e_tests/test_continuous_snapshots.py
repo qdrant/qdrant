@@ -104,12 +104,12 @@ class TestContinuousSnapshots:
             "vectors": {
                 "size": VECTOR_SIZE,
                 "distance": "Cosine",
-                "optimizers_config": {
-                    "default_segment_number": 2,
-                },
-                "write_consistency_factor": 1,
-                "on_disk_payload": True
-            }
+            },
+            "optimizers_config": {
+                "default_segment_number": 2,
+            },
+            "write_consistency_factor": 1,
+            "on_disk_payload": True
         }
         client.create_collection(collection_name, collection_config)
         print(f"Created collection: {collection_name}")
