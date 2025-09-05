@@ -360,7 +360,7 @@ impl Collection {
             Some(ScoringQuery::Fusion(fusion)) => {
                 // If the root query is a Fusion, the returned results correspond to each the prefetches.
                 let mut fused = match fusion {
-                    FusionInternal::Rrf => rrf_scoring(intermediates),
+                    FusionInternal::RrfK(k) => rrf_scoring(intermediates, *k),
                     FusionInternal::Dbsf => score_fusion(intermediates, ScoreFusion::dbsf()),
                 };
                 if let Some(&score_threshold) = score_threshold.as_ref() {

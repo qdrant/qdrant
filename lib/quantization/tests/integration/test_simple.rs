@@ -3,7 +3,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_counter::HardwareCounterCell;
-    use quantization::encoded_storage::TestEncodedStorageBuilder;
+    use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
     use rand::{Rng, SeedableRng};
@@ -24,16 +24,20 @@ mod tests {
         }
         let query: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
 
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
-            &VectorParameters {
-                dim: vector_dim,
-                deprecated_count: None,
-                distance_type: DistanceType::Dot,
-                invert: false,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -61,16 +65,20 @@ mod tests {
         }
         let query: Vec<f32> = (0..vector_dim).map(|_| rng.random::<f32>()).collect();
 
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::L2,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
-            &VectorParameters {
-                dim: vector_dim,
-                deprecated_count: None,
-                distance_type: DistanceType::L2,
-                invert: false,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -102,16 +110,20 @@ mod tests {
             .map(|_| rng.random_range(-1.0..=1.0))
             .collect();
 
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::L1,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
-            &VectorParameters {
-                dim: vector_dim,
-                deprecated_count: None,
-                distance_type: DistanceType::L1,
-                invert: false,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -139,16 +151,20 @@ mod tests {
         }
         let query: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
 
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
-            &VectorParameters {
-                dim: vector_dim,
-                deprecated_count: None,
-                distance_type: DistanceType::Dot,
-                invert: true,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -176,16 +192,20 @@ mod tests {
         }
         let query: Vec<f32> = (0..vector_dim).map(|_| rng.random::<f32>()).collect();
 
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::L2,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
-            &VectorParameters {
-                dim: vector_dim,
-                deprecated_count: None,
-                distance_type: DistanceType::L2,
-                invert: true,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -217,16 +237,20 @@ mod tests {
             .map(|_| rng.random_range(-1.0..=1.0))
             .collect();
 
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::L1,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
-            &VectorParameters {
-                dim: vector_dim,
-                deprecated_count: None,
-                distance_type: DistanceType::L1,
-                invert: true,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -253,16 +277,20 @@ mod tests {
             vector_data.push(vector);
         }
 
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
-            &VectorParameters {
-                dim: vector_dim,
-                deprecated_count: None,
-                distance_type: DistanceType::Dot,
-                invert: false,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -289,16 +317,20 @@ mod tests {
             vector_data.push(vector);
         }
 
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: true,
+        };
+        let quantized_vector_size =
+            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
-            &VectorParameters {
-                dim: vector_dim,
-                deprecated_count: None,
-                distance_type: DistanceType::Dot,
-                invert: true,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             vectors_count,
+            None,
             None,
             &AtomicBool::new(false),
         )
@@ -326,17 +358,21 @@ mod tests {
         }
         let query: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
 
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let quantized_vector_size =
+            EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
-            TestEncodedStorageBuilder::new(),
-            &VectorParameters {
-                dim: vector_dim,
-                deprecated_count: None,
-                distance_type: DistanceType::Dot,
-                invert: false,
-            },
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
             vectors_count,
             Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
+            None,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -365,17 +401,24 @@ mod tests {
         }
 
         for distance_type in [DistanceType::Dot, DistanceType::L2] {
+            let vector_parameters = VectorParameters {
+                dim: vector_dim,
+                deprecated_count: None,
+                distance_type,
+                invert: false,
+            };
+            let quantized_vector_size =
+                EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(
+                    &vector_parameters,
+                );
+
             let encoded = EncodedVectorsU8::encode(
                 vector_data.iter(),
-                TestEncodedStorageBuilder::new(),
-                &VectorParameters {
-                    dim: vector_dim,
-                    deprecated_count: None,
-                    distance_type,
-                    invert: false,
-                },
+                TestEncodedStorageBuilder::new(None, quantized_vector_size),
+                &vector_parameters,
                 vectors_count,
                 Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
+                None,
                 &AtomicBool::new(false),
             )
             .unwrap();

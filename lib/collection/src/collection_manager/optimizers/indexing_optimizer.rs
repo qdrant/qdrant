@@ -302,15 +302,13 @@ mod tests {
     use segment::payload_json;
     use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
     use segment::types::{Distance, PayloadSchemaType, VectorNameBuf};
+    use shard::update::{process_field_index_operation, process_point_operation};
     use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
     use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
     use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
-    use crate::collection_manager::segments_updater::{
-        process_field_index_operation, process_point_operation,
-    };
     use crate::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };

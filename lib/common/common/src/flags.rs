@@ -55,6 +55,10 @@ pub struct FeatureFlags {
     /// Rebuilds a new payload index from scratch.
     // TODO(1.16.1): enable by default
     pub migrate_rocksdb_payload_indices: bool,
+
+    /// Use appendable quantization in appendable plain segments.
+    // TODO(1.16.0): enable by default
+    pub appendable_quantization: bool,
 }
 
 impl Default for FeatureFlags {
@@ -69,6 +73,7 @@ impl Default for FeatureFlags {
             migrate_rocksdb_vector_storage: false,
             migrate_rocksdb_payload_storage: false,
             migrate_rocksdb_payload_indices: false,
+            appendable_quantization: false,
         }
     }
 }
@@ -93,6 +98,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         migrate_rocksdb_vector_storage,
         migrate_rocksdb_payload_storage,
         migrate_rocksdb_payload_indices,
+        appendable_quantization,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
@@ -105,6 +111,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         *migrate_rocksdb_vector_storage = true;
         *migrate_rocksdb_payload_storage = true;
         *migrate_rocksdb_payload_indices = true;
+        *appendable_quantization = true;
     }
 
     let res = FEATURE_FLAGS.set(flags);

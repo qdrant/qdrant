@@ -20,7 +20,7 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{AccessPattern, DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_PATH: &str = "matrix.dat";
 const DELETED_PATH: &str = "deleted.dat";
@@ -144,19 +144,11 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
         self.mmap_store.as_ref().unwrap().dim
     }
 
-    fn get_dense(&self, key: PointOffsetType) -> &[T] {
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
         self.mmap_store
             .as_ref()
             .unwrap()
-            .get_vector_opt(key)
-            .unwrap_or_else(|| panic!("vector not found: {key}"))
-    }
-
-    fn get_dense_sequential(&self, key: PointOffsetType) -> &[T] {
-        self.mmap_store
-            .as_ref()
-            .unwrap()
-            .get_vector_opt_sequential(key)
+            .get_vector_opt::<P>(key)
             .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
 
@@ -187,24 +179,20 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         self.mmap_store.as_ref().unwrap().num_vectors
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt(key).expect("vector not found")
-    }
-
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.mmap_store
             .as_ref()
             .unwrap()
-            .get_vector_opt_sequential(key)
+            .get_vector_opt::<P>(key)
             .map(|vector| T::slice_to_float_cow(vector.into()).into())
             .expect("Vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.mmap_store
             .as_ref()
             .unwrap()
-            .get_vector_opt(key)
+            .get_vector_opt::<P>(key)
             .map(|vector| T::slice_to_float_cow(vector.into()).into())
     }
 
@@ -333,8 +321,10 @@ mod tests {
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-    use crate::vector_storage::{DEFAULT_STOPPED, new_raw_scorer};
+    use crate::vector_storage::quantized::quantized_vectors::{
+        QuantizedVectors, QuantizedVectorsStorageType,
+    };
+    use crate::vector_storage::{DEFAULT_STOPPED, Random, new_raw_scorer};
 
     #[test]
     fn test_basic_persistence() {
@@ -377,7 +367,7 @@ mod tests {
             }
             let mut iter = (0..3).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -386,7 +376,7 @@ mod tests {
 
         assert_eq!(storage.total_vector_count(), 3);
 
-        let vector = storage.get_vector(1).to_owned();
+        let vector = storage.get_vector::<Random>(1).to_owned();
         let vector: DenseVector = vector.try_into().unwrap();
 
         assert_eq!(points[1], vector);
@@ -405,7 +395,7 @@ mod tests {
             }
             let mut iter = (0..2).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -466,7 +456,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -585,7 +575,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -655,7 +645,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -729,7 +719,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector::<Random>(i);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -745,8 +735,15 @@ mod tests {
 
         let stopped = Arc::new(AtomicBool::new(false));
         let hardware_counter = HardwareCounterCell::new();
-        let quantized_vectors =
-            QuantizedVectors::create(&storage, &config, dir.path(), 1, &stopped).unwrap();
+        let quantized_vectors = QuantizedVectors::create(
+            &storage,
+            &config,
+            QuantizedVectorsStorageType::Immutable,
+            dir.path(),
+            1,
+            &stopped,
+        )
+        .unwrap();
 
         let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into();
 
@@ -771,7 +768,9 @@ mod tests {
         let quantization_files = quantized_vectors.files();
 
         // test save-load
-        let quantized_vectors = QuantizedVectors::load(&storage, dir.path()).unwrap();
+        let quantized_vectors = QuantizedVectors::load(&config, &storage, dir.path(), &stopped)
+            .unwrap()
+            .unwrap();
         assert_eq!(files, storage.files());
         assert_eq!(quantization_files, quantized_vectors.files());
         let hardware_counter = HardwareCounterCell::new();

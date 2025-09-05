@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
+use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
@@ -42,7 +43,6 @@ use crate::operations::types::{
 };
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::optimizers_builder::OptimizersConfig;
-use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
@@ -82,6 +82,9 @@ impl ShardHolder {
 
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
             SaveOnDisk::load_or_init_default(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
+
+        // TODO(shardkey): Remove once the old shardkey format has been removed entirely.
+        Self::migrate_shard_key_if_needed(&key_mapping)?;
 
         let mut shard_id_to_key_mapping = HashMap::new();
 
@@ -1246,6 +1249,23 @@ impl ShardHolder {
         stream::iter(self.shards.iter())
             .any(|i| async { i.1.has_remote_shard().await })
             .await
+    }
+
+    /// Migrates the old shard-key format to the new one if necessary.
+    /// TODO(shardkey): Remove once the old shardkey format has been removed entirely.
+    fn migrate_shard_key_if_needed(
+        key_mapping: &SaveOnDisk<ShardKeyMapping>,
+    ) -> CollectionResult<()> {
+        if key_mapping.read().was_old_format {
+            // We automatically migrate to the new format when writing once, which we do here.
+            log::debug!("Migrating persisted shard key mapping to new format");
+            key_mapping.write(|i| {
+                // Also set this to true for consistency. However it should never be read.
+                i.was_old_format = false;
+            })?;
+        }
+
+        Ok(())
     }
 }
 

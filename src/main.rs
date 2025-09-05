@@ -12,6 +12,7 @@ mod tracing;
 
 use std::fs::create_dir_all;
 use std::io::Error;
+use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -395,7 +396,7 @@ fn main() -> anyhow::Result<()> {
             persistent_consensus_state,
             toc_arc.clone(),
             propose_operation_sender.unwrap(),
-            storage_path,
+            Path::new(storage_path),
         )
         .into();
         let is_new_deployment = consensus_state.is_new_deployment();

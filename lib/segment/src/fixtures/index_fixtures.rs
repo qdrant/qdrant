@@ -6,10 +6,13 @@ use common::types::PointOffsetType;
 use rand::Rng;
 
 use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, VectorRef};
+use crate::index::hnsw_index::graph_links::StorageGraphLinksVectors;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{Distance, ScalarQuantizationConfig};
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
+};
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
@@ -49,6 +52,7 @@ impl TestRawScorerProducer {
                     always_ram: Some(true),
                 }
                 .into(),
+                QuantizedVectorsStorageType::Immutable,
                 // NOTE: In general case, we should keep the temporary directory
                 // as long as the QuantizedVectors instance is alive. But as for
                 // now, for this configuration, QuantizedVectors does not touch
@@ -74,6 +78,13 @@ impl TestRawScorerProducer {
 
     pub fn quantized_vectors(&self) -> Option<&QuantizedVectors> {
         self.quantized_vectors.as_ref()
+    }
+
+    pub fn graph_links_vectors(&self) -> Option<StorageGraphLinksVectors<'_>> {
+        Some(StorageGraphLinksVectors {
+            vector_storage: &self.storage,
+            quantized_vectors: self.quantized_vectors.as_ref()?,
+        })
     }
 
     pub fn scorer(&self, query: impl Into<QueryVector>) -> FilteredScorer<'_> {

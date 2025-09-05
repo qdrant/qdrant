@@ -6,9 +6,10 @@ use std::time::Duration;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use atomicwrites::{AtomicFile, Error as AtomicWriteError};
-use common::tar_ext;
 use parking_lot::{Condvar, Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 use serde::{Deserialize, Serialize};
+
+use crate::tar_ext;
 
 /// Functions as a smart pointer which gives a write guard and saves data on disk
 /// when write guard is dropped.
@@ -93,7 +94,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
             let notification_guard = self.notification_lock.lock();
             // Based on https://github.com/Amanieu/parking_lot/issues/165
             RwLockReadGuard::unlocked(&mut data_read_guard, || {
-                // Move the guard in so it gets unlocked before we re-lock g
+                // Move the guard in so it gets unlocked before we re-lock the RwLock read guard
                 let mut guard = notification_guard;
                 self.change_notification.wait_for(&mut guard, timeout);
             });

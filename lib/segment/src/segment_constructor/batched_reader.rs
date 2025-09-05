@@ -8,7 +8,7 @@ use common::types::PointOffsetType;
 
 use crate::data_types::named_vectors::CowVector;
 use crate::types::CompactExtendedPointId;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{Sequential, VectorStorage, VectorStorageEnum};
 
 const BATCH_SIZE: usize = 256;
 
@@ -83,7 +83,7 @@ impl<'a> BatchedVectorReader<'a> {
         for (segment_index, points) in self.seg_to_points_buffer.drain() {
             let source_vector_storage = &self.source_vector_storages[segment_index.get() as usize];
             for (point_data, offset_in_batch) in points {
-                let vec = source_vector_storage.get_vector_sequential(point_data.internal_id);
+                let vec = source_vector_storage.get_vector::<Sequential>(point_data.internal_id);
                 let vector_deleted =
                     source_vector_storage.is_deleted_vector(point_data.internal_id);
                 self.buffer[offset_in_batch] = (vec, vector_deleted);

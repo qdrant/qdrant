@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::disk::dir_size;
+use common::disk::dir_disk_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
@@ -86,8 +86,9 @@ pub trait SegmentOptimizer {
     /// Build temp segment
     fn temp_segment(&self, save_version: bool) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
+        let quantization_config = self.quantization_config();
         let config = SegmentConfig {
-            vector_data: collection_params.to_base_vector_data()?,
+            vector_data: collection_params.to_base_vector_data(quantization_config.as_ref())?,
             sparse_vector_data: collection_params.to_sparse_vector_data()?,
             payload_storage_type: collection_params.payload_storage_type(),
         };
@@ -117,7 +118,7 @@ pub trait SegmentOptimizer {
             let locked_segment = segment.read();
 
             space_occupied =
-                space_occupied.and_then(|acc| match dir_size(locked_segment.data_path()) {
+                space_occupied.and_then(|acc| match dir_disk_size(locked_segment.data_path()) {
                     Ok(size) => Some(size + acc),
                     Err(err) => {
                         log::debug!(
@@ -157,10 +158,13 @@ pub trait SegmentOptimizer {
 
         match (space_available, space_needed) {
             (Some(space_available), Some(space_needed)) => {
+                log::debug!(
+                    "Available space: {space_available}, needed for optimization: {space_needed}",
+                );
                 if space_available < space_needed {
-                    return Err(CollectionError::service_error(
-                        "Not enough space available for optimization".to_string(),
-                    ));
+                    return Err(CollectionError::service_error(format!(
+                        "Not enough space available for optimization, needed: {space_needed}, available: {space_available}"
+                    )));
                 }
             }
             _ => {
@@ -230,13 +234,14 @@ pub trait SegmentOptimizer {
         let threshold_is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold_kb.saturating_mul(BYTES_IN_KB);
 
-        let mut vector_data = collection_params.to_base_vector_data()?;
+        let collection_quantization = self.quantization_config();
+        let mut vector_data =
+            collection_params.to_base_vector_data(collection_quantization.as_ref())?;
         let mut sparse_vector_data = collection_params.to_sparse_vector_data()?;
 
         // If indexing, change to HNSW index and quantization
         if threshold_is_indexed {
             let collection_hnsw = self.hnsw_config();
-            let collection_quantization = self.quantization_config();
             vector_data.iter_mut().for_each(|(vector_name, config)| {
                 // Assign HNSW index
                 let param_hnsw = collection_params
@@ -645,6 +650,9 @@ pub trait SegmentOptimizer {
             let mut proxy = ProxySegment::new(
                 sg.clone(),
                 tmp_segment.clone(),
+                // In this case, all proxies share their set of deleted points
+                // We can share deletes because they're all propagated to the same optimized
+                // segment, and we unproxy all at the same time
                 Arc::clone(&proxy_deleted_points),
                 Arc::clone(&proxy_index_changes),
             );
@@ -669,6 +677,18 @@ pub trait SegmentOptimizer {
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
             let mut proxy_ids = Vec::new();
             for (mut proxy, idx) in proxies.into_iter().zip(ids.iter().cloned()) {
+                // During optimization, we expect that logical point data in the wrapped segment is
+                // not changed at all. But this would be possible if we wrap another proxy segment,
+                // because it can share state through it's write segment. To prevent this we assert
+                // here that we only wrap non-proxy segments.
+                // Also helps to ensure the delete propagation behavior in
+                // `optimize_segment_propagate_changes` remains  sound.
+                // See: <https://github.com/qdrant/qdrant/pull/7208>
+                debug_assert!(
+                    matches!(proxy.wrapped_segment, LockedSegment::Original(_)),
+                    "during optimization, wrapped segment in a proxy segment must not be another proxy segment",
+                );
+
                 // replicate_field_indexes for the second time,
                 // because optimized segments could have been changed.
                 // The probability is small, though,
@@ -836,8 +856,11 @@ pub trait SegmentOptimizer {
             .iter()
             .filter(|&(point_id, _version)| !already_remove_points.contains(point_id));
         for (&point_id, &versions) in points_diff {
-            // Delete points here with their operation version, that'll bump the optimized
-            // segment version and will ensure we flush the new changes
+            // In this specific case we're sure logical point data in the wrapped segment is not
+            // changed at all. We ensure this with an assertion at time of proxying, which makes
+            // sure we only wrap original segments. Because we're sure logical data doesn't change,
+            // we also know pending deletes are always newer. Here we assert that's actually the
+            // case.
             debug_assert!(
                 versions.operation_version
                     >= optimized_segment.point_version(point_id).unwrap_or(0),

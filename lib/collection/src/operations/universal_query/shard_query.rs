@@ -3,6 +3,7 @@ use api::grpc::conversions::grpc_condition_into_condition;
 use api::grpc::{DecayParamsExpression, qdrant as grpc};
 use common::types::ScoreType;
 use itertools::Itertools;
+use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
@@ -56,7 +57,7 @@ impl ShardQueryRequest {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FusionInternal {
     /// Reciprocal Rank Fusion
-    Rrf,
+    RrfK(usize),
     /// Distribution-based score fusion
     Dbsf,
 }
@@ -116,7 +117,7 @@ impl ScoringQuery {
         match self {
             Self::Fusion(fusion) => match fusion {
                 // We need the ranking information of each prefetch
-                FusionInternal::Rrf => true,
+                FusionInternal::RrfK(_) => true,
                 // We need the score distribution information of each prefetch
                 FusionInternal::Dbsf => true,
             },
@@ -154,7 +155,7 @@ impl ScoringQuery {
                     }
                 }
                 ScoringQuery::Fusion(fusion) => match fusion {
-                    FusionInternal::Rrf | FusionInternal::Dbsf => Some(Order::LargeBetter),
+                    FusionInternal::RrfK(_) | FusionInternal::Dbsf => Some(Order::LargeBetter),
                 },
                 // Score boosting formulas are always have descending order,
                 // Euclidean scores can be negated within the formula
@@ -296,55 +297,53 @@ impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
     }
 }
 
-impl QueryEnum {
-    fn try_from_grpc_raw_query(
-        raw_query: grpc::RawQuery,
-        using: Option<VectorNameBuf>,
-    ) -> Result<Self, Status> {
-        use grpc::raw_query::Variant;
+fn query_enum_from_grpc_raw_query(
+    raw_query: grpc::RawQuery,
+    using: Option<VectorNameBuf>,
+) -> Result<QueryEnum, Status> {
+    use grpc::raw_query::Variant;
 
-        let variant = raw_query
-            .variant
-            .ok_or_else(|| Status::invalid_argument("missing field: variant"))?;
+    let variant = raw_query
+        .variant
+        .ok_or_else(|| Status::invalid_argument("missing field: variant"))?;
 
-        let query_enum = match variant {
-            Variant::Nearest(nearest) => {
-                let vector = VectorInternal::try_from(nearest)?;
-                let name = match (using, &vector) {
-                    (None, VectorInternal::Sparse(_)) => {
-                        return Err(Status::invalid_argument("Sparse vector must have a name"));
-                    }
-                    (
-                        Some(name),
-                        VectorInternal::MultiDense(_)
-                        | VectorInternal::Sparse(_)
-                        | VectorInternal::Dense(_),
-                    ) => name,
-                    (None, VectorInternal::MultiDense(_) | VectorInternal::Dense(_)) => {
-                        DEFAULT_VECTOR_NAME.to_owned()
-                    }
-                };
-                let named_vector = NamedQuery::new_from_vector(vector, name);
-                QueryEnum::Nearest(named_vector)
-            }
-            Variant::RecommendBestScore(recommend) => QueryEnum::RecommendBestScore(
-                NamedQuery::new(RecoQuery::try_from(recommend)?, using),
-            ),
-            Variant::RecommendSumScores(recommend) => QueryEnum::RecommendSumScores(
-                NamedQuery::new(RecoQuery::try_from(recommend)?, using),
-            ),
-            Variant::Discover(discovery) => QueryEnum::Discover(NamedQuery {
-                query: DiscoveryQuery::try_from(discovery)?,
-                using,
-            }),
-            Variant::Context(context) => QueryEnum::Context(NamedQuery {
-                query: ContextQuery::try_from(context)?,
-                using,
-            }),
-        };
+    let query_enum = match variant {
+        Variant::Nearest(nearest) => {
+            let vector = VectorInternal::try_from(nearest)?;
+            let name = match (using, &vector) {
+                (None, VectorInternal::Sparse(_)) => {
+                    return Err(Status::invalid_argument("Sparse vector must have a name"));
+                }
+                (
+                    Some(name),
+                    VectorInternal::MultiDense(_)
+                    | VectorInternal::Sparse(_)
+                    | VectorInternal::Dense(_),
+                ) => name,
+                (None, VectorInternal::MultiDense(_) | VectorInternal::Dense(_)) => {
+                    DEFAULT_VECTOR_NAME.to_owned()
+                }
+            };
+            let named_vector = NamedQuery::new_from_vector(vector, name);
+            QueryEnum::Nearest(named_vector)
+        }
+        Variant::RecommendBestScore(recommend) => {
+            QueryEnum::RecommendBestScore(NamedQuery::new(RecoQuery::try_from(recommend)?, using))
+        }
+        Variant::RecommendSumScores(recommend) => {
+            QueryEnum::RecommendSumScores(NamedQuery::new(RecoQuery::try_from(recommend)?, using))
+        }
+        Variant::Discover(discovery) => QueryEnum::Discover(NamedQuery {
+            query: DiscoveryQuery::try_from(discovery)?,
+            using,
+        }),
+        Variant::Context(context) => QueryEnum::Context(NamedQuery {
+            query: ContextQuery::try_from(context)?,
+            using,
+        }),
+    };
 
-        Ok(query_enum)
-    }
+    Ok(query_enum)
 }
 
 impl TryFrom<i32> for FusionInternal {
@@ -356,6 +355,17 @@ impl TryFrom<i32> for FusionInternal {
         })?;
 
         Ok(FusionInternal::from(fusion))
+    }
+}
+
+impl TryFrom<grpc::Rrf> for FusionInternal {
+    type Error = tonic::Status;
+
+    fn try_from(rrf: grpc::Rrf) -> Result<Self, Self::Error> {
+        let grpc::Rrf { k } = rrf;
+        Ok(FusionInternal::RrfK(
+            k.map(|k| k as usize).unwrap_or(DEFAULT_RRF_K),
+        ))
     }
 }
 
@@ -535,17 +545,49 @@ fn try_from_decay_params(
 impl From<api::grpc::qdrant::Fusion> for FusionInternal {
     fn from(fusion: api::grpc::qdrant::Fusion) -> Self {
         match fusion {
-            api::grpc::qdrant::Fusion::Rrf => FusionInternal::Rrf,
+            api::grpc::qdrant::Fusion::Rrf => FusionInternal::RrfK(DEFAULT_RRF_K),
             api::grpc::qdrant::Fusion::Dbsf => FusionInternal::Dbsf,
         }
     }
 }
 
-impl From<FusionInternal> for api::grpc::qdrant::Fusion {
+impl From<FusionInternal> for api::grpc::qdrant::Query {
     fn from(fusion: FusionInternal) -> Self {
+        use api::grpc::qdrant::query::Variant as QueryVariant;
+        use api::grpc::qdrant::{Fusion, Query, Rrf};
+
         match fusion {
-            FusionInternal::Rrf => api::grpc::qdrant::Fusion::Rrf,
-            FusionInternal::Dbsf => api::grpc::qdrant::Fusion::Dbsf,
+            // Avoid breaking rolling upgrade by keeping case of k==2 as Fusion::Rrf
+            FusionInternal::RrfK(k) if k == DEFAULT_RRF_K => Query {
+                variant: Some(QueryVariant::Fusion(i32::from(Fusion::Rrf))),
+            },
+            FusionInternal::RrfK(k) => Query {
+                variant: Some(QueryVariant::Rrf(Rrf { k: Some(k as u32) })),
+            },
+            FusionInternal::Dbsf => Query {
+                variant: Some(QueryVariant::Fusion(i32::from(Fusion::Dbsf))),
+            },
+        }
+    }
+}
+
+impl From<FusionInternal> for api::grpc::qdrant::query_shard_points::Query {
+    fn from(fusion: FusionInternal) -> Self {
+        use api::grpc::qdrant::query_shard_points::Query;
+        use api::grpc::qdrant::query_shard_points::query::Score;
+        use api::grpc::qdrant::{Fusion, Rrf};
+
+        match fusion {
+            // Avoid breaking rolling upgrade by keeping case of k==2 as Fusion::Rrf
+            FusionInternal::RrfK(k) if k == DEFAULT_RRF_K => Query {
+                score: Some(Score::Fusion(i32::from(Fusion::Rrf))),
+            },
+            FusionInternal::RrfK(k) => Query {
+                score: Some(Score::Rrf(Rrf { k: Some(k as u32) })),
+            },
+            FusionInternal::Dbsf => Query {
+                score: Some(Score::Fusion(i32::from(Fusion::Dbsf))),
+            },
         }
     }
 }
@@ -576,10 +618,13 @@ impl ScoringQuery {
             .ok_or_else(|| Status::invalid_argument("missing field: score"))?;
         let scoring_query = match score {
             grpc::query_shard_points::query::Score::Vector(query) => {
-                ScoringQuery::Vector(QueryEnum::try_from_grpc_raw_query(query, using)?)
+                ScoringQuery::Vector(query_enum_from_grpc_raw_query(query, using)?)
             }
             grpc::query_shard_points::query::Score::Fusion(fusion) => {
                 ScoringQuery::Fusion(FusionInternal::try_from(fusion)?)
+            }
+            grpc::query_shard_points::query::Score::Rrf(rrf) => {
+                ScoringQuery::Fusion(FusionInternal::try_from(rrf)?)
             }
             grpc::query_shard_points::query::Score::OrderBy(order_by) => {
                 ScoringQuery::OrderBy(OrderBy::try_from(order_by)?)
@@ -613,29 +658,25 @@ impl ScoringQuery {
     }
 }
 
-impl From<QueryEnum> for grpc::RawQuery {
-    fn from(value: QueryEnum) -> Self {
-        use api::grpc::qdrant::raw_query::Variant;
+fn query_enum_into_grpc_raw_query(query: QueryEnum) -> grpc::RawQuery {
+    use api::grpc::qdrant::raw_query::Variant;
 
-        let variant = match value {
-            QueryEnum::Nearest(named) => Variant::Nearest(grpc::RawVector::from(named.query)),
-            QueryEnum::RecommendBestScore(named) => {
-                Variant::RecommendBestScore(grpc::raw_query::Recommend::from(named.query))
-            }
-            QueryEnum::RecommendSumScores(named) => {
-                Variant::RecommendSumScores(grpc::raw_query::Recommend::from(named.query))
-            }
-            QueryEnum::Discover(named) => {
-                Variant::Discover(grpc::raw_query::Discovery::from(named.query))
-            }
-            QueryEnum::Context(named) => {
-                Variant::Context(grpc::raw_query::Context::from(named.query))
-            }
-        };
-
-        Self {
-            variant: Some(variant),
+    let variant = match query {
+        QueryEnum::Nearest(named) => Variant::Nearest(grpc::RawVector::from(named.query)),
+        QueryEnum::RecommendBestScore(named) => {
+            Variant::RecommendBestScore(grpc::raw_query::Recommend::from(named.query))
         }
+        QueryEnum::RecommendSumScores(named) => {
+            Variant::RecommendSumScores(grpc::raw_query::Recommend::from(named.query))
+        }
+        QueryEnum::Discover(named) => {
+            Variant::Discover(grpc::raw_query::Discovery::from(named.query))
+        }
+        QueryEnum::Context(named) => Variant::Context(grpc::raw_query::Context::from(named.query)),
+    };
+
+    grpc::RawQuery {
+        variant: Some(variant),
     }
 }
 
@@ -645,11 +686,9 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
 
         match value {
             ScoringQuery::Vector(query) => Self {
-                score: Some(Score::Vector(grpc::RawQuery::from(query))),
+                score: Some(Score::Vector(query_enum_into_grpc_raw_query(query))),
             },
-            ScoringQuery::Fusion(fusion) => Self {
-                score: Some(Score::Fusion(api::grpc::qdrant::Fusion::from(fusion) as i32)),
-            },
+            ScoringQuery::Fusion(fusion) => Self::from(fusion),
             ScoringQuery::OrderBy(order_by) => Self {
                 score: Some(Score::OrderBy(grpc::OrderBy::from(order_by))),
             },

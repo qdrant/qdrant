@@ -8,12 +8,13 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::panic;
+use common::save_on_disk::SaveOnDisk;
 use itertools::Itertools;
-use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
-use segment::common::operation_error::OperationResult;
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::SeqNumberType;
+use segment::types::{QuantizationConfig, SeqNumberType};
+use shard::wal::WalError;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{Mutex as TokioMutex, oneshot};
@@ -33,9 +34,8 @@ use crate::config::CollectionParams;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShardClocks;
-use crate::wal::WalError;
+use crate::shards::update_tracker::UpdateTracker;
 use crate::wal_delta::LockedWal;
 
 /// Interval at which the optimizer worker cleans up old optimization handles
@@ -126,6 +126,16 @@ pub struct UpdateHandler {
     shard_path: PathBuf,
     /// Whether we have ever triggered optimizers since starting.
     has_triggered_optimizers: Arc<AtomicBool>,
+
+    /// Scroll read lock
+    /// The lock, which must prevent updates during scroll + retrieve operations
+    /// Consistency of scroll operations is especially important for internal processes like
+    /// re-sharding and shard transfer, so explicit lock for those operations is required.
+    ///
+    /// Write lock must be held for updates, while read lock must be held for scroll
+    scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
+
+    update_tracker: UpdateTracker,
 }
 
 impl UpdateHandler {
@@ -144,6 +154,8 @@ impl UpdateHandler {
         max_optimization_threads: Option<usize>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
+        scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
@@ -166,11 +178,14 @@ impl UpdateHandler {
             clocks,
             shard_path,
             has_triggered_optimizers: Default::default(),
+            scroll_read_lock,
+            update_tracker,
         }
     }
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
+
         self.optimizer_worker = Some(self.runtime_handle.spawn(Self::optimization_worker_fn(
             self.optimizers.clone(),
             tx.clone(),
@@ -184,23 +199,46 @@ impl UpdateHandler {
             self.max_optimization_threads,
             self.has_triggered_optimizers.clone(),
             self.payload_index_schema.clone(),
+            self.scroll_read_lock.clone(),
+            self.update_tracker.clone(),
         )));
-        self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
-            update_receiver,
-            tx,
-            self.wal.clone(),
-            self.segments.clone(),
-        )));
+
+        let wal = self.wal.clone();
+        let segments = self.segments.clone();
+        let scroll_read_lock = self.scroll_read_lock.clone();
+        let update_tracker = self.update_tracker.clone();
+        self.update_worker = Some(self.runtime_handle.spawn_blocking(move || {
+            Self::update_worker_fn(
+                update_receiver,
+                tx,
+                wal,
+                segments,
+                scroll_read_lock,
+                update_tracker,
+            )
+        }));
+
+        let segments = self.segments.clone();
+        let wal = self.wal.clone();
+        let wal_keep_from = self.wal_keep_from.clone();
+        let clocks = self.clocks.clone();
+        let flush_interval_sec = self.flush_interval_sec;
+        let runtime_handle = self.runtime_handle.clone();
+        let shard_path = self.shard_path.clone();
         let (flush_tx, flush_rx) = oneshot::channel();
-        self.flush_worker = Some(self.runtime_handle.spawn(Self::flush_worker(
-            self.segments.clone(),
-            self.wal.clone(),
-            self.wal_keep_from.clone(),
-            self.flush_interval_sec,
-            flush_rx,
-            self.clocks.clone(),
-            self.shard_path.clone(),
-        )));
+        self.flush_worker = Some(self.runtime_handle.spawn_blocking(move || {
+            Self::flush_worker_fn(
+                segments,
+                wal,
+                wal_keep_from,
+                clocks,
+                flush_interval_sec,
+                runtime_handle,
+                flush_rx,
+                shard_path,
+            )
+        }));
+
         self.flush_stop = Some(flush_tx);
     }
 
@@ -208,7 +246,7 @@ impl UpdateHandler {
         if let Some(flush_stop) = self.flush_stop.take()
             && let Err(()) = flush_stop.send(())
         {
-            warn!("Failed to stop flush worker as it is already stopped.");
+            log::warn!("Failed to stop flush worker as it is already stopped.");
         }
     }
 
@@ -244,7 +282,12 @@ impl UpdateHandler {
 
     /// Checks if there are any failed operations.
     /// If so - attempts to re-apply all failed operations.
-    async fn try_recover(segments: LockedSegmentHolder, wal: LockedWal) -> CollectionResult<usize> {
+    async fn try_recover(
+        segments: LockedSegmentHolder,
+        wal: LockedWal,
+        scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
+    ) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
         let first_failed_operation_option = segments.read().failed_operation.iter().cloned().min();
         match first_failed_operation_option {
@@ -256,6 +299,8 @@ impl UpdateHandler {
                         &segments,
                         op_num,
                         operation.operation,
+                        scroll_lock.clone(),
+                        update_tracker.clone(),
                         &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
                     )?;
                 }
@@ -304,7 +349,11 @@ impl UpdateHandler {
                     break;
                 }
 
-                debug!("Optimizing segments: {:?}", &nonoptimal_segment_ids);
+                log::debug!(
+                    "Optimizer '{}' running on segments: {:?}",
+                    optimizer.name(),
+                    &nonoptimal_segment_ids
+                );
 
                 // Determine how many Resources we prefer for optimization task, acquire permit for it
                 // And use same amount of IO threads as CPUs
@@ -376,7 +425,7 @@ impl UpdateHandler {
                                 // Handle and report errors
                                 Err(error) => match error {
                                     CollectionError::Cancelled { description } => {
-                                        debug!("Optimization cancelled - {description}");
+                                        log::debug!("Optimization cancelled - {description}");
                                         tracker_handle
                                             .update(TrackerStatus::Cancelled(description));
                                         false
@@ -406,7 +455,7 @@ impl UpdateHandler {
                         let message = panic::downcast_str(&panic_payload).unwrap_or("");
                         let separator = if !message.is_empty() { ": " } else { "" };
 
-                        warn!(
+                        log::warn!(
                             "Optimization task panicked, collection may be in unstable state\
                              {separator}{message}"
                         );
@@ -435,6 +484,7 @@ impl UpdateHandler {
         segments: &LockedSegmentHolder,
         segments_path: &Path,
         collection_params: &CollectionParams,
+        collection_quantization: Option<&QuantizationConfig>,
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<()> {
@@ -460,9 +510,14 @@ impl UpdateHandler {
 
         if no_segment_with_capacity {
             log::debug!("Creating new appendable segment, all existing segments are over capacity");
+
+            let segment_config = collection_params
+                .to_base_segment_config(collection_quantization)
+                .map_err(|err| OperationError::service_error(err.to_string()))?;
+
             segments.write().create_appendable_segment(
                 segments_path,
-                collection_params,
+                segment_config,
                 payload_index_schema,
             )?;
         }
@@ -566,6 +621,8 @@ impl UpdateHandler {
         max_handles: Option<usize>,
         has_triggered_optimizers: Arc<AtomicBool>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
+        scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
     ) {
         let max_handles = max_handles.unwrap_or(usize::MAX);
         let max_indexing_threads = optimizers
@@ -620,6 +677,7 @@ impl UpdateHandler {
                     &segments,
                     optimizer.segments_path(),
                     &optimizer.collection_params(),
+                    optimizer.quantization_config().as_ref(),
                     optimizer.threshold_config(),
                     payload_index_schema.clone(),
                 );
@@ -636,9 +694,14 @@ impl UpdateHandler {
                 continue;
             }
 
-            if Self::try_recover(segments.clone(), wal.clone())
-                .await
-                .is_err()
+            if Self::try_recover(
+                segments.clone(),
+                wal.clone(),
+                scroll_lock.clone(),
+                update_tracker.clone(),
+            )
+            .await
+            .is_err()
             {
                 continue;
             }
@@ -688,13 +751,15 @@ impl UpdateHandler {
         }
     }
 
-    async fn update_worker_fn(
+    fn update_worker_fn(
         mut receiver: Receiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
         wal: LockedWal,
         segments: LockedSegmentHolder,
+        scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
     ) {
-        while let Some(signal) = receiver.recv().await {
+        while let Some(signal) = receiver.blocking_recv() {
             match signal {
                 UpdateSignal::Operation(OperationData {
                     op_num,
@@ -704,7 +769,7 @@ impl UpdateHandler {
                     hw_measurements,
                 }) => {
                     let flush_res = if wait {
-                        wal.lock().await.flush().map_err(|err| {
+                        wal.blocking_lock().flush().map_err(|err| {
                             CollectionError::service_error(format!(
                                 "Can't flush WAL before operation {op_num} - {err}"
                             ))
@@ -718,14 +783,15 @@ impl UpdateHandler {
                             &segments,
                             op_num,
                             operation,
+                            scroll_lock.clone(),
+                            update_tracker.clone(),
                             &hw_measurements.get_counter_cell(),
                         )
                     });
 
                     let res = match operation_result {
                         Ok(update_res) => optimize_sender
-                            .send(OptimizerSignal::Operation(op_num))
-                            .await
+                            .blocking_send(OptimizerSignal::Operation(op_num))
                             .and(Ok(update_res))
                             .map_err(|send_err| send_err.into()),
                         Err(err) => Err(err),
@@ -733,69 +799,84 @@ impl UpdateHandler {
 
                     if let Some(feedback) = sender {
                         feedback.send(res).unwrap_or_else(|_| {
-                            debug!("Can't report operation {op_num} result. Assume already not required");
+                            log::debug!("Can't report operation {op_num} result. Assume already not required");
                         });
                     };
                 }
                 UpdateSignal::Stop => {
                     optimize_sender
-                        .send(OptimizerSignal::Stop)
-                        .await
-                        .unwrap_or_else(|_| debug!("Optimizer already stopped"));
+                        .blocking_send(OptimizerSignal::Stop)
+                        .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
                     break;
                 }
                 UpdateSignal::Nop => optimize_sender
-                    .send(OptimizerSignal::Nop)
-                    .await
+                    .blocking_send(OptimizerSignal::Nop)
                     .unwrap_or_else(|_| {
-                        info!(
+                        log::info!(
                             "Can't notify optimizers, assume process is dead. Restart is required"
                         );
                     }),
                 UpdateSignal::Plunger(callback_sender) => {
                     callback_sender.send(()).unwrap_or_else(|_| {
-                        debug!("Can't notify sender, assume nobody is waiting anymore");
+                        log::debug!("Can't notify sender, assume nobody is waiting anymore");
                     });
                 }
             }
         }
         // Transmitter was destroyed
         optimize_sender
-            .send(OptimizerSignal::Stop)
-            .await
-            .unwrap_or_else(|_| debug!("Optimizer already stopped"));
+            .blocking_send(OptimizerSignal::Stop)
+            .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
     }
 
-    async fn flush_worker(
+    #[allow(clippy::too_many_arguments)]
+    fn flush_worker_fn(
         segments: LockedSegmentHolder,
         wal: LockedWal,
         wal_keep_from: Arc<AtomicU64>,
-        flush_interval_sec: u64,
-        mut stop_receiver: oneshot::Receiver<()>,
         clocks: LocalShardClocks,
+        flush_interval_sec: u64,
+        runtime: tokio::runtime::Handle,
+        mut stop_receiver: oneshot::Receiver<()>,
         shard_path: PathBuf,
     ) {
         loop {
             // Stop flush worker on signal or if sender was dropped
             // Even if timer did not finish
-            tokio::select! {
-                _ = tokio::time::sleep(Duration::from_secs(flush_interval_sec)) => {},
-                _ = &mut stop_receiver => {
-                    debug!("Stopping flush worker for shard {}", shard_path.display());
-                    return;
+            let stop = runtime.block_on(async {
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(flush_interval_sec)) => false,
+                    _ = &mut stop_receiver => true,
                 }
+            });
+
+            if stop {
+                log::debug!("Stopping flush worker for shard {}", shard_path.display());
+                return;
             }
 
-            trace!("Attempting flushing");
-            let wal_flash_job = wal.lock().await.flush_async();
+            log::trace!("Attempting flushing");
+            let wal_flush_job = wal.blocking_lock().flush_async();
 
-            if let Err(err) = wal_flash_job.join() {
-                error!("Failed to flush wal: {err:?}");
-                segments
-                    .write()
-                    .report_optimizer_error(WalError::WriteWalError(format!(
-                        "WAL flush error: {err:?}"
-                    )));
+            let wal_flush_res = match wal_flush_job.join() {
+                Ok(Ok(())) => Ok(()),
+
+                Ok(Err(err)) => Err(WalError::WriteWalError(format!(
+                    "failed to flush WAL: {err}"
+                ))),
+
+                Err(panic) => {
+                    let message = panic::downcast_str(&panic).unwrap_or("");
+                    let separator = if !message.is_empty() { ": " } else { "" };
+                    Err(WalError::WriteWalError(format!(
+                        "failed to flush WAL: flush task panicked{separator}{message}"
+                    )))
+                }
+            };
+
+            if let Err(err) = wal_flush_res {
+                log::error!("{err}");
+                segments.write().report_optimizer_error(err);
                 continue;
             }
 
@@ -803,7 +884,7 @@ impl UpdateHandler {
             let confirmed_version = match confirmed_version {
                 Ok(version) => version,
                 Err(err) => {
-                    error!("Failed to flush: {err}");
+                    log::error!("Failed to flush: {err}");
                     segments.write().report_optimizer_error(err);
                     continue;
                 }
@@ -823,12 +904,12 @@ impl UpdateHandler {
 
             let ack = confirmed_version.min(keep_from.saturating_sub(1));
 
-            if let Err(err) = clocks.store_if_changed(&shard_path).await {
+            if let Err(err) = clocks.store_if_changed(&shard_path) {
                 log::warn!("Failed to store clock maps to disk: {err}");
                 segments.write().report_optimizer_error(err);
             }
 
-            if let Err(err) = wal.lock().await.ack(ack) {
+            if let Err(err) = wal.blocking_lock().ack(ack) {
                 log::warn!("Failed to acknowledge WAL version: {err}");
                 segments.write().report_optimizer_error(err);
             }

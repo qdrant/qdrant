@@ -1,38 +1,25 @@
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use memory::fadvise::OneshotFile;
 use memory::mmap_type::MmapFlusher;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::vector_utils::TrySetCapacityExact;
+use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 
 #[derive(Debug)]
 pub struct QuantizedRamStorage {
     vectors: ChunkedVectors<u8>,
+    path: PathBuf,
 }
 
-impl quantization::EncodedStorage for QuantizedRamStorage {
-    fn get_vector_data(&self, index: usize, _vector_size: usize) -> &[u8] {
-        self.vectors.get(index)
-    }
-
-    fn push_vector(
-        &mut self,
-        vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        // Skip hardware counter increment because it's a RAM storage.
-        self.vectors
-            .push(vector)
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::OutOfMemory, err.to_string()))?;
-        Ok(())
-    }
-
-    fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
+impl QuantizedRamStorage {
+    pub fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
         let mut vectors = ChunkedVectors::<u8>::new(quantized_vector_size);
         let file = OneshotFile::open(path)?;
         let mut reader = BufReader::new(file);
@@ -46,18 +33,28 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
             })?;
         }
         reader.into_inner().drop_cache()?;
-        Ok(QuantizedRamStorage { vectors })
+        Ok(QuantizedRamStorage {
+            vectors,
+            path: path.to_path_buf(),
+        })
+    }
+}
+
+impl quantization::EncodedStorage for QuantizedRamStorage {
+    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
+        self.vectors.get(index as VectorOffsetType)
     }
 
-    fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
-        let mut buffer = BufWriter::new(File::create(path)?);
-        for i in 0..self.vectors.len() {
-            buffer.write_all(self.vectors.get(i))?;
-        }
-
-        // Explicitly flush write buffer so we can catch IO errors
-        buffer.flush()?;
-        buffer.into_inner()?.sync_all()?;
+    fn upsert_vector(
+        &mut self,
+        id: PointOffsetType,
+        vector: &[u8],
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        // Skip hardware counter increment because it's a RAM storage.
+        self.vectors
+            .insert(id as usize, vector)
+            .map_err(|err| std::io::Error::other(err.to_string()))?;
         Ok(())
     }
 
@@ -65,24 +62,36 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         false
     }
 
-    fn vectors_count(&self, _quantized_vector_size: usize) -> usize {
+    fn vectors_count(&self) -> usize {
         self.vectors.len()
     }
 
     fn flusher(&self) -> MmapFlusher {
         Box::new(|| Ok(()))
     }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
 }
 
 pub struct QuantizedRamStorageBuilder {
     pub vectors: ChunkedVectors<u8>,
+    pub path: PathBuf,
 }
 
 impl QuantizedRamStorageBuilder {
-    pub fn new(count: usize, dim: usize) -> OperationResult<Self> {
+    pub fn new(path: &Path, count: usize, dim: usize) -> OperationResult<Self> {
         let mut vectors = ChunkedVectors::new(dim);
         vectors.try_set_capacity_exact(count)?;
-        Ok(Self { vectors })
+        Ok(Self {
+            vectors,
+            path: path.to_path_buf(),
+        })
     }
 }
 
@@ -90,14 +99,28 @@ impl quantization::EncodedStorageBuilder for QuantizedRamStorageBuilder {
     type Storage = QuantizedRamStorage;
 
     fn build(self) -> std::io::Result<QuantizedRamStorage> {
+        if let Some(dir) = self.path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let mut buffer = BufWriter::new(File::create(&self.path)?);
+        for i in 0..self.vectors.len() {
+            buffer.write_all(self.vectors.get(i))?;
+        }
+
+        // Explicitly flush write buffer so we can catch IO errors
+        buffer.flush()?;
+        buffer.into_inner()?.sync_all()?;
+
         Ok(QuantizedRamStorage {
             vectors: self.vectors,
+            path: self.path,
         })
     }
 
-    fn push_vector_data(&mut self, other: &[u8]) {
-        // Memory for ChunkedVectors are already pre-allocated,
-        // so we do not expect any errors here.
-        self.vectors.push(other).unwrap();
+    fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
+        self.vectors
+            .push(other)
+            .map(|_| ())
+            .map_err(|e| std::io::Error::other(format!("Failed to push vector data: {e}")))
     }
 }

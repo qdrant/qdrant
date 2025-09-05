@@ -3,15 +3,17 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
+use zerocopy::FromBytes;
 
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector};
 use crate::spaces::metric::Metric;
-use crate::vector_storage::DenseVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::{DenseVectorStorage, Random};
 
 pub struct CustomQueryScorer<
     'a,
@@ -83,7 +85,7 @@ impl<
 
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self.vector_storage.get_dense(idx);
+        let stored = self.vector_storage.get_dense::<Random>(idx);
         self.hardware_counter.vector_io_read().incr();
 
         self.score(stored)
@@ -117,5 +119,10 @@ impl<
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer can compare against multiple vectors, not just one")
+    }
+
+    type SupportsBytes = True;
+    fn score_bytes(&self, _enabled: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
+        self.score(<[TElement]>::ref_from_bytes(bytes).unwrap())
     }
 }

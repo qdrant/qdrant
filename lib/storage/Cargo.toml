@@ -30,7 +30,7 @@ schemars = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 tonic = { workspace = true }
-http = "0.2.9" # version of http used by tonic 0.11.x
+http = "0.2.12" # version of http used by tonic 0.11.x
 parking_lot = { workspace = true }
 strum = { workspace = true }
 tap = { workspace = true }
@@ -56,11 +56,11 @@ segment = { path = "../segment", default-features = false }
 collection = { path = "../collection" }
 api = { path = "../api" }
 futures = { workspace = true }
-anyhow = "1.0.98"
+anyhow = "1.0.99"
 uuid = { workspace = true }
-url = "2.5.4"
+url = "2.5.7"
 reqwest = { workspace = true }
 tempfile = { workspace = true }
-async-trait = "0.1.88"
+async-trait = "0.1.89"
 
 tracing = { workspace = true, optional = true }

@@ -491,7 +491,7 @@ mod tests {
     use crate::index::hnsw_index::links_container::LinksContainer;
     use crate::types::Distance;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
+    use crate::vector_storage::{DEFAULT_STOPPED, Random, VectorStorage};
 
     #[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
     #[repr(C)]
@@ -529,7 +529,7 @@ mod tests {
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Dot);
         for idx in 0..(num_vectors + groups_count) as PointOffsetType {
-            let v = vector_holder.storage().get_vector(idx);
+            let v = vector_holder.storage().get_vector::<Random>(idx);
             storage
                 .insert_vector(idx, v.as_vec_ref(), &HardwareCounterCell::new())
                 .unwrap();
@@ -806,9 +806,9 @@ mod tests {
             let mut scorer = test
                 .vector_holder
                 .internal_scorer((num_vectors + i) as PointOffsetType);
-            let search_result = test
-                .graph_layers_builder
-                .search_entry_on_level(0, 0, &mut scorer);
+            let search_result =
+                test.graph_layers_builder
+                    .search_entry_on_level(0, 0, &mut scorer, &mut Vec::new());
             assert_eq!(search_result.idx, gpu_search_result);
         }
     }

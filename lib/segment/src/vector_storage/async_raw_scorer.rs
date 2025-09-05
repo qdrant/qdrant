@@ -5,6 +5,7 @@ use super::query::{
     ContextQuery, DiscoveryQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
 };
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
+use super::query_scorer::{QueryScorerBytes, QueryScorerBytesImpl};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, VectorInternal};
 use crate::spaces::metric::Metric;
@@ -66,6 +67,10 @@ where
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.query_scorer.score_internal(point_a, point_b)
+    }
+
+    fn scorer_bytes(&self) -> Option<&dyn QueryScorerBytes> {
+        QueryScorerBytesImpl::new(&self.query_scorer).map(|s| s as _)
     }
 }
 

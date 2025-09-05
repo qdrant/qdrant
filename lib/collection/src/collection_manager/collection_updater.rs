@@ -1,11 +1,14 @@
+use std::sync::Arc;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
 use segment::types::SeqNumberType;
+use shard::update::*;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
-use crate::collection_manager::segments_updater::*;
 use crate::operations::CollectionUpdateOperations;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shards::update_tracker::UpdateTracker;
 
 /// Implementation of the update operation
 #[derive(Default)]
@@ -40,32 +43,36 @@ impl CollectionUpdater {
         segments: &RwLock<SegmentHolder>,
         op_num: SeqNumberType,
         operation: CollectionUpdateOperations,
+        scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<usize> {
-        // Allow only one update at a time, ensure no data races between segments.
-        // let _lock = self.update_lock.lock().unwrap();
-        let scroll_lock = segments.read().scroll_read_lock.clone();
-
         // Use block_in_place here to avoid blocking the current async executor
-        let _scroll_lock = tokio::task::block_in_place(|| scroll_lock.blocking_write());
+        let operation_result = tokio::task::block_in_place(|| {
+            // Allow only one update at a time, ensure no data races between segments.
+            // let _update_lock = self.update_lock.lock().unwrap();
 
-        let operation_result = match operation {
-            CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(segments, op_num, point_operation, hw_counter)
-            }
-            CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                process_vector_operation(segments, op_num, vector_operation, hw_counter)
-            }
-            CollectionUpdateOperations::PayloadOperation(payload_operation) => {
-                process_payload_operation(segments, op_num, payload_operation, hw_counter)
-            }
-            CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
-                process_field_index_operation(segments, op_num, &index_operation, hw_counter)
-            }
-        };
+            let _scroll_lock = scroll_lock.blocking_write();
+            let _update_guard = update_tracker.update();
 
+            match operation {
+                CollectionUpdateOperations::PointOperation(point_operation) => {
+                    process_point_operation(segments, op_num, point_operation, hw_counter)
+                }
+                CollectionUpdateOperations::VectorOperation(vector_operation) => {
+                    process_vector_operation(segments, op_num, vector_operation, hw_counter)
+                }
+                CollectionUpdateOperations::PayloadOperation(payload_operation) => {
+                    process_payload_operation(segments, op_num, payload_operation, hw_counter)
+                }
+                CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
+                    process_field_index_operation(segments, op_num, &index_operation, hw_counter)
+                }
+            }
+        });
+
+        let operation_result = operation_result.map_err(CollectionError::from);
         CollectionUpdater::handle_update_result(segments, op_num, &operation_result);
-
         operation_result
     }
 }
@@ -87,6 +94,7 @@ mod tests {
     use segment::types::PayloadSchemaType::Keyword;
     use segment::types::{Payload, PayloadContainer, PayloadFieldSchema, WithPayload};
     use serde_json::json;
+    use shard::update::upsert_points;
     use tempfile::Builder;
 
     use super::*;
@@ -95,7 +103,6 @@ mod tests {
     };
     use crate::collection_manager::holders::segment_holder::LockedSegment::Original;
     use crate::collection_manager::segments_searcher::SegmentsSearcher;
-    use crate::collection_manager::segments_updater::upsert_points;
     use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
     use crate::operations::point_ops::{
         PointOperations, PointStructPersisted, VectorStructPersisted,

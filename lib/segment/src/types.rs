@@ -719,7 +719,7 @@ impl Hash for ScalarQuantizationConfig {
 
 impl Eq for ScalarQuantizationConfig {}
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum BinaryQuantizationEncoding {
     #[default]
@@ -774,6 +774,10 @@ impl QuantizationConfig {
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         self != other
     }
+
+    pub fn supports_appendable(&self) -> bool {
+        matches!(self, QuantizationConfig::Binary(_))
+    }
 }
 
 impl Validate for QuantizationConfig {
@@ -787,7 +791,7 @@ impl Validate for QuantizationConfig {
 }
 
 #[derive(
-    Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq, Hash,
+    Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, Copy, PartialEq, Eq, Hash,
 )]
 #[serde(rename_all = "lowercase")]
 #[anonymize(false)]
@@ -1669,7 +1673,7 @@ fn payload_example() -> Option<Payload> {
     })
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash)]
 #[schemars(example = "payload_example")]
 pub struct Payload(pub Map<String, Value>);
 
@@ -2166,6 +2170,13 @@ pub struct MatchText {
     pub text: String,
 }
 
+/// Full-text match of at least one token of the string.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchTextAny {
+    pub text_any: String,
+}
+
 impl<S: Into<String>> From<S> for MatchText {
     fn from(text: S) -> Self {
         MatchText { text: text.into() }
@@ -2207,6 +2218,7 @@ pub struct MatchExcept {
 pub enum MatchInterface {
     Value(MatchValue),
     Text(MatchText),
+    TextAny(MatchTextAny),
     Phrase(MatchPhrase),
     Any(MatchAny),
     Except(MatchExcept),
@@ -2218,6 +2230,7 @@ pub enum MatchInterface {
 pub enum Match {
     Value(MatchValue),
     Text(MatchText),
+    TextAny(MatchTextAny),
     Phrase(MatchPhrase),
     Any(MatchAny),
     Except(MatchExcept),
@@ -2258,6 +2271,9 @@ impl From<MatchInterface> for Match {
         match value {
             MatchInterface::Value(value) => Self::Value(MatchValue { value: value.value }),
             MatchInterface::Text(text) => Self::Text(MatchText { text: text.text }),
+            MatchInterface::TextAny(text_any) => Self::TextAny(MatchTextAny {
+                text_any: text_any.text_any,
+            }),
             MatchInterface::Any(any) => Self::Any(MatchAny { any: any.any }),
             MatchInterface::Except(except) => Self::Except(MatchExcept {
                 except: except.except,
@@ -2774,6 +2790,7 @@ impl FieldCondition {
             Match::Value(_) => 0,
             Match::Text(_) => 0,
             Match::Phrase(_) => 0,
+            Match::TextAny(_) => 0,
         }
     }
 }
@@ -3294,6 +3311,33 @@ impl Filter {
             min_should: None,
             must: None,
             must_not: Some(vec![condition]),
+        }
+    }
+
+    /// Create an extended filtering condition, which would also include filter by given list of IDs.
+    pub fn with_point_ids(self, ids: impl IntoIterator<Item = PointIdType>) -> Filter {
+        let has_id_condition: HasIdCondition = ids.into_iter().collect();
+
+        let Filter {
+            should,
+            min_should,
+            must,
+            must_not,
+        } = self;
+
+        let new_must = match must {
+            Some(mut must) => {
+                must.push(Condition::HasId(has_id_condition));
+                Some(must)
+            }
+            None => Some(vec![Condition::HasId(has_id_condition)]),
+        };
+
+        Filter {
+            should,
+            min_should,
+            must: new_must,
+            must_not,
         }
     }
 

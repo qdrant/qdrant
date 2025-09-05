@@ -35,7 +35,7 @@ walkdir = { workspace = true }
 rstest = { workspace = true }
 segment = { path = ".", default-features = false, features = ["testing"] }
 proptest = { workspace = true }
-anyhow = "1.0.98"
+anyhow = "1.0.99"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }
@@ -61,7 +61,7 @@ serde_json = { workspace = true }
 serde_cbor = { workspace = true }
 serde-value = "0.7"
 serde_variant = { workspace = true }
-serde-untagged = "0.1.7"
+serde-untagged = "0.1.8"
 ordered-float = { workspace = true }
 thiserror = { workspace = true }
 atomic_refcell = { workspace = true }
@@ -69,7 +69,7 @@ atomicwrites = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
-geo = "0.30.0"
+geo = "0.31.0"
 geohash = "0.13.1"
 num-traits = { workspace = true }
 num-derive = "0.4.2"
@@ -80,7 +80,7 @@ seahash = "4.1.0"
 semver = { workspace = true }
 tar = { workspace = true }
 fs_extra = "1.3.0"
-tinyvec = { version = "1.9.0", features = ["alloc", "latest_stable_rust"] }
+tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
 validator = { workspace = true }
 chrono = { workspace = true }
 ecow = { workspace = true }
@@ -99,7 +99,7 @@ lazy_static = "1.5.0"
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { git = "https://github.com/qdrant/rust-stemmers.git", tag = "v1.2.1" }
 sysinfo = "0.37"
-charabia = { version = "0.9.6", default-features = false, features = [
+charabia = { version = "0.9.7", default-features = false, features = [
     "greek",
     "hebrew",
     "thai",
@@ -127,8 +127,8 @@ roaring = { version = "0.11.2" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
-procfs = { version = "0.17", default-features = false }
-io-uring = "0.7.9"
+procfs = { version = "0.18", default-features = false }
+io-uring = "0.7.10"
 
 [[bench]]
 name = "vector_search"

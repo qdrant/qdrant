@@ -12,13 +12,14 @@ use collection::operations::universal_query::shard_query::{
 };
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::save_on_disk::SaveOnDisk;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::ShardOperation;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::save_on_disk::SaveOnDisk;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rng;
+use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{
@@ -32,7 +33,7 @@ use tokio::sync::RwLock;
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-fn setup() -> (TempDir, LocalShard) {
+fn setup() -> (TempDir, LocalShard, Runtime) {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
     let runtime = Runtime::new().unwrap();
@@ -67,6 +68,7 @@ fn setup() -> (TempDir, LocalShard) {
         quantization_config: Default::default(),
         strict_mode_config: Default::default(),
         uuid: None,
+        metadata: None,
     };
 
     let optimizers_config = collection_config.optimizer_config.clone();
@@ -99,7 +101,7 @@ fn setup() -> (TempDir, LocalShard) {
         .block_on(shard.update(rnd_batch.into(), true, HwMeasurementAcc::new()))
         .unwrap();
 
-    (storage_dir, shard)
+    (storage_dir, shard, runtime)
 }
 
 fn create_rnd_batch() -> CollectionUpdateOperations {
@@ -146,9 +148,8 @@ fn some_filters() -> Vec<Option<Filter>> {
 
 /// Compare nearest neighbors query vs normal search
 fn batch_search_bench(c: &mut Criterion) {
-    let (_tempdir, shard) = setup();
+    let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime = Runtime::new().unwrap();
     let search_runtime_handle = search_runtime.handle();
 
     let mut group = c.benchmark_group("batch-search-bench");
@@ -223,9 +224,8 @@ fn batch_search_bench(c: &mut Criterion) {
 }
 
 fn batch_rrf_query_bench(c: &mut Criterion) {
-    let (_tempdir, shard) = setup();
+    let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime = Runtime::new().unwrap();
     let search_runtime_handle = search_runtime.handle();
 
     let mut group = c.benchmark_group("batch-rrf-bench");
@@ -260,7 +260,7 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
                                     score_threshold: None,
                                 },
                             ],
-                            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
+                            query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
                             filter: filter.clone(),
                             params: None,
                             limit: 10,
@@ -287,9 +287,8 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
 }
 
 fn batch_rescore_bench(c: &mut Criterion) {
-    let (_tempdir, shard) = setup();
+    let (_tempdir, shard, search_runtime) = setup();
 
-    let search_runtime = Runtime::new().unwrap();
     let search_runtime_handle = search_runtime.handle();
 
     let mut group = c.benchmark_group("batch-rescore-bench");

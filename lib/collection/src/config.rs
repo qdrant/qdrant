@@ -11,9 +11,9 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SparseVectorDataConfig,
-    StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype,
-    VectorStorageType,
+    Distance, HnswConfig, Indexes, Payload, PayloadStorageType, QuantizationConfig, SegmentConfig,
+    SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf,
+    VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -232,6 +232,11 @@ pub struct CollectionConfigInternal {
     pub strict_mode_config: Option<StrictModeConfig>,
     #[serde(default)]
     pub uuid: Option<Uuid>,
+    /// Arbitrary JSON metadata for the collection
+    /// This can be used to store application-specific information
+    /// such as creation time, migration data, inference model info, etc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Payload>,
 }
 
 impl CollectionConfigInternal {
@@ -267,6 +272,11 @@ impl CollectionConfigInternal {
         if let Err(ref errs) = self.validate() {
             validation::warn_validation_errors("Collection configuration file", errs);
         }
+    }
+
+    pub fn to_base_segment_config(&self) -> CollectionResult<SegmentConfig> {
+        self.params
+            .to_base_segment_config(self.quantization_config.as_ref())
     }
 }
 
@@ -462,7 +472,16 @@ impl CollectionParams {
     /// based on threshold configurations.
     pub fn to_base_vector_data(
         &self,
+        collection_quantization: Option<&QuantizationConfig>,
     ) -> CollectionResult<HashMap<VectorNameBuf, VectorDataConfig>> {
+        let quantization_fn = |quantization_config: Option<&QuantizationConfig>| {
+            quantization_config
+                // Only if there is no `quantization_config` we may start using `collection_quantization` (to avoid mixing quantizations between segments)
+                .or(collection_quantization)
+                .filter(|c| c.supports_appendable())
+                .cloned()
+        };
+
         Ok(self
             .vectors
             .params_iter()
@@ -474,8 +493,11 @@ impl CollectionParams {
                         distance: params.distance,
                         // Plain (disabled) index
                         index: Indexes::Plain {},
-                        // Disabled quantization
-                        quantization_config: None,
+                        // Quantizaton config in appendable segment if runtime feature flag is set
+                        quantization_config: common::flags::feature_flags()
+                            .appendable_quantization
+                            .then(|| quantization_fn(params.quantization_config.as_ref()))
+                            .flatten(),
                         // Default to in memory storage
                         storage_type: if params.on_disk.unwrap_or_default() {
                             VectorStorageType::ChunkedMmap
@@ -522,5 +544,38 @@ impl CollectionParams {
         } else {
             Ok(Default::default())
         }
+    }
+
+    /// Convert into unoptimized segment config
+    ///
+    /// It is the job of the segment optimizer to change this configuration with optimized settings
+    /// based on threshold configurations.
+    pub fn to_base_segment_config(
+        &self,
+        collection_quantization: Option<&QuantizationConfig>,
+    ) -> CollectionResult<SegmentConfig> {
+        let vector_data = self
+            .to_base_vector_data(collection_quantization)
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to source dense vector configuration from collection parameters: {err:?}"
+                ))
+            })?;
+
+        let sparse_vector_data = self.to_sparse_vector_data().map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to source sparse vector configuration from collection parameters: {err:?}"
+            ))
+        })?;
+
+        let payload_storage_type = self.payload_storage_type();
+
+        let segment_config = SegmentConfig {
+            vector_data,
+            sparse_vector_data,
+            payload_storage_type,
+        };
+
+        Ok(segment_config)
     }
 }

@@ -25,7 +25,9 @@ use segment::types::{
     SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use segment::vector_storage::VectorStorageEnum;
-use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use segment::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
+};
 use tempfile::Builder;
 
 enum QuantizationVariant {
@@ -312,6 +314,7 @@ fn test_byte_storage_binary_quantization_hnsw(
             let quantized_vectors = QuantizedVectors::create(
                 &vector_storage.vector_storage.borrow(),
                 &quantization_config,
+                QuantizedVectorsStorageType::Immutable,
                 quantized_data_path,
                 4,
                 &stopped,

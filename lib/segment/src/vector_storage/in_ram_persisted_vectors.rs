@@ -6,6 +6,7 @@ use memory::madvise::{Advice, AdviceSetting};
 
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::vector_storage::AccessPattern;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 
@@ -19,7 +20,6 @@ impl<T: Sized + Copy + Clone + Default + 'static> InRamPersistedVectors<T> {
         let mmap_storage = ChunkedMmapVectors::open(
             directory,
             dim,
-            Some(false),
             AdviceSetting::from(Advice::Normal),
             Some(true),
         )?;
@@ -41,12 +41,8 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     }
 
     #[inline]
-    fn get(&self, key: VectorOffsetType) -> Option<&[T]> {
-        self.mmap_storage.get(key)
-    }
-
-    fn get_sequential(&self, key: VectorOffsetType) -> Option<&[T]> {
-        self.mmap_storage.get_sequential(key)
+    fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<&[T]> {
+        self.mmap_storage.get::<P>(key)
     }
 
     #[inline]
@@ -96,13 +92,8 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     }
 
     #[inline]
-    fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
-        self.mmap_storage.get_many(key, count)
-    }
-
-    #[inline]
-    fn get_many_sequential(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
-        self.mmap_storage.get_many_sequential(key, count)
+    fn get_many<P: AccessPattern>(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
+        self.mmap_storage.get_many::<P>(key, count)
     }
 
     #[inline]

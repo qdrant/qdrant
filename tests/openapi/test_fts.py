@@ -175,21 +175,6 @@ def basic_collection_setup(
     )
     assert response.ok
 
-    # Create index
-    response = request_with_validation(
-        api='/collections/{collection_name}/index',
-        method="PUT",
-        path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
-        body={
-            "field_name": "title",
-            "field_schema": {
-                "type": "text",
-                "tokenizer": "prefix",
-            }
-        }
-    )
-    assert response.ok
 
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -222,8 +207,103 @@ def setup(on_disk_vectors, on_disk_payload, collection_name):
     yield
     drop_collection(collection_name=collection_name)
 
+def test_match_any(collection_name):
+
+    # Create index
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "title",
+            "field_schema": {
+                "type": "text",
+                "tokenizer": "word",
+                "lowercase": True,
+                "stopwords": "english"
+            }
+        }
+    )
+    assert response.ok
+
+
+    response_any = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "offset": None,
+            "limit": 10,
+            "with_payload": True,
+            "with_vector": False,
+            "filter": {
+                "must": {
+                    "key": "title",
+                    "match": {
+                        "text_any": "robot of the star",
+                    }
+                }
+            }
+        }
+    )
+
+    assert response_any.ok
+
+    response_any_ids = {point['id'] for point in response_any.json()['result']['points']}
+
+    # Same request, but manually split into words
+    response_split = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "offset": None,
+            "limit": 10,
+            "with_payload": True,
+            "with_vector": False,
+            "filter": {
+                "should": [
+                    {
+                        "key": "title",
+                        "match": {
+                            "text": "robot",
+                        }
+                    },
+                    {
+                        "key": "title",
+                        "match": {
+                            "text": "star",
+                        }
+                    }
+                ]
+            }
+        }
+    )
+
+    assert response_split.ok
+    response_split_ids = {point['id'] for point in response_split.json()['result']['points']}
+
+    assert response_any_ids == response_split_ids
+
 
 def test_scroll_with_prefix(collection_name):
+    # Create index
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "title",
+            "field_schema": {
+                "type": "text",
+                "tokenizer": "prefix",
+            }
+        }
+    )
+    assert response.ok
+
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
         method="POST",

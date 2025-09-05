@@ -23,7 +23,7 @@ use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{AccessPattern, DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
@@ -85,15 +85,9 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
         self.vectors.dim()
     }
 
-    fn get_dense(&self, key: PointOffsetType) -> &[T] {
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
         self.vectors
-            .get(key as VectorOffsetType)
-            .expect("mmap vector not found")
-    }
-
-    fn get_dense_sequential(&self, key: PointOffsetType) -> &[T] {
-        self.vectors
-            .get_sequential(key as VectorOffsetType)
+            .get::<P>(key as VectorOffsetType)
             .expect("mmap vector not found")
     }
 
@@ -131,20 +125,16 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt(key).expect("vector not found")
-    }
-
-    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.vectors
-            .get_sequential(key as VectorOffsetType)
+            .get::<P>(key as VectorOffsetType)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
             .expect("Vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.vectors
-            .get(key as VectorOffsetType)
+            .get::<P>(key as VectorOffsetType)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
     }
 
@@ -266,13 +256,8 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
 
     let populate = false;
 
-    let vectors = ChunkedMmapVectors::<T>::open(
-        &vectors_path,
-        dim,
-        Some(false),
-        AdviceSetting::Global,
-        Some(populate),
-    )?;
+    let vectors =
+        ChunkedMmapVectors::<T>::open(&vectors_path, dim, AdviceSetting::Global, Some(populate))?;
 
     let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
     let deleted_count = deleted.count_trues();

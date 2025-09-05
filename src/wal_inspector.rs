@@ -2,7 +2,7 @@ use std::env;
 use std::path::Path;
 
 use collection::operations::OperationWithClockTag;
-use collection::wal::SerdeWal;
+use shard::wal::SerdeWal;
 use storage::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use wal::WalOptions;
@@ -24,7 +24,7 @@ fn main() {
 
 fn print_consensus_wal(wal_path: &Path) {
     // must live within a folder named `collections_meta_wal`
-    let wal = ConsensusOpWal::new(wal_path.to_str().unwrap());
+    let wal = ConsensusOpWal::new(wal_path);
     println!("==========================");
     let first_index = wal.first_entry().unwrap();
     println!("First entry: {first_index:?}");

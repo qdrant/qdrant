@@ -23,7 +23,7 @@ fn search_in_builder(
 ) -> Vec<ScoredPointOffset> {
     let Some(entry_point) = builder
         .get_entry_points()
-        .get_entry_point(|point_id| points_scorer.check_vector(point_id))
+        .get_entry_point(|point_id| points_scorer.filters().check_vector(point_id))
     else {
         return vec![];
     };
@@ -87,8 +87,9 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
         })
         .collect_vec();
 
-    let graph_layers = graph_layers_builder
-        .into_graph_layers_ram(format.with_param_for_tests(vector_holder.quantized_vectors()));
+    let graph_layers = graph_layers_builder.into_graph_layers_ram(
+        format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
+    );
 
     let results = queries
         .iter()

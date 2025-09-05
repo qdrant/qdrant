@@ -1,17 +1,21 @@
-use std::fs::canonicalize;
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use memmap2::MmapMut;
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_type::{MmapFlusher, MmapSlice};
-use quantization::{EncodedVectors, VectorParameters};
+use quantization::EncodedVectors;
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
+use crate::vector_storage::Random;
+use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
+use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct MultivectorOffset {
@@ -25,25 +29,43 @@ pub trait MultivectorOffsets {
 
 #[allow(clippy::len_without_is_empty)]
 pub trait MultivectorOffsetsStorage: Sized {
-    fn load(path: &Path) -> OperationResult<Self>;
-
-    fn save(&self, path: &Path) -> OperationResult<()>;
-
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
 
     fn len(&self) -> usize;
 
-    fn push_offset(
+    fn upsert_offset(
         &mut self,
+        id: PointOffsetType,
         offset: MultivectorOffset,
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()>;
 
     fn flusher(&self) -> MmapFlusher;
+
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf>;
 }
 
-impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
-    fn load(path: &Path) -> OperationResult<Self> {
+pub struct MultivectorOffsetsStorageRam {
+    offsets: Vec<MultivectorOffset>,
+    path: PathBuf,
+}
+
+impl MultivectorOffsetsStorageRam {
+    pub fn create(
+        path: &Path,
+        offsets: impl Iterator<Item = MultivectorOffset>,
+    ) -> OperationResult<Self> {
+        let offsets: Vec<_> = offsets.collect();
+        create_offsets_file_from_iter(path, offsets.len(), offsets.iter().cloned())?;
+        Ok(MultivectorOffsetsStorageRam {
+            path: path.to_path_buf(),
+            offsets,
+        })
+    }
+
+    pub fn load(path: &Path) -> OperationResult<Self> {
         let offsets_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -51,65 +73,14 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
         let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
         let mut offsets_mmap_type =
             unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
-        Ok(offsets_mmap_type.deref_mut().iter().copied().collect())
-    }
-
-    fn save(&self, path: &Path) -> OperationResult<()> {
-        create_offsets_file_from_iter(path, self.len(), self.iter().copied())
-    }
-
-    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
-        self[idx as usize]
-    }
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    fn push_offset(
-        &mut self,
-        offset: MultivectorOffset,
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        // Skip hardware counter increment because it's a RAM storage.
-        self.push(offset);
-        Ok(())
-    }
-
-    fn flusher(&self) -> MmapFlusher {
-        Box::new(|| Ok(()))
-    }
-}
-
-#[derive(Debug)]
-pub struct MultivectorOffsetsStorageMmap {
-    path: PathBuf,
-    offsets: MmapSlice<MultivectorOffset>,
-}
-
-impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
-    fn load(path: &Path) -> OperationResult<Self> {
-        let offsets_file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)?;
-        let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
-        let offsets = unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
-        Ok(Self {
+        Ok(MultivectorOffsetsStorageRam {
+            offsets: offsets_mmap_type.deref_mut().iter().copied().collect(),
             path: path.to_path_buf(),
-            offsets,
         })
     }
+}
 
-    fn save(&self, path: &Path) -> OperationResult<()> {
-        if canonicalize(path)? != canonicalize(&self.path)? {
-            create_offsets_file_from_iter(path, self.offsets.len(), self.offsets.iter().copied())
-        } else {
-            // no need to flush, as the mmap is immutable
-            Ok(())
-        }
-    }
-
+impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets[idx as usize]
     }
@@ -118,17 +89,185 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
         self.offsets.len()
     }
 
-    fn push_offset(
+    fn upsert_offset(
         &mut self,
+        id: PointOffsetType,
+        offset: MultivectorOffset,
+        _hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        // Skip hardware counter increment because it's a RAM storage.
+        if id as usize >= self.len() {
+            self.offsets
+                .resize(id as usize + 1, MultivectorOffset::default());
+        }
+        self.offsets[id as usize] = offset;
+        Ok(())
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        Box::new(|| Ok(()))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+}
+
+#[derive(Debug)]
+pub struct MultivectorOffsetsStorageMmap {
+    offsets: MmapSlice<MultivectorOffset>,
+    path: PathBuf,
+}
+
+impl MultivectorOffsetsStorageMmap {
+    pub fn create(
+        path: &Path,
+        offsets: impl Iterator<Item = MultivectorOffset>,
+        count: usize,
+    ) -> OperationResult<Self> {
+        create_offsets_file_from_iter(path, count, offsets)?;
+        MultivectorOffsetsStorageMmap::load(path)
+    }
+
+    pub fn load(path: &Path) -> OperationResult<Self> {
+        let offsets_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)?;
+        let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
+        let offsets = unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
+        Ok(Self {
+            offsets,
+            path: path.to_path_buf(),
+        })
+    }
+
+    pub fn populate(&self) -> std::io::Result<()> {
+        self.offsets.populate()
+    }
+}
+
+impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
+    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
+        self.offsets[idx as usize]
+    }
+
+    fn len(&self) -> usize {
+        self.offsets.len()
+    }
+
+    fn upsert_offset(
+        &mut self,
+        _id: PointOffsetType,
         _offset: MultivectorOffset,
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        unreachable!("Cannot push offset to mmap storage");
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Cannot upsert offset in mmap storage",
+        ))
     }
 
     fn flusher(&self) -> MmapFlusher {
         // Mmap storage does not need a flusher, as it is non-appendable and already backed by a file.
         Box::new(|| Ok(()))
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+}
+
+pub struct MultivectorOffsetsStorageChunkedMmap {
+    data: ChunkedMmapVectors<MultivectorOffset>,
+}
+
+impl MultivectorOffsetsStorageChunkedMmap {
+    pub fn create(
+        path: &Path,
+        offsets: impl Iterator<Item = MultivectorOffset>,
+        in_ram: bool,
+    ) -> OperationResult<Self> {
+        let hw_counter = HardwareCounterCell::disposable();
+        let mut offsets_storage = Self::load(path, in_ram)?;
+        for (id, offset) in offsets.enumerate() {
+            offsets_storage.upsert_offset(id as PointOffsetType, offset, &hw_counter)?;
+        }
+        offsets_storage.flusher()()?;
+        Ok(offsets_storage)
+    }
+
+    pub fn load(path: &Path, in_ram: bool) -> OperationResult<Self> {
+        let advice = if in_ram {
+            AdviceSetting::from(Advice::Normal)
+        } else {
+            AdviceSetting::Global
+        };
+        let data = ChunkedMmapVectors::<MultivectorOffset>::open(
+            path,
+            1,
+            advice,
+            Some(in_ram), // populate
+        )?;
+        Ok(Self { data })
+    }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        self.data.populate()
+    }
+}
+
+impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
+    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
+        ChunkedVectorStorage::get::<Random>(&self.data, idx as VectorOffsetType)
+            .and_then(|offsets| offsets.first())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn len(&self) -> usize {
+        ChunkedVectorStorage::len(&self.data)
+    }
+
+    fn flusher(&self) -> MmapFlusher {
+        let flusher = ChunkedMmapVectors::flusher(&self.data);
+        Box::new(move || {
+            flusher().map_err(|e| {
+                std::io::Error::other(format!("Failed to flush multivector offsets storage: {e}"))
+            })?;
+            Ok(())
+        })
+    }
+
+    fn upsert_offset(
+        &mut self,
+        id: PointOffsetType,
+        offset: MultivectorOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> std::io::Result<()> {
+        ChunkedVectorStorage::insert(
+            &mut self.data,
+            id as VectorOffsetType,
+            &[offset],
+            hw_counter,
+        )
+        .map_err(std::io::Error::other)
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        ChunkedVectorStorage::files(&self.data)
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        ChunkedVectorStorage::immutable_files(&self.data)
     }
 }
 
@@ -153,6 +292,10 @@ where
         &self.quantized_storage
     }
 
+    pub fn offsets_storage(&self) -> &TMultivectorOffsetsStorage {
+        &self.offsets
+    }
+
     pub fn new(
         dim: usize,
         quantized_storage: QuantizedStorage,
@@ -165,33 +308,6 @@ where
             dim,
             multi_vector_config,
         }
-    }
-
-    pub fn save_multi(
-        &self,
-        data_path: &Path,
-        meta_path: &Path,
-        offsets_path: &Path,
-    ) -> OperationResult<()> {
-        self.offsets.save(offsets_path)?;
-        Ok(self.quantized_storage.save(data_path, meta_path)?)
-    }
-
-    pub fn load_multi(
-        data_path: &Path,
-        meta_path: &Path,
-        offsets_path: &Path,
-        vector_parameters: &VectorParameters,
-        multi_vector_config: &MultiVectorConfig,
-    ) -> OperationResult<Self> {
-        let offsets = TMultivectorOffsetsStorage::load(offsets_path)?;
-        let quantized_storage = QuantizedStorage::load(data_path, meta_path, vector_parameters)?;
-        Ok(Self {
-            dim: vector_parameters.dim,
-            quantized_storage,
-            offsets,
-            multi_vector_config: *multi_vector_config,
-        })
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors
@@ -271,21 +387,6 @@ where
     // TODO(colbert): refactor `EncodedVectors` to support multi vector storage after quantization migration
     type EncodedQuery = Vec<QuantizedStorage::EncodedQuery>;
 
-    fn save(&self, _data_path: &Path, _meta_path: &Path) -> std::io::Result<()> {
-        unreachable!("multivector quantized storage should be saved using `self.save_multi` method")
-    }
-
-    // TODO(colbert): refactor `EncodedVectors` to support multi vector storage after quantization migration
-    fn load(
-        _data_path: &Path,
-        _meta_path: &Path,
-        _vector_parameters: &quantization::VectorParameters,
-    ) -> std::io::Result<Self> {
-        unreachable!(
-            "multivector quantized storage should be loaded using `self.load_multi` method"
-        )
-    }
-
     fn is_on_disk(&self) -> bool {
         self.quantized_storage.is_on_disk()
     }
@@ -327,7 +428,10 @@ where
         self.quantized_storage.quantized_vector_size()
     }
 
-    fn encode_internal_vector(&self, id: u32) -> Option<Vec<QuantizedStorage::EncodedQuery>> {
+    fn encode_internal_vector(
+        &self,
+        id: PointOffsetType,
+    ) -> Option<Vec<QuantizedStorage::EncodedQuery>> {
         let offset = self.offsets.get_offset(id);
         let mut query = Vec::with_capacity(offset.count as usize);
         for i in 0..offset.count {
@@ -337,8 +441,9 @@ where
         Some(query)
     }
 
-    fn push_vector(
+    fn upsert_vector(
         &mut self,
+        id: PointOffsetType,
         vector: &[f32],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
@@ -347,17 +452,37 @@ where
             flattened_vectors: vector,
         };
 
-        let old_inner_vectors_count = self.quantized_storage.vectors_count();
-        for inner_vector in multi_vector.multi_vectors() {
-            self.quantized_storage
-                .push_vector(inner_vector, hw_counter)?;
-        }
-
-        let offset: MultivectorOffset = MultivectorOffset {
-            start: old_inner_vectors_count as PointOffsetType,
-            count: multi_vector.vectors_count() as PointOffsetType,
+        let inner_vectors_count = self.quantized_storage.vectors_count() as PointOffsetType;
+        let offset = if (id as usize) < self.offsets.len() {
+            let old_offset = self.offsets.get_offset(id);
+            if multi_vector.vectors_count() <= old_offset.count as usize {
+                // If the new vector has less or equal number of inner vectors, we can reuse the old offset
+                MultivectorOffset {
+                    start: old_offset.start,
+                    count: multi_vector.vectors_count() as PointOffsetType,
+                }
+            } else {
+                // Otherwise, we need allocate a new offset
+                MultivectorOffset {
+                    start: inner_vectors_count,
+                    count: multi_vector.vectors_count() as PointOffsetType,
+                }
+            }
+        } else {
+            MultivectorOffset {
+                start: inner_vectors_count,
+                count: multi_vector.vectors_count() as PointOffsetType,
+            }
         };
-        self.offsets.push_offset(offset, hw_counter)?;
+
+        for (i, inner_vector) in multi_vector.multi_vectors().enumerate() {
+            self.quantized_storage.upsert_vector(
+                offset.start + i as PointOffsetType,
+                inner_vector,
+                hw_counter,
+            )?;
+        }
+        self.offsets.upsert_offset(id, offset, hw_counter)?;
         Ok(())
     }
 
@@ -374,6 +499,29 @@ where
             Ok(())
         })
     }
+
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = self.quantized_storage.files();
+        files.extend(self.offsets.files());
+        files
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = self.quantized_storage.immutable_files();
+        files.extend(self.offsets.immutable_files());
+        files
+    }
+
+    type SupportsBytes = False;
+    fn score_bytes(
+        &self,
+        enabled: Self::SupportsBytes,
+        _: &Self::EncodedQuery,
+        _: &[u8],
+        _: &HardwareCounterCell,
+    ) -> f32 {
+        match enabled {}
+    }
 }
 
 impl<QuantizedStorage, TMultivectorOffsetsStorage> MultivectorOffsets
@@ -387,12 +535,19 @@ where
     }
 }
 
-pub(super) fn create_offsets_file_from_iter(
+fn create_offsets_file_from_iter(
     path: &Path,
     count: usize,
     iter: impl Iterator<Item = MultivectorOffset>,
 ) -> OperationResult<()> {
-    path.parent().map(std::fs::create_dir_all);
+    path.parent()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Path must have a parent directory",
+            )
+        })
+        .and_then(std::fs::create_dir_all)?;
 
     let offsets_file_size = count * std::mem::size_of::<MultivectorOffset>();
     let offsets_file = std::fs::OpenOptions::new()

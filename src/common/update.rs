@@ -4,19 +4,19 @@ use api::rest::models::InferenceUsage;
 use api::rest::*;
 use collection::collection::Collection;
 use collection::operations::conversions::write_ordering_from_proto;
-use collection::operations::payload_ops::*;
 use collection::operations::point_ops::*;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{CollectionResult, UpdateResult};
 use collection::operations::vector_ops::*;
 use collection::operations::verification::*;
-use collection::operations::*;
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
 use serde::{Deserialize, Serialize};
+use shard::operations::payload_ops::*;
+use shard::operations::*;
 use storage::content_manager::collection_meta_ops::*;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -245,24 +245,40 @@ pub async fn do_upsert_points(
         .check_strict_mode(&operation, &collection_name, None, &access)
         .await?;
 
-    let (operation, shard_key, usage) = match operation {
+    let (operation, shard_key, usage, update_filter) = match operation {
         PointInsertOperations::PointsBatch(batch) => {
-            let PointsBatch { batch, shard_key } = batch;
+            let PointsBatch {
+                batch,
+                shard_key,
+                update_filter,
+            } = batch;
             let (batch, usage) = convert_batch(batch, inference_token).await?;
             let operation = PointInsertOperationsInternal::PointsBatch(batch);
-            (operation, shard_key, usage)
+            (operation, shard_key, usage, update_filter)
         }
         PointInsertOperations::PointsList(list) => {
-            let PointsList { points, shard_key } = list;
+            let PointsList {
+                points,
+                shard_key,
+                update_filter,
+            } = list;
             let (list, usage) =
                 convert_point_struct(points, InferenceType::Update, inference_token).await?;
             let operation = PointInsertOperationsInternal::PointsList(list);
-            (operation, shard_key, usage)
+            (operation, shard_key, usage, update_filter)
         }
     };
 
-    let operation =
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation));
+    let operation = if let Some(condition) = update_filter {
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsConditional(
+            ConditionalInsertOperationInternal {
+                points_op: operation,
+                condition,
+            },
+        ))
+    } else {
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation))
+    };
 
     let result = update(
         toc,
@@ -331,13 +347,20 @@ pub async fn do_update_vectors(
         .check_strict_mode(&operation, &collection_name, None, &access)
         .await?;
 
-    let UpdateVectors { points, shard_key } = operation;
+    let UpdateVectors {
+        points,
+        shard_key,
+        update_filter,
+    } = operation;
 
     let (points, usage) =
         convert_point_vectors(points, InferenceType::Update, inference_token).await?;
 
     let operation = CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(
-        UpdateVectorsOp { points },
+        UpdateVectorsOp {
+            points,
+            update_filter,
+        },
     ));
 
     let result = update(

@@ -700,6 +700,7 @@ mod tests {
     use std::sync::Arc;
 
     use common::budget::ResourceBudget;
+    use common::save_on_disk::SaveOnDisk;
     use segment::types::Distance;
     use tempfile::{Builder, TempDir};
     use tokio::runtime::Handle;
@@ -710,7 +711,6 @@ mod tests {
     use crate::operations::types::VectorsConfig;
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::optimizers_builder::OptimizersConfig;
-    use crate::save_on_disk::SaveOnDisk;
     use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 
     #[tokio::test]
@@ -769,6 +769,7 @@ mod tests {
             quantization_config: None,
             strict_mode_config: None,
             uuid: None,
+            metadata: None,
         };
 
         let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();

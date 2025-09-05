@@ -11,9 +11,15 @@ jobs:
   build:
     # Run build on our self-hosted runner, we had trouble with shared runners
     runs-on: [self-hosted, linux, x64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # needed for cosign keyless signing with OIDC
     steps:
     - uses: actions/checkout@v5
     - uses: Swatinem/rust-cache@v2
+    - name: Install cosign
+      uses: sigstore/cosign-installer@v3.9.2
     - name: Get current tag
       id: vars
       run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
@@ -35,8 +41,8 @@ jobs:
         docker buildx create --use
 
         # Authenticate on registries
-        docker login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
-        docker login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
+        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username generall --password-stdin
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://docker.pkg.github.com -u qdrant --password-stdin
 
         # Build regular image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}"
@@ -47,10 +53,13 @@ jobs:
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
 
         # Pull, retag and push to GitHub packages
-        docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
+        docker buildx build --sbom=true --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
+        
+        DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
+        cosign sign --yes "${DOCKERHUB_TAG}@${DIGEST}"
 
         # Build unprivileged image for Docker Hub
         DOCKERHUB_TAG_UNPRIVILEGED="qdrant/qdrant:${{ github.ref_name }}-unprivileged"
@@ -61,16 +70,25 @@ jobs:
         GITHUB_TAG_UNPRIVILEGED="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-unprivileged"
 
         # Pull, retag and push to GitHub packages
-        docker buildx build --build-arg='USER_ID=1000' --platform='linux/amd64,linux/arm64' $TAGS_UNPRIVILEGED --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
+        docker buildx build --sbom=true --build-arg='USER_ID=1000' --platform='linux/amd64,linux/arm64' $TAGS_UNPRIVILEGED --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG_UNPRIVILEGED
         docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GITHUB_TAG_UNPRIVILEGED
         docker push $GITHUB_TAG_UNPRIVILEGED
+        
+        DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG_UNPRIVILEGED} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
+        cosign sign --yes "${DOCKERHUB_TAG_UNPRIVILEGED}@${DIGEST}"
 
   build-gpu:
     runs-on: [self-hosted, linux, x64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # needed for cosign keyless signing with OIDC
     steps:
     - uses: actions/checkout@v5
     - uses: Swatinem/rust-cache@v2
+    - name: Install cosign
+      uses: sigstore/cosign-installer@v3.9.2
     - name: Get current tag
       id: vars
       run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
@@ -92,8 +110,8 @@ jobs:
         docker buildx create --use
 
         # Authenticate on registries
-        docker login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
-        docker login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
+        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username generall --password-stdin
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://docker.pkg.github.com -u qdrant --password-stdin
 
         # Build GPU NVIDIA image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}-gpu-nvidia"
@@ -104,10 +122,13 @@ jobs:
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-gpu-nvidia"
 
         # Pull, retag and push to GitHub packages
-        docker buildx build --build-arg GPU=nvidia --platform='linux/amd64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
+        docker buildx build --sbom=true --build-arg GPU=nvidia --platform='linux/amd64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
+        
+        DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
+        cosign sign --yes "${DOCKERHUB_TAG}@${DIGEST}"
 
         # Build GPU AMD image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}-gpu-amd"
@@ -118,7 +139,10 @@ jobs:
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-gpu-amd"
 
         # Pull, retag and push to GitHub packages
-        docker buildx build --build-arg GPU=amd --platform='linux/amd64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
+        docker buildx build --sbom=true --build-arg GPU=amd --platform='linux/amd64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
+        
+        DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
+        cosign sign --yes "${DOCKERHUB_TAG}@${DIGEST}"

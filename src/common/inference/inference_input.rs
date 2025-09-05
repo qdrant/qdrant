@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
-use api::rest::{Document, Image, InferenceObject};
+use api::rest::{Bm25Config, Document, DocumentOptions, Image, InferenceObject};
 use serde::de::IntoDeserializer;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use storage::content_manager::errors::StorageError;
 
-use super::bm25::Bm25Config;
 use super::service::InferenceData;
 
 #[derive(Debug, Serialize, Clone)]
@@ -49,7 +48,7 @@ impl From<InferenceData> for InferenceInput {
                     data: Value::String(text),
                     data_type: InferenceDataType::Text,
                     model: model.to_string(),
-                    options: options.options,
+                    options: options.map(DocumentOptions::into_options),
                 }
             }
             InferenceData::Image(img) => {

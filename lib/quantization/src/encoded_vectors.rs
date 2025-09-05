@@ -1,6 +1,8 @@
-use std::path::Path;
+use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::TBool;
+use common::types::PointOffsetType;
 use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
 
@@ -29,14 +31,6 @@ pub struct VectorParameters {
 pub trait EncodedVectors: Sized {
     type EncodedQuery;
 
-    fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()>;
-
-    fn load(
-        data_path: &Path,
-        meta_path: &Path,
-        vector_parameters: &VectorParameters,
-    ) -> std::io::Result<Self>;
-
     fn is_on_disk(&self) -> bool;
 
     fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
@@ -44,21 +38,27 @@ pub trait EncodedVectors: Sized {
     fn score_point(
         &self,
         query: &Self::EncodedQuery,
-        i: u32,
+        i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32;
 
-    fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32;
+    fn score_internal(
+        &self,
+        i: PointOffsetType,
+        j: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32;
 
     /// Return size in bytes of a quantized vector
     fn quantized_vector_size(&self) -> usize;
 
     /// Construct a query from stored vector, so it can be used for scoring.
     /// Some implementations may not support this, in which case they should return `None`.
-    fn encode_internal_vector(&self, id: u32) -> Option<Self::EncodedQuery>;
+    fn encode_internal_vector(&self, id: PointOffsetType) -> Option<Self::EncodedQuery>;
 
-    fn push_vector(
+    fn upsert_vector(
         &mut self,
+        id: PointOffsetType,
         vector: &[f32],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()>;
@@ -66,11 +66,15 @@ pub trait EncodedVectors: Sized {
     fn vectors_count(&self) -> usize;
 
     fn flusher(&self) -> MmapFlusher;
-}
 
-pub trait EncodedVectorsBytes: EncodedVectors {
-    fn score_point_vs_bytes(
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf>;
+
+    type SupportsBytes: TBool;
+    fn score_bytes(
         &self,
+        enabled: Self::SupportsBytes,
         query: &Self::EncodedQuery,
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,

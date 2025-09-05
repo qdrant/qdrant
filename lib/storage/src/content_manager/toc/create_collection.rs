@@ -48,6 +48,7 @@ impl TableOfContent {
             sparse_vectors,
             strict_mode_config,
             uuid,
+            metadata,
         } = operation;
 
         {
@@ -218,6 +219,7 @@ impl TableOfContent {
             quantization_config,
             strict_mode_config,
             uuid,
+            metadata,
         };
 
         // No shard key mapping on creation, shard keys are set up after creating the collection

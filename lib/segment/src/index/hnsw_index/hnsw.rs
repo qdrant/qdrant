@@ -9,12 +9,13 @@ use atomic_refcell::{AtomicRef, AtomicRefCell};
 use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::cow::BoxCow;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::ext::BitSliceExt as _;
 use common::flags::FeatureFlags;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
-use itertools::{EitherOrBoth, Itertools as _};
+use itertools::EitherOrBoth;
 use log::{debug, trace};
 use memory::fadvise::clear_disk_cache;
 use parking_lot::Mutex;
@@ -43,13 +44,17 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::{get_gpu_groups_count, gpu_graph_builder::build_hnsw_on_gpu};
-use crate::index::hnsw_index::graph_layers::GraphLayers;
+use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersWithVectors};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
-use crate::index::hnsw_index::point_scorer::{BoxCow, FilteredScorer};
+use crate::index::hnsw_index::graph_links::StorageGraphLinksVectors;
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::vector_index_search_common::{
+    get_oversampled_top, is_quantized_search, postprocess_search_result,
+};
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::payload_storage::FilterContext;
@@ -58,11 +63,10 @@ use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{
     FieldCondition, Filter, HnswConfig, HnswGlobalConfig, QuantizationSearchParams, SearchParams,
-    default_quantization_ignore_value, default_quantization_oversampling_value,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::DiscoveryQuery;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer};
 
 const HNSW_USE_HEURISTIC: bool = true;
 const FINISH_MAIN_GRAPH_LOG_MESSAGE: &str = "Finish main graph in time";
@@ -610,11 +614,17 @@ impl HNSWIndex {
         // as it will be discarded anyway
         let is_on_disk = true;
 
-        let graph: GraphLayers = graph_layers_builder.into_graph_layers(
-            path,
-            LINK_COMPRESSION_FORMAT.with_param(quantized_vectors_ref.as_ref()),
-            is_on_disk,
-        )?;
+        let combined_provider =
+            quantized_vectors_ref
+                .as_ref()
+                .map(|quantized_vectors| StorageGraphLinksVectors {
+                    vector_storage: &vector_storage_ref,
+                    quantized_vectors,
+                });
+        let format_param = LINK_COMPRESSION_FORMAT.with_param(combined_provider.as_ref());
+
+        let graph: GraphLayers =
+            graph_layers_builder.into_graph_layers(path, format_param, is_on_disk)?;
 
         #[cfg(debug_assertions)]
         {
@@ -837,7 +847,7 @@ impl HNSWIndex {
                     block_point_id,
                     vector_storage,
                     quantized_vectors.as_ref(),
-                    Some(BoxCow::Boxed(block_condition_checker)),
+                    Some(BoxCow::Owned(block_condition_checker)),
                     id_tracker.deleted_point_bitslice(),
                     hardware_counter,
                 )
@@ -949,35 +959,90 @@ impl HNSWIndex {
             .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
 
         let hw_counter = vector_query_context.hardware_counter();
-        let filter_context = filter.map(|f| payload_index.filter_context(f, &hw_counter));
-        let points_scorer = Self::construct_search_scorer(
-            vector,
-            &vector_storage,
-            quantized_vectors.as_ref(),
-            deleted_points,
-            params,
-            vector_query_context.hardware_counter(),
-            filter_context,
-        )?;
-        let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
+        let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
-        let search_result = self.graph.search(
-            oversampled_top,
-            ef,
-            points_scorer,
-            custom_entry_points,
-            &is_stopped,
-        )?;
+        let search_with_vectors = || -> OperationResult<Option<Vec<ScoredPointOffset>>> {
+            if !self.graph.has_vectors() || !is_quantized_search(quantized_vectors.as_ref(), params)
+            {
+                return Ok(None);
+            }
+            let Some(quantized_vectors) = quantized_vectors.as_ref() else {
+                return Ok(None);
+            };
 
-        let res = self.postprocess_search_result(
-            search_result,
-            vector,
-            params,
-            top,
-            vector_query_context.hardware_counter(),
-        )?;
+            // Quantized vectors are "link vectors"
+            let link_scorer_filtered = FilteredScorer::new(
+                vector.to_owned(),
+                &vector_storage,
+                Some(quantized_vectors),
+                filter.map(|f| BoxCow::Owned(payload_index.filter_context(f, &hw_counter))),
+                deleted_points,
+                vector_query_context.hardware_counter(),
+            )?;
+            let Some(link_scorer_filtered_bytes) = link_scorer_filtered.scorer_bytes() else {
+                return Ok(None);
+            };
 
-        Ok(res)
+            // Full vectors are "base vectors"
+            let base_scorer = new_raw_scorer(
+                vector.to_owned(),
+                &vector_storage,
+                vector_query_context.hardware_counter(),
+            )?;
+            let Some(base_scorer_bytes) = base_scorer.scorer_bytes() else {
+                return Ok(None);
+            };
+
+            Ok(Some(self.graph.search_with_vectors(
+                top,
+                std::cmp::max(ef, oversampled_top),
+                &link_scorer_filtered,
+                &link_scorer_filtered_bytes,
+                base_scorer_bytes,
+                custom_entry_points,
+                &vector_query_context.is_stopped(),
+            )?))
+        };
+
+        let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
+            let filter_context = filter.map(|f| payload_index.filter_context(f, &hw_counter));
+            let points_scorer = Self::construct_search_scorer(
+                vector,
+                &vector_storage,
+                quantized_vectors.as_ref(),
+                deleted_points,
+                params,
+                vector_query_context.hardware_counter(),
+                filter_context,
+            )?;
+
+            let search_result = self.graph.search(
+                oversampled_top,
+                ef,
+                points_scorer,
+                custom_entry_points,
+                &is_stopped,
+            )?;
+
+            postprocess_search_result(
+                search_result,
+                id_tracker.deleted_point_bitslice(),
+                &vector_storage,
+                quantized_vectors.as_ref(),
+                vector,
+                params,
+                top,
+                vector_query_context.hardware_counter(),
+            )
+        };
+
+        // Try to use graph with vectors first.
+        if let Some(search_result) = search_with_vectors()? {
+            Ok(search_result)
+        } else {
+            // Graph with vectors is not available, fallback to regular graph search.
+            regular_search()
+        }
     }
 
     fn search_vectors_with_graph(
@@ -1032,12 +1097,15 @@ impl HNSWIndex {
             vector_query_context.hardware_counter(),
             None,
         )?;
-        let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
+        let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
         let search_result = points_scorer.peek_top_iter(points, oversampled_top, &is_stopped)?;
 
-        let res = self.postprocess_search_result(
+        let res = postprocess_search_result(
             search_result,
+            id_tracker.deleted_point_bitslice(),
+            &vector_storage,
+            quantized_vectors.as_ref(),
             vector,
             params,
             top,
@@ -1132,17 +1200,6 @@ impl HNSWIndex {
         )
     }
 
-    fn is_quantized_search(
-        quantized_storage: Option<&QuantizedVectors>,
-        params: Option<&SearchParams>,
-    ) -> bool {
-        let ignore_quantization = params
-            .and_then(|p| p.quantization)
-            .map(|q| q.ignore)
-            .unwrap_or(default_quantization_ignore_value());
-        quantized_storage.is_some() && !ignore_quantization
-    }
-
     fn construct_search_scorer<'a>(
         vector: &QueryVector,
         vector_storage: &'a VectorStorageEnum,
@@ -1152,79 +1209,15 @@ impl HNSWIndex {
         hardware_counter: HardwareCounterCell,
         filter_context: Option<Box<dyn FilterContext + 'a>>,
     ) -> OperationResult<FilteredScorer<'a>> {
-        let quantization_enabled = Self::is_quantized_search(quantized_storage, params);
+        let quantization_enabled = is_quantized_search(quantized_storage, params);
         FilteredScorer::new(
             vector.to_owned(),
             vector_storage,
             quantization_enabled.then_some(quantized_storage).flatten(),
-            filter_context.map(BoxCow::Boxed),
+            filter_context.map(BoxCow::Owned),
             deleted_points,
             hardware_counter,
         )
-    }
-
-    fn get_oversampled_top(
-        quantized_storage: Option<&QuantizedVectors>,
-        params: Option<&SearchParams>,
-        top: usize,
-    ) -> usize {
-        let quantization_enabled = Self::is_quantized_search(quantized_storage, params);
-
-        let oversampling_value = params
-            .and_then(|p| p.quantization)
-            .map(|q| q.oversampling)
-            .unwrap_or(default_quantization_oversampling_value());
-
-        match oversampling_value {
-            Some(oversampling) if quantization_enabled && oversampling > 1.0 => {
-                (oversampling * top as f64) as usize
-            }
-            _ => top,
-        }
-    }
-
-    fn postprocess_search_result(
-        &self,
-        mut search_result: Vec<ScoredPointOffset>,
-        vector: &QueryVector,
-        params: Option<&SearchParams>,
-        top: usize,
-        hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let id_tracker = self.id_tracker.borrow();
-        let vector_storage = self.vector_storage.borrow();
-        let quantized_vectors = self.quantized_vectors.borrow();
-
-        let quantization_enabled = Self::is_quantized_search(quantized_vectors.as_ref(), params);
-
-        let default_rescoring = quantized_vectors
-            .as_ref()
-            .map(|q| q.default_rescoring())
-            .unwrap_or(false);
-        let rescore = quantization_enabled
-            && params
-                .and_then(|p| p.quantization)
-                .and_then(|q| q.rescore)
-                .unwrap_or(default_rescoring);
-
-        if rescore {
-            let mut scorer = FilteredScorer::new(
-                vector.to_owned(),
-                &vector_storage,
-                None,
-                None,
-                id_tracker.deleted_point_bitslice(),
-                hardware_counter,
-            )?;
-
-            search_result = scorer
-                .score_points(&mut search_result.iter().map(|x| x.idx).collect_vec(), 0)
-                .collect();
-            search_result.sort_unstable();
-            search_result.reverse();
-        }
-        search_result.truncate(top);
-        Ok(search_result)
     }
 
     /// Read underlying data from disk into disk cache.

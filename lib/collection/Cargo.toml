@@ -36,14 +36,12 @@ ahash = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
-serde_cbor = { workspace = true }
 serde_json = { workspace = true }
 rmp-serde = "~1.3"
 wal = { workspace = true }
 ordered-float = { workspace = true }
 hashring = "0.3.6"
-tinyvec = { version = "1.9.0", features = ["alloc", "latest_stable_rust"] }
-bitvec = { workspace = true }
+tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
 lazy_static = "1.5.0"
 siphasher = "1.0.1"
 smallvec = { workspace = true }
@@ -55,7 +53,7 @@ atomicwrites = { workspace = true}
 log = { workspace = true }
 env_logger = "0.11"
 merge = { workspace = true }
-async-trait = "0.1.88"
+async-trait = "0.1.89"
 arc-swap = "1.7.1"
 tonic = { workspace = true }
 uuid = { workspace = true }
@@ -64,13 +62,14 @@ validator = { workspace = true }
 http = { workspace = true }
 actix-web-validator = "7.0.0"
 actix-web = { version = "4.11.0" }
-actix-files = "0.6.6"
+actix-files = "0.6.7"
 
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
 io = { path = "../common/io" }
 issues = { path = "../common/issues" }
 segment = { path = "../segment", default-features = false }
+shard = { path = "../shard" }
 sparse = { path = "../sparse" }
 api = { path = "../api" }
 
@@ -78,7 +77,6 @@ itertools = { workspace = true }
 indicatif = { workspace = true }
 chrono = { workspace = true }
 schemars = { workspace = true }
-tar = { workspace = true }
 fs_extra = "1.3.0"
 semver = { workspace = true }
 tempfile = { workspace = true }

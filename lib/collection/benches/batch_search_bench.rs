@@ -9,11 +9,11 @@ use collection::operations::point_ops::{
 use collection::operations::types::CoreSearchRequestBatch;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::save_on_disk::SaveOnDisk;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::ShardOperation;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::save_on_disk::SaveOnDisk;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rng;
 use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
@@ -86,6 +86,7 @@ fn batch_search_bench(c: &mut Criterion) {
         quantization_config: Default::default(),
         strict_mode_config: Default::default(),
         uuid: None,
+        metadata: None,
     };
 
     let optimizers_config = collection_config.optimizer_config.clone();

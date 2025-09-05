@@ -1,8 +1,10 @@
 use std::alloc::Layout;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::typelevel::True;
+use common::types::PointOffsetType;
 use io::file_operations::atomic_save_json;
 use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
@@ -10,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{
-    DistanceType, EncodedVectors, EncodedVectorsBytes, VectorParameters, validate_vector_parameters,
+    DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
 
@@ -19,6 +21,7 @@ pub const ALIGNMENT: usize = 16;
 pub struct EncodedVectorsU8<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
+    metadata_path: Option<PathBuf>,
 }
 
 pub struct EncodedQueryU8 {
@@ -46,22 +49,44 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         vector_parameters: &VectorParameters,
         count: usize,
         quantile: Option<f32>,
+        meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
         let actual_dim = Self::get_actual_dim(vector_parameters);
 
         if count == 0 {
+            let metadata = Metadata {
+                actual_dim,
+                alpha: 0.0,
+                offset: 0.0,
+                multiplier: 0.0,
+                vector_parameters: vector_parameters.clone(),
+            };
+            if let Some(meta_path) = meta_path {
+                meta_path
+                    .parent()
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "Path must have a parent directory",
+                        )
+                    })
+                    .and_then(std::fs::create_dir_all)
+                    .map_err(|e| {
+                        EncodingError::EncodingError(format!(
+                            "Failed to create metadata directory: {e}",
+                        ))
+                    })?;
+                atomic_save_json(meta_path, &metadata).map_err(|e| {
+                    EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
+                })?;
+            }
             return Ok(EncodedVectorsU8 {
                 encoded_vectors: storage_builder.build().map_err(|e| {
                     EncodingError::EncodingError(format!("Failed to build storage: {e}",))
                 })?,
-                metadata: Metadata {
-                    actual_dim,
-                    alpha: 0.0,
-                    offset: 0.0,
-                    multiplier: 0.0,
-                    vector_parameters: vector_parameters.clone(),
-                },
+                metadata,
+                metadata_path: meta_path.map(PathBuf::from),
             });
         }
 
@@ -123,7 +148,11 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             };
             encoded_vector[0..std::mem::size_of::<f32>()]
                 .copy_from_slice(&vector_offset.to_ne_bytes());
-            storage_builder.push_vector_data(&encoded_vector);
+            storage_builder
+                .push_vector_data(&encoded_vector)
+                .map_err(|e| {
+                    EncodingError::EncodingError(format!("Failed to push encoded vector: {e}",))
+                })?;
         }
         let multiplier = match vector_parameters.distance_type {
             DistanceType::Dot => alpha * alpha,
@@ -136,18 +165,53 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             multiplier
         };
 
+        let encoded_vectors = storage_builder
+            .build()
+            .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
+
+        let metadata = Metadata {
+            actual_dim,
+            alpha,
+            offset,
+            multiplier,
+            vector_parameters: vector_parameters.clone(),
+        };
+        if let Some(meta_path) = meta_path {
+            meta_path
+                .parent()
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Path must have a parent directory",
+                    )
+                })
+                .and_then(std::fs::create_dir_all)
+                .map_err(|e| {
+                    EncodingError::EncodingError(format!(
+                        "Failed to create metadata directory: {e}",
+                    ))
+                })?;
+            atomic_save_json(meta_path, &metadata).map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
+            })?;
+        }
+
         Ok(EncodedVectorsU8 {
-            encoded_vectors: storage_builder.build().map_err(|e| {
-                EncodingError::EncodingError(format!("Failed to build storage: {e}",))
-            })?,
-            metadata: Metadata {
-                actual_dim,
-                alpha,
-                offset,
-                multiplier,
-                vector_parameters: vector_parameters.clone(),
-            },
+            encoded_vectors,
+            metadata,
+            metadata_path: meta_path.map(PathBuf::from),
         })
+    }
+
+    pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
+        let contents = std::fs::read_to_string(meta_path)?;
+        let metadata: Metadata = serde_json::from_str(&contents)?;
+        let result = Self {
+            encoded_vectors,
+            metadata,
+            metadata_path: Some(meta_path.to_path_buf()),
+        };
+        Ok(result)
     }
 
     pub fn score_point_simple(&self, query: &EncodedQueryU8, i: u32) -> f32 {
@@ -258,24 +322,20 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 
     #[inline]
-    fn get_vec_ptr(&self, i: u32) -> (f32, *const u8) {
-        let vector_data_size = self.quantized_vector_size();
-        let data = self
-            .encoded_vectors
-            .get_vector_data(i as usize, vector_data_size);
+    fn get_vec_ptr(&self, i: PointOffsetType) -> (f32, *const u8) {
+        let data = self.encoded_vectors.get_vector_data(i);
         Self::parse_vec_data(data)
     }
 
-    pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
-        self.encoded_vectors
-            .get_vector_data(i as usize, self.quantized_vector_size())
+    pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
+        self.encoded_vectors.get_vector_data(i)
     }
 
     pub fn layout(&self) -> Layout {
         Layout::from_size_align(self.quantized_vector_size(), align_of::<u8>()).unwrap()
     }
 
-    pub fn get_quantized_vector_offset_and_code(&self, i: u32) -> (f32, &[u8]) {
+    pub fn get_quantized_vector_offset_and_code(&self, i: PointOffsetType) -> (f32, &[u8]) {
         let (offset, v_ptr) = self.get_vec_ptr(i);
         let vector_data_size = self.metadata.actual_dim;
         let code = unsafe { std::slice::from_raw_parts(v_ptr, vector_data_size) };
@@ -307,31 +367,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     type EncodedQuery = EncodedQueryU8;
-
-    fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
-        meta_path.parent().map(std::fs::create_dir_all);
-        atomic_save_json(meta_path, &self.metadata)?;
-
-        data_path.parent().map(std::fs::create_dir_all);
-        self.encoded_vectors.save_to_file(data_path)?;
-        Ok(())
-    }
-
-    fn load(
-        data_path: &Path,
-        meta_path: &Path,
-        vector_parameters: &VectorParameters,
-    ) -> std::io::Result<Self> {
-        let contents = std::fs::read_to_string(meta_path)?;
-        let metadata: Metadata = serde_json::from_str(&contents)?;
-        let quantized_vector_size = Self::get_quantized_vector_size(vector_parameters);
-        let encoded_vectors = TStorage::from_file(data_path, quantized_vector_size)?;
-        let result = Self {
-            encoded_vectors,
-            metadata,
-        };
-        Ok(result)
-    }
 
     fn is_on_disk(&self) -> bool {
         self.encoded_vectors.is_on_disk()
@@ -381,16 +416,22 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         }
     }
 
-    fn score_point(&self, query: &EncodedQueryU8, i: u32, hw_counter: &HardwareCounterCell) -> f32 {
-        let vector_data_size = self.metadata.actual_dim + std::mem::size_of::<f32>();
-        let bytes = self
-            .encoded_vectors
-            .get_vector_data(i as usize, vector_data_size);
-
-        self.score_point_vs_bytes(query, bytes, hw_counter)
+    fn score_point(
+        &self,
+        query: &EncodedQueryU8,
+        i: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        let bytes = self.encoded_vectors.get_vector_data(i);
+        self.score_bytes(True, query, bytes, hw_counter)
     }
 
-    fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
+    fn score_internal(
+        &self,
+        i: PointOffsetType,
+        j: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         hw_counter
             .cpu_counter()
             .incr_delta(self.metadata.vector_parameters.dim);
@@ -473,7 +514,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         self.metadata.actual_dim + std::mem::size_of::<f32>()
     }
 
-    fn encode_internal_vector(&self, id: u32) -> Option<EncodedQueryU8> {
+    fn encode_internal_vector(&self, id: PointOffsetType) -> Option<EncodedQueryU8> {
         let offset_difference = match self.metadata.vector_parameters.distance_type {
             DistanceType::Dot => {
                 self.metadata.actual_dim as f32 * self.metadata.offset * self.metadata.offset
@@ -498,33 +539,47 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         })
     }
 
-    fn push_vector(
+    fn upsert_vector(
         &mut self,
+        _id: PointOffsetType,
         _vector: &[f32],
         _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        debug_assert!(false, "SQ does not support push_vector",);
+        debug_assert!(false, "SQ does not support upsert_vector",);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            "SQ does not support push_vector",
+            "SQ does not support upsert_vector",
         ))
     }
 
     fn vectors_count(&self) -> usize {
-        self.encoded_vectors
-            .vectors_count(Self::get_quantized_vector_size(
-                &self.metadata.vector_parameters,
-            ))
+        self.encoded_vectors.vectors_count()
     }
 
     fn flusher(&self) -> MmapFlusher {
         self.encoded_vectors.flusher()
     }
-}
 
-impl<TStorage: EncodedStorage> EncodedVectorsBytes for EncodedVectorsU8<TStorage> {
-    fn score_point_vs_bytes(
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = self.encoded_vectors.files();
+        if let Some(meta_path) = &self.metadata_path {
+            files.push(meta_path.clone());
+        }
+        files
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = self.encoded_vectors.immutable_files();
+        if let Some(meta_path) = &self.metadata_path {
+            files.push(meta_path.clone());
+        }
+        files
+    }
+
+    type SupportsBytes = True;
+    fn score_bytes(
         &self,
+        _: Self::SupportsBytes,
         query: &Self::EncodedQuery,
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,

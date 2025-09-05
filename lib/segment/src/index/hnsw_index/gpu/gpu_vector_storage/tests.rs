@@ -28,7 +28,8 @@ use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
     open_simple_multi_dense_vector_storage_byte, open_simple_multi_dense_vector_storage_full,
     open_simple_multi_dense_vector_storage_half,
 };
-use crate::vector_storage::{RawScorer, new_raw_scorer_for_test};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsStorageType;
+use crate::vector_storage::{DEFAULT_STOPPED, RawScorer, new_raw_scorer_for_test};
 
 #[derive(Debug, Clone, Copy)]
 enum TestElementType {
@@ -732,8 +733,15 @@ fn test_gpu_vector_storage_impl(
     let storage = create_vector_storage(dir.path(), storage_type, num_vectors, dim, distance);
 
     let quantized_vectors = quantization_config.as_ref().map(|quantization_config| {
-        QuantizedVectors::create(&storage, quantization_config, dir.path(), 1, &false.into())
-            .unwrap()
+        QuantizedVectors::create(
+            &storage,
+            quantization_config,
+            QuantizedVectorsStorageType::Immutable,
+            dir.path(),
+            1,
+            &DEFAULT_STOPPED,
+        )
+        .unwrap()
     });
 
     let instance = gpu::GPU_TEST_INSTANCE.clone();
@@ -750,7 +758,7 @@ fn test_gpu_vector_storage_impl(
         &storage,
         quantized_vectors.as_ref(),
         force_half_precision,
-        &false.into(),
+        &DEFAULT_STOPPED,
     )
     .unwrap();
 
@@ -846,7 +854,7 @@ fn test_gpu_vector_storage_impl(
 
     let gpu_scores = staging_buffer.download_vec(0, num_vectors).unwrap();
 
-    let query = QueryVector::Nearest(storage.get_vector(test_point_id).to_owned());
+    let query = QueryVector::Nearest(storage.get_vector::<Random>(test_point_id).to_owned());
 
     let hardware_counter = HardwareCounterCell::new();
     let scorer: Box<dyn RawScorer> = if let Some(quantized_vectors) = quantized_vectors.as_ref() {

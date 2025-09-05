@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::vector_storage::AccessPattern;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::common::{CHUNK_SIZE, PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient_vectors;
@@ -35,8 +36,6 @@ struct ChunkedMmapConfig {
     chunk_size_bytes: usize,
     chunk_size_vectors: usize,
     dim: usize,
-    #[serde(default)]
-    mlock: Option<bool>,
     #[serde(default)]
     populate: Option<bool>,
 }
@@ -76,7 +75,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     fn ensure_config(
         directory: &Path,
         dim: usize,
-        mlock: Option<bool>,
         populate: Option<bool>,
     ) -> OperationResult<ChunkedMmapConfig> {
         let config_file = Self::config_file(directory);
@@ -92,10 +90,10 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
                     )))
                 }
             }
-            Ok(None) => Self::create_config(&config_file, dim, mlock, populate),
+            Ok(None) => Self::create_config(&config_file, dim, populate),
             Err(e) => {
                 log::error!("Failed to deserialize config file {:?}: {e}", &config_file);
-                Self::create_config(&config_file, dim, mlock, populate)
+                Self::create_config(&config_file, dim, populate)
             }
         }
     }
@@ -113,7 +111,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     fn create_config(
         config_file: &Path,
         dim: usize,
-        mlock: Option<bool>,
         populate: Option<bool>,
     ) -> OperationResult<ChunkedMmapConfig> {
         let chunk_size_bytes = CHUNK_SIZE;
@@ -125,7 +122,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             chunk_size_bytes: corrected_chunk_size_bytes,
             chunk_size_vectors,
             dim,
-            mlock,
             populate,
         };
         atomic_save_json(config_file, &config)?;
@@ -135,7 +131,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     pub fn open(
         directory: &Path,
         dim: usize,
-        mlock: Option<bool>,
         advice: AdviceSetting,
         populate: Option<bool>,
     ) -> OperationResult<Self> {
@@ -143,13 +138,8 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         let status_mmap = Self::ensure_status_file(directory)?;
         let status = unsafe { MmapType::from(status_mmap) };
 
-        let config = Self::ensure_config(directory, dim, mlock, populate)?;
-        let chunks = read_mmaps(
-            directory,
-            config.mlock.unwrap_or_default(),
-            populate.unwrap_or_default(),
-            advice,
-        )?;
+        let config = Self::ensure_config(directory, dim, populate)?;
+        let chunks = read_mmaps(directory, populate.unwrap_or_default(), advice)?;
         let vectors = Self {
             status,
             config,
@@ -188,7 +178,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             &self.directory,
             self.chunks.len(),
             self.config.chunk_size_bytes,
-            self.config.mlock.unwrap_or_default(),
         )?;
 
         self.chunks.push(chunk);
@@ -358,12 +347,8 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     #[inline]
-    fn get(&self, key: VectorOffsetType) -> Option<&[T]> {
-        ChunkedMmapVectors::get(self, key, false)
-    }
-
-    fn get_sequential(&self, key: VectorOffsetType) -> Option<&[T]> {
-        ChunkedMmapVectors::get(self, key, true)
+    fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<&[T]> {
+        ChunkedMmapVectors::get(self, key, P::IS_SEQUENTIAL)
     }
 
     #[inline]
@@ -412,13 +397,8 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     #[inline]
-    fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
-        ChunkedMmapVectors::get_many(self, key, count, false)
-    }
-
-    #[inline]
-    fn get_many_sequential(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
-        ChunkedMmapVectors::get_many(self, key, count, true)
+    fn get_many<P: AccessPattern>(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
+        ChunkedMmapVectors::get_many(self, key, count, P::IS_SEQUENTIAL)
     }
 
     #[inline]
@@ -486,14 +466,9 @@ mod tests {
             .collect();
 
         {
-            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> = ChunkedMmapVectors::open(
-                dir.path(),
-                dim,
-                Some(false),
-                AdviceSetting::Global,
-                Some(true),
-            )
-            .unwrap();
+            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> =
+                ChunkedMmapVectors::open(dir.path(), dim, AdviceSetting::Global, Some(true))
+                    .unwrap();
 
             for vec in &vectors {
                 chunked_mmap.push(vec, &hw_counter).unwrap();

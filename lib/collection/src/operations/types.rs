@@ -8,14 +8,14 @@ use std::time::{Duration, SystemTimeError};
 
 use api::grpc::transport_channel_pool::RequestError;
 use api::rest::{
-    BaseGroupRequest, LookupLocation, OrderByInterface, RecommendStrategy, Record,
+    BaseGroupRequest, LookupLocation, OrderByInterface, RecommendStrategy,
     SearchGroupsRequestInternal, SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
-use common::defaults;
 use common::ext::OptionExt;
 use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
+use common::{defaults, save_on_disk};
 use io::file_operations::FileStorageError;
 use issues::IssueRecord;
 use merge::Merge;
@@ -25,7 +25,7 @@ use segment::common::operation_error::{CancelledError, OperationError};
 use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::{OrderBy, OrderValue};
 use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct, QueryVector, VectorRef,
+    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct, VectorRef,
     VectorStructInternal,
 };
 use segment::types::{
@@ -38,6 +38,8 @@ use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::{Error as JsonError, Map, Value};
+pub use shard::search::CoreSearchRequest;
+use shard::wal::WalError;
 use sparse::common::sparse_vector::SparseVector;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
@@ -55,11 +57,9 @@ use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 use crate::optimizers_builder::OptimizersConfig;
-use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::transfer::ShardTransferMethod;
-use crate::wal::WalError;
 
 /// Current state of the collection.
 /// `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered
@@ -166,30 +166,6 @@ impl TryFrom<RecordInternal> for PointStructPersisted {
     }
 }
 
-impl TryFrom<Record> for PointStructPersisted {
-    type Error = String;
-
-    fn try_from(record: Record) -> Result<Self, Self::Error> {
-        let Record {
-            id,
-            payload,
-            vector,
-            shard_key: _,
-            order_value: _,
-        } = record;
-
-        if vector.is_none() {
-            return Err("Vector is empty".to_string());
-        }
-
-        Ok(Self {
-            id,
-            payload,
-            vector: VectorStructPersisted::from(vector.unwrap()),
-        })
-    }
-}
-
 // Version of the collection config we can present to the user
 /// Information about the collection configuration
 #[derive(Debug, Serialize, JsonSchema)]
@@ -202,6 +178,11 @@ pub struct CollectionConfig {
     pub quantization_config: Option<QuantizationConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strict_mode_config: Option<StrictModeConfigOutput>,
+    /// Arbitrary JSON metadata for the collection
+    /// This can be used to store application-specific information
+    /// such as creation time, migration data, inference model info, etc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Payload>,
 }
 
 impl From<CollectionConfigInternal> for CollectionConfig {
@@ -215,6 +196,7 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             strict_mode_config,
             // Internal UUID to identify unique collections in consensus snapshots
             uuid: _,
+            metadata,
         } = config;
 
         CollectionConfig {
@@ -224,6 +206,7 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             wal_config: Some(wal_config),
             quantization_config,
             strict_mode_config: strict_mode_config.map(StrictModeConfigOutput::from),
+            metadata,
         }
     }
 }
@@ -598,27 +581,6 @@ pub struct SearchRequest {
 pub struct SearchRequestBatch {
     #[validate(nested)]
     pub searches: Vec<SearchRequest>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CoreSearchRequest {
-    /// Every kind of query that can be performed on segment level
-    pub query: QueryEnum,
-    /// Look only for points which satisfies this conditions
-    pub filter: Option<Filter>,
-    /// Additional search params
-    pub params: Option<SearchParams>,
-    /// Max number of result to return
-    pub limit: usize,
-    /// Offset of the first result to return.
-    /// May be used to paginate results.
-    /// Note: large offset values may cause performance issues.
-    pub offset: usize,
-    /// Select which payload to return with the response. Default is false.
-    pub with_payload: Option<WithPayloadInterface>,
-    /// Options for specifying which vectors to include into response. Default is false.
-    pub with_vector: Option<WithVector>,
-    pub score_threshold: Option<ScoreType>,
 }
 
 #[derive(Debug, Clone)]
@@ -2031,31 +1993,6 @@ pub enum NodeType {
     Listener,
 }
 
-impl From<SearchRequestInternal> for CoreSearchRequest {
-    fn from(request: SearchRequestInternal) -> Self {
-        let SearchRequestInternal {
-            vector,
-            filter,
-            score_threshold,
-            limit,
-            offset,
-            params,
-            with_vector,
-            with_payload,
-        } = request;
-        Self {
-            query: QueryEnum::Nearest(NamedQuery::from(NamedVectorStruct::from(vector))),
-            filter,
-            params,
-            limit,
-            offset: offset.unwrap_or_default(),
-            with_payload,
-            with_vector,
-            score_threshold,
-        }
-    }
-}
-
 impl From<SearchRequestInternal> for ShardQueryRequest {
     fn from(value: SearchRequestInternal) -> Self {
         let SearchRequestInternal {
@@ -2108,18 +2045,6 @@ impl From<CoreSearchRequest> for ShardQueryRequest {
             params,
             with_vector: with_vector.unwrap_or_default(),
             with_payload: with_payload.unwrap_or_default(),
-        }
-    }
-}
-
-impl From<QueryEnum> for QueryVector {
-    fn from(query: QueryEnum) -> Self {
-        match query {
-            QueryEnum::Nearest(named) => QueryVector::Nearest(named.query),
-            QueryEnum::RecommendBestScore(named) => QueryVector::RecommendBestScore(named.query),
-            QueryEnum::RecommendSumScores(named) => QueryVector::RecommendSumScores(named.query),
-            QueryEnum::Discover(named) => QueryVector::Discovery(named.query),
-            QueryEnum::Context(named) => QueryVector::Context(named.query),
         }
     }
 }

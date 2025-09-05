@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use collection::config::ShardingMethod;
+use collection::collection_state::State;
+use collection::config::{CollectionConfigInternal, ShardingMethod};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::PeerId;
 use storage::content_manager::collection_meta_ops::{
@@ -37,34 +38,48 @@ pub async fn handle_existing_collections(
             break;
         };
 
-        let collection_state = collection_obj.state().await;
-        let shards_number = collection_state.config.params.shard_number.get();
-        let sharding_method = collection_state.config.params.sharding_method;
+        let State {
+            config,
+            shards,
+            resharding: _, // resharding can't exist outside of consensus
+            transfers: _,  // transfers can't exist outside of consensus
+            shards_key_mapping,
+            payload_index_schema: _, // payload index schema doesn't require special handling in this case
+        } = collection_obj.state().await;
+
+        let CollectionConfigInternal {
+            params,
+            hnsw_config,
+            optimizer_config,
+            wal_config,
+            quantization_config,
+            strict_mode_config,
+            uuid,
+            metadata,
+        } = config;
+
+        let shards_number = params.shard_number.get();
+        let sharding_method = params.sharding_method;
 
         let mut collection_create_operation = CreateCollectionOperation::new(
             collection_name.to_string(),
             CreateCollection {
-                vectors: collection_state.config.params.vectors,
-                sparse_vectors: collection_state.config.params.sparse_vectors,
+                vectors: params.vectors,
+                sparse_vectors: params.sparse_vectors,
                 shard_number: Some(shards_number),
                 sharding_method,
-                replication_factor: Some(collection_state.config.params.replication_factor.get()),
-                write_consistency_factor: Some(
-                    collection_state
-                        .config
-                        .params
-                        .write_consistency_factor
-                        .get(),
-                ),
-                on_disk_payload: Some(collection_state.config.params.on_disk_payload),
-                hnsw_config: Some(collection_state.config.hnsw_config.into()),
-                wal_config: Some(collection_state.config.wal_config.into()),
-                optimizers_config: Some(collection_state.config.optimizer_config.into()),
-                quantization_config: collection_state.config.quantization_config,
-                strict_mode_config: collection_state.config.strict_mode_config,
-                uuid: collection_state.config.uuid,
+                replication_factor: Some(params.replication_factor.get()),
+                write_consistency_factor: Some(params.write_consistency_factor.get()),
+                on_disk_payload: Some(params.on_disk_payload),
+                hnsw_config: Some(hnsw_config.into()),
+                wal_config: Some(wal_config.into()),
+                optimizers_config: Some(optimizer_config.into()),
+                quantization_config,
+                strict_mode_config,
+                uuid,
                 #[expect(deprecated)]
                 init_from: None,
+                metadata,
             },
         )
         .expect("Failed to create collection operation");
@@ -74,8 +89,7 @@ pub async fn handle_existing_collections(
         match sharding_method.unwrap_or_default() {
             ShardingMethod::Auto => {
                 collection_create_operation.set_distribution(ShardDistributionProposal {
-                    distribution: collection_state
-                        .shards
+                    distribution: shards
                         .iter()
                         .filter_map(|(shard_id, shard_info)| {
                             if shard_info.replicas.contains_key(&this_peer_id) {
@@ -98,11 +112,11 @@ pub async fn handle_existing_collections(
                     collection_create_operation,
                 ));
 
-                for (shard_key, shards) in collection_state.shards_key_mapping.iter() {
+                for (shard_key, shard_ids) in shards_key_mapping.iter() {
                     let mut placement = Vec::new();
 
-                    for shard_id in shards {
-                        let shard_info = collection_state.shards.get(shard_id).unwrap();
+                    for shard_id in shard_ids {
+                        let shard_info = shards.get(shard_id).unwrap();
                         placement.push(shard_info.replicas.keys().copied().collect());
                     }
 
@@ -123,7 +137,7 @@ pub async fn handle_existing_collections(
                 .await;
         }
 
-        for (shard_id, shard_info) in collection_state.shards {
+        for (shard_id, shard_info) in shards {
             if shard_info.replicas.contains_key(&this_peer_id) {
                 let _res = dispatcher_arc
                     .submit_collection_meta_op(

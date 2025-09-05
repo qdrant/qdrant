@@ -1,5 +1,25 @@
 name: Build the Docker image
-description: "Build and push a branch image to ghcr"
+description: "Build and push a branch image to container registries"
+
+inputs:
+  ghcr-password:
+    description: 'Password for GitHub Container Registry'
+    required: false
+  dockerhub-password:
+    description: 'Password for Docker Hub'
+    required: false
+  push-to-ghcr:
+    description: 'Push to GitHub Container Registry'
+    required: true
+    default: 'false'
+  push-to-dockerhub:
+    description: 'Push to Docker Hub'
+    required: true
+    default: 'false'
+  build-gpu:
+    description: 'Build GPU images instead of regular images'
+    required: false
+    default: 'false'
 
 runs:
   using: "composite"
@@ -22,31 +42,66 @@ runs:
 
         branch_tmp=$(git rev-parse --abbrev-ref HEAD)
         branch=${branch_tmp//\//-} # replace all / with -
-        echo "Building branch $branch"
+        echo "Building branch ${branch}"
 
         # Create build container
         docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
         docker buildx create --use
 
         # Authenticate on registries
-        docker login https://ghcr.io -u qdrant --password "${DOCKER_PASSWORD}"
+        if [ "${{ inputs.push-to-dockerhub }}" = "true" ]; then
+          echo "${{ inputs.dockerhub-password }}" | docker login -u generall --password-stdin
+        fi
+        if [ "${{ inputs.push-to-ghcr }}" = "true" ]; then
+          echo "${{ inputs.ghcr-password }}" | docker login ghcr.io -u qdrant --password-stdin
+        fi
 
-        ARCH=${ARCH:-regular}
-        # use full git commit sha
         GIT_COMMIT_ID="$(git rev-parse HEAD)"
 
-        if [ "$ARCH" == "regular" ]; then
-          # Build regular image for Github Registry
-          GITHUB_TAG="-t ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID} -t ghcr.io/qdrant/qdrant:$branch"
-          echo "Building tag $branch-${GIT_COMMIT_ID}"
+        # Build base tags array
+        tags=()
+        if [ "${{ inputs.push-to-ghcr }}" = "true" ]; then
+          tags+=("ghcr.io/qdrant/qdrant:${branch}-${GIT_COMMIT_ID}")
+          tags+=("ghcr.io/qdrant/qdrant:${branch}")
+        fi
+        if [ "${{ inputs.push-to-dockerhub }}" = "true" ]; then
+          # Don't push commit tag to Docker Hub to avoid excessive image creation
+          tags+=("qdrant/qdrant:${branch}")
+        fi
 
-          # Pull, retag and push to GitHub packages
-          docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
-        elif [ "$ARCH" == "gpu" ]; then
-          # Build GPU images for Github Registry
-          GITHUB_TAG_NVIDIA="-t ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID}-gpu-nvidia -t ghcr.io/qdrant/qdrant:$branch-gpu-nvidia"
-          docker buildx build --platform='linux/amd64' --build-arg GPU=nvidia --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} $GITHUB_TAG_NVIDIA --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
+        # Exit if no tags to build
+        if [ ${#tags[@]} -eq 0 ]; then
+          echo "No registry enabled for push"
+          exit 1
+        fi
 
-          GITHUB_TAG_AMD="-t ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID}-gpu-amd -t ghcr.io/qdrant/qdrant:$branch-gpu-amd"
-          docker buildx build --platform='linux/amd64' --build-arg GPU=amd --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} $GITHUB_TAG_AMD --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
+        # Function to build and push with given suffix and build args
+        build_image() {
+          local suffix="$1"
+          local platform="$2"
+          local build_args="$3"
+
+          # Create modified tags with suffix
+          local build_tags=()
+          local tag
+          for tag in "${tags[@]}"; do
+            build_tags+=("-t" "${tag}${suffix}")
+          done
+
+          echo "Building with tags: ${build_tags[*]}"
+          docker buildx build --platform="$platform" \
+            --build-arg GIT_COMMIT_ID="${GIT_COMMIT_ID}" \
+            $build_args \
+            "${build_tags[@]}" \
+            --push --label "org.opencontainers.image.revision"="${GIT_COMMIT_ID}" .
+        }
+
+        # Build images based on type
+        if [ "${{ inputs.build-gpu }}" = "true" ]; then
+          echo "Building GPU images"
+          build_image "-gpu-nvidia" "linux/amd64" "--build-arg GPU=nvidia"
+          build_image "-gpu-amd" "linux/amd64" "--build-arg GPU=amd"
+        else
+          echo "Building regular image"
+          build_image "" "linux/amd64,linux/arm64" ""
         fi

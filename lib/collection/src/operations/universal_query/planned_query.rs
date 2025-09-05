@@ -430,6 +430,7 @@ impl TryFrom<Vec<ShardQueryRequest>> for PlannedQuery {
 #[cfg(test)]
 mod tests {
     use ahash::AHashSet;
+    use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
     use segment::data_types::vectors::{MultiDenseVectorInternal, NamedQuery, VectorInternal};
     use segment::json_path::JsonPath;
     use segment::types::{
@@ -661,7 +662,7 @@ mod tests {
                     score_threshold: None,
                 },
             ],
-            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
+            query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
             filter: Some(filter_outer.clone()),
             score_threshold: None,
             limit: 50,
@@ -722,7 +723,7 @@ mod tests {
     fn test_try_from_rrf_without_source() {
         let request = ShardQueryRequest {
             prefetches: vec![],
-            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
+            query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
             filter: Some(Filter::default()),
             score_threshold: None,
             limit: 50,
@@ -765,7 +766,7 @@ mod tests {
                 filter: dummy_filter.clone(),
                 score_threshold: Some(0.1),
             }],
-            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
+            query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
             filter: Some(Filter::default()),
             score_threshold: Some(0.666),
             limit: 50,
@@ -981,7 +982,7 @@ mod tests {
                 prefetches: vec![
                     ShardPrefetch {
                         prefetches: vec![dummy_core_prefetch(30), dummy_core_prefetch(40)],
-                        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
+                        query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
                         filter: None,
                         params: None,
                         score_threshold: None,
@@ -989,7 +990,7 @@ mod tests {
                     },
                     dummy_scroll_prefetch(50),
                 ],
-                query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
+                query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
                 filter: None,
                 score_threshold: None,
                 limit: 10,
@@ -1032,7 +1033,9 @@ mod tests {
                             Source::Prefetch(Box::from(MergePlan {
                                 sources: vec![Source::SearchesIdx(1), Source::SearchesIdx(2),],
                                 rescore_params: Some(RescoreParams {
-                                    rescore: ScoringQuery::Fusion(FusionInternal::Rrf),
+                                    rescore: ScoringQuery::Fusion(FusionInternal::RrfK(
+                                        DEFAULT_RRF_K
+                                    )),
                                     limit: 10,
                                     score_threshold: None,
                                     params: None,

@@ -135,6 +135,7 @@ impl Collection {
                 quantization_config,
                 strict_mode_config,
                 uuid: _,
+                metadata,
             } = &new_config;
 
             let is_core_config_updated = params != &config.params
@@ -142,11 +143,15 @@ impl Collection {
                 || optimizer_config != &config.optimizer_config
                 || quantization_config != &config.quantization_config;
 
+            let is_metadata_updated = metadata != &config.metadata;
+
             let is_wal_config_updated = wal_config != &config.wal_config;
             let is_strict_mode_config_updated = strict_mode_config != &config.strict_mode_config;
 
-            let is_config_updated =
-                is_core_config_updated || is_wal_config_updated || is_strict_mode_config_updated;
+            let is_config_updated = is_core_config_updated
+                || is_wal_config_updated
+                || is_strict_mode_config_updated
+                || is_metadata_updated;
 
             if !is_config_updated {
                 return Ok(());

@@ -5,21 +5,23 @@ use std::sync::atomic::AtomicBool;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use io::file_operations::read_bin;
+use io::file_operations::{atomic_save, read_bin};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use super::HnswM;
 use super::entry_points::{EntryPoint, EntryPoints};
-use super::graph_links::{GraphLinks, GraphLinksFormat, GraphLinksSerializer};
+use super::graph_links::{GraphLinks, GraphLinksFormat};
 use crate::common::operation_error::{
     CancellableResult, OperationError, OperationResult, check_process_stopped,
 };
 use crate::common::utils::rev_range;
-use crate::index::hnsw_index::graph_links::GraphLinksFormatParam;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, serialize_graph_links};
+use crate::index::hnsw_index::point_scorer::{FilteredBytesScorer, FilteredScorer, ScorerFilters};
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
+use crate::vector_storage::RawScorer;
+use crate::vector_storage::query_scorer::QueryScorerBytes;
 
 pub type LinkContainer = Vec<PointOffsetType>;
 pub type LayersContainer = Vec<LinkContainer>;
@@ -127,55 +129,46 @@ pub trait GraphLayersBase {
         points_scorer: &mut FilteredScorer,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<ScoredPointOffset> {
-        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
-
-        let mut current_point = ScoredPointOffset {
-            idx: entry_point,
-            score: points_scorer.score_point(entry_point),
-        };
+        let mut links_buffer = Vec::new();
+        let mut result = None;
+        let mut level_entry = entry_point;
         for level in rev_range(top_level, target_level) {
             check_process_stopped(is_stopped)?;
-
-            let limit = self.get_m(level);
-
-            let mut changed = true;
-            while changed {
-                changed = false;
-
-                links.clear();
-                self.for_each_link(current_point.idx, level, |link| {
-                    links.push(link);
-                });
-
-                points_scorer
-                    .score_points(&mut links, limit)
-                    .for_each(|score_point| {
-                        if score_point.score > current_point.score {
-                            changed = true;
-                            current_point = score_point;
-                        }
-                    });
-            }
+            let search_result =
+                self.search_entry_on_level(level_entry, level, points_scorer, &mut links_buffer);
+            level_entry = search_result.idx;
+            result = Some(search_result);
         }
-        Ok(current_point)
+        if let Some(result) = result {
+            Ok(result)
+        } else {
+            // If no levels, return the entry point with it's score
+            Ok(ScoredPointOffset {
+                idx: entry_point,
+                score: points_scorer.score_point(entry_point),
+            })
+        }
     }
 
-    #[cfg(test)]
-    #[cfg(feature = "gpu")]
     fn search_entry_on_level(
         &self,
         entry_point: PointOffsetType,
         level: usize,
         points_scorer: &mut FilteredScorer,
+        // Temporary buffer for links to avoid unnecessary allocations.
+        // 'links' is reused if `search_entry_on_level` is called multiple times.
+        links: &mut Vec<PointOffsetType>,
     ) -> ScoredPointOffset {
         let limit = self.get_m(level);
-        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
+
+        links.clear();
+        links.reserve(2 * self.get_m(0));
+
+        let mut changed = true;
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
             score: points_scorer.score_point(entry_point),
         };
-
-        let mut changed = true;
         while changed {
             changed = false;
 
@@ -185,7 +178,7 @@ pub trait GraphLayersBase {
             });
 
             points_scorer
-                .score_points(&mut links, limit)
+                .score_points(links, limit)
                 .for_each(|score_point| {
                     if score_point.score > current_point.score {
                         changed = true;
@@ -197,13 +190,158 @@ pub trait GraphLayersBase {
     }
 }
 
-pub trait GraphLayersWithVectors {
+pub trait GraphLayersWithVectors: GraphLayersBase {
+    /// Returns `true` if the current graph format contains vectors.
+    fn has_vectors(&self) -> bool;
+
     /// # Panics
     ///
     /// Panics when using a format that does not support vectors.
-    fn for_each_link_with_vector<F>(&self, point_id: PointOffsetType, level: usize, f: F)
-    where
-        F: FnMut(PointOffsetType, &[u8]);
+    /// Check with [`Self::has_vectors()`] before calling this method.
+    fn links_with_vectors(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> (&[u8], impl Iterator<Item = (PointOffsetType, &[u8])> + '_);
+
+    /// Similar to [`GraphLayersBase::_search_on_level`].
+    #[allow(clippy::too_many_arguments)]
+    fn _search_on_level_with_vectors(
+        &self,
+        links_searcher: &mut SearchContext,
+        base_searcher: &mut SearchContext,
+        level: usize,
+        visited_list: &mut VisitedListHandle,
+        links_scorer: &FilteredBytesScorer,
+        base_scorer: &dyn QueryScorerBytes,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<()> {
+        let limit = self.get_m(level);
+        let mut points: Vec<(PointOffsetType, &[u8])> = Vec::with_capacity(2 * limit);
+
+        while let Some(candidate) = links_searcher.candidates.pop() {
+            check_process_stopped(is_stopped)?;
+
+            if candidate.score < links_searcher.lower_bound() {
+                let (base_vector, _) = self.links_with_vectors(candidate.idx, level);
+                base_searcher.process_candidate(ScoredPointOffset {
+                    idx: candidate.idx,
+                    score: base_scorer.score_bytes(base_vector),
+                });
+                break;
+            }
+
+            points.clear();
+            let (base_vector, links_iter) = self.links_with_vectors(candidate.idx, level);
+            links_iter.for_each(|(link, link_vector)| {
+                if !visited_list.check(link) {
+                    points.push((link, link_vector));
+                }
+            });
+            base_searcher.process_candidate(ScoredPointOffset {
+                idx: candidate.idx,
+                score: base_scorer.score_bytes(base_vector),
+            });
+
+            links_scorer
+                .score_points(&mut points, limit)
+                .for_each(|score_point| {
+                    links_searcher.process_candidate(score_point);
+                    visited_list.check_and_update_visited(score_point.idx);
+                });
+        }
+
+        Ok(())
+    }
+
+    /// Similar to [`GraphLayersBase::search_on_level`].
+    fn search_on_level_with_vectors(
+        &self,
+        level_entry: ScoredPointOffset,
+        level: usize,
+        ef: usize,
+        links_scorer: &FilteredBytesScorer,
+        base_scorer: &dyn QueryScorerBytes,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+        let mut visited_list = self.get_visited_list_from_pool();
+        visited_list.check_and_update_visited(level_entry.idx);
+        let mut links_search_context = SearchContext::new(ef);
+        let mut base_search_context = SearchContext::new(ef);
+        links_search_context.process_candidate(level_entry);
+
+        self._search_on_level_with_vectors(
+            &mut links_search_context,
+            &mut base_search_context,
+            level,
+            &mut visited_list,
+            links_scorer,
+            base_scorer,
+            is_stopped,
+        )?;
+        Ok(base_search_context.nearest)
+    }
+
+    /// Similar to [`GraphLayersBase::search_entry`].
+    fn search_entry_with_vectors(
+        &self,
+        entry_point: PointOffsetType,
+        top_level: usize,
+        target_level: usize,
+        links_scorer_raw: &dyn RawScorer,
+        links_scorer: &FilteredBytesScorer,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<ScoredPointOffset> {
+        let mut links_buffer = Vec::new();
+        let mut current_point = ScoredPointOffset {
+            idx: entry_point,
+            score: links_scorer_raw.score_point(entry_point),
+        };
+        for level in rev_range(top_level, target_level) {
+            check_process_stopped(is_stopped)?;
+            current_point = self.search_entry_on_level_with_vectors(
+                current_point,
+                level,
+                links_scorer,
+                &mut links_buffer,
+            );
+        }
+        Ok(current_point)
+    }
+
+    /// Similar to [`GraphLayersBase::search_entry_on_level`].
+    fn search_entry_on_level_with_vectors<'a>(
+        &'a self,
+        entry_point: ScoredPointOffset,
+        level: usize,
+        links_scorer: &FilteredBytesScorer,
+        links: &mut Vec<(PointOffsetType, &'a [u8])>,
+    ) -> ScoredPointOffset {
+        let limit = self.get_m(level);
+
+        links.clear();
+        links.reserve(limit);
+
+        let mut changed = true;
+        let mut current_point = entry_point;
+        while changed {
+            changed = false;
+
+            links.clear();
+            let (_, links_iter) = self.links_with_vectors(current_point.idx, level);
+            links_iter.for_each(|(link, vector)| links.push((link, vector)));
+
+            links_scorer
+                .score_points(links, limit)
+                .for_each(|score_point| {
+                    if score_point.score > current_point.score {
+                        changed = true;
+                        current_point = score_point;
+                    }
+                });
+        }
+        current_point
+    }
 }
 
 impl GraphLayersBase for GraphLayers {
@@ -224,13 +362,16 @@ impl GraphLayersBase for GraphLayers {
 }
 
 impl GraphLayersWithVectors for GraphLayers {
-    fn for_each_link_with_vector<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
-    where
-        F: FnMut(PointOffsetType, &[u8]),
-    {
-        self.links
-            .links_with_vectors(point_id, level)
-            .for_each(|(point_id, vector)| f(point_id, vector));
+    fn has_vectors(&self) -> bool {
+        self.links.format().is_with_vectors()
+    }
+
+    fn links_with_vectors(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> (&[u8], impl Iterator<Item = (PointOffsetType, &[u8])> + '_) {
+        self.links.links_with_vectors(point_id, level)
     }
 }
 
@@ -245,7 +386,7 @@ impl GraphLayers {
 
     fn get_entry_point(
         &self,
-        points_scorer: &FilteredScorer,
+        filters: &ScorerFilters,
         custom_entry_points: Option<&[PointOffsetType]>,
     ) -> Option<EntryPoint> {
         // Try to get it from custom entry points
@@ -253,7 +394,7 @@ impl GraphLayers {
             .and_then(|custom_entry_points| {
                 custom_entry_points
                     .iter()
-                    .filter(|&&point_id| points_scorer.check_vector(point_id))
+                    .filter(|&&point_id| filters.check_vector(point_id))
                     .map(|&point_id| {
                         let level = self.point_level(point_id);
                         EntryPoint { point_id, level }
@@ -263,7 +404,7 @@ impl GraphLayers {
             .or_else(|| {
                 // Otherwise use normal entry points
                 self.entry_points
-                    .get_entry_point(|point_id| points_scorer.check_vector(point_id))
+                    .get_entry_point(|point_id| filters.check_vector(point_id))
             })
     }
 
@@ -275,7 +416,8 @@ impl GraphLayers {
         custom_entry_points: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<ScoredPointOffset>> {
-        let Some(entry_point) = self.get_entry_point(&points_scorer, custom_entry_points) else {
+        let Some(entry_point) = self.get_entry_point(points_scorer.filters(), custom_entry_points)
+        else {
             return Ok(Vec::default());
         };
 
@@ -291,6 +433,41 @@ impl GraphLayers {
             0,
             max(top, ef),
             &mut points_scorer,
+            is_stopped,
+        )?;
+        Ok(nearest.into_iter_sorted().take(top).collect_vec())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_with_vectors(
+        &self,
+        top: usize,
+        ef: usize,
+        links_scorer: &FilteredScorer,
+        links_scorer_bytes: &FilteredBytesScorer,
+        base_scorer: &dyn QueryScorerBytes,
+        custom_entry_points: Option<&[PointOffsetType]>,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<Vec<ScoredPointOffset>> {
+        let Some(entry_point) = self.get_entry_point(links_scorer.filters(), custom_entry_points)
+        else {
+            return Ok(Vec::default());
+        };
+
+        let zero_level_entry = self.search_entry_with_vectors(
+            entry_point.point_id,
+            entry_point.level,
+            0,
+            links_scorer.raw_scorer(),
+            links_scorer_bytes,
+            is_stopped,
+        )?;
+        let nearest = self.search_on_level_with_vectors(
+            zero_level_entry,
+            0,
+            max(top, ef),
+            links_scorer_bytes,
+            base_scorer,
             is_stopped,
         )?;
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
@@ -371,8 +548,10 @@ impl GraphLayers {
 
         let links = GraphLinks::load_from_file(&plain_path, true, GraphLinksFormat::Plain)?;
         let original_size = plain_path.metadata()?.len();
-        GraphLinksSerializer::new(links.to_edges(), GraphLinksFormatParam::Compressed, hnsw_m)?
-            .save_as(&compressed_path)?;
+        atomic_save(&compressed_path, |writer| {
+            let edges = links.to_edges();
+            serialize_graph_links(edges, GraphLinksFormatParam::Compressed, hnsw_m, writer)
+        })?;
         let new_size = compressed_path.metadata()?.len();
 
         // Remove the original file
@@ -391,20 +570,17 @@ impl GraphLayers {
 
     #[cfg(feature = "testing")]
     pub fn compress_ram(&mut self) {
-        use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
         assert_eq!(self.links.format(), GraphLinksFormat::Plain);
         let dummy =
-            GraphLinksSerializer::new(Vec::new(), GraphLinksFormatParam::Plain, HnswM::new(0, 0))
-                .unwrap()
-                .to_graph_links_ram();
+            GraphLinks::new_from_edges(Vec::new(), GraphLinksFormatParam::Plain, HnswM::new2(0))
+                .unwrap();
         let links = std::mem::replace(&mut self.links, dummy);
-        self.links = GraphLinksSerializer::new(
+        self.links = GraphLinks::new_from_edges(
             links.to_edges(),
             GraphLinksFormatParam::Compressed,
             self.hnsw_m,
         )
-        .unwrap()
-        .to_graph_links_ram();
+        .unwrap();
     }
 
     pub fn populate(&self) -> OperationResult<()> {
@@ -423,7 +599,6 @@ mod tests {
     use super::*;
     use crate::data_types::vectors::VectorElementType;
     use crate::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
-    use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
     use crate::index::hnsw_index::tests::{
         create_graph_layer_builder_fixture, create_graph_layer_fixture,
     };
@@ -471,15 +646,11 @@ mod tests {
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
 
+        let graph_links_vectors = vector_holder.graph_links_vectors();
+        let format_param = format.with_param_for_tests(graph_links_vectors.as_ref());
         let graph_layers = GraphLayers {
             hnsw_m,
-            links: GraphLinksSerializer::new(
-                graph_links.clone(),
-                format.with_param_for_tests(vector_holder.quantized_vectors()),
-                hnsw_m,
-            )
-            .unwrap()
-            .to_graph_links_ram(),
+            links: GraphLinks::new_from_edges(graph_links.clone(), format_param, hnsw_m).unwrap(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
         };
@@ -542,7 +713,7 @@ mod tests {
         let graph1 = graph_layers_builder
             .into_graph_layers(
                 dir.path(),
-                initial_format.with_param_for_tests(vector_holder.quantized_vectors()),
+                initial_format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
                 true,
             )
             .unwrap();

@@ -70,16 +70,17 @@ class ClientUtils:
                     "status": collection_info.status.value if hasattr(collection_info.status, 'value') else str(collection_info.status),
                     "vectors_count": collection_info.vectors_count,
                     "points_count": collection_info.points_count,
-                    "config": collection_info.config
+                    "config": collection_info.config,
+                    "indexed_vectors_count": collection_info.indexed_vectors_count,
+                    "payload_schema": collection_info.payload_schema
                 },
-                "status": "ok",
-                "time": 0
+                "status": "ok"
             }
         except Exception as e:
             raise Exception(f"Failed to get collection info for '{collection_name}': {e}") from e
     
     @staticmethod
-    def generate_points(amount: int) -> Generator[Dict[str, List[models.PointStruct]], None, None]:
+    def generate_points(amount: int, vector_size: int = VECTOR_SIZE) -> Generator[Dict[str, List[models.PointStruct]], None, None]:
         """Generate batches of points for insertion."""
         for _ in range(amount):
             points = []
@@ -87,7 +88,7 @@ class ClientUtils:
                 points.append(
                     models.PointStruct(
                         id=str(uuid.uuid4()),
-                        vector=[round(random.uniform(0, 1), 2) for _ in range(VECTOR_SIZE)],
+                        vector=[round(random.uniform(0, 1), 2) for _ in range(vector_size)],
                         payload={"city": ["Berlin", "London"]}
                     )
                 )
@@ -122,7 +123,7 @@ class ClientUtils:
             timeout=self.timeout
         )
         
-        return {"result": result, "status": "ok", "time": 0}
+        return {"result": result, "status": "ok"}
     
     def update_collection(self, collection_name: str, collection_params: Dict[str, Any]) -> None:
         """Update collection parameters."""
@@ -160,7 +161,7 @@ class ClientUtils:
         print(f"After 30s status is not {status}. Stop waiting.")
         return "timeout"
     
-    def insert_points(self, collection_name: str, batch_data: Dict[str, Any], quit_on_ood: bool = False) -> Optional[str]:
+    def insert_points(self, collection_name: str, batch_data: Dict[str, Any], quit_on_ood: bool = False, wait: bool = True) -> Optional[str]:
         """Insert points into the collection."""
         try:
             # Convert dict format to PointStruct if needed
@@ -177,7 +178,7 @@ class ClientUtils:
             self.client.upsert(
                 collection_name=collection_name,
                 points=points,
-                wait=True
+                wait=wait
             )
             
         except Exception as e:
@@ -216,17 +217,16 @@ class ClientUtils:
                         "vector": hit.vector
                     } for hit in results.points
                 ],
-                "status": "ok",
-                "time": 0
+                "status": "ok"
             }
             
         except Exception as e:
             raise RuntimeError("Search failed") from e
     
-    def create_snapshot(self, collection_name: str = "test_collection") -> str:
+    def create_snapshot(self, collection_name: str = "test_collection") -> Optional[str]:
         """Create a snapshot of the collection."""
         snapshot_info = self.client.create_snapshot(collection_name=collection_name)
-        return snapshot_info.name
+        return snapshot_info.name if snapshot_info else None
     
     def download_snapshot(self, collection_name: str, snapshot_name: str) -> Tuple[bytes, str]:
         """Download a snapshot and return its content and checksum."""
@@ -323,10 +323,37 @@ class ClientUtils:
         return {
             "result": {
                 "status": collection_info.status,
-                "vectors_count": collection_info.vectors_count,
                 "points_count": collection_info.points_count,
                 "config": collection_info.config
             },
-            "status": "ok",
-            "time": 0
+            "status": "ok"
         }
+    
+    def create_payload_index(self, collection_name: str, field_name: str, 
+                            field_schema: Any, wait: bool = True) -> bool:
+        """
+        Create a payload index for a field in the collection.
+        
+        Args:
+            collection_name: Name of the collection
+            field_name: Name of the field to index
+            field_schema: Schema for the field - can be:
+                - models.PayloadSchemaType.UUID for UUID fields
+                - models.PayloadSchemaType.KEYWORD for keyword fields
+                - models.TextIndexParams for text fields
+                - models.KeywordIndexParams for keyword fields with options
+            wait: Whether to wait for the operation to complete
+        
+        Returns:
+            True if the index was created successfully
+        """
+        try:
+            self.client.create_payload_index(
+                collection_name=collection_name,
+                field_name=field_name,
+                field_schema=field_schema,
+                wait=wait
+            )
+            return True
+        except Exception as e:
+            raise Exception(f"Failed to create payload index for field '{field_name}': {e}") from e

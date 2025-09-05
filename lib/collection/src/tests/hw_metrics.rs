@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
+use common::save_on_disk::SaveOnDisk;
 use rand::rngs::ThreadRng;
 use rand::{RngCore, rng};
 use segment::data_types::vectors::{NamedQuery, VectorInternal, VectorStructInternal};
@@ -16,7 +17,6 @@ use crate::operations::point_ops::{
 };
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CoreSearchRequest, CoreSearchRequestBatch};
-use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::tests::fixtures::create_collection_config_with_dim;

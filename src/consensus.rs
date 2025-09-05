@@ -1412,6 +1412,7 @@ fn is_heartbeat(message: &RaftMessage) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
     use std::sync::Arc;
     use std::thread;
 
@@ -1471,7 +1472,7 @@ mod tests {
             persistent_state,
             toc_arc.clone(),
             operation_sender,
-            storage_path,
+            Path::new(storage_path),
         )
         .into();
         let dispatcher =
@@ -1538,6 +1539,7 @@ mod tests {
                                 sharding_method: None,
                                 strict_mode_config: None,
                                 uuid: None,
+                                metadata: None,
                             },
                         )
                         .unwrap(),

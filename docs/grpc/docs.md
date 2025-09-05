@@ -14,6 +14,7 @@
     - [CollectionClusterInfoRequest](#qdrant-CollectionClusterInfoRequest)
     - [CollectionClusterInfoResponse](#qdrant-CollectionClusterInfoResponse)
     - [CollectionConfig](#qdrant-CollectionConfig)
+    - [CollectionConfig.MetadataEntry](#qdrant-CollectionConfig-MetadataEntry)
     - [CollectionDescription](#qdrant-CollectionDescription)
     - [CollectionExists](#qdrant-CollectionExists)
     - [CollectionExistsRequest](#qdrant-CollectionExistsRequest)
@@ -25,6 +26,7 @@
     - [CollectionParamsDiff](#qdrant-CollectionParamsDiff)
     - [CreateAlias](#qdrant-CreateAlias)
     - [CreateCollection](#qdrant-CreateCollection)
+    - [CreateCollection.MetadataEntry](#qdrant-CreateCollection-MetadataEntry)
     - [CreateShardKey](#qdrant-CreateShardKey)
     - [CreateShardKeyRequest](#qdrant-CreateShardKeyRequest)
     - [CreateShardKeyResponse](#qdrant-CreateShardKeyResponse)
@@ -83,6 +85,7 @@
     - [StrictModeSparseConfig.SparseConfigEntry](#qdrant-StrictModeSparseConfig-SparseConfigEntry)
     - [TextIndexParams](#qdrant-TextIndexParams)
     - [UpdateCollection](#qdrant-UpdateCollection)
+    - [UpdateCollection.MetadataEntry](#qdrant-UpdateCollection-MetadataEntry)
     - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
     - [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse)
     - [UuidIndexParams](#qdrant-UuidIndexParams)
@@ -247,6 +250,7 @@
     - [RepeatedStrings](#qdrant-RepeatedStrings)
     - [RetrievedPoint](#qdrant-RetrievedPoint)
     - [RetrievedPoint.PayloadEntry](#qdrant-RetrievedPoint-PayloadEntry)
+    - [Rrf](#qdrant-Rrf)
     - [ScoredPoint](#qdrant-ScoredPoint)
     - [ScoredPoint.PayloadEntry](#qdrant-ScoredPoint-PayloadEntry)
     - [ScrollPoints](#qdrant-ScrollPoints)
@@ -505,6 +509,23 @@
 | wal_config | [WalConfigDiff](#qdrant-WalConfigDiff) |  | Configuration of the Write-Ahead-Log |
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Configuration of the vector quantization |
 | strict_mode_config | [StrictModeConfig](#qdrant-StrictModeConfig) | optional | Configuration of strict mode. |
+| metadata | [CollectionConfig.MetadataEntry](#qdrant-CollectionConfig-MetadataEntry) | repeated | Arbitrary JSON metadata for the collection |
+
+
+
+
+
+
+<a name="qdrant-CollectionConfig-MetadataEntry"></a>
+
+### CollectionConfig.MetadataEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
 
 
 
@@ -705,6 +726,23 @@
 | sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
 | sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | Configuration for sparse vectors |
 | strict_mode_config | [StrictModeConfig](#qdrant-StrictModeConfig) | optional | Configuration for strict mode |
+| metadata | [CreateCollection.MetadataEntry](#qdrant-CreateCollection-MetadataEntry) | repeated | Arbitrary JSON metadata for the collection |
+
+
+
+
+
+
+<a name="qdrant-CreateCollection-MetadataEntry"></a>
+
+### CreateCollection.MetadataEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
 
 
 
@@ -1696,6 +1734,23 @@ Note: 1kB = 1 vector of size 256. |
 | quantization_config | [QuantizationConfigDiff](#qdrant-QuantizationConfigDiff) | optional | Quantization configuration of vector |
 | sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | New sparse vector parameters |
 | strict_mode_config | [StrictModeConfig](#qdrant-StrictModeConfig) | optional | New strict mode configuration |
+| metadata | [UpdateCollection.MetadataEntry](#qdrant-UpdateCollection-MetadataEntry) | repeated | Arbitrary JSON-like metadata for the collection, will be merged with already stored metadata |
+
+
+
+
+
+
+<a name="qdrant-UpdateCollection-MetadataEntry"></a>
+
+### UpdateCollection.MetadataEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
 
 
 
@@ -2892,6 +2947,7 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | hits | [FacetHit](#qdrant-FacetHit) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -3367,6 +3423,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | except_integers | [RepeatedIntegers](#qdrant-RepeatedIntegers) |  | Match any other value except those integers |
 | except_keywords | [RepeatedStrings](#qdrant-RepeatedStrings) |  | Match any other value except those keywords |
 | phrase | [string](#string) |  | Match phrase text |
+| text_any | [string](#string) |  | Match any word in the text |
 
 
 
@@ -3877,6 +3934,7 @@ If not specified, the `limit` value is used. |
 | ----- | ---- | ----- | ----------- |
 | points | [PointStruct](#qdrant-PointStruct) | repeated |  |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+| update_filter | [Filter](#qdrant-Filter) | optional | If specified, only points that match this filter will be updated, others will be inserted |
 
 
 
@@ -3927,6 +3985,7 @@ If not specified, the `limit` value is used. |
 | ----- | ---- | ----- | ----------- |
 | points | [PointVectors](#qdrant-PointVectors) | repeated | List of points and vectors to update |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+| update_filter | [Filter](#qdrant-Filter) | optional | If specified, only points that match this filter will be updated |
 
 
 
@@ -4009,6 +4068,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | sample | [Sample](#qdrant-Sample) |  | Sample points from the collection. |
 | formula | [Formula](#qdrant-Formula) |  | Score boosting via an arbitrary formula |
 | nearest_with_mmr | [NearestInputWithMmr](#qdrant-NearestInputWithMmr) |  | Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm. |
+| rrf | [Rrf](#qdrant-Rrf) |  | Parameterized reciprocal rank fusion |
 
 
 
@@ -4389,6 +4449,21 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
 | value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
+<a name="qdrant-Rrf"></a>
+
+### Rrf
+Parameterized reciprocal rank fusion
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| k | [uint32](#uint32) | optional | K parameter for reciprocal rank fusion |
 
 
 
@@ -4904,6 +4979,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | points | [PointVectors](#qdrant-PointVectors) | repeated | List of points and vectors to update |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+| update_filter | [Filter](#qdrant-Filter) | optional | If specified, only points that match this filter will be updated |
 
 
 
@@ -4939,6 +5015,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | points | [PointStruct](#qdrant-PointStruct) | repeated |  |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+| update_filter | [Filter](#qdrant-Filter) | optional | If specified, only points that match this filter will be updated, others will be inserted |
 
 
 
@@ -5212,7 +5289,7 @@ Vector type to be used in queries. Ids will be substituted with their correspond
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| RRF | 0 | Reciprocal Rank Fusion |
+| RRF | 0 | Reciprocal Rank Fusion (with default parameters) |
 | DBSF | 1 | Distribution-Based Score Fusion |
 
 

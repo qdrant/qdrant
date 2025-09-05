@@ -22,7 +22,10 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::rate_limiting::RateLimiter;
+use common::save_on_disk::SaveOnDisk;
 use common::{panic, tar_ext};
+use futures::StreamExt as _;
+use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
@@ -35,6 +38,7 @@ use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
     SnapshotFormat,
 };
+use shard::wal::SerdeWal;
 use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
@@ -60,12 +64,10 @@ use crate::operations::types::{
     check_sparse_compatible_with_segment_config,
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
-use crate::save_on_disk::SaveOnDisk;
 use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
-use crate::wal::SerdeWal;
 use crate::wal_delta::{LockedWal, RecoverableWal};
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
@@ -101,6 +103,14 @@ pub struct LocalShard {
     pub(super) search_runtime: Handle,
     disk_usage_watcher: DiskUsageWatcher,
     read_rate_limiter: Option<ParkingMutex<RateLimiter>>,
+
+    /// Scroll read lock
+    /// The lock, which must prevent updates during scroll + retrieve operations
+    /// Consistency of scroll operations is especially important for internal processes like
+    /// re-sharding and shard transfer, so explicit lock for those operations is required.
+    ///
+    /// Write lock must be held for updates, while read lock must be held for scroll
+    pub(super) scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -184,6 +194,9 @@ impl LocalShard {
         )
         .await;
 
+        let scroll_read_lock = Arc::new(tokio::sync::RwLock::new(()));
+        let update_tracker = UpdateTracker::default();
+
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
             payload_index_schema.clone(),
@@ -198,13 +211,13 @@ impl LocalShard {
             config.optimizer_config.max_optimization_threads,
             clocks.clone(),
             shard_path.into(),
+            scroll_read_lock.clone(),
+            update_tracker.clone(),
         );
 
         let (update_sender, update_receiver) =
             mpsc::channel(shared_storage_config.update_queue_size);
         update_handler.run_workers(update_receiver);
-
-        let update_tracker = segment_holder.read().update_tracker();
 
         let read_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
             strict_mode
@@ -232,6 +245,7 @@ impl LocalShard {
             total_optimized_points,
             disk_usage_watcher,
             read_rate_limiter,
+            scroll_read_lock,
         }
     }
 
@@ -376,7 +390,7 @@ impl LocalShard {
             segment_holder.add_new(segment);
         }
 
-        let res = segment_holder.deduplicate_points().await?;
+        let res = deduplicate_points_async(&segment_holder).await?;
         if res > 0 {
             log::debug!("Deduplicated {res} points");
         }
@@ -405,10 +419,10 @@ impl LocalShard {
                 "Shard has no appendable segments, this should never happen. Creating new appendable segment now",
             );
             let segments_path = LocalShard::segments_path(shard_path);
-            let collection_params = collection_config.read().await.params.clone();
+            let segment_config = collection_config.read().await.to_base_segment_config()?;
             segment_holder.create_appendable_segment(
                 &segments_path,
-                &collection_params,
+                segment_config,
                 payload_index_schema.clone(),
             )?;
         }
@@ -513,7 +527,9 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::default();
         let mut build_handlers = vec![];
 
-        let vector_params = config.params.to_base_vector_data()?;
+        let vector_params = config
+            .params
+            .to_base_vector_data(config.quantization_config.as_ref())?;
         let sparse_vector_params = config.params.to_sparse_vector_data()?;
         let segment_number = config.optimizer_config.get_number_segments();
 
@@ -645,6 +661,8 @@ impl LocalShard {
                 segments,
                 op_num,
                 update.operation,
+                self.scroll_read_lock.clone(),
+                self.update_tracker.clone(),
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
             ) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
@@ -859,9 +877,13 @@ impl LocalShard {
         }
 
         let segments_path = Self::segments_path(&self.path);
-        let collection_params = self.collection_config.read().await.params.clone();
-        let temp_path = temp_path.to_owned();
+        let segment_config = self
+            .collection_config
+            .read()
+            .await
+            .to_base_segment_config()?;
         let payload_index_schema = self.payload_index_schema.clone();
+        let temp_path = temp_path.to_owned();
 
         let tar_c = tar.clone();
         tokio::task::spawn_blocking(move || {
@@ -869,7 +891,7 @@ impl LocalShard {
             SegmentHolder::snapshot_all_segments(
                 segments.clone(),
                 &segments_path,
-                Some(&collection_params),
+                Some(segment_config),
                 payload_index_schema.clone(),
                 &temp_path,
                 &tar_c.descend(Path::new(SEGMENTS_PATH))?,
@@ -1163,6 +1185,38 @@ impl Drop for LocalShard {
     }
 }
 
+fn deduplicate_points_async(
+    holder: &SegmentHolder,
+) -> impl Future<Output = CollectionResult<usize>> + 'static {
+    let mut tasks: FuturesUnordered<_> = holder
+        .deduplicate_points_tasks()
+        .into_iter()
+        .map(tokio::task::spawn_blocking)
+        .collect();
+
+    async move {
+        let mut total_removed_points = 0;
+
+        while let Some(res) = tasks.next().await {
+            let removed_points = res
+                .map_err(|join_err| {
+                    CollectionError::service_error(format!(
+                        "failed to deduplicate points: {join_err}"
+                    ))
+                })?
+                .map_err(|dedup_err| {
+                    CollectionError::service_error(format!(
+                        "failed to deduplicate points: {dedup_err}"
+                    ))
+                })?;
+
+            total_removed_points += removed_points;
+        }
+
+        Ok(total_removed_points)
+    }
+}
+
 /// Convenience struct for combining clock maps belonging to a shard
 ///
 /// Holds a clock map for tracking the highest clocks and the cutoff clocks.
@@ -1188,15 +1242,13 @@ impl LocalShardClocks {
     }
 
     /// Persist clock maps to disk
-    pub async fn store_if_changed(&self, shard_path: &Path) -> CollectionResult<()> {
+    pub fn store_if_changed(&self, shard_path: &Path) -> CollectionResult<()> {
         self.oldest_clocks
-            .lock()
-            .await
+            .blocking_lock()
             .store_if_changed(&Self::oldest_clocks_path(shard_path))?;
 
         self.newest_clocks
-            .lock()
-            .await
+            .blocking_lock()
             .store_if_changed(&Self::newest_clocks_path(shard_path))?;
 
         Ok(())

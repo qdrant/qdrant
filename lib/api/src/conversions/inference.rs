@@ -2,7 +2,7 @@ use tonic::Status;
 
 use crate::conversions::json::{dict_to_proto, json_to_proto, proto_dict_to_json, proto_to_json};
 use crate::grpc::qdrant as grpc;
-use crate::rest::{Options, schema as rest};
+use crate::rest::{DocumentOptions, Options, schema as rest};
 
 impl From<rest::Document> for grpc::Document {
     fn from(document: rest::Document) -> Self {
@@ -14,7 +14,10 @@ impl From<rest::Document> for grpc::Document {
         Self {
             text,
             model,
-            options: options.options.map(dict_to_proto).unwrap_or_default(),
+            options: options
+                .map(DocumentOptions::into_options)
+                .map(dict_to_proto)
+                .unwrap_or_default(),
         }
     }
 }
@@ -31,9 +34,7 @@ impl TryFrom<grpc::Document> for rest::Document {
         Ok(Self {
             text,
             model,
-            options: Options {
-                options: Some(proto_dict_to_json(options)?),
-            },
+            options: Some(DocumentOptions::Common(proto_dict_to_json(options)?)),
         })
     }
 }

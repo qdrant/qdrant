@@ -135,6 +135,7 @@ message UpsertPoints {
   repeated PointStruct points = 3;
   optional WriteOrdering ordering = 4; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
+  optional Filter update_filter = 6; // If specified, only points that match this filter will be updated, others will be inserted
 }
 
 message DeletePoints {
@@ -162,6 +163,7 @@ message UpdatePointVectors {
   repeated PointVectors points = 3; // List of points and vectors to update
   optional WriteOrdering ordering = 4; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
+  optional Filter update_filter = 6; // If specified, only points that match this filter will be updated
 }
 
 message PointVectors {
@@ -563,7 +565,7 @@ message ContextInput {
 }
 
 enum Fusion {
-    RRF = 0; // Reciprocal Rank Fusion
+    RRF = 0; // Reciprocal Rank Fusion (with default parameters)
     DBSF = 1; // Distribution-Based Score Fusion
 }
 
@@ -667,6 +669,11 @@ message Mmr {
     optional uint32 candidates_limit = 3;
 }
 
+// Parameterized reciprocal rank fusion
+message Rrf {
+    optional uint32 k = 1; // K parameter for reciprocal rank fusion
+}
+
 message Query {
   oneof variant {
     VectorInput nearest = 1; // Find the nearest neighbors to this vector.
@@ -678,6 +685,7 @@ message Query {
     Sample sample = 7; // Sample points from the collection.
     Formula formula = 8; // Score boosting via an arbitrary formula
     NearestInputWithMmr nearest_with_mmr = 9; // Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm.
+    Rrf rrf = 10; // Parameterized reciprocal rank fusion
   }
 }
 
@@ -794,6 +802,7 @@ message PointsUpdateOperation {
   message PointStructList {
     repeated PointStruct points = 1;
     optional ShardKeySelector shard_key_selector = 2; // Option for custom sharding to specify used shard keys
+    optional Filter update_filter = 3; // If specified, only points that match this filter will be updated, others will be inserted
   }
   message SetPayload {
       map<string, Value> payload = 1;
@@ -815,6 +824,7 @@ message PointsUpdateOperation {
   message UpdateVectors {
     repeated PointVectors points = 1; // List of points and vectors to update
     optional ShardKeySelector shard_key_selector = 2; // Option for custom sharding to specify used shard keys
+    optional Filter update_filter = 3; // If specified, only points that match this filter will be updated
   }
   message DeleteVectors {
     PointsSelector points_selector = 1; // Affected points
@@ -1023,6 +1033,7 @@ message UpdateBatchResponse {
 message FacetResponse {
     repeated FacetHit hits = 1;
     double time = 2; // Time spent to process
+    optional Usage usage = 3;
 }
 
 message SearchMatrixPairsResponse {
@@ -1110,6 +1121,7 @@ message Match {
     RepeatedIntegers except_integers = 7; // Match any other value except those integers
     RepeatedStrings except_keywords = 8; // Match any other value except those keywords
     string phrase = 9; // Match phrase text
+    string text_any = 10; // Match any word in the text
   }
 }
 

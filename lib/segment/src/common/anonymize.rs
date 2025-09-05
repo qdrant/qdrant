@@ -93,22 +93,19 @@ where
         .collect()
 }
 
-pub fn hash_u64(value: u64) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    value.hash(&mut hasher);
-    hasher.finish()
-}
-
-pub fn anonymize_collection_with_u64_hashable_key<C, V>(collection: &C) -> C
+/// Anonymize the values of a collection wrapped into an [`Option`], but keeps the keys intact.
+///
+/// Similar to [`anonymize_collection_values`].
+pub fn anonymize_collection_values_opt<C, K, V>(collection_opt: &Option<C>) -> Option<C>
 where
-    for<'a> &'a C: IntoIterator<Item = (&'a u64, &'a V)>,
-    C: FromIterator<(u64, V)>,
+    for<'a> &'a C: IntoIterator<Item = (&'a K, &'a V)>,
+    C: FromIterator<(K, V)>,
+    K: Clone,
     V: Anonymize,
 {
-    collection
-        .into_iter()
-        .map(|(k, v)| (hash_u64(*k), v.anonymize()))
-        .collect()
+    collection_opt
+        .as_ref()
+        .map(|c| anonymize_collection_values(c))
 }
 
 impl Anonymize for String {

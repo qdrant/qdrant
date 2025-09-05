@@ -1,9 +1,10 @@
 use std::borrow::Cow;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use rust_stemmers::Algorithm;
 
-use crate::data_types::index::{SnowballParams, StemmingAlgorithm};
+use crate::data_types::index::{SnowballLanguage, SnowballParams, StemmingAlgorithm};
 
 /// Abstraction to handle different stemming libraries and algorithms with a clean API.
 #[derive(Clone)]
@@ -30,6 +31,16 @@ impl Stemmer {
                 *language,
             )))),
         }
+    }
+
+    /// Construct default stemmer for a given language.
+    /// Returns `None` if the language is not supported.
+    pub fn try_default_from_language(language: &str) -> Option<Self> {
+        let language = SnowballLanguage::from_str(language).ok()?;
+
+        Some(Self::Snowball(Arc::new(rust_stemmers::Stemmer::create(
+            Algorithm::from(language),
+        ))))
     }
 
     pub fn stem<'a>(&self, input: Cow<'a, str>) -> Cow<'a, str> {

@@ -7,7 +7,7 @@ use actix_web::{FromRequest, HttpMessage};
 
 mod batch_processing;
 mod batch_processing_grpc;
-pub(crate) mod bm25;
+pub mod bm25;
 pub(crate) mod config;
 mod infer_processing;
 pub mod inference_input;

@@ -14,6 +14,7 @@ use gpu_multivectors::GpuMultivectors;
 use gpu_quantization::GpuQuantization;
 use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
 use quantization::{EncodedStorage, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
+use zerocopy::IntoBytes;
 
 use super::shader_builder::ShaderBuilderParameters;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -25,7 +26,7 @@ use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectorStorage, QuantizedVectors,
 };
 use crate::vector_storage::{
-    DenseVectorStorage, MultiVectorStorage, VectorStorage, VectorStorageEnum,
+    DenseVectorStorage, MultiVectorStorage, Random, VectorStorage, VectorStorageEnum,
 };
 
 pub const ELEMENTS_PER_SUBGROUP: usize = 4;
@@ -172,6 +173,14 @@ impl GpuVectorStorage {
                 None,
                 stopped,
             ),
+            QuantizedVectorStorage::ScalarChunkedMmap(quantized_storage) => Self::new_sq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
             QuantizedVectorStorage::PQRam(quantized_storage) => Self::new_pq(
                 device.clone(),
                 distance,
@@ -181,6 +190,14 @@ impl GpuVectorStorage {
                 stopped,
             ),
             QuantizedVectorStorage::PQMmap(quantized_storage) => Self::new_pq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
+            QuantizedVectorStorage::PQChunkedMmap(quantized_storage) => Self::new_pq(
                 device.clone(),
                 distance,
                 quantized_storage.vectors_count(),
@@ -204,6 +221,14 @@ impl GpuVectorStorage {
                 None,
                 stopped,
             ),
+            QuantizedVectorStorage::BinaryChunkedMmap(quantized_storage) => Self::new_bq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
             QuantizedVectorStorage::ScalarRamMulti(quantized_storage) => Self::new_sq(
                 device.clone(),
                 distance,
@@ -213,6 +238,14 @@ impl GpuVectorStorage {
                 stopped,
             ),
             QuantizedVectorStorage::ScalarMmapMulti(quantized_storage) => Self::new_sq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage.inner_storage(),
+                Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
+                stopped,
+            ),
+            QuantizedVectorStorage::ScalarChunkedMmapMulti(quantized_storage) => Self::new_sq(
                 device.clone(),
                 distance,
                 quantized_storage.vectors_count(),
@@ -236,6 +269,14 @@ impl GpuVectorStorage {
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
             ),
+            QuantizedVectorStorage::PQChunkedMmapMulti(quantized_storage) => Self::new_pq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage.inner_storage(),
+                Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
+                stopped,
+            ),
             QuantizedVectorStorage::BinaryRamMulti(quantized_storage) => Self::new_bq(
                 device.clone(),
                 distance,
@@ -245,6 +286,14 @@ impl GpuVectorStorage {
                 stopped,
             ),
             QuantizedVectorStorage::BinaryMmapMulti(quantized_storage) => Self::new_bq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage.inner_storage(),
+                Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
+                stopped,
+            ),
+            QuantizedVectorStorage::BinaryChunkedMmapMulti(quantized_storage) => Self::new_bq(
                 device.clone(),
                 distance,
                 quantized_storage.vectors_count(),
@@ -477,7 +526,7 @@ impl GpuVectorStorage {
                 vector_storage.vector_dim(),
                 (0..vector_storage.total_vector_count()).map(|id| {
                     VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
-                        vector_storage.get_dense(id as PointOffsetType),
+                        vector_storage.get_dense::<Random>(id as PointOffsetType),
                     ))
                 }),
                 None,
@@ -505,7 +554,7 @@ impl GpuVectorStorage {
                 vector_storage.vector_dim(),
                 (0..vector_storage.total_vector_count()).map(|id| {
                     VectorElementTypeHalf::slice_to_float_cow(Cow::Borrowed(
-                        vector_storage.get_dense(id as PointOffsetType),
+                        vector_storage.get_dense::<Random>(id as PointOffsetType),
                     ))
                 }),
                 None,
@@ -527,7 +576,7 @@ impl GpuVectorStorage {
             vector_storage.total_vector_count(),
             vector_storage.vector_dim(),
             (0..vector_storage.total_vector_count())
-                .map(|id| Cow::Borrowed(vector_storage.get_dense(id as PointOffsetType))),
+                .map(|id| Cow::Borrowed(vector_storage.get_dense::<Random>(id as PointOffsetType))),
             None,
             None,
             stopped,
@@ -547,7 +596,7 @@ impl GpuVectorStorage {
                 (0..vector_storage.total_vector_count())
                     .map(|id| {
                         vector_storage
-                            .get_multi(id as PointOffsetType)
+                            .get_multi::<Random>(id as PointOffsetType)
                             .vectors_count()
                     })
                     .sum(),
@@ -579,7 +628,7 @@ impl GpuVectorStorage {
                 (0..vector_storage.total_vector_count())
                     .map(|id| {
                         vector_storage
-                            .get_multi(id as PointOffsetType)
+                            .get_multi::<Random>(id as PointOffsetType)
                             .vectors_count()
                     })
                     .sum(),
@@ -606,7 +655,7 @@ impl GpuVectorStorage {
             (0..vector_storage.total_vector_count())
                 .map(|id| {
                     vector_storage
-                        .get_multi(id as PointOffsetType)
+                        .get_multi::<Random>(id as PointOffsetType)
                         .vectors_count()
                 })
                 .sum(),
@@ -669,7 +718,7 @@ impl GpuVectorStorage {
         // fill staging buffer with zeros
         let zero_vector = vec![TElement::default(); gpu_vector_capacity];
         for i in 0..upload_points_count {
-            staging_buffer.upload(TElement::as_bytes(&zero_vector), i * gpu_vector_capacity)?;
+            staging_buffer.upload(zero_vector.as_bytes(), i * gpu_vector_capacity)?;
         }
         log::trace!(
             "GPU staging buffer size {}, `upload_points_count` = {}",
@@ -686,8 +735,7 @@ impl GpuVectorStorage {
 
             for vector in vectors.clone().skip(storage_index).step_by(STORAGES_COUNT) {
                 check_process_stopped(stopped)?;
-                staging_buffer
-                    .upload(TElement::as_bytes(&vector), upload_points * gpu_vector_size)?;
+                staging_buffer.upload(vector.as_bytes(), upload_points * gpu_vector_size)?;
                 upload_size += gpu_vector_size;
                 upload_points += 1;
 
