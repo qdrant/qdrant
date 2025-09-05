@@ -268,6 +268,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("Filter.must_not", ""),
             ("NestedCondition.filter", ""),
             ("Condition.condition_one_of", ""),
+            ("Filter.min_should", ""),
+            ("MinShould.conditions", ""),
             ("PointStruct.vectors", ""),
             ("Vectors.vectors_options", ""),
             ("NamedVectors.vectors", ""),
