@@ -478,6 +478,15 @@ impl Validate for super::qdrant::IntegerIndexParams {
     }
 }
 
+impl Validate for super::qdrant::points_selector::PointsSelectorOneOf {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::points_selector::PointsSelectorOneOf::Points(_) => Ok(()),
+            grpc::points_selector::PointsSelectorOneOf::Filter(filter) => filter.validate(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use validator::Validate;
