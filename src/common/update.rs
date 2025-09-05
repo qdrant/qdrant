@@ -71,6 +71,7 @@ impl InternalUpdateParams {
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct UpdateOperations {
+    #[validate(nested)]
     pub operations: Vec<UpdateOperation>,
 }
 
