@@ -258,7 +258,15 @@ pub fn conditional_upsert(
 
     points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
     let points = points_op.into_point_vec();
-    upsert_points(segments, op_num, points.iter(), hw_counter)
+    let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter)?;
+
+    if upserted_points == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(upserted_points)
 }
 
 /// Upsert to a point ID with the specified vectors and payload in the given segment.
@@ -359,6 +367,12 @@ pub fn delete_points_by_filter(
 
         Ok(true)
     })?;
+
+    if total_deleted == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
 
     Ok(total_deleted)
 }
@@ -551,7 +565,15 @@ pub fn delete_vectors_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    delete_vectors(segments, op_num, &affected_points, vector_names)
+    let vectors_deleted = delete_vectors(segments, op_num, &affected_points, vector_names)?;
+
+    if vectors_deleted == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(vectors_deleted)
 }
 
 /// Batch size when modifying payload
@@ -600,7 +622,15 @@ pub fn set_payload_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    set_payload(segments, op_num, payload, &affected_points, key, hw_counter)
+    let points_updated = set_payload(segments, op_num, payload, &affected_points, key, hw_counter)?;
+
+    if points_updated == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(points_updated)
 }
 
 pub fn delete_payload(
@@ -653,7 +683,15 @@ pub fn delete_payload_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    delete_payload(segments, op_num, &affected_points, keys, hw_counter)
+    let points_updated = delete_payload(segments, op_num, &affected_points, keys, hw_counter)?;
+
+    if points_updated == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(points_updated)
 }
 
 pub fn clear_payload(
@@ -688,7 +726,15 @@ pub fn clear_payload_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let points_to_clear = points_by_filter(segments, filter, hw_counter)?;
-    clear_payload(segments, op_num, &points_to_clear, hw_counter)
+    let points_cleared = clear_payload(segments, op_num, &points_to_clear, hw_counter)?;
+
+    if points_cleared == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(points_cleared)
 }
 
 pub fn overwrite_payload(
@@ -727,7 +773,16 @@ pub fn overwrite_payload_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    overwrite_payload(segments, op_num, payload, &affected_points, hw_counter)
+    let points_updated =
+        overwrite_payload(segments, op_num, payload, &affected_points, hw_counter)?;
+
+    if points_updated == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(points_updated)
 }
 
 pub fn create_field_index(
@@ -822,5 +877,70 @@ fn check_unprocessed_points(
     match first_missed_point {
         None => Ok(processed.len()),
         Some(missed_point_id) => Err(OperationError::PointIdError { missed_point_id }),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use parking_lot::RwLock;
+    use segment::types::{Condition, FieldCondition, Filter, Match, MatchValue, ValueVariants};
+    use tempfile::Builder;
+
+    use crate::fixtures::{build_segment_1, build_segment_2};
+    use crate::segment_holder::SegmentHolder;
+    use crate::update::delete_points_by_filter;
+
+    #[test]
+    fn test_delete_by_filter_version_bump() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let segment1 = build_segment_1(dir.path());
+        let segment2 = build_segment_2(dir.path());
+
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut holder = SegmentHolder::default();
+
+        let _sid1 = holder.add_new(segment1);
+        let _sid2 = holder.add_new(segment2);
+
+        const DELETE_OP_NUM: u64 = 16;
+
+        assert!(
+            holder
+                .iter()
+                .all(|i| i.1.get().read().version() < DELETE_OP_NUM)
+        );
+
+        let old_version = holder
+            .flush_all(true, false)
+            .expect("Failed to flush test segment holder");
+
+        let segments = Arc::new(RwLock::new(holder));
+
+        // A filter that matches no points.
+        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            "color".parse().unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::String("white".to_string()),
+            }),
+        )));
+
+        let deleted_count =
+            delete_points_by_filter(&segments.read(), DELETE_OP_NUM, &filter, &hw_counter).unwrap();
+        assert_eq!(deleted_count, 0);
+
+        let new_version = segments
+            .read()
+            .flush_all(true, false)
+            .expect("Failed to flush test segment holder");
+
+        // Flushing again inrceases by 1 and is now equal to `DELETE_OP_NUM` as we want to acknowledge the empty
+        // delete operation in WAL.
+        assert_eq!(old_version + 1, new_version);
+        assert_eq!(new_version, DELETE_OP_NUM);
     }
 }

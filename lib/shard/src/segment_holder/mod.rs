@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
@@ -70,6 +70,11 @@ pub struct SegmentHolder {
 
     /// Holds the first uncorrected error happened with optimizer
     pub optimizer_errors: Option<String>,
+
+    /// A special segment version that is usually used to keep track of manually bumped segment versions.
+    /// An example for this are operations that don't modify any points but could be expensive to recover from during WAL recovery.
+    /// To acknowledge them in WAL, we overwrite the max_persisted value in `Self::flush_all` with the segment version stored here.
+    max_persisted_segment_version_overwrite: AtomicU64,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -293,6 +298,14 @@ impl SegmentHolder {
     /// Return non-appendable segment IDs sorted by IDs
     pub fn non_appendable_segments_ids(&self) -> Vec<SegmentId> {
         self.non_appendable_segments.keys().copied().collect()
+    }
+
+    /// Suggests a new maximum persisted segment version when calling `flush_all`. This can be used to make WAL acknowledge no-op operations,
+    /// so we don't replay them on startup. This is especially helpful if the no-op operation is computational expensive and could cause
+    /// WAL replay, and thus Qdrant startup, take a significant amount of time.
+    pub fn bump_max_segment_version_overwrite(&self, op_num: SeqNumberType) {
+        self.max_persisted_segment_version_overwrite
+            .fetch_max(op_num, Ordering::Relaxed);
     }
 
     pub fn segment_ids(&self) -> Vec<SegmentId> {
@@ -792,6 +805,13 @@ impl SegmentHolder {
         // Grab and keep to segment RwLock's until the end of this function
         let segments = self.segment_locks(lock_order.iter().cloned())?;
 
+        // We can never have zero segments
+        // Having zero segments could permanently corrupt the WAL by acknowledging u64::MAX
+        assert!(
+            !segments.is_empty(),
+            "must always have at least one segment",
+        );
+
         // Read-lock all segments before flushing any, must prevent any writes to any segment
         // That is to prevent any copy-on-write operation on two segments from occurring in between
         // flushing the two segments. If that would happen, segments could end up in an
@@ -831,7 +851,13 @@ impl SegmentHolder {
             "Must flush appendable segments first",
         );
 
-        let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
+        // Start with the max_persisted_vesrion at the set overwrite value, which may just be 0
+        // Any of the segments we flush may increase this if they have a higher persisted version
+        // The overwrite is required to ensure we acknowledge no-op operations in WAL that didn't hit any segment
+        let mut max_persisted_version: SeqNumberType = self
+            .max_persisted_segment_version_overwrite
+            .load(Ordering::Relaxed);
+
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
         let mut proxy_segments = vec![];
