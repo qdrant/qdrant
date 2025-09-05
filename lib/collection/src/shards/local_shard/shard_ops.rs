@@ -1,6 +1,18 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::order_by::OrderBy;
+use segment::types::{
+    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+};
+use tokio::runtime::Handle;
+use tokio::sync::oneshot;
+use tokio::time::Instant;
+use tokio::time::error::Elapsed;
+
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
@@ -16,17 +28,6 @@ use crate::profiling::interface::log_request_to_collector;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
-use async_trait::async_trait;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use segment::data_types::facets::{FacetParams, FacetResponse};
-use segment::data_types::order_by::OrderBy;
-use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
-};
-use tokio::runtime::Handle;
-use tokio::sync::oneshot;
-use tokio::time::Instant;
-use tokio::time::error::Elapsed;
 
 #[async_trait]
 impl ShardOperation for LocalShard {
