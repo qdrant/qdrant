@@ -45,7 +45,7 @@ def test_batch_update_validation(collection_name):
                         {
                             "id": 7,
                             "vector": {
-                                "image": [1.0, 0.0, 9.0],
+                                "image": [1.0, 0.0, 9.0, 1.0],
                             },
                             "payload": {},
                         },
