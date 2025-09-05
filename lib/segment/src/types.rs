@@ -3397,20 +3397,33 @@ pub struct MinShould {
 pub struct Filter {
     /// At least one of those conditions should match
     #[validate(nested)]
-    #[serde(default, with = "MaybeOneOrMany")]
+    #[serde(
+        default,
+        with = "MaybeOneOrMany",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub should: Option<Vec<Condition>>,
     /// At least minimum amount of given conditions should match
     #[validate(nested)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_should: Option<MinShould>,
     /// All conditions must match
     #[validate(nested)]
-    #[serde(default, with = "MaybeOneOrMany")]
+    #[serde(
+        default,
+        with = "MaybeOneOrMany",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub must: Option<Vec<Condition>>,
     /// All conditions must NOT match
     #[validate(nested)]
-    #[serde(default, with = "MaybeOneOrMany")]
+    #[serde(
+        default,
+        with = "MaybeOneOrMany",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub must_not: Option<Vec<Condition>>,
 }

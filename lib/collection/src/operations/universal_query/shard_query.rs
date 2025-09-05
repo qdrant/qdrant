@@ -32,15 +32,19 @@ pub type ShardQueryResponse = Vec<Vec<ScoredPoint>>;
 /// Direct translation of the user-facing request, but with all point ids substituted with their corresponding vectors.
 ///
 /// For the case of formula queries, it collects conditions and variables too.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Serialize)]
 pub struct ShardQueryRequest {
     pub prefetches: Vec<ShardPrefetch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub query: Option<ScoringQuery>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<Filter>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub score_threshold: Option<OrderedFloat<ScoreType>>,
     pub limit: usize,
     pub offset: usize,
     /// Search params for when there is no prefetch
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<SearchParams>,
     pub with_vector: WithVector,
     pub with_payload: WithPayloadInterface,
@@ -70,7 +74,7 @@ pub enum SampleInternal {
 }
 
 /// Maximal Marginal Relevance configuration
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash, Serialize)]
 pub struct MmrInternal {
     /// Query vector, used to get the relevance of each point.
     pub vector: VectorInternal,
@@ -83,7 +87,7 @@ pub struct MmrInternal {
 }
 
 /// Same as `Query`, but with the resolved vector references.
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash, Serialize)]
 pub enum ScoringQuery {
     /// Score points against some vector(s)
     Vector(QueryEnum),
@@ -177,13 +181,17 @@ impl ScoringQuery {
     }
 }
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Serialize)]
 pub struct ShardPrefetch {
     pub prefetches: Vec<ShardPrefetch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub query: Option<ScoringQuery>,
     pub limit: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<SearchParams>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<Filter>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub score_threshold: Option<OrderedFloat<ScoreType>>,
 }
 

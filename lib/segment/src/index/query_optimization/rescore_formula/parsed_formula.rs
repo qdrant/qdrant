@@ -20,7 +20,7 @@ pub type ConditionId = usize;
 pub type PreciseScore = f64;
 pub type PreciseScoreOrdered = OrderedFloat<PreciseScore>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ParsedFormula {
     /// Variables used in the formula
     pub payload_vars: HashSet<JsonPath>,
@@ -57,7 +57,7 @@ impl Hash for ParsedFormula {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash, Serialize)]
 pub enum ParsedExpression {
     // Terminal
     Constant(PreciseScoreOrdered),
@@ -127,7 +127,7 @@ impl VariableId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash, Serialize)]
 pub enum DatetimeExpression {
     Constant(DateTimePayloadType),
     PayloadVariable(JsonPath),

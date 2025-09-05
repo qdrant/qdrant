@@ -1,6 +1,6 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use shard::operations::CollectionUpdateOperations;
 
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
@@ -33,9 +33,7 @@ impl Loggable for CollectionUpdateOperations {
 
 impl Loggable for Vec<ShardQueryRequest> {
     fn to_log_value(&self) -> Value {
-        json!({
-            "todo": "implement me",
-        })
+        serde_json::to_value(self).unwrap_or_default()
     }
 
     fn request_name(&self) -> &'static str {
