@@ -363,6 +363,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
         max_indexing_threads: 0,
         on_disk: Some(false),
         payload_m: None,
+        copy_vectors: None,
     };
 
     let open_args = HnswIndexOpenArgs {

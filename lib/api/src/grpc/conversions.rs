@@ -2126,6 +2126,7 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             max_indexing_threads,
             on_disk,
             payload_m,
+            copy_vectors,
         } = hnsw_config;
         Self {
             m: m.unwrap_or_default() as usize,
@@ -2134,6 +2135,7 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             max_indexing_threads: max_indexing_threads.unwrap_or_default() as usize,
             on_disk,
             payload_m: payload_m.map(|x| x as usize),
+            copy_vectors,
         }
     }
 }

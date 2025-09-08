@@ -28,7 +28,6 @@ use super::gpu::gpu_devices_manager::LockedGpuDevice;
 use super::gpu::gpu_insert_context::GpuInsertContext;
 #[cfg(feature = "gpu")]
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
-use super::graph_links::GraphLinksFormat;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::operation_time_statistics::{
@@ -47,7 +46,7 @@ use crate::index::hnsw_index::gpu::{get_gpu_groups_count, gpu_graph_builder::bui
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersWithVectors};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
-use crate::index::hnsw_index::graph_links::StorageGraphLinksVectors;
+use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, StorageGraphLinksVectors};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
@@ -78,7 +77,6 @@ pub const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 32;
 #[cfg(not(debug_assertions))]
 pub const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
 
-const LINK_COMPRESSION_FORMAT: GraphLinksFormat = GraphLinksFormat::Compressed;
 const LINK_COMPRESSION_CONVERT_EXISTING: bool = false;
 
 #[derive(Debug)]
@@ -614,9 +612,21 @@ impl HNSWIndex {
         // as it will be discarded anyway
         let is_on_disk = true;
 
-        let graph_links_vectors =
-            StorageGraphLinksVectors::try_new(&vector_storage_ref, quantized_vectors_ref.as_ref());
-        let format_param = LINK_COMPRESSION_FORMAT.with_param(graph_links_vectors.as_ref());
+        let graph_links_vectors = hnsw_config
+            .copy_vectors
+            .unwrap_or_default()
+            .then(|| {
+                // NOTE: the configuration is silently ignored if try_new fails.
+                StorageGraphLinksVectors::try_new(
+                    &vector_storage_ref,
+                    quantized_vectors_ref.as_ref(),
+                )
+            })
+            .flatten();
+        let format_param = match graph_links_vectors.as_ref() {
+            Some(v) => GraphLinksFormatParam::CompressedWithVectors(v),
+            None => GraphLinksFormatParam::Compressed,
+        };
 
         let graph: GraphLayers =
             graph_layers_builder.into_graph_layers(path, format_param, is_on_disk)?;

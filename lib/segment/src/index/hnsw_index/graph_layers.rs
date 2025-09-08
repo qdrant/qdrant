@@ -706,14 +706,15 @@ mod tests {
             M,
             dim,
             false,
-            initial_format.is_with_vectors(),
+            true,
             distance,
             &mut rng,
         );
+        let graph_links_vectors = vector_holder.graph_links_vectors();
         let graph1 = graph_layers_builder
             .into_graph_layers(
                 dir.path(),
-                initial_format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
+                initial_format.with_param_for_tests(graph_links_vectors.as_ref()),
                 true,
             )
             .unwrap();

@@ -220,6 +220,10 @@ impl QuantizedVectors {
         }
     }
 
+    pub fn is_on_disk(&self) -> bool {
+        self.storage_impl.is_on_disk()
+    }
+
     /// Get layout for a single quantized vector.
     ///
     /// I.e. the size of a single vector in bytes, and the required alignment.

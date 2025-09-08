@@ -184,7 +184,7 @@ impl GraphLinksFormat {
     }
 }
 
-impl GraphLinksFormatParam<'_> {
+impl<'a> GraphLinksFormatParam<'a> {
     pub fn as_format(&self) -> GraphLinksFormat {
         match self {
             GraphLinksFormatParam::Plain => GraphLinksFormat::Plain,

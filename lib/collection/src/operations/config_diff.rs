@@ -90,6 +90,12 @@ pub struct HnswConfigDiff {
     /// Custom M param for additional payload-aware HNSW links. If not set, default M will be used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload_m: Option<usize>,
+    /// Store copies of original and quantized vectors within the HNSW index file. Default: false.
+    /// Enabling this option will trade the search speed for disk usage by reducing amount of
+    /// random seeks during the search.
+    /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_vectors: Option<bool>,
 }
 
 #[derive(

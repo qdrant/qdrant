@@ -348,6 +348,7 @@ mod tests {
             max_indexing_threads: 0,
             on_disk: None,
             payload_m: None,
+            copy_vectors: None,
         };
 
         // Optimizers used in test
@@ -508,6 +509,7 @@ mod tests {
             max_indexing_threads: 0,
             on_disk: None,
             payload_m: None,
+            copy_vectors: None,
         };
 
         let permit_cpu_count = num_rayon_threads(hnsw_config_collection.max_indexing_threads);
