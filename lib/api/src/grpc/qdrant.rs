@@ -4496,6 +4496,7 @@ pub struct DeletePointVectors {
     pub wait: ::core::option::Option<bool>,
     /// Affected points
     #[prost(message, optional, tag = "3")]
+    #[validate(nested)]
     pub points_selector: ::core::option::Option<PointsSelector>,
     /// List of vector names to delete
     #[prost(message, optional, tag = "4")]
@@ -4527,6 +4528,7 @@ pub struct SetPayloadPoints {
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
     /// Affected points
     #[prost(message, optional, tag = "5")]
+    #[validate(nested)]
     pub points_selector: ::core::option::Option<PointsSelector>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "6")]
@@ -4558,6 +4560,7 @@ pub struct DeletePayloadPoints {
     pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Affected points
     #[prost(message, optional, tag = "5")]
+    #[validate(nested)]
     pub points_selector: ::core::option::Option<PointsSelector>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "6")]
@@ -4583,6 +4586,7 @@ pub struct ClearPayloadPoints {
     pub wait: ::core::option::Option<bool>,
     /// Affected points
     #[prost(message, optional, tag = "3")]
+    #[validate(nested)]
     pub points: ::core::option::Option<PointsSelector>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
@@ -6862,11 +6866,13 @@ pub struct ValuesCount {
     #[prost(uint64, optional, tag = "4")]
     pub lte: ::core::option::Option<u64>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsSelector {
     #[prost(oneof = "points_selector::PointsSelectorOneOf", tags = "1, 2")]
+    #[validate(nested)]
     pub points_selector_one_of: ::core::option::Option<
         points_selector::PointsSelectorOneOf,
     >,

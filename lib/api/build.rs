@@ -191,6 +191,7 @@ fn configure_validation(builder: Builder) -> Builder {
         ], &[])
         // Service: points.proto
         .validates(&[
+            ("PointsSelector.points_selector_one_of", ""),
             ("UpsertPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("UpsertPoints.points", ""),
             ("UpsertPoints.update_filter", ""),
@@ -200,11 +201,15 @@ fn configure_validation(builder: Builder) -> Builder {
             ("UpdatePointVectors.update_filter", ""),
             ("DeletePointVectors.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("DeletePointVectors.vector_names", "length(min = 1, message = \"must specify vector names to delete\")"),
+            ("DeletePointVectors.points_selector", ""),
             ("PointVectors.vectors", ""),
             ("GetPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("SetPayloadPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("SetPayloadPoints.points_selector", ""),
             ("DeletePayloadPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("DeletePayloadPoints.points_selector", ""),
             ("ClearPayloadPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("ClearPayloadPoints.points", ""),
             ("UpdateBatchPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("UpdateBatchPoints.operations", "length(min = 1)"),
             ("CreateFieldIndexCollection.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
