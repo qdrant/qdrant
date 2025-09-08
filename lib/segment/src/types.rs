@@ -1579,11 +1579,8 @@ pub struct GeoPoint {
 
 impl Hash for GeoPoint {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Normalize -0.0 to 0.0 so that equal floats hash the same
-        let lon = if self.lon == 0.0 { 0.0 } else { self.lon };
-        let lat = if self.lat == 0.0 { 0.0 } else { self.lat };
-        lon.to_bits().hash(state);
-        lat.to_bits().hash(state);
+        OrderedFloat(self.lon).hash(state);
+        OrderedFloat(self.lat).hash(state);
     }
 }
 

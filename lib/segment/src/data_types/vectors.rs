@@ -5,6 +5,7 @@ use std::slice::ChunksExactMut;
 
 use half::f16;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
@@ -35,26 +36,14 @@ impl Hash for VectorInternal {
         match self {
             VectorInternal::Dense(v) => {
                 for element in v {
-                    // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
-                    let bits = if *element == 0.0 {
-                        0.0f32.to_bits()
-                    } else {
-                        element.to_bits()
-                    };
-                    state.write_u32(bits);
+                    OrderedFloat(*element).hash(state);
                 }
             }
             VectorInternal::Sparse(v) => {
                 let SparseVector { indices, values } = v;
                 indices.hash(state);
                 for value in values {
-                    // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
-                    let bits = if *value == 0.0 {
-                        0.0f32.to_bits()
-                    } else {
-                        value.to_bits()
-                    };
-                    state.write_u32(bits);
+                    OrderedFloat(*value).hash(state);
                 }
             }
             VectorInternal::MultiDense(v) => {

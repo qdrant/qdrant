@@ -4,6 +4,7 @@ use std::hash::Hash;
 use common::types::ScoreType;
 use gridstore::Blob;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors};
@@ -25,13 +26,7 @@ impl Hash for SparseVector {
         let Self { indices, values } = self;
         indices.hash(state);
         for &value in values {
-            // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
-            let bits = if value == 0.0 {
-                0.0f32.to_bits()
-            } else {
-                value.to_bits()
-            };
-            bits.hash(state);
+            OrderedFloat(value).hash(state);
         }
     }
 }

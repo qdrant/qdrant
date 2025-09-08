@@ -9,6 +9,7 @@ use api::rest::{
 };
 use common::validation::validate_multi_vector;
 use itertools::Itertools as _;
+use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
@@ -462,13 +463,7 @@ impl Hash for BatchVectorStructPersisted {
             BatchVectorStructPersisted::Single(dense) => {
                 for vector in dense {
                     for v in vector {
-                        // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
-                        let bits = if *v == 0.0 {
-                            0.0f32.to_bits()
-                        } else {
-                            v.to_bits()
-                        };
-                        state.write_u32(bits);
+                        OrderedFloat(*v).hash(state);
                     }
                 }
             }
@@ -476,13 +471,7 @@ impl Hash for BatchVectorStructPersisted {
                 for vector in multidense {
                     for v in vector {
                         for element in v {
-                            // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
-                            let bits = if *element == 0.0 {
-                                0.0f32.to_bits()
-                            } else {
-                                element.to_bits()
-                            };
-                            state.write_u32(bits);
+                            OrderedFloat(*element).hash(state);
                         }
                     }
                 }
@@ -619,25 +608,13 @@ impl std::hash::Hash for VectorStructPersisted {
         match self {
             VectorStructPersisted::Single(vec) => {
                 for v in vec {
-                    // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
-                    let bits = if *v == 0.0 {
-                        0.0f32.to_bits()
-                    } else {
-                        v.to_bits()
-                    };
-                    state.write_u32(bits);
+                    OrderedFloat(*v).hash(state);
                 }
             }
             VectorStructPersisted::MultiDense(multi_vec) => {
                 for vec in multi_vec {
                     for v in vec {
-                        // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
-                        let bits = if *v == 0.0 {
-                            0.0f32.to_bits()
-                        } else {
-                            v.to_bits()
-                        };
-                        state.write_u32(bits);
+                        OrderedFloat(*v).hash(state);
                     }
                 }
             }
@@ -811,13 +788,7 @@ impl Hash for VectorPersisted {
         match self {
             VectorPersisted::Dense(vec) => {
                 for v in vec {
-                    // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
-                    let bits = if *v == 0.0 {
-                        0.0f32.to_bits()
-                    } else {
-                        v.to_bits()
-                    };
-                    state.write_u32(bits);
+                    OrderedFloat(*v).hash(state);
                 }
             }
             VectorPersisted::Sparse(sparse) => {
@@ -826,13 +797,7 @@ impl Hash for VectorPersisted {
             VectorPersisted::MultiDense(multi_vec) => {
                 for vec in multi_vec {
                     for v in vec {
-                        // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
-                        let bits = if *v == 0.0 {
-                            0.0f32.to_bits()
-                        } else {
-                            v.to_bits()
-                        };
-                        state.write_u32(bits);
+                        OrderedFloat(*v).hash(state);
                     }
                 }
             }
