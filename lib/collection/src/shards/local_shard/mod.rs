@@ -21,6 +21,7 @@ use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::defaults::MAX_CONCURRENT_SEGMENT_LOADS;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::{panic, tar_ext};
@@ -43,6 +44,7 @@ use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc, oneshot};
+use tokio::task::JoinSet;
 use wal::{Wal, WalOptions};
 
 use self::clock_map::{ClockMap, RecoveryPoint};
@@ -296,7 +298,7 @@ impl LocalShard {
             })?;
 
         // Grab segment paths, filter out hidden entries and non-directories
-        let segment_paths = segment_paths
+        let mut segment_paths = segment_paths
             .into_iter()
             .filter(|entry| {
                 let is_hidden = entry
@@ -323,18 +325,9 @@ impl LocalShard {
             })
             .map(|entry| entry.path());
 
-        let mut load_handlers = vec![];
-
-        // This semaphore is used to limit the number of threads that load segments concurrently.
-        // Uncomment it if you need to debug segment loading.
-        // let semaphore = Arc::new(parking_lot::Mutex::new(()));
-
-        for segment_path in segment_paths {
+        let load_segment_task = |segment_path: PathBuf| {
             let payload_index_schema = payload_index_schema.clone();
-            // let semaphore_clone = semaphore.clone();
-            load_handlers.push(tokio::task::spawn_blocking(move || {
-                // let _guard = semaphore_clone.lock();
-
+            move || {
                 let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
 
                 let Some(mut segment) = segment else {
@@ -356,38 +349,43 @@ impl LocalShard {
                 }
 
                 CollectionResult::Ok(Some(segment))
-            }));
+            }
+        };
+
+        let mut load_segment_tasks = JoinSet::new();
+        for segment_path in segment_paths.by_ref().take(MAX_CONCURRENT_SEGMENT_LOADS) {
+            load_segment_tasks.spawn_blocking(load_segment_task(segment_path));
         }
 
         let mut segment_holder = SegmentHolder::default();
 
-        for handler in load_handlers {
-            let segment = handler.await.map_err(|err| {
-                CollectionError::service_error(format!("Can't join segment load thread: {err}"))
-            })??;
+        while let Some(result) = load_segment_tasks.join_next().await {
+            let segment = result??;
 
-            let Some(segment) = segment else {
-                continue;
-            };
+            if let Some(segment) = segment {
+                collection_config_read
+                    .params
+                    .vectors
+                    .check_compatible_with_segment_config(&segment.config().vector_data, true)?;
+                collection_config_read
+                    .params
+                    .sparse_vectors
+                    .as_ref()
+                    .map(|sparse_vectors| {
+                        check_sparse_compatible_with_segment_config(
+                            sparse_vectors,
+                            &segment.config().sparse_vector_data,
+                            true,
+                        )
+                    })
+                    .unwrap_or(Ok(()))?;
 
-            collection_config_read
-                .params
-                .vectors
-                .check_compatible_with_segment_config(&segment.config().vector_data, true)?;
-            collection_config_read
-                .params
-                .sparse_vectors
-                .as_ref()
-                .map(|sparse_vectors| {
-                    check_sparse_compatible_with_segment_config(
-                        sparse_vectors,
-                        &segment.config().sparse_vector_data,
-                        true,
-                    )
-                })
-                .unwrap_or(Ok(()))?;
+                segment_holder.add_new(segment);
+            }
 
-            segment_holder.add_new(segment);
+            if let Some(segment_path) = segment_paths.next() {
+                load_segment_tasks.spawn_blocking(load_segment_task(segment_path));
+            }
         }
 
         let res = deduplicate_points_async(&segment_holder).await?;
