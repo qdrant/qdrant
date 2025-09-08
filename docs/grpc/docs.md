@@ -1596,6 +1596,7 @@ Note: 1kB = 1 vector of size 256. |
 | multivector_config | [StrictModeMultivectorConfig](#qdrant-StrictModeMultivectorConfig) | optional |  |
 | sparse_config | [StrictModeSparseConfig](#qdrant-StrictModeSparseConfig) | optional |  |
 | max_points_count | [uint64](#uint64) | optional |  |
+| max_payload_index_count | [uint64](#uint64) | optional |  |
 
 
 

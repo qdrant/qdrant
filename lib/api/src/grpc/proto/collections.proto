@@ -374,6 +374,7 @@ message StrictModeConfig {
   optional StrictModeMultivectorConfig multivector_config = 16;
   optional StrictModeSparseConfig sparse_config = 17;
   optional uint64 max_points_count = 18;
+  optional uint64 max_payload_index_count = 19;
 }
 
 message StrictModeSparseConfig {

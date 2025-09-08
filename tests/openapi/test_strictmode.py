@@ -2413,3 +2413,108 @@ def test_strict_mode_multitenant_full_scan(full_collection_name):
 
     # finally allowed
     filtered_query().raise_for_status()
+
+def test_strict_mode_payload_index_count(collection_name):
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "max_payload_index_count": 1,
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+
+    assert response.ok
+    new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
+    assert new_strict_mode_config['enabled']
+    assert new_strict_mode_config['max_payload_index_count'] == 1
+
+    # let's create one index, should work
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "city",
+            "field_schema": {
+                "type": "keyword",
+            }
+        }
+    ).raise_for_status()
+
+    # should fail now with 1 index already
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "price",
+            "field_schema": {
+                "type": "float",
+            }
+        }
+    )
+
+    assert not response.ok
+    assert response.status_code == 400
+    assert " Collection already has the maximum number of payload indices (1). Help: Please delete an existing index before creating a new one." in response.json()['status']['error']
+
+    # let's increase the limit by one
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "max_payload_index_count": 2,
+    })
+
+    # should work now with 2 indices allowed
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "price",
+            "field_schema": {
+                "type": "float",
+            }
+        }
+    ).raise_for_status()
+
+    # should fail now with 2 indices already
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "count",
+            "field_schema": {
+                "type": "integer",
+            }
+        }
+    )
+
+    assert not response.ok
+    assert response.status_code == 400
+    assert " Collection already has the maximum number of payload indices (2). Help: Please delete an existing index before creating a new one." in response.json()['status']['error']
+
+    set_strict_mode(collection_name, {
+        "enabled": False,
+    })
+
+    # should work now without strict mode
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "count",
+            "field_schema": {
+                "type": "integer",
+            }
+        }
+    ).raise_for_status()

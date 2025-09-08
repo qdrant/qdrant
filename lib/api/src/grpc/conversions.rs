@@ -2159,6 +2159,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             condition_max_size,
             multivector_config,
             sparse_config,
+            max_payload_index_count,
         } = value;
         Self {
             enabled,
@@ -2181,6 +2182,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             multivector_config: multivector_config
                 .map(segment::types::StrictModeMultivectorConfig::from),
             sparse_config: sparse_config.map(segment::types::StrictModeSparseConfig::from),
+            max_payload_index_count: max_payload_index_count.map(|i| i as usize),
         }
     }
 }
@@ -2282,6 +2284,7 @@ impl From<segment::types::StrictModeConfigOutput> for StrictModeConfig {
             condition_max_size,
             multivector_config,
             sparse_config,
+            max_payload_index_count,
         } = value;
         Self {
             enabled,
@@ -2302,6 +2305,7 @@ impl From<segment::types::StrictModeConfigOutput> for StrictModeConfig {
             multivector_config: multivector_config.map(StrictModeMultivectorConfig::from),
             sparse_config: sparse_config.map(StrictModeSparseConfig::from),
             max_points_count: max_points_count.map(|i| i as u64),
+            max_payload_index_count: max_payload_index_count.map(|i| i as u64),
         }
     }
 }
@@ -2327,6 +2331,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfigOutput {
             condition_max_size,
             multivector_config,
             sparse_config,
+            max_payload_index_count,
         } = value;
         Self {
             enabled,
@@ -2349,6 +2354,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfigOutput {
             multivector_config: multivector_config
                 .map(segment::types::StrictModeMultivectorConfigOutput::from),
             sparse_config: sparse_config.map(segment::types::StrictModeSparseConfigOutput::from),
+            max_payload_index_count: max_payload_index_count.map(|i| i as usize),
         }
     }
 }

@@ -7449,6 +7449,13 @@
                 "nullable": true
               }
             ]
+          },
+          "max_payload_index_count": {
+            "description": "Max number of payload index in a collection",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
           }
         }
       },
@@ -9996,6 +10003,13 @@
                 "nullable": true
               }
             ]
+          },
+          "max_payload_index_count": {
+            "description": "Max number of payload index in a collection",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
           }
         }
       },
