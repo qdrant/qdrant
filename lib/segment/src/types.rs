@@ -515,7 +515,9 @@ pub const fn default_quantization_oversampling_value() -> Option<f64> {
 }
 
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Default, Hash,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index

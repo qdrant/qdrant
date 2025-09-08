@@ -1023,7 +1023,7 @@ impl<'a> From<CollectionCoreSearchRequest<'a>> for api::grpc::qdrant::CoreSearch
             limit: *limit as u64,
             with_vectors: with_vector.clone().map(|wv| wv.into()),
             with_payload: with_payload.clone().map(|wp| wp.into()),
-            params: params.clone().map(|sp| sp.into()),
+            params: params.map(|sp| sp.into()),
             score_threshold: *score_threshold,
             offset: Some(*offset as u64),
             vector_name: Some(query.get_vector_name().to_owned()),

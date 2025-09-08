@@ -37,7 +37,7 @@ impl Generalizer for ShardQueryRequest {
             score_threshold: *score_threshold,
             limit: *limit,
             offset: *offset,
-            params: params.clone(),
+            params: *params,
             with_vector: with_vector.clone(),
             with_payload: with_payload.clone(),
         }
@@ -61,7 +61,7 @@ impl Generalizer for ShardPrefetch {
             filter: filter.clone(),
             score_threshold: *score_threshold,
             limit: *limit,
-            params: params.clone(),
+            params: *params,
         }
     }
 }
