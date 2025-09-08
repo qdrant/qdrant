@@ -62,7 +62,7 @@ jobs:
         run: cargo install cargo-llvm-cov && sudo apt install -y lcov
       - name: Install dependencies
         run: sudo apt-get install clang
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Install dependencies
