@@ -224,7 +224,7 @@ indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.18.0", features = ["rayon"] }
 integer-encoding = "4.0.2"
 itertools = "0.14.0"
-log = "0.4.27"
+log = "0.4.28"
 memmap2 = "0.9.8"
 nix = { version = "0.29", features = ["fs", "feature"] }
 num-traits = "0.2.19"
