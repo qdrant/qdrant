@@ -80,10 +80,11 @@ pub trait GraphLinksVectors {
     fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]>;
 
     /// Get the layout of base and link vectors.
-    fn vectors_layout(&self) -> OperationResult<GraphLinksVectorsLayout>;
+    fn vectors_layout(&self) -> GraphLinksVectorsLayout;
 }
 
 /// Layout of base and link vectors, returned by [`GraphLinksVectors::vectors_layout`].
+#[derive(Copy, Clone)]
 pub struct GraphLinksVectorsLayout {
     pub base: Layout,
     pub link: Layout,
@@ -91,8 +92,26 @@ pub struct GraphLinksVectorsLayout {
 
 /// A [`GraphLinksVectors`] implementation that uses real storage.
 pub struct StorageGraphLinksVectors<'a> {
-    pub vector_storage: &'a VectorStorageEnum,   // base vectors
-    pub quantized_vectors: &'a QuantizedVectors, // link vectors
+    vector_storage: &'a VectorStorageEnum,   // base vectors
+    quantized_vectors: &'a QuantizedVectors, // link vectors
+    vectors_layout: GraphLinksVectorsLayout,
+}
+
+impl<'a> StorageGraphLinksVectors<'a> {
+    pub fn try_new(
+        vector_storage: &'a VectorStorageEnum,
+        quantized_vectors: Option<&'a QuantizedVectors>,
+    ) -> Option<Self> {
+        let quantized_vectors = quantized_vectors?;
+        Some(Self {
+            vector_storage,
+            quantized_vectors,
+            vectors_layout: GraphLinksVectorsLayout {
+                base: vector_storage.get_vector_layout().ok()?,
+                link: quantized_vectors.get_quantized_vector_layout().ok()?,
+            },
+        })
+    }
 }
 
 impl<'a> GraphLinksVectors for StorageGraphLinksVectors<'a> {
@@ -113,11 +132,8 @@ impl<'a> GraphLinksVectors for StorageGraphLinksVectors<'a> {
         Ok(self.quantized_vectors.get_quantized_vector(point_id))
     }
 
-    fn vectors_layout(&self) -> OperationResult<GraphLinksVectorsLayout> {
-        Ok(GraphLinksVectorsLayout {
-            base: self.vector_storage.get_vector_layout()?,
-            link: self.quantized_vectors.get_quantized_vector_layout()?,
-        })
+    fn vectors_layout(&self) -> GraphLinksVectorsLayout {
+        self.vectors_layout
     }
 }
 
@@ -336,8 +352,7 @@ mod tests {
     struct TestGraphLinksVectors {
         base_vectors: Vec<Vec<u8>>,
         link_vectors: Vec<Vec<u8>>,
-        base_layout: Layout,
-        link_layout: Layout,
+        vectors_layout: GraphLinksVectorsLayout,
     }
 
     impl TestGraphLinksVectors {
@@ -352,8 +367,10 @@ mod tests {
                 link_vectors: (0..count)
                     .map(|_| (0..link_len).map(|_| rng.random()).collect())
                     .collect(),
-                base_layout: Layout::from_size_align(base_len, base_align).unwrap(),
-                link_layout: Layout::from_size_align(link_len, link_align).unwrap(),
+                vectors_layout: GraphLinksVectorsLayout {
+                    base: Layout::from_size_align(base_len, base_align).unwrap(),
+                    link: Layout::from_size_align(link_len, link_align).unwrap(),
+                },
             }
         }
     }
@@ -367,11 +384,8 @@ mod tests {
             Ok(&self.link_vectors[point_id as usize])
         }
 
-        fn vectors_layout(&self) -> OperationResult<GraphLinksVectorsLayout> {
-            Ok(GraphLinksVectorsLayout {
-                base: self.base_layout,
-                link: self.link_layout,
-            })
+        fn vectors_layout(&self) -> GraphLinksVectorsLayout {
+            self.vectors_layout
         }
     }
 

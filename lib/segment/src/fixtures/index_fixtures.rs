@@ -81,10 +81,7 @@ impl TestRawScorerProducer {
     }
 
     pub fn graph_links_vectors(&self) -> Option<StorageGraphLinksVectors<'_>> {
-        Some(StorageGraphLinksVectors {
-            vector_storage: &self.storage,
-            quantized_vectors: self.quantized_vectors.as_ref()?,
-        })
+        StorageGraphLinksVectors::try_new(&self.storage, self.quantized_vectors.as_ref())
     }
 
     pub fn scorer(&self, query: impl Into<QueryVector>) -> FilteredScorer<'_> {

@@ -33,7 +33,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
         GraphLinksFormatParam::Plain => None,
         GraphLinksFormatParam::Compressed => None,
         GraphLinksFormatParam::CompressedWithVectors(v) => {
-            let vectors_layout = v.vectors_layout()?;
+            let vectors_layout = v.vectors_layout();
             if vectors_layout.base.size() % vectors_layout.base.align() != 0 {
                 return Err(OperationError::service_error(
                     "Base vector size must be a multiple of its alignment",

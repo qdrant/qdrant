@@ -614,14 +614,9 @@ impl HNSWIndex {
         // as it will be discarded anyway
         let is_on_disk = true;
 
-        let combined_provider =
-            quantized_vectors_ref
-                .as_ref()
-                .map(|quantized_vectors| StorageGraphLinksVectors {
-                    vector_storage: &vector_storage_ref,
-                    quantized_vectors,
-                });
-        let format_param = LINK_COMPRESSION_FORMAT.with_param(combined_provider.as_ref());
+        let graph_links_vectors =
+            StorageGraphLinksVectors::try_new(&vector_storage_ref, quantized_vectors_ref.as_ref());
+        let format_param = LINK_COMPRESSION_FORMAT.with_param(graph_links_vectors.as_ref());
 
         let graph: GraphLayers =
             graph_layers_builder.into_graph_layers(path, format_param, is_on_disk)?;
