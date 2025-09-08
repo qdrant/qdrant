@@ -652,6 +652,7 @@ pub struct NearestQuery {
 
     /// Perform MMR (Maximal Marginal Relevance) reranking after search,
     /// using the same vector in this query to calculate relevance.
+    #[validate(nested)]
     pub mmr: Option<Mmr>,
 }
 
