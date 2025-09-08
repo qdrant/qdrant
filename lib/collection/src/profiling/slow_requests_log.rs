@@ -88,11 +88,11 @@ impl SlowRequestsLog {
         });
 
         if let Some(duplicate) = duplicate {
-            if duplicate.duration < entry.duration {
-                // Keep old record
+            if duplicate.duration >= entry.duration {
+                // Existing record took longer, keep it
                 None
             } else {
-                // Remove old record and insert new one
+                // New record took longer, replace existing record
                 self.log_priority_queue
                     .retain(|e| e.content_hash != entry.content_hash);
                 self.log_priority_queue.push(entry)
