@@ -763,7 +763,7 @@ mod tests {
                     ),
                 ))),
                 limit: 37,
-                params: dummy_params.clone(),
+                params: *dummy_params,
                 filter: dummy_filter.clone(),
                 score_threshold: Some(OrderedFloat(0.1)),
             }],
