@@ -9778,13 +9778,15 @@
             "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
             "type": "number",
             "format": "double",
+            "maximum": 1,
+            "minimum": 0,
             "nullable": true
           },
           "vacuum_min_vector_number": {
             "description": "The minimal number of vectors in a segment, required to perform segment optimization",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 100,
             "nullable": true
           },
           "default_segment_number": {

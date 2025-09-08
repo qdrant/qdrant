@@ -124,8 +124,10 @@ pub struct CollectionParamsDiff {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge)]
 pub struct OptimizersConfigDiff {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+    #[validate(range(min = 0.0, max = 1.0))]
     pub deleted_threshold: Option<f64>,
     /// The minimal number of vectors in a segment, required to perform segment optimization
+    #[validate(range(min = 100))]
     pub vacuum_min_vector_number: Option<usize>,
     /// Target amount of segments optimizer will try to keep.
     /// Real amount of segments may vary depending on multiple parameters:
