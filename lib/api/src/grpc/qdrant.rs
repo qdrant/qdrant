@@ -4397,6 +4397,7 @@ pub struct DeletePoints {
     pub wait: ::core::option::Option<bool>,
     /// Affected points
     #[prost(message, optional, tag = "3")]
+    #[validate(nested)]
     pub points: ::core::option::Option<PointsSelector>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
@@ -6035,6 +6036,7 @@ pub struct SearchMatrixOffsets {
     #[prost(message, repeated, tag = "4")]
     pub ids: ::prost::alloc::vec::Vec<PointId>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6043,23 +6045,28 @@ pub struct PointsUpdateOperation {
         oneof = "points_update_operation::Operation",
         tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10"
     )]
+    #[validate(nested)]
     pub operation: ::core::option::Option<points_update_operation::Operation>,
 }
 /// Nested message and enum types in `PointsUpdateOperation`.
 pub mod points_update_operation {
+    #[derive(validator::Validate)]
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct PointStructList {
         #[prost(message, repeated, tag = "1")]
+        #[validate(nested)]
         pub points: ::prost::alloc::vec::Vec<super::PointStruct>,
         /// Option for custom sharding to specify used shard keys
         #[prost(message, optional, tag = "2")]
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
         /// If specified, only points that match this filter will be updated, others will be inserted
         #[prost(message, optional, tag = "3")]
+        #[validate(nested)]
         pub update_filter: ::core::option::Option<super::Filter>,
     }
+    #[derive(validator::Validate)]
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6071,6 +6078,7 @@ pub mod points_update_operation {
         >,
         /// Affected points
         #[prost(message, optional, tag = "2")]
+        #[validate(nested)]
         pub points_selector: ::core::option::Option<super::PointsSelector>,
         /// Option for custom sharding to specify used shard keys
         #[prost(message, optional, tag = "3")]
@@ -6079,6 +6087,7 @@ pub mod points_update_operation {
         #[prost(string, optional, tag = "4")]
         pub key: ::core::option::Option<::prost::alloc::string::String>,
     }
+    #[derive(validator::Validate)]
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6090,6 +6099,7 @@ pub mod points_update_operation {
         >,
         /// Affected points
         #[prost(message, optional, tag = "2")]
+        #[validate(nested)]
         pub points_selector: ::core::option::Option<super::PointsSelector>,
         /// Option for custom sharding to specify used shard keys
         #[prost(message, optional, tag = "3")]
@@ -6098,6 +6108,7 @@ pub mod points_update_operation {
         #[prost(string, optional, tag = "4")]
         pub key: ::core::option::Option<::prost::alloc::string::String>,
     }
+    #[derive(validator::Validate)]
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6106,11 +6117,13 @@ pub mod points_update_operation {
         pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
         /// Affected points
         #[prost(message, optional, tag = "2")]
+        #[validate(nested)]
         pub points_selector: ::core::option::Option<super::PointsSelector>,
         /// Option for custom sharding to specify used shard keys
         #[prost(message, optional, tag = "3")]
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
     }
+    #[derive(validator::Validate)]
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6125,12 +6138,14 @@ pub mod points_update_operation {
         #[prost(message, optional, tag = "3")]
         pub update_filter: ::core::option::Option<super::Filter>,
     }
+    #[derive(validator::Validate)]
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DeleteVectors {
         /// Affected points
         #[prost(message, optional, tag = "1")]
+        #[validate(nested)]
         pub points_selector: ::core::option::Option<super::PointsSelector>,
         /// List of vector names to delete
         #[prost(message, optional, tag = "2")]
@@ -6146,17 +6161,20 @@ pub mod points_update_operation {
     pub struct DeletePoints {
         /// Affected points
         #[prost(message, optional, tag = "1")]
+        #[validate(nested)]
         pub points: ::core::option::Option<super::PointsSelector>,
         /// Option for custom sharding to specify used shard keys
         #[prost(message, optional, tag = "2")]
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
     }
+    #[derive(validator::Validate)]
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ClearPayload {
         /// Affected points
         #[prost(message, optional, tag = "1")]
+        #[validate(nested)]
         pub points: ::core::option::Option<super::PointsSelector>,
         /// Option for custom sharding to specify used shard keys
         #[prost(message, optional, tag = "2")]
@@ -6204,7 +6222,7 @@ pub struct UpdateBatchPoints {
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
     #[prost(message, repeated, tag = "3")]
-    #[validate(length(min = 1))]
+    #[validate(nested)]
     pub operations: ::prost::alloc::vec::Vec<PointsUpdateOperation>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
