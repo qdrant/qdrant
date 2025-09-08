@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
 use std::hash::{self, Hash, Hasher};
+use std::mem;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -3043,42 +3044,34 @@ pub enum Condition {
 
 impl Hash for Condition {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        mem::discriminant(self).hash(state);
         match self {
             Condition::Field(field_condition) => {
-                0u8.hash(state);
                 field_condition.hash(state);
             }
             Condition::IsEmpty(is_empty_condition) => {
-                1u8.hash(state);
                 is_empty_condition.hash(state);
             }
             Condition::IsNull(is_null_condition) => {
-                2u8.hash(state);
                 is_null_condition.hash(state);
             }
             Condition::HasId(has_id_condition) => {
-                3u8.hash(state);
                 has_id_condition.hash(state);
             }
             Condition::HasVector(has_vector_condition) => {
-                4u8.hash(state);
                 has_vector_condition.hash(state);
             }
             Condition::Nested(nested_condition) => {
-                5u8.hash(state);
                 nested_condition.hash(state);
             }
             Condition::Filter(filter) => {
-                6u8.hash(state);
                 filter.hash(state);
             }
             Condition::CustomIdChecker(_) => {
-                7u8.hash(state);
-                // We cannot hash the inner function, so we just use a constant value.
+                // We cannot hash the inner function
                 // This means that two different CustomIdChecker conditions will have the same hash,
                 // but that's acceptable since we cannot do better, and only expected to be used
                 // for logging and profiling purposes.
-                0u8.hash(state);
             }
         }
     }
