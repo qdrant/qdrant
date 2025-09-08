@@ -3,12 +3,12 @@ use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
 use common::types::ScoreType;
-use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::utils::unordered_hash_unique;
 use crate::json_path::{JsonPath, JsonPathItem};
 use crate::types::{Condition, DateTimePayloadType, GeoPoint};
 
@@ -44,15 +44,9 @@ impl Hash for ParsedFormula {
             formula,
         } = self;
 
-        payload_vars.iter().sorted().for_each(|v| v.hash(state));
+        unordered_hash_unique(state, payload_vars.iter());
         conditions.hash(state);
-        defaults
-            .iter()
-            .sorted_by_key(|(k, _)| *k)
-            .for_each(|(k, v)| {
-                k.hash(state);
-                v.hash(state);
-            });
+        unordered_hash_unique(state, defaults.iter());
         formula.hash(state);
     }
 }

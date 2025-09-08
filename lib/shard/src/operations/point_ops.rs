@@ -12,6 +12,7 @@ use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use segment::common::operation_error::OperationError;
+use segment::common::utils::unordered_hash_unique;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
     BatchVectorStructInternal, DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal,
@@ -476,13 +477,7 @@ impl Hash for BatchVectorStructPersisted {
                     }
                 }
             }
-            BatchVectorStructPersisted::Named(named) => {
-                let keys: Vec<_> = named.keys().sorted().collect();
-                for key in keys {
-                    key.hash(state);
-                    named.get(key).hash(state);
-                }
-            }
+            BatchVectorStructPersisted::Named(named) => unordered_hash_unique(state, named.iter()),
         }
     }
 }
@@ -619,11 +614,7 @@ impl std::hash::Hash for VectorStructPersisted {
                 }
             }
             VectorStructPersisted::Named(map) => {
-                let keys: Vec<_> = map.keys().sorted().collect();
-                for key in keys {
-                    key.hash(state);
-                    map.get(key).hash(state);
-                }
+                unordered_hash_unique(state, map.iter());
             }
         }
     }

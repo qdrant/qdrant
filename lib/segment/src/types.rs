@@ -42,6 +42,7 @@ use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::json_path::JsonPath;
 use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
+use crate::types::utils::unordered_hash_unique;
 use crate::utils::maybe_arc::MaybeArc;
 
 pub type PayloadKeyType = JsonPath;
@@ -2938,9 +2939,7 @@ pub struct HasIdCondition {
 
 impl Hash for HasIdCondition {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        for id in self.has_id.iter().sorted() {
-            id.hash(state);
-        }
+        unordered_hash_unique(state, self.has_id.iter());
     }
 }
 
