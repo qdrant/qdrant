@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
-use std::iter;
+use std::{iter, mem};
 
 use api::conversions::json::payload_to_proto;
 use api::rest::{
@@ -457,11 +457,18 @@ pub enum BatchVectorStructPersisted {
 
 impl Hash for BatchVectorStructPersisted {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        mem::discriminant(self).hash(state);
         match self {
             BatchVectorStructPersisted::Single(dense) => {
                 for vector in dense {
                     for v in vector {
-                        state.write_u32(v.to_bits());
+                        // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
+                        let bits = if *v == 0.0 {
+                            0.0f32.to_bits()
+                        } else {
+                            v.to_bits()
+                        };
+                        state.write_u32(bits);
                     }
                 }
             }
@@ -469,7 +476,13 @@ impl Hash for BatchVectorStructPersisted {
                 for vector in multidense {
                     for v in vector {
                         for element in v {
-                            state.write_u32(element.to_bits());
+                            // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
+                            let bits = if *element == 0.0 {
+                                0.0f32.to_bits()
+                            } else {
+                                element.to_bits()
+                            };
+                            state.write_u32(bits);
                         }
                     }
                 }
@@ -602,16 +615,29 @@ pub enum VectorStructPersisted {
 
 impl std::hash::Hash for VectorStructPersisted {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        mem::discriminant(self).hash(state);
         match self {
             VectorStructPersisted::Single(vec) => {
                 for v in vec {
-                    state.write_u32(v.to_bits());
+                    // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
+                    let bits = if *v == 0.0 {
+                        0.0f32.to_bits()
+                    } else {
+                        v.to_bits()
+                    };
+                    state.write_u32(bits);
                 }
             }
             VectorStructPersisted::MultiDense(multi_vec) => {
                 for vec in multi_vec {
                     for v in vec {
-                        state.write_u32(v.to_bits());
+                        // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
+                        let bits = if *v == 0.0 {
+                            0.0f32.to_bits()
+                        } else {
+                            v.to_bits()
+                        };
+                        state.write_u32(bits);
                     }
                 }
             }
@@ -781,10 +807,17 @@ pub enum VectorPersisted {
 
 impl Hash for VectorPersisted {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        mem::discriminant(self).hash(state);
         match self {
             VectorPersisted::Dense(vec) => {
                 for v in vec {
-                    state.write_u32(v.to_bits());
+                    // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
+                    let bits = if *v == 0.0 {
+                        0.0f32.to_bits()
+                    } else {
+                        v.to_bits()
+                    };
+                    state.write_u32(bits);
                 }
             }
             VectorPersisted::Sparse(sparse) => {
@@ -793,7 +826,13 @@ impl Hash for VectorPersisted {
             VectorPersisted::MultiDense(multi_vec) => {
                 for vec in multi_vec {
                     for v in vec {
-                        state.write_u32(v.to_bits());
+                        // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
+                        let bits = if *v == 0.0 {
+                            0.0f32.to_bits()
+                        } else {
+                            v.to_bits()
+                        };
+                        state.write_u32(bits);
                     }
                 }
             }

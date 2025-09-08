@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::mem;
 use std::slice::ChunksExactMut;
 
 use half::f16;
@@ -30,17 +31,30 @@ pub enum VectorInternal {
 
 impl Hash for VectorInternal {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        mem::discriminant(self).hash(state);
         match self {
             VectorInternal::Dense(v) => {
                 for element in v {
-                    element.to_bits().hash(state);
+                    // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
+                    let bits = if *element == 0.0 {
+                        0.0f32.to_bits()
+                    } else {
+                        element.to_bits()
+                    };
+                    state.write_u32(bits);
                 }
             }
             VectorInternal::Sparse(v) => {
                 let SparseVector { indices, values } = v;
                 indices.hash(state);
                 for value in values {
-                    value.to_bits().hash(state);
+                    // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
+                    let bits = if *value == 0.0 {
+                        0.0f32.to_bits()
+                    } else {
+                        value.to_bits()
+                    };
+                    state.write_u32(bits);
                 }
             }
             VectorInternal::MultiDense(v) => {

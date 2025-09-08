@@ -1579,9 +1579,11 @@ pub struct GeoPoint {
 
 impl Hash for GeoPoint {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Use to_bits to ensure that -0.0 and 0.0 are treated the same
-        self.lon.to_bits().hash(state);
-        self.lat.to_bits().hash(state);
+        // Normalize -0.0 to 0.0 so that equal floats hash the same
+        let lon = if self.lon == 0.0 { 0.0 } else { self.lon };
+        let lat = if self.lat == 0.0 { 0.0 } else { self.lat };
+        lon.to_bits().hash(state);
+        lat.to_bits().hash(state);
     }
 }
 
@@ -2184,6 +2186,7 @@ pub enum AnyVariants {
 
 impl Hash for AnyVariants {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        mem::discriminant(self).hash(state);
         match self {
             AnyVariants::Strings(index_set) => {
                 for item in index_set.iter() {

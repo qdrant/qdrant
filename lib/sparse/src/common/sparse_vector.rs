@@ -26,9 +26,14 @@ impl Hash for SparseVector {
         indices.hash(state);
         for &value in values {
             // Normalize -0.0 to 0.0 to keep Hash consistent with PartialEq
-            let bits = if value == 0.0 { 0.0f32.to_bits() } else { value.to_bits() };
+            let bits = if value == 0.0 {
+                0.0f32.to_bits()
+            } else {
+                value.to_bits()
+            };
             bits.hash(state);
         }
+    }
 }
 
 /// Same as `SparseVector` but with `DimOffset` indices.

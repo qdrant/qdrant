@@ -61,7 +61,12 @@ impl Hash for StartFrom {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
             StartFrom::Integer(i) => i.hash(state),
-            StartFrom::Float(f) => f.to_bits().hash(state),
+            StartFrom::Float(f) => if *f == 0.0 {
+                0.0f64.to_bits()
+            } else {
+                f.to_bits()
+            }
+            .hash(state),
             StartFrom::Datetime(dt) => dt.hash(state),
         }
     }
