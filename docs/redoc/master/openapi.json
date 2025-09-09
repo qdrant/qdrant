@@ -30,7 +30,7 @@
           {
             "name": "timeout",
             "in": "query",
-            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
               "type": "integer"
             }
@@ -126,7 +126,7 @@
           {
             "name": "timeout",
             "in": "query",
-            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
               "type": "integer"
             }
@@ -769,6 +769,14 @@
             }
           },
           {
+            "name": "timeout",
+            "in": "query",
+            "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
             "name": "force",
             "in": "query",
             "description": "If true - removes peer even if it has shards/replicas on it.",
@@ -1014,7 +1022,7 @@
           {
             "name": "timeout",
             "in": "query",
-            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
               "type": "integer"
             }
@@ -1109,7 +1117,7 @@
           {
             "name": "timeout",
             "in": "query",
-            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
               "type": "integer"
             }
@@ -1194,7 +1202,7 @@
           {
             "name": "timeout",
             "in": "query",
-            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
               "type": "integer"
             }
@@ -1281,7 +1289,7 @@
           {
             "name": "timeout",
             "in": "query",
-            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
               "type": "integer"
             }
@@ -1746,7 +1754,7 @@
           {
             "name": "timeout",
             "in": "query",
-            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "description": "Wait for operation commit timeout in seconds.\nIf timeout is reached - request will return with service error.\n",
             "schema": {
               "type": "integer"
             }
