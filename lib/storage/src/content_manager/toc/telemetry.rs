@@ -37,4 +37,19 @@ impl TableOfContent {
     pub fn max_collections(&self) -> Option<usize> {
         self.storage_config.max_collections
     }
+
+    pub fn max_payload_indexes(&self) -> Option<usize> {
+        self.storage_config.max_payload_indexes
+    }
+
+    /// Count total number of payload indexes across all collections
+    pub async fn count_total_payload_indexes(&self, access: &Access) -> usize {
+        let mut total = 0;
+        for collection_pass in self.all_collections(access).await {
+            if let Ok(collection) = self.get_collection(&collection_pass).await {
+                total += collection.payload_index_count();
+            }
+        }
+        total
+    }
 }

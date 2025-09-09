@@ -73,6 +73,7 @@ fn test_alias_operation() {
         shard_transfer_method: None,
         collection: None,
         max_collections: None,
+        max_payload_indexes: None,
     };
 
     let search_runtime = Runtime::new().unwrap();

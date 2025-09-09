@@ -231,6 +231,10 @@ storage:
   # If null - no limit.
   max_collections: null
 
+  # Maximum number of payload indexes allowed to be created across all collections
+  # If null - no limit.
+  max_payload_indexes: null
+
 service:
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32

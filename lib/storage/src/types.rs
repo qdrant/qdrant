@@ -111,6 +111,9 @@ pub struct StorageConfig {
     /// Maximum number of collections to allow in the cluster.
     #[serde(default)]
     pub max_collections: Option<usize>,
+    /// Maximum number of payload indexes to allow across all collections.
+    #[serde(default)]
+    pub max_payload_indexes: Option<usize>,
 }
 
 impl StorageConfig {

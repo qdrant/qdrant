@@ -563,6 +563,11 @@ impl Collection {
         }
     }
 
+    /// Get the count of payload indexes in this collection
+    pub fn payload_index_count(&self) -> usize {
+        self.payload_index_schema.read().schema.len()
+    }
+
     pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
         // Abort resharding, if shards are removed from peer driving resharding
         // (which *usually* means the *peer* is being removed from consensus)

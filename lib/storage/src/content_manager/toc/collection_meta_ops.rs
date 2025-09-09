@@ -652,6 +652,18 @@ impl TableOfContent {
         &self,
         operation: CreatePayloadIndex,
     ) -> Result<(), StorageError> {
+        // Check if creating a new payload index would exceed the configured limit
+        if let Some(max_payload_indexes) = self.max_payload_indexes() {
+            let access = crate::rbac::Access::full("Internal check");
+            let current_count = self.count_total_payload_indexes(&access).await;
+            if current_count >= max_payload_indexes {
+                return Err(StorageError::bad_request(format!(
+                    "Cannot create payload index. The maximum number of payload indexes across collections has been reached: {}",
+                    max_payload_indexes
+                )));
+            }
+        }
+
         // We measure hardware on collection level here to not touch consensus for measurements but still
         // measure hw for payload index creation on all nodes.
         let collection_hw_acc = HwMeasurementAcc::new_with_metrics_drain(
