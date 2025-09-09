@@ -207,6 +207,34 @@ fi
   "negative": [{ "num": 2 }]
 }' $QDRANT_HOST qdrant.Points/Recommend
 
+# old format
+"${docker_grpcurl[@]}" -d '{
+  "collection_name": "test_collection",
+  "target": {
+    "single": {
+        "vector": {
+            "data": [0.2,0.1,0.9,0.1]
+        }
+    }
+  },
+  "limit": 1
+}' $QDRANT_HOST qdrant.Points/Discover
+
+# new format
+"${docker_grpcurl[@]}" -d '{
+  "collection_name": "test_collection",
+  "target": {
+    "single": {
+        "vector": {
+            "dense": {
+                "data": [0.2,0.1,0.9,0.1]
+            }
+        }
+    }
+  },
+  "limit": 1
+}' $QDRANT_HOST qdrant.Points/Discover
+
 # city facet
 "${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
