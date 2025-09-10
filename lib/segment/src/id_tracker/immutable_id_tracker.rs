@@ -97,7 +97,10 @@ impl ImmutableIdTracker {
 
         // Deserialize the list entries
         for i in 0..len {
-            let (internal_id, external_id) = Self::read_entry(&mut reader)?;
+            let (internal_id, external_id) = Self::read_entry(&mut reader)
+                .map_err(|err| {
+                    OperationError::inconsistent_storage(format!("Immutable ID tracker failed to read next mapping, reading {} out of {len}, assuming malformed storage: {err}", i + 1))
+                })?;
 
             // Need to push this regardless of point deletion as the vecs index represents the internal id
             // which would become wrong if we leave out entries.
@@ -147,30 +150,40 @@ impl ImmutableIdTracker {
     pub(crate) fn read_entry<R: Read>(
         mut reader: R,
     ) -> OperationResult<(PointOffsetType, ExtendedPointId)> {
-        let point_id_type = reader.read_u8()?;
+        let point_id_type = reader.read_u8().map_err(|err| {
+            OperationError::inconsistent_storage(format!(
+                "failed to read point ID type from file: {err}"
+            ))
+        })?;
 
         let external_id = match ExternalIdType::from_byte(point_id_type) {
             None => {
                 return Err(OperationError::inconsistent_storage(
-                    "Invalid byte read when deserializing Immutable id tracker",
+                    "invalid byte for point ID type",
                 ));
             }
             Some(ExternalIdType::Number) => {
                 let num = reader.read_u64::<FileEndianess>().map_err(|err| {
-                    OperationError::inconsistent_storage(format!("Immutable ID tracker failed to read numeric point ID from file, assuming malformed storage: {err}"))
+                    OperationError::inconsistent_storage(format!(
+                        "failed to read numeric point ID from file: {err}"
+                    ))
                 })?;
                 PointIdType::NumId(num)
             }
             Some(ExternalIdType::Uuid) => {
                 let uuid_u128 = reader.read_u128::<FileEndianess>().map_err(|err| {
-                    OperationError::inconsistent_storage(format!("Immutable ID tracker failed to read UUID point ID from file, assuming malformed storage: {err}"))
+                    OperationError::inconsistent_storage(format!(
+                        "failed to read UUID point ID from file: {err}"
+                    ))
                 })?;
                 PointIdType::Uuid(Uuid::from_u128_le(uuid_u128))
             }
         };
 
         let internal_id = reader.read_u32::<FileEndianess>().map_err(|err| {
-            OperationError::inconsistent_storage(format!("Immutable ID tracker failed to read internal point ID from file, assuming malformed storage: {err}"))
+            OperationError::inconsistent_storage(format!(
+                "failed to read internal point ID from file: {err}"
+            ))
         })? as PointOffsetType;
         Ok((internal_id, external_id))
     }
