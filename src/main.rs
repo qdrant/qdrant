@@ -37,7 +37,7 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 #[cfg(all(
     not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
+    any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "loongarch64")
 ))]
 use tikv_jemallocator::Jemalloc;
 
@@ -56,7 +56,7 @@ use crate::startup::{remove_started_file_indicator, touch_started_file_indicator
 
 #[cfg(all(
     not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
+    any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "loongarch64")
 ))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;

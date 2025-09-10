@@ -289,6 +289,46 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         }
     }
 
+    #[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+    pub fn score_point_lsx(&self, query: &EncodedQueryU8, i: u32) -> f32 {
+        unsafe {
+            let (vector_offset, v_ptr) = self.get_vec_ptr(i);
+            let score = match self.metadata.vector_parameters.distance_type {
+                DistanceType::Dot | DistanceType::L2 => impl_score_dot_lsx(
+                    query.encoded_query.as_ptr(),
+                    v_ptr,
+                    self.metadata.actual_dim as u32,
+                ),
+                DistanceType::L1 => impl_score_l1_lsx(
+                    query.encoded_query.as_ptr(),
+                    v_ptr,
+                    self.metadata.actual_dim as u32,
+                ),
+            };
+            self.metadata.multiplier * score + query.offset + vector_offset
+        }
+    }
+
+    #[cfg(all(target_arch = "loongarch64", target_feature = "lasx"))]
+    pub fn score_point_lasx(&self, query: &EncodedQueryU8, i: u32) -> f32 {
+        unsafe {
+            let (vector_offset, v_ptr) = self.get_vec_ptr(i);
+            let score = match self.metadata.vector_parameters.distance_type {
+                DistanceType::Dot | DistanceType::L2 => impl_score_dot_lasx(
+                    query.encoded_query.as_ptr(),
+                    v_ptr,
+                    self.metadata.actual_dim as u32,
+                ),
+                DistanceType::L1 => impl_score_l1_lasx(
+                    query.encoded_query.as_ptr(),
+                    v_ptr,
+                    self.metadata.actual_dim as u32,
+                ),
+            };
+            self.metadata.multiplier * score + query.offset + vector_offset
+        }
+    }
+
     fn find_alpha_offset_size_dim<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
     ) -> (f32, f32) {
@@ -494,6 +534,38 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
             }
         }
 
+        #[cfg(all(target_arch = "loongarch64", target_feature = "lasx"))]
+        if std::arch::is_loongarch_feature_detected!("lasx") {
+            unsafe {
+                let score = match self.metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::L2 => {
+                        impl_score_dot_lasx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                    DistanceType::L1 => {
+                        impl_score_l1_lasx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                };
+
+                return self.metadata.multiplier * score + offset;
+            }
+        }
+
+        #[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+        if std::arch::is_loongarch_feature_detected!("lsx") {
+            unsafe {
+                let score = match self.metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::L2 => {
+                        impl_score_dot_lsx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                    DistanceType::L1 => {
+                        impl_score_l1_lsx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                };
+
+                return self.metadata.multiplier * score + offset;
+            }
+        }
+
         let score = match self.metadata.vector_parameters.distance_type {
             DistanceType::Dot | DistanceType::L2 => {
                 impl_score_dot(q_ptr, v_ptr, self.metadata.actual_dim)
@@ -637,6 +709,38 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
             }
         }
 
+        #[cfg(all(target_arch = "loongarch64", target_feature = "lasx"))]
+        if std::arch::is_loongarch_feature_detected!("lasx") {
+            unsafe {
+                let score = match self.metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::L2 => {
+                        impl_score_dot_lasx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                    DistanceType::L1 => {
+                        impl_score_l1_lasx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                };
+
+                return self.metadata.multiplier * score + query.offset + vector_offset;
+            }
+        }
+
+        #[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+        if std::arch::is_loongarch_feature_detected!("lsx") {
+            unsafe {
+                let score = match self.metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::L2 => {
+                        impl_score_dot_lsx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                    DistanceType::L1 => {
+                        impl_score_l1_lsx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
+                    }
+                };
+
+                return self.metadata.multiplier * score + query.offset + vector_offset;
+            }
+        }
+
         let score = match self.metadata.vector_parameters.distance_type {
             DistanceType::Dot | DistanceType::L2 => {
                 impl_score_dot(q_ptr, v_ptr, self.metadata.actual_dim)
@@ -675,6 +779,15 @@ unsafe extern "C" {
 
     fn impl_score_dot_sse(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
     fn impl_score_l1_sse(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
+}
+
+#[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+unsafe extern "C" {
+    fn impl_score_dot_lasx(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
+    fn impl_score_l1_lasx(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
+
+    fn impl_score_dot_lsx(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
+    fn impl_score_l1_lsx(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
