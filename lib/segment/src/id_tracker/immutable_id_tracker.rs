@@ -157,16 +157,22 @@ impl ImmutableIdTracker {
                 });
             }
             Some(ExternalIdType::Number) => {
-                let num = reader.read_u64::<FileEndianess>()?;
+                let num = reader.read_u64::<FileEndianess>().map_err(|err| {
+                    OperationError::inconsistent_storage(format!("Immutable ID tracker failed to read numeric point ID from file, assuming malformed storage: {err}"))
+                })?;
                 PointIdType::NumId(num)
             }
             Some(ExternalIdType::Uuid) => {
-                let uuid_u128 = reader.read_u128::<FileEndianess>()?;
+                let uuid_u128 = reader.read_u128::<FileEndianess>().map_err(|err| {
+                    OperationError::inconsistent_storage(format!("Immutable ID tracker failed to read UUID point ID from file, assuming malformed storage: {err}"))
+                })?;
                 PointIdType::Uuid(Uuid::from_u128_le(uuid_u128))
             }
         };
 
-        let internal_id = reader.read_u32::<FileEndianess>()? as PointOffsetType;
+        let internal_id = reader.read_u32::<FileEndianess>().map_err(|err| {
+            OperationError::inconsistent_storage(format!("Immutable ID tracker failed to read internal point ID from file, assuming malformed storage: {err}"))
+        })? as PointOffsetType;
         Ok((internal_id, external_id))
     }
 
