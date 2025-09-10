@@ -342,16 +342,16 @@ impl ForwardProxyShard {
         self.wrapped_shard.trigger_optimizers();
     }
 
-    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
-        self.wrapped_shard.get_telemetry_data(detail)
+    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+        self.wrapped_shard.get_telemetry_data(detail).await
     }
 
-    pub fn get_optimization_status(&self) -> OptimizersStatus {
-        self.wrapped_shard.get_optimization_status()
+    pub async fn get_optimization_status(&self) -> OptimizersStatus {
+        self.wrapped_shard.get_optimization_status().await
     }
 
-    pub fn get_size_stats(&self) -> SizeStats {
-        self.wrapped_shard.get_size_stats()
+    pub async fn get_size_stats(&self) -> SizeStats {
+        self.wrapped_shard.get_size_stats().await
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {
