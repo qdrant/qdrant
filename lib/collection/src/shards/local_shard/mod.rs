@@ -44,7 +44,6 @@ use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc, oneshot};
-use tokio::task::JoinSet;
 use wal::{Wal, WalOptions};
 
 use self::clock_map::{ClockMap, RecoveryPoint};
@@ -298,7 +297,7 @@ impl LocalShard {
             })?;
 
         // Grab segment paths, filter out hidden entries and non-directories
-        let mut segment_paths = segment_paths
+        let segment_paths = segment_paths
             .into_iter()
             .filter(|entry| {
                 let is_hidden = entry
@@ -325,68 +324,65 @@ impl LocalShard {
             })
             .map(|entry| entry.path());
 
-        let load_segment_task = |segment_path: PathBuf| {
-            let payload_index_schema = payload_index_schema.clone();
-            move || {
-                let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
+        let mut segment_stream = futures::stream::iter(segment_paths)
+            .map(|segment_path| {
+                let payload_index_schema = Arc::clone(&payload_index_schema);
+                tokio::task::spawn_blocking(move || {
+                    let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
 
-                let Some(mut segment) = segment else {
-                    std::fs::remove_dir_all(&segment_path).map_err(|err| {
-                        CollectionError::service_error(format!(
-                            "failed to remove leftover segment {}: {err}",
-                            segment_path.display(),
-                        ))
-                    })?;
+                    let Some(mut segment) = segment else {
+                        std::fs::remove_dir_all(&segment_path).map_err(|err| {
+                            CollectionError::service_error(format!(
+                                "failed to remove leftover segment {}: {err}",
+                                segment_path.display(),
+                            ))
+                        })?;
 
-                    return Ok(None);
-                };
+                        return Ok(None);
+                    };
 
-                segment.check_consistency_and_repair()?;
+                    segment.check_consistency_and_repair()?;
 
-                if rebuild_payload_index {
-                    segment
-                        .update_all_field_indices(&payload_index_schema.read().schema.clone())?;
-                }
+                    if rebuild_payload_index {
+                        segment.update_all_field_indices(
+                            &payload_index_schema.read().schema.clone(),
+                        )?;
+                    }
 
-                CollectionResult::Ok(Some(segment))
-            }
-        };
-
-        let mut load_segment_tasks = JoinSet::new();
-        for segment_path in segment_paths.by_ref().take(MAX_CONCURRENT_SEGMENT_LOADS) {
-            load_segment_tasks.spawn_blocking(load_segment_task(segment_path));
-        }
+                    CollectionResult::Ok(Some(segment))
+                })
+            })
+            .buffer_unordered(MAX_CONCURRENT_SEGMENT_LOADS);
 
         let mut segment_holder = SegmentHolder::default();
 
-        while let Some(result) = load_segment_tasks.join_next().await {
+        while let Some(result) = segment_stream.next().await {
             let segment = result??;
 
-            if let Some(segment) = segment {
-                collection_config_read
-                    .params
-                    .vectors
-                    .check_compatible_with_segment_config(&segment.config().vector_data, true)?;
-                collection_config_read
-                    .params
-                    .sparse_vectors
-                    .as_ref()
-                    .map(|sparse_vectors| {
-                        check_sparse_compatible_with_segment_config(
-                            sparse_vectors,
-                            &segment.config().sparse_vector_data,
-                            true,
-                        )
-                    })
-                    .unwrap_or(Ok(()))?;
+            let Some(segment) = segment else {
+                continue;
+            };
 
-                segment_holder.add_new(segment);
-            }
+            collection_config_read
+                .params
+                .vectors
+                .check_compatible_with_segment_config(&segment.config().vector_data, true)?;
+            collection_config_read
+                .params
+                .sparse_vectors
+                .as_ref()
+                .map(|sparse_vectors| {
+                    check_sparse_compatible_with_segment_config(
+                        sparse_vectors,
+                        &segment.config().sparse_vector_data,
+                        true,
+                    )
+                })
+                .unwrap_or(Ok(()))?;
 
-            if let Some(segment_path) = segment_paths.next() {
-                load_segment_tasks.spawn_blocking(load_segment_task(segment_path));
-            }
+            segment_holder.add_new(segment);
         }
+        drop(segment_stream); // release `payload_index_schema` from borrow checker
 
         let res = deduplicate_points_async(&segment_holder).await?;
         if res > 0 {
