@@ -151,10 +151,9 @@ impl ImmutableIdTracker {
 
         let external_id = match ExternalIdType::from_byte(point_id_type) {
             None => {
-                return Err(OperationError::InconsistentStorage {
-                    description: "Invalid byte read when deserializing Immutable id tracker"
-                        .to_string(),
-                });
+                return Err(OperationError::inconsistent_storage(
+                    "Invalid byte read when deserializing Immutable id tracker",
+                ));
             }
             Some(ExternalIdType::Number) => {
                 let num = reader.read_u64::<FileEndianess>().map_err(|err| {
