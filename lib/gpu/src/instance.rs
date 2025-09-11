@@ -204,7 +204,7 @@ impl Instance {
             }
         };
 
-        let vk_physical_devices = vk_physical_devices
+        let mut vk_physical_devices = vk_physical_devices
             .iter()
             .map(|&vk_physical_device| {
                 let device_properties =
@@ -227,6 +227,13 @@ impl Instance {
                 }
             })
             .collect::<Vec<_>>();
+
+        // Prefer discrete GPUs first, then integrated, then others.
+        vk_physical_devices.sort_by_key(|d| match d.device_type {
+            PhysicalDeviceType::Discrete => 0,
+            PhysicalDeviceType::Integrated => 1,
+            PhysicalDeviceType::Other => 2,
+        });
 
         if vk_physical_devices.is_empty() {
             // Don't forget to destroy the instance if we failed to find any physical devices.

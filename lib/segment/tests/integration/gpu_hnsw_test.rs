@@ -12,6 +12,7 @@ use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
+use segment::index::hnsw_index::gpu::set_gpu_groups_count;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
@@ -47,6 +48,8 @@ impl std::io::Write for CapturedLogs {
 
 #[test]
 fn test_gpu_filterable_hnsw() {
+    // Reduce GPU parallelism for determinism on diverse hardware
+    set_gpu_groups_count(Some(256));
     let captured_logs = Arc::new(Mutex::new(Vec::new()));
     let _env_logger = env_logger::builder()
         .is_test(true)

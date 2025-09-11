@@ -37,9 +37,13 @@ mod basic_test;
 #[cfg(any(test, feature = "testing"))]
 pub static GPU_TEST_INSTANCE: std::sync::LazyLock<std::sync::Arc<Instance>> =
     std::sync::LazyLock::new(|| {
+        // Try to create an instance with validation enabled; if the validation
+        // layer or extension is not present on the host, fall back to a plain
+        // instance so tests can still run on systems without SDK layers.
         Instance::builder()
             .with_debug_messenger(Box::new(PanicIfErrorMessenger {}))
             .build()
+            .or_else(|_| Instance::builder().build())
             .unwrap()
     });
 
