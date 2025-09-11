@@ -20,7 +20,6 @@ use segment::types::{
     Distance, HnswConfig, MultiVectorConfig, QuantizationConfig, StrictModeConfigOutput,
     WithPayloadInterface,
 };
-use sparse::common::sparse_vector::{SparseVector, validate_sparse_vector_impl};
 use tonic::Status;
 
 use super::cluster_ops::ReshardingDirection;
@@ -1075,7 +1074,7 @@ impl TryFrom<api::grpc::qdrant::TargetVector> for RecommendExample {
             .ok_or_else(|| Status::invalid_argument("Target vector is malformed"))
             .and_then(|target| match target {
                 api::grpc::qdrant::target_vector::Target::Single(vector_example) => {
-                    Ok(vector_example.try_into()?)
+                    RecommendExample::try_from(vector_example)
                 }
             })
     }
@@ -1154,7 +1153,7 @@ impl TryFrom<api::grpc::qdrant::Vector> for RecommendExample {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::Vector) -> Result<Self, Self::Error> {
-        let vector: VectorInternal = value.try_into()?;
+        let vector: VectorInternal = VectorInternal::try_from(value)?;
         match vector {
             VectorInternal::Dense(vector) => Ok(Self::Dense(vector)),
             VectorInternal::Sparse(vector) => Ok(Self::Sparse(vector)),
@@ -1181,27 +1180,7 @@ impl TryFrom<api::grpc::qdrant::VectorExample> for RecommendExample {
                     Ok(Self::PointId(id.try_into()?))
                 }
                 api::grpc::qdrant::vector_example::Example::Vector(vector) => {
-                    let api::grpc::qdrant::Vector {
-                        data,
-                        indices,
-                        vectors_count: _, // Ignored, since only used in old API
-                        vector: _,        // Ignored, since only used in old API
-                    } = vector;
-                    match indices {
-                        Some(indices) => {
-                            let api::grpc::qdrant::SparseIndices { data: indices } = indices;
-                            validate_sparse_vector_impl(&indices, &data).map_err(|e| {
-                                Status::invalid_argument(format!(
-                                    "Sparse indices does not match sparse vector conditions: {e}"
-                                ))
-                            })?;
-                            Ok(Self::Sparse(SparseVector {
-                                indices,
-                                values: data,
-                            }))
-                        }
-                        None => Ok(Self::Dense(data)),
-                    }
+                    Ok(RecommendExample::try_from(vector)?)
                 }
             })
     }
