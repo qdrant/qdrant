@@ -667,5 +667,10 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
 
 #[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
 unsafe extern "C" {
-    fn impl_score_point_lsx(query_ptr: *const f32, vector_ptr: *const u8, size: u32, offset: u32) -> f32;
+    fn impl_score_point_lsx(
+        query_ptr: *const f32,
+        vector_ptr: *const u8,
+        size: u32,
+        offset: u32,
+    ) -> f32;
 }

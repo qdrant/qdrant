@@ -1065,7 +1065,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                 u8::BITS as usize,
             ),
             EncodedQueryBQ::Scalar4bits(encoded_vector) => self.calculate_metric(
-
                 vector_data_usize,
                 &encoded_vector.encoded_vector,
                 u8::BITS as usize / 2,
