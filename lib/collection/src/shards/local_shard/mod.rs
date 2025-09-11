@@ -21,6 +21,7 @@ use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::defaults::MAX_CONCURRENT_SEGMENT_LOADS;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::{panic, tar_ext};
@@ -323,48 +324,40 @@ impl LocalShard {
             })
             .map(|entry| entry.path());
 
-        let mut load_handlers = vec![];
+        let mut segment_stream = futures::stream::iter(segment_paths)
+            .map(|segment_path| {
+                let payload_index_schema = Arc::clone(&payload_index_schema);
+                tokio::task::spawn_blocking(move || {
+                    let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
 
-        // This semaphore is used to limit the number of threads that load segments concurrently.
-        // Uncomment it if you need to debug segment loading.
-        // let semaphore = Arc::new(parking_lot::Mutex::new(()));
+                    let Some(mut segment) = segment else {
+                        std::fs::remove_dir_all(&segment_path).map_err(|err| {
+                            CollectionError::service_error(format!(
+                                "failed to remove leftover segment {}: {err}",
+                                segment_path.display(),
+                            ))
+                        })?;
 
-        for segment_path in segment_paths {
-            let payload_index_schema = payload_index_schema.clone();
-            // let semaphore_clone = semaphore.clone();
-            load_handlers.push(tokio::task::spawn_blocking(move || {
-                // let _guard = semaphore_clone.lock();
+                        return Ok(None);
+                    };
 
-                let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
+                    segment.check_consistency_and_repair()?;
 
-                let Some(mut segment) = segment else {
-                    std::fs::remove_dir_all(&segment_path).map_err(|err| {
-                        CollectionError::service_error(format!(
-                            "failed to remove leftover segment {}: {err}",
-                            segment_path.display(),
-                        ))
-                    })?;
+                    if rebuild_payload_index {
+                        segment.update_all_field_indices(
+                            &payload_index_schema.read().schema.clone(),
+                        )?;
+                    }
 
-                    return Ok(None);
-                };
-
-                segment.check_consistency_and_repair()?;
-
-                if rebuild_payload_index {
-                    segment
-                        .update_all_field_indices(&payload_index_schema.read().schema.clone())?;
-                }
-
-                CollectionResult::Ok(Some(segment))
-            }));
-        }
+                    CollectionResult::Ok(Some(segment))
+                })
+            })
+            .buffer_unordered(MAX_CONCURRENT_SEGMENT_LOADS);
 
         let mut segment_holder = SegmentHolder::default();
 
-        for handler in load_handlers {
-            let segment = handler.await.map_err(|err| {
-                CollectionError::service_error(format!("Can't join segment load thread: {err}"))
-            })??;
+        while let Some(result) = segment_stream.next().await {
+            let segment = result??;
 
             let Some(segment) = segment else {
                 continue;
@@ -389,6 +382,7 @@ impl LocalShard {
 
             segment_holder.add_new(segment);
         }
+        drop(segment_stream); // release `payload_index_schema` from borrow checker
 
         let res = deduplicate_points_async(&segment_holder).await?;
         if res > 0 {
