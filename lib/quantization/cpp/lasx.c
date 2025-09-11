@@ -91,7 +91,7 @@ static inline __m256i lasx_ext_wu_hu(__m128i _a)
     return __lasx_vext2xv_wu_hu(lasx_cast128_256(_a));
 }
 
-static __m256i lasx_set_w(int e7, int e6, int e5, int e4, int e3, int e2, int e1, int e0)
+static inline __m256i lasx_set_w(int e7, int e6, int e5, int e4, int e3, int e2, int e1, int e0)
 {
     v8i32 __ret = {e0, e1, e2, e3, e4, e5, e6, e7};
     return (__m256i)__ret;

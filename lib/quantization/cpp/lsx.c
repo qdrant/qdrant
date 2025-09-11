@@ -18,7 +18,7 @@ static int HSUM128_EPI16(__m128i X) {
     return r;
 }
 
-static __m128i lsx_set_w(int32_t a, int32_t b, int32_t c, int32_t d)
+static inline __m128i lsx_set_w(int32_t a, int32_t b, int32_t c, int32_t d)
 {
     v4i32 __ret = {d, c, b, a};
     return (__m128i)__ret;
