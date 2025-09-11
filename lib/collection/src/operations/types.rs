@@ -253,7 +253,6 @@ impl From<ShardInfoInternal> for CollectionInfo {
         let ShardInfoInternal {
             status,
             optimizer_status,
-            vectors_count: _,
             indexed_vectors_count,
             points_count,
             segments_count,
@@ -279,11 +278,6 @@ pub struct ShardInfoInternal {
     pub status: ShardStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
-    /// Approximate number of vectors in shard.
-    /// All vectors in shard are available for querying.
-    /// Calculated as `points_count x vectors_per_point`.
-    /// Where `vectors_per_point` is a number of named vectors in schema.
-    pub vectors_count: usize,
     /// Approximate number of indexed vectors in the shard.
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in vector index (HNSW).
