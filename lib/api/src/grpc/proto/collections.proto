@@ -557,7 +557,7 @@ message PayloadSchemaInfo {
 message CollectionInfo {
   CollectionStatus status = 1; // operating condition of the collection
   OptimizerStatus optimizer_status = 2; // status of collection optimizers
-  optional uint64 vectors_count = 3; // Approximate number of vectors in the collection
+  reserved 3; // Deprecated
   uint64 segments_count = 4; // Number of independent segments
   reserved 5; // Deprecated
   reserved 6; // Deprecated

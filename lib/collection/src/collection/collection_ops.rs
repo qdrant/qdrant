@@ -318,10 +318,6 @@ impl Collection {
         while let Some(response) = requests.try_next().await? {
             info.status = cmp::max(info.status, response.status);
             info.optimizer_status = cmp::max(info.optimizer_status, response.optimizer_status);
-            info.vectors_count = info
-                .vectors_count
-                .zip(response.vectors_count)
-                .map(|(a, b)| a + b);
             info.indexed_vectors_count = info
                 .indexed_vectors_count
                 .zip(response.indexed_vectors_count)
@@ -339,10 +335,6 @@ impl Collection {
                     .or_insert(response_schema);
             }
         }
-
-        // Do not display vectors count, as it is an approximate number
-        // and many users are confused by its behavior
-        info.vectors_count = None;
 
         Ok(info)
     }
