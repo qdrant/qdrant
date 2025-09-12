@@ -9,8 +9,11 @@ use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
     WriteOrdering,
 };
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::shared_storage_config::SharedStorageConfig;
-use collection::operations::types::{CollectionResult, NodeType, UpdateStatus, VectorsConfig};
+use collection::operations::types::{
+    CollectionResult, NodeType, PointRequestInternal, UpdateStatus, VectorsConfig,
+};
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -18,7 +21,9 @@ use collection::shards::replica_set::ReplicaState;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::flags::{FeatureFlags, init_feature_flags};
-use segment::types::Distance;
+use segment::payload_json;
+use segment::types::{Distance, WithVector};
+use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use tempfile::Builder;
 use tokio::time::sleep;
 
@@ -141,6 +146,51 @@ async fn test_continuous_snapshot() {
                         )
                         .await?;
                     assert_eq!(insert.status, UpdateStatus::Completed);
+                }
+
+                // Retrieve one point at a time
+                for i in 0..points_count {
+                    let retrieve_point = PointRequestInternal {
+                        ids: vec![i.into()],
+                        with_payload: None,
+                        with_vector: WithVector::Bool(false),
+                    };
+                    let hw_counter = HwMeasurementAcc::disposable();
+                    let retrieve_result = collection
+                        .retrieve(
+                            retrieve_point,
+                            None,
+                            &ShardSelectorInternal::All,
+                            None,
+                            hw_counter,
+                        )
+                        .await?;
+                    assert_eq!(retrieve_result.len(), 1);
+                }
+
+                // Set payload one point at a time
+                for i in 0..points_count {
+                    let set_payload = CollectionUpdateOperations::PayloadOperation(
+                        PayloadOps::SetPayload(SetPayloadOp {
+                            payload: payload_json! {
+                                "city": "London",
+                                "color": "green",
+                            },
+                            points: Some(vec![i.into()]),
+                            filter: None,
+                            key: None,
+                        }),
+                    );
+                    let hw_counter = HwMeasurementAcc::disposable();
+                    let set_result = collection
+                        .update_from_client_simple(
+                            set_payload,
+                            true,
+                            WriteOrdering::default(),
+                            hw_counter,
+                        )
+                        .await?;
+                    assert_eq!(set_result.status, UpdateStatus::Completed);
                 }
             }
             CollectionResult::Ok(())
