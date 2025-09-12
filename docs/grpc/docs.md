@@ -603,7 +603,6 @@
 | ----- | ---- | ----- | ----------- |
 | status | [CollectionStatus](#qdrant-CollectionStatus) |  | operating condition of the collection |
 | optimizer_status | [OptimizerStatus](#qdrant-OptimizerStatus) |  | status of collection optimizers |
-| vectors_count | [uint64](#uint64) | optional | Approximate number of vectors in the collection |
 | segments_count | [uint64](#uint64) |  | Number of independent segments |
 | config | [CollectionConfig](#qdrant-CollectionConfig) |  | Configuration |
 | payload_schema | [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry) | repeated | Collection data types |

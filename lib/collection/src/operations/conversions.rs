@@ -376,7 +376,6 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
         let CollectionInfo {
             status,
             optimizer_status,
-            vectors_count,
             indexed_vectors_count,
             points_count,
             segments_count,
@@ -443,7 +442,6 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     api::grpc::qdrant::OptimizerStatus { ok: false, error }
                 }
             }),
-            vectors_count: vectors_count.map(|count| count as u64),
             indexed_vectors_count: indexed_vectors_count.map(|count| count as u64),
             points_count: points_count.map(|count| count as u64),
             segments_count: segments_count as u64,
@@ -837,7 +835,6 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                 let api::grpc::qdrant::CollectionInfo {
                     status,
                     optimizer_status,
-                    vectors_count,
                     indexed_vectors_count,
                     points_count,
                     segments_count,
@@ -858,7 +855,6 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                             }
                         }
                     },
-                    vectors_count: vectors_count.map(|count| count as usize),
                     indexed_vectors_count: indexed_vectors_count.map(|count| count as usize),
                     points_count: points_count.map(|count| count as usize),
                     segments_count: segments_count as usize,
