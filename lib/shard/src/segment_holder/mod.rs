@@ -1003,7 +1003,8 @@ impl SegmentHolder {
             // Make sure to keep at least one proxy segment to maintain access to the points in the shared write segment.
             // The last proxy and the shared write segment will be promoted into the segment_holder atomically
             // by `Self::unproxy_all_segments` afterwards to maintain the read consistency.
-            if unproxied_segment_ids.len() < proxies.len() - 1 {
+            let is_last_proxy = unproxied_segment_ids.len() >= proxies.len() - 1;
+            if !is_last_proxy {
                 match Self::try_unproxy_segment(segments_lock, *segment_id, proxy_segment.clone()) {
                     Ok(lock) => {
                         segments_lock = lock;
