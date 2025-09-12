@@ -291,6 +291,10 @@ fn upsert_with_payload(
     } else {
         res &= segment.clear_payload(op_num, point_id, hw_counter)?;
     }
+    debug_assert!(
+        segment.has_point(point_id),
+        "the point {point_id} should be present immediately after the upsert"
+    );
     Ok(res)
 }
 

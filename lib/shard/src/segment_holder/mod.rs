@@ -969,6 +969,8 @@ impl SegmentHolder {
         log::trace!("Applying function on all proxied shard segments");
         let mut result = Ok(());
         let mut unproxied_segment_ids = Vec::with_capacity(proxies.len());
+        // Reverse to unproxify first non-appendable segments
+        proxies.reverse();
         for (segment_id, proxy_segment) in &proxies {
             // Get segment to snapshot
             let op_result = match proxy_segment {
@@ -997,13 +999,19 @@ impl SegmentHolder {
             }
 
             // Try to unproxy/release this segment since we don't use it anymore
-            // Unproxying now lets us release the segment earlier, prevent unnecessary writes to the temporary segment
-            match Self::try_unproxy_segment(segments_lock, *segment_id, proxy_segment.clone()) {
-                Ok(lock) => {
-                    segments_lock = lock;
-                    unproxied_segment_ids.push(*segment_id);
+            // Unproxying now lets us release the segment earlier, prevent unnecessary writes to the temporary segment.
+            // Make sure to keep at least one proxy segment to maintain access to the points in the shared write segment.
+            // The last proxy and the shared write segment will be promoted into the segment_holder atomically
+            // by `Self::unproxy_all_segments` afterwards to maintain the read consistency.
+            let remaining = proxies.len() - unproxied_segment_ids.len();
+            if remaining > 1 {
+                match Self::try_unproxy_segment(segments_lock, *segment_id, proxy_segment.clone()) {
+                    Ok(lock) => {
+                        segments_lock = lock;
+                        unproxied_segment_ids.push(*segment_id);
+                    }
+                    Err(lock) => segments_lock = lock,
                 }
-                Err(lock) => segments_lock = lock,
             }
         }
         proxies.retain(|(id, _)| !unproxied_segment_ids.contains(id));
