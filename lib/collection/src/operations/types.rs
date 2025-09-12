@@ -218,13 +218,6 @@ pub struct CollectionInfo {
     pub status: CollectionStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
-    /// DEPRECATED:
-    /// Approximate number of vectors in collection.
-    /// All vectors in collection are available for querying.
-    /// Calculated as `points_count x vectors_per_point`.
-    /// Where `vectors_per_point` is a number of named vectors in schema.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vectors_count: Option<usize>,
     /// Approximate number of indexed vectors in the collection.
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in a specialized vector index.
@@ -246,7 +239,6 @@ impl CollectionInfo {
         Self {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
-            vectors_count: Some(0),
             indexed_vectors_count: Some(0),
             points_count: Some(0),
             segments_count: 0,
@@ -261,7 +253,6 @@ impl From<ShardInfoInternal> for CollectionInfo {
         let ShardInfoInternal {
             status,
             optimizer_status,
-            vectors_count,
             indexed_vectors_count,
             points_count,
             segments_count,
@@ -271,7 +262,6 @@ impl From<ShardInfoInternal> for CollectionInfo {
         Self {
             status: status.into(),
             optimizer_status,
-            vectors_count: Some(vectors_count),
             indexed_vectors_count: Some(indexed_vectors_count),
             points_count: Some(points_count),
             segments_count,
@@ -288,11 +278,6 @@ pub struct ShardInfoInternal {
     pub status: ShardStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
-    /// Approximate number of vectors in shard.
-    /// All vectors in shard are available for querying.
-    /// Calculated as `points_count x vectors_per_point`.
-    /// Where `vectors_per_point` is a number of named vectors in schema.
-    pub vectors_count: usize,
     /// Approximate number of indexed vectors in the shard.
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in vector index (HNSW).

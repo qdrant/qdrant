@@ -1074,7 +1074,6 @@ impl LocalShard {
 
     pub async fn local_shard_info(&self) -> ShardInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
-        let mut vectors_count = 0;
         let mut indexed_vectors_count = 0;
         let mut points_count = 0;
         let mut segments_count = 0;
@@ -1087,7 +1086,6 @@ impl LocalShard {
 
                 let segment_info = segment.get().read().info();
 
-                vectors_count += segment_info.num_vectors;
                 indexed_vectors_count += segment_info.num_indexed_vectors;
                 points_count += segment_info.num_points;
                 for (key, val) in segment_info.index_schema {
@@ -1104,7 +1102,6 @@ impl LocalShard {
         ShardInfoInternal {
             status,
             optimizer_status,
-            vectors_count,
             indexed_vectors_count,
             points_count,
             segments_count,
