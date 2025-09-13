@@ -152,9 +152,17 @@ impl FromRequest for ActixAccess {
         req: &actix_web::HttpRequest,
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
-        let access = req.extensions_mut().remove::<Access>().unwrap_or_else(|| {
+        let mut access = req.extensions_mut().remove::<Access>().unwrap_or_else(|| {
             Access::full("All requests have full by default access when API key is not configured")
         });
+
+        if let Some(service_config) =
+            req.app_data::<actix_web::web::Data<crate::settings::ServiceConfig>>()
+            && service_config.read_only_mode
+        {
+            access = Access::full_ro("System is in read-only mode");
+        }
+
         ready(Ok(ActixAccess(access)))
     }
 }

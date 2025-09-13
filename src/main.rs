@@ -134,6 +134,14 @@ struct Args {
     ///             It'll also compact consensus WAL to force snapshot
     #[arg(long, action, default_value_t = false)]
     reinit: bool,
+
+    /// Enable read-only mode.
+    /// When enabled, the instance will only serve read requests and reject all write operations
+    /// with 403 Forbidden. This mode assumes that all changes have been applied and flushed
+    /// to storage in advance, so WAL reading is skipped.
+    /// Distributed deployment cannot be run in read-only mode.
+    #[arg(long, action, default_value_t = false)]
+    read_only: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -148,7 +156,13 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let settings = Settings::new(args.config_path)?;
+    let mut settings = Settings::new(args.config_path)?;
+
+    // Apply CLI arguments that override config settings
+    if args.read_only {
+        settings.service.read_only_mode = true;
+        settings.storage.read_only_mode = true;
+    }
 
     // Set global feature flags, sourced from configuration
     init_feature_flags(settings.feature_flags);
@@ -277,6 +291,14 @@ fn main() -> anyhow::Result<()> {
     )?;
 
     let is_distributed_deployment = settings.cluster.enabled;
+
+    // Validate that read-only mode is not enabled for distributed deployments
+    if settings.service.read_only_mode && is_distributed_deployment {
+        return Err(anyhow::anyhow!(
+            "Read-only mode cannot be enabled for distributed deployments. \
+             Distributed deployments require consensus operations which are not compatible with read-only mode."
+        ));
+    }
 
     let temp_path = settings.storage.temp_path.as_deref();
 

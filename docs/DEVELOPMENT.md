@@ -34,6 +34,14 @@ docker run -p 6333:6333 \
     qdrant/qdrant
 ```
 
+For read-only deployments, you can use the CLI flag:
+
+```bash
+docker run -p 6333:6333 \
+    -v $(pwd)/path/to/data:/qdrant/storage \
+    qdrant/qdrant --read-only
+```
+
 * `/qdrant/storage` - is the place where Qdrant persists all your data.
 Make sure to mount it as a volume, otherwise docker will drop it with the container.
 - `/qdrant/snapshots` - is the place where Qdrant stores [snapshots](https://qdrant.tech/documentation/concepts/snapshots/)
@@ -83,6 +91,29 @@ To run Qdrant on local development environment you need to install below:
 
     ./target/release/qdrant
     ```
+
+Qdrant supports a read-only mode that can be enabled in two ways:
+
+1. Via CLI flag:
+    ```shell
+    ./target/release/qdrant --read-only
+    ```
+
+2. Via configuration file:**
+    Add or uncomment the following in your config file:
+    ```yaml
+    service:
+      read_only_mode: true
+    ```
+
+In read-only mode:
+- All write operations (create, update, delete) are rejected with 403 Forbidden
+- Only search and read operations are allowed
+- WAL reading is skipped for better performance
+- Cannot be used with distributed deployments
+
+This mode is useful for creating read-only replicas, maintenance scenarios, or when you need to ensure no modifications are made to the data.
+
 - Install Python dependencies for testing
     ```shell
     poetry -C tests install --sync

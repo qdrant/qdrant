@@ -262,6 +262,13 @@ service:
   # Check user HTTPS client certificate against CA file specified in tls config
   verify_https_client_certificate: false
 
+  # Enable read-only mode for this instance.
+  # In read-only mode, all write operations will be rejected with 403 Forbidden.
+  # This mode assumes that all changes have been applied and flushed to storage in advance,
+  # so WAL reading is skipped. Distributed deployment cannot be run in read-only mode.
+  # Default: false
+  # read_only_mode: false
+
   # Set an api-key.
   # If set, all requests must include a header with the api-key.
   # example header: `api-key: <API-KEY>`

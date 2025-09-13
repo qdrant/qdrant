@@ -41,6 +41,9 @@ jobs:
       - name: Run integration tests
         run: poetry --project tests run bash ./tests/integration-tests.sh
         shell: bash
+      - name: Run read-only integration tests
+        run: poetry --project tests run bash ./tests/integration-tests.sh readonly
+        shell: bash
 
   integration-tests-consensus:
 

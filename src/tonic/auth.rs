@@ -15,10 +15,15 @@ type Response = tonic::codegen::http::Response<BoxBody>;
 #[derive(Clone)]
 pub struct AuthMiddleware<S> {
     auth_keys: Arc<AuthKeys>,
+    read_only_mode: bool,
     service: S,
 }
 
-async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, Status> {
+async fn check(
+    auth_keys: Arc<AuthKeys>,
+    read_only_mode: bool,
+    mut req: Request,
+) -> Result<Request, Status> {
     // Allow health check endpoints to bypass authentication
     let path = req.uri().path();
     if path == "/qdrant.Qdrant/HealthCheck" || path == "/grpc.health.v1.Health/Check" {
@@ -32,7 +37,7 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
         return Ok(req);
     }
 
-    let (access, inference_token) = auth_keys
+    let (mut access, inference_token) = auth_keys
         .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
         .await
         .map_err(|e| match e {
@@ -40,6 +45,10 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
             AuthError::Forbidden(e) => Status::permission_denied(e),
             AuthError::StorageError(e) => Status::from(e),
         })?;
+
+    if read_only_mode {
+        access = Access::full_ro("System is in read-only mode");
+    }
 
     let previous = req.extensions_mut().insert::<Access>(access);
 
@@ -73,10 +82,11 @@ where
 
     fn call(&mut self, request: Request) -> Self::Future {
         let auth_keys = self.auth_keys.clone();
+        let read_only_mode = self.read_only_mode;
         let mut service = self.service.clone();
 
         Box::pin(async move {
-            match check(auth_keys, request).await {
+            match check(auth_keys, read_only_mode, request).await {
                 Ok(req) => service.call(req).await,
                 Err(e) => Ok(e.to_http()),
             }
@@ -87,12 +97,14 @@ where
 #[derive(Clone)]
 pub struct AuthLayer {
     auth_keys: Arc<AuthKeys>,
+    read_only_mode: bool,
 }
 
 impl AuthLayer {
-    pub fn new(auth_keys: AuthKeys) -> Self {
+    pub fn new(auth_keys: AuthKeys, read_only_mode: bool) -> Self {
         Self {
             auth_keys: Arc::new(auth_keys),
+            read_only_mode,
         }
     }
 }
@@ -103,6 +115,7 @@ impl<S> Layer<S> for AuthLayer {
     fn layer(&self, service: S) -> Self::Service {
         Self::Service {
             auth_keys: self.auth_keys.clone(),
+            read_only_mode: self.read_only_mode,
             service,
         }
     }
