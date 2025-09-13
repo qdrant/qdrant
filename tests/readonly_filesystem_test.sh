@@ -9,9 +9,9 @@ QDRANT_EXECUTABLE="./target/debug/qdrant"
 qdrant_host_headers=()
 
 if [ -n "${QDRANT_HOST_HEADERS}" ]; then
-  while read h; do
+  while IFS= read -r h; do
     qdrant_host_headers+=("-H" "$h")
-  done <<<  $(echo "${QDRANT_HOST_HEADERS}" | jq -r 'to_entries|map("\(.key): \(.value)")[]')
+  done <<< "$(jq -r 'to_entries|map("\(.key): \(.value)")[]' <<<"${QDRANT_HOST_HEADERS}")"
 fi
 
 # cleanup collection if it exists
