@@ -54,9 +54,11 @@ EXPECTED_COUNT="2"
 # Wait for segment flush
 sleep 5
 
-# Kill server
-kill -9 $PID
-sleep 1
+# kill the current server
+if [ -n "$PID" ]; then
+    kill -9 $PID || true
+    sleep 1
+fi
 
 # start server in read-only mode with proper environment variables
 echo "Starting server in read-only mode..."
@@ -71,7 +73,7 @@ cleanup() {
 
 trap cleanup EXIT
 
-until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections; do
+until curl --output /dev/null --silent --get --fail "${qdrant_host_headers[@]}" http://$QDRANT_HOST/collections; do
   printf 'waiting for server to start...'
   sleep 5
 done
