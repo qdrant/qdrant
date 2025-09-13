@@ -299,7 +299,9 @@ fn main() -> anyhow::Result<()> {
     let is_distributed_deployment = settings.cluster.enabled;
 
     // Validate that read-only mode is not enabled for distributed deployments
-    if (settings.service.read_only_mode || settings.storage.read_only_mode) && is_distributed_deployment {
+    if (settings.service.read_only_mode || settings.storage.read_only_mode)
+        && is_distributed_deployment
+    {
         return Err(anyhow::anyhow!(
             "Read-only mode cannot be enabled for distributed deployments. \
              Distributed deployments require consensus operations which are not compatible with read-only mode."
