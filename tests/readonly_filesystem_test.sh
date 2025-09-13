@@ -51,10 +51,12 @@ curl -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true" \
 TEST_COLLECTION="test_collection"
 EXPECTED_COUNT="2"
 
-# kill the current server
-if [ -n "$PID" ]; then
-    kill -9 $PID || true
-fi
+# Wait for segment flush
+sleep 5
+
+# Kill server
+kill -9 $PID
+sleep 1
 
 # start server in read-only mode with proper environment variables
 echo "Starting server in read-only mode..."
