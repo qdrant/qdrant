@@ -134,6 +134,7 @@ fn hnsw_quantized_search_test(
                 .clone(),
             payload_index: segment.payload_index.clone(),
             hnsw_config,
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit,
@@ -141,7 +142,6 @@ fn hnsw_quantized_search_test(
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

@@ -1175,7 +1175,7 @@ mod tests {
     use crate::index::payload_config::{IndexMutability, PayloadIndexType};
     use crate::segment_constructor::load_segment;
     use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
-    use crate::types::{Distance, PayloadSchemaType};
+    use crate::types::{Distance, HnswGlobalConfig, PayloadSchemaType};
 
     #[test]
     fn test_load_payload_index() {
@@ -1238,9 +1238,13 @@ mod tests {
 
         // Load once and drop.
         {
-            load_segment(&full_segment_path, &AtomicBool::new(false))
-                .unwrap()
-                .unwrap();
+            load_segment(
+                &full_segment_path,
+                &HnswGlobalConfig::default(),
+                &AtomicBool::new(false),
+            )
+            .unwrap()
+            .unwrap();
         }
 
         // Check that index type has been written to disk again.

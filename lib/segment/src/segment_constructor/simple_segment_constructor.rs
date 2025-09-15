@@ -6,8 +6,8 @@ use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::segment::Segment;
 use crate::segment_constructor::build_segment;
 use crate::types::{
-    Distance, Indexes, PayloadStorageType, SegmentConfig, VectorDataConfig, VectorName,
-    VectorStorageType,
+    Distance, HnswGlobalConfig, Indexes, PayloadStorageType, SegmentConfig, VectorDataConfig,
+    VectorName, VectorStorageType,
 };
 
 pub const VECTOR1_NAME: &VectorName = "vector1";
@@ -42,6 +42,7 @@ pub fn build_simple_segment(
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
+        &HnswGlobalConfig::default(),
         true,
     )
 }
@@ -70,6 +71,7 @@ pub fn build_simple_segment_with_payload_storage(
             sparse_vector_data: Default::default(),
             payload_storage_type,
         },
+        &HnswGlobalConfig::default(),
         true,
     )
 }
@@ -113,6 +115,7 @@ pub fn build_multivec_segment(
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
+        &HnswGlobalConfig::default(),
         true,
     )
 }

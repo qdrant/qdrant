@@ -97,6 +97,7 @@ pub trait SegmentOptimizer {
         Ok(LockedSegment::new(build_segment(
             self.segments_path(),
             &config,
+            self.hnsw_global_config(),
             save_version,
         )?))
     }

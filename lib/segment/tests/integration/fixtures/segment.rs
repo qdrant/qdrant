@@ -11,8 +11,8 @@ use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
-    Distance, Indexes, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
-    VectorDataConfig, VectorName, VectorStorageType,
+    Distance, HnswGlobalConfig, Indexes, SegmentConfig, SparseVectorDataConfig,
+    SparseVectorStorageType, VectorDataConfig, VectorName, VectorStorageType,
 };
 use sparse::common::sparse_vector::SparseVector;
 
@@ -172,6 +172,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
+        &HnswGlobalConfig::default(),
         true,
     )
     .unwrap();
@@ -267,6 +268,7 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
             )]),
             payload_storage_type: Default::default(),
         },
+        &HnswGlobalConfig::default(),
         true,
     )
     .unwrap();
@@ -359,6 +361,7 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
             )]),
             payload_storage_type: Default::default(),
         },
+        &HnswGlobalConfig::default(),
         true,
     )
     .unwrap();

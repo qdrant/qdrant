@@ -378,6 +378,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             .clone(),
         payload_index: Arc::clone(&segment.payload_index),
         hnsw_config,
+        hnsw_global_config: &HnswGlobalConfig::default(),
     };
 
     pub const HNSW_INDEX_CONFIG_FILE: &str = "hnsw_config.json";
@@ -397,7 +398,6 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             gpu_device: None,
             rng,
             stopped: &AtomicBool::new(false),
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: feature_flags(),
         },
     )

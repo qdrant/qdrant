@@ -228,7 +228,8 @@ fn test_multivector_quantization_hnsw(
 
     let int_key = "int";
 
-    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+    let mut segment =
+        build_segment(dir.path(), &config, &HnswGlobalConfig::default(), true).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -331,6 +332,7 @@ fn test_multivector_quantization_hnsw(
                 .clone(),
             payload_index: segment.payload_index.clone(),
             hnsw_config,
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit,
@@ -338,7 +340,6 @@ fn test_multivector_quantization_hnsw(
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

@@ -5,7 +5,7 @@ use clap::Parser;
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment_constructor::load_segment;
-use segment::types::PointIdType;
+use segment::types::{HnswGlobalConfig, PointIdType};
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -42,7 +42,7 @@ fn main() {
 
         // Open segment
 
-        let segment = load_segment(path, &AtomicBool::new(false))
+        let segment = load_segment(path, &HnswGlobalConfig::default(), &AtomicBool::new(false))
             .unwrap()
             .unwrap();
 

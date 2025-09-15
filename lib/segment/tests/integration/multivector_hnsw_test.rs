@@ -125,6 +125,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             quantized_vectors: quantized_vectors.clone(),
             payload_index: segment.payload_index.clone(),
             hnsw_config: hnsw_config.clone(),
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit: permit.clone(),
@@ -132,7 +133,6 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )
@@ -147,6 +147,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         quantized_vectors: quantized_vectors.clone(),
         payload_index: segment.payload_index.clone(),
         hnsw_config,
+        hnsw_global_config: &HnswGlobalConfig::default(),
     })
     .unwrap();
 

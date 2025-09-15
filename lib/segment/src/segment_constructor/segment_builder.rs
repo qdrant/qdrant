@@ -466,7 +466,7 @@ impl SegmentBuilder {
         rng: &mut R,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Segment, OperationError> {
-        let (temp_dir, destination_path) = {
+        let (hnsw_global_config, destination_path, temp_dir) = {
             let SegmentBuilder {
                 version,
                 id_tracker,
@@ -479,7 +479,6 @@ impl SegmentBuilder {
                 indexed_fields,
                 defragment_keys: _,
             } = self;
-
             let appendable_flag = segment_config.is_appendable();
 
             payload_storage.flusher()()?;
@@ -592,6 +591,7 @@ impl SegmentBuilder {
                         vector_storage: vector_storage.clone(),
                         payload_index: payload_index_arc.clone(),
                         quantized_vectors: quantized_vectors.clone(),
+                        hnsw_global_config: &hnsw_global_config,
                     },
                     VectorIndexBuildArgs {
                         permit: permit.clone(),
@@ -599,7 +599,6 @@ impl SegmentBuilder {
                         gpu_device: gpu_device.as_ref(),
                         stopped,
                         rng,
-                        hnsw_global_config: &hnsw_global_config,
                         feature_flags: feature_flags(),
                     },
                 )?;
@@ -675,19 +674,20 @@ impl SegmentBuilder {
             // After version is saved, segment can be loaded on restart
             SegmentVersion::save(temp_dir.path())?;
             // All temp data is evicted from RAM
-            (temp_dir, destination_path)
+            (hnsw_global_config, destination_path, temp_dir)
         };
 
         // Move fully constructed segment into collection directory and load back to RAM
         fs::rename(temp_dir.keep(), &destination_path)
             .describe("Moving segment data after optimization")?;
 
-        let loaded_segment = load_segment(&destination_path, stopped)?.ok_or_else(|| {
-            OperationError::service_error(format!(
-                "Segment loading error: {}",
-                destination_path.display()
-            ))
-        })?;
+        let loaded_segment = load_segment(&destination_path, &hnsw_global_config, stopped)?
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Segment loading error: {}",
+                    destination_path.display()
+                ))
+            })?;
         Ok(loaded_segment)
     }
 

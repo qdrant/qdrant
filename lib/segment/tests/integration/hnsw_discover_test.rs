@@ -110,6 +110,7 @@ fn hnsw_discover_precision() {
             quantized_vectors: quantized_vectors.clone(),
             payload_index: payload_index_ptr,
             hnsw_config,
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit,
@@ -117,7 +118,6 @@ fn hnsw_discover_precision() {
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )
@@ -237,6 +237,7 @@ fn filtered_hnsw_discover_precision() {
             quantized_vectors: quantized_vectors.clone(),
             payload_index: payload_index_ptr,
             hnsw_config,
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit,
@@ -244,7 +245,6 @@ fn filtered_hnsw_discover_precision() {
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

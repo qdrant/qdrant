@@ -203,9 +203,11 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     assert!(entry.path().is_dir());
     assert_eq!(entry.file_name(), segment_id);
 
-    let restored_segment = load_segment(&entry.path(), &AtomicBool::new(false))
-        .unwrap()
-        .unwrap();
+    let hnsw_global_config = HnswGlobalConfig::default();
+    let restored_segment =
+        load_segment(&entry.path(), &hnsw_global_config, &AtomicBool::new(false))
+            .unwrap()
+            .unwrap();
 
     // validate restored snapshot is the same as original segment
     assert_eq!(

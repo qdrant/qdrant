@@ -14,7 +14,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::segment_constructor::load_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Condition, Distance, Filter, SearchParams, WithPayload};
+use segment::types::{Condition, Distance, Filter, HnswGlobalConfig, SearchParams, WithPayload};
 use tempfile::Builder;
 
 use crate::fixtures::segment::{build_segment_1, build_segment_3};
@@ -204,7 +204,8 @@ fn ordered_deletion_test() {
         segment.current_path.clone()
     };
 
-    let segment = load_segment(&path, &AtomicBool::new(false))
+    let hnsw_global_config = HnswGlobalConfig::default();
+    let segment = load_segment(&path, &hnsw_global_config, &AtomicBool::new(false))
         .unwrap()
         .unwrap();
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
@@ -241,7 +242,8 @@ fn skip_deleted_segment() {
     let new_path = path.with_extension("deleted");
     fs::rename(&path, new_path).unwrap();
 
-    let segment = load_segment(&path, &AtomicBool::new(false)).unwrap();
+    let hnsw_global_config = HnswGlobalConfig::default();
+    let segment = load_segment(&path, &hnsw_global_config, &AtomicBool::new(false)).unwrap();
 
     assert!(segment.is_none());
 }

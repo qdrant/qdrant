@@ -338,8 +338,10 @@ impl LocalShard {
         let mut segment_stream = futures::stream::iter(segment_paths)
             .map(|segment_path| {
                 let payload_index_schema = Arc::clone(&payload_index_schema);
+                let hnsw_global_config = shared_storage_config.hnsw_global_config.clone();
                 tokio::task::spawn_blocking(move || {
-                    let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
+                    let segment =
+                        load_segment(&segment_path, &hnsw_global_config, &AtomicBool::new(false))?;
 
                     let Some(mut segment) = segment else {
                         fs::remove_dir_all(&segment_path).map_err(|err| {
@@ -548,9 +550,12 @@ impl LocalShard {
                 sparse_vector_data: sparse_vector_params.clone(),
                 payload_storage_type: config.params.payload_storage_type(),
             };
+            let hnsw_global_config = shared_storage_config.hnsw_global_config.clone();
             let segment = thread::Builder::new()
                 .name(format!("shard-build-{collection_id}-{id}"))
-                .spawn(move || build_segment(&path_clone, &segment_config, true))
+                .spawn(move || {
+                    build_segment(&path_clone, &segment_config, &hnsw_global_config, true)
+                })
                 .unwrap();
             build_handlers.push(segment);
         }

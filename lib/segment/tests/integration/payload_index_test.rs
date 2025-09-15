@@ -84,10 +84,21 @@ impl TestSegments {
 
         let config = Self::make_simple_config(true);
 
-        let mut plain_segment =
-            build_segment(&base_dir.path().join("plain"), &config, true).unwrap();
-        let mut struct_segment =
-            build_segment(&base_dir.path().join("struct"), &config, true).unwrap();
+        let hnsw_global_config = HnswGlobalConfig::default();
+        let mut plain_segment = build_segment(
+            &base_dir.path().join("plain"),
+            &config,
+            &hnsw_global_config,
+            true,
+        )
+        .unwrap();
+        let mut struct_segment = build_segment(
+            &base_dir.path().join("struct"),
+            &config,
+            &hnsw_global_config,
+            true,
+        )
+        .unwrap();
 
         let num_points = 3000;
         let points_to_delete = 500;

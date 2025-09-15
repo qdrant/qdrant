@@ -147,6 +147,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             quantized_vectors: Default::default(),
             payload_index: Arc::clone(&segment.payload_index),
             hnsw_config,
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit,
@@ -154,7 +155,6 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             gpu_device: None,
             rng,
             stopped: &AtomicBool::new(false),
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default().tap_mut(|flags| {
                 flags.incremental_hnsw_building = true;
             }),

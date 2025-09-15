@@ -275,6 +275,7 @@ pub(crate) struct VectorIndexOpenArgs<'a> {
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
+    pub hnsw_global_config: &'a HnswGlobalConfig,
 }
 
 pub struct VectorIndexBuildArgs<'a, R: Rng + ?Sized> {
@@ -285,7 +286,6 @@ pub struct VectorIndexBuildArgs<'a, R: Rng + ?Sized> {
     pub gpu_device: Option<&'a LockedGpuDevice<'a>>,
     pub rng: &'a mut R,
     pub stopped: &'a AtomicBool,
-    pub hnsw_global_config: &'a HnswGlobalConfig,
     pub feature_flags: FeatureFlags,
 }
 
@@ -299,6 +299,7 @@ pub(crate) fn open_vector_index(
         vector_storage,
         payload_index,
         quantized_vectors,
+        hnsw_global_config,
     } = open_args;
     Ok(match &vector_config.index {
         Indexes::Plain {} => VectorIndexEnum::Plain(PlainVectorIndex::new(
@@ -314,6 +315,7 @@ pub(crate) fn open_vector_index(
             quantized_vectors,
             payload_index,
             hnsw_config: hnsw_config.clone(),
+            hnsw_global_config,
         })?),
     })
 }
@@ -329,6 +331,7 @@ pub(crate) fn build_vector_index<R: Rng + ?Sized>(
         vector_storage,
         payload_index,
         quantized_vectors,
+        hnsw_global_config,
     } = open_args;
     Ok(match &vector_config.index {
         Indexes::Plain {} => VectorIndexEnum::Plain(PlainVectorIndex::new(
@@ -345,6 +348,7 @@ pub(crate) fn build_vector_index<R: Rng + ?Sized>(
                 quantized_vectors,
                 payload_index,
                 hnsw_config: hnsw_config.clone(),
+                hnsw_global_config,
             },
             build_args,
         )?),
@@ -439,6 +443,7 @@ fn create_segment(
     version: Option<SeqNumberType>,
     segment_path: &Path,
     config: &SegmentConfig,
+    hnsw_global_config: &HnswGlobalConfig,
     stopped: &AtomicBool,
     create: bool,
 ) -> OperationResult<Segment> {
@@ -549,6 +554,7 @@ fn create_segment(
                 vector_storage: vector_storage.clone(),
                 payload_index: payload_index.clone(),
                 quantized_vectors: quantized_vectors.clone(),
+                hnsw_global_config,
             },
         )?);
 
@@ -685,7 +691,11 @@ fn create_segment_id_tracker(
     )))
 }
 
-pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option<Segment>> {
+pub fn load_segment(
+    path: &Path,
+    hnsw_global_config: &HnswGlobalConfig,
+    stopped: &AtomicBool,
+) -> OperationResult<Option<Segment>> {
     if path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -745,6 +755,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         segment_state.version,
         path,
         &segment_state.config,
+        hnsw_global_config,
         stopped,
         false,
     )?;
@@ -783,6 +794,7 @@ pub fn new_segment_path(segments_path: &Path) -> PathBuf {
 pub fn build_segment(
     segments_path: &Path,
     config: &SegmentConfig,
+    hnsw_global_config: &HnswGlobalConfig,
     ready: bool,
 ) -> OperationResult<Segment> {
     let segment_path = new_segment_path(segments_path);
@@ -794,6 +806,7 @@ pub fn build_segment(
         None,
         &segment_path,
         config,
+        hnsw_global_config,
         &AtomicBool::new(false),
         true,
     )?;

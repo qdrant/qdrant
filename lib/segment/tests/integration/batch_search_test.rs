@@ -158,6 +158,7 @@ fn test_batch_and_single_request_equivalency() {
             quantized_vectors: quantized_vectors.clone(),
             payload_index: payload_index_ptr,
             hnsw_config,
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit,
@@ -165,7 +166,6 @@ fn test_batch_and_single_request_equivalency() {
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

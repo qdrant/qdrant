@@ -97,7 +97,13 @@ fn test_byte_storage_hnsw(
     let int_key = "int";
 
     let mut segment_float = build_simple_segment(dir_float.path(), dim, distance).unwrap();
-    let mut segment_byte = build_segment(dir_byte.path(), &config_byte, true).unwrap();
+    let mut segment_byte = build_segment(
+        dir_byte.path(),
+        &config_byte,
+        &HnswGlobalConfig::default(),
+        true,
+    )
+    .unwrap();
     // check that `segment_byte` uses byte or half storage
     {
         let borrowed_storage = segment_byte.vector_data[DEFAULT_VECTOR_NAME]
@@ -195,6 +201,7 @@ fn test_byte_storage_hnsw(
                 .clone(),
             payload_index: segment_byte.payload_index.clone(),
             hnsw_config,
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit,
@@ -202,7 +209,6 @@ fn test_byte_storage_hnsw(
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

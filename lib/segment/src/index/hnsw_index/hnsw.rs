@@ -124,6 +124,7 @@ pub struct HnswIndexOpenArgs<'a> {
     pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     pub hnsw_config: HnswConfig,
+    pub hnsw_global_config: &'a HnswGlobalConfig,
 }
 
 impl HNSWIndex {
@@ -135,6 +136,7 @@ impl HNSWIndex {
             quantized_vectors,
             payload_index,
             hnsw_config,
+            hnsw_global_config: _,
         } = args;
 
         let config_path = HnswGraphConfig::get_config_path(path);
@@ -218,6 +220,7 @@ impl HNSWIndex {
             quantized_vectors,
             payload_index,
             hnsw_config,
+            hnsw_global_config,
         } = open_args;
         let VectorIndexBuildArgs {
             permit,
@@ -225,7 +228,6 @@ impl HNSWIndex {
             gpu_device,
             rng,
             stopped,
-            hnsw_global_config,
             feature_flags,
         } = build_args;
 

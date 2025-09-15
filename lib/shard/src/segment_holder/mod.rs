@@ -22,7 +22,8 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    ExtendedPointId, Payload, PointIdType, SegmentConfig, SegmentType, SeqNumberType,
+    ExtendedPointId, HnswGlobalConfig, Payload, PointIdType, SegmentConfig, SegmentType,
+    SeqNumberType,
 };
 use smallvec::{SmallVec, smallvec};
 
@@ -977,7 +978,12 @@ impl SegmentHolder {
                 .clone(),
         };
 
-        let mut segment = build_segment(segments_path, &config, save_version)?;
+        let mut segment = build_segment(
+            segments_path,
+            &config,
+            &HnswGlobalConfig::default(),
+            save_version,
+        )?;
 
         // Internal operation.
         let hw_counter = HardwareCounterCell::disposable();

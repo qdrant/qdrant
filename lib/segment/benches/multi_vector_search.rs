@@ -90,7 +90,13 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_segment(segment_dir.path(), &segment_config, true).unwrap();
+    let mut segment = build_segment(
+        segment_dir.path(),
+        &segment_config,
+        &HnswGlobalConfig::default(),
+        true,
+    )
+    .unwrap();
     for n in 0..NUM_POINTS {
         let idx = (n as u64).into();
         let multi_vec = random_multi_vector(rng, VECTOR_DIM, NUM_VECTORS_PER_POINT);
@@ -122,6 +128,7 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
             quantized_vectors: quantized_vectors.clone(),
             payload_index: segment.payload_index.clone(),
             hnsw_config,
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit,
@@ -129,7 +136,6 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
             gpu_device: None,
             stopped: &stopped,
             rng,
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

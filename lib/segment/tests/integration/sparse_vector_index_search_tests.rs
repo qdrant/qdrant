@@ -26,9 +26,9 @@ use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
-    Condition, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, FieldCondition, Filter, ScoredPoint,
-    SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType, VectorName,
-    VectorStorageDatatype,
+    Condition, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, FieldCondition, Filter, HnswGlobalConfig,
+    ScoredPoint, SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType,
+    VectorName, VectorStorageDatatype,
 };
 use segment::vector_storage::{Random, VectorStorage};
 use segment::{fixture_for_all_indices, payload_json};
@@ -596,7 +596,8 @@ fn sparse_vector_index_persistence_test() {
         )]),
         payload_storage_type: Default::default(),
     };
-    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+    let hnsw_global_config = HnswGlobalConfig::default();
+    let mut segment = build_segment(dir.path(), &config, &hnsw_global_config, true).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -633,7 +634,9 @@ fn sparse_vector_index_persistence_test() {
 
     // persistence using rebuild of inverted index
     // for appendable segment vector index has to be rebuilt
-    let segment = load_segment(&path, &stopped).unwrap().unwrap();
+    let segment = load_segment(&path, &hnsw_global_config, &stopped)
+        .unwrap()
+        .unwrap();
     let search_after_reload_result = segment
         .search(
             SPARSE_VECTOR_NAME,
@@ -767,7 +770,8 @@ fn sparse_vector_test_large_index() {
         )]),
         payload_storage_type: Default::default(),
     };
-    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+    let mut segment =
+        build_segment(dir.path(), &config, &HnswGlobalConfig::default(), true).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 

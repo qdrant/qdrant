@@ -75,6 +75,7 @@ fn test_graph_connectivity() {
             quantized_vectors: Default::default(),
             payload_index: payload_index_ptr,
             hnsw_config,
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit,
@@ -82,7 +83,6 @@ fn test_graph_connectivity() {
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

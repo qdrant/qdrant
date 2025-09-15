@@ -157,6 +157,7 @@ fn _test_filterable_hnsw(
             quantized_vectors: quantized_vectors.clone(),
             payload_index: payload_index_ptr.clone(),
             hnsw_config,
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit,
@@ -164,7 +165,6 @@ fn _test_filterable_hnsw(
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )

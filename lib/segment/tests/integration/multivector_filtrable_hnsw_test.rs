@@ -81,7 +81,8 @@ fn test_multi_filterable_hnsw(
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+    let mut segment =
+        build_segment(dir.path(), &config, &HnswGlobalConfig::default(), true).unwrap();
     for n in 0..num_points {
         let idx = n.into();
         // Random number of vectors per multivec point
@@ -140,6 +141,7 @@ fn test_multi_filterable_hnsw(
             quantized_vectors: quantized_vectors.clone(),
             payload_index: payload_index_ptr,
             hnsw_config,
+            hnsw_global_config: &HnswGlobalConfig::default(),
         },
         VectorIndexBuildArgs {
             permit,
@@ -147,7 +149,6 @@ fn test_multi_filterable_hnsw(
             gpu_device: None,
             rng: &mut rng,
             stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
         },
     )
