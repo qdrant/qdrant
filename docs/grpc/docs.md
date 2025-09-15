@@ -1587,10 +1587,10 @@ Note: 1kB = 1 vector of size 256. |
 | search_allow_exact | [bool](#bool) | optional | Whether exact search is allowed. |
 | search_max_oversampling | [float](#float) | optional | Max oversampling value allowed in search |
 | upsert_max_batchsize | [uint64](#uint64) | optional | Max batchsize when upserting |
-| max_collection_vector_size_bytes | [uint64](#uint64) | optional |  |
+| max_collection_vector_size_bytes | [uint64](#uint64) | optional | Max size of a collections vector storage in bytes, ignoring replicas. |
 | read_rate_limit | [uint32](#uint32) | optional | Max number of read operations per minute per replica |
 | write_rate_limit | [uint32](#uint32) | optional | Max number of write operations per minute per replica |
-| max_collection_payload_size_bytes | [uint64](#uint64) | optional | Max size of a collections vector storage in bytes, ignoring replicas. |
+| max_collection_payload_size_bytes | [uint64](#uint64) | optional | Max size of a collections payload storage in bytes, ignoring replicas. |
 | filter_max_conditions | [uint64](#uint64) | optional | Max conditions a filter can have. |
 | condition_max_size | [uint64](#uint64) | optional | Max size of a condition, eg. items in `MatchAny`. |
 | multivector_config | [StrictModeMultivectorConfig](#qdrant-StrictModeMultivectorConfig) | optional | Multivector strict mode configuration |

@@ -364,10 +364,10 @@ message StrictModeConfig {
   optional bool search_allow_exact = 7; // Whether exact search is allowed.
   optional float search_max_oversampling = 8; // Max oversampling value allowed in search
   optional uint64 upsert_max_batchsize = 9; // Max batchsize when upserting
-  optional uint64 max_collection_vector_size_bytes = 10;
+  optional uint64 max_collection_vector_size_bytes = 10; // Max size of a collections vector storage in bytes, ignoring replicas.
   optional uint32 read_rate_limit = 11; // Max number of read operations per minute per replica
   optional uint32 write_rate_limit = 12; // Max number of write operations per minute per replica
-  optional uint64 max_collection_payload_size_bytes = 13; // Max size of a collections vector storage in bytes, ignoring replicas.
+  optional uint64 max_collection_payload_size_bytes = 13; // Max size of a collections payload storage in bytes, ignoring replicas.
   optional uint64 filter_max_conditions = 14; // Max conditions a filter can have.
   optional uint64 condition_max_size = 15; // Max size of a condition, eg. items in `MatchAny`.
   optional StrictModeMultivectorConfig multivector_config = 16; // Multivector strict mode configuration

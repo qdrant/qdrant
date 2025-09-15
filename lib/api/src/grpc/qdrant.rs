@@ -699,15 +699,18 @@ pub struct StrictModeConfig {
     /// Max batchsize when upserting
     #[prost(uint64, optional, tag = "9")]
     pub upsert_max_batchsize: ::core::option::Option<u64>,
+    /// Max size of a collections vector storage in bytes, ignoring replicas.
     #[prost(uint64, optional, tag = "10")]
     pub max_collection_vector_size_bytes: ::core::option::Option<u64>,
     /// Max number of read operations per minute per replica
     #[prost(uint32, optional, tag = "11")]
+    #[validate(range(min = 1))]
     pub read_rate_limit: ::core::option::Option<u32>,
     /// Max number of write operations per minute per replica
     #[prost(uint32, optional, tag = "12")]
+    #[validate(range(min = 1))]
     pub write_rate_limit: ::core::option::Option<u32>,
-    /// Max size of a collections vector storage in bytes, ignoring replicas.
+    /// Max size of a collections payload storage in bytes, ignoring replicas.
     #[prost(uint64, optional, tag = "13")]
     pub max_collection_payload_size_bytes: ::core::option::Option<u64>,
     /// Max conditions a filter can have.
