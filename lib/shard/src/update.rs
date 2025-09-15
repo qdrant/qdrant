@@ -30,6 +30,7 @@ pub fn process_point_operation(
     point_operation: PointOperations,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
+    log::debug!("process_point_operation op_num:{op_num}");
     match point_operation {
         PointOperations::UpsertPoints(operation) => {
             let points = operation.into_point_vec();
@@ -180,7 +181,7 @@ where
 {
     let points_map: AHashMap<PointIdType, _> = points.into_iter().map(|p| (p.id, p)).collect();
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
-
+    log::debug!("upsert_points ids:{ids:?}");
     // Update points in writable segments
     let updated_points = segments.apply_points_with_conditional_move(
         op_num,
@@ -217,10 +218,13 @@ where
         let default_write_segment = segments.smallest_appendable_segment().ok_or_else(|| {
             OperationError::service_error("No appendable segments exist, expected at least one")
         })?;
-
         let segment_arc = default_write_segment.get();
         let mut write_segment = segment_arc.write();
         for point_id in new_point_ids {
+            log::debug!(
+                "insert {point_id:?} in new default segment {:?}",
+                write_segment.data_path()
+            );
             let point = points_map[&point_id];
             res += usize::from(upsert_with_payload(
                 &mut write_segment,
@@ -233,7 +237,7 @@ where
         }
         RwLockWriteGuard::unlock_fair(write_segment);
     };
-
+    //sleep(Duration::from_millis(1));
     Ok(res)
 }
 
@@ -243,6 +247,7 @@ pub fn conditional_upsert(
     operation: ConditionalInsertOperationInternal,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
+    log::debug!("conditional_upsert");
     // Find points, which do exist, but don't match the condition.
     // Exclude those points from the upsert operation.
 
@@ -285,8 +290,11 @@ fn upsert_with_payload(
     payload: Option<&Payload>,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<bool> {
+    log::debug!("upsert_with_payload");
+    log::debug!("first upsert the point");
     let mut res = segment.upsert_point(op_num, point_id, vectors, hw_counter)?;
     if let Some(full_payload) = payload {
+        log::debug!("then set the full payload");
         res &= segment.set_full_payload(op_num, point_id, full_payload, hw_counter)?;
     } else {
         res &= segment.clear_payload(op_num, point_id, hw_counter)?;
@@ -309,14 +317,13 @@ pub fn delete_points(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_deleted_points = 0;
-
+    log::debug!("delete_points ids:{ids:?} op_num:{op_num}");
     for batch in ids.chunks(DELETION_BATCH_SIZE) {
         let deleted_points = segments.apply_points(
             batch,
             |_| (),
             |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, hw_counter),
         )?;
-
         total_deleted_points += deleted_points;
     }
 
@@ -592,7 +599,7 @@ pub fn set_payload(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_updated_points = 0;
-
+    log::debug!("Setting payload {:?} for {} points", payload, points.len());
     for chunk in points.chunks(PAYLOAD_OP_BATCH_SIZE) {
         let updated_points = segments.apply_points_with_conditional_move(
             op_num,
@@ -614,6 +621,7 @@ pub fn set_payload(
         total_updated_points += updated_points.len();
     }
 
+    log::info!("set_payload done");
     Ok(total_updated_points)
 }
 
@@ -876,11 +884,14 @@ fn check_unprocessed_points(
     points: &[PointIdType],
     processed: &AHashSet<PointIdType>,
 ) -> OperationResult<usize> {
+    log::debug!("check_unprocessed_points");
     let first_missed_point = points.iter().copied().find(|p| !processed.contains(p));
-
     match first_missed_point {
         None => Ok(processed.len()),
-        Some(missed_point_id) => Err(OperationError::PointIdError { missed_point_id }),
+        Some(missed_point_id) => {
+            log::error!("missed_point_id {missed_point_id:?}");
+            Err(OperationError::PointIdError { missed_point_id })
+        }
     }
 }
 

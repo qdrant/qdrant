@@ -125,8 +125,8 @@ async fn test_continuous_snapshot() {
                     )
                     .await?;
 
+                // Insert one point at a time
                 for i in 0..points_count {
-                    // Insert one point at a time
                     let point = PointStructPersisted {
                         id: i.into(),
                         vector: VectorStructPersisted::Single(vec![i as f32, 0.0, 0.0, 0.0]),

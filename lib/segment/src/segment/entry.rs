@@ -109,15 +109,18 @@ impl SegmentEntry for Segment {
         mut vectors: NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
+        log::debug!("Segment Upsert_point point_id:{point_id} op_num:{op_num}");
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
+                log::debug!("update existing");
                 segment.replace_all_vectors(existing_internal_id, op_num, &vectors, hw_counter)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
+                log::debug!("insert new");
                 let new_index =
                     segment.insert_new_vectors(point_id, op_num, &vectors, hw_counter)?;
                 Ok((false, Some(new_index)))
@@ -132,11 +135,23 @@ impl SegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        log::debug!(
+            "{:?} Deleting point_id:{point_id} point_offset:{internal_id:?} op_num:{op_num}",
+            self.current_path
+        );
         match internal_id {
             // Point does already not exist anymore
             None => Ok(false),
             Some(internal_id) => {
+                log::debug!(
+                    "{:?} Deleting point_id:{point_id} point_offset:{internal_id:?} op_num:{op_num}",
+                    self.current_path
+                );
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
+                    log::debug!(
+                        "{:?} Deleting point_id:{point_id} point_offset:{internal_id:?} op_num:{op_num}",
+                        segment.current_path
+                    );
                     // Mark point as deleted, drop mapping
                     segment
                         .payload_index
@@ -255,6 +270,10 @@ impl SegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        log::debug!(
+            "{:?} set_payload regular segment op_num:{op_num} point_id:{point_id} point_offset:{internal_id:?}",
+            self.current_path
+        );
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
                 segment.payload_index.borrow_mut().set_payload(
@@ -267,9 +286,12 @@ impl SegmentEntry for Segment {
 
                 Ok((true, Some(internal_id)))
             }
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-            }),
+            None => {
+                log::error!("{:?} ooooopsie", segment.current_path);
+                Err(OperationError::PointIdError {
+                    missed_point_id: point_id,
+                })
+            }
         })
     }
 
@@ -444,7 +466,12 @@ impl SegmentEntry for Segment {
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {
-        self.id_tracker.borrow().internal_id(point_id).is_some()
+        let res = self.id_tracker.borrow().internal_id(point_id).is_some();
+        log::debug!(
+            "{:?} segment has_point point_id:{point_id} result:{res}",
+            self.data_path()
+        );
+        res
     }
 
     fn is_empty(&self) -> bool {

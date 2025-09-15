@@ -235,6 +235,7 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        log::debug!("shard retrieve");
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || request.ids.len())?;
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
@@ -251,6 +252,10 @@ impl ShardOperation for LocalShard {
         )
         .await
         .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
+
+        if records_map.is_empty() {
+            log::error!("empty retrieve result!");
+        }
 
         let ordered_records = request
             .ids

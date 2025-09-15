@@ -12,7 +12,7 @@ use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools as _;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
 use segment::entry::entry_point::SegmentEntry;
 use segment::types::*;
@@ -117,6 +117,7 @@ impl ProxySegment {
     /// Ensures that the mask is resized if necessary and returns false
     /// if either the mask or the point offset is missing (mask is not applicable)
     fn set_deleted_offset(&mut self, point_offset: Option<PointOffsetType>) -> bool {
+        log::debug!("{:?} set_deleted_offset {point_offset:?}", self.data_path());
         match (&mut self.deleted_mask, point_offset) {
             (Some(deleted_mask), Some(point_offset)) => {
                 if deleted_mask.len() <= point_offset as usize {
@@ -136,17 +137,28 @@ impl ProxySegment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let deleted_points_guard = self.deleted_points.upgradable_read();
-
-        let (point_offset, local_version) = {
+        let write_data_path = self.write_segment.get().read().data_path();
+        let (point_offset, local_version, write_segment_lock) = {
             let (wrapped_segment, point_offset): (
                 Arc<RwLock<dyn SegmentEntry>>,
                 Option<PointOffsetType>,
             ) = match &self.wrapped_segment {
                 LockedSegment::Original(raw_segment) => {
-                    let point_offset = raw_segment.read().get_internal_id(point_id);
+                    let raw_segment_guard = raw_segment.read();
+                    let point_offset = raw_segment_guard.get_internal_id(point_id);
+                    log::debug!(
+                        "{:?} moving point_id:{point_id} point_offset:{point_offset:?} from wrapped to write segment {write_data_path:?}",
+                        raw_segment_guard.current_path,
+                    );
                     (raw_segment.clone(), point_offset)
                 }
-                LockedSegment::Proxy(sub_proxy) => (sub_proxy.clone(), None),
+                LockedSegment::Proxy(sub_proxy) => {
+                    log::debug!(
+                        "{:?} moving point_id:{point_id} from wrapped double proxy to write segment {write_data_path:?}",
+                        self.data_path(),
+                    );
+                    (sub_proxy.clone(), None)
+                }
             };
 
             let wrapped_segment_guard = wrapped_segment.read();
@@ -160,49 +172,72 @@ impl ProxySegment {
 
             // Point doesn't exist in wrapped segment - do nothing
             let Some(local_version) = wrapped_segment_guard.point_version(point_id) else {
+                log::info!(
+                    "Exit no move because point {point_id} has no version wrapped segment {:?}",
+                    wrapped_segment_guard.data_path()
+                );
                 return Ok(false);
             };
 
+            log::debug!(
+                "moving point_id:{point_id} with version:{local_version} to write segment {write_data_path:?}"
+            );
+
             // Equal or higher point version is already moved into write segment - delete from
             // wrapped segment and do not move it again
-            if deleted_points_guard
-                .get(&point_id)
-                .is_some_and(|&deleted| deleted.local_version >= local_version)
-            {
+            if deleted_points_guard.get(&point_id).is_some_and(|&deleted| {
+                deleted.local_version >= local_version && deleted.operation_version >= local_version
+            }) {
+                log::debug!(
+                    "Equal or higher point version is already moved into write segment (exit no move)"
+                );
                 drop(deleted_points_guard);
                 self.set_deleted_offset(point_offset);
                 return Ok(false);
             }
 
             let (all_vectors, payload) = (
-                wrapped_segment_guard.all_vectors(point_id, hw_counter)?,
-                wrapped_segment_guard.payload(point_id, hw_counter)?,
+                wrapped_segment_guard.all_vectors(point_id, hw_counter)
+                    .inspect_err(|err| log::error!("vectors point {point_id} does not exist in wrapped segment but it has a version:{local_version} {:?}", err))?,
+                wrapped_segment_guard.payload(point_id, hw_counter)
+                    .inspect_err(|err| log::error!("payload point {point_id} does not exist in wrapped segment but it has a version:{local_version} {:?}", err))?,
             );
 
-            {
-                let segment_arc = self.write_segment.get();
-                let mut write_segment = segment_arc.write();
-
-                write_segment.upsert_point(op_num, point_id, all_vectors, hw_counter)?;
-                if !payload.is_empty() {
-                    write_segment.set_full_payload(op_num, point_id, &payload, hw_counter)?;
-                }
+            let segment_arc = self.write_segment.get();
+            let write_segment = segment_arc.upgradable_read();
+            let mut write_segment = RwLockUpgradableReadGuard::upgrade(write_segment);
+            log::debug!(
+                "move_point upsert_point point_id:{point_id} op_num:{op_num} into write segment {write_data_path:?}"
+            );
+            write_segment.upsert_point(op_num, point_id, all_vectors, hw_counter)?;
+            if !payload.is_empty() {
+                log::debug!(
+                    "move_point set_full_payload point_id:{point_id} op_num:{op_num} into write segment {write_data_path:?}"
+                );
+                write_segment.set_full_payload(op_num, point_id, &payload, hw_counter)?;
             }
+            let write_segment = RwLockWriteGuard::downgrade_to_upgradable(write_segment);
 
-            (point_offset, local_version)
+            (point_offset, local_version, write_segment)
         };
 
         {
             let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
-            deleted_points_write.insert(
+            log::debug!(
+                "marking point_id:{point_id} local_version:{local_version} op_num:{op_num} as deleted in wrapped segment"
+            );
+            let prev = deleted_points_write.insert(
                 point_id,
                 ProxyDeletedPoint {
                     local_version,
                     operation_version: op_num,
                 },
             );
+            if let Some(prev) = prev {
+                assert!(prev.local_version <= local_version);
+            }
         }
-
+        drop(write_segment_lock);
         self.set_deleted_offset(point_offset);
 
         Ok(true)
@@ -250,7 +285,18 @@ impl ProxySegment {
         // (or others). Careful locking management is very important here. Instead we just take an
         // upgradable read lock, upgrading to a write lock on demand.
         // See: <https://github.com/qdrant/qdrant/pull/4206>
-        let wrapped_segment = self.wrapped_segment.get();
+        let wrapped_segment: Arc<RwLock<dyn SegmentEntry>> = match &self.wrapped_segment {
+            LockedSegment::Original(raw_segment) => {
+                log::debug!("propagate_to_wrapped where wrapped is a regular segment");
+                raw_segment.clone()
+            }
+            LockedSegment::Proxy(sub_proxy) => {
+                log::debug!("propagate_to_wrapped where wrapped is a proxy segment");
+                sub_proxy.clone()
+            }
+        };
+
+        log::debug!("upgradable read wrapped to propagate");
         let mut wrapped_segment = wrapped_segment.upgradable_read();
 
         // Propagate index changes before point deletions
@@ -296,6 +342,10 @@ impl ProxySegment {
         {
             let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
+                log::debug!(
+                    "{:?} UPGRADE upgradable read wrapped to propagate",
+                    wrapped_segment.data_path()
+                );
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for (point_id, versions) in deleted_points.iter() {
                         // Note:
@@ -304,19 +354,27 @@ impl ProxySegment {
                         // wrapped segment is considered to be newer. This is possible because
                         // different proxy segments can share state through a common write segment.
                         // See: <https://github.com/qdrant/qdrant/pull/7208>
-                        wrapped_segment.delete_point(
-                            versions.operation_version,
-                            *point_id,
-                            &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
-                        )?;
+                        if wrapped_segment.has_point(*point_id) {
+                            wrapped_segment.delete_point(
+                                versions.operation_version,
+                                *point_id,
+                                &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
+                            )?;
+                        }
                     }
                     OperationResult::Ok(())
                 })?;
                 RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
+                log::debug!(
+                    "{:?} DOWNGRADE upgradable read wrapped after propagate",
+                    wrapped_segment.data_path()
+                );
 
                 // Note: We do not clear the deleted mask here, as it provides
                 // no performance advantage and does not affect the correctness of search.
                 // Points are still marked as deleted in two places, which is fine
+            } else {
+                log::debug!("no deletes to propagate")
             }
         }
 

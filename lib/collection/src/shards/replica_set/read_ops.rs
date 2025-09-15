@@ -128,6 +128,7 @@ impl ShardReplicaSet {
         local_only: bool,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        log::debug!("collection retrieve");
         let with_payload = Arc::new(with_payload.clone());
         let with_vector = Arc::new(with_vector.clone());
 

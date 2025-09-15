@@ -20,6 +20,7 @@ impl CollectionUpdater {
         op_num: SeqNumberType,
         operation_result: &CollectionResult<usize>,
     ) {
+        log::debug!("handle_update_result ok:{}", operation_result.is_ok());
         match operation_result {
             Ok(_) => {
                 if !segments.read().failed_operation.is_empty() {
@@ -54,7 +55,7 @@ impl CollectionUpdater {
 
             let _scroll_lock = scroll_lock.blocking_write();
             let _update_guard = update_tracker.update();
-
+            log::debug!("collection update op_num:{op_num}");
             match operation {
                 CollectionUpdateOperations::PointOperation(point_operation) => {
                     process_point_operation(segments, op_num, point_operation, hw_counter)

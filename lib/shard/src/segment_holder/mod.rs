@@ -137,6 +137,7 @@ impl SegmentHolder {
     /// The segment gets assigned a new unique ID.
     pub fn add_new_locked(&mut self, segment: LockedSegment) -> SegmentId {
         let segment_id = self.generate_new_key();
+        log::debug!("Adding new segment with ID: {segment_id}");
         self.add_existing_locked(segment_id, segment);
         segment_id
     }
@@ -156,6 +157,7 @@ impl SegmentHolder {
     ///
     /// The segment gets the provided ID, which must not be in the segment holder yet.
     pub fn add_existing_locked(&mut self, segment_id: SegmentId, segment: LockedSegment) {
+        log::debug!("Add new segment with ID: {segment_id}");
         debug_assert!(
             self.get(segment_id).is_none(),
             "cannot add segment with ID {segment_id}, it already exists",
@@ -168,6 +170,7 @@ impl SegmentHolder {
     }
 
     pub fn remove(&mut self, remove_ids: &[SegmentId]) -> Vec<LockedSegment> {
+        log::debug!("Removing segments: {remove_ids:?}");
         let mut removed_segments = vec![];
         for remove_id in remove_ids {
             let removed_segment = self.appendable_segments.remove(remove_id);
@@ -202,6 +205,7 @@ impl SegmentHolder {
     where
         T: Into<LockedSegment>,
     {
+        log::debug!("Swapping segments: removing {remove_ids:?} and adding new segment");
         let new_id = self.add_new(segment);
         (new_id, self.remove(remove_ids))
     }
@@ -224,6 +228,7 @@ impl SegmentHolder {
     where
         T: Into<LockedSegment>,
     {
+        log::debug!("Replacing segment with ID {segment_id} by new segment");
         // Remove existing segment, check precondition
         let mut removed = self.remove(&[segment_id]);
         if removed.is_empty() {
@@ -389,6 +394,7 @@ impl SegmentHolder {
         AHashMap<SegmentId, Vec<PointIdType>>,
         AHashMap<SegmentId, Vec<PointIdType>>,
     ) {
+        log::debug!("find_points_to_update_and_delete start");
         let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
         // Find in which segments latest point versions are located, mark older points for deletion
@@ -467,7 +473,7 @@ impl SegmentHolder {
                 }),
             "segments should not have overlapping updates and deletes",
         );
-
+        log::debug!("find_points_to_update_and_delete done");
         (to_update, to_delete)
     }
 
@@ -554,15 +560,23 @@ impl SegmentHolder {
         ) -> OperationResult<bool>,
     {
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
-
+        if to_update.is_empty() && to_delete.is_empty() {
+            log::warn!("apply_points ({ids:?}) no points found");
+        }
+        log::debug!("apply_points {to_update:?} {to_delete:?}");
         // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly
-        for (segment_id, points) in to_delete {
+        for (segment_id, mut points) in to_delete {
+            points.sort_unstable();
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
 
             for point_id in points {
                 let version = write_segment.point_version(point_id).unwrap_or_default();
+                log::debug!(
+                    "applying delete for point_id:{point_id} on segment:{:?}",
+                    write_segment.data_path()
+                );
                 write_segment.delete_point(
                     version,
                     point_id,
@@ -573,19 +587,23 @@ impl SegmentHolder {
 
         // Apply point operations to selected segments
         let mut applied_points = 0;
-        for (segment_id, points) in to_update {
+        for (segment_id, mut points) in to_update {
+            points.sort_unstable();
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
             let segment_data = segment_data(write_segment.deref());
-
             for point_id in points {
+                log::debug!(
+                    "applying update point_id:{point_id} on segment:{:?}",
+                    write_segment.data_path()
+                );
                 let is_applied =
                     point_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
                 applied_points += usize::from(is_applied);
             }
         }
-
+        log::debug!("apply_points done");
         Ok(applied_points)
     }
 
@@ -691,7 +709,7 @@ impl SegmentHolder {
     {
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments_ids();
-
+        log::debug!("apply_points_with_conditional_move ids:{ids:?} op_num:{op_num}");
         let mut applied_points: AHashSet<PointIdType> = Default::default();
 
         let _applied_points_count = self.apply_points(
@@ -736,6 +754,7 @@ impl SegmentHolder {
                 Ok(is_applied)
             },
         )?;
+        log::debug!("apply_points_with_conditional_move done");
         Ok(applied_points)
     }
 
@@ -765,11 +784,18 @@ impl SegmentHolder {
         for segment in segments {
             let segment_arc = segment.get();
             let read_segment = segment_arc.read();
-            let points = ids
+            log::debug!("reading {ids:?} from {:?}", read_segment.data_path());
+            let points: Vec<_> = ids
                 .iter()
                 .cloned()
                 .check_stop(|| is_stopped.load(Ordering::Relaxed))
-                .filter(|id| read_segment.has_point(*id));
+                .filter(|id| read_segment.has_point(*id))
+                .collect();
+
+            log::debug!(
+                "reading ids:{ids:?} and found points:{points:?} from {:?}",
+                read_segment.data_path()
+            );
             for point in points {
                 let is_ok = f(point, &read_segment)?;
                 read_points += usize::from(is_ok);
@@ -1110,6 +1136,7 @@ impl SegmentHolder {
         LockedSegment,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
     )> {
+        log::debug!("Proxying all segments for snapshotting");
         // This counter will be used to measure operations on temp segment,
         // which is part of internal process and can be ignored
         let hw_counter = HardwareCounterCell::disposable();
@@ -1202,6 +1229,7 @@ impl SegmentHolder {
         // should be very fast, as we already propagated all changes in the first, which is why we
         // can hold a write lock. Once done, we can swap out the proxy for the wrapped shard.
 
+        log::debug!("try_unproxying segment {segment_id}");
         let proxy_segment = match proxy_segment {
             LockedSegment::Proxy(proxy_segment) => proxy_segment,
             LockedSegment::Original(_) => {
@@ -1213,6 +1241,7 @@ impl SegmentHolder {
         };
 
         // Batch 1: propagate changes to wrapped segment with segment holder read lock
+        log::debug!("Batch 1: propagate changes to wrapped segment with segment holder read lock");
         if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
             log::error!(
                 "Propagating proxy segment {segment_id} changes to wrapped segment failed, ignoring: {err}",
@@ -1224,6 +1253,7 @@ impl SegmentHolder {
         // Batch 2: propagate changes to wrapped segment with segment holder write lock
         // Propagate proxied changes to wrapped segment, take it out and swap with proxy
         // Important: put the wrapped segment back with its original segment ID
+        log::debug!("Batch 2: propagate changes to wrapped segment with segment holder write lock");
         let wrapped_segment = {
             let proxy_segment = proxy_segment.read();
             if let Err(err) = proxy_segment.propagate_to_wrapped() {
@@ -1245,6 +1275,10 @@ impl SegmentHolder {
         proxies: Vec<(SegmentId, LockedSegment)>,
         tmp_segment: LockedSegment,
     ) -> OperationResult<()> {
+        log::debug!(
+            "Unproxying all segments after snapshotting ({:?})",
+            proxies.len()
+        );
         // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
         // wrapped segment back into the segment holder. This can be an expensive step if we
         // collected a lot of changes in the proxy, so we do this in two batches to prevent
@@ -1293,13 +1327,13 @@ impl SegmentHolder {
         // Finalize temporary segment we proxied writes to
         // Append a temp segment to collection if it is not empty or there is no other appendable segment
         if !write_segments.has_appendable_segment() || !tmp_segment.get().read().is_empty() {
-            log::trace!(
+            log::debug!(
                 "Keeping temporary segment with {} points",
                 tmp_segment.get().read().available_point_count(),
             );
             write_segments.add_new_locked(tmp_segment);
         } else {
-            log::trace!("Dropping temporary segment with no changes");
+            log::debug!("Dropping temporary segment with no changes");
             tmp_segment.drop_data()?;
         }
 

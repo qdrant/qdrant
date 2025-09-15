@@ -179,7 +179,17 @@ impl SegmentEntry for ProxySegment {
         vectors: NamedVectors,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
+        log::debug!(
+            "Upsert_point in ProxySegment: op_num={}, point_id={} (-> move_if_exist)",
+            op_num,
+            point_id
+        );
         self.move_if_exists(op_num, point_id, hw_counter)?;
+        log::debug!(
+            "Upsert_point in ProxySegment: op_num={}, point_id={} (move done -> upsert to write segment)",
+            op_num,
+            point_id
+        );
         self.write_segment
             .get()
             .write()
@@ -193,11 +203,22 @@ impl SegmentEntry for ProxySegment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
-
         let point_offset = match &self.wrapped_segment {
             LockedSegment::Original(raw_segment) => {
-                let point_offset = raw_segment.read().get_internal_id(point_id);
+                let raw_segment = raw_segment.read();
+                let point_offset = raw_segment.get_internal_id(point_id);
+                log::debug!(
+                    "{:?} delete_point in ProxySegment: op_num={}, point_id={} point_offset:{:?}",
+                    raw_segment.current_path,
+                    op_num,
+                    point_id,
+                    point_offset,
+                );
                 if point_offset.is_some() {
+                    log::info!(
+                        "{:?} insert deleted point for point_id:{point_id} version:{op_num}",
+                        raw_segment.current_path
+                    );
                     was_deleted = self
                         .deleted_points
                         .write()
@@ -213,7 +234,16 @@ impl SegmentEntry for ProxySegment {
                 point_offset
             }
             LockedSegment::Proxy(proxy) => {
-                if proxy.read().has_point(point_id) {
+                log::debug!(
+                    "delete_point in double ProxySegment op_num={}, point_id={}",
+                    op_num,
+                    point_id
+                );
+                let proxy_read = proxy.read();
+                if proxy_read.has_point(point_id) {
+                    log::info!(
+                        "insert deleted point for point_id:{point_id} version:{op_num} (double proxy)"
+                    );
                     was_deleted = self
                         .deleted_points
                         .write()
@@ -231,7 +261,13 @@ impl SegmentEntry for ProxySegment {
         };
 
         self.set_deleted_offset(point_offset);
-
+        log::debug!(
+            "{:?} proxy delete_point in write segment {:?}: op_num={}, point_id={}",
+            self.data_path(),
+            self.write_segment.get().read().data_path(),
+            op_num,
+            point_id
+        );
         let was_deleted_in_writable = self
             .write_segment
             .get()
@@ -292,7 +328,15 @@ impl SegmentEntry for ProxySegment {
         key: &Option<JsonPath>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
+        log::debug!(
+            "{:?} set_payload proxy segment op_num:{op_num} point_id:{point_id} (-> move_if_exists)",
+            self.data_path()
+        );
         self.move_if_exists(op_num, point_id, hw_counter)?;
+        log::debug!(
+            "{:?} set_payload proxy segment op_num:{op_num} point_id:{point_id} (move_if_exists DONE)",
+            self.data_path()
+        );
         self.write_segment
             .get()
             .write()
@@ -389,18 +433,24 @@ impl SegmentEntry for ProxySegment {
                 .get()
                 .read()
                 .payload(point_id, hw_counter)
+                .inspect_err(|_| log::debug!("Error reading payload from write segment"))
         } else {
             {
                 let write_segment = self.write_segment.get();
                 let segment_guard = write_segment.read();
                 if segment_guard.has_point(point_id) {
-                    return segment_guard.payload(point_id, hw_counter);
+                    return segment_guard
+                        .payload(point_id, hw_counter)
+                        .inspect_err(|_| {
+                            log::debug!("Error reading payload from write segment (bis)")
+                        });
                 }
             }
             self.wrapped_segment
                 .get()
                 .read()
                 .payload(point_id, hw_counter)
+                .inspect_err(|_| log::debug!("Error reading payload from wrapped segment"))
         }
     }
 
@@ -603,9 +653,15 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {
+        log::debug!(
+            "{:?} proxy segment has_point? point_id:{point_id}",
+            self.data_path()
+        );
         if self.deleted_points.read().contains_key(&point_id) {
+            log::debug!("tagged as deleted in proxy-> ask write segment");
             self.write_segment.get().read().has_point(point_id)
         } else {
+            log::debug!("not tagged as deleted in proxy -> ask write segment OR wrapped segment");
             self.write_segment.get().read().has_point(point_id)
                 || self.wrapped_segment.get().read().has_point(point_id)
         }

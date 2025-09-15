@@ -380,6 +380,7 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
+        log::debug!("SegmentSearch retrieve");
         let stopping_guard = StoppingGuard::new();
         runtime_handle
             .spawn_blocking({
@@ -411,6 +412,7 @@ impl SegmentsSearcher {
         is_stopped: &AtomicBool,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
+        log::debug!("retrieve blocking");
         let mut point_version: AHashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: AHashMap<PointIdType, RecordInternal> = Default::default();
 
