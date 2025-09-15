@@ -285,6 +285,11 @@ fn test_phrase_matching() {
         // Should match no documents (no document contains this exact phrase)
         assert_eq!(missing_results.len(), 0);
 
+        // Test valid phrase up to a token that doesn't exist
+        let query_with_unknown_token = index.parse_phrase_query("quick brown bird", &hw_counter);
+        // the phrase query is not valid because it contains an unknow token
+        assert!(query_with_unknown_token.is_none());
+
         // Test repeated words
         let phrase_query = index
             .parse_phrase_query("brown brown fox", &hw_counter)

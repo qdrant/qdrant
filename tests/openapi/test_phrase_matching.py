@@ -102,6 +102,12 @@ def phrase_collection():
             "exact sequence match",
         ),
         (
+            "quick brown bird",
+            0,
+            set(),
+            "exact sequence with unknown token",
+        ),
+        (
             "brown quick",
             0,
             set(),
