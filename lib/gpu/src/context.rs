@@ -259,7 +259,7 @@ impl Context {
             return Ok(());
         }
 
-        if buffer.size() % std::mem::size_of::<u32>() != 0 {
+        if !buffer.size().is_multiple_of(std::mem::size_of::<u32>()) {
             return Err(GpuError::OutOfBounds(
                 "Buffer size must be a multiple of `uint32` size to clear it".to_string(),
             ));

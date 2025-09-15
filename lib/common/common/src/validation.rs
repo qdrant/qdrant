@@ -254,7 +254,7 @@ pub fn validate_multi_vector_len(
         return Err(errors);
     }
 
-    if dense_vector_len % vectors_count as usize != 0 {
+    if !dense_vector_len.is_multiple_of(vectors_count as usize) {
         let mut errors = ValidationErrors::default();
         let mut err = ValidationError::new("invalid dense vector length for vectors count");
         err.add_param(Cow::from("vector_len"), &dense_vector_len);

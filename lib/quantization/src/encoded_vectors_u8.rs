@@ -115,7 +115,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 let encoded = Self::f32_to_u8(value, alpha, offset);
                 encoded_vector.push(encoded);
             }
-            if vector_parameters.dim % ALIGNMENT != 0 {
+            if !vector_parameters.dim.is_multiple_of(ALIGNMENT) {
                 for _ in 0..(ALIGNMENT - vector_parameters.dim % ALIGNMENT) {
                     let placeholder = match vector_parameters.distance_type {
                         DistanceType::Dot => 0.0,
@@ -378,7 +378,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
             .iter()
             .map(|&v| Self::f32_to_u8(v, self.metadata.alpha, self.metadata.offset))
             .collect();
-        if dim % ALIGNMENT != 0 {
+        if !dim.is_multiple_of(ALIGNMENT) {
             for _ in 0..(ALIGNMENT - dim % ALIGNMENT) {
                 let placeholder = match self.metadata.vector_parameters.distance_type {
                     DistanceType::Dot => 0.0,

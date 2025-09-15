@@ -95,7 +95,7 @@ impl TryFrom<StorageOptions> for StorageConfig {
             return Err("Page size must be greater than or equal to (block size * region size)");
         }
 
-        if page_size_bytes % region_size_bytes != 0 {
+        if !page_size_bytes.is_multiple_of(region_size_bytes) {
             return Err("Page size must be a multiple of (block size * region size)");
         }
 

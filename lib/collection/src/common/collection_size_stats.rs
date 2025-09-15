@@ -26,7 +26,7 @@ impl CollectionSizeStatsCache {
     /// Update counter one tick closer to the next update.
     pub fn check_need_update_and_increment(&self) -> bool {
         let req_counter = self.request_counter.fetch_add(1, Ordering::Relaxed);
-        req_counter % UPDATE_INTERVAL == 0
+        req_counter.is_multiple_of(UPDATE_INTERVAL)
     }
 
     /// Returns the cached values. Automatically updates the cache every 32 calls using the given `update` function.
