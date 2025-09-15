@@ -452,7 +452,7 @@ impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
     fn next_from(&mut self, peek: PostingElementEx) -> PostingElement {
         if self.pos.0 / CHUNK_SIZE < self.list.chunks.len() {
             self.pos = (self.pos.0 + 1, None);
-            if self.pos.0 % CHUNK_SIZE == 0 {
+            if self.pos.0.is_multiple_of(CHUNK_SIZE) {
                 self.unpacked = false;
             }
         } else {

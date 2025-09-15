@@ -272,7 +272,7 @@ impl BitsStoreType for u8 {
 
         let bits_count = u8::BITS as usize * bytes_count;
         let mut result = size / bits_count;
-        if size % bits_count != 0 {
+        if !size.is_multiple_of(bits_count) {
             result += 1;
         }
         result * bytes_count
@@ -390,7 +390,7 @@ impl BitsStoreType for u128 {
     fn get_storage_size(size: usize) -> usize {
         let bits_count = u8::BITS as usize * std::mem::size_of::<Self>();
         let mut result = size / bits_count;
-        if size % bits_count != 0 {
+        if !size.is_multiple_of(bits_count) {
             result += 1;
         }
         result
