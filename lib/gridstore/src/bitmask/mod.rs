@@ -103,7 +103,7 @@ impl Bitmask {
 
     pub(crate) fn open(dir: &Path, config: StorageConfig) -> Result<Self, String> {
         debug_assert!(
-            config.page_size_bytes % config.block_size_bytes == 0,
+            config.page_size_bytes.is_multiple_of(config.block_size_bytes),
             "Page size must be a multiple of block size"
         );
 
@@ -191,7 +191,7 @@ impl Bitmask {
             .len()
             .div_euclid(self.config.region_size_blocks);
         debug_assert!(
-            self.bitslice.len() % self.config.region_size_blocks == 0,
+            self.bitslice.len().is_multiple_of(self.config.region_size_blocks),
             "Bitmask length must be a multiple of region size"
         );
         let new_regions = expected_total_full_regions.saturating_sub(current_total_regions);

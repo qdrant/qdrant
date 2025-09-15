@@ -248,7 +248,7 @@ impl<T> TypedMultiDenseVector<T> {
                 description: "MultiDenseVector cannot have zero dimension".to_string(),
             });
         }
-        if vectors.len() % dim != 0 || vectors.is_empty() {
+        if !vectors.len().is_multiple_of(dim) || vectors.is_empty() {
             return Err(OperationError::ValidationError {
                 description: format!(
                     "Invalid multi-vector length: {}, expected multiple of {}",
