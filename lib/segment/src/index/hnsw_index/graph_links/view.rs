@@ -294,7 +294,12 @@ impl GraphLinksView<'_> {
                 let mut base_vector: &[u8] = &[];
                 if level == 0 {
                     base_vector = &neighbors[pos..pos + base_vector_layout.size()];
-                    debug_assert!(base_vector.as_ptr().addr().is_multiple_of(base_vector_layout.align()));
+                    debug_assert!(
+                        base_vector
+                            .as_ptr()
+                            .addr()
+                            .is_multiple_of(base_vector_layout.align())
+                    );
                     pos += base_vector_layout.size();
                 }
 
