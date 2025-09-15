@@ -286,7 +286,7 @@ impl FullTextIndex {
         phrase: &str,
         hw_counter: &HardwareCounterCell,
     ) -> Option<ParsedQuery> {
-        let document = self.parse_document(phrase, hw_counter);
+        let document = self.parse_document(phrase, hw_counter)?;
         Some(ParsedQuery::Phrase(document))
     }
 
@@ -331,14 +331,25 @@ impl FullTextIndex {
         TokenSet::from(tokenset)
     }
 
-    pub fn parse_document(&self, text: &str, hw_counter: &HardwareCounterCell) -> Document {
+    /// Parse document
+    ///
+    /// If there are any unseen tokens, returns `None`
+    pub fn parse_document(&self, text: &str, hw_counter: &HardwareCounterCell) -> Option<Document> {
         let mut document_tokens = Vec::new();
+        let mut unknow_token = false;
         self.get_tokenizer().tokenize_doc(text, |token| {
             if let Some(token_id) = self.get_token(token.as_ref(), hw_counter) {
                 document_tokens.push(token_id);
+            } else {
+                unknow_token = true
             }
         });
-        Document::new(document_tokens)
+        // Bail out if the text contains unknown token
+        if unknow_token {
+            None
+        } else {
+            Some(Document::new(document_tokens))
+        }
     }
 
     #[cfg(test)]
@@ -379,7 +390,7 @@ impl FullTextIndex {
                 }
                 ParsedQuery::Phrase(query) => {
                     let document = self.parse_document(value, hw_counter);
-                    document.has_phrase(query)
+                    document.map(|doc| doc.has_phrase(query)).unwrap_or(false)
                 }
                 ParsedQuery::AnyTokens(query) => {
                     let tokenset = self.parse_tokenset(value, hw_counter);
