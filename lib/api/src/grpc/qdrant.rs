@@ -670,79 +670,113 @@ pub mod quantization_config_diff {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StrictModeConfig {
+    /// Whether strict mode is enabled for a collection or not.
     #[prost(bool, optional, tag = "1")]
     pub enabled: ::core::option::Option<bool>,
+    /// Max allowed `limit` parameter for all APIs that don't have their own max limit.
     #[prost(uint32, optional, tag = "2")]
     #[validate(range(min = 1))]
     pub max_query_limit: ::core::option::Option<u32>,
+    /// Max allowed `timeout` parameter.
     #[prost(uint32, optional, tag = "3")]
     #[validate(range(min = 1))]
     pub max_timeout: ::core::option::Option<u32>,
+    /// Allow usage of unindexed fields in retrieval based (e.g. search) filters.
     #[prost(bool, optional, tag = "4")]
     pub unindexed_filtering_retrieve: ::core::option::Option<bool>,
+    /// Allow usage of unindexed fields in filtered updates (e.g. delete by payload).
     #[prost(bool, optional, tag = "5")]
     pub unindexed_filtering_update: ::core::option::Option<bool>,
+    /// Max HNSW ef value allowed in search parameters.
     #[prost(uint32, optional, tag = "6")]
     pub search_max_hnsw_ef: ::core::option::Option<u32>,
+    /// Whether exact search is allowed.
     #[prost(bool, optional, tag = "7")]
     pub search_allow_exact: ::core::option::Option<bool>,
+    /// Max oversampling value allowed in search
     #[prost(float, optional, tag = "8")]
     pub search_max_oversampling: ::core::option::Option<f32>,
+    /// Max batchsize when upserting
     #[prost(uint64, optional, tag = "9")]
     pub upsert_max_batchsize: ::core::option::Option<u64>,
+    /// Max size of a collections vector storage in bytes, ignoring replicas.
     #[prost(uint64, optional, tag = "10")]
     pub max_collection_vector_size_bytes: ::core::option::Option<u64>,
     /// Max number of read operations per minute per replica
     #[prost(uint32, optional, tag = "11")]
+    #[validate(range(min = 1))]
     pub read_rate_limit: ::core::option::Option<u32>,
     /// Max number of write operations per minute per replica
     #[prost(uint32, optional, tag = "12")]
+    #[validate(range(min = 1))]
     pub write_rate_limit: ::core::option::Option<u32>,
+    /// Max size of a collections payload storage in bytes, ignoring replicas.
     #[prost(uint64, optional, tag = "13")]
     pub max_collection_payload_size_bytes: ::core::option::Option<u64>,
+    /// Max conditions a filter can have.
     #[prost(uint64, optional, tag = "14")]
     pub filter_max_conditions: ::core::option::Option<u64>,
+    /// Max size of a condition, eg. items in `MatchAny`.
     #[prost(uint64, optional, tag = "15")]
     pub condition_max_size: ::core::option::Option<u64>,
+    /// Multivector strict mode configuration
     #[prost(message, optional, tag = "16")]
+    #[validate(nested)]
     pub multivector_config: ::core::option::Option<StrictModeMultivectorConfig>,
+    /// Sparse vector strict mode configuration
     #[prost(message, optional, tag = "17")]
+    #[validate(nested)]
     pub sparse_config: ::core::option::Option<StrictModeSparseConfig>,
+    /// Max number of points estimated in a collection
     #[prost(uint64, optional, tag = "18")]
+    #[validate(range(min = 1))]
     pub max_points_count: ::core::option::Option<u64>,
+    /// Max number of payload indexes in a collection
+    #[prost(uint64, optional, tag = "19")]
+    pub max_payload_index_count: ::core::option::Option<u64>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StrictModeSparseConfig {
     #[prost(map = "string, message", tag = "1")]
+    #[validate(nested)]
     pub sparse_config: ::std::collections::HashMap<
         ::prost::alloc::string::String,
         StrictModeSparse,
     >,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StrictModeSparse {
+    /// Max length of sparse vector
     #[prost(uint64, optional, tag = "10")]
+    #[validate(range(min = 1))]
     pub max_length: ::core::option::Option<u64>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StrictModeMultivectorConfig {
     #[prost(map = "string, message", tag = "1")]
+    #[validate(nested)]
     pub multivector_config: ::std::collections::HashMap<
         ::prost::alloc::string::String,
         StrictModeMultivector,
     >,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StrictModeMultivector {
+    /// Max number of vectors in a multivector
     #[prost(uint64, optional, tag = "1")]
+    #[validate(range(min = 1))]
     pub max_vectors: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
