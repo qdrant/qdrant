@@ -1578,25 +1578,25 @@ Note: 1kB = 1 vector of size 256. |
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| enabled | [bool](#bool) | optional |  |
-| max_query_limit | [uint32](#uint32) | optional |  |
-| max_timeout | [uint32](#uint32) | optional |  |
-| unindexed_filtering_retrieve | [bool](#bool) | optional |  |
-| unindexed_filtering_update | [bool](#bool) | optional |  |
-| search_max_hnsw_ef | [uint32](#uint32) | optional |  |
-| search_allow_exact | [bool](#bool) | optional |  |
-| search_max_oversampling | [float](#float) | optional |  |
-| upsert_max_batchsize | [uint64](#uint64) | optional |  |
+| enabled | [bool](#bool) | optional | Whether strict mode is enabled for a collection or not. |
+| max_query_limit | [uint32](#uint32) | optional | Max allowed `limit` parameter for all APIs that don&#39;t have their own max limit. |
+| max_timeout | [uint32](#uint32) | optional | Max allowed `timeout` parameter. |
+| unindexed_filtering_retrieve | [bool](#bool) | optional | Allow usage of unindexed fields in retrieval based (e.g. search) filters. |
+| unindexed_filtering_update | [bool](#bool) | optional | Allow usage of unindexed fields in filtered updates (e.g. delete by payload). |
+| search_max_hnsw_ef | [uint32](#uint32) | optional | Max HNSW ef value allowed in search parameters. |
+| search_allow_exact | [bool](#bool) | optional | Whether exact search is allowed. |
+| search_max_oversampling | [float](#float) | optional | Max oversampling value allowed in search |
+| upsert_max_batchsize | [uint64](#uint64) | optional | Max batchsize when upserting |
 | max_collection_vector_size_bytes | [uint64](#uint64) | optional |  |
 | read_rate_limit | [uint32](#uint32) | optional | Max number of read operations per minute per replica |
 | write_rate_limit | [uint32](#uint32) | optional | Max number of write operations per minute per replica |
-| max_collection_payload_size_bytes | [uint64](#uint64) | optional |  |
-| filter_max_conditions | [uint64](#uint64) | optional |  |
-| condition_max_size | [uint64](#uint64) | optional |  |
-| multivector_config | [StrictModeMultivectorConfig](#qdrant-StrictModeMultivectorConfig) | optional |  |
-| sparse_config | [StrictModeSparseConfig](#qdrant-StrictModeSparseConfig) | optional |  |
-| max_points_count | [uint64](#uint64) | optional |  |
-| max_payload_index_count | [uint64](#uint64) | optional |  |
+| max_collection_payload_size_bytes | [uint64](#uint64) | optional | Max size of a collections vector storage in bytes, ignoring replicas. |
+| filter_max_conditions | [uint64](#uint64) | optional | Max conditions a filter can have. |
+| condition_max_size | [uint64](#uint64) | optional | Max size of a condition, eg. items in `MatchAny`. |
+| multivector_config | [StrictModeMultivectorConfig](#qdrant-StrictModeMultivectorConfig) | optional | Multivector strict mode configuration |
+| sparse_config | [StrictModeSparseConfig](#qdrant-StrictModeSparseConfig) | optional | Sparse vector strict mode configuration |
+| max_points_count | [uint64](#uint64) | optional | Max number of points estimated in a collection |
+| max_payload_index_count | [uint64](#uint64) | optional | Max number of payload indexes in a collection |
 
 
 
@@ -1611,7 +1611,7 @@ Note: 1kB = 1 vector of size 256. |
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| max_vectors | [uint64](#uint64) | optional |  |
+| max_vectors | [uint64](#uint64) | optional | Max number of vectors in a multivector |
 
 
 
@@ -1657,7 +1657,7 @@ Note: 1kB = 1 vector of size 256. |
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| max_length | [uint64](#uint64) | optional |  |
+| max_length | [uint64](#uint64) | optional | Max length of sparse vector |
 
 
 

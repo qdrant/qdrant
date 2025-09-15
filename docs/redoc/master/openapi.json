@@ -7451,10 +7451,10 @@
             ]
           },
           "max_payload_index_count": {
-            "description": "Max number of payload index in a collection",
+            "description": "Max number of payload indexes in a collection",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           }
         }
@@ -9909,14 +9909,14 @@
             "nullable": true
           },
           "search_max_hnsw_ef": {
-            "description": "Max HNSW value allowed in search parameters.",
+            "description": "Max HNSW ef value allowed in search parameters.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
             "nullable": true
           },
           "search_allow_exact": {
-            "description": "Whether exact search is allowed or not.",
+            "description": "Whether exact search is allowed.",
             "type": "boolean",
             "nullable": true
           },
@@ -9983,7 +9983,7 @@
             "nullable": true
           },
           "multivector_config": {
-            "description": "Multivector configuration",
+            "description": "Multivector strict mode configuration",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/StrictModeMultivectorConfig"
@@ -9994,7 +9994,7 @@
             ]
           },
           "sparse_config": {
-            "description": "Sparse vector configuration",
+            "description": "Sparse vector strict mode configuration",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/StrictModeSparseConfig"
@@ -10005,10 +10005,10 @@
             ]
           },
           "max_payload_index_count": {
-            "description": "Max number of payload index in a collection",
+            "description": "Max number of payload indexes in a collection",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           }
         }

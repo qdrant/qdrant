@@ -2461,7 +2461,7 @@ def test_strict_mode_payload_index_count(collection_name):
 
     assert not response.ok
     assert response.status_code == 400
-    assert " Collection already has the maximum number of payload indices (1). Help: Please delete an existing index before creating a new one." in response.json()['status']['error']
+    assert "Collection already has the maximum number of payload indices (1). Help: Please delete an existing index before creating a new one." in response.json()['status']['error']
 
     # let's increase the limit by one
     set_strict_mode(collection_name, {
@@ -2499,7 +2499,7 @@ def test_strict_mode_payload_index_count(collection_name):
 
     assert not response.ok
     assert response.status_code == 400
-    assert " Collection already has the maximum number of payload indices (2). Help: Please delete an existing index before creating a new one." in response.json()['status']['error']
+    assert "Collection already has the maximum number of payload indices (2). Help: Please delete an existing index before creating a new one." in response.json()['status']['error']
 
     set_strict_mode(collection_name, {
         "enabled": False,

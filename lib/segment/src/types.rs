@@ -970,11 +970,11 @@ pub struct StrictModeConfig {
     pub unindexed_filtering_update: Option<bool>,
 
     // Search
-    /// Max HNSW value allowed in search parameters.
+    /// Max HNSW ef value allowed in search parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_max_hnsw_ef: Option<usize>,
 
-    /// Whether exact search is allowed or not.
+    /// Whether exact search is allowed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_allow_exact: Option<bool>,
 
@@ -1017,19 +1017,19 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub condition_max_size: Option<usize>,
 
-    /// Multivector configuration
+    /// Multivector strict mode configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub multivector_config: Option<StrictModeMultivectorConfig>,
 
-    /// Sparse vector configuration
+    /// Sparse vector strict mode configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub sparse_config: Option<StrictModeSparseConfig>,
 
-    /// Max number of payload index in a collection
+    /// Max number of payload indexes in a collection
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 1))]
+    #[validate(range(min = 0))]
     pub max_payload_index_count: Option<usize>,
 }
 
@@ -1171,9 +1171,9 @@ pub struct StrictModeConfigOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparse_config: Option<StrictModeSparseConfigOutput>,
 
-    /// Max number of payload index in a collection
+    /// Max number of payload indexes in a collection
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 1))]
+    #[validate(range(min = 0))]
     pub max_payload_index_count: Option<usize>,
 }
 
