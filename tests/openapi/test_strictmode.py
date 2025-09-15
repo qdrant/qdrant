@@ -2432,7 +2432,7 @@ def test_strict_mode_payload_index_count(collection_name):
     assert new_strict_mode_config['enabled']
     assert new_strict_mode_config['max_payload_index_count'] == 0
 
-    # should fail now with 1 index already
+    # should fail because zero payload indexes allowed
     response = request_with_validation(
         api='/collections/{collection_name}/index',
         method="PUT",
@@ -2504,6 +2504,16 @@ def test_strict_mode_payload_index_count(collection_name):
         "max_payload_index_count": 2,
     })
 
+    # verify config reflects the new limit
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    cfg = response.json()['result']['config']['strict_mode_config']
+    assert cfg['max_payload_index_count'] == 2
+
     # should work now with 2 indices allowed
     request_with_validation(
         api='/collections/{collection_name}/index',
@@ -2539,6 +2549,8 @@ def test_strict_mode_payload_index_count(collection_name):
     set_strict_mode(collection_name, {
         "enabled": False,
     })
+
+    assert not strict_mode_enabled(collection_name)
 
     # should work now without strict mode
     request_with_validation(
