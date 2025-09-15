@@ -141,6 +141,7 @@ pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> Stric
         condition_max_size,
         multivector_config,
         sparse_config,
+        max_payload_index_count,
     } = value;
     StrictModeConfig {
         enabled,
@@ -161,6 +162,7 @@ pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> Stric
         condition_max_size: condition_max_size.map(|i| i as usize),
         multivector_config: multivector_config.map(StrictModeMultivectorConfig::from),
         sparse_config: sparse_config.map(StrictModeSparseConfig::from),
+        max_payload_index_count: max_payload_index_count.map(|i| i as usize),
     }
 }
 

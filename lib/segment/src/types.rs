@@ -970,11 +970,11 @@ pub struct StrictModeConfig {
     pub unindexed_filtering_update: Option<bool>,
 
     // Search
-    /// Max HNSW value allowed in search parameters.
+    /// Max HNSW ef value allowed in search parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_max_hnsw_ef: Option<usize>,
 
-    /// Whether exact search is allowed or not.
+    /// Whether exact search is allowed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_allow_exact: Option<bool>,
 
@@ -1017,15 +1017,20 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub condition_max_size: Option<usize>,
 
-    /// Multivector configuration
+    /// Multivector strict mode configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub multivector_config: Option<StrictModeMultivectorConfig>,
 
-    /// Sparse vector configuration
+    /// Sparse vector strict mode configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub sparse_config: Option<StrictModeSparseConfig>,
+
+    /// Max number of payload indexes in a collection
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0))]
+    pub max_payload_index_count: Option<usize>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -1052,6 +1057,7 @@ impl Hash for StrictModeConfig {
             condition_max_size,
             multivector_config,
             sparse_config,
+            max_payload_index_count,
         } = self;
         enabled.hash(state);
         max_query_limit.hash(state);
@@ -1070,6 +1076,7 @@ impl Hash for StrictModeConfig {
         condition_max_size.hash(state);
         multivector_config.hash(state);
         sparse_config.hash(state);
+        max_payload_index_count.hash(state);
     }
 }
 
@@ -1163,6 +1170,11 @@ pub struct StrictModeConfigOutput {
     /// Sparse vector configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparse_config: Option<StrictModeSparseConfigOutput>,
+
+    /// Max number of payload indexes in a collection
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0))]
+    pub max_payload_index_count: Option<usize>,
 }
 
 impl From<StrictModeConfig> for StrictModeConfigOutput {
@@ -1186,6 +1198,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             condition_max_size,
             multivector_config,
             sparse_config,
+            max_payload_index_count,
         } = config;
 
         Self {
@@ -1207,6 +1220,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             condition_max_size,
             multivector_config: multivector_config.map(StrictModeMultivectorConfigOutput::from),
             sparse_config: sparse_config.map(StrictModeSparseConfigOutput::from),
+            max_payload_index_count,
         }
     }
 }

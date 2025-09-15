@@ -36,18 +36,17 @@ fn main() -> std::io::Result<()> {
     );
 
     // Fetch git commit ID and pass it to the compiler
-    let git_commit_id =
-        option_env!("GIT_COMMIT_ID").map(Into::into).or_else(|| {
-            match Command::new("git").args(["rev-parse", "HEAD"]).output() {
-                Ok(output) if output.status.success() => {
-                    Some(str::from_utf8(&output.stdout).unwrap().trim().to_string())
-                }
-                _ => {
-                    println!("cargo:warning=current git commit hash could not be determined");
-                    None
-                }
+    let git_commit_id = option_env!("GIT_COMMIT_ID").map(String::from).or_else(|| {
+        match Command::new("git").args(["rev-parse", "HEAD"]).output() {
+            Ok(output) if output.status.success() => {
+                Some(str::from_utf8(&output.stdout).unwrap().trim().to_string())
             }
-        });
+            _ => {
+                println!("cargo:warning=current git commit hash could not be determined");
+                None
+            }
+        }
+    });
 
     if let Some(commit_id) = git_commit_id {
         println!("cargo:rustc-env=GIT_COMMIT_ID={commit_id}");
@@ -166,8 +165,15 @@ fn configure_validation(builder: Builder) -> Builder {
             ("UpdateCollectionClusterSetupRequest.operation", ""),
             ("StrictModeConfig.max_query_limit", "range(min = 1)"),
             ("StrictModeConfig.max_timeout", "range(min = 1)"),
-            ("StrictModeConfig.read_rate_limit_per_minute", "range(min = 1)"),
-            ("StrictModeConfig.write_rate_limit_per_minute", "range(min = 1)"),
+            ("StrictModeConfig.max_points_count", "range(min = 1)"),
+            ("StrictModeConfig.read_rate_limit", "range(min = 1)"),
+            ("StrictModeConfig.write_rate_limit", "range(min = 1)"),
+            ("StrictModeConfig.multivector_config", ""),
+            ("StrictModeConfig.sparse_config", ""),
+            ("StrictModeSparseConfig.sparse_config", ""),
+            ("StrictModeSparse.max_length", "range(min = 1)"),
+            ("StrictModeMultivectorConfig.multivector_config", ""),
+            ("StrictModeMultivector.max_vectors", "range(min = 1)"),
         ], &[
             "ListCollectionsRequest",
             "ListAliasesRequest",
