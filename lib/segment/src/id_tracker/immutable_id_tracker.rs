@@ -338,6 +338,8 @@ impl ImmutableIdTracker {
         let file = File::create(Self::mappings_file_path(path))?;
         let mut writer = BufWriter::new(&file);
         Self::store_mapping(&mappings, &mut writer)?;
+        writer.flush()?;
+        drop(writer);
         file.sync_all()?;
 
         deleted_wrapper.flusher()()?;
