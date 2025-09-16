@@ -1,3 +1,4 @@
+#![feature(unsigned_is_multiple_of)]
 pub mod checkfs;
 pub mod chunked_utils;
 pub mod fadvise;
