@@ -1,3 +1,4 @@
+#![feature(unsigned_is_multiple_of)]
 pub mod bitpacking;
 pub mod bitpacking_links;
 pub mod bitpacking_ordered;
