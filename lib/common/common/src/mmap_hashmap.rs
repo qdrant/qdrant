@@ -121,7 +121,7 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
         let file = tempfile::Builder::new()
             .prefix(path.file_name().ok_or(io::ErrorKind::InvalidInput)?)
             .tempfile_in(path.parent().ok_or(io::ErrorKind::InvalidInput)?)?;
-        let mut bufw = io::BufWriter::new(&file);
+        let mut bufw = io::BufWriter::new(file);
 
         // 1. Header
         let header = Header {
@@ -165,7 +165,7 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
 
         // Explicitly flush write buffer so we can catch IO errors
         bufw.flush()?;
-        drop(bufw);
+        let file = bufw.into_inner().unwrap();
 
         file.as_file().sync_all()?;
         file.persist(path)?;

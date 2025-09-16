@@ -235,6 +235,9 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
                 deleted_ids.push(start_index as PointOffsetType + offset as PointOffsetType);
             }
         }
+
+        // Explicitly fsync file contents to ensure durability
+        vectors_file.flush()?;
         vectors_file
             .into_inner()
             .map_err(io::IntoInnerError::into_error)?
