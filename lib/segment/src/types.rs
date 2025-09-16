@@ -480,6 +480,7 @@ pub struct QuantizationSearchParams {
     /// Might require more time in case if original vectors are stored on disk.
     /// If not set, qdrant decides automatically apply rescoring or not.
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rescore: Option<bool>,
 
     /// Oversampling factor for quantization. Default is 1.0.
@@ -491,6 +492,7 @@ pub struct QuantizationSearchParams {
     /// and then top-100 will be returned after re-scoring.
     #[serde(default = "default_quantization_oversampling_value")]
     #[validate(range(min = 1.0))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub oversampling: Option<f64>,
 }
 
@@ -523,6 +525,7 @@ pub const fn default_quantization_oversampling_value() -> Option<f64> {
 pub struct SearchParams {
     /// Params relevant to HNSW index
     /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hnsw_ef: Option<usize>,
 
     /// Search without approximation. If set to true, search may run long but with exact results.
@@ -532,6 +535,7 @@ pub struct SearchParams {
     /// Quantization params
     #[serde(default)]
     #[validate(nested)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub quantization: Option<QuantizationSearchParams>,
 
     /// If enabled, the engine will only perform search among indexed or small segments.
@@ -2705,20 +2709,28 @@ pub struct FieldCondition {
     /// Payload key
     pub key: PayloadKeyType,
     /// Check if point has field with a given value
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub r#match: Option<Match>,
     /// Check if points value lies in a given range
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub range: Option<RangeInterface>,
     /// Check if points geolocation lies in a given area
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geo_radius: Option<GeoRadius>,
     /// Check if geo point is within a given polygon
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geo_polygon: Option<GeoPolygon>,
     /// Check number of values of the field
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub values_count: Option<ValuesCount>,
     /// Check that the field is empty, alternative syntax for `is_empty: "field_name"`
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_empty: Option<bool>,
     /// Check that the field is null, alternative syntax for `is_null: "field_name"`
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_null: Option<bool>,
 }
 
