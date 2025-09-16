@@ -113,14 +113,14 @@ async fn test_payload_missing_index_check() {
             &num_filter
         )
         .map(|(x, _)| x),
-        Some("location.lat".parse().unwrap())
+        Some("location[].lat".parse().unwrap())
     );
 
     // Create index for nested field
     create_index(
         &shard,
         &payload_index_schema,
-        "location.lat",
+        "location[].lat",
         PayloadSchemaType::Float,
     )
     .await;
