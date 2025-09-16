@@ -363,7 +363,10 @@ impl<'a> Extractor<'a> {
             }
             Condition::Nested(nested) => {
                 self.update_from_filter(
-                    Some(&JsonPath::extend_or_new(nested_prefix, nested.raw_key())),
+                    Some(&JsonPath::extend_or_new(
+                        nested_prefix,
+                        &nested.raw_key().array_key(),
+                    )),
                     nested.filter(),
                 );
                 return;
