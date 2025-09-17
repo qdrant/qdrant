@@ -12,7 +12,7 @@ use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 use tokio::time::error::Elapsed;
 
-use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::collection_manager::segments_retriever::SegmentsRetriever;
 use crate::operations::OperationWithClockTag;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
@@ -238,7 +238,7 @@ impl ShardOperation for LocalShard {
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let records_map = tokio::time::timeout(
             timeout,
-            SegmentsSearcher::retrieve(
+            SegmentsRetriever::retrieve(
                 self.segments.clone(),
                 &request.ids,
                 with_payload,

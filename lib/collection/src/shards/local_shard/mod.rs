@@ -55,7 +55,7 @@ use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder,
 };
 use crate::collection_manager::optimizers::TrackerLog;
-use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::collection_manager::segments_retriever::SegmentsRetriever;
 use crate::common::file_utils::{move_dir, move_file};
 use crate::config::CollectionConfigInternal;
 use crate::operations::OperationWithClockTag;
@@ -1029,7 +1029,7 @@ impl LocalShard {
         hw_counter: HwMeasurementAcc,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let segments = self.segments.clone();
-        SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter).await
+        SegmentsRetriever::read_filtered(segments, filter, runtime_handle, hw_counter).await
     }
 
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {

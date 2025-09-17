@@ -15,7 +15,7 @@ use tokio::time::error::Elapsed;
 
 use super::LocalShard;
 use crate::collection::mmr::mmr_from_points_with_vector;
-use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::collection_manager::segments_retriever::SegmentsRetriever;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
     QueryScrollRequestInternal, ScrollOrder,
@@ -126,7 +126,7 @@ impl LocalShard {
         // Collect retrieved records into a hashmap for fast lookup
         let records_map = tokio::time::timeout(
             timeout,
-            SegmentsSearcher::retrieve(
+            SegmentsRetriever::retrieve(
                 self.segments.clone(),
                 &point_ids,
                 &(&with_payload).into(),

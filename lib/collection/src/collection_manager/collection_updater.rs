@@ -102,7 +102,7 @@ mod tests {
         build_segment_1, build_segment_2, build_test_holder,
     };
     use crate::collection_manager::holders::segment_holder::LockedSegment::Original;
-    use crate::collection_manager::segments_searcher::SegmentsSearcher;
+    use crate::collection_manager::segments_retriever::SegmentsRetriever;
     use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
     use crate::operations::point_ops::{
         PointOperations, PointStructPersisted, VectorStructPersisted,
@@ -189,7 +189,7 @@ mod tests {
         assert!(matches!(res, Ok(1)));
 
         let segments = Arc::new(segments);
-        let records = SegmentsSearcher::retrieve_blocking(
+        let records = SegmentsRetriever::retrieve_blocking(
             segments.clone(),
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
@@ -226,7 +226,7 @@ mod tests {
         )
         .unwrap();
 
-        let records = SegmentsSearcher::retrieve_blocking(
+        let records = SegmentsRetriever::retrieve_blocking(
             segments,
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
@@ -269,7 +269,7 @@ mod tests {
         .unwrap();
 
         let segments = Arc::new(segments);
-        let res = SegmentsSearcher::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve_blocking(
             segments.clone(),
             &points,
             &WithPayload::from(true),
@@ -306,7 +306,7 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsSearcher::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve_blocking(
             segments.clone(),
             &[3.into()],
             &WithPayload::from(true),
@@ -323,7 +323,7 @@ mod tests {
 
         // Test clear payload
 
-        let res = SegmentsSearcher::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve_blocking(
             segments.clone(),
             &[2.into()],
             &WithPayload::from(true),
@@ -347,7 +347,7 @@ mod tests {
             &hw_counter,
         )
         .unwrap();
-        let res = SegmentsSearcher::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve_blocking(
             segments,
             &[2.into()],
             &WithPayload::from(true),
@@ -419,7 +419,7 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsSearcher::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve_blocking(
             segments.clone(),
             &points,
             &WithPayload::from(true),
@@ -482,7 +482,7 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsSearcher::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve_blocking(
             segments,
             &points,
             &WithPayload::from(true),

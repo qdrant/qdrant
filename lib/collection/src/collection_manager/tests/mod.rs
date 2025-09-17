@@ -22,7 +22,7 @@ use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
 };
-use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::collection_manager::segments_retriever::SegmentsRetriever;
 use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use crate::operations::types::RecordInternal;
 
@@ -292,7 +292,7 @@ fn test_delete_all_point_versions() {
     let segments = Arc::new(RwLock::new(holder));
 
     // We should be able to retrieve point 123
-    let retrieved = SegmentsSearcher::retrieve_blocking(
+    let retrieved = SegmentsRetriever::retrieve_blocking(
         segments.clone(),
         &[point_id],
         &WithPayload::from(false),
@@ -337,7 +337,7 @@ fn test_delete_all_point_versions() {
 
     // We must not be able to retrieve point 123
     // Note: before the bug fix we could retrieve the point again from segment 1
-    let retrieved = SegmentsSearcher::retrieve_blocking(
+    let retrieved = SegmentsRetriever::retrieve_blocking(
         segments.clone(),
         &[point_id],
         &WithPayload::from(false),
@@ -456,7 +456,7 @@ fn test_proxy_shared_updates() {
     let with_payload = WithPayload::from(true);
     let with_vector = WithVector::from(true);
 
-    let result = SegmentsSearcher::retrieve_blocking(
+    let result = SegmentsRetriever::retrieve_blocking(
         locked_holder.clone(),
         &ids,
         &with_payload,
@@ -595,7 +595,7 @@ fn test_proxy_shared_updates_same_version() {
     let with_payload = WithPayload::from(true);
     let with_vector = WithVector::from(true);
 
-    let result = SegmentsSearcher::retrieve_blocking(
+    let result = SegmentsRetriever::retrieve_blocking(
         locked_holder.clone(),
         &ids,
         &with_payload,
