@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::facets::{FacetParams, FacetResponse};
@@ -358,12 +357,14 @@ impl ForwardProxyShard {
         self.wrapped_shard.update_tracker()
     }
 
-    pub fn estimate_cardinality(
+    pub async fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
-        hw_counter: &HardwareCounterCell,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
-        self.wrapped_shard.estimate_cardinality(filter, hw_counter)
+        self.wrapped_shard
+            .estimate_cardinality(filter, hw_measurement_acc)
+            .await
     }
 }
 

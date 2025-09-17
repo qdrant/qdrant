@@ -58,7 +58,8 @@ impl ShardReplicaSet {
         let result = match state {
             ReplicaState::Active => {
                 // Rate limit update operations on Active replica
-                self.check_operation_write_rate_limiter(&hw_measurement, local, &operation)?;
+                self.check_operation_write_rate_limiter(&hw_measurement, local, &operation)
+                    .await?;
                 local.get().update(operation, wait, hw_measurement).await
             }
 
@@ -303,7 +304,8 @@ impl ShardReplicaSet {
 
             if self.peer_is_active(this_peer_id) {
                 // Check write rate limiter before proceeding if replica active
-                self.check_operation_write_rate_limiter(&hw_measurement_acc, local, &operation)?;
+                self.check_operation_write_rate_limiter(&hw_measurement_acc, local, &operation)
+                    .await?;
             }
 
             let operation = operation.clone();
@@ -538,26 +540,27 @@ impl ShardReplicaSet {
     /// Check write rate limiter for the operation
     ///
     /// Lazily compute the cost of the operation and check against the write rate limiter
-    fn check_operation_write_rate_limiter(
+    async fn check_operation_write_rate_limiter(
         &self,
         hw_measurement: &HwMeasurementAcc,
         local: &Shard,
         operation: &OperationWithClockTag,
     ) -> CollectionResult<()> {
-        self.check_write_rate_limiter(hw_measurement, || {
+        self.check_write_rate_limiter(hw_measurement, || async {
             let mut ratelimiter_cost = 1;
 
             // Estimate the cost based on affected points if filter is available.
-            match local.estimate_request_cardinality(
-                &operation.operation,
-                &hw_measurement.get_counter_cell(),
-            ) {
+            match local
+                .estimate_request_cardinality(&operation.operation, hw_measurement)
+                .await
+            {
                 Ok(est) => ratelimiter_cost = 1.max(est.exp),
                 Err(err) => log::error!("Estimating cardinality: {err:?}"),
             }
 
             ratelimiter_cost
-        })?;
+        })
+        .await?;
         Ok(())
     }
 

@@ -2,7 +2,7 @@ use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::manifest::SnapshotManifest;
@@ -300,34 +300,47 @@ impl Shard {
         }
     }
 
-    pub fn estimate_cardinality(
+    pub async fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
-        hw_counter: &HardwareCounterCell,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
         match self {
-            Shard::Local(local_shard) => local_shard.estimate_cardinality(filter, hw_counter),
-            Shard::Proxy(proxy_shard) => proxy_shard.estimate_cardinality(filter, hw_counter),
+            Shard::Local(local_shard) => {
+                local_shard
+                    .estimate_cardinality(filter, hw_measurement_acc)
+                    .await
+            }
+            Shard::Proxy(proxy_shard) => {
+                proxy_shard
+                    .estimate_cardinality(filter, hw_measurement_acc)
+                    .await
+            }
             Shard::ForwardProxy(forward_proxy_shard) => {
-                forward_proxy_shard.estimate_cardinality(filter, hw_counter)
+                forward_proxy_shard
+                    .estimate_cardinality(filter, hw_measurement_acc)
+                    .await
             }
             Shard::QueueProxy(queue_proxy_shard) => {
-                queue_proxy_shard.estimate_cardinality(filter, hw_counter)
+                queue_proxy_shard
+                    .estimate_cardinality(filter, hw_measurement_acc)
+                    .await
             }
             Shard::Dummy(dummy_shard) => dummy_shard.estimate_cardinality(filter),
         }
     }
 
-    pub fn estimate_request_cardinality(
+    pub async fn estimate_request_cardinality(
         &self,
         operation: &impl EstimateOperationEffectArea,
-        hw_counter: &HardwareCounterCell,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
         match operation.estimate_effect_area() {
             OperationEffectArea::Empty => Ok(CardinalityEstimation::exact(0)),
             OperationEffectArea::Points(vec) => Ok(CardinalityEstimation::exact(vec.len())),
             OperationEffectArea::Filter(filter) => {
-                self.estimate_cardinality(Some(filter), hw_counter)
+                self.estimate_cardinality(Some(filter), hw_measurement_acc)
+                    .await
             }
         }
     }

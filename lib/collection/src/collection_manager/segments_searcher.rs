@@ -481,6 +481,7 @@ impl SegmentsSearcher {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let stopping_guard = StoppingGuard::new();
+        // cloning filter spawning task
         let filter = filter.cloned();
         runtime_handle
             .spawn_blocking(move || {
