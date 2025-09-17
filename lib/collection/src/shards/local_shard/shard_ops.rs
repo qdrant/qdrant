@@ -233,6 +233,7 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
+        let scroll_lock = self.scroll_read_lock.read().await;
         self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || request.ids.len())?;
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let records_map = tokio::time::timeout(
@@ -248,6 +249,8 @@ impl ShardOperation for LocalShard {
         )
         .await
         .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
+
+        drop(scroll_lock);
 
         let ordered_records = request
             .ids
