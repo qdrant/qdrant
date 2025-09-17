@@ -215,11 +215,9 @@ impl ShardOperation for LocalShard {
             })??;
             all_points.len()
         } else {
-            self.estimate_cardinality(
-                request.filter.as_ref(),
-                &hw_measurement_acc.get_counter_cell(),
-            )?
-            .exp
+            self.estimate_cardinality(request.filter.as_ref(), &hw_measurement_acc)
+                .await?
+                .exp
         };
         Ok(CountResult { count: total_count })
     }

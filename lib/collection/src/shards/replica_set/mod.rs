@@ -845,20 +845,20 @@ impl ShardReplicaSet {
     /// - cost_fn: the cost of the operation called lazily
     ///
     /// Returns an error if the rate limit is exceeded.
-    fn check_write_rate_limiter<F>(
+    async fn check_write_rate_limiter<F>(
         &self,
         hw_measurement_acc: &HwMeasurementAcc,
         cost_fn: F,
     ) -> CollectionResult<()>
     where
-        F: FnOnce() -> usize,
+        F: AsyncFnOnce() -> usize,
     {
         // Do not rate limit internal operation tagged with disposable measurement
         if hw_measurement_acc.is_disposable() {
             return Ok(());
         }
         if let Some(rate_limiter) = &self.write_rate_limiter {
-            let cost = cost_fn();
+            let cost = cost_fn().await;
             rate_limiter
                 .lock()
                 .try_consume(cost as f64)

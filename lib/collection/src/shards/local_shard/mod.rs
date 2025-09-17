@@ -990,28 +990,35 @@ impl LocalShard {
             .map_err(CollectionError::from)
     }
 
-    pub fn estimate_cardinality<'a>(
+    pub async fn estimate_cardinality<'a>(
         &'a self,
         filter: Option<&'a Filter>,
-        hw_counter: &HardwareCounterCell,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
-        let segments = self.segments().read();
-        let cardinality = segments
-            .iter()
-            .map(|(_id, segment)| {
-                segment
-                    .get()
-                    .read()
-                    .estimate_point_count(filter, hw_counter)
-            })
-            .fold(CardinalityEstimation::exact(0), |acc, x| {
-                CardinalityEstimation {
-                    primary_clauses: vec![],
-                    min: acc.min + x.min,
-                    exp: acc.exp + x.exp,
-                    max: acc.max + x.max,
-                }
-            });
+        let segments = self.segments.clone();
+        let hw_counter = hw_measurement_acc.get_counter_cell();
+        // clone filter for spawning task
+        let filter = filter.cloned();
+        let cardinality = tokio::task::spawn_blocking(move || {
+            let segments = segments.read(); // blocking sync lock
+            segments
+                .iter()
+                .map(|(_id, segment)| {
+                    segment
+                        .get()
+                        .read() // blocking sync lock
+                        .estimate_point_count(filter.as_ref(), &hw_counter)
+                })
+                .fold(CardinalityEstimation::exact(0), |acc, x| {
+                    CardinalityEstimation {
+                        primary_clauses: vec![],
+                        min: acc.min + x.min,
+                        exp: acc.exp + x.exp,
+                        max: acc.max + x.max,
+                    }
+                })
+        })
+        .await?;
         Ok(cardinality)
     }
 
