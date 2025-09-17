@@ -13,7 +13,7 @@ impl LocalShard {
         let segments = self.segments.clone();
 
         let segments = tokio::task::spawn_blocking(move || {
-            let segments = segments.read();
+            let segments = segments.read(); // blocking sync lock
 
             if detail.level >= DetailsLevel::Level4 {
                 segments

@@ -1027,27 +1027,39 @@ impl LocalShard {
 
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
         {
-            let segments = self.segments().read();
+            let segments = self.segments.clone();
 
-            // Red status on failed operation or optimizer error
-            if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
-                let optimizer_status = segments
-                    .optimizer_errors
-                    .as_ref()
-                    .map_or(OptimizersStatus::Ok, |err| {
-                        OptimizersStatus::Error(err.to_string())
-                    });
-                return (ShardStatus::Red, optimizer_status);
-            }
+            let has_errored_optimizers = tokio::task::spawn_blocking(move || {
+                let segments = segments.read(); // blocking sync lock
+                // Red status on failed operation or optimizer error
+                if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
+                    let optimizer_status = segments
+                        .optimizer_errors
+                        .as_ref()
+                        .map_or(OptimizersStatus::Ok, |err| {
+                            OptimizersStatus::Error(err.to_string())
+                        });
+                    return Some((ShardStatus::Red, optimizer_status));
+                }
 
-            // Yellow status if we have a special segment, indicates a proxy segment used during optimization
-            // TODO: snapshotting also creates temp proxy segments. should differentiate.
-            let has_special_segment = segments
-                .iter()
-                .map(|(_, segment)| segment.get().read().info().segment_type)
-                .any(|segment_type| segment_type == SegmentType::Special);
-            if has_special_segment {
-                return (ShardStatus::Yellow, OptimizersStatus::Ok);
+                // Yellow status if we have a special segment, indicates a proxy segment used during optimization
+                // TODO: snapshotting also creates temp proxy segments. should differentiate.
+                let has_special_segment = segments
+                    .iter()
+                    .map(|(_, segment)| segment.get().read().info().segment_type)
+                    .any(|segment_type| segment_type == SegmentType::Special);
+                if has_special_segment {
+                    Some((ShardStatus::Yellow, OptimizersStatus::Ok))
+                } else {
+                    None
+                }
+            })
+            .await;
+
+            match has_errored_optimizers {
+                Err(err) => log::error!("Failed to get local_shard_status: {err}"),
+                Ok(Some(to_report)) => return to_report,
+                Ok(None) => (), // no early error to report
             }
         }
 

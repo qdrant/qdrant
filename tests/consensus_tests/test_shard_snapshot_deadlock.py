@@ -8,6 +8,14 @@ from .fixtures import *
 from .utils import *
 
 
+def loop_telemetry(peer_url):
+    while True:
+        requests.get(f"{peer_url}/telemetry", params = { "details_level": "10" })
+
+def loop_version(peer_url):
+    while True:
+        requests.get(f"{peer_url}/", timeout = 0.5)
+
 def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -17,6 +25,11 @@ def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
 
     # Create collection
     create_collection(peer_url)
+
+    # Initialize collection with a few points
+    upsert_random_points(peer_url, 10_000)
+
+    print("ready to take snapshot")
 
     # Request streaming shard snapshot
     snapshot = requests.get(f"{peer_url}/collections/test_collection/shards/0/snapshot", stream = True)
@@ -30,16 +43,26 @@ def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
     snapshot_chunk = next(snapshot_stream)
 
     # Run background executor to send blocking requests without blocking the test
-    executor = ThreadPoolExecutor(max_workers = 2)
-
-    # Upsert a point, to block on segment write-lock
-    upsert = executor.submit(upsert_random_points, peer_url, 10)
-    time.sleep(0.1)
+    executor = ThreadPoolExecutor(max_workers = 3)
 
     # Get telemetry, to block on segment read-lock, which would block Actix worker
-    telemetry = executor.submit(requests.get, f"{peer_url}/telemetry", params = { "details_level": "1" })
-    time.sleep(0.1)
+    telemetry = executor.submit(loop_telemetry, peer_url)
+
+    # Upsert a point, to block on segment write-lock
+    upsert = executor.submit(upsert_random_points, peer_url, 10_000, batch_size=1)
+    
+    # Get version, to block on segment read-lock, which would block Actix worker
+    version = executor.submit(loop_version, peer_url)
+
+    # Let executor cook for a bit to get some interleaving
+    time.sleep(0.5)
 
     # Try to query Qdrant version info, which would block and timeout if Actix worker is blocked
-    resp = requests.get(f"{peer_url}/", timeout = 0.5)
-    assert_http_ok(resp)
+    try:
+        resp = requests.get(f"{peer_url}/", timeout = 20)
+        assert_http_ok(resp)
+    except requests.exceptions.Timeout:
+        print(f"Request timed out against {peer_url}")
+        # uncomment `sleep` and remove `raise` to investigate the deadlock with gdb
+        #time.sleep(100_000) 
+        raise
