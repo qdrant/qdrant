@@ -12,6 +12,10 @@ def loop_telemetry(peer_url):
     while True:
         requests.get(f"{peer_url}/telemetry", params = { "details_level": "10" }, timeout = 0.5)
 
+def loop_metrics(peer_url):
+    while True:
+        requests.get(f"{peer_url}/metrics", params = { "anonymize": True }, timeout = 0.5)
+
 def loop_version(peer_url):
     while True:
         requests.get(f"{peer_url}/", timeout = 0.5)
@@ -47,10 +51,13 @@ def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
     snapshot_chunk = next(snapshot_stream)
 
     # Run background executor to send blocking requests without blocking the test
-    executor = ThreadPoolExecutor(max_workers = 4)
+    executor = ThreadPoolExecutor(max_workers = 5)
 
     # Get telemetry, to block on segment read-lock, which would block Actix worker
     telemetry = executor.submit(loop_telemetry, peer_url)
+
+    # Get metrics, to block on segment read-lock, which would block Actix worker
+    metrics = executor.submit(loop_metrics, peer_url)
 
     # Upsert a point, to block on segment write-lock
     upsert = executor.submit(upsert_random_points, peer_url, 10_000, batch_size=1)
@@ -62,7 +69,7 @@ def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
     cluster_info = executor.submit(loop_cluster_info, peer_url)
 
     # Let executor cook for a bit to get some interleaving
-    time.sleep(0.5)
+    time.sleep(1)
 
     # Try to query Qdrant version info, which would block and timeout if Actix worker is blocked
     try:
