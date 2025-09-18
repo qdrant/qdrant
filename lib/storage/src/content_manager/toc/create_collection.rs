@@ -164,20 +164,14 @@ impl TableOfContent {
             )?,
             read_fan_out_factor: None,
         };
-        let wal_config = match wal_config_diff {
-            None => self.storage_config.wal.clone(),
-            Some(diff) => self.storage_config.wal.update(diff)?,
-        };
+        let wal_config = self.storage_config.wal.update_opt(wal_config_diff);
 
-        let optimizers_config = match optimizers_config_diff {
-            None => self.storage_config.optimizers.clone(),
-            Some(diff) => self.storage_config.optimizers.update(diff)?,
-        };
+        let optimizer_config = self
+            .storage_config
+            .optimizers
+            .update_opt(optimizers_config_diff);
 
-        let hnsw_config = match hnsw_config_diff {
-            None => self.storage_config.hnsw_index.clone(),
-            Some(diff) => self.storage_config.hnsw_index.update(diff)?,
-        };
+        let hnsw_config = self.storage_config.hnsw_index.update_opt(hnsw_config_diff);
 
         let quantization_config = match quantization_config {
             None => self
@@ -214,7 +208,7 @@ impl TableOfContent {
         let collection_config = CollectionConfigInternal {
             wal_config,
             params: collection_params,
-            optimizer_config: optimizers_config,
+            optimizer_config,
             hnsw_config,
             quantization_config,
             strict_mode_config,

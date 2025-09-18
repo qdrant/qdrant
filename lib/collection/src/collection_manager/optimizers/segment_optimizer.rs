@@ -254,9 +254,7 @@ pub trait SegmentOptimizer {
                     .vectors
                     .get_params(vector_name)
                     .and_then(|params| params.hnsw_config);
-                let vector_hnsw = param_hnsw
-                    .and_then(|c| collection_hnsw.update(c).ok())
-                    .unwrap_or_else(|| collection_hnsw.clone());
+                let vector_hnsw = collection_hnsw.update_opt(param_hnsw);
                 config.index = Indexes::Hnsw(vector_hnsw);
 
                 // Assign quantization config

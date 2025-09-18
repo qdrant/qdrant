@@ -20,7 +20,7 @@ use crate::optimizers_builder::OptimizersConfig;
 // Structures for partial update of collection params
 // TODO: make auto-generated somehow...
 
-pub trait DiffConfig<Diff>: DeserializeOwned + Serialize
+pub trait DiffConfig<Diff>: Clone + DeserializeOwned + Serialize
 where
     Diff: Sized + Serialize + DeserializeOwned + Merge,
 {
@@ -30,6 +30,16 @@ where
     /// the `diff` will always be in the returned object.
     fn update(&self, diff: Diff) -> CollectionResult<Self> {
         update_config(self, diff)
+    }
+
+    fn update_opt(&self, diff: Option<Diff>) -> Self {
+        match diff {
+            Some(diff) => self.update(diff).unwrap_or_else(|e| {
+                log::warn!("Failed to apply config diff: {e}");
+                self.clone()
+            }),
+            None => self.clone(),
+        }
     }
 
     fn to_diff(&self) -> CollectionResult<Diff> {
