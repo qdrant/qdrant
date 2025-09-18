@@ -24,6 +24,7 @@
     - [CollectionOperationResponse](#qdrant-CollectionOperationResponse)
     - [CollectionParams](#qdrant-CollectionParams)
     - [CollectionParamsDiff](#qdrant-CollectionParamsDiff)
+    - [ConfigurationStatus](#qdrant-ConfigurationStatus)
     - [CreateAlias](#qdrant-CreateAlias)
     - [CreateCollection](#qdrant-CreateCollection)
     - [CreateCollection.MetadataEntry](#qdrant-CreateCollection-MetadataEntry)
@@ -608,6 +609,7 @@
 | payload_schema | [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry) | repeated | Collection data types |
 | points_count | [uint64](#uint64) | optional | Approximate number of points in the collection |
 | indexed_vectors_count | [uint64](#uint64) | optional | Approximate number of indexed vectors in the collection. |
+| configuration_status | [ConfigurationStatus](#qdrant-ConfigurationStatus) |  | status of configuration inconsistencies |
 
 
 
@@ -680,6 +682,22 @@
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
 | on_disk_payload | [bool](#bool) | optional | If true - point&#39;s payload will not be stored in memory |
 | read_fan_out_factor | [uint32](#uint32) | optional | Fan-out every read request to these many additional remote nodes (and return first available response) |
+
+
+
+
+
+
+<a name="qdrant-ConfigurationStatus"></a>
+
+### ConfigurationStatus
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| ok | [bool](#bool) |  |  |
+| warning | [string](#string) |  |  |
 
 
 

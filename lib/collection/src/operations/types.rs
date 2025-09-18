@@ -127,6 +127,20 @@ pub enum OptimizersStatus {
     Error(String),
 }
 
+/// Current state of the collection
+#[derive(
+    Debug, Default, Serialize, JsonSchema, Anonymize, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigurationStatus {
+    /// Configuration is valid
+    #[default]
+    Ok,
+    /// Configuration has warnings
+    #[anonymize(false)]
+    Warning(String),
+}
+
 /// Point data
 #[derive(Clone, Debug, PartialEq)]
 pub struct RecordInternal {
@@ -219,6 +233,8 @@ pub struct CollectionInfo {
     pub status: CollectionStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
+    /// Status of configuration validation
+    pub configuration_status: ConfigurationStatus,
     /// Approximate number of indexed vectors in the collection.
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in a specialized vector index.
@@ -240,6 +256,7 @@ impl CollectionInfo {
         Self {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
+            configuration_status: collection_config.validate_configuration(),
             indexed_vectors_count: Some(0),
             points_count: Some(0),
             segments_count: 0,
@@ -263,6 +280,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
         Self {
             status: status.into(),
             optimizer_status,
+            configuration_status: config.validate_configuration(),
             indexed_vectors_count: Some(indexed_vectors_count),
             points_count: Some(points_count),
             segments_count,

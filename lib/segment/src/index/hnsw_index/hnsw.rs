@@ -617,6 +617,7 @@ impl HNSWIndex {
             .unwrap_or_default()
             .then(|| {
                 // NOTE: the configuration is silently ignored if try_new fails.
+                // TODO: add comment
                 StorageGraphLinksVectors::try_new(
                     &vector_storage_ref,
                     quantized_vectors_ref.as_ref(),

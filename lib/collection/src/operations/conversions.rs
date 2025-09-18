@@ -25,10 +25,10 @@ use tonic::Status;
 use super::cluster_ops::ReshardingDirection;
 use super::consistency_params::ReadConsistency;
 use super::types::{
-    CollectionConfig, ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal,
-    GroupsResult, Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal,
-    ReshardingInfo, SparseIndexParams, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff,
-    VectorsConfigDiff,
+    CollectionConfig, ConfigurationStatus, ContextExamplePair, CoreSearchRequest, Datatype,
+    DiscoverRequestInternal, GroupsResult, Modifier, PointGroup, RecommendExample,
+    RecommendGroupsRequestInternal, ReshardingInfo, SparseIndexParams, SparseVectorParams,
+    SparseVectorsConfig, VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     CollectionParams, ShardingMethod, WalConfig, default_replication_factor,
@@ -380,6 +380,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
         let CollectionInfo {
             status,
             optimizer_status,
+            configuration_status,
             indexed_vectors_count,
             points_count,
             segments_count,
@@ -445,6 +446,15 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 },
                 OptimizersStatus::Error(error) => {
                     api::grpc::qdrant::OptimizerStatus { ok: false, error }
+                }
+            }),
+            configuration_status: Some(match configuration_status {
+                ConfigurationStatus::Ok => api::grpc::qdrant::ConfigurationStatus {
+                    ok: true,
+                    warning: "".to_string(),
+                },
+                ConfigurationStatus::Warning(warning) => {
+                    api::grpc::qdrant::ConfigurationStatus { ok: false, warning }
                 }
             }),
             indexed_vectors_count: indexed_vectors_count.map(|count| count as u64),
@@ -841,6 +851,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                 let api::grpc::qdrant::CollectionInfo {
                     status,
                     optimizer_status,
+                    configuration_status,
                     indexed_vectors_count,
                     points_count,
                     segments_count,
@@ -858,6 +869,20 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                                 OptimizersStatus::Ok
                             } else {
                                 OptimizersStatus::Error(error)
+                            }
+                        }
+                    },
+                    configuration_status: match configuration_status {
+                        None => {
+                            return Err(Status::invalid_argument(
+                                "Malformed ConfigurationStatus type",
+                            ));
+                        }
+                        Some(api::grpc::qdrant::ConfigurationStatus { ok, warning }) => {
+                            if ok {
+                                ConfigurationStatus::Ok
+                            } else {
+                                ConfigurationStatus::Warning(warning)
                             }
                         }
                     },

@@ -6595,6 +6595,7 @@
         "type": "object",
         "required": [
           "config",
+          "configuration_status",
           "optimizer_status",
           "payload_schema",
           "segments_count",
@@ -6606,6 +6607,9 @@
           },
           "optimizer_status": {
             "$ref": "#/components/schemas/OptimizersStatus"
+          },
+          "configuration_status": {
+            "$ref": "#/components/schemas/ConfigurationStatus"
           },
           "indexed_vectors_count": {
             "description": "Approximate number of indexed vectors in the collection. Indexed vectors in large segments are faster to query, as it is stored in a specialized vector index.",
@@ -6667,6 +6671,31 @@
             ],
             "properties": {
               "error": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ConfigurationStatus": {
+        "description": "Current state of the collection",
+        "oneOf": [
+          {
+            "description": "Configuration is valid",
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          },
+          {
+            "description": "Configuration has warnings",
+            "type": "object",
+            "required": [
+              "warning"
+            ],
+            "properties": {
+              "warning": {
                 "type": "string"
               }
             },
