@@ -166,17 +166,17 @@ impl TableOfContent {
         };
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),
-            Some(diff) => diff.update(&self.storage_config.wal)?,
+            Some(diff) => self.storage_config.wal.update(diff)?,
         };
 
         let optimizers_config = match optimizers_config_diff {
             None => self.storage_config.optimizers.clone(),
-            Some(diff) => diff.update(&self.storage_config.optimizers)?,
+            Some(diff) => self.storage_config.optimizers.update(diff)?,
         };
 
         let hnsw_config = match hnsw_config_diff {
             None => self.storage_config.hnsw_index.clone(),
-            Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
+            Some(diff) => self.storage_config.hnsw_index.update(diff)?,
         };
 
         let quantization_config = match quantization_config {
@@ -196,7 +196,7 @@ impl TableOfContent {
                     .as_ref()
                     .and_then(|i| i.strict_mode.clone())
                     .unwrap_or_default();
-                Some(diff.update(&default_config)?)
+                Some(default_config.update(diff)?)
             }
             None => self
                 .storage_config

@@ -255,7 +255,7 @@ pub trait SegmentOptimizer {
                     .get_params(vector_name)
                     .and_then(|params| params.hnsw_config);
                 let vector_hnsw = param_hnsw
-                    .and_then(|c| c.update(collection_hnsw).ok())
+                    .and_then(|c| collection_hnsw.update(c).ok())
                     .unwrap_or_else(|| collection_hnsw.clone());
                 config.index = Indexes::Hnsw(vector_hnsw);
 

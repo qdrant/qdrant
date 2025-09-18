@@ -85,7 +85,7 @@ impl ConfigMismatchOptimizer {
             .vectors
             .get_params(vector_name)
             .and_then(|vector_params| vector_params.hnsw_config)
-            .map(|vector_hnsw| vector_hnsw.update(target_hnsw_collection))
+            .map(|vector_hnsw| target_hnsw_collection.update(vector_hnsw))
             .and_then(|hnsw| match hnsw {
                 Ok(hnsw) => Some(hnsw),
                 Err(err) => {
@@ -601,12 +601,12 @@ mod tests {
             .for_each(|segment| {
                 assert_eq!(
                     segment.config().vector_data[VECTOR1_NAME].index,
-                    Indexes::Hnsw(hnsw_config_vector1.update(&hnsw_config_collection).unwrap()),
+                    Indexes::Hnsw(hnsw_config_collection.update(hnsw_config_vector1).unwrap()),
                     "HNSW config of vector1 is not what we expect",
                 );
                 assert_eq!(
                     segment.config().vector_data[VECTOR2_NAME].index,
-                    Indexes::Hnsw(hnsw_config_vector2.update(&hnsw_config_collection).unwrap()),
+                    Indexes::Hnsw(hnsw_config_collection.update(hnsw_config_vector2).unwrap()),
                     "HNSW config of vector2 is not what we expect",
                 );
             });

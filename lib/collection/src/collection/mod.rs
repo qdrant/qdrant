@@ -132,7 +132,7 @@ impl Collection {
             let mut effective_optimizers_config = collection_config.optimizer_config.clone();
             if let Some(optimizers_overwrite) = optimizers_overwrite.clone() {
                 effective_optimizers_config =
-                    optimizers_overwrite.update(&effective_optimizers_config)?;
+                    effective_optimizers_config.update(optimizers_overwrite)?;
             }
 
             let shard_key = shard_key_mapping
@@ -253,8 +253,8 @@ impl Collection {
         let mut effective_optimizers_config = collection_config.optimizer_config.clone();
 
         if let Some(optimizers_overwrite) = optimizers_overwrite.clone() {
-            effective_optimizers_config = optimizers_overwrite
-                .update(&effective_optimizers_config)
+            effective_optimizers_config = effective_optimizers_config
+                .update(optimizers_overwrite)
                 .expect("Can not apply optimizer overwrite");
         }
 
@@ -847,7 +847,7 @@ impl Collection {
         let config = self.collection_config.read().await;
 
         if let Some(optimizers_overwrite) = self.optimizers_overwrite.clone() {
-            Ok(optimizers_overwrite.update(&config.optimizer_config)?)
+            Ok(config.optimizer_config.update(optimizers_overwrite)?)
         } else {
             Ok(config.optimizer_config.clone())
         }

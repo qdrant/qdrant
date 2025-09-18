@@ -416,7 +416,7 @@ impl CollectionParams {
 
             if let Some(hnsw_diff) = hnsw_config {
                 if let Some(existing_hnsw) = &vector_params.hnsw_config {
-                    vector_params.hnsw_config = Some(hnsw_diff.update(existing_hnsw)?);
+                    vector_params.hnsw_config = Some(existing_hnsw.update(hnsw_diff)?);
                 } else {
                     vector_params.hnsw_config = Some(hnsw_diff);
                 }

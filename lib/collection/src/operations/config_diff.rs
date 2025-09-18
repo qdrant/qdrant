@@ -20,25 +20,20 @@ use crate::optimizers_builder::OptimizersConfig;
 // Structures for partial update of collection params
 // TODO: make auto-generated somehow...
 
-pub trait DiffConfig<T: DeserializeOwned + Serialize> {
-    /// Update the given `config` with fields in this diff
+pub trait DiffConfig<Diff>: DeserializeOwned + Serialize
+where
+    Diff: Sized + Serialize + DeserializeOwned + Merge,
+{
+    /// Update this config with field from `diff`
     ///
-    /// This clones, modifies and returns `config`.
-    ///
-    /// This diff has higher priority, meaning that fields specified in this diff will always be in
-    /// the returned object.
-    fn update(self, config: &T) -> CollectionResult<T>
-    where
-        Self: Sized + Serialize + DeserializeOwned + Merge,
-    {
-        update_config(config, self)
+    /// The `diff` has higher priority, meaning that fields specified in
+    /// the `diff` will always be in the returned object.
+    fn update(&self, diff: Diff) -> CollectionResult<Self> {
+        update_config(self, diff)
     }
 
-    fn from_full(full: &T) -> CollectionResult<Self>
-    where
-        Self: Sized + Serialize + DeserializeOwned,
-    {
-        from_full(full)
+    fn to_diff(&self) -> CollectionResult<Diff> {
+        from_full(self)
     }
 }
 
@@ -228,16 +223,13 @@ impl PartialEq for OptimizersConfigDiff {
 
 impl Eq for OptimizersConfigDiff {}
 
-impl DiffConfig<HnswConfig> for HnswConfigDiff {}
+impl DiffConfig<HnswConfigDiff> for HnswConfig {}
 
 impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {}
 
-impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {
-    fn update(self, config: &OptimizersConfig) -> CollectionResult<OptimizersConfig>
-    where
-        Self: Sized + Serialize + DeserializeOwned + Merge,
-    {
-        let Self {
+impl DiffConfig<OptimizersConfigDiff> for OptimizersConfig {
+    fn update(&self, diff: OptimizersConfigDiff) -> CollectionResult<OptimizersConfig> {
+        let OptimizersConfigDiff {
             deleted_threshold,
             vacuum_min_vector_number,
             default_segment_number,
@@ -247,51 +239,51 @@ impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {
             indexing_threshold,
             flush_interval_sec,
             max_optimization_threads,
-        } = self;
+        } = diff;
 
         Ok(OptimizersConfig {
-            deleted_threshold: deleted_threshold.unwrap_or(config.deleted_threshold),
+            deleted_threshold: deleted_threshold.unwrap_or(self.deleted_threshold),
             vacuum_min_vector_number: vacuum_min_vector_number
-                .unwrap_or(config.vacuum_min_vector_number),
-            default_segment_number: default_segment_number.unwrap_or(config.default_segment_number),
-            max_segment_size: max_segment_size.or(config.max_segment_size),
+                .unwrap_or(self.vacuum_min_vector_number),
+            default_segment_number: default_segment_number.unwrap_or(self.default_segment_number),
+            max_segment_size: max_segment_size.or(self.max_segment_size),
             #[expect(deprecated)]
-            memmap_threshold: memmap_threshold.or(config.memmap_threshold),
-            indexing_threshold: indexing_threshold.or(config.indexing_threshold),
-            flush_interval_sec: flush_interval_sec.unwrap_or(config.flush_interval_sec),
+            memmap_threshold: memmap_threshold.or(self.memmap_threshold),
+            indexing_threshold: indexing_threshold.or(self.indexing_threshold),
+            flush_interval_sec: flush_interval_sec.unwrap_or(self.flush_interval_sec),
             max_optimization_threads: max_optimization_threads
-                .map_or(config.max_optimization_threads, From::from),
+                .map_or(self.max_optimization_threads, From::from),
         })
     }
 }
 
-impl DiffConfig<WalConfig> for WalConfigDiff {}
+impl DiffConfig<WalConfigDiff> for WalConfig {}
 
-impl DiffConfig<CollectionParams> for CollectionParamsDiff {}
+impl DiffConfig<CollectionParamsDiff> for CollectionParams {}
 
 impl DiffConfig<StrictModeConfig> for StrictModeConfig {}
 
 impl From<HnswConfig> for HnswConfigDiff {
     fn from(config: HnswConfig) -> Self {
-        HnswConfigDiff::from_full(&config).unwrap()
+        config.to_diff().unwrap()
     }
 }
 
 impl From<OptimizersConfig> for OptimizersConfigDiff {
     fn from(config: OptimizersConfig) -> Self {
-        OptimizersConfigDiff::from_full(&config).unwrap()
+        config.to_diff().unwrap()
     }
 }
 
 impl From<WalConfig> for WalConfigDiff {
     fn from(config: WalConfig) -> Self {
-        WalConfigDiff::from_full(&config).unwrap()
+        config.to_diff().unwrap()
     }
 }
 
 impl From<CollectionParams> for CollectionParamsDiff {
     fn from(config: CollectionParams) -> Self {
-        CollectionParamsDiff::from_full(&config).unwrap()
+        config.to_diff().unwrap()
     }
 }
 
@@ -419,7 +411,7 @@ mod tests {
             on_disk_payload: None,
         };
 
-        let new_params = diff.update(&params).unwrap();
+        let new_params = params.update(diff).unwrap();
 
         assert_eq!(new_params.replication_factor.get(), 1);
         assert_eq!(new_params.write_consistency_factor.get(), 2);
@@ -430,7 +422,7 @@ mod tests {
     fn test_hnsw_update() {
         let base_config = HnswConfig::default();
         let update: HnswConfigDiff = serde_json::from_str(r#"{ "m": 32 }"#).unwrap();
-        let new_config = update.update(&base_config).unwrap();
+        let new_config = base_config.update(update).unwrap();
         assert_eq!(new_config.m, 32)
     }
 
@@ -448,7 +440,7 @@ mod tests {
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();
-        let new_config = update.update(&base_config).unwrap();
+        let new_config = base_config.update(update).unwrap();
         assert_eq!(new_config.indexing_threshold, Some(10000))
     }
 
@@ -472,7 +464,7 @@ mod tests {
         };
 
         let update: OptimizersConfigDiff = serde_json::from_str(json_diff).unwrap();
-        let new_config = update.update(&base_config).unwrap();
+        let new_config = base_config.update(update).unwrap();
 
         assert_eq!(new_config.max_optimization_threads, expected);
     }
@@ -481,7 +473,7 @@ mod tests {
     fn test_wal_config() {
         let base_config = WalConfig::default();
         let update: WalConfigDiff = serde_json::from_str(r#"{ "wal_segments_ahead": 2 }"#).unwrap();
-        let new_config = update.update(&base_config).unwrap();
+        let new_config = base_config.update(update).unwrap();
         assert_eq!(new_config.wal_segments_ahead, 2)
     }
 }
