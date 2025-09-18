@@ -407,6 +407,12 @@ pub struct HnswConfigDiff {
     /// Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used.
     #[prost(uint64, optional, tag = "6")]
     pub payload_m: ::core::option::Option<u64>,
+    /// Store copies of original and quantized vectors within the HNSW index file. Default: false.
+    /// Enabling this option will trade the search speed for disk usage by reducing amount of
+    /// random seeks during the search.
+    /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
+    #[prost(bool, optional, tag = "7")]
+    pub copy_vectors: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
