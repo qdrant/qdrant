@@ -81,16 +81,6 @@ impl CollectionUpdater {
 mod tests {
     use std::sync::Arc;
 
-    use super::*;
-    use crate::collection_manager::fixtures::{
-        build_segment_1, build_segment_2, build_test_holder,
-    };
-    use crate::collection_manager::holders::segment_holder::LockedSegment::Original;
-    use crate::collection_manager::segments_retriever::SegmentsRetriever;
-    use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
-    use crate::operations::point_ops::{
-        PointOperations, PointStructPersisted, VectorStructPersisted,
-    };
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use itertools::Itertools;
     use parking_lot::RwLockUpgradableReadGuard;
@@ -106,6 +96,17 @@ mod tests {
     use shard::update::upsert_points;
     use tempfile::Builder;
     use tokio::runtime::Handle;
+
+    use super::*;
+    use crate::collection_manager::fixtures::{
+        build_segment_1, build_segment_2, build_test_holder,
+    };
+    use crate::collection_manager::holders::segment_holder::LockedSegment::Original;
+    use crate::collection_manager::segments_retriever::SegmentsRetriever;
+    use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
+    use crate::operations::point_ops::{
+        PointOperations, PointStructPersisted, VectorStructPersisted,
+    };
 
     #[test]
     fn test_sync_ops() {

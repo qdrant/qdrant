@@ -3,8 +3,6 @@ use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::common::stopping_guard::StoppingGuard;
-use crate::operations::types::{CollectionResult, RecordInternal, RecordInternalVersioned};
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -18,6 +16,9 @@ use segment::types::{Filter, PointIdType, WithPayload, WithVector};
 use shard::locked_segment::LockedSegment;
 use shard::segment_holder::LockedSegmentHolder;
 use tokio::runtime::Handle;
+
+use crate::common::stopping_guard::StoppingGuard;
+use crate::operations::types::{CollectionResult, RecordInternal, RecordInternalVersioned};
 
 #[derive(Default)]
 pub struct SegmentsRetriever;

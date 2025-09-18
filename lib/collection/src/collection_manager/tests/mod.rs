@@ -3,15 +3,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use super::holders::proxy_segment;
-use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
-use crate::collection_manager::holders::proxy_segment::ProxySegment;
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
-};
-use crate::collection_manager::segments_retriever::SegmentsRetriever;
-use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
-use crate::operations::types::RecordInternal;
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -25,6 +16,16 @@ use segment::types::{ExtendedPointId, PayloadContainer, PointIdType, WithPayload
 use shard::update::{delete_points, set_payload, upsert_points};
 use tempfile::Builder;
 use tokio::runtime::Handle;
+
+use super::holders::proxy_segment;
+use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
+use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::collection_manager::holders::segment_holder::{
+    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
+};
+use crate::collection_manager::segments_retriever::SegmentsRetriever;
+use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
+use crate::operations::types::RecordInternal;
 
 mod test_search_aggregation;
 
