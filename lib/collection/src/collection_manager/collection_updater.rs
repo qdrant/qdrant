@@ -80,8 +80,17 @@ impl CollectionUpdater {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::sync::atomic::AtomicBool;
 
+    use super::*;
+    use crate::collection_manager::fixtures::{
+        build_segment_1, build_segment_2, build_test_holder,
+    };
+    use crate::collection_manager::holders::segment_holder::LockedSegment::Original;
+    use crate::collection_manager::segments_retriever::SegmentsRetriever;
+    use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
+    use crate::operations::point_ops::{
+        PointOperations, PointStructPersisted, VectorStructPersisted,
+    };
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use itertools::Itertools;
     use parking_lot::RwLockUpgradableReadGuard;
@@ -96,17 +105,7 @@ mod tests {
     use serde_json::json;
     use shard::update::upsert_points;
     use tempfile::Builder;
-
-    use super::*;
-    use crate::collection_manager::fixtures::{
-        build_segment_1, build_segment_2, build_test_holder,
-    };
-    use crate::collection_manager::holders::segment_holder::LockedSegment::Original;
-    use crate::collection_manager::segments_retriever::SegmentsRetriever;
-    use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
-    use crate::operations::point_ops::{
-        PointOperations, PointStructPersisted, VectorStructPersisted,
-    };
+    use tokio::runtime::Handle;
 
     #[test]
     fn test_sync_ops() {
@@ -164,10 +163,9 @@ mod tests {
         // points 11 and 12 are not updated as they are same as before
     }
 
-    #[test]
-    fn test_point_ops() {
+    #[tokio::test]
+    async fn test_point_ops() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let is_stopped = AtomicBool::new(false);
 
         let segments = build_test_holder(dir.path());
         let points = vec![
@@ -189,14 +187,15 @@ mod tests {
         assert!(matches!(res, Ok(1)));
 
         let segments = Arc::new(segments);
-        let records = SegmentsRetriever::retrieve_blocking(
+        let records = SegmentsRetriever::retrieve(
             segments.clone(),
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
             &true.into(),
-            &is_stopped,
+            &Handle::current(),
             HwMeasurementAcc::new(),
         )
+        .await
         .unwrap()
         .into_values()
         .collect_vec();
@@ -226,14 +225,15 @@ mod tests {
         )
         .unwrap();
 
-        let records = SegmentsRetriever::retrieve_blocking(
+        let records = SegmentsRetriever::retrieve(
             segments,
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
             &true.into(),
-            &is_stopped,
+            &Handle::current(),
             HwMeasurementAcc::new(),
         )
+        .await
         .unwrap()
         .into_values()
         .collect_vec();
@@ -244,12 +244,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_payload_ops() {
+    #[tokio::test]
+    async fn test_payload_ops() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segments = build_test_holder(dir.path());
         let payload: Payload = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
-        let is_stopped = AtomicBool::new(false);
 
         let points = vec![1.into(), 2.into(), 3.into()];
 
@@ -269,14 +268,15 @@ mod tests {
         .unwrap();
 
         let segments = Arc::new(segments);
-        let res = SegmentsRetriever::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve(
             segments.clone(),
             &points,
             &WithPayload::from(true),
             &false.into(),
-            &is_stopped,
+            &Handle::current(),
             HwMeasurementAcc::new(),
         )
+        .await
         .unwrap()
         .into_values()
         .collect_vec();
@@ -306,14 +306,15 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsRetriever::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve(
             segments.clone(),
             &[3.into()],
             &WithPayload::from(true),
             &false.into(),
-            &is_stopped,
+            &Handle::current(),
             HwMeasurementAcc::new(),
         )
+        .await
         .unwrap()
         .into_values()
         .collect_vec();
@@ -323,14 +324,15 @@ mod tests {
 
         // Test clear payload
 
-        let res = SegmentsRetriever::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve(
             segments.clone(),
             &[2.into()],
             &WithPayload::from(true),
             &false.into(),
-            &is_stopped,
+            &Handle::current(),
             HwMeasurementAcc::new(),
         )
+        .await
         .unwrap()
         .into_values()
         .collect_vec();
@@ -347,14 +349,15 @@ mod tests {
             &hw_counter,
         )
         .unwrap();
-        let res = SegmentsRetriever::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve(
             segments,
             &[2.into()],
             &WithPayload::from(true),
             &false.into(),
-            &is_stopped,
+            &Handle::current(),
             HwMeasurementAcc::new(),
         )
+        .await
         .unwrap()
         .into_values()
         .collect_vec();
@@ -363,8 +366,8 @@ mod tests {
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
     }
 
-    #[test]
-    fn test_nested_payload_update_with_index() {
+    #[tokio::test]
+    async fn test_nested_payload_update_with_index() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let path = dir.path();
 
@@ -401,7 +404,6 @@ mod tests {
 
         // payload with nested structure
         let payload: Payload = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
-        let is_stopped = AtomicBool::new(false);
 
         // update points from segment 2
         let points = vec![11.into(), 12.into(), 13.into()];
@@ -419,14 +421,15 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsRetriever::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve(
             segments.clone(),
             &points,
             &WithPayload::from(true),
             &false.into(),
-            &is_stopped,
+            &Handle::current(),
             HwMeasurementAcc::new(),
         )
+        .await
         .unwrap()
         .into_values()
         .collect_vec();
@@ -482,14 +485,15 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsRetriever::retrieve_blocking(
+        let res = SegmentsRetriever::retrieve(
             segments,
             &points,
             &WithPayload::from(true),
             &false.into(),
-            &is_stopped,
+            &Handle::current(),
             HwMeasurementAcc::new(),
         )
+        .await
         .unwrap()
         .into_values()
         .collect_vec();

@@ -3,6 +3,15 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use super::holders::proxy_segment;
+use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
+use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::collection_manager::holders::segment_holder::{
+    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
+};
+use crate::collection_manager::segments_retriever::SegmentsRetriever;
+use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
+use crate::operations::types::RecordInternal;
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -15,16 +24,7 @@ use segment::payload_json;
 use segment::types::{ExtendedPointId, PayloadContainer, PointIdType, WithPayload, WithVector};
 use shard::update::{delete_points, set_payload, upsert_points};
 use tempfile::Builder;
-
-use super::holders::proxy_segment;
-use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
-use crate::collection_manager::holders::proxy_segment::ProxySegment;
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
-};
-use crate::collection_manager::segments_retriever::SegmentsRetriever;
-use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
-use crate::operations::types::RecordInternal;
+use tokio::runtime::Handle;
 
 mod test_search_aggregation;
 
@@ -255,8 +255,8 @@ fn test_upsert_points_in_smallest_segment() {
 /// Test that a delete operation deletes all point versions.
 ///
 /// See: <https://github.com/qdrant/qdrant/pull/5956>
-#[test]
-fn test_delete_all_point_versions() {
+#[tokio::test]
+async fn test_delete_all_point_versions() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hw_counter = HardwareCounterCell::new();
 
@@ -292,14 +292,15 @@ fn test_delete_all_point_versions() {
     let segments = Arc::new(RwLock::new(holder));
 
     // We should be able to retrieve point 123
-    let retrieved = SegmentsRetriever::retrieve_blocking(
+    let retrieved = SegmentsRetriever::retrieve(
         segments.clone(),
         &[point_id],
         &WithPayload::from(false),
         &WithVector::from(true),
-        &AtomicBool::new(false),
+        &Handle::current(),
         HwMeasurementAcc::new(),
     )
+    .await
     .unwrap();
     assert_eq!(
         retrieved,
@@ -337,20 +338,21 @@ fn test_delete_all_point_versions() {
 
     // We must not be able to retrieve point 123
     // Note: before the bug fix we could retrieve the point again from segment 1
-    let retrieved = SegmentsRetriever::retrieve_blocking(
+    let retrieved = SegmentsRetriever::retrieve(
         segments.clone(),
         &[point_id],
         &WithPayload::from(false),
         &WithVector::from(false),
-        &AtomicBool::new(false),
+        &Handle::current(),
         HwMeasurementAcc::new(),
     )
+    .await
     .unwrap();
     assert!(retrieved.is_empty());
 }
 
-#[test]
-fn test_proxy_shared_updates() {
+#[tokio::test]
+async fn test_proxy_shared_updates() {
     // Testing that multiple proxies that share point with the same id but different versions
     // are able to successfully apply and resolve update operation.
 
@@ -451,19 +453,18 @@ fn test_proxy_shared_updates() {
 
     let locked_holder = Arc::new(RwLock::new(holder));
 
-    let is_stopped = AtomicBool::new(false);
-
     let with_payload = WithPayload::from(true);
     let with_vector = WithVector::from(true);
 
-    let result = SegmentsRetriever::retrieve_blocking(
+    let result = SegmentsRetriever::retrieve(
         locked_holder.clone(),
         &ids,
         &with_payload,
         &with_vector,
-        &is_stopped,
+        &Handle::current(),
         HwMeasurementAcc::new(),
     )
+    .await
     .unwrap();
 
     assert_eq!(
@@ -483,8 +484,8 @@ fn test_proxy_shared_updates() {
     }
 }
 
-#[test]
-fn test_proxy_shared_updates_same_version() {
+#[tokio::test]
+async fn test_proxy_shared_updates_same_version() {
     // Testing that multiple proxies that share point with the same id but the same versions
     // are able to successfully apply and resolve update operation.
     //
@@ -590,19 +591,18 @@ fn test_proxy_shared_updates_same_version() {
 
     let locked_holder = Arc::new(RwLock::new(holder));
 
-    let is_stopped = AtomicBool::new(false);
-
     let with_payload = WithPayload::from(true);
     let with_vector = WithVector::from(true);
 
-    let result = SegmentsRetriever::retrieve_blocking(
+    let result = SegmentsRetriever::retrieve(
         locked_holder.clone(),
         &ids,
         &with_payload,
         &with_vector,
-        &is_stopped,
+        &Handle::current(),
         HwMeasurementAcc::new(),
     )
+    .await
     .unwrap();
 
     assert_eq!(

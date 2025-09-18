@@ -141,6 +141,11 @@ pub struct RecordInternal {
     pub order_value: Option<OrderValue>,
 }
 
+pub struct RecordInternalVersioned {
+    pub record: RecordInternal,
+    pub version: SeqNumberType,
+}
+
 /// Warn: panics if the vector is empty
 impl TryFrom<RecordInternal> for PointStructPersisted {
     type Error = String;

@@ -1,18 +1,23 @@
 use std::collections::BTreeSet;
 use std::collections::hash_map::Entry;
-use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common::stopping_guard::StoppingGuard;
+use crate::operations::types::{CollectionResult, RecordInternal, RecordInternalVersioned};
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::IteratorExt;
+use futures::TryStreamExt;
+use futures::stream::FuturesUnordered;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::VectorStructInternal;
-use segment::types::{Filter, PointIdType, SeqNumberType, WithPayload, WithVector};
+use segment::types::{Filter, PointIdType, WithPayload, WithVector};
+use shard::locked_segment::LockedSegment;
 use shard::segment_holder::LockedSegmentHolder;
 use tokio::runtime::Handle;
-
-use crate::common::stopping_guard::StoppingGuard;
-use crate::operations::types::{CollectionResult, RecordInternal};
 
 #[derive(Default)]
 pub struct SegmentsRetriever;
@@ -34,96 +39,132 @@ impl SegmentsRetriever {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
         let stopping_guard = StoppingGuard::new();
-        runtime_handle
-            .spawn_blocking({
-                let segments = segments.clone();
-                let points = points.to_vec();
-                let with_payload = with_payload.clone();
-                let with_vector = with_vector.clone();
-                let is_stopped = stopping_guard.get_is_stopped();
-                // TODO create one Task per segment level retrieve
-                move || {
-                    Self::retrieve_blocking(
-                        segments,
-                        &points,
-                        &with_payload,
-                        &with_vector,
-                        &is_stopped,
-                        hw_measurement_acc,
-                    )
+
+        let points = Arc::new(points.to_vec());
+        let with_payload = Arc::new(with_payload.clone());
+        let with_vector = Arc::new(with_vector.clone());
+
+        let retrieves: Vec<_> = {
+            let segments_lock = segments.read();
+            let segments = segments_lock.non_appendable_then_appendable_segments();
+
+            segments
+                .map(|segment| {
+                    runtime_handle.spawn_blocking({
+                        let points = points.clone();
+                        let hw_counter = hw_measurement_acc.get_counter_cell();
+                        let is_stopped = stopping_guard.get_is_stopped();
+                        let with_payload = with_payload.clone();
+                        let with_vector = with_vector.clone();
+                        move || {
+                            // Retrieve points with versions from the segment
+                            SegmentsRetriever::retrieve_blocking(
+                                segment,
+                                &points,
+                                &with_payload,
+                                &with_vector,
+                                &is_stopped,
+                                hw_counter,
+                            )
+                        }
+                    })
+                })
+                .collect()
+        };
+
+        let mut versioned_results: AHashMap<PointIdType, RecordInternalVersioned> = AHashMap::new();
+
+        let mut retrieve_results_per_segment_res = FuturesUnordered::new();
+
+        for retrieve in retrieves {
+            retrieve_results_per_segment_res.push(retrieve);
+        }
+
+        while let Some(retrieve_result) = retrieve_results_per_segment_res.try_next().await? {
+            let retrieve_result = retrieve_result?;
+            for (point_id, record) in retrieve_result {
+                let existing = versioned_results.entry(point_id);
+                match existing {
+                    Entry::Vacant(v) => {
+                        v.insert(record);
+                    }
+                    Entry::Occupied(mut occupied) => {
+                        // If we already have the latest point version, keep that and continue
+                        if occupied.get().version < record.version {
+                            occupied.insert(record);
+                        }
+                    }
                 }
-            })
-            .await?
+            }
+        }
+
+        Ok(versioned_results
+            .into_iter()
+            .map(|(k, v)| (k, v.record))
+            .collect())
     }
 
     pub fn retrieve_blocking(
-        segments: LockedSegmentHolder,
+        segment: LockedSegment,
         points: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         is_stopped: &AtomicBool,
-        hw_measurement_acc: HwMeasurementAcc,
-    ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
-        let mut point_version: AHashMap<PointIdType, SeqNumberType> = Default::default();
-        let mut point_records: AHashMap<PointIdType, RecordInternal> = Default::default();
+        hw_counter: HardwareCounterCell,
+    ) -> CollectionResult<AHashMap<PointIdType, RecordInternalVersioned>> {
+        let mut point_records: AHashMap<PointIdType, RecordInternalVersioned> = Default::default();
 
-        let hw_counter = hw_measurement_acc.get_counter_cell();
+        let segment_arc = segment.get();
+        let read_segment = segment_arc.read();
 
-        segments
-            .read()
-            .read_points(points, is_stopped, |id, segment| {
-                let version = segment.point_version(id).ok_or_else(|| {
-                    OperationError::service_error(format!("No version for point {id}"))
-                })?;
+        let points = points
+            .iter()
+            .cloned()
+            .check_stop(|| is_stopped.load(Ordering::Relaxed))
+            .filter(|id| read_segment.has_point(*id));
 
-                // If we already have the latest point version, keep that and continue
-                let version_entry = point_version.entry(id);
-                if matches!(&version_entry, Entry::Occupied(entry) if *entry.get() >= version) {
-                    return Ok(true);
-                }
-
-                point_records.insert(
-                    id,
-                    RecordInternal {
-                        id,
-                        payload: if with_payload.enable {
-                            if let Some(selector) = &with_payload.payload_selector {
-                                Some(selector.process(segment.payload(id, &hw_counter)?))
-                            } else {
-                                Some(segment.payload(id, &hw_counter)?)
-                            }
-                        } else {
-                            None
-                        },
-                        vector: {
-                            match with_vector {
-                                WithVector::Bool(true) => {
-                                    let vectors = segment.all_vectors(id, &hw_counter)?;
-                                    Some(VectorStructInternal::from(vectors))
-                                }
-                                WithVector::Bool(false) => None,
-                                WithVector::Selector(vector_names) => {
-                                    let mut selected_vectors = NamedVectors::default();
-                                    for vector_name in vector_names {
-                                        if let Some(vector) =
-                                            segment.vector(vector_name, id, &hw_counter)?
-                                        {
-                                            selected_vectors.insert(vector_name.clone(), vector);
-                                        }
-                                    }
-                                    Some(VectorStructInternal::from(selected_vectors))
-                                }
-                            }
-                        },
-                        shard_key: None,
-                        order_value: None,
-                    },
-                );
-                *version_entry.or_default() = version;
-
-                Ok(true)
+        for id in points {
+            let version = read_segment.point_version(id).ok_or_else(|| {
+                OperationError::service_error(format!("No version for point {id}"))
             })?;
 
+            let record = RecordInternal {
+                id,
+                payload: if with_payload.enable {
+                    if let Some(selector) = &with_payload.payload_selector {
+                        Some(selector.process(read_segment.payload(id, &hw_counter)?))
+                    } else {
+                        Some(read_segment.payload(id, &hw_counter)?)
+                    }
+                } else {
+                    None
+                },
+                vector: {
+                    match with_vector {
+                        WithVector::Bool(true) => {
+                            let vectors = read_segment.all_vectors(id, &hw_counter)?;
+                            Some(VectorStructInternal::from(vectors))
+                        }
+                        WithVector::Bool(false) => None,
+                        WithVector::Selector(vector_names) => {
+                            let mut selected_vectors = NamedVectors::default();
+                            for vector_name in vector_names {
+                                if let Some(vector) =
+                                    read_segment.vector(vector_name, id, &hw_counter)?
+                                {
+                                    selected_vectors.insert(vector_name.clone(), vector);
+                                }
+                            }
+                            Some(VectorStructInternal::from(selected_vectors))
+                        }
+                    }
+                },
+                shard_key: None,
+                order_value: None,
+            };
+
+            point_records.insert(id, RecordInternalVersioned { record, version });
+        }
         Ok(point_records)
     }
 
@@ -167,18 +208,20 @@ mod tests {
     use super::*;
     use crate::collection_manager::fixtures::build_test_holder;
 
-    #[test]
-    fn test_retrieve() {
+    #[tokio::test]
+    async fn test_retrieve() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
-        let records = SegmentsRetriever::retrieve_blocking(
+
+        let records = SegmentsRetriever::retrieve(
             Arc::new(segment_holder),
             &[1.into(), 2.into(), 3.into()],
             &WithPayload::from(true),
             &true.into(),
-            &AtomicBool::new(false),
+            &Handle::current(),
             HwMeasurementAcc::new(),
         )
+        .await
         .unwrap();
         assert_eq!(records.len(), 3);
     }
