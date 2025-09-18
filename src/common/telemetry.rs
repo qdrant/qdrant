@@ -71,21 +71,23 @@ impl TelemetryCollector {
     }
 
     pub async fn prepare_data(&self, access: &Access, detail: TelemetryDetail) -> TelemetryData {
-        let dispatcher = self.dispatcher.clone();
-        let access_collection = access.clone();
         // Use blocking pool because the collection telemetry acquires several sync. locks.
-        let collections_telemetry = tokio::task::spawn_blocking(move || {
-            // Re-enter the async runtime in this blocking thread
-            tokio::runtime::Handle::current().block_on(async move {
-                CollectionsTelemetry::collect(
-                    detail,
-                    &access_collection,
-                    dispatcher.toc(&access_collection, &new_unchecked_verification_pass()),
-                )
+        let collections_telemetry = {
+            let toc = self
+                .dispatcher
+                .toc(access, &new_unchecked_verification_pass())
+                .clone();
+            let runtime_handle = toc.general_runtime_handle().clone();
+            let access_collection = access.clone();
+            runtime_handle
+                .spawn_blocking(move || {
+                    // Re-enter the async runtime in this blocking thread
+                    tokio::runtime::Handle::current().block_on(async move {
+                        CollectionsTelemetry::collect(detail, &access_collection, &toc).await
+                    })
+                })
                 .await
-            })
-        })
-        .await;
+        };
 
         let collections_telemetry = collections_telemetry
             .map_err(|err| log::error!("Failed to generate collection telemetry {err}"))

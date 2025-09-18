@@ -690,7 +690,7 @@ impl TableOfContent {
             .collect()
     }
 
-    pub(crate) fn general_runtime_handle(&self) -> &Handle {
+    pub fn general_runtime_handle(&self) -> &Handle {
         self.general_runtime.handle()
     }
 }

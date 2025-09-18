@@ -54,19 +54,19 @@ def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
     executor = ThreadPoolExecutor(max_workers = 5)
 
     # Get telemetry, to block on segment read-lock, which would block Actix worker
-    telemetry = executor.submit(loop_telemetry, peer_url)
+    _telemetry = executor.submit(loop_telemetry, peer_url)
 
     # Get metrics, to block on segment read-lock, which would block Actix worker
-    metrics = executor.submit(loop_metrics, peer_url)
+    _metrics = executor.submit(loop_metrics, peer_url)
 
     # Upsert a point, to block on segment write-lock
-    upsert = executor.submit(upsert_random_points, peer_url, 10_000, batch_size=1)
+    _upsert = executor.submit(upsert_random_points, peer_url, 10_000, batch_size=1)
     
     # Get version, to block on segment read-lock, which would block Actix worker
-    version = executor.submit(loop_version, peer_url)
+    _version = executor.submit(loop_version, peer_url)
 
     # Get cluster info, to block on segment read-lock, which would block Actix worker
-    cluster_info = executor.submit(loop_cluster_info, peer_url)
+    _cluster_info = executor.submit(loop_cluster_info, peer_url)
 
     # Let executor cook for a bit to get some interleaving
     time.sleep(1)
