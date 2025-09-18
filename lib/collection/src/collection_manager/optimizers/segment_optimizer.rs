@@ -28,6 +28,7 @@ use crate::collection_manager::holders::proxy_segment::{self, ProxyIndexChange, 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
 };
+use crate::collection_manager::optimizers::TriggerReason;
 use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -74,12 +75,14 @@ pub trait SegmentOptimizer {
     /// Get thresholds configuration for the current optimizer
     fn threshold_config(&self) -> &OptimizerThresholds;
 
-    /// Checks if segment optimization is required
+    /// Checks if segment optimization is required.
+    ///
+    /// This function may also return a reason indicating why the returned segment(s) should be indexed.
     fn check_condition(
         &self,
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId>;
+    ) -> (Vec<SegmentId>, Option<TriggerReason>);
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator>;
 

@@ -10,6 +10,7 @@ use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentTy
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
+use crate::collection_manager::optimizers::TriggerReason;
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
@@ -97,7 +98,7 @@ impl SegmentOptimizer for MergeOptimizer {
         &self,
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
+    ) -> (Vec<SegmentId>, Option<TriggerReason>) {
         let read_segments = segments.read();
 
         let raw_segments = read_segments
@@ -108,7 +109,7 @@ impl SegmentOptimizer for MergeOptimizer {
             .collect_vec();
 
         if raw_segments.len() <= self.default_segments_number {
-            return vec![];
+            return (vec![], None);
         }
         let max_candidates = raw_segments.len() - self.default_segments_number + 2;
 
@@ -145,9 +146,10 @@ impl SegmentOptimizer for MergeOptimizer {
             .collect();
 
         if candidates.len() < 3 {
-            return vec![];
+            return (vec![], None);
         }
-        candidates
+
+        (candidates, Some(TriggerReason::ManySmallSegments))
     }
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
@@ -191,16 +193,19 @@ mod tests {
 
         merge_optimizer.thresholds_config.max_segment_size_kb = 100;
 
-        let check_result_empty =
+        let (check_result_empty, trigger_reason) =
             merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
 
         assert!(check_result_empty.is_empty());
+        assert_eq!(trigger_reason, None);
 
         merge_optimizer.thresholds_config.max_segment_size_kb = 200;
 
-        let check_result = merge_optimizer.check_condition(locked_holder, &Default::default());
+        let (check_result, trigger_reason) =
+            merge_optimizer.check_condition(locked_holder, &Default::default());
 
         assert_eq!(check_result.len(), 3);
+        assert_eq!(trigger_reason, Some(TriggerReason::ManySmallSegments));
     }
 
     #[test]
@@ -228,7 +233,7 @@ mod tests {
 
         let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
 
-        let suggested_for_merge =
+        let (suggested_for_merge, _) =
             merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
 
         assert_eq!(suggested_for_merge.len(), 4);

@@ -80,16 +80,23 @@ pub struct Tracker {
     pub start_at: DateTime<Utc>,
     /// Latest state of the optimizer
     pub state: Arc<Mutex<TrackerState>>,
+    /// The reason why the optimizer was triggered.
+    pub trigger_reason: Option<TriggerReason>,
 }
 
 impl Tracker {
     /// Start a new optimizer tracker
-    pub fn start(name: impl Into<String>, segment_ids: Vec<SegmentId>) -> Self {
+    pub fn start(
+        name: impl Into<String>,
+        segment_ids: Vec<SegmentId>,
+        trigger_reason: Option<TriggerReason>,
+    ) -> Self {
         Self {
             name: name.into(),
             segment_ids,
             state: Default::default(),
             start_at: Utc::now(),
+            trigger_reason,
         }
     }
 
@@ -107,6 +114,7 @@ impl Tracker {
             status: state.status.clone(),
             start_at: self.start_at,
             end_at: state.end_at,
+            trigger_reason: self.trigger_reason,
         }
     }
 }
@@ -125,6 +133,8 @@ pub struct TrackerTelemetry {
     pub start_at: DateTime<Utc>,
     /// End time of the optimizer
     pub end_at: Option<DateTime<Utc>>,
+    /// The reason why the optimizer was triggered.
+    pub trigger_reason: Option<TriggerReason>,
 }
 
 /// Handle to an optimizer tracker, allows updating its state
@@ -180,4 +190,33 @@ pub enum TrackerStatus {
     Cancelled(String),
     #[anonymize(false)]
     Error(String),
+}
+
+/// Reasons that can trigger the optimizer.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, JsonSchema, Anonymize, PartialEq)]
+pub enum TriggerReason {
+    // -- Vacuum Optimizer --
+    /// Triggered when the optimizer's threshold is reached for total points of a segment.
+    TotalPointThreshold,
+    /// Triggered when the optimizer's threshold is reached for indexed vectors.
+    VectorIndexThreshold,
+
+    // -- Index Optimizer --
+    /// Triggered to create a vector index.
+    ToIndex,
+    /// Triggered to move vectors from memory to disk.
+    MoveToDisk,
+
+    // -- Config Mismatch Optimizer --
+    /// Triggered when there is a mismatch in the payload configuration.
+    PayloadConfigMismatch,
+    /// Triggered when there is a mismatch in the sparse vector configuration.
+    SparseConfigMismatch,
+    /// Triggered when there is a mismatch in the dense vector configuration.
+    DenseConfigMismatch,
+
+    // -- Merge Optimizer --
+    /// Triggered when many small segments were present.
+    /// This is currently the only reason merge optimizer may be triggered.
+    ManySmallSegments,
 }

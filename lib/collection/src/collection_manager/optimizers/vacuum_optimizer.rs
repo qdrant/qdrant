@@ -13,6 +13,7 @@ use segment::vector_storage::VectorStorage;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
+use crate::collection_manager::optimizers::TriggerReason;
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
@@ -68,7 +69,7 @@ impl VacuumOptimizer {
         &self,
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
-    ) -> Option<SegmentId> {
+    ) -> Option<(SegmentId, TriggerReason)> {
         let segments_read_guard = segments.read();
         segments_read_guard
             .iter()
@@ -81,16 +82,16 @@ impl VacuumOptimizer {
                 [littered_ratio_segment, littered_ratio_vectors]
                     .into_iter()
                     .flatten()
-                    .map(|ratio| (*idx, ratio))
+                    .map(|(ratio, reason)| (*idx, ratio, reason))
             })
-            .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
-            .map(|(idx, _)| idx)
+            .max_by_key(|(_, ratio, _)| OrderedFloat(*ratio))
+            .map(|(idx, _, trigger_reason)| (idx, trigger_reason))
     }
 
     /// Calculate littered ratio for segment on point level
     ///
     /// Returns `None` if littered ratio did not reach vacuum thresholds.
-    fn littered_ratio_segment(&self, segment: &LockedSegment) -> Option<f64> {
+    fn littered_ratio_segment(&self, segment: &LockedSegment) -> Option<(f64, TriggerReason)> {
         let segment_entry = match segment {
             LockedSegment::Original(segment) => segment,
             LockedSegment::Proxy(_) => return None,
@@ -102,7 +103,7 @@ impl VacuumOptimizer {
         let is_big = read_segment.total_point_count() >= self.min_vectors_number;
         let is_littered = littered_ratio > self.deleted_threshold;
 
-        (is_big && is_littered).then_some(littered_ratio)
+        (is_big && is_littered).then_some((littered_ratio, TriggerReason::TotalPointThreshold))
     }
 
     /// Calculate littered ratio for segment on vector index level
@@ -111,10 +112,13 @@ impl VacuumOptimizer {
     /// We are only interested in indexed vectors, as they are the ones affected by soft-deletes.
     ///
     /// This finds the maximum deletion ratio for a named vector. The ratio is based on the number
-    /// of deleted vectors versus the number of indexed vector.s
+    /// of deleted vectors versus the number of indexed vectors.
     ///
     /// Returns `None` if littered ratio did not reach vacuum thresholds for no named vectors.
-    fn littered_vectors_index_ratio(&self, segment: &LockedSegment) -> Option<f64> {
+    fn littered_vectors_index_ratio(
+        &self,
+        segment: &LockedSegment,
+    ) -> Option<(f64, TriggerReason)> {
         {
             let segment_entry = segment.get();
             let read_segment = segment_entry.read();
@@ -162,6 +166,7 @@ impl VacuumOptimizer {
                 (reached_minimum && reached_ratio).then_some(deleted_ratio)
             })
             .max_by_key(|ratio| OrderedFloat(*ratio))
+            .map(|i| (i, TriggerReason::VectorIndexThreshold))
     }
 }
 
@@ -202,10 +207,10 @@ impl SegmentOptimizer for VacuumOptimizer {
         &self,
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
+    ) -> (Vec<SegmentId>, Option<TriggerReason>) {
         self.worst_segment(segments, excluded_ids)
-            .into_iter()
-            .collect()
+            .map(|(segment, trigger_reason)| (vec![segment], Some(trigger_reason)))
+            .unwrap_or_else(|| (vec![], None))
     }
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
@@ -337,7 +342,7 @@ mod tests {
             Default::default(),
         );
 
-        let suggested_to_optimize =
+        let (suggested_to_optimize, _) =
             vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
 
         // Check that only one segment is selected for optimization
@@ -529,9 +534,10 @@ mod tests {
             .0;
 
         // Vacuum optimizer should not optimize yet, no points/vectors have been deleted
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 0);
+        assert_eq!(trigger_reason, None);
 
         // Delete some points and vectors
         {
@@ -611,9 +617,10 @@ mod tests {
 
         // Run vacuum index optimizer, make sure it optimizes properly
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
+        assert_eq!(trigger_reason, Some(TriggerReason::VectorIndexThreshold));
         let changed = vacuum_optimizer
             .optimize(
                 locked_holder.clone(),

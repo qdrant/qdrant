@@ -9,6 +9,7 @@ use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentTy
 use crate::collection_manager::holders::segment_holder::{
     LockedSegmentHolder, SegmentHolder, SegmentId,
 };
+use crate::collection_manager::optimizers::TriggerReason;
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
@@ -95,7 +96,7 @@ impl IndexingOptimizer {
         &self,
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
+    ) -> (Vec<SegmentId>, Option<TriggerReason>) {
         let segments_read_guard = segments.read();
         let candidates: Vec<_> = segments_read_guard
             .iter()
@@ -124,6 +125,9 @@ impl IndexingOptimizer {
                     .saturating_mul(BYTES_IN_KB);
                 let mut require_optimization = false;
 
+                // Why this segment is a candidate for optimization.
+                let mut trigger_reason: Option<TriggerReason> = None;
+
                 for (vector_name, vector_config) in self.collection_params.vectors.params_iter() {
                     if let Some(vector_data) = segment_config.vector_data.get(vector_name) {
                         let is_indexed = vector_data.index.is_indexed();
@@ -144,6 +148,12 @@ impl IndexingOptimizer {
                         };
 
                         if optimize_for_index || optimize_for_mmap {
+                            if optimize_for_index {
+                                trigger_reason = Some(TriggerReason::ToIndex);
+                            } else if optimize_for_mmap {
+                                trigger_reason = Some(TriggerReason::MoveToDisk);
+                            }
+
                             require_optimization = true;
                             break;
                         }
@@ -171,6 +181,12 @@ impl IndexingOptimizer {
                             let is_big = is_big_for_index || is_big_for_mmap;
 
                             if is_big && !is_index_immutable {
+                                if is_big_for_index {
+                                    trigger_reason = Some(TriggerReason::ToIndex);
+                                } else if is_big_for_mmap {
+                                    trigger_reason = Some(TriggerReason::MoveToDisk);
+                                }
+
                                 require_optimization = true;
                                 break;
                             }
@@ -178,18 +194,19 @@ impl IndexingOptimizer {
                     }
                 }
 
-                require_optimization.then_some((*idx, max_vector_size_bytes))
+                require_optimization.then(|| (*idx, max_vector_size_bytes, trigger_reason.unwrap()))
             })
             .collect();
 
         // Select the largest unindexed segment, return if none
         let selected_segment = candidates
             .iter()
-            .max_by_key(|(_, vector_size_bytes)| *vector_size_bytes);
-        if selected_segment.is_none() {
-            return vec![];
-        }
-        let (selected_segment_id, selected_segment_size) = *selected_segment.unwrap();
+            .max_by_key(|(_, vector_size_bytes, _)| *vector_size_bytes);
+
+        let Some((selected_segment_id, selected_segment_size, trigger_reason)) = selected_segment
+        else {
+            return (vec![], None);
+        };
 
         let number_of_segments = segments_read_guard.len();
 
@@ -197,7 +214,7 @@ impl IndexingOptimizer {
         // We want to make sure that we at least do not increase number of segments after optimization, thus we take more than one segment to optimize
 
         if number_of_segments < self.default_segments_number {
-            return vec![selected_segment_id];
+            return (vec![*selected_segment_id], Some(*trigger_reason));
         }
 
         // It is better for scheduling if indexing optimizer optimizes 2 segments.
@@ -207,32 +224,32 @@ impl IndexingOptimizer {
         // Find the smallest unindexed to check if we can index together
         let smallest_unindexed = candidates
             .iter()
-            .min_by_key(|(_, vector_size_bytes)| *vector_size_bytes);
-        if let Some((idx, size)) = smallest_unindexed
-            && *idx != selected_segment_id
+            .min_by_key(|(_, vector_size_bytes, _)| *vector_size_bytes);
+        if let Some((idx, size, trigger_reason)) = smallest_unindexed
+            && *idx != *selected_segment_id
             && selected_segment_size + size
                 < self
                     .thresholds_config
                     .max_segment_size_kb
                     .saturating_mul(BYTES_IN_KB)
         {
-            return vec![selected_segment_id, *idx];
+            return (vec![*selected_segment_id, *idx], Some(*trigger_reason));
         }
 
         // Find smallest indexed to check if we can reindex together
         let smallest_indexed = Self::smallest_indexed_segment(&segments_read_guard, excluded_ids);
         if let Some((idx, size)) = smallest_indexed
-            && idx != selected_segment_id
+            && idx != *selected_segment_id
             && selected_segment_size + size
                 < self
                     .thresholds_config
                     .max_segment_size_kb
                     .saturating_mul(BYTES_IN_KB)
         {
-            return vec![selected_segment_id, idx];
+            return (vec![*selected_segment_id, idx], Some(*trigger_reason));
         }
 
-        vec![selected_segment_id]
+        (vec![*selected_segment_id], Some(*trigger_reason))
     }
 }
 
@@ -273,7 +290,7 @@ impl SegmentOptimizer for IndexingOptimizer {
         &self,
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
+    ) -> (Vec<SegmentId>, Option<TriggerReason>) {
         self.worst_segment(segments, excluded_ids)
     }
 
@@ -375,16 +392,18 @@ mod tests {
 
         let excluded_ids = Default::default();
 
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.is_empty());
+        assert_eq!(trigger_reason, None);
 
         index_optimizer.thresholds_config.memmap_threshold_kb = 1000;
         index_optimizer.thresholds_config.indexing_threshold_kb = 50;
 
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
+        assert_eq!(trigger_reason, Some(TriggerReason::ToIndex));
 
         let permit_cpu_count = num_rayon_threads(0);
         let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
@@ -487,31 +506,35 @@ mod tests {
         let excluded_ids = Default::default();
 
         // ---- check condition for MMap optimization
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.is_empty());
+        assert_eq!(trigger_reason, None);
 
         index_optimizer.thresholds_config.memmap_threshold_kb = 1000;
         index_optimizer.thresholds_config.indexing_threshold_kb = 50;
 
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
         assert!(suggested_to_optimize.contains(&middle_low_segment_id));
+        assert_eq!(trigger_reason, Some(TriggerReason::ToIndex));
 
         index_optimizer.thresholds_config.memmap_threshold_kb = 1000;
         index_optimizer.thresholds_config.indexing_threshold_kb = 1000;
 
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.is_empty());
+        assert_eq!(trigger_reason, None);
 
         index_optimizer.thresholds_config.memmap_threshold_kb = 50;
         index_optimizer.thresholds_config.indexing_threshold_kb = 1000;
 
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
+        assert_eq!(trigger_reason, Some(TriggerReason::MoveToDisk));
 
         index_optimizer.thresholds_config.memmap_threshold_kb = 150;
         index_optimizer.thresholds_config.indexing_threshold_kb = 50;
@@ -535,9 +558,10 @@ mod tests {
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
 
         // ------ Plain -> Mmap & Indexed payload
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
+        assert_eq!(trigger_reason, Some(TriggerReason::ToIndex));
         eprintln!("suggested_to_optimize = {suggested_to_optimize:#?}");
         index_optimizer
             .optimize(
@@ -552,8 +576,9 @@ mod tests {
 
         // ------ Plain -> Indexed payload
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
+        assert_eq!(trigger_reason, Some(TriggerReason::ToIndex));
         assert!(suggested_to_optimize.contains(&middle_segment_id));
         index_optimizer
             .optimize(
@@ -566,8 +591,9 @@ mod tests {
             .unwrap();
 
         // ------- Keep smallest segment without changes
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
+        assert_eq!(trigger_reason, None);
         assert!(suggested_to_optimize.is_empty());
 
         assert_eq!(
@@ -681,9 +707,10 @@ mod tests {
         // Index even the smallest segment
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         index_optimizer.thresholds_config.indexing_threshold_kb = 20;
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             index_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert!(suggested_to_optimize.contains(&small_segment_id));
+        assert_eq!(trigger_reason, Some(TriggerReason::ToIndex));
         index_optimizer
             .optimize(
                 locked_holder.clone(),
@@ -796,11 +823,12 @@ mod tests {
         // Index until all segments are indexed
         let mut numer_of_optimizations = 0;
         loop {
-            let suggested_to_optimize =
+            let (suggested_to_optimize, trigger_reason) =
                 index_optimizer.check_condition(locked_holder.clone(), &Default::default());
             if suggested_to_optimize.is_empty() {
                 break;
             }
+            assert_eq!(trigger_reason, Some(TriggerReason::ToIndex));
             log::debug!("suggested_to_optimize = {suggested_to_optimize:#?}");
 
             let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
@@ -902,7 +930,7 @@ mod tests {
             );
 
             // Index optimizer should not optimize and put storage back in memory, nothing changed
-            let suggested_to_optimize =
+            let (suggested_to_optimize, _) =
                 index_optimizer.check_condition(locked_holder.clone(), &Default::default());
             assert_eq!(
                 suggested_to_optimize.len(),
@@ -911,7 +939,7 @@ mod tests {
             );
 
             // Config mismatch optimizer should not try to change the current state
-            let suggested_to_optimize = config_mismatch_optimizer
+            let (suggested_to_optimize, _) = config_mismatch_optimizer
                 .check_condition(locked_holder.clone(), &Default::default());
             assert_eq!(
                 suggested_to_optimize.len(),
@@ -992,7 +1020,7 @@ mod tests {
         assert_eq!(locked_holder.read().len(), 2, "mmap must be built");
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
-        let suggested_to_optimize =
+        let (suggested_to_optimize, _) =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 0);
 

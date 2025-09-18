@@ -343,7 +343,7 @@ impl UpdateHandler {
                     break 'outer;
                 }
 
-                let nonoptimal_segment_ids =
+                let (nonoptimal_segment_ids, trigger_reason) =
                     optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
                 if nonoptimal_segment_ids.is_empty() {
                     break;
@@ -401,7 +401,11 @@ impl UpdateHandler {
                         let segments = segments.clone();
                         move |stopped| {
                             // Track optimizer status
-                            let tracker = Tracker::start(optimizer.as_ref().name(), nsi.clone());
+                            let tracker = Tracker::start(
+                                optimizer.as_ref().name(),
+                                nsi.clone(),
+                                trigger_reason,
+                            );
                             let tracker_handle = tracker.handle();
                             optimizers_log.lock().register(tracker);
 
@@ -536,7 +540,7 @@ impl UpdateHandler {
 
         let excluded_ids = HashSet::<_>::default();
         let has_suboptimal_optimizers = self.optimizers.iter().any(|optimizer| {
-            let nonoptimal_segment_ids =
+            let (nonoptimal_segment_ids, _reasons) =
                 optimizer.check_condition(self.segments.clone(), &excluded_ids);
             !nonoptimal_segment_ids.is_empty()
         });

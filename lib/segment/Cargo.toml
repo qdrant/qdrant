@@ -12,7 +12,7 @@ edition = "2024"
 workspace = true
 
 [features]
-default = ["rocksdb"]
+default = []
 testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing"]
 gpu = ["gpu/gpu"]
 rocksdb = ["dep:rocksdb"]

@@ -11,6 +11,7 @@ use segment::types::{
 };
 
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
+use crate::collection_manager::optimizers::TriggerReason;
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
@@ -105,7 +106,7 @@ impl ConfigMismatchOptimizer {
         &self,
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
+    ) -> (Vec<SegmentId>, Option<TriggerReason>) {
         let segments_read_guard = segments.read();
         let candidates: Vec<_> = segments_read_guard
             .iter()
@@ -127,7 +128,11 @@ impl ConfigMismatchOptimizer {
                 if self.collection_params.on_disk_payload
                     != segment_config.payload_storage_type.is_on_disk()
                 {
-                    return Some((*idx, vector_size)); // Skip segments with payload mismatch
+                    return Some((
+                        *idx,
+                        vector_size,
+                        Some(TriggerReason::PayloadConfigMismatch),
+                    )); // Skip segments with payload mismatch
                 }
 
                 // Determine whether dense data in segment has mismatch
@@ -214,17 +219,30 @@ impl ConfigMismatchOptimizer {
                                 SparseIndexType::Mmap => !is_required_on_disk, // Rebuild if we require in RAM
                             }
                         });
-                (sparse_has_mismatch || dense_has_mismatch).then_some((*idx, vector_size))
+
+                // Why this segment is a candidate for optimization.
+                let trigger_reason = if dense_has_mismatch {
+                    Some(TriggerReason::DenseConfigMismatch)
+                } else if sparse_has_mismatch {
+                    Some(TriggerReason::SparseConfigMismatch)
+                } else {
+                    None
+                };
+
+                (sparse_has_mismatch || dense_has_mismatch).then_some((
+                    *idx,
+                    vector_size,
+                    trigger_reason,
+                ))
             })
             .collect();
 
         // Select segment with largest vector size
         candidates
             .into_iter()
-            .max_by_key(|(_, vector_size)| *vector_size)
-            .map(|(segment_id, _)| segment_id)
-            .into_iter()
-            .collect()
+            .max_by_key(|(_, vector_size, _)| *vector_size)
+            .map(|(segment_id, _, trigger_reason)| (vec![segment_id], trigger_reason))
+            .unwrap_or_else(|| (vec![], None))
     }
 }
 
@@ -265,7 +283,7 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
         &self,
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
+    ) -> (Vec<SegmentId>, Option<TriggerReason>) {
         self.worst_segment(segments, excluded_ids)
     }
 
@@ -393,9 +411,10 @@ mod tests {
         assert_eq!(locked_holder.read().len(), 2, "index must be built");
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 0);
+        assert_eq!(trigger_reason, None);
 
         // Create changed HNSW config with other m/ef_construct value, update it in the optimizer
         let mut changed_hnsw_config = hnsw_config;
@@ -405,9 +424,11 @@ mod tests {
 
         // Run mismatch optimizer again, make sure it optimizes now
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
+        assert_eq!(trigger_reason, Some(TriggerReason::DenseConfigMismatch));
+
         let changed = config_mismatch_optimizer
             .optimize(
                 locked_holder.clone(),
@@ -553,9 +574,10 @@ mod tests {
         assert_eq!(locked_holder.read().len(), 2, "index must be built");
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 0);
+        assert_eq!(trigger_reason, None);
 
         // Create changed HNSW config for vector2, update it in the optimizer
         let mut hnsw_config_vector2 = hnsw_config_vector1;
@@ -573,9 +595,11 @@ mod tests {
 
         // Run mismatch optimizer again, make sure it optimizes now
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
+        assert_eq!(trigger_reason, Some(TriggerReason::DenseConfigMismatch));
+
         let changed = config_mismatch_optimizer
             .optimize(
                 locked_holder.clone(),
@@ -728,9 +752,10 @@ mod tests {
         assert_eq!(locked_holder.read().len(), 2, "index must be built");
 
         // Mismatch optimizer should not optimize yet, quantization config is not changed yet
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 0);
+        assert_eq!(trigger_reason, None);
 
         // Create changed quantization config for vector2, update it in the optimizer
         let quantization_config_vector2 = QuantizationConfig::Product(ProductQuantization {
@@ -751,9 +776,10 @@ mod tests {
 
         // Run mismatch optimizer again, make sure it optimizes now
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-        let suggested_to_optimize =
+        let (suggested_to_optimize, trigger_reason) =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
+        assert_eq!(trigger_reason, Some(TriggerReason::DenseConfigMismatch));
         let changed = config_mismatch_optimizer
             .optimize(
                 locked_holder.clone(),
