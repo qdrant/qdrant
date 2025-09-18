@@ -78,6 +78,7 @@ fn exact_search_test() {
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
+        copy_vectors: None,
     };
 
     payload_index_ptr

@@ -240,6 +240,7 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             max_indexing_threads,
             on_disk,
             payload_m,
+            copy_vectors,
         } = value;
         Self {
             m: m.map(|v| v as usize),
@@ -248,6 +249,7 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             max_indexing_threads: max_indexing_threads.map(|v| v as usize),
             on_disk,
             payload_m: payload_m.map(|v| v as usize),
+            copy_vectors,
         }
     }
 }
@@ -261,6 +263,7 @@ impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
             max_indexing_threads,
             on_disk,
             payload_m,
+            copy_vectors,
         } = value;
         Self {
             m: m.map(|v| v as u64),
@@ -269,6 +272,7 @@ impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
             max_indexing_threads: max_indexing_threads.map(|v| v as u64),
             on_disk,
             payload_m: payload_m.map(|v| v as u64),
+            copy_vectors,
         }
     }
 }
@@ -412,6 +416,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             max_indexing_threads,
             on_disk,
             payload_m,
+            copy_vectors,
         } = hnsw_config;
 
         let CollectionParams {
@@ -493,6 +498,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     max_indexing_threads: Some(max_indexing_threads as u64),
                     on_disk,
                     payload_m: payload_m.map(|v| v as u64),
+                    copy_vectors,
                 }),
                 optimizer_config: Some(api::grpc::qdrant::OptimizersConfigDiff {
                     deleted_threshold: Some(deleted_threshold),

@@ -6929,6 +6929,11 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "copy_vectors": {
+            "description": "Store copies of original and quantized vectors within the HNSW index file. Default: false. Enabling this option will trade the search speed for disk usage by reducing amount of random seeks during the search. Requires quantized vectors to be enabled. Multi-vectors are not supported.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7221,6 +7226,11 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0,
+            "nullable": true
+          },
+          "copy_vectors": {
+            "description": "Store copies of original and quantized vectors within the HNSW index file. Default: false. Enabling this option will trade the search speed for disk usage by reducing amount of random seeks during the search. Requires quantized vectors to be enabled. Multi-vectors are not supported.",
+            "type": "boolean",
             "nullable": true
           }
         }

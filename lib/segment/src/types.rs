@@ -590,6 +590,12 @@ pub struct HnswConfig {
     /// Custom M param for hnsw graph built for payload index. If not set, default M will be used.
     #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub payload_m: Option<usize>,
+    /// Store copies of original and quantized vectors within the HNSW index file. Default: false.
+    /// Enabling this option will trade the search speed for disk usage by reducing amount of
+    /// random seeks during the search.
+    /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_vectors: Option<bool>,
 }
 
 impl HnswConfig {
@@ -602,14 +608,25 @@ impl HnswConfig {
     /// For example, a change in `max_indexing_threads` will not require rebuilding because it
     /// doesn't affect the final index, and thus this would return false.
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
-        self.m != other.m
-            || self.ef_construct != other.ef_construct
-            || self.full_scan_threshold != other.full_scan_threshold
-            || self.payload_m != other.payload_m
+        let HnswConfig {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads: _,
+            payload_m,
+            on_disk,
+            copy_vectors,
+        } = self.clone();
+
+        m != other.m
+            || ef_construct != other.ef_construct
+            || full_scan_threshold != other.full_scan_threshold
+            || payload_m != other.payload_m
             // Data on disk is the same, we have a unit test for that. We can eventually optimize
             // this to just reload the collection rather than optimizing it again as a whole just
             // to flip this flag
-            || self.on_disk != other.on_disk
+            || on_disk != other.on_disk
+            || copy_vectors != other.copy_vectors
     }
 }
 
@@ -1236,6 +1253,7 @@ impl Default for HnswConfig {
             max_indexing_threads: 0,
             on_disk: Some(false),
             payload_m: None,
+            copy_vectors: None,
         }
     }
 }
