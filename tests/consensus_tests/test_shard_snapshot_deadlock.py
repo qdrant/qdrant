@@ -3,8 +3,8 @@ import pathlib
 import requests
 import time
 
-from .assertions import *
-from .fixtures import *
+from .assertions import assert_http_ok
+from .fixtures import upsert_random_points, create_collection
 from .utils import *
 
 
@@ -80,3 +80,5 @@ def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
         # uncomment `sleep` and remove `raise` to investigate the deadlock with gdb
         #time.sleep(100_000) 
         raise
+    finally:
+        executor.shutdown(wait=False)
