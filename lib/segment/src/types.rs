@@ -2578,7 +2578,7 @@ impl Hash for GeoRadius {
         let GeoRadius { center, radius } = self;
         center.hash(state);
         // Hash f64 by converting to bits
-        radius.to_bits().hash(state);
+        OrderedFloat(*radius).hash(state);
     }
 }
 
