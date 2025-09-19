@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
+use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_disk_size;
 use io::storage_version::StorageVersion;
@@ -159,18 +160,22 @@ pub trait SegmentOptimizer {
         match (space_available, space_needed) {
             (Some(space_available), Some(space_needed)) => {
                 log::debug!(
-                    "Available space: {space_available}, needed for optimization: {space_needed}",
+                    "Available space: {}, needed for optimization: {}",
+                    bytes_to_human(space_available as usize),
+                    bytes_to_human(space_needed as usize),
                 );
                 if space_available < space_needed {
                     return Err(CollectionError::service_error(format!(
-                        "Not enough space available for optimization, needed: {space_needed}, available: {space_available}"
+                        "Not enough space available for optimization, needed: {}, available: {}",
+                        bytes_to_human(space_needed as usize),
+                        bytes_to_human(space_available as usize),
                     )));
                 }
             }
             _ => {
                 log::warn!(
                     "Could not estimate available storage space in `{}`; will try optimizing anyway",
-                    self.name()
+                    self.name(),
                 );
             }
         }
