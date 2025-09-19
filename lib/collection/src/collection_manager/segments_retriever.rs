@@ -45,7 +45,7 @@ impl SegmentsRetriever {
         let with_payload = Arc::new(with_payload.clone());
         let with_vector = Arc::new(with_vector.clone());
 
-        let retrieves: Vec<_> = {
+        let mut retrieves: FuturesUnordered<_> = {
             let segments_lock = segments.read();
             let segments = segments_lock.non_appendable_then_appendable_segments();
 
@@ -75,13 +75,7 @@ impl SegmentsRetriever {
 
         let mut versioned_results: AHashMap<PointIdType, RecordInternalVersioned> = AHashMap::new();
 
-        let mut retrieve_results_per_segment_res = FuturesUnordered::new();
-
-        for retrieve in retrieves {
-            retrieve_results_per_segment_res.push(retrieve);
-        }
-
-        while let Some(retrieve_result) = retrieve_results_per_segment_res.try_next().await? {
+        while let Some(retrieve_result) = retrieves.try_next().await? {
             let retrieve_result = retrieve_result?;
             for (point_id, record) in retrieve_result {
                 let existing = versioned_results.entry(point_id);
@@ -120,7 +114,7 @@ impl SegmentsRetriever {
 
         let points = points
             .iter()
-            .cloned()
+            .copied()
             .check_stop(|| is_stopped.load(Ordering::Relaxed))
             .filter(|id| read_segment.has_point(*id));
 
