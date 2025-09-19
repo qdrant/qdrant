@@ -10,10 +10,12 @@ use segment::types::{
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
+use tokio::time::Instant;
 use tokio::time::error::Elapsed;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::OperationWithClockTag;
+use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, UpdateResult,
@@ -22,6 +24,7 @@ use crate::operations::types::{
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::verification::operation_rate_cost::{BASE_COST, filter_rate_cost};
+use crate::profiling::interface::log_request_to_collector;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
@@ -266,6 +269,7 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        let start_time = Instant::now();
         let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
 
         // Check read rate limiter before proceeding
@@ -278,13 +282,19 @@ impl ShardOperation for LocalShard {
                 .sum()
         })?;
 
-        self.do_planned_query(
-            planned_query,
-            search_runtime_handle,
-            timeout,
-            hw_measurement_acc,
-        )
-        .await
+        let result = self
+            .do_planned_query(
+                planned_query,
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+            )
+            .await;
+
+        let elapsed = start_time.elapsed();
+        log_request_to_collector(&self.collection_name, elapsed, || requests.remove_details());
+
+        result
     }
 
     /// This call is rate limited by the read rate limiter.

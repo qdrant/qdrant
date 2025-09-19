@@ -7,6 +7,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::Future;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
+use serde::Serialize;
 use tokio::sync::RwLockReadGuard;
 use types::PseudoId;
 
@@ -17,7 +18,7 @@ use crate::operations::types::{
     CollectionError, CollectionResult, PointRequestInternal, RecordInternal,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct WithLookup {
     /// Name of the collection to use for points lookup
     pub collection_name: String,

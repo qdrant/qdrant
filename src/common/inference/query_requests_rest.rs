@@ -7,6 +7,7 @@ use collection::operations::universal_query::collection_query::{
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
+use ordered_float::OrderedFloat;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
@@ -305,7 +306,7 @@ fn convert_prefetch_with_inferred(
         query,
         using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned()),
         filter,
-        score_threshold,
+        score_threshold: score_threshold.map(OrderedFloat),
         limit: limit.unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
         params,
         lookup_from,

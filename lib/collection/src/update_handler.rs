@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::time::Instant;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -32,8 +33,11 @@ use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
 use crate::common::stoppable_task::{StoppableTaskHandle, spawn_stoppable};
 use crate::config::CollectionParams;
 use crate::operations::CollectionUpdateOperations;
+use crate::operations::generalizer::Generalizer;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::profiling::interface::log_request_to_collector;
+use crate::shards::CollectionId;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::wal_delta::LockedWal;
@@ -86,6 +90,7 @@ pub enum OptimizerSignal {
 
 /// Structure, which holds object, required for processing updates of the collection
 pub struct UpdateHandler {
+    collection_name: CollectionId,
     shared_storage_config: Arc<SharedStorageConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     /// List of used optimizers
@@ -141,6 +146,7 @@ pub struct UpdateHandler {
 impl UpdateHandler {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        collection_name: CollectionId,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
@@ -158,6 +164,7 @@ impl UpdateHandler {
         update_tracker: UpdateTracker,
     ) -> UpdateHandler {
         UpdateHandler {
+            collection_name,
             shared_storage_config,
             payload_index_schema,
             optimizers,
@@ -207,8 +214,10 @@ impl UpdateHandler {
         let segments = self.segments.clone();
         let scroll_read_lock = self.scroll_read_lock.clone();
         let update_tracker = self.update_tracker.clone();
+        let collection_name = self.collection_name.clone();
         self.update_worker = Some(self.runtime_handle.spawn_blocking(move || {
             Self::update_worker_fn(
+                collection_name,
                 update_receiver,
                 tx,
                 wal,
@@ -752,6 +761,7 @@ impl UpdateHandler {
     }
 
     fn update_worker_fn(
+        collection_name: CollectionId,
         mut receiver: Receiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
         wal: LockedWal,
@@ -779,14 +789,28 @@ impl UpdateHandler {
                     };
 
                     let operation_result = flush_res.and_then(|_| {
-                        CollectionUpdater::update(
+                        let start_time = Instant::now();
+
+                        // This represents the operation without vectors and payloads for logging purposes
+                        // Do not use for anything else
+                        let loggable_operation = operation.remove_details();
+
+                        let result = CollectionUpdater::update(
                             &segments,
                             op_num,
                             operation,
                             scroll_lock.clone(),
                             update_tracker.clone(),
                             &hw_measurements.get_counter_cell(),
-                        )
+                        );
+
+                        let duration = start_time.elapsed();
+
+                        log_request_to_collector(&collection_name, duration, move || {
+                            loggable_operation
+                        });
+
+                        result
                     });
 
                     let res = match operation_result {

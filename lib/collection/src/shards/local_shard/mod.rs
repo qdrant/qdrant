@@ -88,6 +88,7 @@ const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
 ///
 /// Holds all object, required for collection functioning
 pub struct LocalShard {
+    collection_name: CollectionId,
     pub(super) segments: LockedSegmentHolder,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
     pub(super) shared_storage_config: Arc<SharedStorageConfig>,
@@ -167,6 +168,7 @@ impl LocalShard {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
+        collection_name: String,
         segment_holder: SegmentHolder,
         collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
         shared_storage_config: Arc<SharedStorageConfig>,
@@ -199,6 +201,7 @@ impl LocalShard {
         let update_tracker = UpdateTracker::default();
 
         let mut update_handler = UpdateHandler::new(
+            collection_name.clone(),
             shared_storage_config.clone(),
             payload_index_schema.clone(),
             optimizers.clone(),
@@ -230,6 +233,7 @@ impl LocalShard {
         drop(config); // release `shared_config` from borrow checker
 
         Self {
+            collection_name,
             segments: segment_holder,
             collection_config,
             shared_storage_config,
@@ -422,6 +426,7 @@ impl LocalShard {
         }
 
         let local_shard = LocalShard::new(
+            collection_id.clone(),
             segment_holder,
             collection_config,
             shared_storage_config,
@@ -574,6 +579,7 @@ impl LocalShard {
         drop(config); // release `shared_config` from borrow checker
 
         let collection = LocalShard::new(
+            collection_id,
             segment_holder,
             collection_config,
             shared_storage_config,

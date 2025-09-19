@@ -394,7 +394,7 @@ pub struct Batch {
     pub payloads: Option<Vec<Option<Payload>>>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq, Hash)]
 #[serde(untagged)]
 #[serde(expecting = "Expected a string or an integer")]
 pub enum ShardKeySelector {

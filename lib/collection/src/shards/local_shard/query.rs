@@ -6,6 +6,7 @@ use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::FutureExt;
 use futures::future::BoxFuture;
+use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
@@ -286,8 +287,13 @@ impl LocalShard {
 
         match rescore {
             ScoringQuery::Fusion(fusion) => {
-                self.fusion_rescore(sources.into_iter(), fusion, score_threshold, limit)
-                    .await
+                self.fusion_rescore(
+                    sources.into_iter(),
+                    fusion,
+                    score_threshold.map(OrderedFloat::into_inner),
+                    limit,
+                )
+                .await
             }
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
@@ -329,7 +335,7 @@ impl LocalShard {
                     offset: 0,
                     with_payload: None,
                     with_vector: None,
-                    score_threshold,
+                    score_threshold: score_threshold.map(OrderedFloat::into_inner),
                 };
                 let rescoring_core_search_request = CoreSearchRequestBatch {
                     searches: vec![search_request],

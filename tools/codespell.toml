@@ -16,4 +16,5 @@ ignore-words-list = [
     "generall",            # The boss
     "hel",                 # Query token
     "mmapped",             # Memory mapped
+    "ser",                 # Serde package
 ]

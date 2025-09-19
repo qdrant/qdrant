@@ -19,6 +19,7 @@ use common::{defaults, save_on_disk};
 use io::file_operations::FileStorageError;
 use issues::IssueRecord;
 use merge::Merge;
+use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::{CancelledError, OperationError};
@@ -1997,7 +1998,7 @@ impl From<SearchRequestInternal> for ShardQueryRequest {
                 NamedVectorStruct::from(vector),
             )))),
             filter,
-            score_threshold,
+            score_threshold: score_threshold.map(OrderedFloat),
             limit,
             offset: offset.unwrap_or_default(),
             params,
@@ -2024,7 +2025,7 @@ impl From<CoreSearchRequest> for ShardQueryRequest {
             prefetches: vec![],
             query: Some(ScoringQuery::Vector(query)),
             filter,
-            score_threshold,
+            score_threshold: score_threshold.map(OrderedFloat),
             limit,
             offset,
             params,

@@ -8465,7 +8465,6 @@
         "properties": {
           "should": {
             "description": "At least one of those conditions should match",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Condition"
@@ -8494,7 +8493,6 @@
           },
           "must": {
             "description": "All conditions must match",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Condition"
@@ -8512,7 +8510,6 @@
           },
           "must_not": {
             "description": "All conditions must NOT match",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Condition"
@@ -9094,7 +9091,6 @@
           },
           "quantization": {
             "description": "Quantization params",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QuantizationSearchParams"
@@ -9122,13 +9118,11 @@
           },
           "rescore": {
             "description": "If true, use original vectors to re-score top-k results. Might require more time in case if original vectors are stored on disk. If not set, qdrant decides automatically apply rescoring or not.",
-            "default": null,
             "type": "boolean",
             "nullable": true
           },
           "oversampling": {
             "description": "Oversampling factor for quantization. Default is 1.0.\n\nDefines how many extra vectors should be pre-selected using quantized index, and then re-scored using original vectors.\n\nFor example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index, and then top-100 will be returned after re-scoring.",
-            "default": null,
             "type": "number",
             "format": "double",
             "minimum": 1,

@@ -6,6 +6,7 @@ use segment::data_types::vectors::{
 };
 use segment::types::{Filter, SearchParams, VectorName, WithPayloadInterface, WithVector};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use serde::Serialize;
 use sparse::common::sparse_vector::{SparseVector, validate_sparse_vector_impl};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -214,7 +215,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
 }
 
 /// Every kind of vector query that can be performed on segment level.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash, Serialize)]
 pub enum QueryEnum {
     Nearest(NamedQuery<VectorInternal>),
     RecommendBestScore(NamedQuery<RecoQuery<VectorInternal>>),
