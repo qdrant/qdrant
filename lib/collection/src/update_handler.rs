@@ -788,27 +788,29 @@ impl UpdateHandler {
                         Ok(())
                     };
 
-                    let start_time = Instant::now();
-
-                    // This represents the operation without vectors and payloads for logging purposes
-                    // Do not use for anything else
-                    let loggable_operation = operation.remove_details();
-
                     let operation_result = flush_res.and_then(|_| {
-                        CollectionUpdater::update(
+                        let start_time = Instant::now();
+
+                        // This represents the operation without vectors and payloads for logging purposes
+                        // Do not use for anything else
+                        let loggable_operation = operation.remove_details();
+
+                        let result = CollectionUpdater::update(
                             &segments,
                             op_num,
                             operation,
                             scroll_lock.clone(),
                             update_tracker.clone(),
                             &hw_measurements.get_counter_cell(),
-                        )
-                    });
+                        );
 
-                    let duration = start_time.elapsed();
+                        let duration = start_time.elapsed();
 
-                    log_request_to_collector(&collection_name, duration, move || {
-                        loggable_operation
+                        log_request_to_collector(&collection_name, duration, move || {
+                            loggable_operation
+                        });
+
+                        result
                     });
 
                     let res = match operation_result {
