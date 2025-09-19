@@ -2,7 +2,8 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
-use std::hash::{self, Hash};
+use std::hash::{self, Hash, Hasher};
+use std::mem;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -41,6 +42,7 @@ use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::json_path::JsonPath;
 use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
+use crate::types::utils::unordered_hash_unique;
 use crate::utils::maybe_arc::MaybeArc;
 
 pub type PayloadKeyType = JsonPath;
@@ -63,7 +65,7 @@ pub type VectorName = str;
 pub type VectorNameBuf = String;
 
 /// Wraps `DateTime<Utc>` to allow more flexible deserialization
-#[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, PartialOrd, Hash)]
 #[serde(transparent)]
 pub struct DateTimeWrapper(pub chrono::DateTime<chrono::Utc>);
 
@@ -478,6 +480,7 @@ pub struct QuantizationSearchParams {
     /// Might require more time in case if original vectors are stored on disk.
     /// If not set, qdrant decides automatically apply rescoring or not.
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rescore: Option<bool>,
 
     /// Oversampling factor for quantization. Default is 1.0.
@@ -489,7 +492,21 @@ pub struct QuantizationSearchParams {
     /// and then top-100 will be returned after re-scoring.
     #[serde(default = "default_quantization_oversampling_value")]
     #[validate(range(min = 1.0))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub oversampling: Option<f64>,
+}
+
+impl Hash for QuantizationSearchParams {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let Self {
+            ignore,
+            rescore,
+            oversampling,
+        } = self;
+        ignore.hash(state);
+        rescore.hash(state);
+        oversampling.map(OrderedFloat).hash(state);
+    }
 }
 
 pub const fn default_quantization_ignore_value() -> bool {
@@ -501,11 +518,14 @@ pub const fn default_quantization_oversampling_value() -> Option<f64> {
 }
 
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Copy, PartialEq, Default)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Default, Hash,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
     /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hnsw_ef: Option<usize>,
 
     /// Search without approximation. If set to true, search may run long but with exact results.
@@ -515,6 +535,7 @@ pub struct SearchParams {
     /// Quantization params
     #[serde(default)]
     #[validate(nested)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub quantization: Option<QuantizationSearchParams>,
 
     /// If enabled, the engine will only perform search among indexed or small segments.
@@ -1579,8 +1600,15 @@ pub struct GeoPoint {
     pub lat: f64,
 }
 
+impl Hash for GeoPoint {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        OrderedFloat(self.lon).hash(state);
+        OrderedFloat(self.lat).hash(state);
+    }
+}
+
 /// Ordered sequence of GeoPoints representing the line
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash)]
 pub struct GeoLineString {
     pub points: Vec<GeoPoint>,
 }
@@ -1732,6 +1760,10 @@ impl Payload {
 
     pub fn contains_key(&self, key: &str) -> bool {
         self.0.contains_key(key)
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.keys()
     }
 }
 
@@ -2147,7 +2179,7 @@ pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ValueVariants {
     String(String),
@@ -2172,6 +2204,24 @@ pub enum AnyVariants {
     Integers(IndexSet<IntPayloadType, FnvBuildHasher>),
 }
 
+impl Hash for AnyVariants {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        mem::discriminant(self).hash(state);
+        match self {
+            AnyVariants::Strings(index_set) => {
+                for item in index_set.iter() {
+                    item.hash(state);
+                }
+            }
+            AnyVariants::Integers(index_set) => {
+                for item in index_set.iter() {
+                    item.hash(state);
+                }
+            }
+        }
+    }
+}
+
 impl AnyVariants {
     pub fn len(&self) -> usize {
         match self {
@@ -2189,21 +2239,21 @@ impl AnyVariants {
 }
 
 /// Exact match of the given value
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct MatchValue {
     pub value: ValueVariants,
 }
 
 /// Full-text match of the strings.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct MatchText {
     pub text: String,
 }
 
 /// Full-text match of at least one token of the string.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct MatchTextAny {
     pub text_any: String,
@@ -2216,7 +2266,7 @@ impl<S: Into<String>> From<S> for MatchText {
 }
 
 /// Full-text phrase match of the string.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct MatchPhrase {
     pub phrase: String,
@@ -2231,14 +2281,14 @@ impl<S: Into<String>> From<S> for MatchPhrase {
 }
 
 /// Exact match on any of the given values
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct MatchAny {
     pub any: AnyVariants,
 }
 
 /// Should have at least one value not matching the any given values
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct MatchExcept {
     pub except: AnyVariants,
@@ -2257,7 +2307,7 @@ pub enum MatchInterface {
 }
 
 /// Match filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged, from = "MatchInterface")]
 pub enum Match {
     Value(MatchValue),
@@ -2396,6 +2446,27 @@ pub enum RangeInterface {
     DateTime(Range<DateTimePayloadType>),
 }
 
+impl Hash for RangeInterface {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        match self {
+            RangeInterface::Float(range) => {
+                let Range { lt, gt, gte, lte } = range;
+                lt.map(OrderedFloat).hash(state);
+                gt.map(OrderedFloat).hash(state);
+                gte.map(OrderedFloat).hash(state);
+                lte.map(OrderedFloat).hash(state);
+            }
+            RangeInterface::DateTime(range) => {
+                let Range { lt, gt, gte, lte } = range;
+                lt.hash(state);
+                gt.hash(state);
+                gte.hash(state);
+                lte.hash(state);
+            }
+        }
+    }
+}
+
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
 #[derive_args(< FloatPayloadType > => "Range", < DateTimePayloadType > => "DatetimeRange")]
@@ -2436,7 +2507,7 @@ impl<T: Copy + PartialOrd> Range<T> {
 }
 
 /// Values count filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct ValuesCount {
     /// point.key.length() < values_count.lt
@@ -2484,7 +2555,7 @@ impl From<std::ops::Range<usize>> for ValuesCount {
 /// Geo filter request
 ///
 /// Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoBoundingBox {
     /// Coordinates of the top left point of the area rectangle
@@ -2520,6 +2591,15 @@ pub struct GeoRadius {
     pub radius: f64,
 }
 
+impl Hash for GeoRadius {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        let GeoRadius { center, radius } = self;
+        center.hash(state);
+        // Hash f64 by converting to bits
+        OrderedFloat(*radius).hash(state);
+    }
+}
+
 impl GeoRadius {
     pub fn check_point(&self, point: &GeoPoint) -> bool {
         let query_center = Point::from(self.center);
@@ -2547,7 +2627,7 @@ impl PolygonWrapper {
 /// Geo filter request
 ///
 /// Matches coordinates inside the polygon, defined by `exterior` and `interiors`
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash)]
 #[serde(try_from = "GeoPolygonShadow", rename_all = "snake_case")]
 pub struct GeoPolygon {
     /// The exterior line bounds the surface
@@ -2640,27 +2720,35 @@ impl TryFrom<GeoPolygonShadow> for GeoPolygon {
 }
 
 /// All possible payload filtering conditions
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Hash)]
 #[validate(schema(function = "validate_field_condition"))]
 #[serde(rename_all = "snake_case")]
 pub struct FieldCondition {
     /// Payload key
     pub key: PayloadKeyType,
     /// Check if point has field with a given value
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub r#match: Option<Match>,
     /// Check if points value lies in a given range
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub range: Option<RangeInterface>,
     /// Check if points geolocation lies in a given area
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geo_radius: Option<GeoRadius>,
     /// Check if geo point is within a given polygon
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geo_polygon: Option<GeoPolygon>,
     /// Check number of values of the field
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub values_count: Option<ValuesCount>,
     /// Check that the field is empty, alternative syntax for `is_empty: "field_name"`
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_empty: Option<bool>,
     /// Check that the field is null, alternative syntax for `is_null: "field_name"`
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_null: Option<bool>,
 }
 
@@ -2838,20 +2926,20 @@ pub fn validate_field_condition(field_condition: &FieldCondition) -> Result<(), 
 }
 
 /// Payload field
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 pub struct PayloadField {
     /// Payload field name
     pub key: PayloadKeyType,
 }
 
 /// Select points with empty payload for a specified field
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 pub struct IsEmptyCondition {
     pub is_empty: PayloadField,
 }
 
 /// Select points with null payload for a specified field
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 pub struct IsNullCondition {
     pub is_null: PayloadField,
 }
@@ -2879,8 +2967,14 @@ pub struct HasIdCondition {
     pub has_id: MaybeArc<AHashSet<PointIdType>>,
 }
 
+impl Hash for HasIdCondition {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        unordered_hash_unique(state, self.has_id.iter());
+    }
+}
+
 /// Filter points which have specific vector assigned
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 pub struct HasVectorCondition {
     pub has_vector: VectorNameBuf,
 }
@@ -2919,14 +3013,14 @@ impl FromIterator<PointIdType> for HasIdCondition {
 }
 
 /// Select points with payload for a specified nested field
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate, Hash)]
 pub struct Nested {
     pub key: PayloadKeyType,
     #[validate(nested)]
     pub filter: Filter,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate, Hash)]
 pub struct NestedCondition {
     #[validate(nested)]
     pub nested: Nested,
@@ -2977,6 +3071,41 @@ pub enum Condition {
 
     #[serde(skip)]
     CustomIdChecker(Arc<dyn CustomIdCheckerCondition + Send + Sync + 'static>),
+}
+
+impl Hash for Condition {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        mem::discriminant(self).hash(state);
+        match self {
+            Condition::Field(field_condition) => {
+                field_condition.hash(state);
+            }
+            Condition::IsEmpty(is_empty_condition) => {
+                is_empty_condition.hash(state);
+            }
+            Condition::IsNull(is_null_condition) => {
+                is_null_condition.hash(state);
+            }
+            Condition::HasId(has_id_condition) => {
+                has_id_condition.hash(state);
+            }
+            Condition::HasVector(has_vector_condition) => {
+                has_vector_condition.hash(state);
+            }
+            Condition::Nested(nested_condition) => {
+                nested_condition.hash(state);
+            }
+            Condition::Filter(filter) => {
+                filter.hash(state);
+            }
+            Condition::CustomIdChecker(_) => {
+                // We cannot hash the inner function
+                // This means that two different CustomIdChecker conditions will have the same hash,
+                // but that's acceptable since we cannot do better, and only expected to be used
+                // for logging and profiling purposes.
+            }
+        }
+    }
 }
 
 impl PartialEq for Condition {
@@ -3064,7 +3193,7 @@ pub trait CustomIdCheckerCondition: fmt::Debug {
 }
 
 /// Options for specifying which payload to include or not
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash)]
 #[serde(untagged, rename_all = "snake_case")]
 #[serde(
     expecting = "Expected a boolean, an array of strings, or an object with an include/exclude field"
@@ -3092,7 +3221,7 @@ impl Default for WithPayloadInterface {
 }
 
 /// Options for specifying which vector to include
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged, rename_all = "snake_case")]
 #[serde(expecting = "Expected a boolean, or an array of strings")]
 pub enum WithVector {
@@ -3188,7 +3317,7 @@ impl From<&WithPayloadInterface> for WithPayload {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct PayloadSelectorInclude {
     /// Only include this payload keys
@@ -3201,7 +3330,7 @@ impl PayloadSelectorInclude {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct PayloadSelectorExclude {
     /// Exclude this fields from returning payload
@@ -3215,7 +3344,7 @@ impl PayloadSelectorExclude {
 }
 
 /// Specifies how to treat payload selector
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadSelector {
     /// Include only this fields into response payload
@@ -3279,7 +3408,7 @@ pub struct WithPayload {
     pub payload_selector: Option<PayloadSelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct MinShould {
     #[validate(nested)]
@@ -3287,25 +3416,38 @@ pub struct MinShould {
     pub min_count: usize,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of those conditions should match
     #[validate(nested)]
-    #[serde(default, with = "MaybeOneOrMany")]
+    #[serde(
+        default,
+        with = "MaybeOneOrMany",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub should: Option<Vec<Condition>>,
     /// At least minimum amount of given conditions should match
     #[validate(nested)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_should: Option<MinShould>,
     /// All conditions must match
     #[validate(nested)]
-    #[serde(default, with = "MaybeOneOrMany")]
+    #[serde(
+        default,
+        with = "MaybeOneOrMany",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub must: Option<Vec<Condition>>,
     /// All conditions must NOT match
     #[validate(nested)]
-    #[serde(default, with = "MaybeOneOrMany")]
+    #[serde(
+        default,
+        with = "MaybeOneOrMany",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub must_not: Option<Vec<Condition>>,
 }

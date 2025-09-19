@@ -4,7 +4,7 @@ use strum::{EnumDiscriminants, EnumIter};
 
 use super::point_ops::{PointIdsList, VectorStructPersisted};
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants, Hash)]
 #[strum_discriminants(derive(EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum VectorOperations {
@@ -45,7 +45,7 @@ impl VectorOperations {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]
 pub struct UpdateVectorsOp {
     /// Points with named vectors
     pub points: Vec<PointVectorsPersisted>,
@@ -54,7 +54,7 @@ pub struct UpdateVectorsOp {
     pub update_filter: Option<Filter>,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]
 pub struct PointVectorsPersisted {
     /// Point id
     pub id: PointIdType,

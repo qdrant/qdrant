@@ -20,6 +20,7 @@ ahash = { workspace = true }
 bitvec = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
+ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
 rmp-serde = "~1.3"

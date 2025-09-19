@@ -4,6 +4,7 @@ use std::hash::Hash;
 use common::types::ScoreType;
 use gridstore::Blob;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors};
@@ -18,6 +19,16 @@ pub struct SparseVector {
     pub indices: Vec<DimId>,
     /// Values and indices must be the same length
     pub values: Vec<DimWeight>,
+}
+
+impl Hash for SparseVector {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let Self { indices, values } = self;
+        indices.hash(state);
+        for &value in values {
+            OrderedFloat(value).hash(state);
+        }
+    }
 }
 
 /// Same as `SparseVector` but with `DimOffset` indices.

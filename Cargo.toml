@@ -68,6 +68,7 @@ serde_cbor = { workspace = true }
 uuid = { workspace = true }
 sys-info = "0.9.1"
 wal = { workspace = true }
+ordered-float = { workspace = true }
 
 config = { version = "0.15.13", default-features = false, features = ["yaml"] }
 

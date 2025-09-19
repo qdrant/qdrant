@@ -24,6 +24,7 @@ use ::common::flags::{feature_flags, init_feature_flags};
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
+use collection::profiling::interface::init_requests_profile_collector;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
 use memory::checkfs::{check_fs_info, check_mmap_functionality};
@@ -523,6 +524,7 @@ fn main() -> anyhow::Result<()> {
 
     // Setup subscribers to listen for issue-able events
     issues_setup::setup_subscribers(&settings);
+    init_requests_profile_collector(runtime_handle.clone());
 
     // Helper to better log start errors
     let log_err_if_any = |server_name, result| match result {

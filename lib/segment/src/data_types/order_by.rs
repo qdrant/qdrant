@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use num_cmp::NumCmp;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
@@ -9,7 +11,7 @@ use crate::types::{
     DateTimePayloadType, FloatPayloadType, IntPayloadType, Order, Range, RangeInterface,
 };
 
-#[derive(Deserialize, Serialize, JsonSchema, Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Deserialize, Serialize, JsonSchema, Copy, Clone, Debug, Default, PartialEq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
     #[default]
@@ -55,7 +57,17 @@ pub enum StartFrom {
     Datetime(DateTimePayloadType),
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq)]
+impl Hash for StartFrom {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            StartFrom::Integer(i) => i.hash(state),
+            StartFrom::Float(f) => OrderedFloat(*f).hash(state),
+            StartFrom::Datetime(dt) => dt.hash(state),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct OrderBy {
     /// Payload key to order by

@@ -3116,7 +3116,7 @@ fn unparse_expression(
     use super::expression::Variant;
 
     let variant = match expression {
-        ParsedExpression::Constant(c) => Variant::Constant(c as ScoreType),
+        ParsedExpression::Constant(c) => Variant::Constant(c.0 as ScoreType),
         ParsedExpression::Variable(variable_id) => match variable_id {
             var_id @ VariableId::Score(_) => Variant::Variable(var_id.unparse()),
             var_id @ VariableId::Payload(_) => Variant::Variable(var_id.unparse()),
@@ -3158,7 +3158,7 @@ fn unparse_expression(
         } => Variant::Div(Box::new(DivExpression {
             left: Some(Box::new(unparse_expression(*left, conditions))),
             right: Some(Box::new(unparse_expression(*right, conditions))),
-            by_zero_default: by_zero_default.map(|v| v as f32),
+            by_zero_default: by_zero_default.map(|v| v.0 as f32),
         })),
         ParsedExpression::Sqrt(expr) => {
             Variant::Sqrt(Box::new(unparse_expression(*expr, conditions)))
@@ -3183,7 +3183,7 @@ fn unparse_expression(
             lambda,
             x,
         } => {
-            let (midpoint, scale) = ParsedExpression::decay_lambda_to_params(lambda, kind);
+            let (midpoint, scale) = ParsedExpression::decay_lambda_to_params(lambda.0, kind);
             let params = DecayParamsExpression {
                 x: Some(Box::new(unparse_expression(*x, conditions))),
                 target: target.map(|t| Box::new(unparse_expression(*t, conditions))),

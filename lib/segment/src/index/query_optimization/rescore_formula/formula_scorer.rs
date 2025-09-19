@@ -116,7 +116,7 @@ impl FormulaScorer<'_> {
         point_id: PointOffsetType,
     ) -> OperationResult<PreciseScore> {
         match expression {
-            ParsedExpression::Constant(c) => Ok(*c),
+            ParsedExpression::Constant(c) => Ok(c.0),
             ParsedExpression::Variable(v) => match v {
                 VariableId::Score(prefetch_idx) => Ok(self
                     .prefetches_scores
@@ -205,7 +205,7 @@ impl FormulaScorer<'_> {
                 if right == 0.0
                     && let Some(default) = by_zero_default
                 {
-                    return Ok(*default);
+                    return Ok(default.0);
                 }
 
                 let div_value = left / right;
@@ -289,9 +289,9 @@ impl FormulaScorer<'_> {
                     DEFAULT_DECAY_TARGET
                 };
                 let decay = match kind {
-                    DecayKind::Exp => exp_decay(x, target, *lambda),
-                    DecayKind::Gauss => gauss_decay(x, target, *lambda),
-                    DecayKind::Lin => linear_decay(x, target, *lambda),
+                    DecayKind::Exp => exp_decay(x, target, lambda.0),
+                    DecayKind::Gauss => gauss_decay(x, target, lambda.0),
+                    DecayKind::Lin => linear_decay(x, target, lambda.0),
                 };
 
                 // All decay functions have a range of [0, 1], no need to check for bounds
@@ -373,6 +373,7 @@ mod tests {
     use smallvec::smallvec;
 
     use super::*;
+    use crate::index::query_optimization::rescore_formula::parsed_formula::PreciseScoreOrdered;
     use crate::json_path::JsonPath;
 
     const FIELD_NAME: &str = "number";
@@ -425,7 +426,7 @@ mod tests {
             ];
 
             FormulaScorer {
-                formula: ParsedExpression::Constant(0.0),
+                formula: ParsedExpression::Constant(PreciseScoreOrdered::from(0.0)),
                 prefetches_scores,
                 payload_retrievers,
                 condition_checkers,
@@ -436,7 +437,7 @@ mod tests {
 
     #[rstest]
     // Basic expressions, just variables
-    #[case(ParsedExpression::Constant(5.0), 5.0)]
+    #[case(ParsedExpression::Constant(PreciseScoreOrdered::from(5.0)), 5.0)]
     #[case(ParsedExpression::new_score_id(0), 1.0)]
     #[case(ParsedExpression::new_score_id(1), 2.0)]
     #[case(ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)), 85.0)]
@@ -444,21 +445,21 @@ mod tests {
     #[case(ParsedExpression::new_condition_id(1), 0.0)]
     // Operations
     #[case(ParsedExpression::Sum(vec![
-        ParsedExpression::Constant(1.0),
+        ParsedExpression::Constant(PreciseScoreOrdered::from(1.0)),
         ParsedExpression::new_score_id(0),
         ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)),
         ParsedExpression::new_condition_id(0),
     ]), 1.0 + 1.0 + 85.0 + 1.0)]
     #[case(ParsedExpression::Mult(vec![
-        ParsedExpression::Constant(2.0),
+        ParsedExpression::Constant(PreciseScoreOrdered::from(2.0)),
         ParsedExpression::new_score_id(0),
         ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)),
         ParsedExpression::new_condition_id(0),
     ]), 2.0 * 1.0 * 85.0 * 1.0)]
     #[case(ParsedExpression::new_div(
-        ParsedExpression::Constant(10.0), ParsedExpression::new_score_id(0), None
+        ParsedExpression::Constant(PreciseScoreOrdered::from(10.0)), ParsedExpression::new_score_id(0), None
     ), 10.0 / 1.0)]
-    #[case(ParsedExpression::new_neg(ParsedExpression::Constant(10.0)), -10.0)]
+    #[case(ParsedExpression::new_neg(ParsedExpression::Constant(PreciseScoreOrdered::from(10.0))), -10.0)]
     // Error cases
     #[case(ParsedExpression::new_geo_distance(
         GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(GEO_FIELD_NAME)
@@ -468,22 +469,28 @@ mod tests {
     )]
     #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(FIELD_NAME)), 0.0)]
     #[should_panic(expected = r#"NonFiniteNumber { expression: "-1^0.4 = NaN" }"#)]
-    #[case(ParsedExpression::new_pow(ParsedExpression::Constant(-1.0), ParsedExpression::Constant(0.4)), 0.0)]
+    #[case(ParsedExpression::new_pow(ParsedExpression::Constant(PreciseScoreOrdered::from(-1.0)), ParsedExpression::Constant(PreciseScoreOrdered::from(0.4))), 0.0)]
     #[should_panic(expected = r#"NonFiniteNumber { expression: "√-3 = NaN" }"#)]
-    #[case(ParsedExpression::new_sqrt(ParsedExpression::Constant(-3.0)), 0.0)]
+    #[case(ParsedExpression::new_sqrt(ParsedExpression::Constant(PreciseScoreOrdered::from(-3.0))), 0.0)]
     #[should_panic(expected = r#"NonFiniteNumber { expression: "1/0 = inf" }"#)]
     #[case(
         ParsedExpression::new_div(
-            ParsedExpression::Constant(1.0),
-            ParsedExpression::Constant(0.0),
+            ParsedExpression::Constant(PreciseScoreOrdered::from(1.0)),
+            ParsedExpression::Constant(PreciseScoreOrdered::from(0.0)),
             None
         ),
         0.0
     )]
     #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0) = -inf" }"#)]
-    #[case(ParsedExpression::new_log10(ParsedExpression::Constant(0.0)), 0.0)]
+    #[case(
+        ParsedExpression::new_log10(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+        0.0
+    )]
     #[should_panic(expected = r#"NonFiniteNumber { expression: "ln(0) = -inf" }"#)]
-    #[case(ParsedExpression::new_ln(ParsedExpression::Constant(0.0)), 0.0)]
+    #[case(
+        ParsedExpression::new_ln(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+        0.0
+    )]
     #[test]
     fn test_evaluation(#[case] expr: ParsedExpression, #[case] expected: PreciseScore) {
         let defaults = HashMap::new();
