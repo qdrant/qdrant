@@ -1,10 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use ordered_float::OrderedFloat;
-use parking_lot::Mutex;
-use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::VectorIndex;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentType};
@@ -13,6 +10,7 @@ use segment::vector_storage::VectorStorage;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
+use crate::collection_manager::optimizers::OptimizerTelemetryCounter;
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
@@ -34,7 +32,7 @@ pub struct VacuumOptimizer {
     hnsw_config: HnswConfig,
     hnsw_global_config: HnswGlobalConfig,
     quantization_config: Option<QuantizationConfig>,
-    telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
+    telemetry_aggregator: OptimizerTelemetryCounter,
 }
 
 impl VacuumOptimizer {
@@ -60,7 +58,7 @@ impl VacuumOptimizer {
             hnsw_config,
             quantization_config,
             hnsw_global_config,
-            telemetry_durations_aggregator: OperationDurationsAggregator::new(),
+            telemetry_aggregator: OptimizerTelemetryCounter::new(),
         }
     }
 
@@ -208,8 +206,12 @@ impl SegmentOptimizer for VacuumOptimizer {
             .collect()
     }
 
-    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
-        &self.telemetry_durations_aggregator
+    fn get_telemetry_counter(&self) -> &OptimizerTelemetryCounter {
+        &self.telemetry_aggregator
+    }
+
+    fn increment_run_counter(&self) {
+        self.telemetry_aggregator.triggers.lock().vacuum += 1;
     }
 }
 

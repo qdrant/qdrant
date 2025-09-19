@@ -1,14 +1,12 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use parking_lot::Mutex;
-use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentType};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegmentHolder, SegmentHolder, SegmentId,
 };
+use crate::collection_manager::optimizers::OptimizerTelemetryCounter;
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
@@ -30,7 +28,7 @@ pub struct IndexingOptimizer {
     hnsw_config: HnswConfig,
     hnsw_global_config: HnswGlobalConfig,
     quantization_config: Option<QuantizationConfig>,
-    telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
+    telemetry_aggregator: OptimizerTelemetryCounter,
 }
 
 impl IndexingOptimizer {
@@ -54,7 +52,7 @@ impl IndexingOptimizer {
             hnsw_config,
             hnsw_global_config,
             quantization_config,
-            telemetry_durations_aggregator: OperationDurationsAggregator::new(),
+            telemetry_aggregator: OptimizerTelemetryCounter::new(),
         }
     }
 
@@ -277,8 +275,12 @@ impl SegmentOptimizer for IndexingOptimizer {
         self.worst_segment(segments, excluded_ids)
     }
 
-    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
-        &self.telemetry_durations_aggregator
+    fn get_telemetry_counter(&self) -> &OptimizerTelemetryCounter {
+        &self.telemetry_aggregator
+    }
+
+    fn increment_run_counter(&self) {
+        self.telemetry_aggregator.triggers.lock().index += 1;
     }
 }
 

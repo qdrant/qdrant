@@ -364,6 +364,9 @@ impl UpdateHandler {
                     &nonoptimal_segment_ids
                 );
 
+                // Optimizer has been triggered, so we need to increment the trigger-counter.
+                optimizer.increment_run_counter();
+
                 // Determine how many Resources we prefer for optimization task, acquire permit for it
                 // And use same amount of IO threads as CPUs
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;

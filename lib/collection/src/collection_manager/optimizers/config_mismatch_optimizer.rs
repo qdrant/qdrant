@@ -1,16 +1,14 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use parking_lot::Mutex;
-use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentType, VectorName,
 };
 
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
+use crate::collection_manager::optimizers::OptimizerTelemetryCounter;
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
@@ -30,7 +28,7 @@ pub struct ConfigMismatchOptimizer {
     hnsw_config: HnswConfig,
     hnsw_global_config: HnswGlobalConfig,
     quantization_config: Option<QuantizationConfig>,
-    telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
+    telemetry_aggregator: OptimizerTelemetryCounter,
 }
 
 impl ConfigMismatchOptimizer {
@@ -51,7 +49,7 @@ impl ConfigMismatchOptimizer {
             hnsw_config,
             hnsw_global_config,
             quantization_config,
-            telemetry_durations_aggregator: OperationDurationsAggregator::new(),
+            telemetry_aggregator: OptimizerTelemetryCounter::new(),
         }
     }
 
@@ -269,8 +267,12 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
         self.worst_segment(segments, excluded_ids)
     }
 
-    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
-        &self.telemetry_durations_aggregator
+    fn get_telemetry_counter(&self) -> &OptimizerTelemetryCounter {
+        &self.telemetry_aggregator
+    }
+
+    fn increment_run_counter(&self) {
+        self.telemetry_aggregator.triggers.lock().config_mismatch += 1;
     }
 }
 

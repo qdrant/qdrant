@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Add;
 
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
@@ -73,6 +74,28 @@ pub struct OptimizerTelemetry {
     pub optimizations: OperationDurationStatistics,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log: Option<Vec<TrackerTelemetry>>,
+    pub triggers: OptimizerTriggers,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, JsonSchema, Anonymize, Default)]
+pub struct OptimizerTriggers {
+    pub vacuum: usize,
+    pub merge: usize,
+    pub index: usize,
+    pub config_mismatch: usize,
+}
+
+impl Add for OptimizerTriggers {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            vacuum: self.vacuum + rhs.vacuum,
+            merge: self.merge + rhs.merge,
+            index: self.index + rhs.index,
+            config_mismatch: self.config_mismatch + rhs.config_mismatch,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Serialize, JsonSchema, Anonymize)]

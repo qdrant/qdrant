@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-
 use api::rest::models::HardwareUsage;
-use itertools::Itertools;
+use collection::shards::telemetry::OptimizerTriggers;
 use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
@@ -178,7 +176,8 @@ impl MetricsProvider for CollectionsTelemetry {
             vec![gauge(vector_count as f64, &[])],
         ));
 
-        // Optimization trigger counts by optimizer type
+        let mut optimizer_counter_metrics = vec![];
+
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
                 CollectionTelemetryEnum::Full(collection_telemetry) => collection_telemetry,
@@ -187,34 +186,37 @@ impl MetricsProvider for CollectionsTelemetry {
                 }
             };
 
-            // Count the occurrences of each optimizer type in optimizer logs.
-            let optimizer_name_counts: HashMap<&str, usize> = collection
+            // Sum the optimization triggers over all shards of this collection.
+            let optimizer_triggers = collection
                 .shards
                 .iter()
                 .flatten()
                 .filter_map(|i| i.local.as_ref())
-                .flat_map(|i| i.optimizations.log.iter().flatten())
-                .map(|i| i.name.as_str())
-                .counts();
+                .map(|i| i.optimizations.triggers)
+                .fold(OptimizerTriggers::default(), |total, state| total + state);
 
-            let counter_metrics: Vec<_> = optimizer_name_counts
-                .into_iter()
-                .map(|(name, counts)| {
-                    counter(
-                        counts as f64,
+            let mut add_optimizer_metric = |name: &str, value: usize| {
+                if value > 0 {
+                    optimizer_counter_metrics.push(counter(
+                        value as f64,
                         &[("id", &collection.id), ("optimizer", name)],
-                    )
-                })
-                .collect();
+                    ));
+                }
+            };
 
-            if !counter_metrics.is_empty() {
-                metrics.push(metric_family(
-                    "collections_optimizer_trigger_count",
-                    "number of optimization triggers per optimizer",
-                    MetricType::COUNTER,
-                    counter_metrics,
-                ));
-            }
+            add_optimizer_metric("config-mismatch", optimizer_triggers.config_mismatch);
+            add_optimizer_metric("index", optimizer_triggers.index);
+            add_optimizer_metric("merge", optimizer_triggers.merge);
+            add_optimizer_metric("vacuum", optimizer_triggers.vacuum);
+        }
+
+        if !optimizer_counter_metrics.is_empty() {
+            metrics.push(metric_family(
+                "collections_optimizer_trigger_count",
+                "number of optimization triggers per optimizer",
+                MetricType::COUNTER,
+                optimizer_counter_metrics,
+            ));
         }
     }
 }

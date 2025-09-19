@@ -5,9 +5,11 @@ use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use serde::{Deserialize, Serialize};
 
 use super::holders::segment_holder::SegmentId;
+use crate::shards::telemetry::OptimizerTriggers;
 
 pub mod config_mismatch_optimizer;
 pub mod indexing_optimizer;
@@ -180,4 +182,25 @@ pub enum TrackerStatus {
     Cancelled(String),
     #[anonymize(false)]
     Error(String),
+}
+
+#[derive(Debug)]
+pub struct OptimizerTelemetryCounter {
+    pub durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
+    pub triggers: Arc<Mutex<OptimizerTriggers>>,
+}
+
+impl OptimizerTelemetryCounter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for OptimizerTelemetryCounter {
+    fn default() -> Self {
+        Self {
+            durations_aggregator: OperationDurationsAggregator::new(),
+            triggers: Arc::new(Mutex::new(OptimizerTriggers::default())),
+        }
+    }
 }

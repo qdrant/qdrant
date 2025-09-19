@@ -10,12 +10,10 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_disk_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
+use parking_lot::RwLockUpgradableReadGuard;
 use parking_lot::lock_api::RwLockWriteGuard;
-use parking_lot::{Mutex, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, check_process_stopped};
-use segment::common::operation_time_statistics::{
-    OperationDurationsAggregator, ScopeDurationMeasurer,
-};
+use segment::common::operation_time_statistics::ScopeDurationMeasurer;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::{Segment, SegmentVersion};
@@ -29,6 +27,7 @@ use crate::collection_manager::holders::proxy_segment::{self, ProxyIndexChange, 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
 };
+use crate::collection_manager::optimizers::OptimizerTelemetryCounter;
 use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -82,7 +81,10 @@ pub trait SegmentOptimizer {
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId>;
 
-    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator>;
+    fn get_telemetry_counter(&self) -> &OptimizerTelemetryCounter;
+
+    /// Increments a the counter of the given optimizer. This counter is populated in /metrics and /telemetry API.
+    fn increment_run_counter(&self);
 
     /// Build temp segment
     fn temp_segment(&self, save_version: bool) -> CollectionResult<LockedSegment> {
@@ -610,7 +612,8 @@ pub trait SegmentOptimizer {
     ) -> CollectionResult<usize> {
         check_process_stopped(stopped)?;
 
-        let mut timer = ScopeDurationMeasurer::new(self.get_telemetry_counter());
+        let mut timer =
+            ScopeDurationMeasurer::new(&self.get_telemetry_counter().durations_aggregator);
         timer.set_success(false);
 
         // On the one hand - we want to check consistently if all provided segments are
