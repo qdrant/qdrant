@@ -12746,7 +12746,8 @@
         "type": "object",
         "required": [
           "optimizations",
-          "status"
+          "status",
+          "triggers"
         ],
         "properties": {
           "status": {
@@ -12761,6 +12762,9 @@
               "$ref": "#/components/schemas/TrackerTelemetry"
             },
             "nullable": true
+          },
+          "triggers": {
+            "$ref": "#/components/schemas/OptimizerTriggers"
           }
         }
       },
@@ -12838,6 +12842,37 @@
             "additionalProperties": false
           }
         ]
+      },
+      "OptimizerTriggers": {
+        "type": "object",
+        "required": [
+          "config_mismatch",
+          "index",
+          "merge",
+          "vacuum"
+        ],
+        "properties": {
+          "vacuum": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "merge": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "index": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "config_mismatch": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
       },
       "RemoteShardTelemetry": {
         "type": "object",
