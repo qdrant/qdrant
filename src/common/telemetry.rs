@@ -104,9 +104,7 @@ impl TelemetryCollector {
                 &self.tonic_telemetry_collector.lock(),
                 detail,
             ),
-            memory: (detail.level > DetailsLevel::Level0)
-                .then(|| MemoryTelemetry::collect(access))
-                .flatten(),
+            memory: None,
             hardware: (detail.level > DetailsLevel::Level0)
                 .then(|| HardwareTelemetry::new(&self.dispatcher, access)),
         }
