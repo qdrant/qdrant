@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use api::rest::models::HardwareUsage;
+use itertools::Itertools;
 use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
@@ -174,6 +177,43 @@ impl MetricsProvider for CollectionsTelemetry {
             MetricType::GAUGE,
             vec![gauge(vector_count as f64, &[])],
         ));
+
+        // Optimization trigger counts by optimizer type
+        for collection in self.collections.iter().flatten() {
+            let collection = match collection {
+                CollectionTelemetryEnum::Full(collection_telemetry) => collection_telemetry,
+                CollectionTelemetryEnum::Aggregated(_) => {
+                    continue;
+                }
+            };
+
+            // Count the occurrences of each optimizer type in optimizer logs.
+            let optimizer_name_counts: HashMap<&str, usize> = collection
+                .shards
+                .iter()
+                .flatten()
+                .filter_map(|i| i.local.as_ref())
+                .flat_map(|i| i.optimizations.log.iter().flatten())
+                .map(|i| i.name.as_str())
+                .counts();
+
+            let counter_metrics: Vec<_> = optimizer_name_counts
+                .into_iter()
+                .map(|(name, counts)| {
+                    counter(
+                        counts as f64,
+                        &[("id", &collection.id), ("optimizer", name)],
+                    )
+                })
+                .collect();
+
+            metrics.push(metric_family(
+                "collections_optimizer_trigger_count",
+                "number of optimization triggers per optimizer",
+                MetricType::COUNTER,
+                counter_metrics,
+            ));
+        }
     }
 }
 
