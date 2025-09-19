@@ -207,12 +207,14 @@ impl MetricsProvider for CollectionsTelemetry {
                 })
                 .collect();
 
-            metrics.push(metric_family(
-                "collections_optimizer_trigger_count",
-                "number of optimization triggers per optimizer",
-                MetricType::COUNTER,
-                counter_metrics,
-            ));
+            if !counter_metrics.is_empty() {
+                metrics.push(metric_family(
+                    "collections_optimizer_trigger_count",
+                    "number of optimization triggers per optimizer",
+                    MetricType::COUNTER,
+                    counter_metrics,
+                ));
+            }
         }
     }
 }
