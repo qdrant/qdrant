@@ -331,7 +331,7 @@ impl Hash for MultiDenseVectorInternal {
         } = self;
         dim.hash(state);
         for element in flattened_vectors {
-            element.to_bits().hash(state);
+            OrderedFloat(*element).hash(state);
         }
     }
 }
