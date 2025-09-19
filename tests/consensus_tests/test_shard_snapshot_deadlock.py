@@ -3,14 +3,18 @@ import pathlib
 import requests
 import time
 
-from .assertions import *
-from .fixtures import *
+from .assertions import assert_http_ok
+from .fixtures import upsert_random_points, create_collection
 from .utils import *
 
 
 def loop_telemetry(peer_url):
     while True:
         requests.get(f"{peer_url}/telemetry", params = { "details_level": "10" }, timeout = 0.5)
+
+def loop_metrics(peer_url):
+    while True:
+        requests.get(f"{peer_url}/metrics", params = { "anonymize": True }, timeout = 0.5)
 
 def loop_version(peer_url):
     while True:
@@ -47,22 +51,25 @@ def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
     snapshot_chunk = next(snapshot_stream)
 
     # Run background executor to send blocking requests without blocking the test
-    executor = ThreadPoolExecutor(max_workers = 4)
+    executor = ThreadPoolExecutor(max_workers = 5)
 
     # Get telemetry, to block on segment read-lock, which would block Actix worker
-    telemetry = executor.submit(loop_telemetry, peer_url)
+    _telemetry = executor.submit(loop_telemetry, peer_url)
+
+    # Get metrics, to block on segment read-lock, which would block Actix worker
+    _metrics = executor.submit(loop_metrics, peer_url)
 
     # Upsert a point, to block on segment write-lock
-    upsert = executor.submit(upsert_random_points, peer_url, 10_000, batch_size=1)
+    _upsert = executor.submit(upsert_random_points, peer_url, 10_000, batch_size=1)
     
     # Get version, to block on segment read-lock, which would block Actix worker
-    version = executor.submit(loop_version, peer_url)
+    _version = executor.submit(loop_version, peer_url)
 
     # Get cluster info, to block on segment read-lock, which would block Actix worker
-    cluster_info = executor.submit(loop_cluster_info, peer_url)
+    _cluster_info = executor.submit(loop_cluster_info, peer_url)
 
     # Let executor cook for a bit to get some interleaving
-    time.sleep(0.5)
+    time.sleep(1)
 
     # Try to query Qdrant version info, which would block and timeout if Actix worker is blocked
     try:
@@ -73,3 +80,5 @@ def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
         # uncomment `sleep` and remove `raise` to investigate the deadlock with gdb
         #time.sleep(100_000) 
         raise
+    finally:
+        executor.shutdown(wait=False)
