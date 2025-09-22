@@ -256,6 +256,8 @@ impl ShardOperation for LocalShard {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || request.ids.len())?;
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+
+        let start_time = Instant::now();
         let records_map = tokio::time::timeout(
             timeout,
             SegmentsSearcher::retrieve(
@@ -275,6 +277,9 @@ impl ShardOperation for LocalShard {
             .iter()
             .filter_map(|point| records_map.get(point).cloned())
             .collect();
+
+        let elapsed = start_time.elapsed();
+        log_request_to_collector(&self.collection_name, elapsed, || request);
 
         Ok(ordered_records)
     }
