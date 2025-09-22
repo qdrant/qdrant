@@ -1,5 +1,7 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Arc;
 
+use segment::data_types::facets::FacetParams;
 use serde_json::Value;
 use shard::operations::CollectionUpdateOperations;
 
@@ -64,5 +66,36 @@ impl Loggable for ScrollRequestLoggable {
         self.request_name().hash(&mut hasher);
         self.0.hash(&mut hasher);
         hasher.finish()
+    }
+}
+
+impl Loggable for FacetParams {
+    fn to_log_value(&self) -> Value {
+        serde_json::to_value(self).unwrap_or_default()
+    }
+
+    fn request_name(&self) -> &'static str {
+        "facet"
+    }
+
+    fn request_hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.request_name().hash(&mut hasher);
+        self.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl Loggable for Arc<FacetParams> {
+    fn to_log_value(&self) -> Value {
+        self.as_ref().to_log_value()
+    }
+
+    fn request_name(&self) -> &'static str {
+        "facet"
+    }
+
+    fn request_hash(&self) -> u64 {
+        self.as_ref().request_hash()
     }
 }

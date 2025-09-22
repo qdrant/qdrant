@@ -328,13 +328,27 @@ impl ShardOperation for LocalShard {
             }
             cost
         })?;
+
+        let start_time = Instant::now();
         let hits = if request.exact {
-            self.exact_facet(request, search_runtime_handle, timeout, hw_measurement_acc)
-                .await?
+            self.exact_facet(
+                request.clone(),
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+            )
+            .await?
         } else {
-            self.approx_facet(request, search_runtime_handle, timeout, hw_measurement_acc)
-                .await?
+            self.approx_facet(
+                request.clone(),
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+            )
+            .await?
         };
+        let elapsed = start_time.elapsed();
+        log_request_to_collector(&self.collection_name, elapsed, || request.clone());
         Ok(FacetResponse { hits })
     }
 }
