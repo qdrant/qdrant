@@ -938,8 +938,8 @@ impl ShardReplicaSet {
                     &false.into(),
                     &false.into(),
                     Some(&filter),
-                    &self.search_runtime,
                     None,
+                    &self.search_runtime,
                     None,
                     hw_measurement_acc.clone(),
                 )

@@ -112,8 +112,8 @@ impl ShardOperation for DummyShard {
         _: &WithPayloadInterface,
         _: &WithVector,
         _: Option<&Filter>,
-        _: &Handle,
         _: Option<&OrderBy>,
+        _: &Handle,
         _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {

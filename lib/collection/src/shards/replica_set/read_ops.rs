@@ -50,8 +50,8 @@ impl ShardReplicaSet {
                             &with_payload_interface,
                             &with_vector,
                             filter.as_deref(),
-                            &search_runtime,
                             order_by.as_deref(),
+                            &search_runtime,
                             timeout,
                             hw_acc,
                         )
