@@ -1099,13 +1099,16 @@ impl LocalShard {
 
     pub async fn local_shard_info(&self) -> ShardInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
-        let mut indexed_vectors_count = 0;
-        let mut points_count = 0;
-        let mut segments_count = 0;
-        let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
 
-        {
-            let segments = self.segments().read();
+        let segments = self.segments.clone();
+        let segment_info = tokio::task::spawn_blocking(move || {
+            let segments = segments.read(); // blocking sync lock
+
+            let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
+            let mut indexed_vectors_count = 0;
+            let mut points_count = 0;
+            let mut segments_count = 0;
+
             for (_idx, segment) in segments.iter() {
                 segments_count += 1;
 
@@ -1120,7 +1123,16 @@ impl LocalShard {
                         .or_insert(val);
                 }
             }
+            (schema, indexed_vectors_count, points_count, segments_count)
+        })
+        .await;
+
+        if let Err(err) = &segment_info {
+            log::error!("Failed to get local shard info: {err}");
         }
+
+        let (schema, indexed_vectors_count, points_count, segments_count) =
+            segment_info.unwrap_or_default();
 
         let (status, optimizer_status) = self.local_shard_status().await;
 
