@@ -5,7 +5,7 @@ use segment::data_types::facets::FacetParams;
 use serde_json::Value;
 use shard::operations::CollectionUpdateOperations;
 
-use crate::operations::types::CountRequestInternal;
+use crate::operations::types::{CountRequestInternal, PointRequestInternal};
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
 
 pub trait Loggable {
@@ -94,6 +94,23 @@ impl Loggable for Arc<CountRequestInternal> {
 
     fn request_name(&self) -> &'static str {
         "count"
+    }
+
+    fn request_hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.request_name().hash(&mut hasher);
+        self.as_ref().hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl Loggable for Arc<PointRequestInternal> {
+    fn to_log_value(&self) -> Value {
+        serde_json::to_value(self.as_ref()).unwrap_or_default()
+    }
+
+    fn request_name(&self) -> &'static str {
+        "retrieve"
     }
 
     fn request_hash(&self) -> u64 {
