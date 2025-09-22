@@ -24,6 +24,11 @@ def loop_cluster_info(peer_url):
     while True:
         requests.get(f"{peer_url}/collections/test_collection/cluster", timeout = 0.5)
 
+def loop_collection_info(peer_url):
+    while True:
+        requests.get(f"{peer_url}/collections/test_collection", timeout = 0.5)
+
+
 def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -51,7 +56,7 @@ def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
     snapshot_chunk = next(snapshot_stream)
 
     # Run background executor to send blocking requests without blocking the test
-    executor = ThreadPoolExecutor(max_workers = 5)
+    executor = ThreadPoolExecutor(max_workers = 6)
 
     # Get telemetry, to block on segment read-lock, which would block Actix worker
     _telemetry = executor.submit(loop_telemetry, peer_url)
@@ -67,6 +72,9 @@ def test_shard_snapshot_deadlock(tmp_path: pathlib.Path):
 
     # Get cluster info, to block on segment read-lock, which would block Actix worker
     _cluster_info = executor.submit(loop_cluster_info, peer_url)
+    
+    # Get collection info, to block on segment read-lock, which would block Actix worker
+    _collection_info = executor.submit(loop_collection_info, peer_url)
 
     # Let executor cook for a bit to get some interleaving
     time.sleep(1)
