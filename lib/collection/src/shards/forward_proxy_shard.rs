@@ -200,8 +200,8 @@ impl ForwardProxyShard {
                 &WithPayloadInterface::Bool(true),
                 &WithVector::Bool(true),
                 None,
-                runtime_handle,
                 None,
+                runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
             )
@@ -269,8 +269,8 @@ impl ForwardProxyShard {
                 &WithPayloadInterface::Bool(false),
                 &WithVector::Bool(false),
                 None,
-                runtime_handle,
                 None,
+                runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
             )
@@ -484,8 +484,8 @@ impl ShardOperation for ForwardProxyShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
+        search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -497,8 +497,8 @@ impl ShardOperation for ForwardProxyShard {
                 with_payload_interface,
                 with_vector,
                 filter,
-                search_runtime_handle,
                 order_by,
+                search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
             )

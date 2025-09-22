@@ -949,8 +949,8 @@ impl ShardOperation for RemoteShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        _search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
+        _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {

@@ -276,8 +276,8 @@ impl ShardOperation for QueueProxyShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
+        search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -288,8 +288,8 @@ impl ShardOperation for QueueProxyShard {
                 with_payload_interface,
                 with_vector,
                 filter,
-                search_runtime_handle,
                 order_by,
+                search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
             )
@@ -600,8 +600,8 @@ impl ShardOperation for Inner {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
+        search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -613,8 +613,8 @@ impl ShardOperation for Inner {
                 with_payload_interface,
                 with_vector,
                 filter,
-                search_runtime_handle,
                 order_by,
+                search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
             )
