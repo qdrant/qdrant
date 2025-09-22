@@ -36,7 +36,14 @@ impl SegmentEntry for ProxySegment {
         }
 
         // Use wrapped segment version, if absent we have no version at all
-        let wrapped_version = self.wrapped_segment.get().read().point_version(point_id)?;
+        let Some(wrapped_version) = self.wrapped_segment.get().read().point_version(point_id)
+        else {
+            log::debug!(
+                "{:?} no version because no version in wrapped segment",
+                self.data_path()
+            );
+            return None;
+        };
 
         // Ignore point from wrapped segment if already marked for deletion with newer version
         // By `point_version` semantics we don't expect to get a version if the point
@@ -48,6 +55,7 @@ impl SegmentEntry for ProxySegment {
             .get(&point_id)
             .is_some_and(|delete| wrapped_version <= delete.local_version)
         {
+            log::debug!("no version because marked as deleted with a higher version");
             return None;
         }
 
@@ -337,6 +345,7 @@ impl SegmentEntry for ProxySegment {
             "{:?} set_payload proxy segment op_num:{op_num} point_id:{point_id} (move_if_exists DONE)",
             self.data_path()
         );
+        // NON ATOMIC!!
         self.write_segment
             .get()
             .write()

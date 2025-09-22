@@ -343,7 +343,7 @@ impl ProxySegment {
             let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
                 log::debug!(
-                    "{:?} UPGRADE upgradable read wrapped to propagate",
+                    "{:?} UPGRADE upgradable read wrapped to propagate {deleted_points:?}",
                     wrapped_segment.data_path()
                 );
                 wrapped_segment.with_upgraded(|wrapped_segment| {
@@ -355,6 +355,10 @@ impl ProxySegment {
                         // different proxy segments can share state through a common write segment.
                         // See: <https://github.com/qdrant/qdrant/pull/7208>
                         if wrapped_segment.has_point(*point_id) {
+                            log::debug!(
+                                "{:?} propagate delete point_id:{point_id} versions:{versions:?}",
+                                wrapped_segment.data_path()
+                            );
                             wrapped_segment.delete_point(
                                 versions.operation_version,
                                 *point_id,

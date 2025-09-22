@@ -284,6 +284,7 @@ impl Segment {
                 .internal_version(point_offset)
                 .is_some_and(|current_version| current_version > op_num)
         {
+            log::debug!("ignoring point_offset:{op_point_offset:?} op_num:{op_num}");
             return Ok(false);
         }
 

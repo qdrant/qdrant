@@ -574,7 +574,7 @@ impl SegmentHolder {
             for point_id in points {
                 let version = write_segment.point_version(point_id).unwrap_or_default();
                 log::debug!(
-                    "applying delete for point_id:{point_id} on segment:{:?}",
+                    "{:?} applying delete for point_id:{point_id} on segment_id:{segment_id}",
                     write_segment.data_path()
                 );
                 write_segment.delete_point(
@@ -595,7 +595,7 @@ impl SegmentHolder {
             let segment_data = segment_data(write_segment.deref());
             for point_id in points {
                 log::debug!(
-                    "applying update point_id:{point_id} on segment:{:?}",
+                    "{:?} applying update point_id:{point_id} on segment_id:{segment_id}",
                     write_segment.data_path()
                 );
                 let is_applied =

@@ -39,10 +39,27 @@ impl SegmentEntry for Segment {
     }
 
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
+        log::debug!(
+            "{:?} point_version for point_id:{point_id}",
+            self.data_path()
+        );
         let id_tracker = self.id_tracker.borrow();
-        id_tracker
-            .internal_id(point_id)
-            .and_then(|internal_id| id_tracker.internal_version(internal_id))
+        let Some(internal_id) = id_tracker.internal_id(point_id) else {
+            log::debug!(
+                "{:?} no internal id found point_id:{point_id}",
+                self.data_path()
+            );
+            return None;
+        };
+
+        let Some(version) = id_tracker.internal_version(internal_id) else {
+            log::debug!(
+                "{:?} no version for internal_id:{internal_id}",
+                self.data_path()
+            );
+            return None;
+        };
+        Some(version)
     }
 
     fn search_batch(
@@ -136,7 +153,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         log::debug!(
-            "{:?} Deleting point_id:{point_id} point_offset:{internal_id:?} op_num:{op_num}",
+            "{:?} (1) Deleting point_id:{point_id} point_offset:{internal_id:?} op_num:{op_num}",
             self.current_path
         );
         match internal_id {
@@ -144,12 +161,12 @@ impl SegmentEntry for Segment {
             None => Ok(false),
             Some(internal_id) => {
                 log::debug!(
-                    "{:?} Deleting point_id:{point_id} point_offset:{internal_id:?} op_num:{op_num}",
+                    "{:?} (2) Deleting point_id:{point_id} point_offset:{internal_id:?} op_num:{op_num}",
                     self.current_path
                 );
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
                     log::debug!(
-                        "{:?} Deleting point_id:{point_id} point_offset:{internal_id:?} op_num:{op_num}",
+                        "{:?} (3) Deleting point_id:{point_id} point_offset:{internal_id:?} op_num:{op_num}",
                         segment.current_path
                     );
                     // Mark point as deleted, drop mapping
