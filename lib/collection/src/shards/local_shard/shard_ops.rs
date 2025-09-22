@@ -217,6 +217,7 @@ impl ShardOperation for LocalShard {
             }
             cost
         })?;
+        let start_time = Instant::now();
         let total_count = if request.exact {
             let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
             let all_points = tokio::time::timeout(
@@ -237,6 +238,8 @@ impl ShardOperation for LocalShard {
                 .await?
                 .exp
         };
+        let elapsed = start_time.elapsed();
+        log_request_to_collector(&self.collection_name, elapsed, || request);
         Ok(CountResult { count: total_count })
     }
 

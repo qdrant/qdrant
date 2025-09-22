@@ -861,7 +861,7 @@ pub struct CountRequest {
 /// Count Request
 /// Counts the number of points which satisfy the given filter.
 /// If filter is not provided, the count of all points in the collection will be returned.
-#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct CountRequestInternal {
     /// Look only for points which satisfies this conditions
