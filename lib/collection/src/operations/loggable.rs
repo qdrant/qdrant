@@ -47,3 +47,22 @@ impl Loggable for Vec<ShardQueryRequest> {
         hasher.finish()
     }
 }
+
+pub struct ScrollRequestLoggable(pub Value);
+
+impl Loggable for ScrollRequestLoggable {
+    fn to_log_value(&self) -> Value {
+        self.0.clone()
+    }
+
+    fn request_name(&self) -> &'static str {
+        "scroll"
+    }
+
+    fn request_hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.request_name().hash(&mut hasher);
+        self.0.hash(&mut hasher);
+        hasher.finish()
+    }
+}

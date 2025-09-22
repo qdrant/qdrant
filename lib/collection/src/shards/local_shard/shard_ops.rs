@@ -8,6 +8,7 @@ use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
+use serde_json::json;
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
@@ -16,6 +17,7 @@ use tokio::time::error::Elapsed;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
+use crate::operations::loggable::ScrollRequestLoggable;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, UpdateResult,
@@ -135,7 +137,8 @@ impl ShardOperation for LocalShard {
             }
             cost
         })?;
-        match order_by {
+        let start_time = Instant::now();
+        let result = match order_by {
             None => {
                 self.scroll_by_id(
                     offset,
@@ -162,7 +165,19 @@ impl ShardOperation for LocalShard {
                 )
                 .await
             }
-        }
+        }?;
+        let elapsed = start_time.elapsed();
+        log_request_to_collector(&self.collection_name, elapsed, || {
+            ScrollRequestLoggable(json!({
+                "offset": offset,
+                "limit": limit,
+                "with_payload": with_payload_interface,
+                "with_vector": with_vector,
+                "filter": filter,
+                "order_by": order_by,
+            }))
+        });
+        Ok(result)
     }
 
     /// Collect overview information about the shard
