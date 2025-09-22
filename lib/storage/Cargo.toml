@@ -56,7 +56,7 @@ segment = { path = "../segment", default-features = false }
 collection = { path = "../collection" }
 api = { path = "../api" }
 futures = { workspace = true }
-anyhow = "1.0.99"
+anyhow = "1.0.100"
 uuid = { workspace = true }
 url = "2.5.7"
 reqwest = { workspace = true }
