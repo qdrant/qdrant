@@ -266,7 +266,7 @@ tar = "0.4.41"
 tempfile = "3.22.0"
 tokio = { version = "1.47.1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io", "io-util"] }
-tonic = { version = "0.11.0", features = ["gzip", "tls"] }
+tonic = { version = "0.12.3", features = ["gzip", "tls"] }
 tonic-build = { version = "0.11.0", features = ["prost"] }
 tonic-reflection = "0.11.0"
 tracing = { version = "0.1", features = ["async-await"] }
