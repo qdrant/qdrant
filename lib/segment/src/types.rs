@@ -17,7 +17,6 @@ use fnv::FnvBuildHasher;
 use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use merge::Merge;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -866,9 +865,7 @@ impl From<BinaryQuantizationConfig> for QuantizationConfig {
     }
 }
 
-#[derive(
-    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Merge, Hash,
-)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 pub struct StrictModeSparse {
     /// Max length of sparse vector
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -882,14 +879,6 @@ pub struct StrictModeSparseConfig {
     #[validate(nested)]
     #[serde(flatten)]
     pub config: BTreeMap<VectorNameBuf, StrictModeSparse>,
-}
-
-impl Merge for StrictModeSparseConfig {
-    fn merge(&mut self, other: Self) {
-        for (key, value) in other.config {
-            self.config.entry(key).or_default().merge(value);
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Default)]
@@ -927,9 +916,7 @@ impl From<StrictModeSparse> for StrictModeSparseOutput {
     }
 }
 
-#[derive(
-    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Merge, Hash,
-)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 pub struct StrictModeMultivector {
     /// Max number of vectors in a multivector
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -943,15 +930,6 @@ pub struct StrictModeMultivectorConfig {
     #[validate(nested)]
     #[serde(flatten)]
     pub config: BTreeMap<VectorNameBuf, StrictModeMultivector>,
-}
-
-impl Merge for StrictModeMultivectorConfig {
-    fn merge(&mut self, other: Self) {
-        for (key, value) in other.config {
-            // overwrite value if key exists
-            self.config.entry(key).or_default().merge(value);
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Default)]
@@ -989,7 +967,7 @@ impl From<StrictModeMultivector> for StrictModeMultivectorOutput {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Merge)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
 pub struct StrictModeConfig {
     // Global
     /// Whether strict mode is enabled for a collection or not.

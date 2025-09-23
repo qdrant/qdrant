@@ -18,7 +18,6 @@ use common::validation::validate_range_generic;
 use common::{defaults, save_on_disk};
 use io::file_operations::FileStorageError;
 use issues::IssueRecord;
-use merge::Merge;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -1870,9 +1869,7 @@ impl From<&segment::types::VectorDataConfig> for VectorParamsBase {
     }
 }
 
-#[derive(
-    Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Merge,
-)]
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorParamsDiff {
     /// Update params for HNSW index. If empty object - it will be unset.
