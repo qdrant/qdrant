@@ -356,7 +356,7 @@ impl ShardOperation for LocalShard {
             .await?
         };
         let elapsed = start_time.elapsed();
-        log_request_to_collector(&self.collection_name, elapsed, || request.clone());
+        log_request_to_collector(&self.collection_name, elapsed, || request);
         Ok(FacetResponse { hits })
     }
 }
