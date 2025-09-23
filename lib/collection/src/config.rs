@@ -281,7 +281,9 @@ impl CollectionConfigInternal {
         let mut warnings = Vec::new();
 
         for (vector_name, vector_config) in self.params.vectors.params_iter() {
-            let vector_hnsw = self.hnsw_config.update_opt(vector_config.hnsw_config);
+            let vector_hnsw = self
+                .hnsw_config
+                .update_opt(vector_config.hnsw_config.as_ref());
 
             let vector_quantization =
                 vector_config.quantization_config.is_some() || self.quantization_config.is_some();
@@ -449,7 +451,7 @@ impl CollectionParams {
 
             if let Some(hnsw_diff) = hnsw_config {
                 if let Some(existing_hnsw) = &vector_params.hnsw_config {
-                    vector_params.hnsw_config = Some(existing_hnsw.update(hnsw_diff)?);
+                    vector_params.hnsw_config = Some(existing_hnsw.update(&hnsw_diff));
                 } else {
                     vector_params.hnsw_config = Some(hnsw_diff);
                 }

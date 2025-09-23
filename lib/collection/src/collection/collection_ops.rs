@@ -34,7 +34,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         {
             let mut config = self.collection_config.write().await;
-            config.params = config.params.update(params_diff)?;
+            config.params = config.params.update(&params_diff);
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
@@ -51,7 +51,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         {
             let mut config = self.collection_config.write().await;
-            config.hnsw_config = config.hnsw_config.update(hnsw_config_diff)?;
+            config.hnsw_config = config.hnsw_config.update(&hnsw_config_diff);
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
@@ -104,7 +104,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         {
             let mut config = self.collection_config.write().await;
-            config.optimizer_config = config.optimizer_config.update(optimizer_config_diff)?;
+            config.optimizer_config = config.optimizer_config.update(&optimizer_config_diff);
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
@@ -186,7 +186,7 @@ impl Collection {
         {
             let mut config = self.collection_config.write().await;
             if let Some(current_config) = config.strict_mode_config.as_mut() {
-                *current_config = current_config.update(strict_mode_diff)?;
+                *current_config = current_config.update(&strict_mode_diff);
             } else {
                 config.strict_mode_config = Some(strict_mode_diff);
             }

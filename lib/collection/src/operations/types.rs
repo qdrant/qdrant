@@ -50,7 +50,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::{ClockTag, config_diff};
+use super::ClockTag;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
@@ -1534,10 +1534,7 @@ pub fn validate_nonzerou64_range_min_1_max_65536(
 
 /// Is considered empty if `None` or if diff has no field specified
 fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
-    hnsw_config
-        .as_ref()
-        .and_then(|config| config_diff::is_empty(config).ok())
-        .unwrap_or(true)
+    hnsw_config.is_none() || *hnsw_config == Some(HnswConfigDiff::default())
 }
 
 /// If used, include weight modification, which will be applied to sparse vectors at query time:
