@@ -434,7 +434,7 @@ pub struct ScrollRequest {
 }
 
 /// Scroll request - paginate over all points which matches given condition
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequestInternal {
     /// Start ID to read points from.

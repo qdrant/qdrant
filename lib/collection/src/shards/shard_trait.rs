@@ -4,7 +4,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::{FacetParams, FacetResponse};
-use segment::data_types::order_by::OrderBy;
 use segment::types::*;
 use tokio::runtime::Handle;
 
@@ -21,15 +20,25 @@ pub trait ShardOperation {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult>;
 
-    #[allow(clippy::too_many_arguments)]
     async fn scroll_by(
+        &self,
+        request: Arc<ScrollRequestInternal>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<RecordInternal>>;
+
+    /// Scroll points ordered by their IDs.
+    /// Intended for internal use only.
+    /// This API is excluded from the rate limits and logging.
+    #[allow(clippy::too_many_arguments)]
+    async fn local_scroll_by_id(
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        order_by: Option<&OrderBy>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,

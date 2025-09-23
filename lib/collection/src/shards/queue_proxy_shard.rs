@@ -10,7 +10,6 @@ use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::manifest::SnapshotManifest;
-use segment::data_types::order_by::OrderBy;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
@@ -29,7 +28,7 @@ use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal, RecordInternal,
-    UpdateResult,
+    ScrollRequestInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::local_shard::LocalShard;
@@ -271,24 +270,35 @@ impl ShardOperation for QueueProxyShard {
     /// Forward read-only `scroll_by` to `wrapped_shard`
     async fn scroll_by(
         &self,
-        offset: Option<ExtendedPointId>,
-        limit: usize,
-        with_payload_interface: &WithPayloadInterface,
-        with_vector: &WithVector,
-        filter: Option<&Filter>,
-        order_by: Option<&OrderBy>,
+        request: Arc<ScrollRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.inner_unchecked()
-            .scroll_by(
+            .scroll_by(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .await
+    }
+
+    /// Forward read-only `local_scroll_by_id` to `wrapped_shard`
+    async fn local_scroll_by_id(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        self.inner_unchecked()
+            .local_scroll_by_id(
                 offset,
                 limit,
                 with_payload_interface,
                 with_vector,
                 filter,
-                order_by,
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
@@ -594,25 +604,36 @@ impl ShardOperation for Inner {
     /// Forward read-only `scroll_by` to `wrapped_shard`
     async fn scroll_by(
         &self,
-        offset: Option<ExtendedPointId>,
-        limit: usize,
-        with_payload_interface: &WithPayloadInterface,
-        with_vector: &WithVector,
-        filter: Option<&Filter>,
-        order_by: Option<&OrderBy>,
+        request: Arc<ScrollRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .scroll_by(
+            .scroll_by(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .await
+    }
+
+    async fn local_scroll_by_id(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        let local_shard = &self.wrapped_shard;
+        local_shard
+            .local_scroll_by_id(
                 offset,
                 limit,
                 with_payload_interface,
                 with_vector,
                 filter,
-                order_by,
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,

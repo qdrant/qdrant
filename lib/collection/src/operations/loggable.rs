@@ -5,7 +5,7 @@ use segment::data_types::facets::FacetParams;
 use serde_json::Value;
 use shard::operations::CollectionUpdateOperations;
 
-use crate::operations::types::{CountRequestInternal, PointRequestInternal};
+use crate::operations::types::{CountRequestInternal, PointRequestInternal, ScrollRequestInternal};
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
 
 pub trait Loggable {
@@ -51,11 +51,9 @@ impl Loggable for Vec<ShardQueryRequest> {
     }
 }
 
-pub struct ScrollRequestLoggable(pub Value);
-
-impl Loggable for ScrollRequestLoggable {
+impl Loggable for ScrollRequestInternal {
     fn to_log_value(&self) -> Value {
-        self.0.clone()
+        serde_json::to_value(self).unwrap_or_default()
     }
 
     fn request_name(&self) -> &'static str {
@@ -65,7 +63,7 @@ impl Loggable for ScrollRequestLoggable {
     fn request_hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.request_name().hash(&mut hasher);
-        self.0.hash(&mut hasher);
+        self.hash(&mut hasher);
         hasher.finish()
     }
 }

@@ -8,7 +8,6 @@ use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::manifest::SnapshotManifest;
-use segment::data_types::order_by::OrderBy;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
@@ -26,7 +25,7 @@ use crate::operations::point_ops::{
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal, RecordInternal,
-    UpdateResult, UpdateStatus,
+    ScrollRequestInternal, UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::{
@@ -190,12 +189,11 @@ impl ForwardProxyShard {
 
         let mut batch = self
             .wrapped_shard
-            .scroll_by(
+            .local_scroll_by_id(
                 offset,
                 limit,
                 &WithPayloadInterface::Bool(true),
                 &WithVector::Bool(true),
-                None,
                 None,
                 runtime_handle,
                 None,                           // No timeout
@@ -259,12 +257,11 @@ impl ForwardProxyShard {
         // transferred.
         let mut batch = self
             .wrapped_shard
-            .scroll_by(
+            .local_scroll_by_id(
                 offset,
                 limit,
                 &WithPayloadInterface::Bool(false),
                 &WithVector::Bool(false),
-                None,
                 None,
                 runtime_handle,
                 None,                           // No timeout
@@ -475,25 +472,36 @@ impl ShardOperation for ForwardProxyShard {
     /// Forward read-only `scroll_by` to `wrapped_shard`
     async fn scroll_by(
         &self,
-        offset: Option<ExtendedPointId>,
-        limit: usize,
-        with_payload_interface: &WithPayloadInterface,
-        with_vector: &WithVector,
-        filter: Option<&Filter>,
-        order_by: Option<&OrderBy>,
+        request: Arc<ScrollRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .scroll_by(
+            .scroll_by(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .await
+    }
+
+    async fn local_scroll_by_id(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        let local_shard = &self.wrapped_shard;
+        local_shard
+            .local_scroll_by_id(
                 offset,
                 limit,
                 with_payload_interface,
                 with_vector,
                 filter,
-                order_by,
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
