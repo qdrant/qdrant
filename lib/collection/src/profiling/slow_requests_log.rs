@@ -17,7 +17,7 @@ pub struct LogEntry {
     #[serde(serialize_with = "duration_as_seconds")]
     duration: Duration,
     datetime: DateTime<Utc>,
-    request_name: String,
+    request_name: &'static str,
     approx_count: usize,
     request_body: serde_json::Value,
     /// Used for fast comparison and lookup
@@ -30,7 +30,7 @@ impl LogEntry {
         collection_name: String,
         duration: Duration,
         datetime: DateTime<Utc>,
-        request_name: String,
+        request_name: &'static str,
         request_body: serde_json::Value,
         content_hash: u64, // Pre-computed content hash
     ) -> Self {
@@ -70,7 +70,7 @@ impl Ord for LogEntry {
 }
 
 pub struct SlowRequestsLog {
-    log_priority_queue: AHashMap<String, FixedLengthPriorityQueue<LogEntry>>,
+    log_priority_queue: AHashMap<&'static str, FixedLengthPriorityQueue<LogEntry>>,
     counters: CountMinSketch64<u64>,
     max_entries: usize,
 }
@@ -88,7 +88,7 @@ impl SlowRequestsLog {
     fn try_insert_dedup(&mut self, entry: LogEntry) -> Option<LogEntry> {
         let queue = self
             .log_priority_queue
-            .entry(entry.request_name.clone())
+            .entry(entry.request_name)
             .or_insert_with(|| FixedLengthPriorityQueue::new(self.max_entries));
 
         let duplicate = queue.iter_unsorted().find(|e| {
@@ -137,27 +137,17 @@ impl SlowRequestsLog {
 
         self.inc_counter(content_hash);
 
-        let queue = self.log_priority_queue.get(request.request_name());
-
-        let Some(queue) = queue else {
-            // No entries yet, just insert
-            let entry = LogEntry::new(
-                collection_name.to_string(),
-                duration,
-                datetime,
-                request.request_name().to_string(),
-                request.to_log_value(),
-                content_hash,
-            );
-            return self.try_insert_dedup(entry);
-        };
+        let queue = self
+            .log_priority_queue
+            .entry(request.request_name())
+            .or_insert_with(|| FixedLengthPriorityQueue::new(self.max_entries));
 
         if !queue.is_full() {
             let entry = LogEntry::new(
                 collection_name.to_string(),
                 duration,
                 datetime,
-                request.request_name().to_string(),
+                request.request_name(),
                 request.to_log_value(),
                 content_hash,
             );
@@ -177,7 +167,7 @@ impl SlowRequestsLog {
             collection_name.to_string(),
             duration,
             datetime,
-            request.request_name().to_string(),
+            request.request_name(),
             request.to_log_value(),
             content_hash,
         );
