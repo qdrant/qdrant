@@ -40,7 +40,9 @@ pub struct RequestsCollector {
     sender: tokio::sync::mpsc::Sender<RequestProfileMessage>,
 }
 
-const MAX_REQUESTS_LOGGED: usize = 100;
+/// Number of top slow requests to keep in the log
+/// per request type (method name)
+const MAX_REQUESTS_LOGGED: usize = 32;
 const QUEUE_CAPACITY: usize = 64;
 
 impl RequestsCollector {
