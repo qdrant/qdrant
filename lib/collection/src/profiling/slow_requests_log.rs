@@ -185,10 +185,17 @@ impl SlowRequestsLog {
         self.try_insert_dedup(entry)
     }
 
-    pub fn get_log_entries(&self, limit: usize) -> Vec<LogEntry> {
+    pub fn get_log_entries(&self, limit: usize, method_name_substr: Option<&str>) -> Vec<LogEntry> {
         self.log_priority_queue
-            .values()
-            .flat_map(|queue| queue.iter_unsorted())
+            .iter()
+            .filter(|(key, _value)| {
+                if let Some(substr) = &method_name_substr {
+                    key.contains(substr)
+                } else {
+                    true
+                }
+            })
+            .flat_map(|(_key, queue)| queue.iter_unsorted())
             .sorted_by(|a, b| b.cmp(a))
             .take(limit)
             .cloned()
@@ -231,7 +238,7 @@ mod tests {
         log.log_request("col1", Duration::from_secs(1), Utc::now(), &request);
         log.log_request("col2", Duration::from_secs(2), Utc::now(), &request);
         log.log_request("col3", Duration::from_secs(3), Utc::now(), &request);
-        let entries = log.get_log_entries(10);
+        let entries = log.get_log_entries(10, None);
         assert_eq!(entries.len(), 3);
 
         let evicted = log.log_request("col4", Duration::from_secs(4), Utc::now(), &request);
@@ -239,12 +246,12 @@ mod tests {
         let evicted = evicted.unwrap();
         assert_eq!(evicted.collection_name, "col1");
 
-        let entries = log.get_log_entries(10);
+        let entries = log.get_log_entries(10, None);
         assert_eq!(entries.len(), 3);
 
         let evicted = log.log_request("col5", Duration::from_secs(1), Utc::now(), &request);
         assert!(evicted.is_none());
-        let entries = log.get_log_entries(10);
+        let entries = log.get_log_entries(10, None);
         assert_eq!(entries.len(), 3);
     }
 }

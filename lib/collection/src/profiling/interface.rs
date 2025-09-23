@@ -54,10 +54,17 @@ pub fn init_requests_profile_collector(runtime: Handle) {
 }
 
 /// Read current log of slow requests with associated data.
-pub async fn get_requests_profile_log(limit: usize) -> Vec<LogEntry> {
+pub async fn get_requests_profile_log(
+    limit: usize,
+    method_name_substr: Option<&str>,
+) -> Vec<LogEntry> {
     let listener = REQUESTS_COLLECTOR.get();
     if let Some(listener) = listener {
-        listener.get_log().read().await.get_log_entries(limit)
+        listener
+            .get_log()
+            .read()
+            .await
+            .get_log_entries(limit, method_name_substr)
     } else {
         log::warn!("RequestsCollector is not initialized");
         vec![]
