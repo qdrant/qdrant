@@ -1,6 +1,7 @@
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
+use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use count_min_sketch::CountMinSketch64;
@@ -16,7 +17,7 @@ pub struct LogEntry {
     #[serde(serialize_with = "duration_as_seconds")]
     duration: Duration,
     datetime: DateTime<Utc>,
-    request_name: String,
+    request_name: &'static str,
     approx_count: usize,
     request_body: serde_json::Value,
     /// Used for fast comparison and lookup
@@ -29,7 +30,7 @@ impl LogEntry {
         collection_name: String,
         duration: Duration,
         datetime: DateTime<Utc>,
-        request_name: String,
+        request_name: &'static str,
         request_body: serde_json::Value,
         content_hash: u64, // Pre-computed content hash
     ) -> Self {
@@ -69,21 +70,28 @@ impl Ord for LogEntry {
 }
 
 pub struct SlowRequestsLog {
-    log_priority_queue: FixedLengthPriorityQueue<LogEntry>,
+    log_priority_queue: AHashMap<&'static str, FixedLengthPriorityQueue<LogEntry>>,
     counters: CountMinSketch64<u64>,
+    max_entries: usize,
 }
 
 impl SlowRequestsLog {
     pub fn new(max_entries: usize) -> Self {
         SlowRequestsLog {
-            log_priority_queue: FixedLengthPriorityQueue::new(max_entries),
+            log_priority_queue: Default::default(),
             counters: CountMinSketch64::new(1024, 0.95, 0.1).unwrap(), // 95% probability, 10% tolerance
+            max_entries,
         }
     }
 
     /// Try insert an entry into the log in the way, that it is not duplicated by content.
     fn try_insert_dedup(&mut self, entry: LogEntry) -> Option<LogEntry> {
-        let duplicate = self.log_priority_queue.iter_unsorted().find(|e| {
+        let queue = self
+            .log_priority_queue
+            .entry(entry.request_name)
+            .or_insert_with(|| FixedLengthPriorityQueue::new(self.max_entries));
+
+        let duplicate = queue.iter_unsorted().find(|e| {
             e.content_hash == entry.content_hash // Fast check
         });
 
@@ -93,13 +101,12 @@ impl SlowRequestsLog {
                 None
             } else {
                 // New record took longer, replace existing record
-                self.log_priority_queue
-                    .retain(|e| e.content_hash != entry.content_hash);
-                self.log_priority_queue.push(entry)
+                queue.retain(|e| e.content_hash != entry.content_hash);
+                queue.push(entry)
             }
         } else {
             // just insert
-            self.log_priority_queue.push(entry)
+            queue.push(entry)
         }
     }
 
@@ -130,12 +137,17 @@ impl SlowRequestsLog {
 
         self.inc_counter(content_hash);
 
-        if !self.log_priority_queue.is_full() {
+        let queue = self
+            .log_priority_queue
+            .entry(request.request_name())
+            .or_insert_with(|| FixedLengthPriorityQueue::new(self.max_entries));
+
+        if !queue.is_full() {
             let entry = LogEntry::new(
                 collection_name.to_string(),
                 duration,
                 datetime,
-                request.request_name().to_string(),
+                request.request_name(),
                 request.to_log_value(),
                 content_hash,
             );
@@ -144,7 +156,7 @@ impl SlowRequestsLog {
 
         // Check if we can insert into the queue before actually serializing the request
         // Safety: unwrap is safe because we checked that the queue is full
-        let fastest_logged = self.log_priority_queue.top().unwrap();
+        let fastest_logged = queue.top().unwrap();
 
         if duration <= fastest_logged.duration {
             // Our queue is already slower than this request
@@ -155,7 +167,7 @@ impl SlowRequestsLog {
             collection_name.to_string(),
             duration,
             datetime,
-            request.request_name().to_string(),
+            request.request_name(),
             request.to_log_value(),
             content_hash,
         );
@@ -163,9 +175,17 @@ impl SlowRequestsLog {
         self.try_insert_dedup(entry)
     }
 
-    pub fn get_log_entries(&self, limit: usize) -> Vec<LogEntry> {
+    pub fn get_log_entries(&self, limit: usize, method_name_substr: Option<&str>) -> Vec<LogEntry> {
         self.log_priority_queue
-            .iter_unsorted()
+            .iter()
+            .filter(|(key, _value)| {
+                if let Some(substr) = &method_name_substr {
+                    key.contains(substr)
+                } else {
+                    true
+                }
+            })
+            .flat_map(|(_key, queue)| queue.iter_unsorted())
             .sorted_by(|a, b| b.cmp(a))
             .take(limit)
             .cloned()
@@ -208,7 +228,7 @@ mod tests {
         log.log_request("col1", Duration::from_secs(1), Utc::now(), &request);
         log.log_request("col2", Duration::from_secs(2), Utc::now(), &request);
         log.log_request("col3", Duration::from_secs(3), Utc::now(), &request);
-        let entries = log.get_log_entries(10);
+        let entries = log.get_log_entries(10, None);
         assert_eq!(entries.len(), 3);
 
         let evicted = log.log_request("col4", Duration::from_secs(4), Utc::now(), &request);
@@ -216,12 +236,12 @@ mod tests {
         let evicted = evicted.unwrap();
         assert_eq!(evicted.collection_name, "col1");
 
-        let entries = log.get_log_entries(10);
+        let entries = log.get_log_entries(10, None);
         assert_eq!(entries.len(), 3);
 
         let evicted = log.log_request("col5", Duration::from_secs(1), Utc::now(), &request);
         assert!(evicted.is_none());
-        let entries = log.get_log_entries(10);
+        let entries = log.get_log_entries(10, None);
         assert_eq!(entries.len(), 3);
     }
 }

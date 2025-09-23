@@ -12,6 +12,8 @@ use crate::actix::auth::ActixAccess;
 #[derive(Deserialize, Validate)]
 struct LogParams {
     limit: Option<usize>,
+    /// Optional filter by request name (substring match)
+    request: Option<String>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -28,8 +30,13 @@ async fn get_slow_requests(
 ) -> impl Responder {
     crate::actix::helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
-        let slow_requests =
-            get_requests_profile_log(params.limit.unwrap_or(DEFAULT_SLOW_REQUESTS_LIMIT)).await;
+        let LogParams { limit, request } = params.into_inner();
+
+        let slow_requests = get_requests_profile_log(
+            limit.unwrap_or(DEFAULT_SLOW_REQUESTS_LIMIT),
+            request.as_deref(),
+        )
+        .await;
 
         Ok(SlowRequestsResponse {
             requests: slow_requests,
