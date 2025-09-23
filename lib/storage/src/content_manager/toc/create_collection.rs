@@ -249,7 +249,7 @@ impl TableOfContent {
         )
         .await?;
 
-        collection.validate_and_print_warnings().await?;
+        collection.print_warnings().await;
 
         let local_shards = collection.get_local_shards().await;
 

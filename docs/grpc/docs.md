@@ -24,7 +24,7 @@
     - [CollectionOperationResponse](#qdrant-CollectionOperationResponse)
     - [CollectionParams](#qdrant-CollectionParams)
     - [CollectionParamsDiff](#qdrant-CollectionParamsDiff)
-    - [ConfigurationStatus](#qdrant-ConfigurationStatus)
+    - [CollectionWarning](#qdrant-CollectionWarning)
     - [CreateAlias](#qdrant-CreateAlias)
     - [CreateCollection](#qdrant-CreateCollection)
     - [CreateCollection.MetadataEntry](#qdrant-CreateCollection-MetadataEntry)
@@ -609,7 +609,7 @@
 | payload_schema | [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry) | repeated | Collection data types |
 | points_count | [uint64](#uint64) | optional | Approximate number of points in the collection |
 | indexed_vectors_count | [uint64](#uint64) | optional | Approximate number of indexed vectors in the collection. |
-| configuration_status | [ConfigurationStatus](#qdrant-ConfigurationStatus) |  | status of configuration inconsistencies |
+| warnings | [CollectionWarning](#qdrant-CollectionWarning) | repeated | Warnings related to the collection |
 
 
 
@@ -688,16 +688,15 @@
 
 
 
-<a name="qdrant-ConfigurationStatus"></a>
+<a name="qdrant-CollectionWarning"></a>
 
-### ConfigurationStatus
+### CollectionWarning
 
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| ok | [bool](#bool) |  |  |
-| warning | [string](#string) |  |  |
+| message | [string](#string) |  |  |
 
 
 

@@ -173,7 +173,7 @@ impl Collection {
 
         self.collection_config.read().await.save(&self.path)?;
 
-        self.validate_and_print_warnings().await?;
+        self.print_warnings().await;
 
         if recreate_optimizers {
             self.recreate_optimizers_blocking().await?;

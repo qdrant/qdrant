@@ -180,7 +180,7 @@ impl TableOfContent {
             collection.update_metadata(metadata).await?;
         }
 
-        collection.validate_and_print_warnings().await?;
+        collection.print_warnings().await;
 
         // Recreate optimizers
         if recreate_optimizers {

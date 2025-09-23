@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Write as _;
 use std::io::{Read, Write as _};
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::Path;
@@ -23,8 +22,8 @@ use wal::WalOptions;
 
 use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff};
 use crate::operations::types::{
-    CollectionError, CollectionResult, ConfigurationStatus, SparseVectorParams,
-    SparseVectorsConfig, VectorParams, VectorParamsDiff, VectorsConfig, VectorsConfigDiff,
+    CollectionError, CollectionResult, CollectionWarning, SparseVectorParams, SparseVectorsConfig,
+    VectorParams, VectorParamsDiff, VectorsConfig, VectorsConfigDiff,
 };
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
@@ -277,9 +276,9 @@ impl CollectionConfigInternal {
         }
     }
 
-    /// Check for configuration inconsistencies.
-    pub fn validate_configuration(&self) -> ConfigurationStatus {
-        let mut messages = String::new();
+    /// Get warnings related to this configuration
+    pub fn get_warnings(&self) -> Vec<CollectionWarning> {
+        let mut warnings = Vec::new();
 
         for (vector_name, vector_config) in self.params.vectors.params_iter() {
             let vector_hnsw = self.hnsw_config.update_opt(vector_config.hnsw_config);
@@ -289,30 +288,25 @@ impl CollectionConfigInternal {
 
             if vector_hnsw.copy_vectors.unwrap_or_default() {
                 if !vector_quantization {
-                    writeln!(
-                        &mut messages,
-                        "The `hnsw_config.copy_vectors` option for vector '{vector_name}' \
-                         requires quantization to be enabled. This option will be ignored."
-                    )
-                    .unwrap();
+                    warnings.push(CollectionWarning {
+                        message: format!(
+                            "The `hnsw_config.copy_vectors` option for vector '{vector_name}' \
+                             requires quantization to be enabled. This option will be ignored."
+                        ),
+                    });
                 }
                 if vector_config.multivector_config.is_some() {
-                    writeln!(
-                        &mut messages,
-                        "The `hnsw_config.copy_vectors` option for vector '{vector_name}' \
-                         is not compatible with multivectors. This option will be ignored."
-                    )
-                    .unwrap();
+                    warnings.push(CollectionWarning {
+                        message: format!(
+                            "The `hnsw_config.copy_vectors` option for vector '{vector_name}' \
+                             is not compatible with multivectors. This option will be ignored."
+                        ),
+                    });
                 }
             }
         }
 
-        if !messages.is_empty() {
-            messages.pop(); // trim the last newline
-            ConfigurationStatus::Warning(messages)
-        } else {
-            ConfigurationStatus::Ok
-        }
+        warnings
     }
 
     pub fn to_base_segment_config(&self) -> CollectionResult<SegmentConfig> {

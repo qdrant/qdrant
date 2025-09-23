@@ -406,13 +406,10 @@ impl Collection {
         Ok(info)
     }
 
-    pub async fn validate_and_print_warnings(&self) -> CollectionResult<()> {
-        let status = self.collection_config.read().await.validate_configuration();
-        if let ConfigurationStatus::Warning(warnings) = status {
-            for warning in warnings.lines() {
-                log::warn!("Collection {}: {warning}", self.name());
-            }
+    pub async fn print_warnings(&self) {
+        let warnings = self.collection_config.read().await.get_warnings();
+        for warning in warnings {
+            log::warn!("Collection {}: {}", self.name(), warning.message);
         }
-        Ok(())
     }
 }

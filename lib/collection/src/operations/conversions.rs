@@ -25,10 +25,10 @@ use tonic::Status;
 use super::cluster_ops::ReshardingDirection;
 use super::consistency_params::ReadConsistency;
 use super::types::{
-    CollectionConfig, ConfigurationStatus, ContextExamplePair, CoreSearchRequest, Datatype,
-    DiscoverRequestInternal, GroupsResult, Modifier, PointGroup, RecommendExample,
-    RecommendGroupsRequestInternal, ReshardingInfo, SparseIndexParams, SparseVectorParams,
-    SparseVectorsConfig, VectorParamsDiff, VectorsConfigDiff,
+    CollectionConfig, ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal,
+    GroupsResult, Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal,
+    ReshardingInfo, SparseIndexParams, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff,
+    VectorsConfigDiff,
 };
 use crate::config::{
     CollectionParams, ShardingMethod, WalConfig, default_replication_factor,
@@ -50,9 +50,9 @@ use crate::operations::config_diff::{
 use crate::operations::point_ops::{FilterSelector, PointIdsList, PointsSelector, WriteOrdering};
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
-    LocalShardInfo, OptimizersStatus, RecommendRequestInternal, RecordInternal, RemoteShardInfo,
-    ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
+    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CollectionWarning,
+    CountResult, LocalShardInfo, OptimizersStatus, RecommendRequestInternal, RecordInternal,
+    RemoteShardInfo, ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionCoreSearchRequest;
@@ -380,7 +380,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
         let CollectionInfo {
             status,
             optimizer_status,
-            configuration_status,
+            warnings,
             indexed_vectors_count,
             points_count,
             segments_count,
@@ -446,15 +446,6 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 },
                 OptimizersStatus::Error(error) => {
                     api::grpc::qdrant::OptimizerStatus { ok: false, error }
-                }
-            }),
-            configuration_status: Some(match configuration_status {
-                ConfigurationStatus::Ok => api::grpc::qdrant::ConfigurationStatus {
-                    ok: true,
-                    warning: "".to_string(),
-                },
-                ConfigurationStatus::Warning(warning) => {
-                    api::grpc::qdrant::ConfigurationStatus { ok: false, warning }
                 }
             }),
             indexed_vectors_count: indexed_vectors_count.map(|count| count as u64),
@@ -545,7 +536,25 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.into()))
                 .collect(),
+            warnings: warnings
+                .into_iter()
+                .map(api::grpc::qdrant::CollectionWarning::from)
+                .collect(),
         }
+    }
+}
+
+impl From<CollectionWarning> for api::grpc::qdrant::CollectionWarning {
+    fn from(value: CollectionWarning) -> Self {
+        let CollectionWarning { message } = value;
+        Self { message }
+    }
+}
+
+impl From<api::grpc::qdrant::CollectionWarning> for CollectionWarning {
+    fn from(value: api::grpc::qdrant::CollectionWarning) -> Self {
+        let api::grpc::qdrant::CollectionWarning { message } = value;
+        Self { message }
     }
 }
 
@@ -851,12 +860,12 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                 let api::grpc::qdrant::CollectionInfo {
                     status,
                     optimizer_status,
-                    configuration_status,
                     indexed_vectors_count,
                     points_count,
                     segments_count,
                     config,
                     payload_schema,
+                    warnings,
                 } = collection_info_response;
                 Ok(Self {
                     status: CollectionStatus::try_from(status)?,
@@ -869,20 +878,6 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                                 OptimizersStatus::Ok
                             } else {
                                 OptimizersStatus::Error(error)
-                            }
-                        }
-                    },
-                    configuration_status: match configuration_status {
-                        None => {
-                            return Err(Status::invalid_argument(
-                                "Malformed ConfigurationStatus type",
-                            ));
-                        }
-                        Some(api::grpc::qdrant::ConfigurationStatus { ok, warning }) => {
-                            if ok {
-                                ConfigurationStatus::Ok
-                            } else {
-                                ConfigurationStatus::Warning(warning)
                             }
                         }
                     },
@@ -901,6 +896,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                         .into_iter()
                         .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
                         .try_collect()?,
+                    warnings: warnings.into_iter().map(CollectionWarning::from).collect(),
                 })
             }
         }

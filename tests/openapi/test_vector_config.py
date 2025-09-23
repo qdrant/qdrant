@@ -222,29 +222,29 @@ def test_disable_indexing(on_disk_vectors):
 
 
 @pytest.mark.parametrize(
-    "config_name,vector_config,expected_status",
+    "config_name,vector_config,expected_warnings",
     [
-        ("no_copy_vectors", {}, "ok"),
+        ("no_copy_vectors", {}, 0),
         (
             "valid_config",
             {
                 "hnsw_config": {"copy_vectors": True},
                 "quantization_config": {"scalar": {"type": "int8"}},
             },
-            "ok",
+            0,
         ),
-        ("copy_vectors_no_quant", {"hnsw_config": {"copy_vectors": True}}, "warning"),
+        ("copy_vectors_no_quant", {"hnsw_config": {"copy_vectors": True}}, 1),
         (
             "copy_vectors_multivec",
             {
                 "hnsw_config": {"copy_vectors": True},
                 "multivector_config": {"comparator": "max_sim"},
             },
-            "warning",
+            2,
         ),
     ],
 )
-def test_configuration_status(config_name, vector_config, expected_status):
+def test_configuration_warnings(config_name, vector_config, expected_warnings):
     test_collection = f"test_{config_name}"
     drop_collection(collection_name=test_collection)
 
@@ -260,7 +260,6 @@ def test_configuration_status(config_name, vector_config, expected_status):
     )
     assert response.ok
 
-    # Check configuration_status
     response = request_with_validation(
         api="/collections/{collection_name}",
         method="GET",
@@ -268,12 +267,11 @@ def test_configuration_status(config_name, vector_config, expected_status):
     )
     assert response.ok
 
-    configuration_status = response.json()["result"]["configuration_status"]
-
-    if expected_status == "ok":
-        assert configuration_status == "ok"
+    if expected_warnings > 0:
+        warnings = response.json()["result"]["warnings"]
+        assert len(warnings) == expected_warnings
     else:
-        assert configuration_status != "ok"
+        assert "warnings" not in response.json()["result"]
 
     drop_collection(collection_name=test_collection)
 

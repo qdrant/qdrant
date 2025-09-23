@@ -162,9 +162,8 @@ message OptimizerStatus {
   string error = 2;
 }
 
-message ConfigurationStatus {
-  bool ok = 1;
-  string warning = 2;
+message CollectionWarning {
+  string message = 1;
 }
 
 message HnswConfigDiff {
@@ -577,7 +576,7 @@ message CollectionInfo {
   map<string, PayloadSchemaInfo> payload_schema = 8; // Collection data types
   optional uint64 points_count = 9; // Approximate number of points in the collection
   optional uint64 indexed_vectors_count = 10; // Approximate number of indexed vectors in the collection.
-  ConfigurationStatus configuration_status = 11; // status of configuration inconsistencies
+  repeated CollectionWarning warnings = 11; // Warnings related to the collection
 }
 
 message ChangeAliases {
