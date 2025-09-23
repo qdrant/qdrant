@@ -203,153 +203,240 @@ impl PartialEq for OptimizersConfigDiff {
 
 impl Eq for OptimizersConfigDiff {}
 
-/// Helper macro to generate impls for `*ConfigDiff` structs.
-///
-/// Accepts three arguments:
-/// - A block with impls to generate.
-/// - `common_fields()` - Fields that both `*Config` and `*ConfigDiff` have.
-/// - `config_only_fields()` - Fields that `*Config` has but `*ConfigDiff` does not.
-macro_rules! impl_diff_config {
-    (
-        {
-            impl DiffConfig<$TDiff:ident> for $TSelf:ident {}
-            $($rest:tt)*
-        },
-        common_fields($($field:ident),* $(,)?),
-        config_only_fields($($ignored_field:ident),* $(,)?)
-    ) => {
-        impl DiffConfig<$TDiff> for $TSelf {
-            fn update(&self, diff: &$TDiff) -> Self {
-                let $TDiff {
-                    $($field: _,)*
-                } = diff; // Make sure that we did not miss any field
-                $TSelf {
-                    $($field: DiffConfigMerge::merge(&self.$field, &diff.$field),)*
-                    $($ignored_field: self.$ignored_field.clone(),)*
-                }
-            }
-        }
-        impl_diff_config!(
-            { $($rest)* },
-            common_fields($($field),*),
-            config_only_fields($($ignored_field),*)
-        );
-    };
+impl DiffConfig<HnswConfigDiff> for HnswConfig {
+    fn update(&self, diff: &HnswConfigDiff) -> Self {
+        let HnswConfigDiff {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads,
+            on_disk,
+            payload_m,
+            copy_vectors,
+        } = diff;
 
-    (
-        {
-            impl From<$TSelf:ident> for $TDiff:ident {}
-            $($rest:tt)*
-        },
-        common_fields($($field:ident),* $(,)?),
-        config_only_fields($($ignored_field:ident),* $(,)?)
-    ) => {
-        impl From<$TSelf> for $TDiff {
-            fn from(config: $TSelf) -> Self {
-                let $TSelf {
-                    $($field: _,)*
-                    $($ignored_field: _,)*
-                } = config; // Make sure that we did not miss any field
-                $TDiff {
-                    $($field: Option::from(config.$field),)*
-                }
-            }
+        HnswConfig {
+            m: m.unwrap_or(self.m),
+            ef_construct: ef_construct.unwrap_or(self.ef_construct),
+            full_scan_threshold: full_scan_threshold.unwrap_or(self.full_scan_threshold),
+            max_indexing_threads: max_indexing_threads.unwrap_or(self.max_indexing_threads),
+            on_disk: on_disk.or(self.on_disk),
+            payload_m: payload_m.or(self.payload_m),
+            copy_vectors: copy_vectors.or(self.copy_vectors),
         }
-        impl_diff_config!(
-            { $($rest)* },
-            common_fields($($field),*),
-            config_only_fields($($ignored_field),*)
-        );
-    };
-
-    ( {}, $($_:tt)* ) => {};
+    }
 }
 
-impl_diff_config!(
-    {
-        impl DiffConfig<HnswConfigDiff> for HnswConfig {}
-        impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {}
-        impl From<HnswConfig> for HnswConfigDiff {}
-    },
-    common_fields(
-        m,
-        ef_construct,
-        full_scan_threshold,
-        max_indexing_threads,
-        on_disk,
-        payload_m,
-        copy_vectors,
-    ),
-    config_only_fields()
-);
+impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
+    fn update(&self, diff: &HnswConfigDiff) -> Self {
+        let HnswConfigDiff {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads,
+            on_disk,
+            payload_m,
+            copy_vectors,
+        } = diff;
 
-impl_diff_config!(
-    {
-        impl DiffConfig<OptimizersConfigDiff> for OptimizersConfig {}
-    },
-    common_fields(
-        deleted_threshold,
-        vacuum_min_vector_number,
-        default_segment_number,
-        max_segment_size,
-        memmap_threshold,
-        indexing_threshold,
-        flush_interval_sec,
-        max_optimization_threads,
-    ),
-    config_only_fields()
-);
+        HnswConfigDiff {
+            m: m.or(self.m),
+            ef_construct: ef_construct.or(self.ef_construct),
+            full_scan_threshold: full_scan_threshold.or(self.full_scan_threshold),
+            max_indexing_threads: max_indexing_threads.or(self.max_indexing_threads),
+            on_disk: on_disk.or(self.on_disk),
+            payload_m: payload_m.or(self.payload_m),
+            copy_vectors: copy_vectors.or(self.copy_vectors),
+        }
+    }
+}
 
-impl_diff_config!(
-    {
-        impl DiffConfig<WalConfigDiff> for WalConfig {}
-        impl From<WalConfig> for WalConfigDiff {}
-    },
-    common_fields(wal_capacity_mb, wal_segments_ahead, wal_retain_closed),
-    config_only_fields()
-);
+impl DiffConfig<OptimizersConfigDiff> for OptimizersConfig {
+    fn update(&self, diff: &OptimizersConfigDiff) -> Self {
+        let OptimizersConfigDiff {
+            deleted_threshold,
+            vacuum_min_vector_number,
+            default_segment_number,
+            max_segment_size,
+            memmap_threshold,
+            indexing_threshold,
+            flush_interval_sec,
+            max_optimization_threads,
+        } = diff;
 
-impl_diff_config!(
-    {
-        impl DiffConfig<CollectionParamsDiff> for CollectionParams {}
-        impl From<CollectionParams> for CollectionParamsDiff {}
-    },
-    common_fields(
-        replication_factor,
-        write_consistency_factor,
-        read_fan_out_factor,
-        on_disk_payload,
-    ),
-    config_only_fields(shard_number, sharding_method, sparse_vectors, vectors)
-);
+        OptimizersConfig {
+            deleted_threshold: deleted_threshold.unwrap_or(self.deleted_threshold),
+            vacuum_min_vector_number: vacuum_min_vector_number
+                .unwrap_or(self.vacuum_min_vector_number),
+            default_segment_number: default_segment_number.unwrap_or(self.default_segment_number),
+            max_segment_size: max_segment_size.or(self.max_segment_size),
+            memmap_threshold: memmap_threshold.or(self.memmap_threshold),
+            indexing_threshold: indexing_threshold.or(self.indexing_threshold),
+            flush_interval_sec: flush_interval_sec.unwrap_or(self.flush_interval_sec),
+            max_optimization_threads: max_optimization_threads
+                .map_or(self.max_optimization_threads, From::from),
+        }
+    }
+}
 
-impl_diff_config!(
-    {
-        impl DiffConfig<StrictModeConfig> for StrictModeConfig {}
-    },
-    common_fields(
-        enabled,
-        max_query_limit,
-        max_timeout,
-        unindexed_filtering_retrieve,
-        unindexed_filtering_update,
-        search_max_hnsw_ef,
-        search_allow_exact,
-        search_max_oversampling,
-        upsert_max_batchsize,
-        max_collection_vector_size_bytes,
-        read_rate_limit,
-        write_rate_limit,
-        max_collection_payload_size_bytes,
-        max_points_count,
-        filter_max_conditions,
-        condition_max_size,
-        multivector_config,
-        sparse_config,
-        max_payload_index_count,
-    ),
-    config_only_fields()
-);
+impl DiffConfig<WalConfigDiff> for WalConfig {
+    fn update(&self, diff: &WalConfigDiff) -> Self {
+        let WalConfigDiff {
+            wal_capacity_mb,
+            wal_segments_ahead,
+            wal_retain_closed,
+        } = diff;
+
+        WalConfig {
+            wal_capacity_mb: wal_capacity_mb.unwrap_or(self.wal_capacity_mb),
+            wal_segments_ahead: wal_segments_ahead.unwrap_or(self.wal_segments_ahead),
+            wal_retain_closed: wal_retain_closed.unwrap_or(self.wal_retain_closed),
+        }
+    }
+}
+
+impl DiffConfig<CollectionParamsDiff> for CollectionParams {
+    fn update(&self, diff: &CollectionParamsDiff) -> Self {
+        let CollectionParamsDiff {
+            replication_factor,
+            write_consistency_factor,
+            read_fan_out_factor,
+            on_disk_payload,
+        } = diff;
+
+        CollectionParams {
+            replication_factor: replication_factor.unwrap_or(self.replication_factor),
+            write_consistency_factor: write_consistency_factor
+                .unwrap_or(self.write_consistency_factor),
+            read_fan_out_factor: read_fan_out_factor.or(self.read_fan_out_factor),
+            on_disk_payload: on_disk_payload.unwrap_or(self.on_disk_payload),
+            shard_number: self.shard_number,
+            sharding_method: self.sharding_method,
+            sparse_vectors: self.sparse_vectors.clone(),
+            vectors: self.vectors.clone(),
+        }
+    }
+}
+
+impl DiffConfig<StrictModeConfig> for StrictModeConfig {
+    fn update(&self, diff: &StrictModeConfig) -> Self {
+        let StrictModeConfig {
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+            search_max_oversampling,
+            upsert_max_batchsize,
+            max_collection_vector_size_bytes,
+            read_rate_limit,
+            write_rate_limit,
+            max_collection_payload_size_bytes,
+            max_points_count,
+            filter_max_conditions,
+            condition_max_size,
+            multivector_config,
+            sparse_config,
+            max_payload_index_count,
+        } = diff;
+
+        StrictModeConfig {
+            enabled: enabled.or(self.enabled),
+            max_query_limit: max_query_limit.or(self.max_query_limit),
+            max_timeout: max_timeout.or(self.max_timeout),
+            unindexed_filtering_retrieve: unindexed_filtering_retrieve
+                .or(self.unindexed_filtering_retrieve),
+            unindexed_filtering_update: unindexed_filtering_update
+                .or(self.unindexed_filtering_update),
+            search_max_hnsw_ef: search_max_hnsw_ef.or(self.search_max_hnsw_ef),
+            search_allow_exact: search_allow_exact.or(self.search_allow_exact),
+            search_max_oversampling: search_max_oversampling.or(self.search_max_oversampling),
+            upsert_max_batchsize: upsert_max_batchsize.or(self.upsert_max_batchsize),
+            max_collection_vector_size_bytes: max_collection_vector_size_bytes
+                .or(self.max_collection_vector_size_bytes),
+            read_rate_limit: read_rate_limit.or(self.read_rate_limit),
+            write_rate_limit: write_rate_limit.or(self.write_rate_limit),
+            max_collection_payload_size_bytes: max_collection_payload_size_bytes
+                .or(self.max_collection_payload_size_bytes),
+            max_points_count: max_points_count.or(self.max_points_count),
+            filter_max_conditions: filter_max_conditions.or(self.filter_max_conditions),
+            condition_max_size: condition_max_size.or(self.condition_max_size),
+            multivector_config: multivector_config
+                .as_ref()
+                .or(self.multivector_config.as_ref())
+                .cloned(),
+            sparse_config: sparse_config
+                .as_ref()
+                .or(self.sparse_config.as_ref())
+                .cloned(),
+            max_payload_index_count: max_payload_index_count.or(self.max_payload_index_count),
+        }
+    }
+}
+
+impl From<HnswConfig> for HnswConfigDiff {
+    fn from(config: HnswConfig) -> Self {
+        let HnswConfig {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads,
+            on_disk,
+            payload_m,
+            copy_vectors,
+        } = config;
+
+        HnswConfigDiff {
+            m: Some(m),
+            ef_construct: Some(ef_construct),
+            full_scan_threshold: Some(full_scan_threshold),
+            max_indexing_threads: Some(max_indexing_threads),
+            on_disk,
+            payload_m,
+            copy_vectors,
+        }
+    }
+}
+
+impl From<WalConfig> for WalConfigDiff {
+    fn from(config: WalConfig) -> Self {
+        let WalConfig {
+            wal_capacity_mb,
+            wal_segments_ahead,
+            wal_retain_closed,
+        } = config;
+
+        WalConfigDiff {
+            wal_capacity_mb: Some(wal_capacity_mb),
+            wal_segments_ahead: Some(wal_segments_ahead),
+            wal_retain_closed: Some(wal_retain_closed),
+        }
+    }
+}
+
+impl From<CollectionParams> for CollectionParamsDiff {
+    fn from(config: CollectionParams) -> Self {
+        let CollectionParams {
+            replication_factor,
+            write_consistency_factor,
+            read_fan_out_factor,
+            on_disk_payload,
+            shard_number: _,
+            sharding_method: _,
+            sparse_vectors: _,
+            vectors: _,
+        } = config;
+
+        CollectionParamsDiff {
+            replication_factor: Some(replication_factor),
+            write_consistency_factor: Some(write_consistency_factor),
+            read_fan_out_factor,
+            on_disk_payload: Some(on_disk_payload),
+        }
+    }
+}
 
 impl From<OptimizersConfig> for OptimizersConfigDiff {
     fn from(config: OptimizersConfig) -> Self {
@@ -364,6 +451,7 @@ impl From<OptimizersConfig> for OptimizersConfigDiff {
             flush_interval_sec,
             max_optimization_threads,
         } = config;
+
         Self {
             deleted_threshold: Some(deleted_threshold),
             vacuum_min_vector_number: Some(vacuum_min_vector_number),
@@ -375,29 +463,6 @@ impl From<OptimizersConfig> for OptimizersConfigDiff {
             flush_interval_sec: Some(flush_interval_sec),
             max_optimization_threads: max_optimization_threads.map(MaxOptimizationThreads::Threads),
         }
-    }
-}
-
-/// Implementation detail of [`impl_diff_config!`].
-trait DiffConfigMerge<T> {
-    fn merge(&self, diff: &Option<T>) -> Self;
-}
-
-impl<T: Clone> DiffConfigMerge<T> for T {
-    fn merge(&self, diff: &Option<T>) -> Self {
-        diff.clone().unwrap_or_else(|| self.clone())
-    }
-}
-
-impl<T: Clone> DiffConfigMerge<T> for Option<T> {
-    fn merge(&self, diff: &Option<T>) -> Self {
-        diff.clone().or_else(|| self.clone())
-    }
-}
-
-impl DiffConfigMerge<MaxOptimizationThreads> for Option<usize> {
-    fn merge(&self, diff: &Option<MaxOptimizationThreads>) -> Self {
-        diff.map_or(*self, From::from)
     }
 }
 
