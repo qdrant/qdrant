@@ -70,9 +70,23 @@ impl Loggable for ScrollRequestLoggable {
     }
 }
 
-impl Loggable for Arc<FacetParams> {
+impl<T: Loggable> Loggable for Arc<T> {
     fn to_log_value(&self) -> Value {
-        serde_json::to_value(self.as_ref()).unwrap_or_default()
+        self.as_ref().to_log_value()
+    }
+
+    fn request_name(&self) -> &'static str {
+        self.as_ref().request_name()
+    }
+
+    fn request_hash(&self) -> u64 {
+        self.as_ref().request_hash()
+    }
+}
+
+impl Loggable for FacetParams {
+    fn to_log_value(&self) -> Value {
+        serde_json::to_value(self).unwrap_or_default()
     }
 
     fn request_name(&self) -> &'static str {
@@ -82,14 +96,14 @@ impl Loggable for Arc<FacetParams> {
     fn request_hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.request_name().hash(&mut hasher);
-        self.as_ref().hash(&mut hasher);
+        self.hash(&mut hasher);
         hasher.finish()
     }
 }
 
-impl Loggable for Arc<CountRequestInternal> {
+impl Loggable for CountRequestInternal {
     fn to_log_value(&self) -> Value {
-        serde_json::to_value(self.as_ref()).unwrap_or_default()
+        serde_json::to_value(self).unwrap_or_default()
     }
 
     fn request_name(&self) -> &'static str {
@@ -99,14 +113,14 @@ impl Loggable for Arc<CountRequestInternal> {
     fn request_hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.request_name().hash(&mut hasher);
-        self.as_ref().hash(&mut hasher);
+        self.hash(&mut hasher);
         hasher.finish()
     }
 }
 
-impl Loggable for Arc<PointRequestInternal> {
+impl Loggable for PointRequestInternal {
     fn to_log_value(&self) -> Value {
-        serde_json::to_value(self.as_ref()).unwrap_or_default()
+        serde_json::to_value(self).unwrap_or_default()
     }
 
     fn request_name(&self) -> &'static str {
@@ -116,7 +130,7 @@ impl Loggable for Arc<PointRequestInternal> {
     fn request_hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.request_name().hash(&mut hasher);
-        self.as_ref().hash(&mut hasher);
+        self.hash(&mut hasher);
         hasher.finish()
     }
 }
