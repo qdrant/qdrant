@@ -245,7 +245,7 @@ impl SegmentEntry for ProxySegment {
         let point_version_in_write_segment = write_segment_guard
             .point_version(point_id)
             .unwrap_or_default();
-        let mut was_deleted_in_writable = false;
+        let mut was_deleted_in_writable = write_segment_guard.has_point(point_id);
         // Make sure deletion operation is not stale
         if op_num > point_version_in_write_segment {
             was_deleted_in_writable =
