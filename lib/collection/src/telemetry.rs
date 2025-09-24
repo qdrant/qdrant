@@ -66,6 +66,15 @@ impl CollectionTelemetry {
             .filter(|log| log.status == TrackerStatus::Optimizing)
             .count()
     }
+
+    pub fn count_points(&self) -> usize {
+        self.shards
+            .iter()
+            .flatten()
+            .filter_map(|shard| shard.local.as_ref())
+            .map(|local_shard| local_shard.num_points.unwrap_or(0))
+            .sum()
+    }
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
