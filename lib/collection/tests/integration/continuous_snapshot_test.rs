@@ -104,7 +104,7 @@ async fn test_continuous_snapshot() {
     let stop_flag = Arc::new(AtomicBool::new(false));
 
     // Continuously insert the same point
-    let points_count = 1;
+    let points_count = 3;
     let points_task = {
         let collection = Arc::clone(&collection);
         let stop_flag = Arc::clone(&stop_flag);
