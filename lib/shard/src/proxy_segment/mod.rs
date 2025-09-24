@@ -204,9 +204,7 @@ impl ProxySegment {
             if let Some(prev) = prev {
                 debug_assert!(
                     prev.operation_version < op_num,
-                    "Overriding deleted flag {:?} with older op_num:{}",
-                    prev,
-                    op_num
+                    "Overriding deleted flag {prev:?} with older op_num:{op_num}",
                 )
             }
         }
