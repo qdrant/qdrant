@@ -108,7 +108,7 @@ class TestStorageCompatibility:
             volumes={str(storage_dir): {"bind": "/qdrant/storage", "mode": "rw"}},
             exit_on_error=False
         )
-        container_info = qdrant_container_factory(docker_client, qdrant_image, config)
+        container_info = qdrant_container_factory(config)
 
         client = ClientUtils(host=container_info.host, port=container_info.http_port)
         if not client.wait_for_server():
@@ -132,7 +132,7 @@ class TestStorageCompatibility:
             command=["./qdrant", "--storage-snapshot", "/qdrant/snapshot.snapshot"],
             exit_on_error=False
         )
-        container_info = qdrant_container_factory(docker_client, qdrant_image, config)
+        container_info = qdrant_container_factory(config)
 
         client = ClientUtils(host=container_info.host, port=container_info.http_port)
         if not client.wait_for_server():
