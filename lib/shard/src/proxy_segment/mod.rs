@@ -194,13 +194,19 @@ impl ProxySegment {
 
         {
             let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
-            deleted_points_write.insert(
+            let prev = deleted_points_write.insert(
                 point_id,
                 ProxyDeletedPoint {
                     local_version,
                     operation_version: op_num,
                 },
             );
+            if let Some(prev) = prev {
+                debug_assert!(
+                    prev.operation_version < op_num,
+                    "Overriding deleted flag {prev:?} with older op_num:{op_num}",
+                )
+            }
         }
 
         self.set_deleted_offset(point_offset);

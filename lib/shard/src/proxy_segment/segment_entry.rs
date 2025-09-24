@@ -198,33 +198,39 @@ impl SegmentEntry for ProxySegment {
             LockedSegment::Original(raw_segment) => {
                 let point_offset = raw_segment.read().get_internal_id(point_id);
                 if point_offset.is_some() {
-                    was_deleted = self
-                        .deleted_points
-                        .write()
-                        .insert(
-                            point_id,
-                            ProxyDeletedPoint {
-                                local_version: op_num,
-                                operation_version: op_num,
-                            },
+                    let prev = self.deleted_points.write().insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
                         )
-                        .is_none();
+                    }
                 }
                 point_offset
             }
             LockedSegment::Proxy(proxy) => {
                 if proxy.read().has_point(point_id) {
-                    was_deleted = self
-                        .deleted_points
-                        .write()
-                        .insert(
-                            point_id,
-                            ProxyDeletedPoint {
-                                local_version: op_num,
-                                operation_version: op_num,
-                            },
+                    let prev = self.deleted_points.write().insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
                         )
-                        .is_none();
+                    }
                 }
                 None
             }
