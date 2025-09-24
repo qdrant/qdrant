@@ -217,10 +217,17 @@ impl MetricsProvider for CollectionsTelemetry {
                 }
             };
 
-            add_optimizer_metric("config-mismatch", optimizer_triggers.config_mismatch);
-            add_optimizer_metric("index", optimizer_triggers.index);
-            add_optimizer_metric("merge", optimizer_triggers.merge);
-            add_optimizer_metric("vacuum", optimizer_triggers.vacuum);
+            let OptimizerTriggers {
+                vacuum,
+                merge,
+                index,
+                config_mismatch,
+            } = optimizer_triggers;
+
+            add_optimizer_metric("config-mismatch", config_mismatch);
+            add_optimizer_metric("index", index);
+            add_optimizer_metric("merge", merge);
+            add_optimizer_metric("vacuum", vacuum);
         }
 
         if !optimizer_counter_metrics.is_empty() {
