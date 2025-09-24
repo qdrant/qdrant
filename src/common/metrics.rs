@@ -1,4 +1,5 @@
 use api::rest::models::HardwareUsage;
+use collection::collection_manager::optimizers::TrackerStatus;
 use collection::shards::telemetry::OptimizerTriggers;
 use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
@@ -178,6 +179,8 @@ impl MetricsProvider for CollectionsTelemetry {
 
         let mut optimizer_counter_metrics = vec![];
 
+        let mut total_optimizations_running = 0;
+
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
                 CollectionTelemetryEnum::Full(collection_telemetry) => collection_telemetry,
@@ -185,6 +188,16 @@ impl MetricsProvider for CollectionsTelemetry {
                     continue;
                 }
             };
+
+            total_optimizations_running += collection
+                .shards
+                .iter()
+                .flatten()
+                .filter_map(|i| i.local.as_ref())
+                .flat_map(|i| i.optimizations.log.iter())
+                .flatten()
+                .filter(|i| i.status == TrackerStatus::Optimizing)
+                .count();
 
             // Sum the optimization triggers over all shards of this collection.
             let optimizer_triggers = collection
@@ -218,6 +231,13 @@ impl MetricsProvider for CollectionsTelemetry {
                 optimizer_counter_metrics,
             ));
         }
+
+        metrics.push(metric_family(
+            "optimizer_total_processes_running",
+            "number of optimization processes running in total",
+            MetricType::GAUGE,
+            vec![gauge(total_optimizations_running as f64, &[])],
+        ));
     }
 }
 
