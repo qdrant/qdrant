@@ -1,4 +1,6 @@
 use api::rest::models::HardwareUsage;
+use collection::shards::telemetry::OptimizerRunCounters;
+use itertools::Itertools;
 use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
@@ -177,6 +179,12 @@ impl MetricsProvider for CollectionsTelemetry {
 
         let mut total_optimizations_running = 0;
 
+        // Min/Max/Expected/Active replicas over all shards.
+        let mut total_min_active_replicas = usize::MAX;
+        let mut total_max_active_replicas = 0;
+        let mut total_expected_replicas = 0;
+        let mut total_active_replicas = 0;
+
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
                 CollectionTelemetryEnum::Full(collection_telemetry) => collection_telemetry,
@@ -186,6 +194,76 @@ impl MetricsProvider for CollectionsTelemetry {
             };
 
             total_optimizations_running += collection.count_optimizers_running();
+
+            let min_max_active_replicas = collection
+                .shards
+                .iter()
+                .flatten()
+                .map(|shard| {
+                    shard
+                        .replicate_states
+                        .values()
+                        .filter(|state| state.is_active() || state.is_resharding())
+                        .count()
+                })
+                .inspect(|active_replicas| total_active_replicas += active_replicas)
+                .minmax();
+
+            let min_max_active_replicas = match min_max_active_replicas {
+                itertools::MinMaxResult::NoElements => None,
+                itertools::MinMaxResult::OneElement(one) => Some((one, one)),
+                itertools::MinMaxResult::MinMax(min, max) => Some((min, max)),
+            };
+
+            if let Some((min, max)) = min_max_active_replicas {
+                total_min_active_replicas = total_min_active_replicas.min(min);
+                total_max_active_replicas = total_max_active_replicas.max(max);
+            }
+
+            total_expected_replicas += collection.config.params.replication_factor.get();
+
+            // Sum the optimization triggers over all shards of this collection.
+            let optimizer_triggers = collection
+                .shards
+                .iter()
+                .flatten()
+                .filter_map(|i| i.local.as_ref())
+                .map(|i| i.optimizations.runs)
+                .fold(OptimizerRunCounters::default(), |total, state| {
+                    total + state
+                });
+        }
+
+        metrics.push(metric_family(
+            "active_total_replicas",
+            "total number of active replicas across all shards",
+            MetricType::GAUGE,
+            vec![gauge(total_active_replicas as f64, &[])],
+        ));
+
+        metrics.push(metric_family(
+            "active_expected_replicas",
+            "total number of expected replicas across all shards",
+            MetricType::GAUGE,
+            vec![gauge(total_expected_replicas as f64, &[])],
+        ));
+
+        if total_max_active_replicas != 0 {
+            metrics.push(metric_family(
+                "active_replicas_max",
+                "minimum number of active replicas across all shards",
+                MetricType::GAUGE,
+                vec![gauge(total_max_active_replicas as f64, &[])],
+            ));
+        }
+
+        if total_min_active_replicas != usize::MAX {
+            metrics.push(metric_family(
+                "active_replicas_min",
+                "maximum number of active replicas across all shards",
+                MetricType::GAUGE,
+                vec![gauge(total_min_active_replicas as f64, &[])],
+            ));
         }
 
         metrics.push(metric_family(
