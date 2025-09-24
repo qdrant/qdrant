@@ -198,46 +198,59 @@ impl SegmentEntry for ProxySegment {
             LockedSegment::Original(raw_segment) => {
                 let point_offset = raw_segment.read().get_internal_id(point_id);
                 if point_offset.is_some() {
-                    was_deleted = self
-                        .deleted_points
-                        .write()
-                        .insert(
-                            point_id,
-                            ProxyDeletedPoint {
-                                local_version: op_num,
-                                operation_version: op_num,
-                            },
+                    let prev = self.deleted_points.write().insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {:?} with older op_num:{}",
+                            prev,
+                            op_num
                         )
-                        .is_none();
+                    }
                 }
                 point_offset
             }
             LockedSegment::Proxy(proxy) => {
                 if proxy.read().has_point(point_id) {
-                    was_deleted = self
-                        .deleted_points
-                        .write()
-                        .insert(
-                            point_id,
-                            ProxyDeletedPoint {
-                                local_version: op_num,
-                                operation_version: op_num,
-                            },
+                    let prev = self.deleted_points.write().insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {:?} with older op_num:{}",
+                            prev,
+                            op_num
                         )
-                        .is_none();
+                    }
                 }
                 None
             }
         };
 
         self.set_deleted_offset(point_offset);
-
-        let was_deleted_in_writable = self
-            .write_segment
-            .get()
-            .write()
-            .delete_point(op_num, point_id, hw_counter)?;
-
+        let mut write_segment_guard = self.write_segment.get().write();
+        let point_version_in_write_segment = write_segment_guard
+            .point_version(point_id)
+            .unwrap_or_default();
+        let mut was_deleted_in_writable = false;
+        // Make sure deletion operation is not stale
+        if op_num > point_version_in_write_segment {
+            was_deleted_in_writable =
+                write_segment_guard.delete_point(op_num, point_id, hw_counter)?;
+        }
         Ok(was_deleted || was_deleted_in_writable)
     }
 
