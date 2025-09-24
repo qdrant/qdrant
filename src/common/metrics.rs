@@ -175,7 +175,12 @@ impl MetricsProvider for CollectionsTelemetry {
             vec![gauge(vector_count as f64, &[])],
         ));
 
+        // Optimizers
         let mut total_optimizations_running = 0;
+
+        // Points & Vectors per collection
+        let mut vectors_per_collection = vec![];
+        let mut points_per_collection = vec![];
 
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
@@ -186,6 +191,16 @@ impl MetricsProvider for CollectionsTelemetry {
             };
 
             total_optimizations_running += collection.count_optimizers_running();
+
+            points_per_collection.push(gauge(
+                collection.count_points() as f64,
+                &[("id", &collection.id)],
+            ));
+
+            vectors_per_collection.push(gauge(
+                collection.count_vectors() as f64,
+                &[("id", &collection.id)],
+            ));
         }
 
         metrics.push(metric_family(
@@ -193,6 +208,20 @@ impl MetricsProvider for CollectionsTelemetry {
             "number of currently running optimization processes",
             MetricType::GAUGE,
             vec![gauge(total_optimizations_running as f64, &[])],
+        ));
+
+        metrics.push(metric_family(
+            "collection_points",
+            "approximate amount of points per collection",
+            MetricType::GAUGE,
+            points_per_collection,
+        ));
+
+        metrics.push(metric_family(
+            "collection_vectors",
+            "approximate amount of vectors per collection",
+            MetricType::GAUGE,
+            vectors_per_collection,
         ));
     }
 }
