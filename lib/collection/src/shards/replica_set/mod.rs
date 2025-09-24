@@ -932,13 +932,12 @@ impl ShardReplicaSet {
 
             let mut points = local_shard
                 .get()
-                .scroll_by(
+                .local_scroll_by_id(
                     Some(current_offset),
                     BATCH_SIZE + 1,
                     &false.into(),
                     &false.into(),
                     Some(&filter),
-                    None,
                     &self.search_runtime,
                     None,
                     hw_measurement_acc.clone(),

@@ -283,14 +283,12 @@ async fn clean_task(
 
         // Scroll next batch of points
         let mut ids = match shard
-            .scroll_by(
+            .local_scroll_by_id(
                 offset,
                 CLEAN_BATCH_SIZE + 1,
                 &false.into(),
                 &false.into(),
                 None,
-                None,
-                true,
                 None,
                 None,
                 HwMeasurementAcc::disposable(), // Internal operation, no measurement needed!
