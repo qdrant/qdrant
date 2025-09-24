@@ -220,7 +220,7 @@ impl MetricsProvider for CollectionsTelemetry {
                 total_max_active_replicas = total_max_active_replicas.max(max);
             }
 
-            total_expected_replicas += collection.config.params.replication_factor.get();
+            total_expected_replicas += collection.config.params.replication_factor.get() as usize;
 
             // Sum the optimization triggers over all shards of this collection.
             let optimizer_triggers = collection
