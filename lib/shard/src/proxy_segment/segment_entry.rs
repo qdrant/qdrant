@@ -237,16 +237,13 @@ impl SegmentEntry for ProxySegment {
         };
 
         self.set_deleted_offset(point_offset);
-        let mut write_segment_guard = self.write_segment.get().write();
-        let point_version_in_write_segment = write_segment_guard
-            .point_version(point_id)
-            .unwrap_or_default();
-        let mut was_deleted_in_writable = write_segment_guard.has_point(point_id);
-        // Make sure deletion operation is not stale
-        if op_num > point_version_in_write_segment {
-            was_deleted_in_writable =
-                write_segment_guard.delete_point(op_num, point_id, hw_counter)?;
-        }
+
+        let was_deleted_in_writable = self
+            .write_segment
+            .get()
+            .write()
+            .delete_point(op_num, point_id, hw_counter)?;
+
         Ok(was_deleted || was_deleted_in_writable)
     }
 
