@@ -16,7 +16,7 @@ use common::iterator_ext::IteratorExt;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use io::storage_version::StorageVersion;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SnapshotManifest;
@@ -75,6 +75,11 @@ pub struct SegmentHolder {
     /// An example for this are operations that don't modify any points but could be expensive to recover from during WAL recovery.
     /// To acknowledge them in WAL, we overwrite the max_persisted value in `Self::flush_all` with the segment version stored here.
     max_persisted_segment_version_overwrite: AtomicU64,
+
+    /// Ensuring at most one update at time is happening.
+    /// Clients updates are serialized through the channel update but some internals are performing
+    /// out of band updates.
+    update_lock: Arc<Mutex<()>>,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -553,6 +558,7 @@ impl SegmentHolder {
             &T,
         ) -> OperationResult<bool>,
     {
+        let _update_guard = self.update_lock.lock();
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
 
         // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly
@@ -1213,10 +1219,13 @@ impl SegmentHolder {
         };
 
         // Batch 1: propagate changes to wrapped segment with segment holder read lock
-        if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
-            log::error!(
-                "Propagating proxy segment {segment_id} changes to wrapped segment failed, ignoring: {err}",
-            );
+        {
+            let _update_guard = segments_lock.update_lock.lock();
+            if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
+                log::error!(
+                    "Propagating proxy segment {segment_id} changes to wrapped segment failed, ignoring: {err}",
+                );
+            }
         }
 
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
@@ -1261,6 +1270,7 @@ impl SegmentHolder {
                 LockedSegment::Proxy(proxy_segment) => Some((segment_id, proxy_segment)),
                 LockedSegment::Original(_) => None,
             }).for_each(|(proxy_id, proxy_segment)| {
+                let _update_guard = segments_lock.update_lock.lock();
                 if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
                     log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
                 }
