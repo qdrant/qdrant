@@ -7,7 +7,7 @@ pub mod segment_holder;
 pub mod update;
 pub mod wal;
 
-#[cfg(test)]
-mod fixtures;
+#[cfg(feature = "testing")]
+pub mod fixtures;
 
 pub type PeerId = u64;

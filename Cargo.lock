@@ -1215,6 +1215,7 @@ dependencies = [
  "smallvec",
  "sparse",
  "strum",
+ "tar",
  "tempfile",
  "thiserror 2.0.16",
  "tinyvec",
