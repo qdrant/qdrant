@@ -775,10 +775,17 @@ impl SegmentHolder {
             let points = ids
                 .iter()
                 .cloned()
-                .check_stop(|| is_stopped.load(Ordering::Relaxed))
-                .filter(|id| read_segment.has_point(*id));
+                .check_stop(|| is_stopped.load(Ordering::Relaxed));
             for point in points {
-                let is_ok = f(point, &read_segment)?;
+                let is_ok = match f(point, &read_segment) {
+                    Ok(is_ok) => is_ok,
+                    Err(OperationError::PointIdError { missed_point_id })
+                        if missed_point_id == point =>
+                    {
+                        false
+                    }
+                    Err(err) => return Err(err),
+                };
                 read_points += usize::from(is_ok);
             }
         }

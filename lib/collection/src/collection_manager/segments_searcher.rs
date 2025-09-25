@@ -419,9 +419,10 @@ impl SegmentsSearcher {
         segments
             .read()
             .read_points(points, is_stopped, |id, segment| {
-                let version = segment.point_version(id).ok_or_else(|| {
-                    OperationError::service_error(format!("No version for point {id}"))
-                })?;
+                let Some(version) = segment.point_version(id) else {
+                    // ignore point
+                    return Ok(false);
+                };
 
                 // If we already have the latest point version, keep that and continue
                 let version_entry = point_version.entry(id);
