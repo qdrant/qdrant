@@ -1,22 +1,20 @@
-use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
-use common::tar_ext;
 use io::storage_version::StorageVersion;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
-use segment::common::operation_error::{OperationError, OperationResult};
+use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
+use segment::common::operation_error::OperationResult;
 use segment::data_types::manifest::SnapshotManifest;
 use segment::entry::SegmentEntry;
 use segment::segment::SegmentVersion;
-use segment::types::{SegmentConfig, SnapshotFormat};
+use segment::types::SegmentConfig;
 
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::proxy_segment::{LockedIndexChanges, LockedRmSet, ProxySegment};
-use crate::segment_holder::{LockedSegmentHolder, SegmentHolder, SegmentId};
+use crate::segment_holder::{SegmentHolder, SegmentId};
 
 impl SegmentHolder {
     pub fn snapshot_manifest(&self) -> OperationResult<SnapshotManifest> {
@@ -32,152 +30,9 @@ impl SegmentHolder {
         Ok(manifest)
     }
 
-    /// Take a snapshot of all segments into `snapshot_dir_path`
-    ///
-    /// It is recommended to provide collection parameters. This function internally creates a
-    /// temporary segment, which will source the configuration from it.
-    ///
-    /// Shortcuts at the first failing segment snapshot.
-    #[expect(clippy::too_many_arguments)]
-    pub fn snapshot_all_segments(
-        segments: LockedSegmentHolder,
-        segments_path: &Path,
-        segment_config: Option<SegmentConfig>,
-        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        temp_dir: &Path,
-        tar: &tar_ext::BuilderExt,
-        format: SnapshotFormat,
-        manifest: Option<&SnapshotManifest>,
-    ) -> OperationResult<()> {
-        // Snapshotting may take long-running read locks on segments blocking incoming writes, do
-        // this through proxied segments to allow writes to continue.
-
-        let mut snapshotted_segments = HashSet::<String>::new();
-
-        Self::proxy_all_segments_and_apply(
-            segments,
-            segments_path,
-            segment_config,
-            payload_index_schema,
-            |segment| {
-                let read_segment = segment.read();
-                read_segment.take_snapshot(
-                    temp_dir,
-                    tar,
-                    format,
-                    manifest,
-                    &mut snapshotted_segments,
-                )?;
-                Ok(())
-            },
-        )
-    }
-
-    /// Temporarily proxify all segments and apply function `f` to it.
-    ///
-    /// Intended to smoothly accept writes while performing long-running read operations on each
-    /// segment, such as during snapshotting. It should prevent blocking reads on segments for any
-    /// significant amount of time.
-    ///
-    /// This calls function `f` on all segments, but each segment is temporarily proxified while
-    /// the function is called.
-    ///
-    /// All segments are proxified at the same time on start. That ensures each wrapped (proxied)
-    /// segment is kept at the same point in time. Each segment is unproxied one by one, right
-    /// after function `f` has been applied. That helps keeping proxies as shortlived as possible.
-    ///
-    /// A read lock is kept during the whole process to prevent external actors from messing with
-    /// the segment holder while segments are in proxified state. That means no other actors can
-    /// take a write lock while this operation is running.
-    ///
-    /// As part of this process, a new segment is created. All proxies direct their writes to this
-    /// segment. The segment is added to the collection if it has any operations, otherwise it is
-    /// deleted when all segments are unproxied again.
-    ///
-    /// It is recommended to provide collection parameters. The segment configuration will be
-    /// sourced from it.
-    pub fn proxy_all_segments_and_apply<F>(
-        segments: LockedSegmentHolder,
-        segments_path: &Path,
-        segment_config: Option<SegmentConfig>,
-        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        mut operation: F,
-    ) -> OperationResult<()>
-    where
-        F: FnMut(&RwLock<dyn SegmentEntry>) -> OperationResult<()>,
-    {
-        let segments_lock = segments.upgradable_read();
-
-        // Proxy all segments
-        log::trace!("Proxying all shard segments to apply function");
-        let (mut proxies, tmp_segment, mut segments_lock) = Self::proxy_all_segments(
-            segments_lock,
-            segments_path,
-            segment_config,
-            payload_index_schema,
-        )?;
-
-        // Apply provided function
-        log::trace!("Applying function on all proxied shard segments");
-        let mut result = Ok(());
-        let mut unproxied_segment_ids = Vec::with_capacity(proxies.len());
-
-        for (segment_id, proxy_segment) in &proxies {
-            // Get segment to snapshot
-            let op_result = match proxy_segment {
-                LockedSegment::Proxy(proxy_segment) => {
-                    let guard = proxy_segment.read();
-                    let segment = guard.wrapped_segment.get();
-                    // Call provided function on wrapped segment while holding guard to parent segment
-                    operation(segment)
-                }
-                // All segments to snapshot should be proxy, warn if this is not the case
-                LockedSegment::Original(segment) => {
-                    debug_assert!(
-                        false,
-                        "Reached non-proxy segment while applying function to proxies, this should not happen, ignoring",
-                    );
-                    // Call provided function on segment
-                    operation(segment.as_ref())
-                }
-            };
-
-            if let Err(err) = op_result {
-                result = Err(OperationError::service_error(format!(
-                    "Applying function to a proxied shard segment {segment_id} failed: {err}"
-                )));
-                break;
-            }
-
-            // Try to unproxy/release this segment since we don't use it anymore
-            // Unproxying now lets us release the segment earlier, prevent unnecessary writes to the temporary segment.
-            // Make sure to keep at least one proxy segment to maintain access to the points in the shared write segment.
-            // The last proxy and the shared write segment will be promoted into the segment_holder atomically
-            // by `Self::unproxy_all_segments` afterwards to maintain the read consistency.
-            let remaining = proxies.len() - unproxied_segment_ids.len();
-            if remaining > 1 {
-                match Self::try_unproxy_segment(segments_lock, *segment_id, proxy_segment.clone()) {
-                    Ok(lock) => {
-                        segments_lock = lock;
-                        unproxied_segment_ids.push(*segment_id);
-                    }
-                    Err(lock) => segments_lock = lock,
-                }
-            }
-        }
-        proxies.retain(|(id, _)| !unproxied_segment_ids.contains(id));
-
-        // Unproxy all segments
-        // Always do this to prevent leaving proxy segments behind
-        log::trace!("Unproxying all shard segments after function is applied");
-        Self::unproxy_all_segments(segments_lock, proxies, tmp_segment)?;
-
-        result
-    }
-
-    /// Proxy all shard segments for [`Self::proxy_all_segments_and_apply`].
+    /// Proxy all shard segments for [`proxy_all_segments_and_apply`].
     #[allow(clippy::type_complexity)]
-    pub(crate) fn proxy_all_segments<'a>(
+    pub fn proxy_all_segments<'a>(
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,
@@ -258,13 +113,13 @@ impl SegmentHolder {
         Ok((proxies, tmp_segment, segments_lock))
     }
 
-    /// Try to unproxy a single shard segment for [`Self::proxy_all_segments_and_apply`].
+    /// Try to unproxy a single shard segment for [`proxy_all_segments_and_apply`].
     ///
     /// # Warning
     ///
     /// If unproxying fails an error is returned with the lock and the proxy is left behind in the
     /// shard holder.
-    pub(crate) fn try_unproxy_segment(
+    pub fn try_unproxy_segment(
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         segment_id: SegmentId,
         proxy_segment: LockedSegment,
@@ -319,8 +174,8 @@ impl SegmentHolder {
         Ok(RwLockWriteGuard::downgrade_to_upgradable(write_segments))
     }
 
-    /// Unproxy all shard segments for [`Self::proxy_all_segments_and_apply`].
-    pub(crate) fn unproxy_all_segments(
+    /// Unproxy all shard segments for [`proxy_all_segments_and_apply`].
+    pub fn unproxy_all_segments(
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         proxies: Vec<(SegmentId, LockedSegment)>,
         tmp_segment: LockedSegment,

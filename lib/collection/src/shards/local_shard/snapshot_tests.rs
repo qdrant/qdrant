@@ -11,6 +11,8 @@ use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::SegmentHolder;
 use tempfile::Builder;
 
+use crate::shards::local_shard::snapshot::snapshot_all_segments;
+
 #[test]
 fn test_snapshot_all() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -40,7 +42,7 @@ fn test_snapshot_all() {
     let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
         Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
 
-    SegmentHolder::snapshot_all_segments(
+    snapshot_all_segments(
         holder.clone(),
         segments_dir.path(),
         None,
