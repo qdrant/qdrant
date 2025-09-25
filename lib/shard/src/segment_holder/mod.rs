@@ -568,12 +568,13 @@ impl SegmentHolder {
             let mut write_segment = segment_arc.write();
 
             for point_id in points {
-                let version = write_segment.point_version(point_id).unwrap_or_default();
-                write_segment.delete_point(
-                    version,
-                    point_id,
-                    &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
-                )?;
+                if let Some(version) = write_segment.point_version(point_id) {
+                    write_segment.delete_point(
+                        version,
+                        point_id,
+                        &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
+                    )?;
+                }
             }
         }
 
@@ -975,8 +976,7 @@ impl SegmentHolder {
         log::trace!("Applying function on all proxied shard segments");
         let mut result = Ok(());
         let mut unproxied_segment_ids = Vec::with_capacity(proxies.len());
-        // Reverse to unproxify first non-appendable segments
-        proxies.reverse();
+
         for (segment_id, proxy_segment) in &proxies {
             // Get segment to snapshot
             let op_result = match proxy_segment {
