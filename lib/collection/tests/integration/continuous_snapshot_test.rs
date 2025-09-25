@@ -125,8 +125,8 @@ async fn test_continuous_snapshot() {
                     )
                     .await?;
 
+                // Insert one point at a time
                 for i in 0..points_count {
-                    // Insert one point at a time
                     let point = PointStructPersisted {
                         id: i.into(),
                         vector: VectorStructPersisted::Single(vec![i as f32, 0.0, 0.0, 0.0]),
@@ -191,6 +191,26 @@ async fn test_continuous_snapshot() {
                         )
                         .await?;
                     assert_eq!(set_result.status, UpdateStatus::Completed);
+                }
+
+                // Retrieve one point at a time again with payload
+                for i in 0..points_count {
+                    let retrieve_point = PointRequestInternal {
+                        ids: vec![i.into()],
+                        with_payload: Some(true.into()),
+                        with_vector: WithVector::Bool(false),
+                    };
+                    let hw_counter = HwMeasurementAcc::disposable();
+                    let retrieve_result = collection
+                        .retrieve(
+                            retrieve_point,
+                            None,
+                            &ShardSelectorInternal::All,
+                            None,
+                            hw_counter,
+                        )
+                        .await?;
+                    assert_eq!(retrieve_result.len(), 1);
                 }
             }
             CollectionResult::Ok(())
