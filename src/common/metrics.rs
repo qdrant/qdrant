@@ -199,11 +199,13 @@ impl MetricsProvider for CollectionsTelemetry {
                 .shards
                 .iter()
                 .flatten()
+                // Ignore shards in resharding state.
+                .filter(|shard| !shard.replicate_states.values().any(|i| i.is_resharding()))
                 .map(|shard| {
                     shard
                         .replicate_states
                         .values()
-                        .filter(|state| state.is_active() || state.is_resharding())
+                        .filter(|state| state.is_active())
                         .count()
                 })
                 .inspect(|active_replicas| total_active_replicas += active_replicas)
