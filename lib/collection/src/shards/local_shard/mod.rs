@@ -105,13 +105,22 @@ pub struct LocalShard {
     disk_usage_watcher: DiskUsageWatcher,
     read_rate_limiter: Option<ParkingMutex<RateLimiter>>,
 
-    /// Scroll read lock
-    /// The lock, which must prevent updates during scroll + retrieve operations
-    /// Consistency of scroll operations is especially important for internal processes like
-    /// re-sharding and shard transfer, so explicit lock for those operations is required.
+    /// Update operation lock
+    /// The lock, which must prevent updates critical sections of other operations, which
+    /// are not compatible with updates.
     ///
-    /// Write lock must be held for updates, while read lock must be held for scroll
-    pub(super) scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
+    /// Currently used for:
+    ///
+    /// * Blocking updates during scroll + retrieve operations
+    ///   Consistency of scroll operations is especially important for internal processes like
+    ///   re-sharding and shard transfer, so explicit lock for those operations is required.
+    ///
+    /// * Blocking updates during some parts of snapshot creation
+    ///   Snapshotting process wraps and unwraps proxy segments, which might
+    ///   create inconsistencies if updates are applied concurrently.
+    ///
+    /// Write lock must be held for updates, while read lock must be held for critical sections
+    pub(super) update_operation_lock: Arc<tokio::sync::RwLock<()>>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -249,7 +258,7 @@ impl LocalShard {
             total_optimized_points,
             disk_usage_watcher,
             read_rate_limiter,
-            scroll_read_lock,
+            update_operation_lock: scroll_read_lock,
         }
     }
 
@@ -660,7 +669,7 @@ impl LocalShard {
                 segments,
                 op_num,
                 update.operation,
-                self.scroll_read_lock.clone(),
+                self.update_operation_lock.clone(),
                 self.update_tracker.clone(),
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
             ) {

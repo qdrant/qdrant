@@ -15,7 +15,7 @@ use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::save_on_disk::SaveOnDisk;
-use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
@@ -70,11 +70,6 @@ pub struct SegmentHolder {
     /// An example for this are operations that don't modify any points but could be expensive to recover from during WAL recovery.
     /// To acknowledge them in WAL, we overwrite the max_persisted value in `Self::flush_all` with the segment version stored here.
     max_persisted_segment_version_overwrite: AtomicU64,
-
-    /// Ensuring at most one update at time is happening.
-    /// Clients updates are serialized through the channel update but some internals are performing
-    /// out of band updates.
-    update_lock: Arc<Mutex<()>>,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -540,7 +535,6 @@ impl SegmentHolder {
             &T,
         ) -> OperationResult<bool>,
     {
-        let _update_guard = self.update_lock.lock();
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
 
         // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly

@@ -146,7 +146,6 @@ impl SegmentHolder {
 
         // Batch 1: propagate changes to wrapped segment with segment holder read lock
         {
-            let _update_guard = segments_lock.update_lock.lock();
             if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
                 log::error!(
                     "Propagating proxy segment {segment_id} changes to wrapped segment failed, ignoring: {err}",
@@ -196,7 +195,6 @@ impl SegmentHolder {
                 LockedSegment::Proxy(proxy_segment) => Some((segment_id, proxy_segment)),
                 LockedSegment::Original(_) => None,
             }).for_each(|(proxy_id, proxy_segment)| {
-            let _update_guard = segments_lock.update_lock.lock();
             if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
                 log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
             }
