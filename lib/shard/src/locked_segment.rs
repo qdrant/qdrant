@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::entry::SnapshotEntry;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 
@@ -51,6 +52,13 @@ impl LockedSegment {
 
     /// Get reference to the locked segment
     pub fn get(&self) -> &RwLock<dyn SegmentEntry> {
+        match self {
+            LockedSegment::Original(segment) => segment.as_ref(),
+            LockedSegment::Proxy(proxy) => proxy.as_ref(),
+        }
+    }
+
+    pub fn get_snapshot_entry(&self) -> &RwLock<dyn SnapshotEntry> {
         match self {
             LockedSegment::Original(segment) => segment.as_ref(),
             LockedSegment::Proxy(proxy) => proxy.as_ref(),

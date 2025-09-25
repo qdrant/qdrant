@@ -90,7 +90,7 @@ impl SegmentHolder {
 
         for (_, segment) in self.iter() {
             segment
-                .get()
+                .get_snapshot_entry()
                 .read()
                 .collect_snapshot_manifest(&mut manifest)?;
         }
@@ -959,7 +959,7 @@ impl SegmentHolder {
         mut operation: F,
     ) -> OperationResult<()>
     where
-        F: FnMut(&RwLock<dyn SegmentEntry>) -> OperationResult<()>,
+        F: FnMut(&LockedSegment) -> OperationResult<()>,
     {
         let segments_lock = segments.upgradable_read();
 
@@ -982,18 +982,17 @@ impl SegmentHolder {
             let op_result = match proxy_segment {
                 LockedSegment::Proxy(proxy_segment) => {
                     let guard = proxy_segment.read();
-                    let segment = guard.wrapped_segment.get();
                     // Call provided function on wrapped segment while holding guard to parent segment
-                    operation(segment)
+                    operation(&guard.wrapped_segment)
                 }
                 // All segments to snapshot should be proxy, warn if this is not the case
-                LockedSegment::Original(segment) => {
+                LockedSegment::Original(_) => {
                     debug_assert!(
                         false,
                         "Reached non-proxy segment while applying function to proxies, this should not happen, ignoring",
                     );
                     // Call provided function on segment
-                    operation(segment.as_ref())
+                    operation(proxy_segment)
                 }
             };
 
@@ -1344,8 +1343,7 @@ impl SegmentHolder {
             segment_config,
             payload_index_schema,
             |segment| {
-                let read_segment = segment.read();
-                read_segment.take_snapshot(
+                segment.get_snapshot_entry().read().take_snapshot(
                     temp_dir,
                     tar,
                     format,

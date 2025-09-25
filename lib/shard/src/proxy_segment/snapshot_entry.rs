@@ -21,34 +21,28 @@ impl SnapshotEntry for ProxySegment {
         log::info!("Taking a snapshot of a proxy segment");
 
         // Snapshot wrapped segment data into the temporary dir
-        self.wrapped_segment.get().read().take_snapshot(
-            temp_path,
-            tar,
-            format,
-            manifest,
-            snapshotted_segments,
-        )?;
+        self.wrapped_segment
+            .get_snapshot_entry()
+            .read()
+            .take_snapshot(temp_path, tar, format, manifest, snapshotted_segments)?;
 
         // Snapshot write_segment
-        self.write_segment.get().read().take_snapshot(
-            temp_path,
-            tar,
-            format,
-            manifest,
-            snapshotted_segments,
-        )?;
+        self.write_segment
+            .get_snapshot_entry()
+            .read()
+            .take_snapshot(temp_path, tar, format, manifest, snapshotted_segments)?;
 
         Ok(())
     }
 
     fn collect_snapshot_manifest(&self, manifest: &mut SnapshotManifest) -> OperationResult<()> {
         self.wrapped_segment
-            .get()
+            .get_snapshot_entry()
             .read()
             .collect_snapshot_manifest(manifest)?;
 
         self.write_segment
-            .get()
+            .get_snapshot_entry()
             .read()
             .collect_snapshot_manifest(manifest)?;
 

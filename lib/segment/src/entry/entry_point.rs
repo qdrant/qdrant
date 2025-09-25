@@ -13,7 +13,6 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
-use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
@@ -27,7 +26,7 @@ use crate::types::{
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait SegmentEntry: SnapshotEntry {
+pub trait SegmentEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
