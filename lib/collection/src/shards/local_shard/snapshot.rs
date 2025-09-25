@@ -326,7 +326,7 @@ where
         // by `Self::unproxy_all_segments` afterwards to maintain the read consistency.
         let remaining = proxies.len() - unproxied_segment_ids.len();
         if remaining > 1 {
-            let _update_guard = update_lock.blocking_read();
+            let _update_guard = update_lock.blocking_write();
             match SegmentHolder::try_unproxy_segment(
                 segments_lock,
                 *segment_id,
@@ -345,7 +345,7 @@ where
     // Unproxy all segments
     // Always do this to prevent leaving proxy segments behind
     log::trace!("Unproxying all shard segments after function is applied");
-    let _update_guard = update_lock.blocking_read();
+    let _update_guard = update_lock.blocking_write();
     SegmentHolder::unproxy_all_segments(segments_lock, proxies, tmp_segment)?;
 
     result
