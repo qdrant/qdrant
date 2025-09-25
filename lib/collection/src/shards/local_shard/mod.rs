@@ -9,6 +9,9 @@ pub(super) mod shard_ops;
 mod snapshot;
 mod telemetry;
 
+#[cfg(test)]
+mod snapshot_tests;
+
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};

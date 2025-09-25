@@ -1,14 +1,12 @@
 use std::collections::HashMap;
-use std::fs::File;
 use std::str::FromStr;
 
-use common::tar_ext;
 use rand::Rng;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal, only_default_vector};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, PayloadContainer, SnapshotFormat};
+use segment::types::{Distance, PayloadContainer};
 use serde_json::Value;
 use tempfile::Builder;
 
@@ -519,64 +517,6 @@ fn deduplicate_points_sync(holder: &SegmentHolder) -> OperationResult<usize> {
     }
 
     Ok(removed_points)
-}
-
-#[test]
-fn test_snapshot_all() {
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let segment1 = build_segment_1(dir.path());
-    let segment2 = build_segment_2(dir.path());
-
-    let mut holder = SegmentHolder::default();
-
-    let sid1 = holder.add_new(segment1);
-    let sid2 = holder.add_new(segment2);
-    assert_ne!(sid1, sid2);
-
-    let holder = Arc::new(RwLock::new(holder));
-
-    let before_ids = holder
-        .read()
-        .iter()
-        .map(|(id, _)| *id)
-        .collect::<HashSet<_>>();
-
-    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
-    let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
-    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_file).unwrap());
-
-    let payload_schema_file = dir.path().join("payload.schema");
-    let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
-        Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
-
-    SegmentHolder::snapshot_all_segments(
-        holder.clone(),
-        segments_dir.path(),
-        None,
-        schema,
-        temp_dir.path(),
-        &tar,
-        SnapshotFormat::Regular,
-        None,
-    )
-    .unwrap();
-
-    let after_ids = holder
-        .read()
-        .iter()
-        .map(|(id, _)| *id)
-        .collect::<HashSet<_>>();
-
-    assert_eq!(
-        before_ids, after_ids,
-        "segment holder IDs before and after snapshotting must be equal",
-    );
-
-    let mut tar = tar::Archive::new(File::open(&snapshot_file).unwrap());
-    let archive_count = tar.entries_with_seek().unwrap().count();
-    // one archive produced per concrete segment in the SegmentHolder
-    assert_eq!(archive_count, 2);
 }
 
 #[test]

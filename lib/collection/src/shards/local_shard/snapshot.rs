@@ -114,7 +114,7 @@ impl LocalShard {
     /// # Panics
     ///
     /// This function panics if called within an asynchronous execution context.
-    pub fn snapshot_empty_wal(
+    fn snapshot_empty_wal(
         wal: LockedWal,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
@@ -154,7 +154,7 @@ impl LocalShard {
     /// # Panics
     ///
     /// This function panics if called within an asynchronous execution context.
-    pub fn snapshot_wal(wal: LockedWal, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
+    fn snapshot_wal(wal: LockedWal, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
         // lock wal during snapshot
         let mut wal_guard = wal.blocking_lock();
         wal_guard.flush()?;
