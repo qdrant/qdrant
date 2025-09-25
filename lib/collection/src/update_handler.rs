@@ -294,7 +294,7 @@ impl UpdateHandler {
     async fn try_recover(
         segments: LockedSegmentHolder,
         wal: LockedWal,
-        scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
@@ -308,7 +308,7 @@ impl UpdateHandler {
                         &segments,
                         op_num,
                         operation.operation,
-                        scroll_lock.clone(),
+                        update_operation_lock.clone(),
                         update_tracker.clone(),
                         &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
                     )?;
@@ -630,7 +630,7 @@ impl UpdateHandler {
         max_handles: Option<usize>,
         has_triggered_optimizers: Arc<AtomicBool>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) {
         let max_handles = max_handles.unwrap_or(usize::MAX);
@@ -706,7 +706,7 @@ impl UpdateHandler {
             if Self::try_recover(
                 segments.clone(),
                 wal.clone(),
-                scroll_lock.clone(),
+                update_operation_lock.clone(),
                 update_tracker.clone(),
             )
             .await
@@ -766,7 +766,7 @@ impl UpdateHandler {
         optimize_sender: Sender<OptimizerSignal>,
         wal: LockedWal,
         segments: LockedSegmentHolder,
-        scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) {
         while let Some(signal) = receiver.blocking_recv() {
@@ -799,7 +799,7 @@ impl UpdateHandler {
                             &segments,
                             op_num,
                             operation,
-                            scroll_lock.clone(),
+                            update_operation_lock.clone(),
                             update_tracker.clone(),
                             &hw_measurements.get_counter_cell(),
                         );
