@@ -12746,8 +12746,8 @@
         "type": "object",
         "required": [
           "optimizations",
-          "status",
-          "triggers"
+          "runs",
+          "status"
         ],
         "properties": {
           "status": {
@@ -12763,8 +12763,8 @@
             },
             "nullable": true
           },
-          "triggers": {
-            "$ref": "#/components/schemas/OptimizerTriggers"
+          "runs": {
+            "$ref": "#/components/schemas/OptimizerRunCounters"
           }
         }
       },
@@ -12843,7 +12843,7 @@
           }
         ]
       },
-      "OptimizerTriggers": {
+      "OptimizerRunCounters": {
         "type": "object",
         "required": [
           "config_mismatch",
