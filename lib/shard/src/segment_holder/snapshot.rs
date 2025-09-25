@@ -177,7 +177,7 @@ impl SegmentHolder {
 
     /// Proxy all shard segments for [`Self::proxy_all_segments_and_apply`].
     #[allow(clippy::type_complexity)]
-    fn proxy_all_segments<'a>(
+    pub(crate) fn proxy_all_segments<'a>(
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,
@@ -264,7 +264,7 @@ impl SegmentHolder {
     ///
     /// If unproxying fails an error is returned with the lock and the proxy is left behind in the
     /// shard holder.
-    fn try_unproxy_segment(
+    pub(crate) fn try_unproxy_segment(
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         segment_id: SegmentId,
         proxy_segment: LockedSegment,
@@ -320,7 +320,7 @@ impl SegmentHolder {
     }
 
     /// Unproxy all shard segments for [`Self::proxy_all_segments_and_apply`].
-    fn unproxy_all_segments(
+    pub(crate) fn unproxy_all_segments(
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         proxies: Vec<(SegmentId, LockedSegment)>,
         tmp_segment: LockedSegment,

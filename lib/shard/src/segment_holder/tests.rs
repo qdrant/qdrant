@@ -2,12 +2,13 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::str::FromStr;
 
+use common::tar_ext;
 use rand::Rng;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal, only_default_vector};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, PayloadContainer};
+use segment::types::{Distance, PayloadContainer, SnapshotFormat};
 use serde_json::Value;
 use tempfile::Builder;
 
