@@ -280,7 +280,7 @@ impl SegmentOptimizer for IndexingOptimizer {
     }
 
     fn increment_run_counter(&self) {
-        self.telemetry_aggregator.triggers.lock().index += 1;
+        self.telemetry_aggregator.run_counters.lock().index += 1;
     }
 }
 

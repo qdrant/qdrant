@@ -1,6 +1,6 @@
 use api::rest::models::HardwareUsage;
 use collection::collection_manager::optimizers::TrackerStatus;
-use collection::shards::telemetry::OptimizerTriggers;
+use collection::shards::telemetry::OptimizerRunCounters;
 use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
@@ -205,8 +205,10 @@ impl MetricsProvider for CollectionsTelemetry {
                 .iter()
                 .flatten()
                 .filter_map(|i| i.local.as_ref())
-                .map(|i| i.optimizations.triggers)
-                .fold(OptimizerTriggers::default(), |total, state| total + state);
+                .map(|i| i.optimizations.runs)
+                .fold(OptimizerRunCounters::default(), |total, state| {
+                    total + state
+                });
 
             let mut add_optimizer_metric = |name: &str, value: usize| {
                 if value > 0 {
@@ -217,7 +219,7 @@ impl MetricsProvider for CollectionsTelemetry {
                 }
             };
 
-            let OptimizerTriggers {
+            let OptimizerRunCounters {
                 vacuum,
                 merge,
                 index,
@@ -232,8 +234,8 @@ impl MetricsProvider for CollectionsTelemetry {
 
         if !optimizer_counter_metrics.is_empty() {
             metrics.push(metric_family(
-                "collections_optimizer_trigger_count",
-                "number of optimization triggers per optimizer",
+                "collections_optimizer_run_count",
+                "number of optimization runs per optimizer",
                 MetricType::COUNTER,
                 optimizer_counter_metrics,
             ));

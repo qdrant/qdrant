@@ -272,7 +272,10 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
     }
 
     fn increment_run_counter(&self) {
-        self.telemetry_aggregator.triggers.lock().config_mismatch += 1;
+        self.telemetry_aggregator
+            .run_counters
+            .lock()
+            .config_mismatch += 1;
     }
 }
 

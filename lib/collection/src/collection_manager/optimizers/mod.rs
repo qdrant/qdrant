@@ -9,7 +9,7 @@ use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use serde::{Deserialize, Serialize};
 
 use super::holders::segment_holder::SegmentId;
-use crate::shards::telemetry::OptimizerTriggers;
+use crate::shards::telemetry::OptimizerRunCounters;
 
 pub mod config_mismatch_optimizer;
 pub mod indexing_optimizer;
@@ -187,7 +187,7 @@ pub enum TrackerStatus {
 #[derive(Debug)]
 pub struct OptimizerTelemetryCounter {
     pub durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
-    pub triggers: Arc<Mutex<OptimizerTriggers>>,
+    pub run_counters: Arc<Mutex<OptimizerRunCounters>>,
 }
 
 impl OptimizerTelemetryCounter {
@@ -200,7 +200,7 @@ impl Default for OptimizerTelemetryCounter {
     fn default() -> Self {
         Self {
             durations_aggregator: OperationDurationsAggregator::new(),
-            triggers: Arc::new(Mutex::new(OptimizerTriggers::default())),
+            run_counters: Arc::new(Mutex::new(OptimizerRunCounters::default())),
         }
     }
 }

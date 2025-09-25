@@ -46,10 +46,10 @@ impl LocalShard {
             })
             .fold(Default::default(), |total, stats| total + stats);
 
-        let optimizer_triggers = self
+        let optimizer_runs = self
             .optimizers
             .iter()
-            .map(|optimizer| *optimizer.get_telemetry_counter().triggers.lock())
+            .map(|optimizer| *optimizer.get_telemetry_counter().run_counters.lock())
             .fold(Default::default(), |total, stats| total + stats);
 
         let status = self.get_optimization_status().await;
@@ -79,7 +79,7 @@ impl LocalShard {
                 optimizations,
                 log: (detail.level >= DetailsLevel::Level4 || detail.optimizer_logs)
                     .then(|| self.optimizers_log.lock().to_telemetry()),
-                triggers: optimizer_triggers,
+                runs: optimizer_runs,
             },
             async_scorer: Some(get_async_scorer()),
         }

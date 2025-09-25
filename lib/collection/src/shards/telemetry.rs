@@ -74,18 +74,18 @@ pub struct OptimizerTelemetry {
     pub optimizations: OperationDurationStatistics,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log: Option<Vec<TrackerTelemetry>>,
-    pub triggers: OptimizerTriggers,
+    pub runs: OptimizerRunCounters,
 }
 
 #[derive(Serialize, Clone, Copy, Debug, JsonSchema, Anonymize, Default)]
-pub struct OptimizerTriggers {
+pub struct OptimizerRunCounters {
     pub vacuum: usize,
     pub merge: usize,
     pub index: usize,
     pub config_mismatch: usize,
 }
 
-impl Add for OptimizerTriggers {
+impl Add for OptimizerRunCounters {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {

@@ -153,7 +153,7 @@ impl SegmentOptimizer for MergeOptimizer {
     }
 
     fn increment_run_counter(&self) {
-        self.telemetry_aggregator.triggers.lock().merge += 1;
+        self.telemetry_aggregator.run_counters.lock().merge += 1;
     }
 }
 
