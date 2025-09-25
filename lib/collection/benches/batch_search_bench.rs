@@ -209,6 +209,10 @@ fn batch_search_bench(c: &mut Criterion) {
     }
 
     group.finish();
+
+    search_runtime.block_on(async {
+        shard.stop_gracefully().await;
+    });
 }
 
 criterion_group! {
