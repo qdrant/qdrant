@@ -40,15 +40,15 @@ class TestStorageCompatibility:
         url = f"https://storage.googleapis.com/qdrant-backward-compatibility/compatibility-{version}.tar"
         
         print(f"Downloading compatibility data for {version}...")
-        
+
         try:
-            response = requests.get(url, timeout=60)
-            response.raise_for_status()
-            
-            with open(compatibility_file, 'wb') as f:
-                f.write(response.content)
-                
-        except Exception as e:
+            with requests.get(url, stream=True, timeout=(10, 300)) as response:
+                response.raise_for_status()
+                with open(compatibility_file, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            f.write(chunk)
+        except requests.exceptions.RequestException as e:
             pytest.skip(f"Could not download compatibility data for {version}: {e}")
         
         return compatibility_file
