@@ -18,11 +18,11 @@ const STORAGE_PATH: &str = "payload_storage";
 
 impl Blob for Payload {
     fn to_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap()
+        serde_cbor::to_vec(self).unwrap()
     }
 
     fn from_bytes(data: &[u8]) -> Self {
-        serde_json::from_slice(data).unwrap()
+        serde_cbor::from_slice(data).unwrap()
     }
 }
 
