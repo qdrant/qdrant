@@ -189,7 +189,7 @@ impl MetricsProvider for CollectionsTelemetry {
         }
 
         metrics.push(metric_family(
-            "optimizer_total_processes_running",
+            "optimizer_processes_running",
             "number of optimization processes running in total",
             MetricType::GAUGE,
             vec![gauge(total_optimizations_running as f64, &[])],
