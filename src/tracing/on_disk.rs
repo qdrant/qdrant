@@ -1,9 +1,10 @@
 use std::collections::HashSet;
+use std::io;
 use std::sync::Mutex;
-use std::{fs, io};
 
 use anyhow::Context as _;
 use common::ext::OptionExt;
+use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::{Layer, fmt, registry};
 

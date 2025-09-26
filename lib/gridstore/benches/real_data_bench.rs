@@ -1,10 +1,11 @@
-use std::fs::File;
 use std::hint::black_box;
 use std::io::BufReader;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
+use fs_err as fs;
+use fs_err::File;
 use gridstore::fixtures::{HM_FIELDS, Payload, empty_storage};
 use rand::Rng;
 use serde_json::Value;
@@ -35,7 +36,7 @@ fn append_csv_data(storage: &mut gridstore::Gridstore<Payload>, csv_path: &Path)
 /// Recursively compute the size of a directory in megabytes
 fn compute_folder_size_mb<P: AsRef<Path>>(path: P) -> u64 {
     let mut size = 0;
-    for entry in std::fs::read_dir(path).unwrap() {
+    for entry in fs::read_dir(path.as_ref()).unwrap() {
         let entry = entry.unwrap();
         let metadata = entry.metadata().unwrap();
 
@@ -55,7 +56,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
         .expect("download should succeed");
 
     // check source file size
-    let file_size_bytes = std::fs::metadata(csv_path.clone())
+    let file_size_bytes = fs::metadata(csv_path.clone())
         .expect("file should exist")
         .len();
     assert_eq!(file_size_bytes, 36_127_865); // 36MB

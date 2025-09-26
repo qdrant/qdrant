@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use fs_err as fs;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
@@ -66,11 +67,11 @@ fn test_building_new_segment() {
 
     // Check what happens if segment building fails here
 
-    let segment_count = dir.path().read_dir().unwrap().count();
+    let segment_count = fs::read_dir(dir.path()).unwrap().count();
 
     assert_eq!(segment_count, 2);
 
-    let temp_segment_count = temp_dir.path().read_dir().unwrap().count();
+    let temp_segment_count = fs::read_dir(temp_dir.path()).unwrap().count();
 
     assert_eq!(temp_segment_count, 1);
 
@@ -84,7 +85,7 @@ fn test_building_new_segment() {
         .build(permit, &stopped, &mut rng, &hw_counter)
         .unwrap();
 
-    let new_segment_count = dir.path().read_dir().unwrap().count();
+    let new_segment_count = fs::read_dir(dir.path()).unwrap().count();
 
     assert_eq!(new_segment_count, 3);
 
@@ -152,11 +153,11 @@ fn test_building_new_defragmented_segment() {
 
     // Check what happens if segment building fails here
 
-    let segment_count = dir.path().read_dir().unwrap().count();
+    let segment_count = fs::read_dir(dir.path()).unwrap().count();
 
     assert_eq!(segment_count, 2);
 
-    let temp_segment_count = temp_dir.path().read_dir().unwrap().count();
+    let temp_segment_count = fs::read_dir(temp_dir.path()).unwrap().count();
 
     assert_eq!(temp_segment_count, 1);
 
@@ -170,7 +171,7 @@ fn test_building_new_defragmented_segment() {
         .build(permit, &stopped, &mut rng, &hw_counter)
         .unwrap();
 
-    let new_segment_count = dir.path().read_dir().unwrap().count();
+    let new_segment_count = fs::read_dir(dir.path()).unwrap().count();
 
     assert_eq!(new_segment_count, 3);
 
@@ -285,11 +286,11 @@ fn test_building_new_sparse_segment() {
 
     // Check what happens if segment building fails here
 
-    let segment_count = dir.path().read_dir().unwrap().count();
+    let segment_count = fs::read_dir(dir.path()).unwrap().count();
 
     assert_eq!(segment_count, 2);
 
-    let temp_segment_count = temp_dir.path().read_dir().unwrap().count();
+    let temp_segment_count = fs::read_dir(temp_dir.path()).unwrap().count();
 
     assert_eq!(temp_segment_count, 1);
 
@@ -303,7 +304,7 @@ fn test_building_new_sparse_segment() {
         .build(permit, &stopped, &mut rng, &hw_counter)
         .unwrap();
 
-    let new_segment_count = dir.path().read_dir().unwrap().count();
+    let new_segment_count = fs::read_dir(dir.path()).unwrap().count();
 
     assert_eq!(new_segment_count, 3);
 
@@ -576,7 +577,7 @@ fn test_building_new_segment_with_mmap_payload() {
     )
     .unwrap();
 
-    let temp_segment_count = temp_dir.path().read_dir().unwrap().count();
+    let temp_segment_count = fs::read_dir(temp_dir.path()).unwrap().count();
 
     assert_eq!(temp_segment_count, 1);
 
@@ -593,7 +594,7 @@ fn test_building_new_segment_with_mmap_payload() {
         PayloadStorageType::Mmap
     );
 
-    let new_segment_count = segment_dir.path().read_dir().unwrap().count();
+    let new_segment_count = fs::read_dir(segment_dir.path()).unwrap().count();
 
     assert_eq!(new_segment_count, 2);
 }

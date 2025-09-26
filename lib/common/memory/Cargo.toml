@@ -15,6 +15,7 @@ workspace = true
 [dependencies]
 ahash = { workspace = true }
 delegate = { workspace = true }
+fs-err = { workspace = true }
 memmap2 = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }

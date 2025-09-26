@@ -9,6 +9,7 @@ use collection::shards::replica_set::ReplicaState;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::{PeerId, ShardId};
 use common::save_on_disk::SaveOnDisk;
+use fs_err::tokio as tokio_fs;
 
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
@@ -351,7 +352,7 @@ async fn _do_recover_from_snapshot(
     collection.trigger_optimizers().await;
 
     // Remove tmp collection dir
-    tokio::fs::remove_dir_all(&tmp_collection_dir).await?;
+    tokio_fs::remove_dir_all(&tmp_collection_dir).await?;
 
     // Remove snapshot after recovery if downloaded
     if let Err(err) = snapshot_path.close() {

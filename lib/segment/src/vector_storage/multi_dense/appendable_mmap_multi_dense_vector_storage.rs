@@ -1,4 +1,3 @@
-use std::fs::create_dir_all;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -6,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use memory::madvise::AdviceSetting;
 
 use crate::common::Flusher;
@@ -402,7 +402,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         ChunkedMmapVectors<MultivectorMmapOffset>,
     >,
 > {
-    create_dir_all(path)?;
+    fs::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let offsets_path = path.join(OFFSETS_DIR_PATH);
@@ -516,7 +516,7 @@ pub fn open_appendable_in_ram_multi_vector_storage_impl<T: PrimitiveVectorElemen
         InRamPersistedVectors<MultivectorMmapOffset>,
     >,
 > {
-    create_dir_all(path)?;
+    fs::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let offsets_path = path.join(OFFSETS_DIR_PATH);

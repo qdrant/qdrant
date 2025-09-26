@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::True;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use io::file_operations::atomic_save_json;
 use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
@@ -71,7 +72,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                             "Path must have a parent directory",
                         )
                     })
-                    .and_then(std::fs::create_dir_all)
+                    .and_then(fs::create_dir_all)
                     .map_err(|e| {
                         EncodingError::EncodingError(format!(
                             "Failed to create metadata directory: {e}",
@@ -185,7 +186,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                         "Path must have a parent directory",
                     )
                 })
-                .and_then(std::fs::create_dir_all)
+                .and_then(fs::create_dir_all)
                 .map_err(|e| {
                     EncodingError::EncodingError(format!(
                         "Failed to create metadata directory: {e}",
@@ -204,7 +205,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 
     pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
-        let contents = std::fs::read_to_string(meta_path)?;
+        let contents = fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
         let result = Self {
             encoded_vectors,

@@ -28,6 +28,8 @@ use common::defaults::MAX_CONCURRENT_SEGMENT_LOADS;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::{panic, tar_ext};
+use fs_err as fs;
+use fs_err::tokio as tokio_fs;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -40,7 +42,6 @@ use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
 };
 use shard::wal::SerdeWal;
-use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc};
@@ -160,13 +161,13 @@ impl LocalShard {
         // Delete WAL
         let wal_path = Self::wal_path(shard_path);
         if wal_path.exists() {
-            remove_dir_all(wal_path).await?;
+            tokio_fs::remove_dir_all(wal_path).await?;
         }
 
         // Delete segments
         let segments_path = Self::segments_path(shard_path);
         if segments_path.exists() {
-            remove_dir_all(segments_path).await?;
+            tokio_fs::remove_dir_all(segments_path).await?;
         }
 
         LocalShardClocks::delete_data(shard_path).await?;
@@ -294,7 +295,7 @@ impl LocalShard {
 
         // Walk over segments directory and collect all directory entries now
         // Collect now and error early to prevent errors while we've already spawned load threads
-        let segment_paths = std::fs::read_dir(&segments_path)
+        let segment_paths = fs::read_dir(&segments_path)
             .map_err(|err| {
                 CollectionError::service_error(format!(
                     "Can't read segments directory due to {err}\nat {}",
@@ -343,7 +344,7 @@ impl LocalShard {
                     let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
 
                     let Some(mut segment) = segment else {
-                        std::fs::remove_dir_all(&segment_path).map_err(|err| {
+                        fs::remove_dir_all(&segment_path).map_err(|err| {
                             CollectionError::service_error(format!(
                                 "failed to remove leftover segment {}: {err}",
                                 segment_path.display(),
@@ -517,7 +518,7 @@ impl LocalShard {
 
         let wal_path = Self::wal_path(shard_path);
 
-        create_dir_all(&wal_path).await.map_err(|err| {
+        tokio_fs::create_dir_all(&wal_path).await.map_err(|err| {
             CollectionError::service_error(format!(
                 "Can't create shard wal directory. Error: {err}"
             ))
@@ -525,11 +526,13 @@ impl LocalShard {
 
         let segments_path = Self::segments_path(shard_path);
 
-        create_dir_all(&segments_path).await.map_err(|err| {
-            CollectionError::service_error(format!(
-                "Can't create shard segments directory. Error: {err}"
-            ))
-        })?;
+        tokio_fs::create_dir_all(&segments_path)
+            .await
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Can't create shard segments directory. Error: {err}"
+                ))
+            })?;
 
         let mut segment_holder = SegmentHolder::default();
         let mut build_handlers = vec![];
@@ -1162,11 +1165,11 @@ impl LocalShardClocks {
         let oldest_clocks_path = Self::oldest_clocks_path(shard_path);
 
         if newest_clocks_path.exists() {
-            remove_file(newest_clocks_path).await?;
+            tokio_fs::remove_file(newest_clocks_path).await?;
         }
 
         if oldest_clocks_path.exists() {
-            remove_file(oldest_clocks_path).await?;
+            tokio_fs::remove_file(oldest_clocks_path).await?;
         }
 
         Ok(())

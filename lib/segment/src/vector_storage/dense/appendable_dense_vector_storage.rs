@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::fs::create_dir_all;
 use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -9,6 +8,7 @@ use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use memory::madvise::AdviceSetting;
 
 use crate::common::Flusher;
@@ -249,7 +249,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     dim: usize,
     distance: Distance,
 ) -> OperationResult<AppendableMmapDenseVectorStorage<T, ChunkedMmapVectors<T>>> {
-    create_dir_all(path)?;
+    fs::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
@@ -330,7 +330,7 @@ pub fn open_appendable_in_ram_vector_storage_impl<T: PrimitiveVectorElement>(
     dim: usize,
     distance: Distance,
 ) -> OperationResult<AppendableMmapDenseVectorStorage<T, InRamPersistedVectors<T>>> {
-    create_dir_all(path)?;
+    fs::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);

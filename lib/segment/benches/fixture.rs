@@ -2,6 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use common::types::PointOffsetType;
+use fs_err as fs;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
@@ -77,7 +78,7 @@ where
             )
             .for_each(add_point);
 
-        std::fs::create_dir_all(&path).unwrap();
+        fs::create_dir_all(&path).unwrap();
         graph_layers_builder
             .into_graph_layers(&path, GraphLinksFormatParam::Plain, false)
             .unwrap()
@@ -87,7 +88,7 @@ where
 }
 
 fn updated_ago(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let elapsed = std::fs::metadata(path)?.modified()?.elapsed()?;
+    let elapsed = fs::metadata(path)?.modified()?.elapsed()?;
     let secs_rounded = elapsed.as_secs().next_multiple_of(60);
     Ok(humantime::format_duration(Duration::from_secs(secs_rounded)).to_string())
 }

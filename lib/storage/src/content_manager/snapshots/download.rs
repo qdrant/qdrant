@@ -2,13 +2,13 @@ use std::ffi::OsString;
 use std::path::Path;
 
 use common::tempfile_ext::MaybeTempPath;
+use fs_err::tokio as tokio_fs;
 use futures::StreamExt;
-use reqwest;
 use tap::Tap;
 use tempfile::TempPath;
-use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use url::Url;
+use {fs_err as fs, reqwest};
 
 use crate::StorageError;
 
@@ -34,10 +34,11 @@ async fn download_file(
         .suffix(".download")
         .tempfile_in(dir_path)?
         .into_parts();
+    let file = fs::File::from_parts::<&Path>(file, temp_path.as_ref());
 
     log::debug!("Downloading snapshot from {url} to {temp_path:?}");
 
-    let mut file = File::from_std(file);
+    let mut file = tokio_fs::File::from_std(file);
 
     let response = client.get(url.clone()).send().await?;
 

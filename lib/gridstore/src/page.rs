@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use fs_err as fs;
 use memmap2::{Mmap, MmapMut};
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
@@ -144,7 +145,7 @@ impl Page {
     #[allow(dead_code)]
     pub fn delete_page(self) {
         drop(self.mmap);
-        std::fs::remove_file(&self.path).unwrap();
+        fs::remove_file(&self.path).unwrap();
     }
 
     /// Populate all pages in the mmap.

@@ -1,11 +1,12 @@
 use std::cmp::max;
-use std::fs::{File, create_dir_all};
 use std::io::BufReader;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::maybe_uninit::maybe_uninit_fill_from;
+use fs_err as fs;
+use fs_err::File;
 use io::file_operations::atomic_save_json;
 use memmap2::MmapMut;
 use memory::chunked_utils::{UniversalMmapChunk, chunk_name, create_chunk, read_mmaps};
@@ -134,7 +135,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         advice: AdviceSetting,
         populate: Option<bool>,
     ) -> OperationResult<Self> {
-        create_dir_all(directory)?;
+        fs::create_dir_all(directory)?;
         let status_mmap = Self::ensure_status_file(directory)?;
         let status = unsafe { MmapType::from(status_mmap) };
 

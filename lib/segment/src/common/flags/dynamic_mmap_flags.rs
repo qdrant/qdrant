@@ -1,11 +1,11 @@
 use std::cmp::max;
-use std::fs::OpenOptions;
+use std::fmt;
 use std::path::{Path, PathBuf};
-use std::{fmt, fs};
 
 use bitvec::prelude::BitSlice;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use memmap2::MmapMut;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{self, AdviceSetting, Madviseable as _};
@@ -118,7 +118,7 @@ impl DynamicMmapFlags {
     ) -> OperationResult<MmapBitSlice> {
         let capacity_bytes = mmap_capacity_bytes(num_flags);
 
-        let file = OpenOptions::new()
+        let file = fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)

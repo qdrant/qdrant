@@ -240,12 +240,12 @@ pub enum WalError {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(not(target_os = "windows"))]
-    use std::fs;
     use std::num::NonZeroUsize;
     #[cfg(not(target_os = "windows"))]
     use std::os::unix::fs::MetadataExt;
 
+    #[cfg(not(target_os = "windows"))]
+    use fs_err as fs;
     use tempfile::Builder;
 
     use super::*;

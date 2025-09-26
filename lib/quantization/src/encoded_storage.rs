@@ -1,6 +1,4 @@
 #[cfg(feature = "testing")]
-use std::fs::File;
-#[cfg(feature = "testing")]
 use std::io::{Read, Write};
 #[cfg(feature = "testing")]
 use std::num::NonZeroUsize;
@@ -10,6 +8,10 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+#[cfg(feature = "testing")]
+use fs_err as fs;
+#[cfg(feature = "testing")]
+use fs_err::File;
 #[cfg(feature = "testing")]
 use memory::fadvise::OneshotFile;
 use memory::mmap_type::MmapFlusher;
@@ -179,7 +181,7 @@ impl EncodedStorageBuilder for TestEncodedStorageBuilder {
                         "Path must have a parent directory",
                     )
                 })
-                .and_then(std::fs::create_dir_all)?;
+                .and_then(fs::create_dir_all)?;
             let mut file = File::create(path)?;
             file.write_all(&self.data)?;
             file.sync_all()?;

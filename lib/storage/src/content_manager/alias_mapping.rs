@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use collection::shards::CollectionId;
+use fs_err as fs;
 use io::file_operations::{atomic_save_json, read_json};
 use serde::{Deserialize, Serialize};
 

@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 
 use channel_service::ChannelService;
 use common::defaults;
+use fs_err::tokio as tokio_fs;
 use shard::ShardId;
 use tokio::time::{sleep_until, timeout_at};
 use transfer::ShardTransferConsensus;
@@ -70,15 +71,15 @@ pub async fn create_shard_dir(
     shard_id: ShardId,
 ) -> CollectionResult<PathBuf> {
     let shard_path = shard_path(collection_path, shard_id);
-    match tokio::fs::create_dir(&shard_path).await {
+    match tokio_fs::create_dir(&shard_path).await {
         Ok(_) => Ok(shard_path),
         // If the directory already exists, remove it and create it again
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             log::warn!("Shard path already exists, removing and creating again: {shard_path:?}");
-            tokio::fs::remove_dir_all(&shard_path)
+            tokio_fs::remove_dir_all(&shard_path)
                 .await
                 .map_err(CollectionError::from)?;
-            tokio::fs::create_dir(&shard_path)
+            tokio_fs::create_dir(&shard_path)
                 .await
                 .map_err(CollectionError::from)?;
             Ok(shard_path)

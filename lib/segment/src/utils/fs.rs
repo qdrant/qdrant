@@ -1,5 +1,7 @@
+use std::fmt;
 use std::path::Path;
-use std::{fmt, fs};
+
+use fs_err as fs;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 
@@ -15,7 +17,7 @@ pub fn move_all(dir: &Path, dest_dir: &Path) -> OperationResult<()> {
 }
 
 fn move_all_impl(base: &Path, dir: &Path, dest_dir: &Path) -> OperationResult<()> {
-    let entries = dir.read_dir().map_err(|err| {
+    let entries = fs::read_dir(dir).map_err(|err| {
         if base != dir {
             failed_to_read_dir_error(dir, err)
         } else {
@@ -42,7 +44,7 @@ fn move_all_impl(base: &Path, dir: &Path, dest_dir: &Path) -> OperationResult<()
 
         if path.is_dir() && dest_path.exists() {
             move_all_impl(base, &path, &dest_path)?;
-            std::fs::remove_dir(path)?;
+            fs::remove_dir(path)?;
         } else {
             if let Some(dir) = dest_path.parent()
                 && !dir.exists()

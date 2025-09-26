@@ -4,6 +4,8 @@ use std::backtrace::Backtrace;
 use std::panic;
 use std::path::PathBuf;
 
+use fs_err as fs;
+
 use crate::common::error_reporting::ErrorReporter;
 
 const DEFAULT_INITIALIZED_FILE: &str = ".qdrant-initialized";
@@ -42,7 +44,7 @@ pub fn setup_panic_hook(reporting_enabled: bool, reporting_id: String) {
 /// Creates a file that indicates that the server has been started.
 /// This file is used to check if the server has been successfully started before potential kill.
 pub fn touch_started_file_indicator() {
-    if let Err(err) = std::fs::write(get_init_file_path(), "") {
+    if let Err(err) = fs::write(get_init_file_path(), "") {
         log::warn!("Failed to create init file indicator: {err}");
     }
 }
@@ -52,7 +54,7 @@ pub fn touch_started_file_indicator() {
 pub fn remove_started_file_indicator() {
     let path = get_init_file_path();
     if path.exists()
-        && let Err(err) = std::fs::remove_file(path)
+        && let Err(err) = fs::remove_file(path)
     {
         log::warn!("Failed to remove init file indicator: {err}");
     }

@@ -1,9 +1,10 @@
-use std::fs::{self, File, remove_dir_all, rename};
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use collection::collection::Collection;
 use collection::shards::shard::PeerId;
+use fs_err as fs;
+use fs_err::File;
 use log::info;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use storage::content_manager::alias_mapping::AliasPersistence;
@@ -73,11 +74,11 @@ pub fn recover_snapshots(
         }
         // Remove collection_path directory if exists
         if collection_path.exists()
-            && let Err(err) = remove_dir_all(&collection_path)
+            && let Err(err) = fs::remove_dir_all(&collection_path)
         {
             panic!("Failed to remove collection {collection_name}: {err}");
         }
-        rename(&collection_temp_path, &collection_path).unwrap();
+        fs::rename(&collection_temp_path, &collection_path).unwrap();
     }
     recovered_collections
 }
@@ -137,6 +138,6 @@ pub fn recover_full_snapshot(
     }
 
     // Remove temporary directory
-    remove_dir_all(&snapshot_temp_path).unwrap();
+    fs::remove_dir_all(&snapshot_temp_path).unwrap();
     recovered_collection
 }

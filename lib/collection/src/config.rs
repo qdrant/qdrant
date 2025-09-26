@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs::File;
 use std::io::{Read, Write};
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::Path;
 
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use fs_err::File;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;

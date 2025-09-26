@@ -588,6 +588,7 @@ mod tests {
             .suffix(".mmap")
             .tempfile()
             .unwrap();
+        #[allow(clippy::disallowed_methods, reason = "test code")]
         tempfile.as_file().set_len(len as u64).unwrap();
         tempfile
     }
