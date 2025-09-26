@@ -164,6 +164,7 @@ impl MetricsProvider for CollectionsTelemetry {
                 CollectionTelemetryEnum::Full(c) => c.count_vectors(),
             })
             .sum::<usize>();
+
         metrics.push(metric_family(
             "collections_total",
             "number of collections",
@@ -186,6 +187,8 @@ impl MetricsProvider for CollectionsTelemetry {
 
         // Vectors excluded from index-only requests.
         let mut indexed_only_excluded = vec![];
+
+        let mut total_dead_shards = 0;
 
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
@@ -228,6 +231,13 @@ impl MetricsProvider for CollectionsTelemetry {
                     &[("id", &collection.id), ("vector", name)],
                 ))
             }
+
+            total_dead_shards += collection
+                .shards
+                .iter()
+                .flatten()
+                .filter(|i| i.replicate_states.values().any(|state| !state.is_active()))
+                .count();
         }
 
         if !indexed_only_excluded.is_empty() {
@@ -258,6 +268,13 @@ impl MetricsProvider for CollectionsTelemetry {
             "approximate amount of vectors per collection",
             MetricType::GAUGE,
             vectors_per_collection,
+        ));
+
+        metrics.push(metric_family(
+            "dead_shards_total",
+            "total amount of dead shards",
+            MetricType::GAUGE,
+            vec![gauge(total_dead_shards as f64, &[])],
         ));
     }
 }
