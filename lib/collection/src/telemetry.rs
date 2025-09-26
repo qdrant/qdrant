@@ -54,6 +54,9 @@ impl CollectionTelemetry {
     }
 
     /// Amount of optimizers currently running.
+    ///
+    /// Note: A `DetailsLevel` of 4 or setting `telemetry_detail.optimizer_log` to true is required.
+    ///       Otherwise, this function will return 0, which may not be correct.
     pub fn count_optimizers_running(&self) -> usize {
         self.shards
             .iter()
