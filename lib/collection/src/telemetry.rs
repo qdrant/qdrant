@@ -55,16 +55,15 @@ impl CollectionTelemetry {
 
     /// Amount of optimizers currently running.
     ///
-    /// Note: A `DetailsLevel` of 4 or setting `telemetry_detail.optimizer_log` to true is required.
+    /// Note: A `DetailsLevel` of 4 or setting `telemetry_detail.optimizer_logs` to true is required.
     ///       Otherwise, this function will return 0, which may not be correct.
     pub fn count_optimizers_running(&self) -> usize {
         self.shards
             .iter()
             .flatten()
-            .filter_map(|i| i.local.as_ref())
-            .flat_map(|i| i.optimizations.log.iter())
-            .flatten()
-            .filter(|i| i.status == TrackerStatus::Optimizing)
+            .filter_map(|replica_set| replica_set.local.as_ref())
+            .flat_map(|local_shard| local_shard.optimizations.log.iter().flatten())
+            .filter(|log| log.status == TrackerStatus::Optimizing)
             .count()
     }
 }
