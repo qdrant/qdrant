@@ -33,7 +33,6 @@ impl PartialOrd for ScoredPointOffset {
 pub struct TelemetryDetail {
     pub level: DetailsLevel,
     pub histograms: bool,
-    pub optimizer_logs: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -70,7 +69,6 @@ impl Default for TelemetryDetail {
         TelemetryDetail {
             level: DetailsLevel::Level0,
             histograms: false,
-            optimizer_logs: false,
         }
     }
 }
