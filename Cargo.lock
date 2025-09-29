@@ -1195,7 +1195,6 @@ dependencies = [
  "itertools 0.14.0",
  "lazy_static",
  "log",
- "merge",
  "object_store",
  "ordered-float 5.0.0",
  "parking_lot",
@@ -3615,28 +3614,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "merge"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10bbef93abb1da61525bbc45eeaff6473a41907d19f8f9aa5168d214e10693e9"
-dependencies = [
- "merge_derive",
- "num-traits",
-]
-
-[[package]]
-name = "merge_derive"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "209d075476da2e63b4b29e72a2ef627b840589588e71400a25e3565c4f849d07"
-dependencies = [
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "syn 1.0.107",
-]
-
-[[package]]
 name = "mime"
 version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5801,7 +5778,6 @@ dependencies = [
  "macros",
  "memmap2",
  "memory",
- "merge",
  "ndarray",
  "ndarray-npy",
  "nom 8.0.0",
