@@ -463,7 +463,7 @@ pub fn sync_points(
 }
 
 /// Batch size when modifying vector
-const VECTOR_OP_BATCH_SIZE: usize = 512;
+const VECTOR_OP_BATCH_SIZE: usize = 32;
 
 pub fn update_vectors_conditional(
     segments: &SegmentHolder,
