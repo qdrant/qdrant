@@ -2,11 +2,12 @@ use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::{cmp, fmt, fs};
+use std::{cmp, fmt};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
+use fs_err as fs;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::query_context::QueryContext;
