@@ -166,7 +166,7 @@ pub fn process_field_index_operation(
     }
 }
 
-/// No not insert more than this number of points in a single update operation chunk
+/// Do not insert more than this number of points in a single update operation chunk
 /// This is needed to avoid locking segments for too long, so that
 /// parallel read operations are not starved.
 const UPDATE_OP_CHUNK_SIZE: usize = 32;
