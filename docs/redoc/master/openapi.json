@@ -6607,6 +6607,13 @@
           "optimizer_status": {
             "$ref": "#/components/schemas/OptimizersStatus"
           },
+          "warnings": {
+            "description": "Warnings related to the collection",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CollectionWarning"
+            }
+          },
           "indexed_vectors_count": {
             "description": "Approximate number of indexed vectors in the collection. Indexed vectors in large segments are faster to query, as it is stored in a specialized vector index.",
             "type": "integer",
@@ -6673,6 +6680,18 @@
             "additionalProperties": false
           }
         ]
+      },
+      "CollectionWarning": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "description": "Warning message",
+            "type": "string"
+          }
+        }
       },
       "CollectionConfig": {
         "description": "Information about the collection configuration",
