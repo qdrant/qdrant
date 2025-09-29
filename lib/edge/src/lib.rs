@@ -7,6 +7,7 @@ use std::{cmp, fmt};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
+use fs_err as fs;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::query_context::QueryContext;
@@ -38,7 +39,7 @@ impl Shard {
         let wal_path = path.join(WAL_PATH);
 
         if !wal_path.exists() {
-            fs_err::create_dir(&wal_path).map_err(|err| {
+            fs::create_dir(&wal_path).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to create WAL directory {}: {err}",
                     wal_path.display(),
@@ -57,7 +58,7 @@ impl Shard {
         let segments_path = path.join(SEGMENTS_PATH);
 
         if !segments_path.exists() {
-            fs_err::create_dir(&segments_path).map_err(|err| {
+            fs::create_dir(&segments_path).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to create segments directory {}: {err}",
                     segments_path.display(),
@@ -65,7 +66,7 @@ impl Shard {
             })?;
         }
 
-        let segments_dir = fs_err::read_dir(&segments_path).map_err(|err| {
+        let segments_dir = fs::read_dir(&segments_path).map_err(|err| {
             OperationError::service_error(format!(
                 "failed to read segments directory {}: {err}",
                 segments_path.display(),
@@ -112,7 +113,7 @@ impl Shard {
             })?;
 
             let Some(mut segment) = segment else {
-                fs_err::remove_dir_all(&segment_path).map_err(|err| {
+                fs::remove_dir_all(&segment_path).map_err(|err| {
                     OperationError::service_error(format!(
                         "failed to remove leftover segment {}: {err}",
                         segment_path.display(),
