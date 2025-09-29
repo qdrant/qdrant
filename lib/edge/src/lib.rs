@@ -59,7 +59,7 @@ impl Shard {
         if !segments_path.exists() {
             fs::create_dir(&segments_path).map_err(|err| {
                 OperationError::service_error(format!(
-                    "failed to create segmens directory {}: {err}",
+                    "failed to create segments directory {}: {err}",
                     segments_path.display(),
                 ))
             })?;
