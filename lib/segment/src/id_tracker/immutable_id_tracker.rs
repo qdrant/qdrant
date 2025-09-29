@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
@@ -8,6 +7,7 @@ use bitvec::vec::BitVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
+use fs_err::File;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapSlice};

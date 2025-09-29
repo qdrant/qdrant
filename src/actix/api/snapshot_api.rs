@@ -4,7 +4,6 @@ use ::common::tempfile_ext::MaybeTempPath;
 use actix_multipart::form::MultipartForm;
 use actix_multipart::form::tempfile::TempFile;
 use actix_web::{Responder, Result, delete, get, post, put, web};
-use actix_web_validator as valid;
 use collection::common::file_utils::move_file;
 use collection::common::sha_256;
 use collection::common::snapshot_stream::SnapshotStream;
@@ -15,6 +14,7 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
 use collection::shards::shard_holder::shard_not_found_error;
+use fs_err::tokio as tokio_fs;
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
@@ -32,6 +32,7 @@ use storage::rbac::{Access, AccessRequirements};
 use tokio::io::AsyncWriteExt as _;
 use uuid::Uuid;
 use validator::Validate;
+use {actix_web_validator as valid, fs_err as fs};
 
 use super::{CollectionPath, StrictCollectionPath};
 use crate::actix::auth::ActixAccess;
@@ -105,7 +106,7 @@ pub async fn do_save_uploaded_snapshot(
 
     move_file(snapshot.file.path(), &path).await?;
 
-    let absolute_path = path.canonicalize()?;
+    let absolute_path = fs::canonicalize(&path)?;
 
     let snapshot_location = Url::from_file_path(&absolute_path).map_err(|_| {
         StorageError::service_error(format!(
@@ -743,6 +744,10 @@ async fn recover_partial_snapshot_from(
                 .suffix(".download")
                 .tempfile_in(&download_dir)?
                 .into_parts();
+            let partial_snapshot_file = fs::File::from_parts::<&Path>(
+                partial_snapshot_file,
+                partial_snapshot_temp_path.as_ref(),
+            );
 
             let response = http_client
                 .post(create_snapshot_url)
@@ -765,7 +770,7 @@ async fn recover_partial_snapshot_from(
             }
 
             let mut partial_snapshot_file =
-                tokio::io::BufWriter::new(tokio::fs::File::from_std(partial_snapshot_file));
+                tokio::io::BufWriter::new(tokio_fs::File::from_std(partial_snapshot_file));
 
             let mut partial_snapshot_stream = response.bytes_stream();
 

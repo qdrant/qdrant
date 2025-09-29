@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::defaults;
+use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
 
 use super::Collection;
@@ -448,7 +449,7 @@ impl Collection {
                 if tokio::fs::try_exists(&shard_flag).await.is_ok() {
                     // We can delete initializing flag without waiting for transfer to finish
                     // because if transfer fails in between, Qdrant will retry it.
-                    tokio::fs::remove_file(&shard_flag).await?;
+                    tokio_fs::remove_file(&shard_flag).await?;
                     log::debug!("Removed shard initializing flag {shard_flag:?}");
                 }
             }

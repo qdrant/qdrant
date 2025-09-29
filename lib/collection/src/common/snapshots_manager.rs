@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use common::tempfile_ext::MaybeTempPath;
+use fs_err as fs;
+use fs_err::tokio as tokio_fs;
 use object_store::aws::AmazonS3Builder;
 use serde::Deserialize;
 use tempfile::TempPath;
@@ -217,8 +219,8 @@ impl SnapshotStorageLocalFS {
     async fn delete_snapshot(&self, snapshot_path: &Path) -> CollectionResult<bool> {
         let checksum_path = get_checksum_path(snapshot_path);
         let (delete_snapshot, delete_checksum) = tokio::join!(
-            tokio::fs::remove_file(snapshot_path),
-            tokio::fs::remove_file(checksum_path),
+            tokio_fs::remove_file(snapshot_path),
+            tokio_fs::remove_file(checksum_path),
         );
 
         delete_snapshot.map_err(|e| match e.kind() {
@@ -237,7 +239,7 @@ impl SnapshotStorageLocalFS {
     }
 
     async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {
-        let mut entries = match tokio::fs::read_dir(directory).await {
+        let mut entries = match tokio_fs::read_dir(directory).await {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
             Err(e) => return Err(e.into()),
@@ -269,7 +271,7 @@ impl SnapshotStorageLocalFS {
         // 5. Move the temporary file to the target file. (move is atomic, copy is not)
 
         if let Some(target_dir) = target_path.parent() {
-            std::fs::create_dir_all(target_dir)?;
+            fs::create_dir_all(target_dir)?;
         }
 
         // Move snapshot to permanent location.
@@ -283,7 +285,7 @@ impl SnapshotStorageLocalFS {
         let checksum_path = get_checksum_path(target_path);
         let checksum = hash_file(source_path).await?;
         let checksum_file = TempPath::from_path(&checksum_path);
-        let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
+        let mut file = tokio_fs::File::create(checksum_path.as_path()).await?;
         file.write_all(checksum.as_bytes()).await?;
 
         move_file(&source_path, &target_path_tmp).await?;
@@ -301,7 +303,7 @@ impl SnapshotStorageLocalFS {
         if let Some(target_dir) = local_path.parent()
             && !target_dir.exists()
         {
-            std::fs::create_dir_all(target_dir)?;
+            fs::create_dir_all(target_dir)?;
         }
 
         if storage_path != local_path {
@@ -317,13 +319,11 @@ impl SnapshotStorageLocalFS {
         snapshots_path: &str,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
-        let absolute_snapshot_dir = Path::new(snapshots_path).canonicalize().map_err(|_| {
+        let absolute_snapshot_dir = fs::canonicalize(snapshots_path).map_err(|_| {
             CollectionError::not_found(format!("Snapshot directory: {snapshots_path}"))
         })?;
 
-        let absolute_snapshot_path = absolute_snapshot_dir
-            .join(snapshot_name)
-            .canonicalize()
+        let absolute_snapshot_path = fs::canonicalize(absolute_snapshot_dir.join(snapshot_name))
             .map_err(|_| CollectionError::not_found(format!("Snapshot {snapshot_name}")))?;
 
         if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
@@ -345,13 +345,11 @@ impl SnapshotStorageLocalFS {
     ///
     /// This enforces the file to be inside the snapshots directory
     fn get_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> CollectionResult<PathBuf> {
-        let absolute_snapshot_dir = snapshots_path.canonicalize().map_err(|_| {
+        let absolute_snapshot_dir = fs::canonicalize(snapshots_path).map_err(|_| {
             CollectionError::not_found(format!("Snapshot directory: {}", snapshots_path.display()))
         })?;
 
-        let absolute_snapshot_path = absolute_snapshot_dir
-            .join(snapshot_name)
-            .canonicalize()
+        let absolute_snapshot_path = fs::canonicalize(absolute_snapshot_dir.join(snapshot_name))
             .map_err(|_| CollectionError::not_found(format!("Snapshot {snapshot_name}")))?;
 
         if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
@@ -403,7 +401,7 @@ impl SnapshotStorageCloud {
         target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
         snapshot_storage_ops::multipart_upload(&self.client, source_path, target_path).await?;
-        tokio::fs::remove_file(source_path).await?;
+        tokio_fs::remove_file(source_path).await?;
         snapshot_storage_ops::get_snapshot_description(&self.client, target_path).await
     }
 
@@ -415,7 +413,7 @@ impl SnapshotStorageCloud {
         if let Some(target_dir) = local_path.parent()
             && !target_dir.exists()
         {
-            std::fs::create_dir_all(target_dir)?;
+            fs::create_dir_all(target_dir)?;
         }
         if storage_path != local_path {
             // download snapshot from cloud storage to local path

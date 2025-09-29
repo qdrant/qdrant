@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
+use fs_err as fs;
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SnapshotManifest;
@@ -33,7 +34,7 @@ impl LocalShard {
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
         log::info!("Restoring shard snapshot {}", snapshot_path.display());
         // Read dir first as the directory contents would change during restore
-        let entries = std::fs::read_dir(LocalShard::segments_path(snapshot_path))?
+        let entries = fs::read_dir(LocalShard::segments_path(snapshot_path))?
             .collect::<Result<Vec<_>, _>>()?;
 
         // Filter out hidden entries
@@ -172,7 +173,7 @@ impl LocalShard {
         let source_wal_path = wal_guard.path();
 
         let tar = tar.descend(Path::new(WAL_PATH))?;
-        for entry in std::fs::read_dir(source_wal_path).map_err(|err| {
+        for entry in fs::read_dir(source_wal_path).map_err(|err| {
             CollectionError::service_error(format!("Can't read WAL directory: {err}",))
         })? {
             let entry = entry.map_err(|err| {

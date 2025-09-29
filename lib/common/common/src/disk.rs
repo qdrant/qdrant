@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use fs_err as fs;
 use walkdir::WalkDir;
 
 /// How many bytes a directory takes on disk.
@@ -7,12 +8,12 @@ use walkdir::WalkDir;
 /// Note: on non-unix systems, this function returns the apparent/logical
 /// directory size rather than actual disk usage.
 pub fn dir_disk_size(path: impl Into<PathBuf>) -> std::io::Result<u64> {
-    fn dir_disk_size(mut dir: std::fs::ReadDir) -> std::io::Result<u64> {
+    fn dir_disk_size(mut dir: fs::ReadDir) -> std::io::Result<u64> {
         dir.try_fold(0, |acc, file| {
             let file = file?;
             let metadata = file.metadata()?;
             let size = if metadata.is_dir() {
-                dir_disk_size(std::fs::read_dir(file.path())?)?
+                dir_disk_size(fs::read_dir(file.path())?)?
             } else {
                 #[cfg(unix)]
                 {
@@ -29,7 +30,7 @@ pub fn dir_disk_size(path: impl Into<PathBuf>) -> std::io::Result<u64> {
         })
     }
 
-    dir_disk_size(std::fs::read_dir(path.into())?)
+    dir_disk_size(fs::read_dir(path.into())?)
 }
 
 /// List all files in the given directory recursively.

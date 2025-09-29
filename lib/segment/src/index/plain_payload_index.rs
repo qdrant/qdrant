@@ -1,11 +1,11 @@
 use std::collections::HashMap;
-use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndex;
@@ -46,7 +46,7 @@ impl PlainPayloadIndex {
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         path: &Path,
     ) -> OperationResult<Self> {
-        create_dir_all(path)?;
+        fs::create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
         let config = if config_path.exists() {
             PayloadConfig::load(&config_path)?

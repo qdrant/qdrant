@@ -1182,6 +1182,7 @@ dependencies = [
  "criterion",
  "env_logger",
  "fnv",
+ "fs-err",
  "fs4",
  "fs_extra",
  "futures",
@@ -1262,6 +1263,7 @@ dependencies = [
  "bytemuck",
  "common",
  "criterion",
+ "fs-err",
  "itertools 0.14.0",
  "lazy_static",
  "log",
@@ -1682,6 +1684,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "flate2",
+ "fs-err",
  "indicatif",
  "reqwest",
 ]
@@ -2007,6 +2010,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs-err"
+version = "3.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44f150ffc8782f35521cec2b23727707cb4045706ba3c854e86bef66b3a8cdbd"
+dependencies = [
+ "autocfg",
+ "tokio",
 ]
 
 [[package]]
@@ -2348,6 +2361,7 @@ dependencies = [
  "csv",
  "dataset",
  "ecow",
+ "fs-err",
  "io",
  "itertools 0.14.0",
  "lz4_flex",
@@ -3047,6 +3061,7 @@ version = "0.0.0"
 dependencies = [
  "atomicwrites",
  "bincode 1.3.3",
+ "fs-err",
  "semver",
  "serde",
  "serde_json",
@@ -3573,6 +3588,7 @@ dependencies = [
  "ahash",
  "bitvec",
  "delegate",
+ "fs-err",
  "log",
  "memmap2",
  "nix 0.29.0",
@@ -4759,6 +4775,7 @@ dependencies = [
  "config",
  "console-subscriber",
  "constant_time_eq 0.4.2",
+ "fs-err",
  "futures",
  "futures-util",
  "gpu",
@@ -4822,6 +4839,7 @@ dependencies = [
  "cc",
  "common",
  "criterion",
+ "fs-err",
  "io",
  "memory",
  "num-traits",
@@ -5747,6 +5765,7 @@ dependencies = [
  "ecow",
  "env_logger",
  "fnv",
+ "fs-err",
  "fs_extra",
  "geo",
  "geohash",
@@ -6040,6 +6059,7 @@ dependencies = [
  "api",
  "bitvec",
  "common",
+ "fs-err",
  "io",
  "itertools 0.14.0",
  "log",
@@ -6216,6 +6236,7 @@ dependencies = [
  "common",
  "criterion",
  "dataset",
+ "fs-err",
  "generic-tests",
  "gridstore",
  "half 2.6.0",
@@ -6273,6 +6294,7 @@ dependencies = [
  "common",
  "dashmap",
  "env_logger",
+ "fs-err",
  "futures",
  "http 0.2.12",
  "io",

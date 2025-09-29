@@ -152,11 +152,11 @@ impl From<(ShardKey, HashSet<ShardId>)> for KeyIdsPair {
 #[cfg(test)]
 mod test {
 
-    use std::fs::File;
     use std::sync::Arc;
 
     use common::budget::ResourceBudget;
     use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use fs_err::File;
     use segment::types::{PayloadFieldSchema, PayloadSchemaType};
     use tempfile::{Builder, TempDir};
 

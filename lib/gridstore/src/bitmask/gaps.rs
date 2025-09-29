@@ -589,8 +589,7 @@ mod tests {
 
     #[test]
     fn test_region_gaps_persistence() {
-        use std::fs;
-
+        use fs_err as fs;
         use tempfile::tempdir;
 
         let dir = tempdir().unwrap();

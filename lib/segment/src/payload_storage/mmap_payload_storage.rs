@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use gridstore::config::StorageOptions;
 use gridstore::{Blob, Gridstore};
 use parking_lot::RwLock;
@@ -39,7 +40,7 @@ impl MmapPayloadStorage {
             Self::open(path, populate)
         } else {
             // create folder if it does not exist
-            std::fs::create_dir_all(&path).map_err(|_| {
+            fs::create_dir_all(&path).map_err(|_| {
                 OperationError::service_error("Failed to create mmap payload storage directory")
             })?;
             Ok(Self::new(path, populate)?)

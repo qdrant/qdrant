@@ -1,8 +1,9 @@
-use std::fs::{File, create_dir_all};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use flate2::read::GzDecoder;
+use fs_err as fs;
+use fs_err::File;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 
 pub enum Dataset {
@@ -68,7 +69,7 @@ fn download_cached(url: &str) -> Result<PathBuf> {
 
     eprintln!("Downloading {url} to {cache_path:?}...");
 
-    create_dir_all(cache_dir)?;
+    fs::create_dir_all(cache_dir)?;
 
     let resp = reqwest::blocking::get(url)?;
     if !resp.status().is_success() {
@@ -95,7 +96,7 @@ fn download_cached(url: &str) -> Result<PathBuf> {
         &mut File::create(&tmp_fname)?,
     )?;
 
-    std::fs::rename(&tmp_fname, &cache_path)
+    fs::rename(&tmp_fname, &cache_path)
         .with_context(|| format!("Failed to rename {tmp_fname:?} to {cache_path:?}"))?;
 
     Ok(cache_path)

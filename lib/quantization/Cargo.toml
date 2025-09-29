@@ -18,6 +18,7 @@ testing = ["common/testing"]
 cc = "1.0"
 
 [dependencies]
+fs-err = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 permutation_iterator = "0.1.2"

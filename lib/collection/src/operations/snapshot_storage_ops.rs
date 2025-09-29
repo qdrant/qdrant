@@ -1,8 +1,9 @@
-use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use common::budget::ResourceBudget;
+use fs_err as fs;
+use fs_err::{File, tokio as tokio_fs};
 use futures::StreamExt;
 use object_store::WriteMultipart;
 use tokio::io::AsyncWriteExt;
@@ -78,7 +79,7 @@ pub async fn get_appropriate_chunk_size(local_source_path: &Path) -> CollectionR
     /// Source: <https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html>
     const MAX_UPLOAD_SIZE: usize = 5 * 1024 * 1024 * 1024 * 1024;
 
-    let file_meta = tokio::fs::metadata(local_source_path).await?;
+    let file_meta = tokio_fs::metadata(local_source_path).await?;
     let file_size = file_meta.len() as usize;
 
     // check if the file size exceeds the maximum upload size
@@ -209,10 +210,10 @@ pub async fn download_snapshot(
     if let Some(target_dir) = target_path.parent()
         && !target_dir.exists()
     {
-        std::fs::create_dir_all(target_dir)?;
+        fs::create_dir_all(target_dir)?;
     }
 
-    let mut file = tokio::fs::File::create(target_path)
+    let mut file = tokio_fs::File::create(target_path)
         .await
         .map_err(|e| CollectionError::service_error(format!("Failed to create file: {e}")))?;
 
@@ -232,7 +233,7 @@ pub async fn download_snapshot(
         .map_err(|e| CollectionError::service_error(format!("Failed to flush file: {e}")))?;
 
     // check len to file len
-    let file_meta = tokio::fs::metadata(target_path).await?;
+    let file_meta = tokio_fs::metadata(target_path).await?;
     if file_meta.len() != total_size as u64 {
         return Err(CollectionError::service_error(format!(
             "Downloaded file size does not match the expected size: {} != {}",

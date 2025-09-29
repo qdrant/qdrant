@@ -2,7 +2,6 @@ mod resharding;
 pub(crate) mod shard_mapping;
 
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,6 +10,8 @@ use std::time::Duration;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
+use fs_err as fs;
+use fs_err::{File, tokio as tokio_fs};
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::{
@@ -158,13 +159,13 @@ impl ShardHolder {
             // file to be left behind if the process is killed in the middle. We must avoid this so
             // we don't attempt to load this shard anymore on restart.
             let shard_config_path = ShardConfig::get_config_path(&shard_path);
-            if let Err(err) = tokio::fs::remove_file(shard_config_path).await {
+            if let Err(err) = tokio_fs::remove_file(shard_config_path).await {
                 log::error!(
                     "Failed to remove shard config file before removing the rest of the files: {err}",
                 );
             }
 
-            tokio::fs::remove_dir_all(shard_path).await?;
+            tokio_fs::remove_dir_all(shard_path).await?;
         }
         Ok(())
     }
@@ -986,7 +987,7 @@ impl ShardHolder {
         }
 
         if !temp_dir.exists() {
-            std::fs::create_dir_all(temp_dir)?;
+            fs::create_dir_all(temp_dir)?;
         }
 
         let snapshot_file_name = snapshot_path.file_name().unwrap().to_string_lossy();

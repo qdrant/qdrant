@@ -401,9 +401,9 @@ const fn default_tls_cert_ttl() -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use std::io::Write;
 
+    use fs_err as fs;
     use sealed_test::prelude::*;
 
     use super::*;
@@ -421,15 +421,20 @@ mod tests {
             .expect("failed to validate default config");
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "#[sealed_test] uses std::fs::copy"
+    )]
+    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
     #[sealed_test(files = ["config/config.yaml", "config/development.yaml"])]
     fn test_runtime_development_config() {
         unsafe { env::set_var("RUN_MODE", "development") };
 
         // `sealed_test` copies files into the same directory as the test runs in.
         // We need them in a subdirectory.
-        std::fs::create_dir("config").expect("failed to create `config` subdirectory.");
-        std::fs::copy("config.yaml", "config/config.yaml").expect("failed to copy `config.yaml`.");
-        std::fs::copy("development.yaml", "config/development.yaml")
+        fs::create_dir("config").expect("failed to create `config` subdirectory.");
+        fs::copy("config.yaml", "config/config.yaml").expect("failed to copy `config.yaml`.");
+        fs::copy("development.yaml", "config/development.yaml")
             .expect("failed to copy `development.yaml`.");
 
         // Read config
@@ -442,6 +447,7 @@ mod tests {
         assert!(config.load_errors.is_empty(), "must not have load errors")
     }
 
+    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
     #[sealed_test]
     fn test_no_config_files() {
         let non_existing_config_path = "config/non_existing_config".to_string();
@@ -457,6 +463,7 @@ mod tests {
         assert!(!config.load_errors.is_empty(), "must have load errors")
     }
 
+    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
     #[sealed_test]
     fn test_custom_config() {
         let path = "config/custom.yaml";

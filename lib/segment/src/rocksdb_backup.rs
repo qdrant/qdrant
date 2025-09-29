@@ -1,5 +1,6 @@
-use std::fs;
 use std::path::Path;
+
+use fs_err as fs;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 
@@ -8,7 +9,7 @@ pub fn create(db: &rocksdb::DB, backup_path: &Path) -> OperationResult<()> {
         create_dir_all(backup_path)?;
     } else if !backup_path.is_dir() {
         return Err(not_a_directory_error(backup_path));
-    } else if backup_path.read_dir().unwrap().next().is_some() {
+    } else if fs::read_dir(backup_path).unwrap().next().is_some() {
         return Err(directory_not_empty_error(backup_path));
     }
 

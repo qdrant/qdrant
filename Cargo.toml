@@ -51,6 +51,7 @@ mockito = "1.7"
 [dependencies]
 parking_lot = { workspace = true }
 
+fs-err = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 colored = "3"
@@ -208,6 +209,7 @@ data-encoding = "2.9.0"
 delegate = "0.13.4"
 ecow = { version = "0.2.6", features = ["serde"] }
 fnv = "1.0"
+fs-err = { version = "3.1.2", features = ["tokio"] }
 futures = "0.3.31"
 futures-util = "0.3.31"
 generic-tests = "0.1.3"

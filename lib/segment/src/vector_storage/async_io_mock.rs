@@ -1,6 +1,6 @@
 #![allow(dead_code)] // The mock is unused on Linux, and so produces dead code warnings
 
-use std::fs::File;
+use fs_err::File;
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;

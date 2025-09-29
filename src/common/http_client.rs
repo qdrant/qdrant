@@ -1,6 +1,7 @@
 use std::path::Path;
-use std::{fs, io, result};
+use std::{io, result};
 
+use fs_err as fs;
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use storage::content_manager::errors::StorageError;
 

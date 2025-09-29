@@ -1,9 +1,10 @@
 use std::collections::HashSet;
-use std::fs::File;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
+use fs_err as fs;
+use fs_err::File;
 use rstest::rstest;
 use tempfile::Builder;
 
@@ -205,19 +206,20 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
         .unwrap();
 
     // snapshotting!
-    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&parent_snapshot_tar).unwrap());
+    let tar =
+        tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
     segment
         .take_snapshot(temp_dir.path(), &tar, format, None, &mut HashSet::new())
         .unwrap();
     tar.blocking_finish().unwrap();
 
     let parent_snapshot_unpacked = Builder::new().prefix("parent_snapshot").tempdir().unwrap();
-    tar::Archive::new(File::open(&parent_snapshot_tar).unwrap())
+    tar::Archive::new(File::open(parent_snapshot_tar.path()).unwrap())
         .unpack(parent_snapshot_unpacked.path())
         .unwrap();
 
     // Should be exactly one entry in the snapshot.
-    let mut entries = parent_snapshot_unpacked.path().read_dir().unwrap();
+    let mut entries = fs::read_dir(parent_snapshot_unpacked.path()).unwrap();
     let entry = entries.next().unwrap().unwrap();
     assert!(entries.next().is_none());
 
@@ -237,7 +239,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     Segment::restore_snapshot_in_place(&entry.path()).unwrap();
 
     // Should be exactly one entry in the snapshot.
-    let mut entries = parent_snapshot_unpacked.path().read_dir().unwrap();
+    let mut entries = fs::read_dir(parent_snapshot_unpacked.path()).unwrap();
     let entry = entries.next().unwrap().unwrap();
     assert!(entries.next().is_none());
 
