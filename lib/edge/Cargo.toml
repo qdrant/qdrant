@@ -11,11 +11,11 @@ common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard" }
 
+fs-err = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 thiserror = { workspace = true }
 wal = { workspace = true }
-fs-err = { workspace = true }
 
 
 [dev-dependencies]

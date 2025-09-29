@@ -40,10 +40,7 @@ impl Shard {
 
         if !wal_path.exists() {
             fs::create_dir(&wal_path).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to create WAL directory {}: {err}",
-                    wal_path.display(),
-                ))
+                OperationError::service_error(format!("failed to create WAL directory: {err}"))
             })?;
         }
 
@@ -59,18 +56,12 @@ impl Shard {
 
         if !segments_path.exists() {
             fs::create_dir(&segments_path).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to create segments directory {}: {err}",
-                    segments_path.display(),
-                ))
+                OperationError::service_error(format!("failed to create segments directory: {err}"))
             })?;
         }
 
         let segments_dir = fs::read_dir(&segments_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to read segments directory {}: {err}",
-                segments_path.display(),
-            ))
+            OperationError::service_error(format!("failed to read segments directory: {err}"))
         })?;
 
         let mut segments = SegmentHolder::default();
@@ -78,8 +69,7 @@ impl Shard {
         for entry in segments_dir {
             let entry = entry.map_err(|err| {
                 OperationError::service_error(format!(
-                    "failed to read entry in segments directory {}: {err}",
-                    segments_path.display(),
+                    "failed to read entry in segments directory: {err}",
                 ))
             })?;
 
@@ -115,8 +105,7 @@ impl Shard {
             let Some(mut segment) = segment else {
                 fs::remove_dir_all(&segment_path).map_err(|err| {
                     OperationError::service_error(format!(
-                        "failed to remove leftover segment {}: {err}",
-                        segment_path.display(),
+                        "failed to remove leftover segment: {err}",
                     ))
                 })?;
 
