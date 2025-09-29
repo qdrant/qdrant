@@ -581,7 +581,7 @@ pub fn delete_vectors_by_filter(
 }
 
 /// Batch size when modifying payload
-const PAYLOAD_OP_BATCH_SIZE: usize = 512;
+const PAYLOAD_OP_BATCH_SIZE: usize = 32;
 
 pub fn set_payload(
     segments: &SegmentHolder,
