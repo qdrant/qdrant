@@ -287,11 +287,9 @@ impl LocalShard {
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
 
-        let wal: SerdeWal<OperationWithClockTag> = SerdeWal::new(
-            wal_path.to_str().unwrap(),
-            (&collection_config_read.wal_config).into(),
-        )
-        .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
+        let wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(&wal_path, (&collection_config_read.wal_config).into())
+                .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
 
         // Walk over segments directory and collect all directory entries now
         // Collect now and error early to prevent errors while we've already spawned load threads
@@ -576,7 +574,7 @@ impl LocalShard {
         }
 
         let wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_path.to_str().unwrap(), (&config.wal_config).into())?;
+            SerdeWal::new(&wal_path, (&config.wal_config).into())?;
 
         let optimizers = build_optimizers(
             shard_path,

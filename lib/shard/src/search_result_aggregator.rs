@@ -45,7 +45,7 @@ pub struct BatchResultAggregator {
 }
 
 impl BatchResultAggregator {
-    pub fn new(tops: impl Iterator<Item = usize>) -> Self {
+    pub fn new(tops: impl IntoIterator<Item = usize>) -> Self {
         let mut merged_results_per_batch = vec![];
         for top in tops {
             merged_results_per_batch.push(SearchResultAggregator::new(top));
@@ -59,7 +59,7 @@ impl BatchResultAggregator {
 
     pub fn update_point_versions<'a>(
         &mut self,
-        all_searches_results: impl Iterator<Item = &'a ScoredPoint>,
+        all_searches_results: impl IntoIterator<Item = &'a ScoredPoint>,
     ) {
         for point in all_searches_results {
             let point_id = point.id;
@@ -79,7 +79,7 @@ impl BatchResultAggregator {
     pub fn update_batch_results(
         &mut self,
         batch_id: usize,
-        search_results: impl Iterator<Item = ScoredPoint>,
+        search_results: impl IntoIterator<Item = ScoredPoint>,
     ) {
         let aggregator = &mut self.batch_aggregators[batch_id];
         for scored_point in search_results {

@@ -331,6 +331,13 @@ impl Distance {
         }
     }
 
+    pub fn is_ordered(&self, left: ScoreType, right: ScoreType) -> bool {
+        match self.distance_order() {
+            Order::LargeBetter => left >= right,
+            Order::SmallBetter => left <= right,
+        }
+    }
+
     /// Checks if score satisfies threshold condition
     pub fn check_threshold(&self, score: ScoreType, threshold: ScoreType) -> bool {
         match self.distance_order() {
@@ -1328,7 +1335,7 @@ impl PayloadStorageType {
     }
 }
 
-#[derive(Anonymize, Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     #[serde(default)]
@@ -1398,6 +1405,56 @@ impl SegmentConfig {
             )
             .all(|v| v)
     }
+
+    pub fn is_compatible(&self, other: &Self) -> bool {
+        // Vector data have to be compatible between two segments.
+        // Sparse vector data can be different, but a placeholder check is implemented to catch
+        // and enforce compatibility check for future changes.
+        // Payload storage type can be different.
+
+        // Assert segment config fields
+        let Self {
+            vector_data: _,
+            sparse_vector_data: _,
+            payload_storage_type: _,
+        } = self;
+
+        let is_vector_config_compatible = is_map_compatible(
+            &self.vector_data,
+            &other.vector_data,
+            VectorDataConfig::is_compatible,
+        );
+
+        let is_sparse_vector_config_compatible = is_map_compatible(
+            &self.sparse_vector_data,
+            &other.sparse_vector_data,
+            SparseVectorDataConfig::is_compatible,
+        );
+
+        is_vector_config_compatible && is_sparse_vector_config_compatible
+    }
+}
+
+fn is_map_compatible<V, C, F>(this: &HashMap<V, C>, other: &HashMap<V, C>, check: F) -> bool
+where
+    V: Eq + Hash,
+    F: Fn(&C, &C) -> bool,
+{
+    if this.len() != other.len() {
+        return false;
+    }
+
+    for (vector_name, config) in this {
+        let Some(other_config) = other.get(vector_name) else {
+            return false;
+        };
+
+        if !check(config, other_config) {
+            return false;
+        }
+    }
+
+    true
 }
 
 /// Storage types for vectors
@@ -1461,6 +1518,17 @@ pub struct MultiVectorConfig {
     pub comparator: MultiVectorComparator,
 }
 
+impl MultiVectorConfig {
+    fn is_compatible(&self, other: &Self) -> bool {
+        // TODO: Does comparator have to be same for two segments to be compatible? 🤔
+
+        // Assert multi-vector config fields
+        let Self { comparator: _ } = self;
+
+        self.comparator == other.comparator // TODO: 🤔
+    }
+}
+
 #[derive(
     Debug, Default, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
 )]
@@ -1481,7 +1549,7 @@ impl VectorStorageType {
 }
 
 /// Config of single vector data storage
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorDataConfig {
     /// Size/dimensionality of the vectors used
@@ -1519,9 +1587,46 @@ impl VectorDataConfig {
         };
         is_index_appendable && is_storage_appendable
     }
+
+    pub fn is_compatible(&self, other: &Self) -> bool {
+        // Size and distance have to be the same for both segments.
+        // Storage type, index and quantization config can be different.
+        //
+        // TODO: Can multivector config and datatype be different?
+
+        // Assert vector data config fields
+        let Self {
+            size: _,
+            distance: _,
+            storage_type: _,
+            index: _,
+            quantization_config: _,
+            multivector_config: _,
+            datatype: _,
+        } = self;
+
+        self.size == other.size
+            && self.distance == other.distance
+            && self.datatype == other.datatype // TODO: 🤔
+            && is_opt_compatible(
+                self.multivector_config.as_ref(),
+                other.multivector_config.as_ref(),
+                MultiVectorConfig::is_compatible,
+            )
+    }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, Copy, Default)]
+fn is_opt_compatible<T, F: Fn(T, T) -> bool>(this: Option<T>, other: Option<T>, check: F) -> bool {
+    match (this, other) {
+        (Some(this), Some(other)) => check(this, other),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+#[derive(
+    Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Anonymize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum SparseVectorStorageType {
     /// Storage on disk (rocksdb storage)
@@ -1546,7 +1651,7 @@ impl SparseVectorStorageType {
 }
 
 /// Config of single sparse vector data storage
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, Validate)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Anonymize)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVectorDataConfig {
     /// Sparse inverted index config
@@ -1571,6 +1676,18 @@ fn default_sparse_vector_storage_type_when_not_in_config() -> SparseVectorStorag
 
 impl SparseVectorDataConfig {
     pub fn is_indexed(&self) -> bool {
+        true
+    }
+
+    pub fn is_compatible(&self, _other: &Self) -> bool {
+        // Both index and storage type can be different for two segments to be compatible
+
+        // Assert sparse vector config fields
+        let Self {
+            index: _,
+            storage_type: _,
+        } = self;
+
         true
     }
 }
@@ -3298,22 +3415,28 @@ impl From<bool> for WithPayload {
     }
 }
 
-impl From<&WithPayloadInterface> for WithPayload {
-    fn from(interface: &WithPayloadInterface) -> Self {
+impl From<WithPayloadInterface> for WithPayload {
+    fn from(interface: WithPayloadInterface) -> Self {
         match interface {
-            WithPayloadInterface::Bool(x) => WithPayload {
-                enable: *x,
+            WithPayloadInterface::Bool(enable) => WithPayload {
+                enable,
                 payload_selector: None,
             },
-            WithPayloadInterface::Fields(x) => WithPayload {
+            WithPayloadInterface::Fields(fields) => WithPayload {
                 enable: true,
-                payload_selector: Some(PayloadSelector::new_include(x.clone())),
+                payload_selector: Some(PayloadSelector::new_include(fields)),
             },
-            WithPayloadInterface::Selector(x) => WithPayload {
+            WithPayloadInterface::Selector(selector) => WithPayload {
                 enable: true,
-                payload_selector: Some(x.clone()),
+                payload_selector: Some(selector),
             },
         }
+    }
+}
+
+impl From<&WithPayloadInterface> for WithPayload {
+    fn from(interface: &WithPayloadInterface) -> Self {
+        WithPayload::from(interface.clone())
     }
 }
 
