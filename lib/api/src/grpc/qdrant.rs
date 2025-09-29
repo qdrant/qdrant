@@ -375,6 +375,13 @@ pub struct OptimizerStatus {
     #[prost(string, tag = "2")]
     pub error: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionWarning {
+    #[prost(string, tag = "1")]
+    pub message: ::prost::alloc::string::String,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1233,6 +1240,9 @@ pub struct CollectionInfo {
     /// Approximate number of indexed vectors in the collection.
     #[prost(uint64, optional, tag = "10")]
     pub indexed_vectors_count: ::core::option::Option<u64>,
+    /// Warnings related to the collection
+    #[prost(message, repeated, tag = "11")]
+    pub warnings: ::prost::alloc::vec::Vec<CollectionWarning>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

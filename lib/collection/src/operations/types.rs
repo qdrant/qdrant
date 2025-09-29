@@ -127,6 +127,16 @@ pub enum OptimizersStatus {
     Error(String),
 }
 
+#[derive(
+    Debug, Default, Serialize, JsonSchema, Anonymize, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
+#[serde(rename_all = "snake_case")]
+pub struct CollectionWarning {
+    /// Warning message
+    #[anonymize(true)] // Might contain vector names
+    pub message: String,
+}
+
 /// Point data
 #[derive(Clone, Debug, PartialEq)]
 pub struct RecordInternal {
@@ -219,6 +229,9 @@ pub struct CollectionInfo {
     pub status: CollectionStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
+    /// Warnings related to the collection
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<CollectionWarning>,
     /// Approximate number of indexed vectors in the collection.
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in a specialized vector index.
@@ -240,6 +253,7 @@ impl CollectionInfo {
         Self {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
+            warnings: collection_config.get_warnings(),
             indexed_vectors_count: Some(0),
             points_count: Some(0),
             segments_count: 0,
@@ -263,6 +277,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
         Self {
             status: status.into(),
             optimizer_status,
+            warnings: config.get_warnings(),
             indexed_vectors_count: Some(indexed_vectors_count),
             points_count: Some(points_count),
             segments_count,

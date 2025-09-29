@@ -24,6 +24,7 @@
     - [CollectionOperationResponse](#qdrant-CollectionOperationResponse)
     - [CollectionParams](#qdrant-CollectionParams)
     - [CollectionParamsDiff](#qdrant-CollectionParamsDiff)
+    - [CollectionWarning](#qdrant-CollectionWarning)
     - [CreateAlias](#qdrant-CreateAlias)
     - [CreateCollection](#qdrant-CreateCollection)
     - [CreateCollection.MetadataEntry](#qdrant-CreateCollection-MetadataEntry)
@@ -608,6 +609,7 @@
 | payload_schema | [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry) | repeated | Collection data types |
 | points_count | [uint64](#uint64) | optional | Approximate number of points in the collection |
 | indexed_vectors_count | [uint64](#uint64) | optional | Approximate number of indexed vectors in the collection. |
+| warnings | [CollectionWarning](#qdrant-CollectionWarning) | repeated | Warnings related to the collection |
 
 
 
@@ -680,6 +682,21 @@
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
 | on_disk_payload | [bool](#bool) | optional | If true - point&#39;s payload will not be stored in memory |
 | read_fan_out_factor | [uint32](#uint32) | optional | Fan-out every read request to these many additional remote nodes (and return first available response) |
+
+
+
+
+
+
+<a name="qdrant-CollectionWarning"></a>
+
+### CollectionWarning
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| message | [string](#string) |  |  |
 
 
 
