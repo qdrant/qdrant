@@ -166,6 +166,11 @@ pub fn process_field_index_operation(
     }
 }
 
+/// Do not insert more than this number of points in a single update operation chunk
+/// This is needed to avoid locking segments for too long, so that
+/// parallel read operations are not starved.
+const UPDATE_OP_CHUNK_SIZE: usize = 32;
+
 /// Checks point id in each segment, update point if found.
 /// All not found points are inserted into random segment.
 /// Returns: number of updated points.
@@ -181,58 +186,68 @@ where
     let points_map: AHashMap<PointIdType, _> = points.into_iter().map(|p| (p.id, p)).collect();
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
-    // Update points in writable segments
-    let updated_points = segments.apply_points_with_conditional_move(
-        op_num,
-        &ids,
-        |id, write_segment| {
-            let point = points_map[&id];
-            upsert_with_payload(
-                write_segment,
-                op_num,
-                id,
-                point.get_vectors(),
-                point.payload.as_ref(),
-                hw_counter,
-            )
-        },
-        |id, vectors, old_payload| {
-            let point = points_map[&id];
-            for (name, vec) in point.get_vectors() {
-                vectors.insert(name.into(), vec.to_owned());
+    let mut res = 0;
+
+    for ids_chunk in ids.chunks(UPDATE_OP_CHUNK_SIZE) {
+        // Update points in writable segments
+        let updated_points = segments.apply_points_with_conditional_move(
+            op_num,
+            ids_chunk,
+            |id, write_segment| {
+                let point = points_map[&id];
+                upsert_with_payload(
+                    write_segment,
+                    op_num,
+                    id,
+                    point.get_vectors(),
+                    point.payload.as_ref(),
+                    hw_counter,
+                )
+            },
+            |id, vectors, old_payload| {
+                let point = points_map[&id];
+                for (name, vec) in point.get_vectors() {
+                    vectors.insert(name.into(), vec.to_owned());
+                }
+                if let Some(payload) = &point.payload {
+                    *old_payload = payload.clone();
+                }
+            },
+            |_| false,
+            hw_counter,
+        )?;
+
+        res += updated_points.len();
+        // Insert new points, which was not updated or existed
+        let new_point_ids = ids_chunk
+            .iter()
+            .copied()
+            .filter(|x| !updated_points.contains(x));
+
+        {
+            let default_write_segment =
+                segments.smallest_appendable_segment().ok_or_else(|| {
+                    OperationError::service_error(
+                        "No appendable segments exist, expected at least one",
+                    )
+                })?;
+
+            let segment_arc = default_write_segment.get();
+            let mut write_segment = segment_arc.write();
+            for point_id in new_point_ids {
+                let point = points_map[&point_id];
+                res += usize::from(upsert_with_payload(
+                    &mut write_segment,
+                    op_num,
+                    point_id,
+                    point.get_vectors(),
+                    point.payload.as_ref(),
+                    hw_counter,
+                )?);
             }
-            if let Some(payload) = &point.payload {
-                *old_payload = payload.clone();
-            }
-        },
-        |_| false,
-        hw_counter,
-    )?;
-
-    let mut res = updated_points.len();
-    // Insert new points, which was not updated or existed
-    let new_point_ids = ids.iter().copied().filter(|x| !updated_points.contains(x));
-
-    {
-        let default_write_segment = segments.smallest_appendable_segment().ok_or_else(|| {
-            OperationError::service_error("No appendable segments exist, expected at least one")
-        })?;
-
-        let segment_arc = default_write_segment.get();
-        let mut write_segment = segment_arc.write();
-        for point_id in new_point_ids {
-            let point = points_map[&point_id];
-            res += usize::from(upsert_with_payload(
-                &mut write_segment,
-                op_num,
-                point_id,
-                point.get_vectors(),
-                point.payload.as_ref(),
-                hw_counter,
-            )?);
-        }
-        RwLockWriteGuard::unlock_fair(write_segment);
-    };
+            RwLockWriteGuard::unlock_fair(write_segment);
+        };
+    }
 
     Ok(res)
 }
@@ -463,7 +478,7 @@ pub fn sync_points(
 }
 
 /// Batch size when modifying vector
-const VECTOR_OP_BATCH_SIZE: usize = 512;
+const VECTOR_OP_BATCH_SIZE: usize = 32;
 
 pub fn update_vectors_conditional(
     segments: &SegmentHolder,
@@ -581,7 +596,7 @@ pub fn delete_vectors_by_filter(
 }
 
 /// Batch size when modifying payload
-const PAYLOAD_OP_BATCH_SIZE: usize = 512;
+const PAYLOAD_OP_BATCH_SIZE: usize = 32;
 
 pub fn set_payload(
     segments: &SegmentHolder,
