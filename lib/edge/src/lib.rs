@@ -2,7 +2,7 @@ use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::{fmt, fs};
+use std::{cmp, fmt, fs};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -36,19 +36,39 @@ const SEGMENTS_PATH: &str = "segments";
 impl Shard {
     pub fn load(path: &Path, mut config: Option<SegmentConfig>) -> OperationResult<Self> {
         let wal_path = path.join(WAL_PATH);
+
+        if !wal_path.exists() {
+            fs::create_dir(&wal_path).map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to create WAL directory {}: {err}",
+                    wal_path.display(),
+                ))
+            })?;
+        }
+
         let wal: SerdeWal<CollectionUpdateOperations> =
             SerdeWal::new(&wal_path, default_wal_options()).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open WAL {}: {err}",
-                    wal_path.display()
+                    wal_path.display(),
                 ))
             })?;
 
         let segments_path = path.join(SEGMENTS_PATH);
+
+        if !segments_path.exists() {
+            fs::create_dir(&segments_path).map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to create segmens directory {}: {err}",
+                    segments_path.display(),
+                ))
+            })?;
+        }
+
         let segments_dir = fs::read_dir(&segments_path).map_err(|err| {
             OperationError::service_error(format!(
                 "failed to read segments directory {}: {err}",
-                segments_path.display()
+                segments_path.display(),
             ))
         })?;
 
@@ -58,7 +78,7 @@ impl Shard {
             let entry = entry.map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to read entry in segments directory {}: {err}",
-                    segments_path.display()
+                    segments_path.display(),
                 ))
             })?;
 
@@ -79,7 +99,7 @@ impl Shard {
             {
                 log::warn!(
                     "Skipping hidden segment directory {}",
-                    segment_path.display()
+                    segment_path.display(),
                 );
                 continue;
             }
@@ -87,7 +107,7 @@ impl Shard {
             let segment = load_segment(&segment_path, &AtomicBool::new(false)).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to load segment {}: {err}",
-                    segment_path.display()
+                    segment_path.display(),
                 ))
             })?;
 
@@ -119,7 +139,7 @@ impl Shard {
             segment.check_consistency_and_repair().map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to repair segment {}: {err}",
-                    segment_path.display()
+                    segment_path.display(),
                 ))
             })?;
 
@@ -300,7 +320,7 @@ impl Shard {
             }
         }
 
-        let _ = points.drain(..offset);
+        let _ = points.drain(..cmp::min(points.len(), offset));
 
         Ok(points)
     }
