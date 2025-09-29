@@ -2,7 +2,7 @@ use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::{cmp, fmt, fs};
+use std::{cmp, fmt};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -38,7 +38,7 @@ impl Shard {
         let wal_path = path.join(WAL_PATH);
 
         if !wal_path.exists() {
-            fs::create_dir(&wal_path).map_err(|err| {
+            fs_err::create_dir(&wal_path).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to create WAL directory {}: {err}",
                     wal_path.display(),
@@ -57,7 +57,7 @@ impl Shard {
         let segments_path = path.join(SEGMENTS_PATH);
 
         if !segments_path.exists() {
-            fs::create_dir(&segments_path).map_err(|err| {
+            fs_err::create_dir(&segments_path).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to create segments directory {}: {err}",
                     segments_path.display(),
@@ -65,7 +65,7 @@ impl Shard {
             })?;
         }
 
-        let segments_dir = fs::read_dir(&segments_path).map_err(|err| {
+        let segments_dir = fs_err::read_dir(&segments_path).map_err(|err| {
             OperationError::service_error(format!(
                 "failed to read segments directory {}: {err}",
                 segments_path.display(),
@@ -112,7 +112,7 @@ impl Shard {
             })?;
 
             let Some(mut segment) = segment else {
-                fs::remove_dir_all(&segment_path).map_err(|err| {
+                fs_err::remove_dir_all(&segment_path).map_err(|err| {
                     OperationError::service_error(format!(
                         "failed to remove leftover segment {}: {err}",
                         segment_path.display(),

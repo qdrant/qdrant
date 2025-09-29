@@ -1813,6 +1813,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "common",
+ "fs-err",
  "log",
  "parking_lot",
  "segment",
