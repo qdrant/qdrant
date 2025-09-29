@@ -8,7 +8,7 @@ cd "$(dirname "$0")/../../"
 
 QDRANT_HOST='localhost:6333'
 PREV_PATCH_QDRANT_VERSION='v1.15.4'
-PREV_MINOR_QDRANT_VERSION='v1.14.1'
+PREV_MINOR_QDRANT_VERSION='v1.13.5' # skipping v1.14.x contains known a data corruption (https://github.com/qdrant/qdrant/pull/6916)
 
 RETRY_LIMIT=30
 
