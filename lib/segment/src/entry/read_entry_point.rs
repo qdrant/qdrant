@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
@@ -16,9 +16,9 @@ use crate::index::field_index::CardinalityEstimation;
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorName,
-    VectorNameBuf, WithPayload, WithVector,
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, ScoredPoint, SearchParams,
+    SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorName, VectorNameBuf, WithPayload,
+    WithVector,
 };
 
 /// Define all operations which can be performed with Segment or Segment-like entity.

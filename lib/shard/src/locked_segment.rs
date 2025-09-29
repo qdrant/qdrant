@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use parking_lot::{RwLock, RwLockReadGuard};
 use parking_lot::lock_api::{MappedRwLockReadGuard, RawRwLock};
+use parking_lot::{RwLock, RwLockReadGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::SnapshotEntry;
 use segment::entry::entry_point::SegmentEntry;
@@ -61,14 +61,16 @@ impl LockedSegment {
         }
     }
 
-    pub fn get_read_entry(&self) -> MappedRwLockReadGuard<'_, impl RawRwLock, dyn SegmentEntryRead> {
+    pub fn get_read_entry(
+        &self,
+    ) -> MappedRwLockReadGuard<'_, impl RawRwLock, dyn SegmentEntryRead> {
         match self {
             LockedSegment::Original(segment) => {
                 RwLockReadGuard::map(segment.read(), |s| s as &dyn SegmentEntryRead)
             }
-            LockedSegment::Proxy(proxy) => {
-                RwLockReadGuard::map(proxy.read(), |p| &p.as_read_guard() as &dyn SegmentEntryRead)
-            }
+            LockedSegment::Proxy(proxy) => RwLockReadGuard::map(proxy.read(), |p| {
+                &p.as_read_guard() as &dyn SegmentEntryRead
+            }),
         }
     }
 

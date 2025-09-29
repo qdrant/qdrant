@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::thread;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -24,8 +24,8 @@ use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType,
-    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PointIdType,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
     VectorDataInfo, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 use crate::vector_storage::VectorStorage;

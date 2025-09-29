@@ -1,6 +1,7 @@
-use crate::proxy_segment::ProxySegment;
 use parking_lot::RwLockReadGuard;
 use segment::entry::SegmentEntry;
+
+use crate::proxy_segment::ProxySegment;
 
 pub struct ProxyReadSegmentGuard<'a> {
     pub(super) proxy: &'a ProxySegment,

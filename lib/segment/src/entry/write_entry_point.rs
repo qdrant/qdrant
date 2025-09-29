@@ -6,9 +6,8 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::index::field_index::FieldIndex;
 use crate::json_path::JsonPath;
 use crate::types::{
-    Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType
-    , SeqNumberType, VectorName
-    ,
+    Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
+    VectorName,
 };
 
 /// Define all operations which can be performed with Segment or Segment-like entity.
