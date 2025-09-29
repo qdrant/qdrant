@@ -7,8 +7,8 @@ echo $PWD
 cd "$(dirname "$0")/../../"
 
 QDRANT_HOST='localhost:6333'
-PREV_PATCH_QDRANT_VERSION='v1.14.0'
-PREV_MINOR_QDRANT_VERSION='v1.13.5'
+PREV_PATCH_QDRANT_VERSION='v1.15.4'
+PREV_MINOR_QDRANT_VERSION='v1.14.0' # skipping v1.14.1 as it contains a known data corruption (https://github.com/qdrant/qdrant/pull/6916)
 
 RETRY_LIMIT=30
 
