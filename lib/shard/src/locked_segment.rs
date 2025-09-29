@@ -1,11 +1,14 @@
+use std::ops::Deref;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::lock_api::{MappedRwLockReadGuard, RawRwLock};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::SnapshotEntry;
 use segment::entry::entry_point::SegmentEntry;
+use segment::entry::read_entry_point::SegmentEntryRead;
 use segment::segment::Segment;
 
 use crate::proxy_segment::ProxySegment;
@@ -58,6 +61,17 @@ impl LockedSegment {
         }
     }
 
+    pub fn get_read_entry(&self) -> MappedRwLockReadGuard<'_, impl RawRwLock, dyn SegmentEntryRead> {
+        match self {
+            LockedSegment::Original(segment) => {
+                RwLockReadGuard::map(segment.read(), |s| s as &dyn SegmentEntryRead)
+            }
+            LockedSegment::Proxy(proxy) => {
+                RwLockReadGuard::map(proxy.read(), |p| &p.as_read_guard() as &dyn SegmentEntryRead)
+            }
+        }
+    }
+
     pub fn get_snapshot_entry(&self) -> &RwLock<dyn SnapshotEntry> {
         match self {
             LockedSegment::Original(segment) => segment.as_ref(),
@@ -74,7 +88,7 @@ impl LockedSegment {
                     Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
                     Err(locked_segment) => Err(OperationError::service_error(format!(
                         "Removing segment which is still in use: {:?}",
-                        locked_segment.read().data_path(),
+                        SegmentEntry::data_path(locked_segment.read().deref())
                     ))),
                 }
             }

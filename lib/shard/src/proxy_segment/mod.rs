@@ -1,6 +1,9 @@
 pub mod segment_entry;
 pub mod snapshot_entry;
 
+pub mod proxy_read_guard;
+pub mod segment_entry_read_guard;
+
 #[cfg(test)]
 mod tests;
 

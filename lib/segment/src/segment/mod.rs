@@ -10,6 +10,7 @@ mod version_tracker;
 
 pub mod snapshot;
 
+pub mod entry_read;
 #[cfg(test)]
 mod tests;
 

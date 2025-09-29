@@ -1,0 +1,218 @@
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::TelemetryDetail;
+
+use crate::common::operation_error::{OperationResult, SegmentFailedState};
+use crate::data_types::facets::{FacetParams, FacetValue};
+use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::order_by::{OrderBy, OrderValue};
+use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
+use crate::data_types::vectors::{QueryVector, VectorInternal};
+use crate::index::field_index::CardinalityEstimation;
+use crate::json_path::JsonPath;
+use crate::telemetry::SegmentTelemetry;
+use crate::types::{
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PointIdType,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorName,
+    VectorNameBuf, WithPayload, WithVector,
+};
+
+/// Define all operations which can be performed with Segment or Segment-like entity.
+///
+/// Assume all operations are idempotent - which means that no matter how many times an operation
+/// is executed - the storage state will be the same.
+pub trait SegmentEntryRead {
+    /// Get current update version of the segment
+    fn version(&self) -> SeqNumberType;
+
+    /// Get version of specified point
+    ///
+    /// Returns `None` if point does not exist or is soft-deleted.
+    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn search_batch(
+        &self,
+        vector_name: &VectorName,
+        query_vectors: &[&QueryVector],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
+
+    /// Rescore results with a formula that can reference payload values.
+    ///
+    /// A deleted bitslice is passed to exclude points from a wrapped segment.
+    fn rescore_with_formula(
+        &self,
+        formula_ctx: Arc<FormulaContext>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPoint>>;
+
+    fn vector(
+        &self,
+        vector_name: &VectorName,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<VectorInternal>>;
+
+    fn all_vectors(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<NamedVectors<'_>>;
+
+    /// Retrieve payload for the point
+    /// If not found, return empty payload
+    fn payload(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+
+    /// Iterator over all points in segment in ascending order.
+    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
+
+    /// Paginate over points which satisfies filtering condition starting with `offset` id including.
+    ///
+    /// Cancelled by `is_stopped` flag.
+    fn read_filtered<'a>(
+        &'a self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        filter: Option<&'a Filter>,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<PointIdType>;
+
+    /// Return points which satisfies filtering condition ordered by the `order_by.key` field,
+    /// starting with `order_by.start_from` value including.
+    ///
+    /// Will fail if there is no index for the order_by key.
+    /// Cancelled by `is_stopped` flag.
+    fn read_ordered_filtered<'a>(
+        &'a self,
+        limit: Option<usize>,
+        filter: Option<&'a Filter>,
+        order_by: &'a OrderBy,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<(OrderValue, PointIdType)>>;
+
+    /// Return random points which satisfies filtering condition.
+    ///
+    /// Cancelled by `is_stopped` flag.
+    fn read_random_filtered(
+        &self,
+        limit: usize,
+        filter: Option<&Filter>,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<PointIdType>;
+
+    /// Read points in [from; to) range
+    fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;
+
+    /// Return all unique values for the given key.
+    fn unique_values(
+        &self,
+        key: &JsonPath,
+        filter: Option<&Filter>,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<BTreeSet<FacetValue>>;
+
+    /// Return the largest counts for the given facet request.
+    fn facet(
+        &self,
+        request: &FacetParams,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<HashMap<FacetValue, usize>>;
+
+    /// Check if there is point with `point_id` in this segment.
+    ///
+    /// Soft deleted points are excluded.
+    fn has_point(&self, point_id: PointIdType) -> bool;
+
+    /// Estimate available point count in this segment for given filter.
+    fn estimate_point_count<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation;
+
+    fn vector_names(&self) -> HashSet<VectorNameBuf>;
+
+    /// Whether this segment is completely empty in terms of points
+    ///
+    /// The segment is considered to not be empty if it contains any points, even if deleted.
+    /// Deleted points still have a version which may be important at time of recovery. Deciding
+    /// this by just the reported point count is not reliable in case a proxy segment is used.
+    ///
+    /// Payload indices or type of storage are not considered here.
+    fn is_empty(&self) -> bool;
+
+    /// Number of available points
+    ///
+    /// - excludes soft deleted points
+    fn available_point_count(&self) -> usize;
+
+    /// Number of deleted points
+    fn deleted_point_count(&self) -> usize;
+
+    /// Size of all available vectors in storage
+    fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize>;
+
+    /// Max value from all `available_vectors_size_in_bytes`
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+        self.vector_names()
+            .into_iter()
+            .map(|vector_name| self.available_vectors_size_in_bytes(&vector_name))
+            .collect::<OperationResult<Vec<_>>>()
+            .map(|sizes| sizes.into_iter().max().unwrap_or_default())
+    }
+
+    /// Get segment type
+    fn segment_type(&self) -> SegmentType;
+
+    /// Get current stats of the segment
+    fn info(&self) -> SegmentInfo;
+
+    /// Get size related stats of the segment.
+    /// This returns `SegmentInfo` with some non size-related data (like `schema`) unset to improve performance.
+    fn size_info(&self) -> SegmentInfo;
+
+    /// Get segment configuration
+    fn config(&self) -> &SegmentConfig;
+
+    /// Get current stats of the segment
+    fn is_appendable(&self) -> bool;
+
+    /// Flushes current segment state into a persistent storage, if possible
+    /// if sync == true, block current thread while flushing
+    ///
+    /// Returns maximum version number which is guaranteed to be persisted.
+    fn flush(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType>;
+
+    /// Path to data, owned by segment
+    fn data_path(&self) -> PathBuf;
+
+    /// Get indexed fields
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
+
+    /// Checks if segment errored during last operations
+    fn check_error(&self) -> Option<SegmentFailedState>;
+
+    // Get collected telemetry data of segment
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
+
+    fn fill_query_context(&self, query_context: &mut QueryContext);
+}
