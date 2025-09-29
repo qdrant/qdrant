@@ -1,8 +1,8 @@
-use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
+use fs_err::File;
 use semver::Version;
 
 use crate::file_operations::{FileOperationResult, FileStorageError};

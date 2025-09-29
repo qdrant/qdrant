@@ -1,4 +1,3 @@
-use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::mem::{self, MaybeUninit, size_of, transmute};
 use std::path::Path;
@@ -8,6 +7,7 @@ use bitvec::prelude::BitSlice;
 use common::ext::BitSliceExt as _;
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
+use fs_err::{File, OpenOptions};
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops;

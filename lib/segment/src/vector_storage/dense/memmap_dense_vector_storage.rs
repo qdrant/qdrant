@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::fs::{File, OpenOptions, create_dir_all};
 use std::io::{self, BufWriter, Write};
 use std::mem::MaybeUninit;
 use std::ops::Range;
@@ -9,6 +8,8 @@ use std::sync::atomic::AtomicBool;
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fs_err as fs;
+use fs_err::{File, OpenOptions};
 use memory::fadvise::clear_disk_cache;
 use memory::mmap_ops;
 
@@ -112,7 +113,7 @@ fn open_memmap_vector_storage_with_async_io_impl<T: PrimitiveVectorElement>(
     distance: Distance,
     with_async_io: bool,
 ) -> OperationResult<Box<MemmapDenseVectorStorage<T>>> {
-    create_dir_all(path)?;
+    fs::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
@@ -304,6 +305,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
 
 /// Open a file shortly for appending
 fn open_append<P: AsRef<Path>>(path: P) -> io::Result<File> {
+    let path = path.as_ref().to_path_buf();
     OpenOptions::new().append(true).open(path)
 }
 

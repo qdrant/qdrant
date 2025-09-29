@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
+use fs_err as fs;
 use io::file_operations::{atomic_save, read_bin};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -547,15 +548,15 @@ impl GraphLayers {
         let start = std::time::Instant::now();
 
         let links = GraphLinks::load_from_file(&plain_path, true, GraphLinksFormat::Plain)?;
-        let original_size = plain_path.metadata()?.len();
+        let original_size = fs::metadata(&plain_path)?.len();
         atomic_save(&compressed_path, |writer| {
             let edges = links.to_edges();
             serialize_graph_links(edges, GraphLinksFormatParam::Compressed, hnsw_m, writer)
         })?;
-        let new_size = compressed_path.metadata()?.len();
+        let new_size = fs::metadata(&compressed_path)?.len();
 
         // Remove the original file
-        std::fs::remove_file(plain_path)?;
+        fs::remove_file(&plain_path)?;
 
         log::debug!(
             "Compressed HNSW graph links in {:.1?}: {:.1}MB -> {:.1}MB ({:.1}%)",

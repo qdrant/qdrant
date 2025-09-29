@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::{self, BufRead as _, BufReader, Lines};
 use std::mem::size_of;
 use std::path::Path;
 
+use fs_err::File;
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{open_read_mmap, transmute_from_u8, transmute_from_u8_to_slice};
@@ -137,6 +137,7 @@ pub struct JsonReader(Lines<BufReader<File>>);
 
 impl JsonReader {
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+        let path = path.as_ref().to_path_buf();
         Ok(JsonReader(BufReader::new(File::open(path)?).lines()))
     }
 }

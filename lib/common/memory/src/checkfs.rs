@@ -4,10 +4,10 @@
 // 2. Try to create, fill and save mmap file with some dummy data. If file is possible to read after it is closed, return true.
 // Some file systems are known to fail this test, so we need to check for that and notify user before it is too late.
 
-use std::fs::create_dir_all;
 use std::io;
 use std::path::Path;
 
+use fs_err as fs;
 #[cfg(fs_type_check_supported)]
 use nix::sys::statfs::statfs;
 
@@ -194,10 +194,10 @@ pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {
 
     // Remove file and folder if they exist
     if magic_file_path.exists() {
-        std::fs::remove_file(&magic_file_path)?;
+        fs::remove_file(&magic_file_path)?;
     }
 
-    create_dir_all(path)?;
+    fs::create_dir_all(path)?;
 
     create_and_ensure_length(&magic_file_path, MAGIC_FILE_SIZE)?;
 
@@ -221,7 +221,7 @@ pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {
     }
 
     // Check the size of the file
-    let file_size = magic_file_path.metadata()?.len() as usize;
+    let file_size = fs::metadata(&magic_file_path)?.len() as usize;
     if file_size != MAGIC_FILE_SIZE {
         log::debug!("File size is not equal to MAGIC_FILE_SIZE: {file_size} != {MAGIC_FILE_SIZE}");
         return Ok(false);
@@ -236,7 +236,7 @@ pub fn check_mmap_functionality(path: impl AsRef<Path>) -> io::Result<bool> {
     if result {
         // If ok, we can remove the file
         // But if not, we might need to for further investigation
-        std::fs::remove_file(&magic_file_path)?;
+        fs::remove_file(&magic_file_path)?;
     }
 
     Ok(result)

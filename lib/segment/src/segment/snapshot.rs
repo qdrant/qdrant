@@ -2,9 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Seek, Write};
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
-use std::{fmt, fs, thread};
+use std::{fmt, thread};
 
 use common::tar_ext;
+use fs_err as fs;
 use io::storage_version::VERSION_FILE;
 use uuid::Uuid;
 

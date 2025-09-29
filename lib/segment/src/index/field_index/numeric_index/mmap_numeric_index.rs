@@ -1,4 +1,3 @@
-use std::fs::{create_dir_all, remove_dir};
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
@@ -6,6 +5,7 @@ use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
 use memory::fadvise::clear_disk_cache;
@@ -92,7 +92,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         path: &Path,
         is_on_disk: bool,
     ) -> OperationResult<Self> {
-        create_dir_all(path)?;
+        fs::create_dir_all(path)?;
 
         let pairs_path = path.join(PAIRS_PATH);
         let deleted_path = path.join(DELETED_PATH);
@@ -201,9 +201,9 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         let files = self.files();
         let Self { path, .. } = self;
         for file in files {
-            std::fs::remove_file(file)?;
+            fs::remove_file(file)?;
         }
-        let _ = remove_dir(path);
+        let _ = fs::remove_dir(path);
         Ok(())
     }
 

@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
+use fs_err as fs;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
@@ -238,7 +239,7 @@ fn skip_deleted_segment() {
     };
 
     let new_path = path.with_extension("deleted");
-    std::fs::rename(&path, new_path).unwrap();
+    fs::rename(&path, new_path).unwrap();
 
     let segment = load_segment(&path, &AtomicBool::new(false)).unwrap();
 

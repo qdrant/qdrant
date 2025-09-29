@@ -1,5 +1,4 @@
 use std::borrow::Borrow;
-use std::fs::{create_dir_all, remove_dir};
 use std::iter;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
@@ -10,6 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
+use fs_err as fs;
 use io::file_operations::{atomic_save_json, read_json};
 use itertools::Itertools;
 use memmap2::MmapMut;
@@ -93,7 +93,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         values_to_points: HashMap<N::Owned, Vec<PointOffsetType>>,
         is_on_disk: bool,
     ) -> OperationResult<Self> {
-        create_dir_all(path)?;
+        fs::create_dir_all(path)?;
 
         let hashmap_path = path.join(HASHMAP_PATH);
         let deleted_path = path.join(DELETED_PATH);
@@ -154,9 +154,9 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let files = self.files();
         let Self { path, .. } = self;
         for file in files {
-            std::fs::remove_file(file)?;
+            fs::remove_file(file)?;
         }
-        let _ = remove_dir(path);
+        let _ = fs::remove_dir(path);
         Ok(())
     }
 

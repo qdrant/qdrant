@@ -1,9 +1,9 @@
-use std::fs::File;
 use std::io::{self, IoSliceMut, Read, Seek};
 use std::ops::Deref;
 use std::path::Path;
 
 use delegate::delegate;
+use fs_err::File;
 #[cfg(posix_fadvise_supported)]
 use nix::fcntl::{PosixFadviseAdvice, posix_fadvise};
 
@@ -19,7 +19,7 @@ fn fadvise(f: &impl std::os::unix::io::AsRawFd, advise: PosixFadviseAdvice) -> i
 /// - `posix_fadvise` is not supported on this platform
 pub fn clear_disk_cache(file_path: &Path) -> io::Result<()> {
     #[cfg(posix_fadvise_supported)]
-    match File::open(file_path) {
+    match File::open(file_path.to_path_buf()) {
         Ok(file) => fadvise(&file, PosixFadviseAdvice::POSIX_FADV_DONTNEED),
         // If file is not found, no need to clear cache
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -45,7 +45,7 @@ pub struct OneshotFile {
 impl OneshotFile {
     /// Similar to [`File::open`].
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        let file = File::open(path)?;
+        let file = File::open(path.as_ref().to_path_buf())?;
         #[cfg(posix_fadvise_supported)]
         {
             fadvise(&file, PosixFadviseAdvice::POSIX_FADV_SEQUENTIAL)?;

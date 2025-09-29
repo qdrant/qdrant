@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 use std::fmt::Debug;
-use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -11,6 +10,8 @@ use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::{FeatureFlags, feature_flags, init_feature_flags};
 use common::types::ScoredPointOffset;
+use fs_err as fs;
+use fs_err::File;
 use io::file_operations::{atomic_save_json, read_json};
 use itertools::Itertools as _;
 use ndarray::{ArrayView2, Axis};
@@ -291,7 +292,7 @@ fn main() {
         last_index = Arc::new(AtomicRefCell::new(VectorIndexEnum::Hnsw(index)));
 
         // Cleanup previous segment and index.
-        std::fs::remove_dir_all(last_segment_path).unwrap();
+        fs::remove_dir_all(last_segment_path).unwrap();
 
         // Slide the window.
         sliding_window =

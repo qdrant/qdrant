@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fs::create_dir;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -10,6 +9,7 @@ use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use fnv::FnvBuildHasher;
+use fs_err as fs;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use rand::prelude::StdRng;
@@ -278,7 +278,7 @@ impl TestSegments {
 
     fn make_mmap_segment(rng: &mut StdRng, path: &Path, plain_segment: &Segment) -> Segment {
         let stopped = AtomicBool::new(false);
-        create_dir(path).unwrap();
+        fs::create_dir(path).unwrap();
 
         let mut builder = SegmentBuilder::new(
             path,

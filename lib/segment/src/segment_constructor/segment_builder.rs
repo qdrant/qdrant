@@ -14,6 +14,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
 use common::small_uint::U24;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use rand::Rng;
@@ -678,7 +679,7 @@ impl SegmentBuilder {
         };
 
         // Move fully constructed segment into collection directory and load back to RAM
-        std::fs::rename(temp_dir.keep(), &destination_path)
+        fs::rename(temp_dir.keep(), &destination_path)
             .describe("Moving segment data after optimization")?;
 
         let loaded_segment = load_segment(&destination_path, stopped)?.ok_or_else(|| {
@@ -779,7 +780,7 @@ where
 
 fn create_temp_dir(parent_path: &Path) -> Result<TempDir, OperationError> {
     // Ensure parent path exists
-    std::fs::create_dir_all(parent_path)
+    fs::create_dir_all(parent_path)
         .and_then(|_| TempDir::with_prefix_in("segment_builder_", parent_path))
         .map_err(|err| {
             OperationError::service_error(format!(

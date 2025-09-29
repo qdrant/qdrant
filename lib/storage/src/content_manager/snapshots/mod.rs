@@ -7,6 +7,8 @@ use std::path::Path;
 
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::verification::new_unchecked_verification_pass;
+use fs_err as fs;
+use fs_err::tokio as tokio_fs;
 use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
 use tempfile::TempPath;
@@ -143,7 +145,7 @@ async fn _do_create_full_snapshot(
             collections_mapping: collection_name_to_snapshot_path,
             collections_aliases: alias_mapping,
         };
-        let mut config_file = tokio::fs::File::create(&config_path).await?;
+        let mut config_file = tokio_fs::File::create(&config_path).await?;
         config_file
             .write_all(
                 serde_json::to_string_pretty(&snapshot_config)
@@ -192,7 +194,7 @@ async fn _do_create_full_snapshot(
     let full_snapshot_path_clone = temp_full_snapshot_path.clone();
     let archiving = tokio::task::spawn_blocking(move || {
         // have to use std here, cause TarBuilder is not async
-        let mut file = BufWriter::new(std::fs::File::create(&full_snapshot_path_clone)?);
+        let mut file = BufWriter::new(fs::File::create(&full_snapshot_path_clone)?);
         let mut builder = TarBuilder::new(&mut file);
         builder.sparse(true);
         for (temp_file, snapshot_name) in temp_collection_snapshots {
@@ -212,6 +214,6 @@ async fn _do_create_full_snapshot(
     let snapshot_description = snapshot_manager
         .store_file(&temp_full_snapshot_path, &full_snapshot_path)
         .await?;
-    tokio::fs::remove_file(&config_path).await?;
+    tokio_fs::remove_file(&config_path).await?;
     Ok(snapshot_description)
 }

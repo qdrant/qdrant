@@ -1,10 +1,10 @@
 use std::cmp::max;
 use std::collections::HashMap;
-use std::fs::remove_file;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, TelemetryDetail};
+use fs_err as fs;
 use io::storage_version::VERSION_FILE;
 use itertools::Itertools;
 use rand::SeedableRng;
@@ -720,7 +720,7 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
 
     // drop version file and reload index
     drop(sparse_vector_index);
-    remove_file(&version_file).unwrap();
+    fs::remove_file(&version_file).unwrap();
     let sparse_vector_index = open_index();
     assert!(version_file.exists(), "version file should be recreated");
     check_search(&sparse_vector_index);

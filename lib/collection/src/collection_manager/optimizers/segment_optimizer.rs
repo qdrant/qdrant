@@ -8,6 +8,7 @@ use common::budget::{ResourceBudget, ResourcePermit};
 use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_disk_size;
+use fs_err as fs;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
@@ -136,7 +137,7 @@ pub trait SegmentOptimizer {
 
         // Ensure temp_path exists
         if !self.temp_path().exists() {
-            std::fs::create_dir_all(self.temp_path()).map_err(|err| {
+            fs::create_dir_all(self.temp_path()).map_err(|err| {
                 CollectionError::service_error(format!(
                     "Could not create temp directory `{}`: {}",
                     self.temp_path().display(),

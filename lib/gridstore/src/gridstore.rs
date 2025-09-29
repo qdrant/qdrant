@@ -1,10 +1,11 @@
-use std::fs::File;
 use std::io::BufReader;
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
+use fs_err as fs;
+use fs_err::File;
 use io::file_operations::atomic_save_json;
 use itertools::Itertools;
 use lz4_flex::compress_prepend_size;
@@ -111,7 +112,7 @@ impl<V: Blob> Gridstore<V> {
             Self::open(base_path)
         } else {
             // create folder if it does not exist
-            std::fs::create_dir_all(&base_path)
+            fs::create_dir_all(&base_path)
                 .map_err(|err| format!("Failed to create gridstore storage directory: {err}"))?;
             Self::new(base_path, create_options)
         }
@@ -457,11 +458,11 @@ impl<V: Blob> Gridstore<V> {
 
         // Wipe
         self.pages.clear();
-        std::fs::remove_dir_all(&base_path)
+        fs::remove_dir_all(&base_path)
             .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))?;
 
         // Recreate
-        std::fs::create_dir_all(&base_path)
+        fs::create_dir_all(&base_path)
             .map_err(|err| format!("Failed to create gridstore storage directory: {err}"))?;
         *self = Self::new(base_path, create_options)?;
         Ok(())
@@ -475,7 +476,7 @@ impl<V: Blob> Gridstore<V> {
         // clear pages
         self.pages.clear();
         // deleted base directory
-        std::fs::remove_dir_all(&self.base_path)
+        fs::remove_dir_all(&self.base_path)
             .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))
     }
 
@@ -605,8 +606,7 @@ impl<V> Gridstore<V> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-
+    use fs_err::File;
     use itertools::Itertools;
     use rand::distr::Uniform;
     use rand::prelude::Distribution;
@@ -695,10 +695,7 @@ mod tests {
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
         let files = storage.files();
-        let actual_files: Vec<_> = std::fs::read_dir(dir.path())
-            .unwrap()
-            .try_collect()
-            .unwrap();
+        let actual_files: Vec<_> = fs::read_dir(dir.path()).unwrap().try_collect().unwrap();
         assert_eq!(
             files.len(),
             actual_files.len(),

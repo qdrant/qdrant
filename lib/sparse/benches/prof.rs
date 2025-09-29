@@ -1,9 +1,10 @@
-use std::fs::File;
 use std::io::Write;
 use std::os::raw::c_int;
 use std::path::Path;
 
 use criterion::profiler::Profiler;
+use fs_err as fs;
+use fs_err::File;
 use pprof::ProfilerGuard;
 use pprof::flamegraph::TextTruncateDirection;
 use pprof::protos::Message;
@@ -60,7 +61,7 @@ impl Profiler for FlamegraphProfiler<'_> {
     }
 
     fn stop_profiling(&mut self, _benchmark_id: &str, benchmark_dir: &Path) {
-        std::fs::create_dir_all(benchmark_dir).unwrap();
+        fs::create_dir_all(benchmark_dir).unwrap();
         let pprof_path = benchmark_dir.join("profile.pb");
         let flamegraph_path = benchmark_dir.join("flamegraph.svg");
         eprintln!("\nflamegraph_path = {flamegraph_path:#?}");

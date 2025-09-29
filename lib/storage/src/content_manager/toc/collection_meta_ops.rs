@@ -10,6 +10,7 @@ use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{CollectionId, transfer};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use fs_err::tokio as tokio_fs;
 use tempfile::Builder;
 
 use super::TableOfContent;
@@ -216,7 +217,7 @@ impl TableOfContent {
             // directory.
             let removed_collections_path =
                 Path::new(&self.storage_config.storage_path).join(".deleted");
-            tokio::fs::create_dir_all(&removed_collections_path).await?;
+            tokio_fs::create_dir_all(&removed_collections_path).await?;
 
             let deleted_path = Builder::new()
                 // Limit the file name to be on a lower side to avoid running into too-long
@@ -227,7 +228,7 @@ impl TableOfContent {
                 .prefix("")
                 .tempdir_in(removed_collections_path)?;
 
-            tokio::fs::rename(path, &deleted_path).await?;
+            tokio_fs::rename(path, &deleted_path).await?;
 
             // Solve all issues related to this collection
             issues::publish(CollectionDeletedEvent {
@@ -238,7 +239,7 @@ impl TableOfContent {
             // Next time we load service the collection will not appear in the list of collections.
             // We can take our time to delete the collection from disk.
             tokio::spawn(async move {
-                if let Err(error) = tokio::fs::remove_dir_all(&deleted_path).await {
+                if let Err(error) = tokio_fs::remove_dir_all(&deleted_path).await {
                     log::error!(
                         "Can't delete collection {} from disk. Error: {}",
                         deleted_path.as_ref().display(),
@@ -255,7 +256,7 @@ impl TableOfContent {
                 log::warn!(
                     "Collection {collection_name} is not loaded, but its directory still exists. Deleting it."
                 );
-                tokio::fs::remove_dir_all(path).await?;
+                tokio_fs::remove_dir_all(path).await?;
             }
             Ok(false)
         }

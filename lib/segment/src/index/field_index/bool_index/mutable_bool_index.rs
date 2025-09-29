@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use roaring::RoaringBitmap;
 
 use super::BoolIndex;
@@ -61,7 +62,7 @@ impl MutableBoolIndex {
     }
 
     fn open_or_create(path: &Path) -> OperationResult<Self> {
-        std::fs::create_dir_all(path).map_err(|err| {
+        fs::create_dir_all(path).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create mmap bool index directory: {err}"
             ))
@@ -308,7 +309,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
 
     fn cleanup(self) -> OperationResult<()> {
         if self.base_dir.is_dir() {
-            std::fs::remove_dir_all(self.base_dir)?;
+            fs::remove_dir_all(self.base_dir)?;
         };
 
         Ok(())

@@ -1,9 +1,9 @@
 use std::collections::HashSet;
-use std::fs::File;
 use std::sync::Arc;
 
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
+use fs_err::File;
 use parking_lot::RwLock;
 use segment::types::SnapshotFormat;
 use shard::fixtures::{build_segment_1, build_segment_2};
@@ -36,7 +36,7 @@ fn test_snapshot_all() {
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
-    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_file).unwrap());
+    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(snapshot_file.path()).unwrap());
 
     let payload_schema_file = dir.path().join("payload.schema");
     let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
@@ -68,7 +68,7 @@ fn test_snapshot_all() {
         "segment holder IDs before and after snapshotting must be equal",
     );
 
-    let mut tar = tar::Archive::new(File::open(&snapshot_file).unwrap());
+    let mut tar = tar::Archive::new(File::open(snapshot_file.path()).unwrap());
     let archive_count = tar.entries_with_seek().unwrap().count();
     // one archive produced per concrete segment in the SegmentHolder
     assert_eq!(archive_count, 2);
