@@ -190,12 +190,12 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
     )
 
     # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 10000)
+    upsert_random_points(peer_api_uris[0], 10_000)
 
     # Start pushing points to the cluster
     upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, throttle=True)
-    upload_process_2 = run_update_points_in_background(peer_api_uris[1], COLLECTION_NAME, init_offset=10000, throttle=True)
-    upload_process_3 = run_update_points_in_background(peer_api_uris[2], COLLECTION_NAME, init_offset=20000, throttle=True)
+    upload_process_2 = run_update_points_in_background(peer_api_uris[1], COLLECTION_NAME, init_offset=10_000, throttle=True)
+    upload_process_3 = run_update_points_in_background(peer_api_uris[2], COLLECTION_NAME, init_offset=20_000, throttle=True)
 
     transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
@@ -207,7 +207,7 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
 
     # Transfer shard from one node to another
 
-    # Move shard `shard_id` to peer `target_peer_id`
+    # Replicate shard `shard_id` to peer `target_peer_id`
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
             "replicate_shard": {
@@ -219,13 +219,20 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
+    # Wait for start of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
+
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     upload_process_1.kill()
     upload_process_2.kill()
     upload_process_3.kill()
-    sleep(1)
+
+    # Wait for them to terminate
+    upload_process_1.join()
+    upload_process_2.join()
+    upload_process_3.join()
 
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
     number_local_shards = len(receiver_collection_cluster_info['local_shards'])
@@ -241,6 +248,25 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
         )
         assert_http_ok(r)
         counts.append(r.json()["result"]['count'])
+
+    if not (counts[0] == counts[1] == counts[2]):
+        print(f"Incorrect counts detected! (peer_0:{counts[0]} peer_1:{counts[1]} peer_2:{counts[2]}")
+        # Match all points on all nodes exactly
+        data = []
+        for uri in peer_api_uris:
+            print_collection_cluster_info(uri, COLLECTION_NAME)
+            r = requests.post(
+                f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                    "limit": 999999999,
+                    "with_vectors": True,
+                    "with_payload": True,
+                }
+            )
+            assert_http_ok(r)
+            data.append(r.json()["result"]["points"])
+        check_data_consistency(data)
+
+
     assert counts[0] == counts[1] == counts[2]
 
 
