@@ -12,7 +12,10 @@ FROM --platform=${BUILDPLATFORM:-linux/amd64} tonistiigi/xx AS xx
 # Utilizing Docker layer caching with `cargo-chef`.
 #
 # https://www.lpalmieri.com/posts/fast-rust-docker-builds/
-FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.90.0 AS chef
+
+# Note: using bookworm base image to match GPU runtime image, otherwise we're
+# seeing runtime errors due to libc version mismatch.
+FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.90-bookworm  AS chef
 
 
 FROM chef AS planner
