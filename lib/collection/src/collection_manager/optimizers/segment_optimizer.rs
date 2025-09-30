@@ -160,11 +160,13 @@ pub trait SegmentOptimizer {
 
         match (space_available, space_needed) {
             (Some(space_available), Some(space_needed)) => {
-                log::debug!(
-                    "Available space: {}, needed for optimization: {}",
-                    bytes_to_human(space_available as usize),
-                    bytes_to_human(space_needed as usize),
-                );
+                if space_needed > 0 {
+                    log::debug!(
+                        "Available space: {}, needed for optimization: {}",
+                        bytes_to_human(space_available as usize),
+                        bytes_to_human(space_needed as usize),
+                    );
+                }
                 if space_available < space_needed {
                     return Err(CollectionError::service_error(format!(
                         "Not enough space available for optimization, needed: {}, available: {}",
