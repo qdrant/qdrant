@@ -1294,9 +1294,9 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "0.15.16"
+version = "0.15.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cef036f0ecf99baef11555578630e2cca559909b4c50822dbba828c252d21c49"
+checksum = "680d3ac2fe066c43300ec831c978871e50113a708d58ab13d231bd92deca5adb"
 dependencies = [
  "pathdiff",
  "serde_core",
@@ -4061,9 +4061,9 @@ checksum = "d01a5bd0424d00070b0098dd17ebca6f961a959dead1dbcbbbc1d1cd8d3deeba"
 
 [[package]]
 name = "pathdiff"
-version = "0.2.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8835116a5c179084a830efb3adc117ab007512b535bc1a21c991d3b32a6b44dd"
+checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
 name = "pem"
@@ -8026,9 +8026,9 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 
 [[package]]
 name = "winnow"
-version = "0.7.1"
+version = "0.7.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86e376c75f4f43f44db463cf729e0d3acbf954d13e22c51e26e4c264b4ab545f"
+checksum = "21a0236b59786fed61e2a80582dd500fe61f18b5dca67a4a067d0bc9039339cf"
 dependencies = [
  "memchr",
 ]
@@ -8085,9 +8085,9 @@ dependencies = [
 
 [[package]]
 name = "yaml-rust2"
-version = "0.10.0"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "232bdb534d65520716bef0bbb205ff8f2db72d807b19c0bc3020853b92a0cd4b"
+checksum = "2462ea039c445496d8793d052e13787f2b90e750b833afee748e601c17621ed9"
 dependencies = [
  "arraydeque",
  "encoding_rs",
