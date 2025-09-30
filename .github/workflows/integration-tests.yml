@@ -45,6 +45,8 @@ jobs:
   integration-tests-consensus:
 
     runs-on: ubuntu-latest
+    env:
+      RUST_LOG: "TRACE"
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
