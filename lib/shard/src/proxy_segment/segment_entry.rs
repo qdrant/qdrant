@@ -234,9 +234,8 @@ impl SegmentEntry for ProxySegment {
                 }
                 None
             }
-            LockedSegment::Memory(raw_segment) => {
-                let point_offset = raw_segment.read().get_internal_id(point_id);
-                if point_offset.is_some() {
+            LockedSegment::Memory(segment) => {
+                if segment.read().has_point(point_id) {
                     let prev = self.deleted_points.write().insert(
                         point_id,
                         ProxyDeletedPoint {
@@ -252,7 +251,7 @@ impl SegmentEntry for ProxySegment {
                         )
                     }
                 }
-                point_offset
+                None
             }
         };
 

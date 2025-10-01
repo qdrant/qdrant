@@ -84,11 +84,7 @@ impl SegmentHolder {
                 let segment_path = &segment.read().current_path;
                 SegmentVersion::save(segment_path)?;
             }
-            LockedSegment::Proxy(_) => unreachable!(),
-            LockedSegment::Memory(segment) => {
-                let segment_path = &segment.read().current_path;
-                SegmentVersion::save(segment_path)?;
-            }
+            LockedSegment::Proxy(_) | LockedSegment::Memory(_) => unreachable!(),
         }
 
         // Replace all segments with proxies

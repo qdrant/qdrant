@@ -7,6 +7,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 
+use crate::memory_segment::MemorySegment;
 use crate::proxy_segment::ProxySegment;
 
 const DROP_SPIN_TIMEOUT: Duration = Duration::from_millis(10);
@@ -18,7 +19,7 @@ const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 pub enum LockedSegment {
     Original(Arc<RwLock<Segment>>),
     Proxy(Arc<RwLock<ProxySegment>>),
-    Memory(Arc<RwLock<Segment>>),
+    Memory(Arc<RwLock<MemorySegment>>),
 }
 
 fn try_unwrap_with_timeout<T>(

@@ -151,10 +151,7 @@ impl ProxySegment {
                     (raw_segment.clone(), point_offset)
                 }
                 LockedSegment::Proxy(sub_proxy) => (sub_proxy.clone(), None),
-                LockedSegment::Memory(raw_segment) => {
-                    let point_offset = raw_segment.read().get_internal_id(point_id);
-                    (raw_segment.clone(), point_offset)
-                }
+                LockedSegment::Memory(segment) => (segment.clone(), None),
             };
 
             let wrapped_segment_guard = wrapped_segment.read();
