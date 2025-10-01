@@ -169,7 +169,7 @@ pub fn process_field_index_operation(
 /// Do not insert more than this number of points in a single update operation chunk
 /// This is needed to avoid locking segments for too long, so that
 /// parallel read operations are not starved.
-const UPDATE_OP_CHUNK_SIZE: usize = 32;
+const UPDATE_OP_CHUNK_SIZE: usize = 100000;
 
 /// Checks point id in each segment, update point if found.
 /// All not found points are inserted into random segment.

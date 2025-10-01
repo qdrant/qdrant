@@ -18,6 +18,10 @@ struct Args {
     #[clap(long)]
     info: bool,
 
+    /// Internal ID to inspect
+    #[clap(long)]
+    internal_id: Option<u32>,
+
     /// Point ID to inspect
     #[clap(long)]
     point_id_int: Option<u64>,
@@ -56,6 +60,18 @@ fn main() {
             let info = segment.info();
             eprintln!("info = {info:#?}");
         }
+
+        if let Some(internal_id) = args.internal_id {
+            let id_tracker = segment.id_tracker.borrow();
+
+            let deleted_points = id_tracker.deleted_point_bitslice();
+
+            eprintln!("deleted_points = {:#?}", deleted_points);
+
+            let point_id = id_tracker.external_id(internal_id);
+            eprintln!("point_id = {point_id:?}");
+        }
+
 
         if let Some(point_id_int) = args.point_id_int {
             let point_id = PointIdType::NumId(point_id_int);
