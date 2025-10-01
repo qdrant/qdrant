@@ -5,7 +5,9 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use half::f16;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::vectors::{VectorElementTypeByte, VectorElementTypeHalf};
+use segment::data_types::vectors::{
+    VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
+};
 use segment::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
 use segment::spaces::metric_f16::avx::dot::avx_dot_similarity_half;
@@ -56,8 +58,16 @@ use segment::spaces::metric_uint::sse2::dot::sse_dot_similarity_bytes;
 use segment::spaces::metric_uint::sse2::euclid::sse_euclid_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
 use segment::spaces::metric_uint::sse2::manhattan::sse_manhattan_similarity_bytes;
-use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-
+use segment::spaces::simple::{
+    CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric, dot_similarity,
+};
+#[cfg(target_arch = "aarch64")]
+use segment::spaces::simple_neon::dot_similarity_neon;
+#[cfg(target_arch = "x86_64")]
+use segment::spaces::{
+    simple_avx::dot_similarity_avx, simple_avx512::dot_similarity_avx512,
+    simple_sse::dot_similarity_sse,
+};
 const DIM: usize = 1024;
 const COUNT: usize = 100_000;
 
@@ -417,10 +427,80 @@ fn half_metrics_bench(c: &mut Criterion) {
     });
 }
 
+fn single_metrics_bench(c: &mut Criterion) {
+    let mut group = c.benchmark_group("float-metrics-bench-group");
+
+    let mut rng = StdRng::seed_from_u64(42);
+
+    let random_vectors_1: Vec<Vec<f32>> = (0..COUNT)
+        .map(|_| (0..DIM).map(|_| rng.random_range(0.0..=1.0)).collect())
+        .collect();
+    let random_vectors_2: Vec<Vec<f32>> = (0..COUNT)
+        .map(|_| (0..DIM).map(|_| rng.random_range(0.0..=1.0)).collect())
+        .collect();
+
+    group.bench_function("single-dot", |b| {
+        let mut i = 0;
+        b.iter(|| {
+            i = (i + 1) % COUNT;
+            <DotProductMetric as Metric<VectorElementType>>::similarity(
+                &random_vectors_1[i],
+                &random_vectors_2[i],
+            )
+        });
+    });
+
+    group.bench_function("single-dot-no-simd", |b| {
+        let mut i = 0;
+        b.iter(|| {
+            i = (i + 1) % COUNT;
+            dot_similarity(&random_vectors_1[i], &random_vectors_2[i])
+        });
+    });
+
+    #[cfg(target_arch = "x86_64")]
+    group.bench_function("single-dot-avx", |b| {
+        let mut i = 0;
+        b.iter(|| unsafe {
+            i = (i + 1) % COUNT;
+            dot_similarity_avx(&random_vectors_1[i], &random_vectors_2[i])
+        });
+    });
+
+    #[cfg(target_arch = "x86_64")]
+    group.bench_function("single-dot-sse", |b| {
+        let mut i = 0;
+        b.iter(|| unsafe {
+            i = (i + 1) % COUNT;
+            dot_similarity_sse(&random_vectors_1[i], &random_vectors_2[i])
+        });
+    });
+
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512dq") {
+        group.bench_function("single-dot-avx512", |b| {
+            let mut i = 0;
+            b.iter(|| unsafe {
+                i = (i + 1) % COUNT;
+                dot_similarity_avx512(&random_vectors_1[i], &random_vectors_2[i])
+            });
+        });
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    group.bench_function("single-dot-neon", |b| {
+        let mut i = 0;
+        b.iter(|| unsafe {
+            i = (i + 1) % COUNT;
+            dot_similarity_neon(&random_vectors_1[i], &random_vectors_2[i])
+        });
+    });
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = byte_metrics_bench, half_metrics_bench
+    targets = byte_metrics_bench, half_metrics_bench, single_metrics_bench
 }
 
 criterion_main!(benches);

@@ -132,10 +132,7 @@ pub(crate) unsafe fn cosine_preprocess_neon(vector: DenseVector) -> DenseVector 
 }
 
 #[cfg(target_feature = "neon")]
-pub(crate) unsafe fn dot_similarity_neon(
-    v1: &[VectorElementType],
-    v2: &[VectorElementType],
-) -> ScoreType {
+pub unsafe fn dot_similarity_neon(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     unsafe {
         let n = v1.len();
         let m = n - (n % 16);
