@@ -827,6 +827,7 @@ def check_data_consistency(data):
             if len(diff) < 100:
                 print(f"Diff between {i} and {j}: {diff}")
             else:
-                print(f"Diff len between {i} and {j}: {len(diff)}")
+                sample = list(diff)[:32]
+                print(f"Diff len between {i} and {j}: {len(diff)}, sample: {sample}")
 
             assert False, "Data on all nodes should be consistent"
