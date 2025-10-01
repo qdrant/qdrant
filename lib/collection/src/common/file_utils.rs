@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use fs_err::tokio as tokio_fs;
 use fs_extra::dir::CopyOptions;
 
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -12,7 +13,7 @@ pub async fn move_dir(from: impl Into<PathBuf>, to: impl Into<PathBuf>) -> Colle
 
     log::trace!("Renaming directory {} to {}", from.display(), to.display());
 
-    let Err(err) = tokio::fs::rename(&from, &to).await else {
+    let Err(err) = tokio_fs::rename(&from, &to).await else {
         return Ok(());
     };
 
@@ -38,7 +39,7 @@ pub async fn move_dir(from: impl Into<PathBuf>, to: impl Into<PathBuf>) -> Colle
     if !to.exists() {
         log::trace!("Creating destination directory {}", to.display());
 
-        tokio::fs::create_dir(&to).await.map_err(|err| {
+        tokio_fs::create_dir(&to).await.map_err(|err| {
             CollectionError::service_error(format!(
                 "failed to move directory {} to {}: \
                  failed to create destination directory: \
@@ -74,13 +75,13 @@ pub async fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Collecti
     let to = to.as_ref();
 
     // Try to rename first and fallback to copy to prevent TOCTOU.
-    if let Ok(()) = tokio::fs::rename(from, to).await {
+    if let Ok(()) = tokio_fs::rename(from, to).await {
         return Ok(());
     }
 
     // If rename failed, try to copy.
     // It is possible that the source and destination are on different filesystems.
-    if let Err(err) = tokio::fs::copy(from, to).await {
+    if let Err(err) = tokio_fs::copy(from, to).await {
         cleanup_file(to).await;
         return Err(CollectionError::service_error(format!(
             "Can't move file from {} to {} due to {}",
@@ -90,7 +91,7 @@ pub async fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Collecti
         )));
     }
 
-    if let Err(err) = tokio::fs::remove_file(from).await {
+    if let Err(err) = tokio_fs::remove_file(from).await {
         cleanup_file(to).await;
         return Err(CollectionError::service_error(format!(
             "Can't remove file {} due to {}",
@@ -104,7 +105,7 @@ pub async fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Collecti
 
 /// Remove the file if it exists. Print a warning if the file can't be removed.
 async fn cleanup_file(path: &Path) {
-    if let Err(err) = tokio::fs::remove_file(path).await
+    if let Err(err) = tokio_fs::remove_file(path).await
         && err.kind() != std::io::ErrorKind::NotFound
     {
         log::warn!("Failed to remove file {}: {err}", path.display());

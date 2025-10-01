@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{Read, Write as _};
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::Path;
 
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use fs_err::File;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
@@ -22,8 +22,8 @@ use wal::WalOptions;
 
 use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff};
 use crate::operations::types::{
-    CollectionError, CollectionResult, SparseVectorParams, SparseVectorsConfig, VectorParams,
-    VectorParamsDiff, VectorsConfig, VectorsConfigDiff,
+    CollectionError, CollectionResult, CollectionWarning, SparseVectorParams, SparseVectorsConfig,
+    VectorParams, VectorParamsDiff, VectorsConfig, VectorsConfigDiff,
 };
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
@@ -276,6 +276,41 @@ impl CollectionConfigInternal {
         }
     }
 
+    /// Get warnings related to this configuration
+    pub fn get_warnings(&self) -> Vec<CollectionWarning> {
+        let mut warnings = Vec::new();
+
+        for (vector_name, vector_config) in self.params.vectors.params_iter() {
+            let vector_hnsw = self
+                .hnsw_config
+                .update_opt(vector_config.hnsw_config.as_ref());
+
+            let vector_quantization =
+                vector_config.quantization_config.is_some() || self.quantization_config.is_some();
+
+            if vector_hnsw.copy_vectors.unwrap_or_default() {
+                if !vector_quantization {
+                    warnings.push(CollectionWarning {
+                        message: format!(
+                            "The `hnsw_config.copy_vectors` option for vector '{vector_name}' \
+                             requires quantization to be enabled. This option will be ignored."
+                        ),
+                    });
+                }
+                if vector_config.multivector_config.is_some() {
+                    warnings.push(CollectionWarning {
+                        message: format!(
+                            "The `hnsw_config.copy_vectors` option for vector '{vector_name}' \
+                             is not compatible with multivectors. This option will be ignored."
+                        ),
+                    });
+                }
+            }
+        }
+
+        warnings
+    }
+
     pub fn to_base_segment_config(&self) -> CollectionResult<SegmentConfig> {
         self.params
             .to_base_segment_config(self.quantization_config.as_ref())
@@ -416,7 +451,7 @@ impl CollectionParams {
 
             if let Some(hnsw_diff) = hnsw_config {
                 if let Some(existing_hnsw) = &vector_params.hnsw_config {
-                    vector_params.hnsw_config = Some(hnsw_diff.update(existing_hnsw)?);
+                    vector_params.hnsw_config = Some(existing_hnsw.update(&hnsw_diff));
                 } else {
                     vector_params.hnsw_config = Some(hnsw_diff);
                 }

@@ -2,10 +2,11 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::{fs, thread};
+use std::thread;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
+use fs_err as fs;
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};

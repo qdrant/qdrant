@@ -1,9 +1,11 @@
 use std::collections::HashSet;
+use std::io;
 use std::path::Path;
-use std::{fs, io};
 
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
+use fs_err as fs;
+use fs_err::{File, tokio as tokio_fs};
 use segment::data_types::manifest::{SegmentManifest, SnapshotManifest};
 use segment::types::SnapshotFormat;
 
@@ -129,7 +131,7 @@ impl ShardReplicaSet {
         let mut snapshot_segments = HashSet::new();
         let mut snapshot_manifest = SnapshotManifest::default();
 
-        for segment_entry in segments_path.read_dir()? {
+        for segment_entry in fs::read_dir(segments_path)? {
             let segment_path = segment_entry?.path();
 
             if !segment_path.is_dir() {
@@ -172,7 +174,7 @@ impl ShardReplicaSet {
                 )));
             }
 
-            let manifest = fs::File::open(&manifest_path).map_err(|err| {
+            let manifest = File::open(&manifest_path).map_err(|err| {
                 CollectionError::service_error(format!(
                     "failed to open segment {segment_id} manifest: {err}",
                 ))
@@ -219,7 +221,7 @@ impl ShardReplicaSet {
         // the file is removed after full recovery to indicate a well-formed shard
         // for example: some of the files may go missing if node gets killed during shard directory move/replace
         let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
-        let flag_file = tokio::fs::File::create(&shard_flag).await?;
+        let flag_file = tokio_fs::File::create(&shard_flag).await?;
         flag_file.sync_all().await?;
 
         // Check `cancel` token one last time before starting non-cancellable section
@@ -285,7 +287,7 @@ impl ShardReplicaSet {
                     let Some(snapshot_manifest) = snapshot_manifest.get(segment_id) else {
                         log::debug!("Removing outdated segment {}", segment_path.display());
 
-                        tokio::fs::remove_dir_all(&segment_path)
+                        tokio_fs::remove_dir_all(&segment_path)
                             .await
                             .map_err(|err| {
                                 CollectionError::service_error(format!(
@@ -330,7 +332,7 @@ impl ShardReplicaSet {
 
                                 log::debug!("Removing outdated segment file {}", path.display());
 
-                                tokio::fs::remove_file(&path).await.map_err(|err| {
+                                tokio_fs::remove_file(&path).await.map_err(|err| {
                                     CollectionError::service_error(format!(
                                         "failed to remove outdated segment file {}: {err}",
                                         path.display(),
@@ -370,7 +372,7 @@ impl ShardReplicaSet {
                 if wal_path.is_dir() {
                     log::debug!("Removing WAL {}", wal_path.display());
 
-                    tokio::fs::remove_dir_all(&wal_path).await.map_err(|err| {
+                    tokio_fs::remove_dir_all(&wal_path).await.map_err(|err| {
                         CollectionError::service_error(format!(
                             "failed to remove WAL {}: {err}",
                             wal_path.display(),
@@ -404,7 +406,7 @@ impl ShardReplicaSet {
             Ok(new_local) => {
                 local.replace(Shard::Local(new_local));
                 // remove shard_id initialization flag because shard is fully recovered
-                tokio::fs::remove_file(&shard_flag).await?;
+                tokio_fs::remove_file(&shard_flag).await?;
 
                 if recovery_type.is_partial() {
                     self.partial_snapshot_meta.snapshot_recovered();

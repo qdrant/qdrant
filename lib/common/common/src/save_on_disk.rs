@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
@@ -6,6 +5,7 @@ use std::time::Duration;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use atomicwrites::{AtomicFile, Error as AtomicWriteError};
+use fs_err::{File, tokio as tokio_fs};
 use parking_lot::{Condvar, Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 use serde::{Deserialize, Serialize};
 
@@ -162,7 +162,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     }
 
     pub async fn delete(self) -> std::io::Result<()> {
-        tokio::fs::remove_file(self.path).await
+        tokio_fs::remove_file(self.path).await
     }
 }
 
@@ -183,10 +183,11 @@ impl<T> DerefMut for SaveOnDisk<T> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::thread;
     use std::thread::sleep;
     use std::time::Duration;
-    use std::{fs, thread};
 
+    use fs_err as fs;
     use tempfile::Builder;
 
     use super::SaveOnDisk;

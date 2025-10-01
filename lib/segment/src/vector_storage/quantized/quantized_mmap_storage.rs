@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fs_err as fs;
+use fs_err::OpenOptions;
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
 use memory::madvise::Madviseable;
@@ -33,7 +35,7 @@ impl QuantizedMmapStorage {
         path: &Path,
         quantized_vector_size: usize,
     ) -> std::io::Result<QuantizedMmapStorage> {
-        let file = std::fs::OpenOptions::new().read(true).open(path)?;
+        let file = OpenOptions::new().read(true).open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
         madvise::madvise(&mmap, madvise::get_global())?;
 
@@ -154,9 +156,9 @@ impl QuantizedMmapStorageBuilder {
                     "Path must have a parent directory",
                 )
             })
-            .and_then(std::fs::create_dir_all)?;
+            .and_then(fs::create_dir_all)?;
 
-        let file = std::fs::OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)

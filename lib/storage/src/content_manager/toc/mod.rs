@@ -13,7 +13,6 @@ pub mod transfer;
 
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir_all, read_dir};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -33,6 +32,8 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwSharedDrain;
 use common::cpu::get_num_cpus;
 use dashmap::DashMap;
+use fs_err as fs;
+use fs_err::tokio as tokio_fs;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use tokio::runtime::{Handle, Runtime};
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
@@ -101,13 +102,13 @@ impl TableOfContent {
         consensus_proposal_sender: Option<OperationSender>,
     ) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
-        create_dir_all(&collections_path).expect("Can't create Collections directory");
+        fs::create_dir_all(&collections_path).expect("Can't create Collections directory");
         if let Some(path) = storage_config.temp_path.as_deref() {
             let temp_path = Path::new(path);
-            create_dir_all(temp_path).expect("Can't create temporary files directory");
+            fs::create_dir_all(temp_path).expect("Can't create temporary files directory");
         }
         let collection_paths =
-            read_dir(&collections_path).expect("Can't read Collections directory");
+            fs::read_dir(&collections_path).expect("Can't read Collections directory");
         let mut collections: HashMap<String, Collection> = Default::default();
         let is_distributed = consensus_proposal_sender.is_some();
         for entry in collection_paths {
@@ -631,7 +632,7 @@ impl TableOfContent {
                     "Removing invalid collection path {path} from storage",
                     path = path.display(),
                 );
-                tokio::fs::remove_dir_all(&path).await.map_err(|err| {
+                tokio_fs::remove_dir_all(&path).await.map_err(|err| {
                     StorageError::service_error(format!(
                         "Can't clear directory for collection {collection_name}. Error: {err}"
                     ))
@@ -639,7 +640,7 @@ impl TableOfContent {
             }
         }
 
-        tokio::fs::create_dir_all(&path).await.map_err(|err| {
+        tokio_fs::create_dir_all(&path).await.map_err(|err| {
             StorageError::service_error(format!(
                 "Can't create directory for collection {collection_name}. Error: {err}"
             ))

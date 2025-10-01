@@ -5,6 +5,7 @@ use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
+use fs_err::tokio as tokio_fs;
 
 use super::TableOfContent;
 use crate::content_manager::consensus::operation_sender::OperationSender;
@@ -41,7 +42,7 @@ impl TableOfContent {
         collection_name: &str,
     ) -> Result<PathBuf, StorageError> {
         let snapshots_path = self.snapshots_path_for_collection(collection_name);
-        tokio::fs::create_dir_all(&snapshots_path)
+        tokio_fs::create_dir_all(&snapshots_path)
             .await
             .map_err(|err| {
                 StorageError::service_error(format!(

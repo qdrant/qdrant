@@ -1,9 +1,9 @@
 use std::collections::HashSet;
-use std::fs::File;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
+use fs_err::File;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
@@ -485,7 +485,7 @@ fn test_take_snapshot() {
 
     let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
     eprintln!("Snapshot into {:?}", snapshot_file.path());
-    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_file).unwrap());
+    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(snapshot_file.path()).unwrap());
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     let temp_dir2 = Builder::new().prefix("temp_dir").tempdir().unwrap();
     let mut snapshotted_segments = HashSet::new();
@@ -511,12 +511,12 @@ fn test_take_snapshot() {
 
     // validate that 3 archives were created:
     // wrapped_segment1, wrapped_segment2 & shared write_segment
-    let mut tar = tar::Archive::new(File::open(&snapshot_file).unwrap());
+    let mut tar = tar::Archive::new(File::open(snapshot_file.path()).unwrap());
     let archive_count = tar.entries_with_seek().unwrap().count();
     assert_eq!(archive_count, 3);
     assert_eq!(snapshotted_segments.len(), 3);
 
-    let mut tar = tar::Archive::new(File::open(&snapshot_file).unwrap());
+    let mut tar = tar::Archive::new(File::open(snapshot_file.path()).unwrap());
     for entry in tar.entries_with_seek().unwrap() {
         let archive_path = entry.unwrap().path().unwrap().into_owned();
         let archive_extension = archive_path.extension().unwrap();

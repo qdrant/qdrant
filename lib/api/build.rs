@@ -414,10 +414,10 @@ fn configure_validation(builder: Builder) -> Builder {
 }
 
 fn append_to_file(path: &str, line: &str) {
-    use std::fs::OpenOptions;
     use std::io::prelude::*;
+    #[expect(clippy::disallowed_types, reason = "build script, ok to use std::fs")]
     writeln!(
-        OpenOptions::new().append(true).open(path).unwrap(),
+        std::fs::OpenOptions::new().append(true).open(path).unwrap(),
         "{line}",
     )
     .unwrap()

@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use serde_json::Value;
 
 use crate::common::Flusher;
@@ -68,7 +69,7 @@ impl MutableNullIndex {
     }
 
     fn open_or_create(path: &Path, total_point_count: usize) -> OperationResult<Self> {
-        std::fs::create_dir_all(path).map_err(|err| {
+        fs::create_dir_all(path).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create mutable-null-index directory: {err}, path: {path:?}"
             ))
@@ -220,7 +221,7 @@ impl PayloadFieldIndex for MutableNullIndex {
 
     fn cleanup(self) -> OperationResult<()> {
         if self.base_dir.is_dir() {
-            std::fs::remove_dir_all(&self.base_dir)?;
+            fs::remove_dir_all(&self.base_dir)?;
         }
         Ok(())
     }

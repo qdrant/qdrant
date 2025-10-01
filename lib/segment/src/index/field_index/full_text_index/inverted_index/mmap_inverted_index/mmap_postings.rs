@@ -2,10 +2,11 @@ use std::fmt::Debug;
 use std::io;
 use std::io::Write;
 use std::marker::PhantomData;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt;
+use fs_err::File;
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops::open_read_mmap;
@@ -158,9 +159,11 @@ impl<V: MmapPostingValue> MmapPostings<V> {
     /// The format of the file is compatible with the `MmapPostings` structure.
     pub fn create(path: PathBuf, compressed_postings: &[PostingList<V>]) -> io::Result<()> {
         // Create a new empty file, where we will write the compressed posting lists and the header
-        let file = tempfile::Builder::new()
+        let (file, temp_path) = tempfile::Builder::new()
             .prefix(path.file_name().ok_or(io::ErrorKind::InvalidInput)?)
-            .tempfile_in(path.parent().ok_or(io::ErrorKind::InvalidInput)?)?;
+            .tempfile_in(path.parent().ok_or(io::ErrorKind::InvalidInput)?)?
+            .into_parts();
+        let file = File::from_parts::<&Path>(file, temp_path.as_ref());
         let mut bufw = io::BufWriter::new(&file);
 
         let postings_header = PostingsHeader {
@@ -250,8 +253,9 @@ impl<V: MmapPostingValue> MmapPostings<V> {
         bufw.flush()?;
         drop(bufw);
 
-        file.as_file().sync_all()?;
-        file.persist(path)?;
+        file.sync_all()?;
+        drop(file);
+        temp_path.persist(path)?;
 
         Ok(())
     }

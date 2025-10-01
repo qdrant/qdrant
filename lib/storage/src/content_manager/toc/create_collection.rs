@@ -164,20 +164,17 @@ impl TableOfContent {
             )?,
             read_fan_out_factor: None,
         };
-        let wal_config = match wal_config_diff {
-            None => self.storage_config.wal.clone(),
-            Some(diff) => diff.update(&self.storage_config.wal)?,
-        };
+        let wal_config = self.storage_config.wal.update_opt(wal_config_diff.as_ref());
 
-        let optimizers_config = match optimizers_config_diff {
-            None => self.storage_config.optimizers.clone(),
-            Some(diff) => diff.update(&self.storage_config.optimizers)?,
-        };
+        let optimizer_config = self
+            .storage_config
+            .optimizers
+            .update_opt(optimizers_config_diff.as_ref());
 
-        let hnsw_config = match hnsw_config_diff {
-            None => self.storage_config.hnsw_index.clone(),
-            Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
-        };
+        let hnsw_config = self
+            .storage_config
+            .hnsw_index
+            .update_opt(hnsw_config_diff.as_ref());
 
         let quantization_config = match quantization_config {
             None => self
@@ -196,7 +193,7 @@ impl TableOfContent {
                     .as_ref()
                     .and_then(|i| i.strict_mode.clone())
                     .unwrap_or_default();
-                Some(diff.update(&default_config)?)
+                Some(default_config.update(&diff))
             }
             None => self
                 .storage_config
@@ -214,7 +211,7 @@ impl TableOfContent {
         let collection_config = CollectionConfigInternal {
             wal_config,
             params: collection_params,
-            optimizer_config: optimizers_config,
+            optimizer_config,
             hnsw_config,
             quantization_config,
             strict_mode_config,
@@ -254,6 +251,8 @@ impl TableOfContent {
             self.storage_config.optimizers_overwrite.clone(),
         )
         .await?;
+
+        collection.print_warnings().await;
 
         let local_shards = collection.get_local_shards().await;
 

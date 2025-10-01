@@ -10,7 +10,6 @@ mod startup;
 mod tonic;
 mod tracing;
 
-use std::fs::create_dir_all;
 use std::io::Error;
 use std::path::Path;
 use std::sync::Arc;
@@ -27,6 +26,7 @@ use clap::Parser;
 use collection::profiling::interface::init_requests_profile_collector;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
+use fs_err as fs;
 use memory::checkfs::{check_fs_info, check_mmap_functionality};
 use slog::Drain;
 use startup::setup_panic_hook;
@@ -217,7 +217,7 @@ fn main() -> anyhow::Result<()> {
     // Validate as soon as possible, but we must initialize logging first
     settings.validate_and_warn();
 
-    create_dir_all(&settings.storage.storage_path)?;
+    fs::create_dir_all(&settings.storage.storage_path)?;
 
     // Check if the filesystem is compatible with Qdrant
     match check_fs_info(&settings.storage.storage_path) {

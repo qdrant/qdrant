@@ -1,8 +1,8 @@
-use std::fs::{create_dir_all, remove_dir};
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use serde_json::Value;
 
 use super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
@@ -58,9 +58,9 @@ impl MmapFullTextIndex {
         let files = self.files();
         let path = self.path();
         for file in files {
-            std::fs::remove_file(file)?;
+            fs::remove_file(file)?;
         }
-        let _ = remove_dir(path);
+        let _ = fs::remove_dir(path);
         Ok(())
     }
 
@@ -188,7 +188,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
 
         let immutable = ImmutableInvertedIndex::from(mutable_index);
 
-        create_dir_all(path.as_path())?;
+        fs::create_dir_all(path.as_path())?;
 
         MmapInvertedIndex::create(path.clone(), &immutable)?;
 

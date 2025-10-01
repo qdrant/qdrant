@@ -291,6 +291,7 @@ mod tests {
 
     use common::budget::ResourceBudget;
     use common::counter::hardware_counter::HardwareCounterCell;
+    use fs_err as fs;
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
     use rand::rng;
@@ -605,7 +606,7 @@ mod tests {
             "Testing that only largest segment is not Mmap"
         );
 
-        let segment_dirs = segments_dir.path().read_dir().unwrap().collect_vec();
+        let segment_dirs = fs::read_dir(segments_dir.path()).unwrap().collect_vec();
         assert_eq!(
             segment_dirs.len(),
             locked_holder.read().len(),

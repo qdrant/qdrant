@@ -1,12 +1,12 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::path::Path;
 use std::thread::JoinHandle;
 
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use io::file_operations::{atomic_save_json, read_json};
 
 use super::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};
@@ -699,7 +699,7 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
             );
             unpack_snapshot(&inner_path)?;
             utils::fs::move_all(&inner_path, &segment_path)?;
-            std::fs::remove_dir(&inner_path)?;
+            fs::remove_dir(&inner_path)?;
         } else {
             log::debug!(
                 "Extracting segment {} from {:?} snapshot",
@@ -709,7 +709,7 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
             // Do nothing, this format is just a plain archive.
         }
 
-        std::fs::remove_file(snapshot_path)?;
+        fs::remove_file(snapshot_path)?;
     }
 
     Ok(())
@@ -724,19 +724,19 @@ fn unpack_snapshot(segment_path: &Path) -> OperationResult<()> {
         let db_backup_path = segment_path.join(DB_BACKUP_PATH);
         if db_backup_path.is_dir() {
             crate::rocksdb_backup::restore(&db_backup_path, segment_path)?;
-            std::fs::remove_dir_all(&db_backup_path)?;
+            fs::remove_dir_all(&db_backup_path)?;
         }
 
         let payload_index_db_backup = segment_path.join(PAYLOAD_DB_BACKUP_PATH);
         if payload_index_db_backup.is_dir() {
             StructPayloadIndex::restore_database_snapshot(&payload_index_db_backup, segment_path)?;
-            std::fs::remove_dir_all(&payload_index_db_backup)?;
+            fs::remove_dir_all(&payload_index_db_backup)?;
         }
     }
 
     let files_path = segment_path.join(SNAPSHOT_FILES_PATH);
     utils::fs::move_all(&files_path, segment_path)?;
-    std::fs::remove_dir(&files_path)?;
+    fs::remove_dir(&files_path)?;
 
     Ok(())
 }

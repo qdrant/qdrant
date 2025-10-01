@@ -1,9 +1,9 @@
 use std::fmt::Debug;
-use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use fs_err::File;
 use parking_lot::RwLock;
 use rustls::client::VerifierBuilderError;
 use rustls::pki_types::CertificateDer;

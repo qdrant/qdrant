@@ -51,6 +51,7 @@ mockito = "1.7"
 [dependencies]
 parking_lot = { workspace = true }
 
+fs-err = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 colored = "3"
@@ -117,7 +118,7 @@ cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
 segment = { path = "lib/segment", default-features = false }
-shard = { path = "lib/shard" }
+shard = { path = "lib/shard", default-features = false }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
@@ -202,12 +203,13 @@ bytemuck = { version = "1.23.2", features = [
 ] }
 bytes = "1.10.1"
 chrono = { version = "0.4.42", features = ["serde"] }
-clap = { version = "4.5.47", features = ["derive", "env"] }
+clap = { version = "4.5.48", features = ["derive", "env"] }
 criterion = "0.7.0"
 data-encoding = "2.9.0"
 delegate = "0.13.4"
 ecow = { version = "0.2.6", features = ["serde"] }
 fnv = "1.0"
+fs-err = { version = "3.1.2", features = ["tokio"] }
 futures = "0.3.31"
 futures-util = "0.3.31"
 generic-tests = "0.1.3"
@@ -276,10 +278,9 @@ wal = { git = "https://github.com/qdrant/wal.git", rev = "fad05934581585c18ff847
 zerocopy = { version = "0.8.27", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
-thiserror = "2.0.16"
+thiserror = "2.0.17"
 bitvec = "1.0.1"
 smallvec = { version = "1.15.1", features = ["write"] }
-merge = "0.1.0"
 dashmap = "6.1"
 walkdir = "2.5.0"
 
@@ -310,6 +311,7 @@ members = [
     "lib/api",
     "lib/collection",
     "lib/common/*",
+    "lib/edge",
     "lib/gridstore",
     "lib/macros",
     "lib/posting_list",

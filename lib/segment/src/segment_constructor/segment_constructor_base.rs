@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -8,6 +7,8 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
+use fs_err as fs;
+use fs_err::File;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
@@ -786,7 +787,7 @@ pub fn build_segment(
 ) -> OperationResult<Segment> {
     let segment_path = new_segment_path(segments_path);
 
-    std::fs::create_dir_all(&segment_path)?;
+    fs::create_dir_all(&segment_path)?;
 
     let segment = create_segment(
         None,
@@ -949,7 +950,7 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
         // On migration error, clean up and remove all new ID tracker files
         Err(err) => {
             for file in MutableIdTracker::segment_files(segment_path) {
-                if let Err(err) = std::fs::remove_file(&file) {
+                if let Err(err) = fs::remove_file(&file) {
                     log::error!(
                         "ID tracker migration to mutable failed, failed to remove mutable file {} for cleanup: {err}",
                         file.display(),
@@ -1104,7 +1105,7 @@ pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
             match files {
                 Ok(files) => {
                     for file in files {
-                        if let Err(err) = std::fs::remove_file(&file) {
+                        if let Err(err) = fs::remove_file(&file) {
                             log::error!(
                                 "Dense vector storage migration to mmap failed, failed to remove mmap file {} for cleanup: {err}",
                                 file.display(),
@@ -1195,7 +1196,7 @@ pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
             match files {
                 Ok(files) => {
                     for file in files {
-                        if let Err(err) = std::fs::remove_file(&file) {
+                        if let Err(err) = fs::remove_file(&file) {
                             log::error!(
                                 "Multi dense vector storage migration to mmap failed, failed to remove mmap file {} for cleanup: {err}",
                                 file.display(),
@@ -1327,7 +1328,7 @@ pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
             match files {
                 Ok(files) => {
                     for file in files {
-                        if let Err(err) = std::fs::remove_file(&file) {
+                        if let Err(err) = fs::remove_file(&file) {
                             log::error!(
                                 "Sparse vector storage migration to mmap failed, failed to remove mmap file {} for cleanup: {err}",
                                 file.display(),
@@ -1450,7 +1451,7 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
         Err(err) => {
             let storage_dir = mmap_payload_storage::storage_dir(segment_path);
             if storage_dir.is_dir()
-                && let Err(err) = std::fs::remove_dir_all(&storage_dir)
+                && let Err(err) = fs::remove_dir_all(&storage_dir)
             {
                 log::error!(
                     "Payload storage migration to mmap failed, failed to remove mmap files in {} for cleanup: {err}",

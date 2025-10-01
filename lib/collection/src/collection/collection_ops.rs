@@ -34,7 +34,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         {
             let mut config = self.collection_config.write().await;
-            config.params = params_diff.update(&config.params)?;
+            config.params = config.params.update(&params_diff);
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
@@ -51,7 +51,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         {
             let mut config = self.collection_config.write().await;
-            config.hnsw_config = hnsw_config_diff.update(&config.hnsw_config)?;
+            config.hnsw_config = config.hnsw_config.update(&hnsw_config_diff);
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
@@ -104,8 +104,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         {
             let mut config = self.collection_config.write().await;
-            config.optimizer_config =
-                DiffConfig::update(optimizer_config_diff, &config.optimizer_config)?;
+            config.optimizer_config = config.optimizer_config.update(&optimizer_config_diff);
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
@@ -187,7 +186,7 @@ impl Collection {
         {
             let mut config = self.collection_config.write().await;
             if let Some(current_config) = config.strict_mode_config.as_mut() {
-                *current_config = strict_mode_diff.update(current_config)?;
+                *current_config = current_config.update(&strict_mode_diff);
             } else {
                 config.strict_mode_config = Some(strict_mode_diff);
             }
@@ -405,5 +404,12 @@ impl Collection {
             resharding_operations,
         };
         Ok(info)
+    }
+
+    pub async fn print_warnings(&self) {
+        let warnings = self.collection_config.read().await.get_warnings();
+        for warning in warnings {
+            log::warn!("Collection {}: {}", self.name(), warning.message);
+        }
     }
 }

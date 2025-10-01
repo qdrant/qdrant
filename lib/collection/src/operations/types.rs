@@ -18,7 +18,6 @@ use common::validation::validate_range_generic;
 use common::{defaults, save_on_disk};
 use io::file_operations::FileStorageError;
 use issues::IssueRecord;
-use merge::Merge;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -50,7 +49,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::{ClockTag, config_diff};
+use super::ClockTag;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
@@ -125,6 +124,16 @@ pub enum OptimizersStatus {
     /// Something wrong happened with optimizers
     #[anonymize(false)]
     Error(String),
+}
+
+#[derive(
+    Debug, Default, Serialize, JsonSchema, Anonymize, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
+#[serde(rename_all = "snake_case")]
+pub struct CollectionWarning {
+    /// Warning message
+    #[anonymize(true)] // Might contain vector names
+    pub message: String,
 }
 
 /// Point data
@@ -219,6 +228,9 @@ pub struct CollectionInfo {
     pub status: CollectionStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
+    /// Warnings related to the collection
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<CollectionWarning>,
     /// Approximate number of indexed vectors in the collection.
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in a specialized vector index.
@@ -240,6 +252,7 @@ impl CollectionInfo {
         Self {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
+            warnings: collection_config.get_warnings(),
             indexed_vectors_count: Some(0),
             points_count: Some(0),
             segments_count: 0,
@@ -263,6 +276,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
         Self {
             status: status.into(),
             optimizer_status,
+            warnings: config.get_warnings(),
             indexed_vectors_count: Some(indexed_vectors_count),
             points_count: Some(points_count),
             segments_count,
@@ -1519,10 +1533,7 @@ pub fn validate_nonzerou64_range_min_1_max_65536(
 
 /// Is considered empty if `None` or if diff has no field specified
 fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
-    hnsw_config
-        .as_ref()
-        .and_then(|config| config_diff::is_empty(config).ok())
-        .unwrap_or(true)
+    hnsw_config.is_none() || *hnsw_config == Some(HnswConfigDiff::default())
 }
 
 /// If used, include weight modification, which will be applied to sparse vectors at query time:
@@ -1858,9 +1869,7 @@ impl From<&segment::types::VectorDataConfig> for VectorParamsBase {
     }
 }
 
-#[derive(
-    Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Merge,
-)]
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorParamsDiff {
     /// Update params for HNSW index. If empty object - it will be unset.

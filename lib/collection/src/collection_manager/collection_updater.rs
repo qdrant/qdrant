@@ -43,7 +43,7 @@ impl CollectionUpdater {
         segments: &RwLock<SegmentHolder>,
         op_num: SeqNumberType,
         operation: CollectionUpdateOperations,
-        scroll_lock: Arc<tokio::sync::RwLock<()>>,
+        update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<usize> {
@@ -52,7 +52,7 @@ impl CollectionUpdater {
             // Allow only one update at a time, ensure no data races between segments.
             // let _update_lock = self.update_lock.lock().unwrap();
 
-            let _scroll_lock = scroll_lock.blocking_write();
+            let _update_operation_lock = update_operation_lock.blocking_write();
             let _update_guard = update_tracker.update();
 
             match operation {

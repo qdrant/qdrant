@@ -1,4 +1,3 @@
-use std::fs::create_dir_all;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -15,6 +14,7 @@ use common::cpu::linux_low_thread_priority;
 use common::ext::BitSliceExt as _;
 use common::flags::FeatureFlags;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use fs_err as fs;
 use itertools::EitherOrBoth;
 use log::{debug, trace};
 use memory::fadvise::clear_disk_cache;
@@ -229,7 +229,7 @@ impl HNSWIndex {
             feature_flags,
         } = build_args;
 
-        create_dir_all(path)?;
+        fs::create_dir_all(path)?;
 
         let id_tracker_ref = id_tracker.borrow();
         let vector_storage_ref = vector_storage.borrow();

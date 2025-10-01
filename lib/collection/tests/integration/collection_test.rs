@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
 use std::io::{BufReader, BufWriter};
 
 use ahash::AHashSet;
@@ -18,6 +17,7 @@ use collection::operations::types::{
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use fs_err::File;
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::data_types::vectors::VectorStructInternal;
