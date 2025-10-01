@@ -466,7 +466,7 @@ fn single_metrics_bench(c: &mut Criterion) {
     });
 
     #[cfg(target_arch = "x86_64")]
-    group.bench_function("single-dot-avx", |b| {
+    group.bench_function("single-dot-avx-nocache", |b| {
         b.iter(|| unsafe { dot_similarity_avx(&random_vectors_1[0], &random_vector_2) });
     });
 
