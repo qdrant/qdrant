@@ -241,6 +241,23 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
         )
         assert_http_ok(r)
         counts.append(r.json()["result"]['count'])
+
+    if not (counts[0] == counts[1] == counts[2]):
+        # Match all points on all nodes exactly
+        data = []
+        for uri in peer_api_uris:
+            r = requests.post(
+                f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                    "limit": 999999999,
+                    "with_vectors": True,
+                    "with_payload": True,
+                }
+            )
+            assert_http_ok(r)
+            data.append(r.json()["result"])
+        check_data_consistency(data)
+
+
     assert counts[0] == counts[1] == counts[2]
 
 

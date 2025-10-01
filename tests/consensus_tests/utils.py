@@ -806,3 +806,27 @@ def replicate_shard(source_uri, collection_name, shard_id, source_peer_id, targe
             }
         })
     assert_http_ok(r)
+
+
+def check_data_consistency(data):
+
+    assert(len(data) > 1)
+
+    for i in range(len(data) - 1):
+        j = i + 1
+
+        data_i = data[i]
+        data_j = data[j]
+
+        if data_i != data_j:
+            ids_i = set(x.id for x in data_i)
+            ids_j = set(x.id for x in data_j)
+
+            diff = ids_i - ids_j
+
+            if len(diff) < 100:
+                print(f"Diff between {i} and {j}: {diff}")
+            else:
+                print(f"Diff len between {i} and {j}: {len(diff)}")
+
+            assert False, "Data on all nodes should be consistent"
