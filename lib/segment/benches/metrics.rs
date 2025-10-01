@@ -435,9 +435,7 @@ fn single_metrics_bench(c: &mut Criterion) {
     let random_vectors_1: Vec<Vec<f32>> = (0..COUNT)
         .map(|_| (0..DIM).map(|_| rng.random_range(0.0..=1.0)).collect())
         .collect();
-    let random_vectors_2: Vec<Vec<f32>> = (0..COUNT)
-        .map(|_| (0..DIM).map(|_| rng.random_range(0.0..=1.0)).collect())
-        .collect();
+    let random_vector_2: Vec<f32> = (0..DIM).map(|_| rng.random_range(0.0..=1.0)).collect();
 
     group.bench_function("single-dot", |b| {
         let mut i = 0;
@@ -445,7 +443,7 @@ fn single_metrics_bench(c: &mut Criterion) {
             i = (i + 1) % COUNT;
             <DotProductMetric as Metric<VectorElementType>>::similarity(
                 &random_vectors_1[i],
-                &random_vectors_2[i],
+                &random_vector_2,
             )
         });
     });
@@ -454,7 +452,7 @@ fn single_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| {
             i = (i + 1) % COUNT;
-            dot_similarity(&random_vectors_1[i], &random_vectors_2[i])
+            dot_similarity(&random_vectors_1[i], &random_vector_2)
         });
     });
 
@@ -463,7 +461,7 @@ fn single_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            dot_similarity_avx(&random_vectors_1[i], &random_vectors_2[i])
+            dot_similarity_avx(&random_vectors_1[i], &random_vector_2)
         });
     });
 
@@ -472,7 +470,7 @@ fn single_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            dot_similarity_sse(&random_vectors_1[i], &random_vectors_2[i])
+            dot_similarity_sse(&random_vectors_1[i], &random_vector_2)
         });
     });
 
@@ -482,7 +480,7 @@ fn single_metrics_bench(c: &mut Criterion) {
             let mut i = 0;
             b.iter(|| unsafe {
                 i = (i + 1) % COUNT;
-                dot_similarity_avx512(&random_vectors_1[i], &random_vectors_2[i])
+                dot_similarity_avx512(&random_vectors_1[i], &random_vector_2)
             });
         });
     }
@@ -492,7 +490,7 @@ fn single_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            dot_similarity_neon(&random_vectors_1[i], &random_vectors_2[i])
+            dot_similarity_neon(&random_vectors_1[i], &random_vector_2)
         });
     });
 }
