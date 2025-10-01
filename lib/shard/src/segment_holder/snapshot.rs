@@ -4,7 +4,7 @@ use std::sync::Arc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use io::storage_version::StorageVersion;
-use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
 use segment::data_types::manifest::SnapshotManifest;
 use segment::entry::SegmentEntry;
@@ -12,6 +12,7 @@ use segment::segment::SegmentVersion;
 use segment::types::SegmentConfig;
 
 use crate::locked_segment::LockedSegment;
+use crate::memory_segment::MemorySegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::proxy_segment::{LockedIndexChanges, LockedRmSet, ProxySegment};
 use crate::segment_holder::{SegmentHolder, SegmentId};
@@ -49,7 +50,7 @@ impl SegmentHolder {
         // Create temporary appendable segment to direct all proxy writes into
         let tmp_segment = segments_lock.build_tmp_segment(
             segments_path,
-            segment_config,
+            segment_config.clone(),
             payload_index_schema,
             false,
         )?;
@@ -60,10 +61,19 @@ impl SegmentHolder {
         // Create proxy for all segments
         let mut new_proxies = Vec::with_capacity(segment_ids.len());
         for segment_id in segment_ids {
+            // Create in-memory write segment
+            let memory_segment = MemorySegment::new(
+                0,
+                // TODO: don't unwrap here
+                segment_config.clone().unwrap(),
+                // TODO: include this: payload_index_schema.clone(),
+            )?;
+            let memory_segment = LockedSegment::Memory(Arc::new(RwLock::new(memory_segment)));
+
             let segment = segments_lock.get(segment_id).unwrap();
             let mut proxy = ProxySegment::new(
                 segment.clone(),
-                tmp_segment.clone(),
+                memory_segment,
                 // In this case, each proxy has their own set of deleted points
                 // We cannot share deletes because they're propagated to different wrapped
                 // segments, and we unproxy at different times
@@ -155,6 +165,8 @@ impl SegmentHolder {
 
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
 
+        // TODO: promote in-memory write segment!
+
         // Batch 2: propagate changes to wrapped segment with segment holder write lock
         // Propagate proxied changes to wrapped segment, take it out and swap with proxy
         // Important: put the wrapped segment back with its original segment ID
@@ -225,6 +237,8 @@ impl SegmentHolder {
                 LockedSegment::Memory(_) => {}
             }
         }
+
+        // TODO: promote in-memory write segments!
 
         // Finalize temporary segment we proxied writes to
         // Append a temp segment to collection if it is not empty or there is no other appendable segment
