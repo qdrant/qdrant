@@ -243,6 +243,7 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
         counts.append(r.json()["result"]['count'])
 
     if not (counts[0] == counts[1] == counts[2]):
+        print(f"Incorrect counts detected! (peer_0:{counts[0]} peer_1:{counts[1]} peer_2:{counts[2]}")
         # Match all points on all nodes exactly
         data = []
         for uri in peer_api_uris:
