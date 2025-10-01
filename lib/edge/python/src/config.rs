@@ -46,7 +46,7 @@ impl PyVectorDataConfig {
     pub fn new(
         size: usize,
         distance: PyDistance,
-        storage_type: PyStorageType,
+        storage_type: PyVectorStorageType,
         index: PyIndexes,
         quantization_config: Option<PyQuantizationConfig>,
         multivector_config: Option<PyMultiVectorConfig>,
@@ -96,10 +96,10 @@ impl PyDistance {
 
 #[pyclass(name = "VectorStorageType")]
 #[derive(Copy, Clone, Debug, Into)]
-pub struct PyStorageType(VectorStorageType);
+pub struct PyVectorStorageType(VectorStorageType);
 
 #[pymethods]
-impl PyStorageType {
+impl PyVectorStorageType {
     #[classattr]
     pub const MEMORY: Self = Self(VectorStorageType::Memory);
 
@@ -113,7 +113,7 @@ impl PyStorageType {
     pub const IN_RAM_CHUNKED_MMAP: Self = Self(VectorStorageType::InRamChunkedMmap);
 }
 
-impl PyStorageType {
+impl PyVectorStorageType {
     fn _variants(storage_type: VectorStorageType) {
         match storage_type {
             VectorStorageType::Memory => (),

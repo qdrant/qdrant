@@ -18,17 +18,20 @@ use self::update::*;
 #[pymodule]
 mod qdrant_edge {
     #[pymodule_export]
-    use super::PyShard;
-    #[pymodule_export]
     use super::config::{
         PyDistance, PyIndexes, PyMultiVectorComparator, PyMultiVectorConfig, PyPayloadStorageType,
-        PyQuantizationConfig, PySegmentConfig, PyStorageType, PyVectorDataConfig,
-        PyVectorStorageDatatype,
+        PyQuantizationConfig, PySegmentConfig, PySparseVectorDataConfig, PyVectorDataConfig,
+        PyVectorStorageDatatype, PyVectorStorageType,
     };
     #[pymodule_export]
-    use super::search::{PyScoredPoint, PySearchRequest};
+    use super::search::{
+        PyFilter, PyQuery, PyQueryVector, PyScoredPoint, PySearchParams, PySearchRequest,
+        PyWithPayload, PyWithVector,
+    };
     #[pymodule_export]
     use super::update::{PyPoint, PyUpdateOperation, PyVector};
+    #[pymodule_export]
+    use super::{PyPayload, PyPointId, PyShard};
 }
 
 #[pyclass(name = "Shard")]
