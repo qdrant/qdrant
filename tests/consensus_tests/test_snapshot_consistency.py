@@ -80,5 +80,5 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path):
             }
         )
         assert_http_ok(r)
-        data.append(r.json()["result"])
+        data.append(r.json()["result"]["points"])
     check_data_consistency(data)

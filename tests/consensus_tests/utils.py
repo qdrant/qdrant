@@ -819,8 +819,8 @@ def check_data_consistency(data):
         data_j = data[j]
 
         if data_i != data_j:
-            ids_i = set(x.id for x in data_i)
-            ids_j = set(x.id for x in data_j)
+            ids_i = set(x.get("id") for x in data_i)
+            ids_j = set(x.get("id") for x in data_j)
 
             diff = ids_i - ids_j
 

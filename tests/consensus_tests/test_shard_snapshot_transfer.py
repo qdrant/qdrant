@@ -255,7 +255,7 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
                 }
             )
             assert_http_ok(r)
-            data.append(r.json()["result"])
+            data.append(r.json()["result"]["points"])
         check_data_consistency(data)
 
 
