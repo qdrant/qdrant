@@ -72,7 +72,6 @@ fn main() {
             eprintln!("point_id = {point_id:?}");
         }
 
-
         if let Some(point_id_int) = args.point_id_int {
             let point_id = PointIdType::NumId(point_id_int);
 
