@@ -466,6 +466,11 @@ fn single_metrics_bench(c: &mut Criterion) {
     });
 
     #[cfg(target_arch = "x86_64")]
+    group.bench_function("single-dot-avx", |b| {
+        b.iter(|| unsafe { dot_similarity_avx(&random_vectors_1[0], &random_vector_2) });
+    });
+
+    #[cfg(target_arch = "x86_64")]
     group.bench_function("single-dot-sse", |b| {
         let mut i = 0;
         b.iter(|| unsafe {
@@ -482,6 +487,10 @@ fn single_metrics_bench(c: &mut Criterion) {
                 i = (i + 1) % COUNT;
                 dot_similarity_avx512(&random_vectors_1[i], &random_vector_2)
             });
+        });
+
+        group.bench_function("single-dot-avx512-nocache", |b| {
+            b.iter(|| unsafe { dot_similarity_avx512(&random_vectors_1[0], &random_vector_2) });
         });
     }
 
