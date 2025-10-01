@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
@@ -187,20 +186,22 @@ impl QueueProxyShard {
         self.inner_unchecked().wrapped_shard.trigger_optimizers();
     }
 
-    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
         self.inner_unchecked()
             .wrapped_shard
             .get_telemetry_data(detail)
+            .await
     }
 
-    pub fn get_optimization_status(&self) -> OptimizersStatus {
+    pub async fn get_optimization_status(&self) -> OptimizersStatus {
         self.inner_unchecked()
             .wrapped_shard
             .get_optimization_status()
+            .await
     }
 
-    pub fn get_size_stats(&self) -> SizeStats {
-        self.inner_unchecked().wrapped_shard.get_size_stats()
+    pub async fn get_size_stats(&self) -> SizeStats {
+        self.inner_unchecked().wrapped_shard.get_size_stats().await
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {
@@ -236,14 +237,15 @@ impl QueueProxyShard {
         (queue_proxy.wrapped_shard, queue_proxy.remote_shard)
     }
 
-    pub fn estimate_cardinality(
+    pub async fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
-        hw_counter: &HardwareCounterCell,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
         self.inner_unchecked()
             .wrapped_shard
-            .estimate_cardinality(filter, hw_counter)
+            .estimate_cardinality(filter, hw_measurement_acc)
+            .await
     }
 }
 

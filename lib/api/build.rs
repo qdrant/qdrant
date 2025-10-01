@@ -36,18 +36,17 @@ fn main() -> std::io::Result<()> {
     );
 
     // Fetch git commit ID and pass it to the compiler
-    let git_commit_id =
-        option_env!("GIT_COMMIT_ID").map(Into::into).or_else(|| {
-            match Command::new("git").args(["rev-parse", "HEAD"]).output() {
-                Ok(output) if output.status.success() => {
-                    Some(str::from_utf8(&output.stdout).unwrap().trim().to_string())
-                }
-                _ => {
-                    println!("cargo:warning=current git commit hash could not be determined");
-                    None
-                }
+    let git_commit_id = option_env!("GIT_COMMIT_ID").map(String::from).or_else(|| {
+        match Command::new("git").args(["rev-parse", "HEAD"]).output() {
+            Ok(output) if output.status.success() => {
+                Some(str::from_utf8(&output.stdout).unwrap().trim().to_string())
             }
-        });
+            _ => {
+                println!("cargo:warning=current git commit hash could not be determined");
+                None
+            }
+        }
+    });
 
     if let Some(commit_id) = git_commit_id {
         println!("cargo:rustc-env=GIT_COMMIT_ID={commit_id}");
@@ -166,8 +165,15 @@ fn configure_validation(builder: Builder) -> Builder {
             ("UpdateCollectionClusterSetupRequest.operation", ""),
             ("StrictModeConfig.max_query_limit", "range(min = 1)"),
             ("StrictModeConfig.max_timeout", "range(min = 1)"),
-            ("StrictModeConfig.read_rate_limit_per_minute", "range(min = 1)"),
-            ("StrictModeConfig.write_rate_limit_per_minute", "range(min = 1)"),
+            ("StrictModeConfig.max_points_count", "range(min = 1)"),
+            ("StrictModeConfig.read_rate_limit", "range(min = 1)"),
+            ("StrictModeConfig.write_rate_limit", "range(min = 1)"),
+            ("StrictModeConfig.multivector_config", ""),
+            ("StrictModeConfig.sparse_config", ""),
+            ("StrictModeSparseConfig.sparse_config", ""),
+            ("StrictModeSparse.max_length", "range(min = 1)"),
+            ("StrictModeMultivectorConfig.multivector_config", ""),
+            ("StrictModeMultivector.max_vectors", "range(min = 1)"),
         ], &[
             "ListCollectionsRequest",
             "ListAliasesRequest",
@@ -191,6 +197,7 @@ fn configure_validation(builder: Builder) -> Builder {
         ], &[])
         // Service: points.proto
         .validates(&[
+            ("PointsSelector.points_selector_one_of", ""),
             ("UpsertPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("UpsertPoints.points", ""),
             ("UpsertPoints.update_filter", ""),
@@ -200,11 +207,15 @@ fn configure_validation(builder: Builder) -> Builder {
             ("UpdatePointVectors.update_filter", ""),
             ("DeletePointVectors.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("DeletePointVectors.vector_names", "length(min = 1, message = \"must specify vector names to delete\")"),
+            ("DeletePointVectors.points_selector", ""),
             ("PointVectors.vectors", ""),
             ("GetPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("SetPayloadPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("SetPayloadPoints.points_selector", ""),
             ("DeletePayloadPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("DeletePayloadPoints.points_selector", ""),
             ("ClearPayloadPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("ClearPayloadPoints.points", ""),
             ("UpdateBatchPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("UpdateBatchPoints.operations", "length(min = 1)"),
             ("CreateFieldIndexCollection.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
@@ -268,6 +279,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("Filter.must_not", ""),
             ("NestedCondition.filter", ""),
             ("Condition.condition_one_of", ""),
+            ("Filter.min_should", ""),
+            ("MinShould.conditions", ""),
             ("PointStruct.vectors", ""),
             ("Vectors.vectors_options", ""),
             ("NamedVectors.vectors", ""),
@@ -401,10 +414,10 @@ fn configure_validation(builder: Builder) -> Builder {
 }
 
 fn append_to_file(path: &str, line: &str) {
-    use std::fs::OpenOptions;
     use std::io::prelude::*;
+    #[expect(clippy::disallowed_types, reason = "build script, ok to use std::fs")]
     writeln!(
-        OpenOptions::new().append(true).open(path).unwrap(),
+        std::fs::OpenOptions::new().append(true).open(path).unwrap(),
         "{line}",
     )
     .unwrap()

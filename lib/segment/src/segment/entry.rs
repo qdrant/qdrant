@@ -2,10 +2,11 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::{fs, thread};
+use std::thread;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
+use fs_err as fs;
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
@@ -857,21 +858,6 @@ impl SegmentEntry for Segment {
 
     fn check_error(&self) -> Option<SegmentFailedState> {
         self.error_status.clone()
-    }
-
-    fn delete_filtered<'a>(
-        &'a mut self,
-        op_num: SeqNumberType,
-        filter: &'a Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        let mut deleted_points = 0;
-        let is_stopped = AtomicBool::new(false);
-        for point_id in self.read_filtered(None, None, Some(filter), &is_stopped, hw_counter) {
-            deleted_points += usize::from(self.delete_point(op_num, point_id, hw_counter)?);
-        }
-
-        Ok(deleted_points)
     }
 
     fn vector_names(&self) -> HashSet<VectorNameBuf> {

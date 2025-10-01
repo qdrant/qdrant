@@ -21,7 +21,6 @@ use segment::types::*;
 
 use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
-
 impl SegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
         cmp::max(
@@ -199,33 +198,39 @@ impl SegmentEntry for ProxySegment {
             LockedSegment::Original(raw_segment) => {
                 let point_offset = raw_segment.read().get_internal_id(point_id);
                 if point_offset.is_some() {
-                    was_deleted = self
-                        .deleted_points
-                        .write()
-                        .insert(
-                            point_id,
-                            ProxyDeletedPoint {
-                                local_version: op_num,
-                                operation_version: op_num,
-                            },
+                    let prev = self.deleted_points.write().insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
                         )
-                        .is_none();
+                    }
                 }
                 point_offset
             }
             LockedSegment::Proxy(proxy) => {
                 if proxy.read().has_point(point_id) {
-                    was_deleted = self
-                        .deleted_points
-                        .write()
-                        .insert(
-                            point_id,
-                            ProxyDeletedPoint {
-                                local_version: op_num,
-                                operation_version: op_num,
-                            },
+                    let prev = self.deleted_points.write().insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
                         )
-                        .is_none();
+                    }
                 }
                 None
             }
@@ -940,60 +945,6 @@ impl SegmentEntry for ProxySegment {
 
     fn check_error(&self) -> Option<SegmentFailedState> {
         self.write_segment.get().read().check_error()
-    }
-
-    fn delete_filtered<'a>(
-        &'a mut self,
-        op_num: SeqNumberType,
-        filter: &'a Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        let mut deleted_points = 0;
-        // we don’t want to cancel this filtered read
-        let is_stopped = AtomicBool::new(false);
-        let points_to_delete = self.wrapped_segment.get().read().read_filtered(
-            None,
-            None,
-            Some(filter),
-            &is_stopped,
-            hw_counter,
-        );
-        let points_offsets_to_delete = match &self.wrapped_segment {
-            LockedSegment::Original(raw_segment) => {
-                let raw_segment_read = raw_segment.read();
-                points_to_delete
-                    .iter()
-                    .filter_map(|point_id| raw_segment_read.get_internal_id(*point_id))
-                    .collect()
-            }
-            LockedSegment::Proxy(_) => vec![],
-        };
-
-        if !points_to_delete.is_empty() {
-            deleted_points += points_to_delete.len();
-            let mut deleted_points_guard = self.deleted_points.write();
-            deleted_points_guard.extend(points_to_delete.iter().map(|&point_id| {
-                (
-                    point_id,
-                    ProxyDeletedPoint {
-                        local_version: op_num,
-                        operation_version: op_num,
-                    },
-                )
-            }));
-        }
-
-        for point_offset in points_offsets_to_delete {
-            self.set_deleted_offset(Some(point_offset));
-        }
-
-        deleted_points += self
-            .write_segment
-            .get()
-            .write()
-            .delete_filtered(op_num, filter, hw_counter)?;
-
-        Ok(deleted_points)
     }
 
     fn vector_names(&self) -> HashSet<VectorNameBuf> {

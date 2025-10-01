@@ -1,6 +1,7 @@
+use std::cmp;
 use std::path::Path;
-use std::{cmp, fs};
 
+use fs_err as fs;
 use prost_for_raft::Message;
 use protobuf::Message as _;
 use raft::eraftpb::Entry as RaftEntry;

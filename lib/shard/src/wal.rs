@@ -27,11 +27,11 @@ pub struct SerdeWal<R> {
 const FIRST_INDEX_FILE: &str = "first-index";
 
 impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
-    pub fn new(dir: &str, wal_options: WalOptions) -> Result<SerdeWal<R>> {
+    pub fn new(dir: &Path, wal_options: WalOptions) -> Result<SerdeWal<R>> {
         let wal = Wal::with_options(dir, &wal_options)
             .map_err(|err| WalError::InitWalError(format!("{err:?}")))?;
 
-        let first_index_path = Path::new(dir).join(FIRST_INDEX_FILE);
+        let first_index_path = dir.join(FIRST_INDEX_FILE);
 
         let first_index = if first_index_path.exists() {
             let wal_state: WalState = read_json(&first_index_path).map_err(|err| {
@@ -240,12 +240,12 @@ pub enum WalError {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(not(target_os = "windows"))]
-    use std::fs;
     use std::num::NonZeroUsize;
     #[cfg(not(target_os = "windows"))]
     use std::os::unix::fs::MetadataExt;
 
+    #[cfg(not(target_os = "windows"))]
+    use fs_err as fs;
     use tempfile::Builder;
 
     use super::*;
@@ -281,8 +281,7 @@ mod tests {
             retain_closed: NonZeroUsize::new(1).unwrap(),
         };
 
-        let mut serde_wal: SerdeWal<TestRecord> =
-            SerdeWal::new(dir.path().to_str().unwrap(), wal_options).unwrap();
+        let mut serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path(), wal_options).unwrap();
 
         let record = TestRecord::Struct1(TestInternalStruct1 { data: 10 });
 

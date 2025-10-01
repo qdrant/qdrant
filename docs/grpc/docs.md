@@ -24,6 +24,7 @@
     - [CollectionOperationResponse](#qdrant-CollectionOperationResponse)
     - [CollectionParams](#qdrant-CollectionParams)
     - [CollectionParamsDiff](#qdrant-CollectionParamsDiff)
+    - [CollectionWarning](#qdrant-CollectionWarning)
     - [CreateAlias](#qdrant-CreateAlias)
     - [CreateCollection](#qdrant-CreateCollection)
     - [CreateCollection.MetadataEntry](#qdrant-CreateCollection-MetadataEntry)
@@ -603,12 +604,12 @@
 | ----- | ---- | ----- | ----------- |
 | status | [CollectionStatus](#qdrant-CollectionStatus) |  | operating condition of the collection |
 | optimizer_status | [OptimizerStatus](#qdrant-OptimizerStatus) |  | status of collection optimizers |
-| vectors_count | [uint64](#uint64) | optional | Approximate number of vectors in the collection |
 | segments_count | [uint64](#uint64) |  | Number of independent segments |
 | config | [CollectionConfig](#qdrant-CollectionConfig) |  | Configuration |
 | payload_schema | [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry) | repeated | Collection data types |
 | points_count | [uint64](#uint64) | optional | Approximate number of points in the collection |
 | indexed_vectors_count | [uint64](#uint64) | optional | Approximate number of indexed vectors in the collection. |
+| warnings | [CollectionWarning](#qdrant-CollectionWarning) | repeated | Warnings related to the collection |
 
 
 
@@ -681,6 +682,21 @@
 | write_consistency_factor | [uint32](#uint32) | optional | How many replicas should apply the operation for us to consider it successful |
 | on_disk_payload | [bool](#bool) | optional | If true - point&#39;s payload will not be stored in memory |
 | read_fan_out_factor | [uint32](#uint32) | optional | Fan-out every read request to these many additional remote nodes (and return first available response) |
+
+
+
+
+
+
+<a name="qdrant-CollectionWarning"></a>
+
+### CollectionWarning
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| message | [string](#string) |  |  |
 
 
 
@@ -979,6 +995,7 @@
 | max_indexing_threads | [uint64](#uint64) | optional | Number of parallel threads used for background index building. If 0 - automatically select from 8 to 16. Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs. On small CPUs, less threads are used. |
 | on_disk | [bool](#bool) | optional | Store HNSW index on disk. If set to false, the index will be stored in RAM. |
 | payload_m | [uint64](#uint64) | optional | Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used. |
+| copy_vectors | [bool](#bool) | optional | Store copies of original and quantized vectors within the HNSW index file. Default: false. Enabling this option will trade the search speed for disk usage by reducing amount of random seeks during the search. Requires quantized vectors to be enabled. Multi-vectors are not supported. |
 
 
 
@@ -1579,24 +1596,25 @@ Note: 1kB = 1 vector of size 256. |
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| enabled | [bool](#bool) | optional |  |
-| max_query_limit | [uint32](#uint32) | optional |  |
-| max_timeout | [uint32](#uint32) | optional |  |
-| unindexed_filtering_retrieve | [bool](#bool) | optional |  |
-| unindexed_filtering_update | [bool](#bool) | optional |  |
-| search_max_hnsw_ef | [uint32](#uint32) | optional |  |
-| search_allow_exact | [bool](#bool) | optional |  |
-| search_max_oversampling | [float](#float) | optional |  |
-| upsert_max_batchsize | [uint64](#uint64) | optional |  |
-| max_collection_vector_size_bytes | [uint64](#uint64) | optional |  |
+| enabled | [bool](#bool) | optional | Whether strict mode is enabled for a collection or not. |
+| max_query_limit | [uint32](#uint32) | optional | Max allowed `limit` parameter for all APIs that don&#39;t have their own max limit. |
+| max_timeout | [uint32](#uint32) | optional | Max allowed `timeout` parameter. |
+| unindexed_filtering_retrieve | [bool](#bool) | optional | Allow usage of unindexed fields in retrieval based (e.g. search) filters. |
+| unindexed_filtering_update | [bool](#bool) | optional | Allow usage of unindexed fields in filtered updates (e.g. delete by payload). |
+| search_max_hnsw_ef | [uint32](#uint32) | optional | Max HNSW ef value allowed in search parameters. |
+| search_allow_exact | [bool](#bool) | optional | Whether exact search is allowed. |
+| search_max_oversampling | [float](#float) | optional | Max oversampling value allowed in search |
+| upsert_max_batchsize | [uint64](#uint64) | optional | Max batchsize when upserting |
+| max_collection_vector_size_bytes | [uint64](#uint64) | optional | Max size of a collections vector storage in bytes, ignoring replicas. |
 | read_rate_limit | [uint32](#uint32) | optional | Max number of read operations per minute per replica |
 | write_rate_limit | [uint32](#uint32) | optional | Max number of write operations per minute per replica |
-| max_collection_payload_size_bytes | [uint64](#uint64) | optional |  |
-| filter_max_conditions | [uint64](#uint64) | optional |  |
-| condition_max_size | [uint64](#uint64) | optional |  |
-| multivector_config | [StrictModeMultivectorConfig](#qdrant-StrictModeMultivectorConfig) | optional |  |
-| sparse_config | [StrictModeSparseConfig](#qdrant-StrictModeSparseConfig) | optional |  |
-| max_points_count | [uint64](#uint64) | optional |  |
+| max_collection_payload_size_bytes | [uint64](#uint64) | optional | Max size of a collections payload storage in bytes, ignoring replicas. |
+| filter_max_conditions | [uint64](#uint64) | optional | Max conditions a filter can have. |
+| condition_max_size | [uint64](#uint64) | optional | Max size of a condition, eg. items in `MatchAny`. |
+| multivector_config | [StrictModeMultivectorConfig](#qdrant-StrictModeMultivectorConfig) | optional | Multivector strict mode configuration |
+| sparse_config | [StrictModeSparseConfig](#qdrant-StrictModeSparseConfig) | optional | Sparse vector strict mode configuration |
+| max_points_count | [uint64](#uint64) | optional | Max number of points estimated in a collection |
+| max_payload_index_count | [uint64](#uint64) | optional | Max number of payload indexes in a collection |
 
 
 
@@ -1611,7 +1629,7 @@ Note: 1kB = 1 vector of size 256. |
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| max_vectors | [uint64](#uint64) | optional |  |
+| max_vectors | [uint64](#uint64) | optional | Max number of vectors in a multivector |
 
 
 
@@ -1657,7 +1675,7 @@ Note: 1kB = 1 vector of size 256. |
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| max_length | [uint64](#uint64) | optional |  |
+| max_length | [uint64](#uint64) | optional | Max length of sparse vector |
 
 
 

@@ -162,6 +162,10 @@ message OptimizerStatus {
   string error = 2;
 }
 
+message CollectionWarning {
+  string message = 1;
+}
+
 message HnswConfigDiff {
   /*
      Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
@@ -195,6 +199,13 @@ message HnswConfigDiff {
      Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used.
   */
   optional uint64 payload_m = 6;
+  /*
+     Store copies of original and quantized vectors within the HNSW index file. Default: false.
+     Enabling this option will trade the search speed for disk usage by reducing amount of
+     random seeks during the search.
+     Requires quantized vectors to be enabled. Multi-vectors are not supported.
+  */
+  optional bool copy_vectors = 7;
 }
 
 message SparseIndexConfig {
@@ -355,25 +366,25 @@ enum ShardingMethod {
 }
 
 message StrictModeConfig {
-  optional bool enabled = 1;
-  optional uint32 max_query_limit = 2;
-  optional uint32 max_timeout = 3;
-  optional bool unindexed_filtering_retrieve = 4;
-  optional bool unindexed_filtering_update = 5;
-
-  optional uint32 search_max_hnsw_ef = 6;
-  optional bool search_allow_exact = 7;
-  optional float search_max_oversampling = 8;
-  optional uint64 upsert_max_batchsize = 9;
-  optional uint64 max_collection_vector_size_bytes = 10;
+  optional bool enabled = 1; // Whether strict mode is enabled for a collection or not.
+  optional uint32 max_query_limit = 2; // Max allowed `limit` parameter for all APIs that don't have their own max limit.
+  optional uint32 max_timeout = 3; // Max allowed `timeout` parameter.
+  optional bool unindexed_filtering_retrieve = 4; // Allow usage of unindexed fields in retrieval based (e.g. search) filters.
+  optional bool unindexed_filtering_update = 5; // Allow usage of unindexed fields in filtered updates (e.g. delete by payload).
+  optional uint32 search_max_hnsw_ef = 6; // Max HNSW ef value allowed in search parameters.
+  optional bool search_allow_exact = 7; // Whether exact search is allowed.
+  optional float search_max_oversampling = 8; // Max oversampling value allowed in search
+  optional uint64 upsert_max_batchsize = 9; // Max batchsize when upserting
+  optional uint64 max_collection_vector_size_bytes = 10; // Max size of a collections vector storage in bytes, ignoring replicas.
   optional uint32 read_rate_limit = 11; // Max number of read operations per minute per replica
   optional uint32 write_rate_limit = 12; // Max number of write operations per minute per replica
-  optional uint64 max_collection_payload_size_bytes = 13;
-  optional uint64 filter_max_conditions = 14;
-  optional uint64 condition_max_size = 15;
-  optional StrictModeMultivectorConfig multivector_config = 16;
-  optional StrictModeSparseConfig sparse_config = 17;
-  optional uint64 max_points_count = 18;
+  optional uint64 max_collection_payload_size_bytes = 13; // Max size of a collections payload storage in bytes, ignoring replicas.
+  optional uint64 filter_max_conditions = 14; // Max conditions a filter can have.
+  optional uint64 condition_max_size = 15; // Max size of a condition, eg. items in `MatchAny`.
+  optional StrictModeMultivectorConfig multivector_config = 16; // Multivector strict mode configuration
+  optional StrictModeSparseConfig sparse_config = 17; // Sparse vector strict mode configuration
+  optional uint64 max_points_count = 18; // Max number of points estimated in a collection
+  optional uint64 max_payload_index_count = 19; // Max number of payload indexes in a collection
 }
 
 message StrictModeSparseConfig {
@@ -381,7 +392,7 @@ message StrictModeSparseConfig {
 }
 
 message StrictModeSparse {
-  optional uint64 max_length = 10;
+  optional uint64 max_length = 10;  // Max length of sparse vector
 }
 
 message StrictModeMultivectorConfig {
@@ -389,7 +400,7 @@ message StrictModeMultivectorConfig {
 }
 
 message StrictModeMultivector {
-  optional uint64 max_vectors = 1;
+  optional uint64 max_vectors = 1; // Max number of vectors in a multivector
 }
 
 message CreateCollection {
@@ -557,7 +568,7 @@ message PayloadSchemaInfo {
 message CollectionInfo {
   CollectionStatus status = 1; // operating condition of the collection
   OptimizerStatus optimizer_status = 2; // status of collection optimizers
-  optional uint64 vectors_count = 3; // Approximate number of vectors in the collection
+  reserved 3; // Deprecated
   uint64 segments_count = 4; // Number of independent segments
   reserved 5; // Deprecated
   reserved 6; // Deprecated
@@ -565,6 +576,7 @@ message CollectionInfo {
   map<string, PayloadSchemaInfo> payload_schema = 8; // Collection data types
   optional uint64 points_count = 9; // Approximate number of points in the collection
   optional uint64 indexed_vectors_count = 10; // Approximate number of indexed vectors in the collection.
+  repeated CollectionWarning warnings = 11; // Warnings related to the collection
 }
 
 message ChangeAliases {

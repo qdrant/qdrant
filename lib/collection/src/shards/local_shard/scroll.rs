@@ -153,7 +153,7 @@ impl LocalShard {
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments.clone();
 
-        let scroll_lock = self.scroll_read_lock.read().await;
+        let update_operation_lock = self.update_operation_lock.read().await;
         let (non_appendable, appendable) = segments.read().split_segments();
 
         let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
@@ -210,7 +210,7 @@ impl LocalShard {
         .await
         .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
 
-        drop(scroll_lock);
+        drop(update_operation_lock);
 
         let ordered_records = point_ids
             .iter()
@@ -238,7 +238,7 @@ impl LocalShard {
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments.clone();
 
-        let scroll_lock = self.scroll_read_lock.read().await;
+        let update_operation_lock = self.update_operation_lock.read().await;
         let (non_appendable, appendable) = segments.read().split_segments();
 
         let read_ordered_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
@@ -306,7 +306,7 @@ impl LocalShard {
         .await
         .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
 
-        drop(scroll_lock);
+        drop(update_operation_lock);
 
         let ordered_records = point_ids
             .iter()
@@ -337,7 +337,7 @@ impl LocalShard {
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments.clone();
 
-        let scroll_lock = self.scroll_read_lock.read().await;
+        let update_operation_lock = self.update_operation_lock.read().await;
         let (non_appendable, appendable) = segments.read().split_segments();
 
         let read_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
@@ -446,7 +446,7 @@ impl LocalShard {
         .await
         .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
 
-        drop(scroll_lock);
+        drop(update_operation_lock);
 
         Ok(records_map.into_values().collect())
     }

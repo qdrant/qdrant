@@ -223,7 +223,7 @@ impl Consensus {
                 &runtime,
                 leader_established_in_ms,
             )
-            .map_err(|err| anyhow!("Failed to initialize Consensus for new Raft state: {}", err))?;
+            .map_err(|err| anyhow!("Failed to initialize Consensus for new Raft state: {err}"))?;
         } else {
             runtime
                 .block_on(Self::recover(
@@ -234,10 +234,7 @@ impl Consensus {
                     tls_config.clone(),
                 ))
                 .map_err(|err| {
-                    anyhow!(
-                        "Failed to recover Consensus from existing Raft state: {}",
-                        err
-                    )
+                    anyhow!("Failed to recover Consensus from existing Raft state: {err}")
                 })?;
 
             if bootstrap_peer.is_some() || uri.is_some() {
@@ -455,7 +452,7 @@ impl Consensus {
                         .parse()
                         .context(format!("Failed to parse peer URI: {}", peer.uri))?,
                 )
-                .map_err(|err| anyhow!("Failed to add peer: {}", err))?
+                .map_err(|err| anyhow!("Failed to add peer: {err}"))?
         }
         // Only first peer has itself as a voter in the initial conf state.
         // This needs to be propagated manually to other peers as it is not contained in any log entry.
@@ -922,7 +919,7 @@ impl Consensus {
 
             store
                 .append_entries(ready.take_entries())
-                .map_err(|err| anyhow!("Failed to append entries: {}", err))?
+                .map_err(|err| anyhow!("Failed to append entries: {err}"))?
         }
 
         if let Some(hs) = ready.hs() {
@@ -932,7 +929,7 @@ impl Consensus {
 
             store
                 .set_hard_state(hs.clone())
-                .map_err(|err| anyhow!("Failed to set hard state: {}", err))?
+                .map_err(|err| anyhow!("Failed to set hard state: {err}"))?
         }
 
         let role_change = ready.ss().map(|ss| ss.raft_state);
@@ -995,7 +992,7 @@ impl Consensus {
 
             store
                 .set_commit_index(commit)
-                .map_err(|err| anyhow!("Failed to set commit index: {}", err))?;
+                .map_err(|err| anyhow!("Failed to set commit index: {err}"))?;
         }
 
         self.send_messages(light_rd.take_messages());
@@ -1392,7 +1389,7 @@ impl RaftMessageSender {
             self.tls_config.clone(),
         )
         .await
-        .map_err(|err| anyhow::format_err!("Failed to create who-is channel: {}", err))?;
+        .map_err(|err| anyhow::format_err!("Failed to create who-is channel: {err}"))?;
 
         let uri = RaftClient::new(channel)
             .who_is(tonic::Request::new(GrpcPeerId { id: peer_id }))

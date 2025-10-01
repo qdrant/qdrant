@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
+use fs_err as fs;
 use memmap2::MmapMut;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_type::{MmapFlusher, MmapSlice};
@@ -66,10 +67,7 @@ impl MultivectorOffsetsStorageRam {
     }
 
     pub fn load(path: &Path) -> OperationResult<Self> {
-        let offsets_file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)?;
+        let offsets_file = fs::OpenOptions::new().read(true).write(true).open(path)?;
         let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
         let mut offsets_mmap_type =
             unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
@@ -134,10 +132,7 @@ impl MultivectorOffsetsStorageMmap {
     }
 
     pub fn load(path: &Path) -> OperationResult<Self> {
-        let offsets_file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)?;
+        let offsets_file = fs::OpenOptions::new().read(true).write(true).open(path)?;
         let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
         let offsets = unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
         Ok(Self {
@@ -547,10 +542,10 @@ fn create_offsets_file_from_iter(
                 "Path must have a parent directory",
             )
         })
-        .and_then(std::fs::create_dir_all)?;
+        .and_then(fs::create_dir_all)?;
 
     let offsets_file_size = count * std::mem::size_of::<MultivectorOffset>();
-    let offsets_file = std::fs::OpenOptions::new()
+    let offsets_file = fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)

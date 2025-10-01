@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -58,6 +59,22 @@ pub fn transpose_map_into_named_vector<TVector: Into<VectorInternal>>(
         }
     }
     result
+}
+
+/// Hashes an iterator of unique items in an order-independent way.
+///
+/// The order of items does not affect the resulting hash.
+/// Assumes that each item is unique. Suitable for hashing, e.g., sets and maps,
+/// but not for vectors or multisets.
+#[inline(always)]
+pub fn unordered_hash_unique<T: Hash, I: Iterator<Item = T>, H: Hasher>(state: &mut H, iter: I) {
+    iter.fold(0u64, |res, item| {
+        let mut hasher = DefaultHasher::new();
+        item.hash(&mut hasher);
+        // NOTE: xor is used, duplicates will cancel each other out
+        res ^ hasher.finish()
+    })
+    .hash(state);
 }
 
 /// Deserializer helper for `Option<Vec<T>>` that allows deserializing both single and an array of values.

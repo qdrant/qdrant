@@ -18,7 +18,7 @@ use common::validation::validate_range_generic;
 use common::{defaults, save_on_disk};
 use io::file_operations::FileStorageError;
 use issues::IssueRecord;
-use merge::Merge;
+use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::{CancelledError, OperationError};
@@ -49,7 +49,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::{ClockTag, config_diff};
+use super::ClockTag;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
@@ -124,6 +124,16 @@ pub enum OptimizersStatus {
     /// Something wrong happened with optimizers
     #[anonymize(false)]
     Error(String),
+}
+
+#[derive(
+    Debug, Default, Serialize, JsonSchema, Anonymize, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
+#[serde(rename_all = "snake_case")]
+pub struct CollectionWarning {
+    /// Warning message
+    #[anonymize(true)] // Might contain vector names
+    pub message: String,
 }
 
 /// Point data
@@ -218,13 +228,9 @@ pub struct CollectionInfo {
     pub status: CollectionStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
-    /// DEPRECATED:
-    /// Approximate number of vectors in collection.
-    /// All vectors in collection are available for querying.
-    /// Calculated as `points_count x vectors_per_point`.
-    /// Where `vectors_per_point` is a number of named vectors in schema.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vectors_count: Option<usize>,
+    /// Warnings related to the collection
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<CollectionWarning>,
     /// Approximate number of indexed vectors in the collection.
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in a specialized vector index.
@@ -246,7 +252,7 @@ impl CollectionInfo {
         Self {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
-            vectors_count: Some(0),
+            warnings: collection_config.get_warnings(),
             indexed_vectors_count: Some(0),
             points_count: Some(0),
             segments_count: 0,
@@ -261,7 +267,6 @@ impl From<ShardInfoInternal> for CollectionInfo {
         let ShardInfoInternal {
             status,
             optimizer_status,
-            vectors_count,
             indexed_vectors_count,
             points_count,
             segments_count,
@@ -271,7 +276,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
         Self {
             status: status.into(),
             optimizer_status,
-            vectors_count: Some(vectors_count),
+            warnings: config.get_warnings(),
             indexed_vectors_count: Some(indexed_vectors_count),
             points_count: Some(points_count),
             segments_count,
@@ -288,11 +293,6 @@ pub struct ShardInfoInternal {
     pub status: ShardStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
-    /// Approximate number of vectors in shard.
-    /// All vectors in shard are available for querying.
-    /// Calculated as `points_count x vectors_per_point`.
-    /// Where `vectors_per_point` is a number of named vectors in schema.
-    pub vectors_count: usize,
     /// Approximate number of indexed vectors in the shard.
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in vector index (HNSW).
@@ -1533,10 +1533,7 @@ pub fn validate_nonzerou64_range_min_1_max_65536(
 
 /// Is considered empty if `None` or if diff has no field specified
 fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
-    hnsw_config
-        .as_ref()
-        .and_then(|config| config_diff::is_empty(config).ok())
-        .unwrap_or(true)
+    hnsw_config.is_none() || *hnsw_config == Some(HnswConfigDiff::default())
 }
 
 /// If used, include weight modification, which will be applied to sparse vectors at query time:
@@ -1872,9 +1869,7 @@ impl From<&segment::types::VectorDataConfig> for VectorParamsBase {
     }
 }
 
-#[derive(
-    Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Merge,
-)]
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorParamsDiff {
     /// Update params for HNSW index. If empty object - it will be unset.
@@ -2012,7 +2007,7 @@ impl From<SearchRequestInternal> for ShardQueryRequest {
                 NamedVectorStruct::from(vector),
             )))),
             filter,
-            score_threshold,
+            score_threshold: score_threshold.map(OrderedFloat),
             limit,
             offset: offset.unwrap_or_default(),
             params,
@@ -2039,7 +2034,7 @@ impl From<CoreSearchRequest> for ShardQueryRequest {
             prefetches: vec![],
             query: Some(ScoringQuery::Vector(query)),
             filter,
-            score_threshold,
+            score_threshold: score_threshold.map(OrderedFloat),
             limit,
             offset,
             params,

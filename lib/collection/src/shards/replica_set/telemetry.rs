@@ -1,3 +1,5 @@
+use std::ops::Deref as _;
+
 use common::types::TelemetryDetail;
 use segment::types::SizeStats;
 
@@ -39,17 +41,21 @@ impl ShardReplicaSet {
 
     pub(crate) async fn get_optimization_status(&self) -> Option<OptimizersStatus> {
         let local_shard = self.local.read().await;
-        let local = local_shard.as_ref();
 
-        local.map(|local_shard| local_shard.get_optimization_status())
+        let Some(local) = local_shard.deref() else {
+            return None;
+        };
+
+        Some(local.get_optimization_status().await)
     }
 
     pub(crate) async fn get_size_stats(&self) -> SizeStats {
         let local_shard = self.local.read().await;
-        let local = local_shard.as_ref();
 
-        local
-            .map(|local_shard| local_shard.get_size_stats())
-            .unwrap_or_default()
+        let Some(local) = local_shard.deref() else {
+            return SizeStats::default();
+        };
+
+        local.get_size_stats().await
     }
 }

@@ -1,0 +1,22 @@
+[package]
+name = "edge"
+version = "0.1.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+
+
+[dependencies]
+common = { path = "../common/common" }
+segment = { path = "../segment", default-features = false }
+shard = { path = "../shard" }
+
+fs-err = { workspace = true }
+log = { workspace = true }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+wal = { workspace = true }
+
+
+[dev-dependencies]
+anyhow = "1.0"

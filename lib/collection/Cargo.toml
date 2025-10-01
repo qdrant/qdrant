@@ -21,16 +21,20 @@ rocksdb = ["segment/rocksdb"]
 criterion = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+tar = { workspace = true }
 approx = "0.5.1"
 collection = { path = ".", features = ["testing"] }
 common = { path = "../common/common", features = ["testing"] }
 segment = { path = "../segment", default-features = false, features = ["testing"] }
+shard = { path = "../shard", default-features = false, features = ["testing"] }
+
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }
 
 [dependencies]
 bytemuck = { workspace = true }
+fs-err = { workspace = true }
 parking_lot = { workspace = true }
 ahash = { workspace = true }
 rand = { workspace = true }
@@ -45,6 +49,7 @@ tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
 lazy_static = "1.5.0"
 siphasher = "1.0.1"
 smallvec = { workspace = true }
+count-min-sketch = "0.1.8"
 
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -52,7 +57,6 @@ futures = { workspace = true }
 atomicwrites = { workspace = true}
 log = { workspace = true }
 env_logger = "0.11"
-merge = { workspace = true }
 async-trait = "0.1.89"
 arc-swap = "1.7.1"
 tonic = { workspace = true }
@@ -62,14 +66,14 @@ validator = { workspace = true }
 http = { workspace = true }
 actix-web-validator = "7.0.0"
 actix-web = { version = "4.11.0" }
-actix-files = "0.6.7"
+actix-files = "0.6.8"
 
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
 io = { path = "../common/io" }
 issues = { path = "../common/issues" }
 segment = { path = "../segment", default-features = false }
-shard = { path = "../shard" }
+shard = { path = "../shard", default-features = false }
 sparse = { path = "../sparse" }
 api = { path = "../api" }
 
@@ -91,7 +95,7 @@ tracing = { workspace = true, optional = true }
 fs4 = "0.13.1"
 
 # AWS S3 support
-object_store = { version = "0.12.3", features = ["aws"] }
+object_store = { version = "0.12.4", features = ["aws"] }
 
 
 [[bench]]

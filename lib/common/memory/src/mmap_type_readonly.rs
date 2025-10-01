@@ -240,7 +240,7 @@ where
     } else {
         // Must be multiple of size T
         debug_assert_eq!(header_size % size_t, 0, "header not multiple of size T");
-        if mmap.len() % size_t != 0 {
+        if !mmap.len().is_multiple_of(size_t) {
             return Err(Error::SizeMultiple(size_t, mmap.len()));
         }
     }
@@ -380,6 +380,7 @@ mod tests {
             .suffix(".mmap")
             .tempfile()
             .unwrap();
+        #[allow(clippy::disallowed_methods, reason = "test code")]
         tempfile.as_file().set_len(len as u64).unwrap();
         tempfile
     }

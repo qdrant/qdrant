@@ -39,7 +39,7 @@ pub fn process_point_operation(
         PointOperations::UpsertPointsConditional(operation) => {
             conditional_upsert(&segments.read(), op_num, operation, hw_counter)
         }
-        PointOperations::DeletePoints { ids, .. } => {
+        PointOperations::DeletePoints { ids } => {
             delete_points(&segments.read(), op_num, &ids, hw_counter)
         }
         PointOperations::DeletePointsByFilter(filter) => {
@@ -166,6 +166,11 @@ pub fn process_field_index_operation(
     }
 }
 
+/// Do not insert more than this number of points in a single update operation chunk
+/// This is needed to avoid locking segments for too long, so that
+/// parallel read operations are not starved.
+const UPDATE_OP_CHUNK_SIZE: usize = 32;
+
 /// Checks point id in each segment, update point if found.
 /// All not found points are inserted into random segment.
 /// Returns: number of updated points.
@@ -181,58 +186,68 @@ where
     let points_map: AHashMap<PointIdType, _> = points.into_iter().map(|p| (p.id, p)).collect();
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
-    // Update points in writable segments
-    let updated_points = segments.apply_points_with_conditional_move(
-        op_num,
-        &ids,
-        |id, write_segment| {
-            let point = points_map[&id];
-            upsert_with_payload(
-                write_segment,
-                op_num,
-                id,
-                point.get_vectors(),
-                point.payload.as_ref(),
-                hw_counter,
-            )
-        },
-        |id, vectors, old_payload| {
-            let point = points_map[&id];
-            for (name, vec) in point.get_vectors() {
-                vectors.insert(name.into(), vec.to_owned());
+    let mut res = 0;
+
+    for ids_chunk in ids.chunks(UPDATE_OP_CHUNK_SIZE) {
+        // Update points in writable segments
+        let updated_points = segments.apply_points_with_conditional_move(
+            op_num,
+            ids_chunk,
+            |id, write_segment| {
+                let point = points_map[&id];
+                upsert_with_payload(
+                    write_segment,
+                    op_num,
+                    id,
+                    point.get_vectors(),
+                    point.payload.as_ref(),
+                    hw_counter,
+                )
+            },
+            |id, vectors, old_payload| {
+                let point = points_map[&id];
+                for (name, vec) in point.get_vectors() {
+                    vectors.insert(name.into(), vec.to_owned());
+                }
+                if let Some(payload) = &point.payload {
+                    *old_payload = payload.clone();
+                }
+            },
+            |_| false,
+            hw_counter,
+        )?;
+
+        res += updated_points.len();
+        // Insert new points, which was not updated or existed
+        let new_point_ids = ids_chunk
+            .iter()
+            .copied()
+            .filter(|x| !updated_points.contains(x));
+
+        {
+            let default_write_segment =
+                segments.smallest_appendable_segment().ok_or_else(|| {
+                    OperationError::service_error(
+                        "No appendable segments exist, expected at least one",
+                    )
+                })?;
+
+            let segment_arc = default_write_segment.get();
+            let mut write_segment = segment_arc.write();
+            for point_id in new_point_ids {
+                let point = points_map[&point_id];
+                res += usize::from(upsert_with_payload(
+                    &mut write_segment,
+                    op_num,
+                    point_id,
+                    point.get_vectors(),
+                    point.payload.as_ref(),
+                    hw_counter,
+                )?);
             }
-            if let Some(payload) = &point.payload {
-                *old_payload = payload.clone();
-            }
-        },
-        |_| false,
-        hw_counter,
-    )?;
-
-    let mut res = updated_points.len();
-    // Insert new points, which was not updated or existed
-    let new_point_ids = ids.iter().copied().filter(|x| !updated_points.contains(x));
-
-    {
-        let default_write_segment = segments.smallest_appendable_segment().ok_or_else(|| {
-            OperationError::service_error("No appendable segments exist, expected at least one")
-        })?;
-
-        let segment_arc = default_write_segment.get();
-        let mut write_segment = segment_arc.write();
-        for point_id in new_point_ids {
-            let point = points_map[&point_id];
-            res += usize::from(upsert_with_payload(
-                &mut write_segment,
-                op_num,
-                point_id,
-                point.get_vectors(),
-                point.payload.as_ref(),
-                hw_counter,
-            )?);
-        }
-        RwLockWriteGuard::unlock_fair(write_segment);
-    };
+            RwLockWriteGuard::unlock_fair(write_segment);
+        };
+    }
 
     Ok(res)
 }
@@ -258,7 +273,15 @@ pub fn conditional_upsert(
 
     points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
     let points = points_op.into_point_vec();
-    upsert_points(segments, op_num, points.iter(), hw_counter)
+    let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter)?;
+
+    if upserted_points == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(upserted_points)
 }
 
 /// Upsert to a point ID with the specified vectors and payload in the given segment.
@@ -283,6 +306,10 @@ fn upsert_with_payload(
     } else {
         res &= segment.clear_payload(op_num, point_id, hw_counter)?;
     }
+    debug_assert!(
+        segment.has_point(point_id),
+        "the point {point_id} should be present immediately after the upsert"
+    );
     Ok(res)
 }
 
@@ -359,6 +386,12 @@ pub fn delete_points_by_filter(
 
         Ok(true)
     })?;
+
+    if total_deleted == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
 
     Ok(total_deleted)
 }
@@ -445,7 +478,7 @@ pub fn sync_points(
 }
 
 /// Batch size when modifying vector
-const VECTOR_OP_BATCH_SIZE: usize = 512;
+const VECTOR_OP_BATCH_SIZE: usize = 32;
 
 pub fn update_vectors_conditional(
     segments: &SegmentHolder,
@@ -551,11 +584,19 @@ pub fn delete_vectors_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    delete_vectors(segments, op_num, &affected_points, vector_names)
+    let vectors_deleted = delete_vectors(segments, op_num, &affected_points, vector_names)?;
+
+    if vectors_deleted == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(vectors_deleted)
 }
 
 /// Batch size when modifying payload
-const PAYLOAD_OP_BATCH_SIZE: usize = 512;
+const PAYLOAD_OP_BATCH_SIZE: usize = 32;
 
 pub fn set_payload(
     segments: &SegmentHolder,
@@ -600,7 +641,15 @@ pub fn set_payload_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    set_payload(segments, op_num, payload, &affected_points, key, hw_counter)
+    let points_updated = set_payload(segments, op_num, payload, &affected_points, key, hw_counter)?;
+
+    if points_updated == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(points_updated)
 }
 
 pub fn delete_payload(
@@ -653,7 +702,15 @@ pub fn delete_payload_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    delete_payload(segments, op_num, &affected_points, keys, hw_counter)
+    let points_updated = delete_payload(segments, op_num, &affected_points, keys, hw_counter)?;
+
+    if points_updated == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(points_updated)
 }
 
 pub fn clear_payload(
@@ -688,7 +745,15 @@ pub fn clear_payload_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let points_to_clear = points_by_filter(segments, filter, hw_counter)?;
-    clear_payload(segments, op_num, &points_to_clear, hw_counter)
+    let points_cleared = clear_payload(segments, op_num, &points_to_clear, hw_counter)?;
+
+    if points_cleared == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(points_cleared)
 }
 
 pub fn overwrite_payload(
@@ -727,7 +792,16 @@ pub fn overwrite_payload_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    overwrite_payload(segments, op_num, payload, &affected_points, hw_counter)
+    let points_updated =
+        overwrite_payload(segments, op_num, payload, &affected_points, hw_counter)?;
+
+    if points_updated == 0 {
+        // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
+        // If we don't do this, startup might take up a lot of time in some scenarios because of recovering these no-op operations.
+        segments.bump_max_segment_version_overwrite(op_num);
+    }
+
+    Ok(points_updated)
 }
 
 pub fn create_field_index(
@@ -822,5 +896,70 @@ fn check_unprocessed_points(
     match first_missed_point {
         None => Ok(processed.len()),
         Some(missed_point_id) => Err(OperationError::PointIdError { missed_point_id }),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use parking_lot::RwLock;
+    use segment::types::{Condition, FieldCondition, Filter, Match, MatchValue, ValueVariants};
+    use tempfile::Builder;
+
+    use crate::fixtures::{build_segment_1, build_segment_2};
+    use crate::segment_holder::SegmentHolder;
+    use crate::update::delete_points_by_filter;
+
+    #[test]
+    fn test_delete_by_filter_version_bump() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let segment1 = build_segment_1(dir.path());
+        let segment2 = build_segment_2(dir.path());
+
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut holder = SegmentHolder::default();
+
+        let _sid1 = holder.add_new(segment1);
+        let _sid2 = holder.add_new(segment2);
+
+        const DELETE_OP_NUM: u64 = 16;
+
+        assert!(
+            holder
+                .iter()
+                .all(|i| i.1.get().read().version() < DELETE_OP_NUM)
+        );
+
+        let old_version = holder
+            .flush_all(true, false)
+            .expect("Failed to flush test segment holder");
+
+        let segments = Arc::new(RwLock::new(holder));
+
+        // A filter that matches no points.
+        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            "color".parse().unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::String("white".to_string()),
+            }),
+        )));
+
+        let deleted_count =
+            delete_points_by_filter(&segments.read(), DELETE_OP_NUM, &filter, &hw_counter).unwrap();
+        assert_eq!(deleted_count, 0);
+
+        let new_version = segments
+            .read()
+            .flush_all(true, false)
+            .expect("Failed to flush test segment holder");
+
+        // Flushing again inrceases by 1 and is now equal to `DELETE_OP_NUM` as we want to acknowledge the empty
+        // delete operation in WAL.
+        assert_eq!(old_version + 1, new_version);
+        assert_eq!(new_version, DELETE_OP_NUM);
     }
 }

@@ -20,6 +20,7 @@ env_logger = "0.11"
 
 [dependencies]
 ahash = { workspace = true }
+fs-err = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
 wal = { workspace = true }
@@ -42,7 +43,7 @@ semver = { workspace = true }
 
 # Consensus related
 atomicwrites = { workspace = true }
-raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
+raft = { workspace = true }
 prost-for-raft = { workspace = true }
 protobuf = "2.28.0" # version of protobuf used by raft
 serde_cbor = { workspace = true }
@@ -56,7 +57,7 @@ segment = { path = "../segment", default-features = false }
 collection = { path = "../collection" }
 api = { path = "../api" }
 futures = { workspace = true }
-anyhow = "1.0.99"
+anyhow = "1.0.100"
 uuid = { workspace = true }
 url = "2.5.7"
 reqwest = { workspace = true }

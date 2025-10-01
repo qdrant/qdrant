@@ -288,7 +288,7 @@ mod tests {
             segment_queue_len: 0,
             retain_closed: NonZeroUsize::new(1).unwrap(),
         };
-        let wal = SerdeWal::new(dir.path().to_str().unwrap(), options).unwrap();
+        let wal = SerdeWal::new(dir.path(), options).unwrap();
         (
             RecoverableWal::new(
                 Arc::new(Mutex::new(wal)),

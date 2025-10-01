@@ -119,7 +119,7 @@ impl Collection {
             let mut new_request = request.clone();
             let request_limit = new_request.limit + new_request.offset;
 
-            let is_exact = request.params.map(|p| p.exact).unwrap_or(false);
+            let is_exact = request.params.as_ref().map(|p| p.exact).unwrap_or(false);
 
             if is_exact || request_limit < Self::SHARD_QUERY_SUBSAMPLING_LIMIT {
                 new_requests.push(new_request);
@@ -174,9 +174,10 @@ impl Collection {
 
         let all_searches = target_shards.iter().map(|(shard, shard_key)| {
             let shard_key = shard_key.cloned();
+            let request_clone = Arc::clone(&batch_request);
             shard
                 .query_batch(
-                    Arc::clone(&batch_request),
+                    request_clone,
                     read_consistency,
                     shard_selection.is_shard_id(),
                     timeout,
@@ -366,7 +367,7 @@ impl Collection {
                 if let Some(&score_threshold) = score_threshold.as_ref() {
                     fused = fused
                         .into_iter()
-                        .take_while(|point| point.score >= score_threshold)
+                        .take_while(|point| point.score >= score_threshold.0)
                         .collect();
                 }
                 fused

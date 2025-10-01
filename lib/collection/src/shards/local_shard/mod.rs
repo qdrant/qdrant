@@ -6,10 +6,13 @@ pub(super) mod query;
 pub(super) mod scroll;
 pub(super) mod search;
 pub(super) mod shard_ops;
+mod snapshot;
 mod telemetry;
 
+#[cfg(test)]
+mod snapshot_tests;
+
 use std::collections::{BTreeSet, HashMap};
-use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,29 +24,27 @@ use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::defaults::MAX_CONCURRENT_SEGMENT_LOADS;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::{panic, tar_ext};
+use fs_err as fs;
+use fs_err::tokio as tokio_fs;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
-use segment::data_types::manifest::SnapshotManifest;
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::CardinalityEstimation;
-use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
-    SnapshotFormat,
 };
 use shard::wal::SerdeWal;
-use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc, oneshot};
-use wal::{Wal, WalOptions};
+use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc};
 
 use self::clock_map::{ClockMap, RecoveryPoint};
 use self::disk_usage_watcher::DiskUsageWatcher;
@@ -68,7 +69,7 @@ use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
-use crate::wal_delta::{LockedWal, RecoverableWal};
+use crate::wal_delta::RecoverableWal;
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
@@ -87,6 +88,7 @@ const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
 ///
 /// Holds all object, required for collection functioning
 pub struct LocalShard {
+    collection_name: CollectionId,
     pub(super) segments: LockedSegmentHolder,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
     pub(super) shared_storage_config: Arc<SharedStorageConfig>,
@@ -104,13 +106,22 @@ pub struct LocalShard {
     disk_usage_watcher: DiskUsageWatcher,
     read_rate_limiter: Option<ParkingMutex<RateLimiter>>,
 
-    /// Scroll read lock
-    /// The lock, which must prevent updates during scroll + retrieve operations
-    /// Consistency of scroll operations is especially important for internal processes like
-    /// re-sharding and shard transfer, so explicit lock for those operations is required.
+    /// Update operation lock
+    /// The lock, which must prevent updates critical sections of other operations, which
+    /// are not compatible with updates.
     ///
-    /// Write lock must be held for updates, while read lock must be held for scroll
-    pub(super) scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
+    /// Currently used for:
+    ///
+    /// * Blocking updates during scroll + retrieve operations
+    ///   Consistency of scroll operations is especially important for internal processes like
+    ///   re-sharding and shard transfer, so explicit lock for those operations is required.
+    ///
+    /// * Blocking updates during some parts of snapshot creation
+    ///   Snapshotting process wraps and unwraps proxy segments, which might
+    ///   create inconsistencies if updates are applied concurrently.
+    ///
+    /// Write lock must be held for updates, while read lock must be held for critical sections
+    pub(super) update_operation_lock: Arc<tokio::sync::RwLock<()>>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -150,13 +161,13 @@ impl LocalShard {
         // Delete WAL
         let wal_path = Self::wal_path(shard_path);
         if wal_path.exists() {
-            remove_dir_all(wal_path).await?;
+            tokio_fs::remove_dir_all(wal_path).await?;
         }
 
         // Delete segments
         let segments_path = Self::segments_path(shard_path);
         if segments_path.exists() {
-            remove_dir_all(segments_path).await?;
+            tokio_fs::remove_dir_all(segments_path).await?;
         }
 
         LocalShardClocks::delete_data(shard_path).await?;
@@ -166,6 +177,7 @@ impl LocalShard {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
+        collection_name: String,
         segment_holder: SegmentHolder,
         collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
         shared_storage_config: Arc<SharedStorageConfig>,
@@ -198,6 +210,7 @@ impl LocalShard {
         let update_tracker = UpdateTracker::default();
 
         let mut update_handler = UpdateHandler::new(
+            collection_name.clone(),
             shared_storage_config.clone(),
             payload_index_schema.clone(),
             optimizers.clone(),
@@ -229,6 +242,7 @@ impl LocalShard {
         drop(config); // release `shared_config` from borrow checker
 
         Self {
+            collection_name,
             segments: segment_holder,
             collection_config,
             shared_storage_config,
@@ -245,7 +259,7 @@ impl LocalShard {
             total_optimized_points,
             disk_usage_watcher,
             read_rate_limiter,
-            scroll_read_lock,
+            update_operation_lock: scroll_read_lock,
         }
     }
 
@@ -273,15 +287,13 @@ impl LocalShard {
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
 
-        let wal: SerdeWal<OperationWithClockTag> = SerdeWal::new(
-            wal_path.to_str().unwrap(),
-            (&collection_config_read.wal_config).into(),
-        )
-        .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
+        let wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(&wal_path, (&collection_config_read.wal_config).into())
+                .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
 
         // Walk over segments directory and collect all directory entries now
         // Collect now and error early to prevent errors while we've already spawned load threads
-        let segment_paths = std::fs::read_dir(&segments_path)
+        let segment_paths = fs::read_dir(&segments_path)
             .map_err(|err| {
                 CollectionError::service_error(format!(
                     "Can't read segments directory due to {err}\nat {}",
@@ -323,48 +335,40 @@ impl LocalShard {
             })
             .map(|entry| entry.path());
 
-        let mut load_handlers = vec![];
+        let mut segment_stream = futures::stream::iter(segment_paths)
+            .map(|segment_path| {
+                let payload_index_schema = Arc::clone(&payload_index_schema);
+                tokio::task::spawn_blocking(move || {
+                    let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
 
-        // This semaphore is used to limit the number of threads that load segments concurrently.
-        // Uncomment it if you need to debug segment loading.
-        // let semaphore = Arc::new(parking_lot::Mutex::new(()));
+                    let Some(mut segment) = segment else {
+                        fs::remove_dir_all(&segment_path).map_err(|err| {
+                            CollectionError::service_error(format!(
+                                "failed to remove leftover segment {}: {err}",
+                                segment_path.display(),
+                            ))
+                        })?;
 
-        for segment_path in segment_paths {
-            let payload_index_schema = payload_index_schema.clone();
-            // let semaphore_clone = semaphore.clone();
-            load_handlers.push(tokio::task::spawn_blocking(move || {
-                // let _guard = semaphore_clone.lock();
+                        return Ok(None);
+                    };
 
-                let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
+                    segment.check_consistency_and_repair()?;
 
-                let Some(mut segment) = segment else {
-                    std::fs::remove_dir_all(&segment_path).map_err(|err| {
-                        CollectionError::service_error(format!(
-                            "failed to remove leftover segment {}: {err}",
-                            segment_path.display(),
-                        ))
-                    })?;
+                    if rebuild_payload_index {
+                        segment.update_all_field_indices(
+                            &payload_index_schema.read().schema.clone(),
+                        )?;
+                    }
 
-                    return Ok(None);
-                };
-
-                segment.check_consistency_and_repair()?;
-
-                if rebuild_payload_index {
-                    segment
-                        .update_all_field_indices(&payload_index_schema.read().schema.clone())?;
-                }
-
-                CollectionResult::Ok(Some(segment))
-            }));
-        }
+                    CollectionResult::Ok(Some(segment))
+                })
+            })
+            .buffer_unordered(MAX_CONCURRENT_SEGMENT_LOADS);
 
         let mut segment_holder = SegmentHolder::default();
 
-        for handler in load_handlers {
-            let segment = handler.await.map_err(|err| {
-                CollectionError::service_error(format!("Can't join segment load thread: {err}"))
-            })??;
+        while let Some(result) = segment_stream.next().await {
+            let segment = result??;
 
             let Some(segment) = segment else {
                 continue;
@@ -389,6 +393,7 @@ impl LocalShard {
 
             segment_holder.add_new(segment);
         }
+        drop(segment_stream); // release `payload_index_schema` from borrow checker
 
         let res = deduplicate_points_async(&segment_holder).await?;
         if res > 0 {
@@ -428,6 +433,7 @@ impl LocalShard {
         }
 
         let local_shard = LocalShard::new(
+            collection_id.clone(),
             segment_holder,
             collection_config,
             shared_storage_config,
@@ -510,7 +516,7 @@ impl LocalShard {
 
         let wal_path = Self::wal_path(shard_path);
 
-        create_dir_all(&wal_path).await.map_err(|err| {
+        tokio_fs::create_dir_all(&wal_path).await.map_err(|err| {
             CollectionError::service_error(format!(
                 "Can't create shard wal directory. Error: {err}"
             ))
@@ -518,11 +524,13 @@ impl LocalShard {
 
         let segments_path = Self::segments_path(shard_path);
 
-        create_dir_all(&segments_path).await.map_err(|err| {
-            CollectionError::service_error(format!(
-                "Can't create shard segments directory. Error: {err}"
-            ))
-        })?;
+        tokio_fs::create_dir_all(&segments_path)
+            .await
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Can't create shard segments directory. Error: {err}"
+                ))
+            })?;
 
         let mut segment_holder = SegmentHolder::default();
         let mut build_handlers = vec![];
@@ -566,7 +574,7 @@ impl LocalShard {
         }
 
         let wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_path.to_str().unwrap(), (&config.wal_config).into())?;
+            SerdeWal::new(&wal_path, (&config.wal_config).into())?;
 
         let optimizers = build_optimizers(
             shard_path,
@@ -580,6 +588,7 @@ impl LocalShard {
         drop(config); // release `shared_config` from borrow checker
 
         let collection = LocalShard::new(
+            collection_id,
             segment_holder,
             collection_config,
             shared_storage_config,
@@ -661,7 +670,7 @@ impl LocalShard {
                 segments,
                 op_num,
                 update.operation,
-                self.scroll_read_lock.clone(),
+                self.update_operation_lock.clone(),
                 self.update_tracker.clone(),
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
             ) {
@@ -826,198 +835,35 @@ impl LocalShard {
         }
     }
 
-    pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
-        log::info!("Restoring shard snapshot {}", snapshot_path.display());
-        // Read dir first as the directory contents would change during restore
-        let entries = std::fs::read_dir(LocalShard::segments_path(snapshot_path))?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Filter out hidden entries
-        let entries = entries.into_iter().filter(|entry| {
-            let is_hidden = entry
-                .file_name()
-                .to_str()
-                .is_some_and(|s| s.starts_with('.'));
-            if is_hidden {
-                log::debug!(
-                    "Ignoring hidden segment in local shard during snapshot recovery: {}",
-                    entry.path().display(),
-                );
-            }
-            !is_hidden
-        });
-
-        for entry in entries {
-            Segment::restore_snapshot_in_place(&entry.path())?;
-        }
-
-        Ok(())
-    }
-
-    /// Create snapshot for local shard into `target_path`
-    pub async fn create_snapshot(
-        &self,
-        temp_path: &Path,
-        tar: &tar_ext::BuilderExt,
-        format: SnapshotFormat,
-        manifest: Option<SnapshotManifest>,
-        save_wal: bool,
-    ) -> CollectionResult<()> {
-        let segments = self.segments.clone();
-        let wal = self.wal.wal.clone();
-
-        if !save_wal {
-            // If we are not saving WAL, we still need to make sure that all submitted by this point
-            // updates have made it to the segments. So we use the Plunger to achieve that.
-            // It will notify us when all submitted updates so far have been processed.
-            let (tx, rx) = oneshot::channel();
-            let plunger = UpdateSignal::Plunger(tx);
-            self.update_sender.load().send(plunger).await?;
-            rx.await?;
-        }
-
-        let segments_path = Self::segments_path(&self.path);
-        let segment_config = self
-            .collection_config
-            .read()
-            .await
-            .to_base_segment_config()?;
-        let payload_index_schema = self.payload_index_schema.clone();
-        let temp_path = temp_path.to_owned();
-
-        let tar_c = tar.clone();
-        tokio::task::spawn_blocking(move || {
-            // Do not change segments while snapshotting
-            SegmentHolder::snapshot_all_segments(
-                segments.clone(),
-                &segments_path,
-                Some(segment_config),
-                payload_index_schema.clone(),
-                &temp_path,
-                &tar_c.descend(Path::new(SEGMENTS_PATH))?,
-                format,
-                manifest.as_ref(),
-            )?;
-
-            if save_wal {
-                // snapshot all shard's WAL
-                Self::snapshot_wal(wal, &tar_c)
-            } else {
-                Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
-            }
-        })
-        .await??;
-
-        LocalShardClocks::archive_data(&self.path, tar).await?;
-
-        Ok(())
-    }
-
-    /// Create empty WAL which is compatible with currently stored data
-    ///
-    /// # Panics
-    ///
-    /// This function panics if called within an asynchronous execution context.
-    pub fn snapshot_empty_wal(
-        wal: LockedWal,
-        temp_path: &Path,
-        tar: &tar_ext::BuilderExt,
-    ) -> CollectionResult<()> {
-        let (segment_capacity, latest_op_num) = {
-            let wal_guard = wal.blocking_lock();
-            (wal_guard.segment_capacity(), wal_guard.last_index())
-        };
-
-        let temp_dir = tempfile::tempdir_in(temp_path).map_err(|err| {
-            CollectionError::service_error(format!(
-                "Can not create temporary directory for WAL: {err}",
-            ))
-        })?;
-
-        Wal::generate_empty_wal_starting_at_index(
-            temp_dir.path(),
-            &WalOptions {
-                segment_capacity,
-                segment_queue_len: 0,
-                retain_closed: NonZeroUsize::new(1).unwrap(),
-            },
-            latest_op_num,
-        )
-        .map_err(|err| {
-            CollectionError::service_error(format!("Error while create empty WAL: {err}"))
-        })?;
-
-        tar.blocking_append_dir_all(temp_dir.path(), Path::new(WAL_PATH))
-            .map_err(|err| {
-                CollectionError::service_error(format!("Error while archiving WAL: {err}"))
-            })
-    }
-
-    /// snapshot WAL
-    ///
-    /// # Panics
-    ///
-    /// This function panics if called within an asynchronous execution context.
-    pub fn snapshot_wal(wal: LockedWal, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
-        // lock wal during snapshot
-        let mut wal_guard = wal.blocking_lock();
-        wal_guard.flush()?;
-        let source_wal_path = wal_guard.path();
-
-        let tar = tar.descend(Path::new(WAL_PATH))?;
-        for entry in std::fs::read_dir(source_wal_path).map_err(|err| {
-            CollectionError::service_error(format!("Can't read WAL directory: {err}",))
-        })? {
-            let entry = entry.map_err(|err| {
-                CollectionError::service_error(format!("Can't read WAL directory: {err}",))
-            })?;
-
-            if entry.file_name() == ".wal" {
-                // This sentinel file is used for WAL locking. Trying to archive
-                // or open it will cause the following error on Windows:
-                // > The process cannot access the file because another process
-                // > has locked a portion of the file. (os error 33)
-                // https://github.com/qdrant/wal/blob/7c9202d0874/src/lib.rs#L125-L145
-                continue;
-            }
-
-            tar.blocking_append_file(&entry.path(), Path::new(&entry.file_name()))
-                .map_err(|err| {
-                    CollectionError::service_error(format!("Error while archiving WAL: {err}"))
-                })?;
-        }
-        Ok(())
-    }
-
-    pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
-        self.segments()
-            .read()
-            .snapshot_manifest()
-            .map_err(CollectionError::from)
-    }
-
-    pub fn estimate_cardinality<'a>(
+    pub async fn estimate_cardinality<'a>(
         &'a self,
         filter: Option<&'a Filter>,
-        hw_counter: &HardwareCounterCell,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
-        let segments = self.segments().read();
-        let cardinality = segments
-            .iter()
-            .map(|(_id, segment)| {
-                segment
-                    .get()
-                    .read()
-                    .estimate_point_count(filter, hw_counter)
-            })
-            .fold(CardinalityEstimation::exact(0), |acc, x| {
-                CardinalityEstimation {
-                    primary_clauses: vec![],
-                    min: acc.min + x.min,
-                    exp: acc.exp + x.exp,
-                    max: acc.max + x.max,
-                }
-            });
+        let segments = self.segments.clone();
+        let hw_counter = hw_measurement_acc.get_counter_cell();
+        // clone filter for spawning task
+        let filter = filter.cloned();
+        let cardinality = tokio::task::spawn_blocking(move || {
+            let segments = segments.read(); // blocking sync lock
+            segments
+                .iter()
+                .map(|(_id, segment)| {
+                    segment
+                        .get()
+                        .read() // blocking sync lock
+                        .estimate_point_count(filter.as_ref(), &hw_counter)
+                })
+                .fold(CardinalityEstimation::exact(0), |acc, x| {
+                    CardinalityEstimation {
+                        primary_clauses: vec![],
+                        min: acc.min + x.min,
+                        exp: acc.exp + x.exp,
+                        max: acc.max + x.max,
+                    }
+                })
+        })
+        .await?;
         Ok(cardinality)
     }
 
@@ -1033,27 +879,39 @@ impl LocalShard {
 
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
         {
-            let segments = self.segments().read();
+            let segments = self.segments.clone();
 
-            // Red status on failed operation or optimizer error
-            if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
-                let optimizer_status = segments
-                    .optimizer_errors
-                    .as_ref()
-                    .map_or(OptimizersStatus::Ok, |err| {
-                        OptimizersStatus::Error(err.to_string())
-                    });
-                return (ShardStatus::Red, optimizer_status);
-            }
+            let has_errored_optimizers = tokio::task::spawn_blocking(move || {
+                let segments = segments.read(); // blocking sync lock
+                // Red status on failed operation or optimizer error
+                if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
+                    let optimizer_status = segments
+                        .optimizer_errors
+                        .as_ref()
+                        .map_or(OptimizersStatus::Ok, |err| {
+                            OptimizersStatus::Error(err.to_string())
+                        });
+                    return Some((ShardStatus::Red, optimizer_status));
+                }
 
-            // Yellow status if we have a special segment, indicates a proxy segment used during optimization
-            // TODO: snapshotting also creates temp proxy segments. should differentiate.
-            let has_special_segment = segments
-                .iter()
-                .map(|(_, segment)| segment.get().read().info().segment_type)
-                .any(|segment_type| segment_type == SegmentType::Special);
-            if has_special_segment {
-                return (ShardStatus::Yellow, OptimizersStatus::Ok);
+                // Yellow status if we have a special segment, indicates a proxy segment used during optimization
+                // TODO: snapshotting also creates temp proxy segments. should differentiate.
+                let has_special_segment = segments
+                    .iter()
+                    .map(|(_, segment)| segment.get().read().info().segment_type)
+                    .any(|segment_type| segment_type == SegmentType::Special);
+                if has_special_segment {
+                    Some((ShardStatus::Yellow, OptimizersStatus::Ok))
+                } else {
+                    None
+                }
+            })
+            .await;
+
+            match has_errored_optimizers {
+                Err(err) => log::error!("Failed to get local_shard_status: {err}"),
+                Ok(Some(to_report)) => return to_report,
+                Ok(None) => (), // no early error to report
             }
         }
 
@@ -1080,20 +938,21 @@ impl LocalShard {
 
     pub async fn local_shard_info(&self) -> ShardInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
-        let mut vectors_count = 0;
-        let mut indexed_vectors_count = 0;
-        let mut points_count = 0;
-        let mut segments_count = 0;
-        let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
 
-        {
-            let segments = self.segments().read();
+        let segments = self.segments.clone();
+        let segment_info = tokio::task::spawn_blocking(move || {
+            let segments = segments.read(); // blocking sync lock
+
+            let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
+            let mut indexed_vectors_count = 0;
+            let mut points_count = 0;
+            let mut segments_count = 0;
+
             for (_idx, segment) in segments.iter() {
                 segments_count += 1;
 
                 let segment_info = segment.get().read().info();
 
-                vectors_count += segment_info.num_vectors;
                 indexed_vectors_count += segment_info.num_indexed_vectors;
                 points_count += segment_info.num_points;
                 for (key, val) in segment_info.index_schema {
@@ -1103,14 +962,22 @@ impl LocalShard {
                         .or_insert(val);
                 }
             }
+            (schema, indexed_vectors_count, points_count, segments_count)
+        })
+        .await;
+
+        if let Err(err) = &segment_info {
+            log::error!("Failed to get local shard info: {err}");
         }
+
+        let (schema, indexed_vectors_count, points_count, segments_count) =
+            segment_info.unwrap_or_default();
 
         let (status, optimizer_status) = self.local_shard_status().await;
 
         ShardInfoInternal {
             status,
             optimizer_status,
-            vectors_count,
             indexed_vectors_count,
             points_count,
             segments_count,
@@ -1296,11 +1163,11 @@ impl LocalShardClocks {
         let oldest_clocks_path = Self::oldest_clocks_path(shard_path);
 
         if newest_clocks_path.exists() {
-            remove_file(newest_clocks_path).await?;
+            tokio_fs::remove_file(newest_clocks_path).await?;
         }
 
         if oldest_clocks_path.exists() {
-            remove_file(oldest_clocks_path).await?;
+            tokio_fs::remove_file(oldest_clocks_path).await?;
         }
 
         Ok(())

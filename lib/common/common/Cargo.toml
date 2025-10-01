@@ -18,6 +18,7 @@ testing = []
 [dependencies]
 bitvec = { workspace = true }
 bytemuck = { workspace = true }
+fs-err = { workspace = true }
 num-traits = { workspace = true }
 num_cpus = "1.17"
 ordered-float = { workspace = true }
@@ -53,7 +54,7 @@ serde_json = { workspace = true }
 tango-bench = "0.6.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-thread-priority = "2.1.0"
+thread-priority = "3.0.0"
 
 [[bench]]
 name = "bitpacking"

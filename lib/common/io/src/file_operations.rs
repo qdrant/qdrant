@@ -1,16 +1,20 @@
-use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Write};
 use std::path::Path;
 use std::result;
 
 use atomicwrites::{AtomicFile, OverwriteBehavior};
+use fs_err::File;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+#[allow(
+    clippy::disallowed_types,
+    reason = "can't use `fs_err::File` since `atomicwrites` only provides `&mut std::fs::File`"
+)]
 pub fn atomic_save<E, F>(path: &Path, write: F) -> Result<(), E>
 where
     E: From<io::Error>,
-    F: FnOnce(&mut BufWriter<&mut File>) -> Result<(), E>,
+    F: FnOnce(&mut BufWriter<&mut std::fs::File>) -> Result<(), E>,
 {
     let af = AtomicFile::new(path, OverwriteBehavior::AllowOverwrite);
     af.write(|f| {

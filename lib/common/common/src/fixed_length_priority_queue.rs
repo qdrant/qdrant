@@ -95,4 +95,11 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     pub fn is_full(&self) -> bool {
         self.heap.len() >= self.length.into()
     }
+
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&T) -> bool,
+    {
+        self.heap.retain(|x| f(&x.0));
+    }
 }

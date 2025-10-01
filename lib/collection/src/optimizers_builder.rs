@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use fs_err as fs;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::index::hnsw_index::num_rayon_threads;
@@ -146,7 +147,7 @@ pub fn clear_temp_segments(shard_path: &Path) {
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
     if temp_segments_path.exists() {
         log::debug!("Removing temp_segments directory: {temp_segments_path:?}");
-        if let Err(err) = std::fs::remove_dir_all(&temp_segments_path) {
+        if let Err(err) = fs::remove_dir_all(&temp_segments_path) {
             log::warn!(
                 "Failed to remove temp_segments directory: {temp_segments_path:?}, error: {err:?}"
             );

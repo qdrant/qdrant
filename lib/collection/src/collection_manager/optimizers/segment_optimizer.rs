@@ -5,8 +5,10 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
+use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_disk_size;
+use fs_err as fs;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
@@ -135,7 +137,7 @@ pub trait SegmentOptimizer {
 
         // Ensure temp_path exists
         if !self.temp_path().exists() {
-            std::fs::create_dir_all(self.temp_path()).map_err(|err| {
+            fs::create_dir_all(self.temp_path()).map_err(|err| {
                 CollectionError::service_error(format!(
                     "Could not create temp directory `{}`: {}",
                     self.temp_path().display(),
@@ -158,19 +160,25 @@ pub trait SegmentOptimizer {
 
         match (space_available, space_needed) {
             (Some(space_available), Some(space_needed)) => {
-                log::debug!(
-                    "Available space: {space_available}, needed for optimization: {space_needed}",
-                );
+                if space_needed > 0 {
+                    log::debug!(
+                        "Available space: {}, needed for optimization: {}",
+                        bytes_to_human(space_available as usize),
+                        bytes_to_human(space_needed as usize),
+                    );
+                }
                 if space_available < space_needed {
                     return Err(CollectionError::service_error(format!(
-                        "Not enough space available for optimization, needed: {space_needed}, available: {space_available}"
+                        "Not enough space available for optimization, needed: {}, available: {}",
+                        bytes_to_human(space_needed as usize),
+                        bytes_to_human(space_available as usize),
                     )));
                 }
             }
             _ => {
                 log::warn!(
                     "Could not estimate available storage space in `{}`; will try optimizing anyway",
-                    self.name()
+                    self.name(),
                 );
             }
         }
@@ -248,9 +256,7 @@ pub trait SegmentOptimizer {
                     .vectors
                     .get_params(vector_name)
                     .and_then(|params| params.hnsw_config);
-                let vector_hnsw = param_hnsw
-                    .and_then(|c| c.update(collection_hnsw).ok())
-                    .unwrap_or_else(|| collection_hnsw.clone());
+                let vector_hnsw = collection_hnsw.update_opt(param_hnsw.as_ref());
                 config.index = Indexes::Hnsw(vector_hnsw);
 
                 // Assign quantization config

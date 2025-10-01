@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::True;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use io::file_operations::atomic_save_json;
 use memory::mmap_ops::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use memory::mmap_type::MmapFlusher;
@@ -272,7 +273,7 @@ impl BitsStoreType for u8 {
 
         let bits_count = u8::BITS as usize * bytes_count;
         let mut result = size / bits_count;
-        if size % bits_count != 0 {
+        if !size.is_multiple_of(bits_count) {
             result += 1;
         }
         result * bytes_count
@@ -390,7 +391,7 @@ impl BitsStoreType for u128 {
     fn get_storage_size(size: usize) -> usize {
         let bits_count = u8::BITS as usize * std::mem::size_of::<Self>();
         let mut result = size / bits_count;
-        if size % bits_count != 0 {
+        if !size.is_multiple_of(bits_count) {
             result += 1;
         }
         result
@@ -464,7 +465,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                         "Path must have a parent directory",
                     )
                 })
-                .and_then(std::fs::create_dir_all)
+                .and_then(fs::create_dir_all)
                 .map_err(|e| {
                     EncodingError::EncodingError(format!(
                         "Failed to create metadata directory: {e}",
@@ -484,7 +485,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     }
 
     pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
-        let contents = std::fs::read_to_string(meta_path)?;
+        let contents = fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
         let result = Self {
             metadata,

@@ -57,7 +57,7 @@ fn print_consensus_wal(wal_path: &Path) {
 
 fn print_collection_wal(wal_path: &Path) {
     let wal: Result<SerdeWal<OperationWithClockTag>, _> =
-        SerdeWal::new(wal_path.to_str().unwrap(), WalOptions::default());
+        SerdeWal::new(wal_path, WalOptions::default());
 
     match wal {
         Err(error) => {

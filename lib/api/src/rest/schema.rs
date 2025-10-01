@@ -394,7 +394,7 @@ pub struct Batch {
     pub payloads: Option<Vec<Option<Payload>>>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq, Hash)]
 #[serde(untagged)]
 #[serde(expecting = "Expected a string or an integer")]
 pub enum ShardKeySelector {
@@ -652,6 +652,7 @@ pub struct NearestQuery {
 
     /// Perform MMR (Maximal Marginal Relevance) reranking after search,
     /// using the same vector in this query to calculate relevance.
+    #[validate(nested)]
     pub mmr: Option<Mmr>,
 }
 
@@ -1290,6 +1291,7 @@ pub struct FacetRequestInternal {
     pub limit: Option<usize>,
 
     /// Filter conditions - only consider points that satisfy these conditions.
+    #[validate(nested)]
     pub filter: Option<Filter>,
 
     /// Whether to do a more expensive exact count for each of the values in the facet. Default is false.

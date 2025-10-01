@@ -1,9 +1,10 @@
-use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use fs_err as fs;
+use fs_err::File;
 use memory::fadvise::OneshotFile;
 use memory::mmap_type::MmapFlusher;
 
@@ -100,7 +101,7 @@ impl quantization::EncodedStorageBuilder for QuantizedRamStorageBuilder {
 
     fn build(self) -> std::io::Result<QuantizedRamStorage> {
         if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir)?;
+            fs::create_dir_all(dir)?;
         }
         let mut buffer = BufWriter::new(File::create(&self.path)?);
         for i in 0..self.vectors.len() {

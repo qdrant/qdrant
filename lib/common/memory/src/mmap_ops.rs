@@ -1,8 +1,9 @@
-use std::fs::{File, OpenOptions};
 use std::mem::{align_of, size_of};
 use std::path::Path;
 use std::{io, mem, ptr};
 
+use fs_err as fs;
+use fs_err::{File, OpenOptions};
 use memmap2::{Mmap, MmapMut};
 
 use crate::madvise::{self, AdviceSetting, Madviseable};
@@ -35,7 +36,7 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
             temp_file.set_len(length as u64)?;
         }
 
-        std::fs::rename(&temp_path, path)?;
+        fs::rename(&temp_path, path)?;
 
         OpenOptions::new().read(true).write(true).open(path)
     }

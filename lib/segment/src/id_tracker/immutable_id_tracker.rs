@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
@@ -8,6 +7,7 @@ use bitvec::vec::BitVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
+use fs_err::File;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
@@ -97,7 +97,10 @@ impl ImmutableIdTracker {
 
         // Deserialize the list entries
         for i in 0..len {
-            let (internal_id, external_id) = Self::read_entry(&mut reader)?;
+            let (internal_id, external_id) = Self::read_entry(&mut reader)
+                .map_err(|err| {
+                    OperationError::inconsistent_storage(format!("Immutable ID tracker failed to read next mapping, reading {} out of {len}, assuming malformed storage: {err}", i + 1))
+                })?;
 
             // Need to push this regardless of point deletion as the vecs index represents the internal id
             // which would become wrong if we leave out entries.
@@ -147,26 +150,41 @@ impl ImmutableIdTracker {
     pub(crate) fn read_entry<R: Read>(
         mut reader: R,
     ) -> OperationResult<(PointOffsetType, ExtendedPointId)> {
-        let point_id_type = reader.read_u8()?;
+        let point_id_type = reader.read_u8().map_err(|err| {
+            OperationError::inconsistent_storage(format!(
+                "failed to read point ID type from file: {err}"
+            ))
+        })?;
 
         let external_id = match ExternalIdType::from_byte(point_id_type) {
             None => {
-                return Err(OperationError::InconsistentStorage {
-                    description: "Invalid byte read when deserializing Immutable id tracker"
-                        .to_string(),
-                });
+                return Err(OperationError::inconsistent_storage(
+                    "invalid byte for point ID type",
+                ));
             }
             Some(ExternalIdType::Number) => {
-                let num = reader.read_u64::<FileEndianess>()?;
+                let num = reader.read_u64::<FileEndianess>().map_err(|err| {
+                    OperationError::inconsistent_storage(format!(
+                        "failed to read numeric point ID from file: {err}"
+                    ))
+                })?;
                 PointIdType::NumId(num)
             }
             Some(ExternalIdType::Uuid) => {
-                let uuid_u128 = reader.read_u128::<FileEndianess>()?;
+                let uuid_u128 = reader.read_u128::<FileEndianess>().map_err(|err| {
+                    OperationError::inconsistent_storage(format!(
+                        "failed to read UUID point ID from file: {err}"
+                    ))
+                })?;
                 PointIdType::Uuid(Uuid::from_u128_le(uuid_u128))
             }
         };
 
-        let internal_id = reader.read_u32::<FileEndianess>()? as PointOffsetType;
+        let internal_id = reader.read_u32::<FileEndianess>().map_err(|err| {
+            OperationError::inconsistent_storage(format!(
+                "failed to read internal point ID from file: {err}"
+            ))
+        })? as PointOffsetType;
         Ok((internal_id, external_id))
     }
 
@@ -318,8 +336,12 @@ impl ImmutableIdTracker {
 
         // Write mappings to disk.
         let file = File::create(Self::mappings_file_path(path))?;
-        let mut writer = BufWriter::new(&file);
+        let mut writer = BufWriter::new(file);
         Self::store_mapping(&mappings, &mut writer)?;
+
+        // Explicitly fsync file contents to ensure durability
+        writer.flush()?;
+        let file = writer.into_inner().unwrap();
         file.sync_all()?;
 
         deleted_wrapper.flusher()()?;

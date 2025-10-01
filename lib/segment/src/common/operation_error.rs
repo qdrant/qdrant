@@ -101,6 +101,12 @@ impl OperationError {
             description: description.into(),
         }
     }
+
+    pub fn inconsistent_storage(description: impl Into<String>) -> OperationError {
+        OperationError::InconsistentStorage {
+            description: description.into(),
+        }
+    }
 }
 
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed

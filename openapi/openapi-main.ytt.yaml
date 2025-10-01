@@ -66,7 +66,6 @@ info:
     {
       "result": {
         "status": "green",
-        "vectors_count": 0,
         "segments_count": 5,
         "disk_data_size": 0,
         "ram_data_size": 0,

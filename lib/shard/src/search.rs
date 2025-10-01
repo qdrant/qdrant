@@ -6,6 +6,7 @@ use segment::data_types::vectors::{
 };
 use segment::types::{Filter, SearchParams, VectorName, WithPayloadInterface, WithVector};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use serde::Serialize;
 use sparse::common::sparse_vector::{SparseVector, validate_sparse_vector_impl};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -76,11 +77,11 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
             .map(|query| {
                 Ok(match query {
                     api::grpc::qdrant::query_enum::Query::NearestNeighbors(vector) => {
+                        let vector_internal = VectorInternal::try_from(vector)?;
                         QueryEnum::Nearest(NamedQuery::from(
                             api::grpc::conversions::into_named_vector_struct(
                                 value.vector_name,
-                                vector.data,
-                                vector.indices,
+                                vector_internal,
                             )?,
                         ))
                     }
@@ -192,8 +193,11 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             })?;
         }
 
+        let vector_internal =
+            VectorInternal::from_vector_and_indices(vector, sparse_indices.map(|v| v.data));
+
         let vector_struct =
-            api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
+            api::grpc::conversions::into_named_vector_struct(vector_name, vector_internal)?;
 
         Ok(Self {
             query: QueryEnum::Nearest(NamedQuery::from(vector_struct)),
@@ -211,7 +215,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
 }
 
 /// Every kind of vector query that can be performed on segment level.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash, Serialize)]
 pub enum QueryEnum {
     Nearest(NamedQuery<VectorInternal>),
     RecommendBestScore(NamedQuery<RecoQuery<VectorInternal>>),

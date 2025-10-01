@@ -7,6 +7,7 @@ use std::mem::{align_of, size_of};
 use std::path::Path;
 use std::str;
 
+use fs_err::File;
 use memmap2::Mmap;
 use memory::madvise::{AdviceSetting, Madviseable};
 use memory::mmap_ops::open_read_mmap;
@@ -118,10 +119,12 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
         _ = file_size;
 
         // == Second pass ==
-        let file = tempfile::Builder::new()
+        let (file, temp_path) = tempfile::Builder::new()
             .prefix(path.file_name().ok_or(io::ErrorKind::InvalidInput)?)
-            .tempfile_in(path.parent().ok_or(io::ErrorKind::InvalidInput)?)?;
-        let mut bufw = io::BufWriter::new(&file);
+            .tempfile_in(path.parent().ok_or(io::ErrorKind::InvalidInput)?)?
+            .into_parts();
+        let file = File::from_parts::<&Path>(file, temp_path.as_ref());
+        let mut bufw = io::BufWriter::new(file);
 
         // 1. Header
         let header = Header {
@@ -165,10 +168,11 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
 
         // Explicitly flush write buffer so we can catch IO errors
         bufw.flush()?;
-        drop(bufw);
+        let file = bufw.into_inner().unwrap();
 
-        file.as_file().sync_all()?;
-        file.persist(path)?;
+        file.sync_all()?;
+        drop(file);
+        temp_path.persist(path)?;
 
         Ok(())
     }

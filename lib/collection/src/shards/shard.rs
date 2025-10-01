@@ -2,7 +2,7 @@ use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::manifest::SnapshotManifest;
@@ -73,37 +73,40 @@ impl Shard {
     pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
         let mut telemetry = match self {
             Shard::Local(local_shard) => {
-                let mut shard_telemetry = local_shard.get_telemetry_data(detail);
+                let mut shard_telemetry = local_shard.get_telemetry_data(detail).await;
+
                 // can't take sync locks in async fn so local_shard_status() has to be
                 // called outside get_telemetry_data()
                 shard_telemetry.status = Some(local_shard.local_shard_status().await.0);
                 shard_telemetry
             }
-            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(detail),
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(detail),
-            Shard::QueueProxy(proxy_shard) => proxy_shard.get_telemetry_data(detail),
+            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(detail).await,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(detail).await,
+            Shard::QueueProxy(proxy_shard) => proxy_shard.get_telemetry_data(detail).await,
             Shard::Dummy(dummy_shard) => dummy_shard.get_telemetry_data(),
         };
         telemetry.variant_name = Some(self.variant_name().to_string());
         telemetry
     }
 
-    pub fn get_optimization_status(&self) -> OptimizersStatus {
+    pub async fn get_optimization_status(&self) -> OptimizersStatus {
         match self {
-            Shard::Local(local_shard) => local_shard.get_optimization_status(),
-            Shard::Proxy(proxy_shard) => proxy_shard.get_optimization_status(),
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_optimization_status(),
-            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.get_optimization_status(),
+            Shard::Local(local_shard) => local_shard.get_optimization_status().await,
+            Shard::Proxy(proxy_shard) => proxy_shard.get_optimization_status().await,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_optimization_status().await,
+            Shard::QueueProxy(queue_proxy_shard) => {
+                queue_proxy_shard.get_optimization_status().await
+            }
             Shard::Dummy(dummy_shard) => dummy_shard.get_optimization_status(),
         }
     }
 
-    pub fn get_size_stats(&self) -> SizeStats {
+    pub async fn get_size_stats(&self) -> SizeStats {
         match self {
-            Shard::Local(local_shard) => local_shard.get_size_stats(),
-            Shard::Proxy(proxy_shard) => proxy_shard.get_size_stats(),
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_size_stats(),
-            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.get_size_stats(),
+            Shard::Local(local_shard) => local_shard.get_size_stats().await,
+            Shard::Proxy(proxy_shard) => proxy_shard.get_size_stats().await,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_size_stats().await,
+            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.get_size_stats().await,
             Shard::Dummy(dummy_shard) => dummy_shard.get_size_stats(),
         }
     }
@@ -297,34 +300,47 @@ impl Shard {
         }
     }
 
-    pub fn estimate_cardinality(
+    pub async fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
-        hw_counter: &HardwareCounterCell,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
         match self {
-            Shard::Local(local_shard) => local_shard.estimate_cardinality(filter, hw_counter),
-            Shard::Proxy(proxy_shard) => proxy_shard.estimate_cardinality(filter, hw_counter),
+            Shard::Local(local_shard) => {
+                local_shard
+                    .estimate_cardinality(filter, hw_measurement_acc)
+                    .await
+            }
+            Shard::Proxy(proxy_shard) => {
+                proxy_shard
+                    .estimate_cardinality(filter, hw_measurement_acc)
+                    .await
+            }
             Shard::ForwardProxy(forward_proxy_shard) => {
-                forward_proxy_shard.estimate_cardinality(filter, hw_counter)
+                forward_proxy_shard
+                    .estimate_cardinality(filter, hw_measurement_acc)
+                    .await
             }
             Shard::QueueProxy(queue_proxy_shard) => {
-                queue_proxy_shard.estimate_cardinality(filter, hw_counter)
+                queue_proxy_shard
+                    .estimate_cardinality(filter, hw_measurement_acc)
+                    .await
             }
             Shard::Dummy(dummy_shard) => dummy_shard.estimate_cardinality(filter),
         }
     }
 
-    pub fn estimate_request_cardinality(
+    pub async fn estimate_request_cardinality(
         &self,
         operation: &impl EstimateOperationEffectArea,
-        hw_counter: &HardwareCounterCell,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
         match operation.estimate_effect_area() {
             OperationEffectArea::Empty => Ok(CardinalityEstimation::exact(0)),
             OperationEffectArea::Points(vec) => Ok(CardinalityEstimation::exact(vec.len())),
             OperationEffectArea::Filter(filter) => {
-                self.estimate_cardinality(Some(filter), hw_counter)
+                self.estimate_cardinality(Some(filter), hw_measurement_acc)
+                    .await
             }
         }
     }

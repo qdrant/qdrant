@@ -18,6 +18,7 @@ use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
     VectorName, WithPayload, WithPayloadInterface, WithVector,
 };
+use shard::search_result_aggregator::BatchResultAggregator;
 use tinyvec::TinyVec;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
@@ -25,7 +26,6 @@ use tokio::task::JoinHandle;
 use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
-use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::config::CollectionConfigInternal;
 use crate::operations::query_enum::QueryEnum;
@@ -481,6 +481,7 @@ impl SegmentsSearcher {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let stopping_guard = StoppingGuard::new();
+        // cloning filter spawning task
         let filter = filter.cloned();
         runtime_handle
             .spawn_blocking(move || {

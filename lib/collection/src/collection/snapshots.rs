@@ -1,10 +1,10 @@
 use std::collections::HashSet;
-use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
 use common::tar_ext::BuilderExt;
 use common::tempfile_ext::MaybeTempPath;
+use fs_err::File;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;

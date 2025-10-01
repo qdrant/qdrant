@@ -13,7 +13,7 @@ pub enum CollectionTelemetryEnum {
     Aggregated(CollectionsAggregatedTelemetry),
 }
 
-#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize, Default)]
 pub struct CollectionsTelemetry {
     #[anonymize(false)]
     pub number_of_collections: usize,

@@ -7,6 +7,7 @@ use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use gridstore::Gridstore;
 use gridstore::config::{Compression, StorageOptions};
 use parking_lot::RwLock;
@@ -87,7 +88,7 @@ impl MmapSparseVectorStorage {
 
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
-        std::fs::create_dir_all(&storage_dir)?;
+        fs::create_dir_all(&storage_dir)?;
         let storage_config = StorageOptions {
             // Don't use built-in compression, as we will use bitpacking instead
             compression: Some(Compression::None),
@@ -350,7 +351,7 @@ mod test {
 
     fn visit_files_recursively(dir: &Path, cb: &mut impl FnMut(PathBuf)) -> std::io::Result<()> {
         if dir.is_dir() {
-            for entry in std::fs::read_dir(dir)? {
+            for entry in fs::read_dir(dir)? {
                 let entry = entry?;
                 let path = entry.path();
                 if path.is_dir() {

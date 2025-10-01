@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -73,34 +72,6 @@ impl ConfigMismatchOptimizer {
             .and_then(|index| index.on_disk)
     }
 
-    /// Calculates and HNSW config that should be used for a given vector
-    /// with current configuration.
-    ///
-    /// Takes vector-specific HNSW config (if any) and merges it with the collection-wide config.
-    fn get_required_hnsw_config(&self, vector_name: &VectorName) -> Cow<'_, HnswConfig> {
-        let target_hnsw_collection = &self.hnsw_config;
-        // Select vector specific target HNSW config
-        let target_hnsw_vector = self
-            .collection_params
-            .vectors
-            .get_params(vector_name)
-            .and_then(|vector_params| vector_params.hnsw_config)
-            .map(|vector_hnsw| vector_hnsw.update(target_hnsw_collection))
-            .and_then(|hnsw| match hnsw {
-                Ok(hnsw) => Some(hnsw),
-                Err(err) => {
-                    log::warn!(
-                        "Failed to merge collection and vector HNSW config, ignoring: {err}"
-                    );
-                    None
-                }
-            });
-        match target_hnsw_vector {
-            Some(target_hnsw) => Cow::Owned(target_hnsw),
-            None => Cow::Borrowed(target_hnsw_collection),
-        }
-    }
-
     fn worst_segment(
         &self,
         segments: LockedSegmentHolder,
@@ -141,7 +112,14 @@ impl ConfigMismatchOptimizer {
                                 Indexes::Plain {} => {}
                                 Indexes::Hnsw(effective_hnsw) => {
                                     // Select segment if we have an HNSW mismatch that requires rebuild
-                                    let target_hnsw = self.get_required_hnsw_config(vector_name);
+                                    let target_hnsw = self.hnsw_config.update_opt(
+                                        self.collection_params
+                                            .vectors
+                                            .get_params(vector_name)
+                                            .and_then(|vector_params| {
+                                                vector_params.hnsw_config.as_ref()
+                                            }),
+                                    );
                                     if effective_hnsw.mismatch_requires_rebuild(&target_hnsw) {
                                         return true;
                                     }
@@ -186,8 +164,10 @@ impl ConfigMismatchOptimizer {
                                         .unwrap_or(false);
                                     // If segment is unindexed, only appendable quantization is applied.
                                     // So that we check if any config is appendable to avoid infinity loop here.
-                                    let unindexed_changed = vector_data_quantization_appendable
-                                        || target_quantization_appendable;
+                                    let unindexed_changed = common::flags::feature_flags()
+                                        .appendable_quantization
+                                        && (vector_data_quantization_appendable
+                                            || target_quantization_appendable);
                                     (vector_data.quantization_config.is_some()
                                         != target_quantization.is_some())
                                         && (vector_data.index.is_indexed() || unindexed_changed)
@@ -346,6 +326,7 @@ mod tests {
             max_indexing_threads: 0,
             on_disk: None,
             payload_m: None,
+            copy_vectors: None,
         };
 
         // Optimizers used in test
@@ -506,6 +487,7 @@ mod tests {
             max_indexing_threads: 0,
             on_disk: None,
             payload_m: None,
+            copy_vectors: None,
         };
 
         let permit_cpu_count = num_rayon_threads(hnsw_config_collection.max_indexing_threads);
@@ -597,12 +579,12 @@ mod tests {
             .for_each(|segment| {
                 assert_eq!(
                     segment.config().vector_data[VECTOR1_NAME].index,
-                    Indexes::Hnsw(hnsw_config_vector1.update(&hnsw_config_collection).unwrap()),
+                    Indexes::Hnsw(hnsw_config_collection.update(&hnsw_config_vector1)),
                     "HNSW config of vector1 is not what we expect",
                 );
                 assert_eq!(
                     segment.config().vector_data[VECTOR2_NAME].index,
-                    Indexes::Hnsw(hnsw_config_vector2.update(&hnsw_config_collection).unwrap()),
+                    Indexes::Hnsw(hnsw_config_collection.update(&hnsw_config_vector2)),
                     "HNSW config of vector2 is not what we expect",
                 );
             });

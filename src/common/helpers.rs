@@ -1,7 +1,8 @@
 use std::cmp::max;
+use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{fs, io};
 
+use fs_err as fs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::runtime;

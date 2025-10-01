@@ -27,7 +27,7 @@ use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
 use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::rbac::Access;
@@ -82,8 +82,11 @@ pub async fn search(
         sparse_indices,
     } = search_points;
 
+    let vector_internal =
+        VectorInternal::from_vector_and_indices(vector, sparse_indices.map(|v| v.data));
+
     let vector_struct =
-        api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
+        api::grpc::conversions::into_named_vector_struct(vector_name, vector_internal)?;
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
@@ -197,8 +200,10 @@ pub async fn core_search_list(
     timeout: Option<Duration>,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<SearchBatchResponse>, Status> {
-    let searches: Result<Vec<_>, Status> =
-        search_points.into_iter().map(TryInto::try_into).collect();
+    let searches: Result<Vec<_>, Status> = search_points
+        .into_iter()
+        .map(CoreSearchRequest::try_from)
+        .collect();
 
     let request = CoreSearchRequestBatch {
         searches: searches?,

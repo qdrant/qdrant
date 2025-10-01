@@ -92,7 +92,7 @@ impl<'a> BatchedVectorReader<'a> {
     }
 
     fn refill_buffer_if_needed(&mut self) {
-        if self.position % BATCH_SIZE == 0 {
+        if self.position.is_multiple_of(BATCH_SIZE) {
             self.refill_buffer();
         }
     }

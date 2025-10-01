@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -7,6 +6,7 @@ use std::path::{Path, PathBuf};
 use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::types::PointOffsetType;
+use fs_err::File;
 use itertools::Itertools;
 use memory::fadvise::OneshotFile;
 use parking_lot::Mutex;
@@ -785,6 +785,7 @@ pub(super) mod tests {
     use std::collections::{HashMap, HashSet};
     use std::io::Cursor;
 
+    use fs_err as fs;
     use itertools::Itertools;
     #[cfg(feature = "rocksdb")]
     use rand::Rng;
@@ -1146,63 +1147,63 @@ pub(super) mod tests {
         let mappings_path = mappings_path(segment_dir.path());
 
         // Exactly one entry
-        std::fs::write(
+        fs::write(
             &mappings_path,
             b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00",
         )
         .unwrap();
-        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+        assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 13);
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
-        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+        assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 13);
 
         // One entry and and one extra byte, file must be truncated
-        std::fs::write(
+        fs::write(
             &mappings_path,
             b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01",
         )
         .unwrap();
-        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 14);
+        assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 14);
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
-        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+        assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 13);
 
         // One entry and an incomplete second one, file must be truncated
-        std::fs::write(
+        fs::write(
             &mappings_path,
             b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01\x02\x00",
         )
         .unwrap();
-        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 16);
+        assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 16);
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
-        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+        assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 13);
 
         // Two entries and an incomplete third one, file must be truncated
-        std::fs::write(
+        fs::write(
             &mappings_path,
             b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01\x02\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x02\x00",
         ).unwrap();
-        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 28);
+        assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 28);
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
-        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 26);
+        assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 26);
     }
 
     fn make_in_memory_tracker_from_memory() -> InMemoryIdTracker {

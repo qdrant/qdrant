@@ -9,6 +9,9 @@ license = "Apache-2.0"
 edition = "2024"
 
 
+[features]
+testing = []
+
 [dependencies]
 api = { path = "../api" }
 common = { path = "../common/common" }
@@ -20,6 +23,7 @@ ahash = { workspace = true }
 bitvec = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
+ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
 rmp-serde = "~1.3"
@@ -32,14 +36,15 @@ thiserror = { workspace = true }
 tonic = { workspace = true }
 validator = { workspace = true }
 wal = { workspace = true }
+serde_json = { workspace = true }
 
 
 [dev-dependencies]
 segment = { path = "../segment", default-features = false, features = ["testing"] }
 
+fs-err = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 serde_cbor = { workspace = true }
-serde_json = { workspace = true }
 tar = { workspace = true }
 tempfile = { workspace = true }

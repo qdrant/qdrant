@@ -93,7 +93,7 @@ pub async fn mmr_from_points_with_vector(
             candidates,
             query_similarities,
             similarity_matrix,
-            mmr.lambda,
+            mmr.lambda.0,
             limit,
         ))
     };
@@ -285,6 +285,7 @@ mod tests {
     use std::time::Duration;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use ordered_float::OrderedFloat;
     use rstest::rstest;
     use segment::data_types::vectors::{
         MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
@@ -458,7 +459,7 @@ mod tests {
         let mmr = MmrInternal {
             vector: vec![1.0, 0.0].into(),
             using: VectorNameBuf::from(""),
-            lambda,
+            lambda: OrderedFloat(lambda),
             candidates_limit: 100,
         };
 
@@ -502,7 +503,7 @@ mod tests {
         let mmr = MmrInternal {
             vector: vec![1.0, 0.0].into(),
             using: VectorNameBuf::from(""),
-            lambda: 0.5,
+            lambda: OrderedFloat(0.5),
             candidates_limit: 100,
         };
 
@@ -560,7 +561,7 @@ mod tests {
         let mmr = MmrInternal {
             vector: vec![1.0, 0.0, 0.0].into(),
             using: VectorNameBuf::from("custom"),
-            lambda: 0.5,
+            lambda: OrderedFloat(0.5),
             candidates_limit: 100,
         };
 
@@ -601,7 +602,7 @@ mod tests {
         let mmr = MmrInternal {
             vector: vec![1.0, 0.0, 0.0].into(),
             using: VectorNameBuf::from(""),
-            lambda: 0.5,
+            lambda: OrderedFloat(0.5),
             candidates_limit: 100,
         };
 
@@ -640,7 +641,7 @@ mod tests {
         let mmr = MmrInternal {
             vector: vec![1.0, 0.0, 0.0].into(),
             using: VectorNameBuf::from(""),
-            lambda: 0.5,
+            lambda: OrderedFloat(0.5),
             candidates_limit: 100,
         };
 
@@ -703,7 +704,7 @@ mod tests {
                 .unwrap()
                 .into(),
             using: VectorNameBuf::from(sparse_vector_name),
-            lambda: 0.5,
+            lambda: OrderedFloat(0.5),
             candidates_limit: 100,
         };
 
@@ -750,7 +751,7 @@ mod tests {
         let multi_mmr = MmrInternal {
             vector: MultiDenseVectorInternal::new(vec![1.0, 0.0, 0.0, 1.0], 2).into(),
             using: VectorNameBuf::from(multi_vector_name),
-            lambda: 0.5,
+            lambda: OrderedFloat(0.5),
             candidates_limit: 100,
         };
 

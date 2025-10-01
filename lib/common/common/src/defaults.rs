@@ -13,6 +13,9 @@ lazy_static! {
     pub static ref QDRANT_VERSION: Version = Version::parse(QDRANT_VERSION_STRING).expect("malformed version string");
 }
 
+/// Maximum number of segments to load concurrently when loading a collection.
+pub const MAX_CONCURRENT_SEGMENT_LOADS: usize = 8;
+
 /// Number of retries for confirming a consensus operation.
 pub const CONSENSUS_CONFIRM_RETRIES: usize = 3;
 

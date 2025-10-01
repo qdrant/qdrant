@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fs::{create_dir_all, remove_dir_all, rename};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -8,6 +7,8 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use fs_err as fs;
+use fs_err::PathExt;
 use io::storage_version::{StorageVersion as _, VERSION_FILE};
 use itertools::Itertools;
 use semver::Version;
@@ -105,7 +106,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let (config, inverted_index, indices_tracker) = if !config.index_type.is_persisted() {
             // RAM mutable case - build inverted index from scratch and use provided config
-            create_dir_all(path)?;
+            fs::create_dir_all(path)?;
             let (inverted_index, indices_tracker) = Self::build_inverted_index(
                 &id_tracker,
                 &vector_storage,
@@ -116,14 +117,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             (config, inverted_index, indices_tracker)
         } else {
             Self::try_load(path).or_else(|e| {
-                if path.try_exists().unwrap_or(true) {
+                if path.fs_err_try_exists().unwrap_or(true) {
                     log::warn!("Failed to load {path:?}, rebuilding: {e}");
 
                     // Drop index completely.
-                    remove_dir_all(path)?;
+                    fs::remove_dir_all(path)?;
                 }
 
-                create_dir_all(path)?;
+                fs::create_dir_all(path)?;
 
                 let (inverted_index, indices_tracker) = Self::build_inverted_index(
                     &id_tracker,
@@ -173,7 +174,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let old_path = path.join(OLD_INDEX_FILE_NAME);
         if TInvertedIndex::Version::current() == Version::new(0, 1, 0) && old_path.exists() {
             // Didn't have a version file, but uses 0.1.0 index. Create a version file.
-            rename(old_path, path.join(INDEX_FILE_NAME))?;
+            fs::rename(old_path, path.join(INDEX_FILE_NAME))?;
             TInvertedIndex::Version::save(path)?;
             stored_version = Some(TInvertedIndex::Version::current());
         }

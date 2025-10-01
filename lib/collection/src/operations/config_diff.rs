@@ -1,60 +1,37 @@
+//! Structures for partial update of collection params
+
 #![allow(deprecated)] // hack to remove warning for memmap_threshold deprecation below
 
 use std::num::NonZeroU32;
 
 use api::rest::MaxOptimizationThreads;
-use merge::Merge;
 use schemars::JsonSchema;
 use segment::types::{
     BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization, StrictModeConfig,
 };
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use validator::{Validate, ValidationErrors};
 
 use crate::config::{CollectionParams, WalConfig};
-use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::OptimizersConfig;
 
-// Structures for partial update of collection params
-// TODO: make auto-generated somehow...
-
-pub trait DiffConfig<T: DeserializeOwned + Serialize> {
-    /// Update the given `config` with fields in this diff
+pub trait DiffConfig<Diff>: Clone {
+    /// Update this config with field from `diff`
     ///
-    /// This clones, modifies and returns `config`.
-    ///
-    /// This diff has higher priority, meaning that fields specified in this diff will always be in
-    /// the returned object.
-    fn update(self, config: &T) -> CollectionResult<T>
-    where
-        Self: Sized + Serialize + DeserializeOwned + Merge,
-    {
-        update_config(config, self)
-    }
+    /// The `diff` has higher priority, meaning that fields specified in
+    /// the `diff` will always be in the returned object.
+    fn update(&self, diff: &Diff) -> Self;
 
-    fn from_full(full: &T) -> CollectionResult<Self>
-    where
-        Self: Sized + Serialize + DeserializeOwned,
-    {
-        from_full(full)
+    fn update_opt(&self, diff: Option<&Diff>) -> Self {
+        match diff {
+            Some(diff) => self.update(diff),
+            None => self.clone(),
+        }
     }
 }
 
 #[derive(
-    Debug,
-    Default,
-    Deserialize,
-    Serialize,
-    JsonSchema,
-    Validate,
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    Merge,
-    Hash,
+    Debug, Default, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Eq, Hash,
 )]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfigDiff {
@@ -90,11 +67,15 @@ pub struct HnswConfigDiff {
     /// Custom M param for additional payload-aware HNSW links. If not set, default M will be used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload_m: Option<usize>,
+    /// Store copies of original and quantized vectors within the HNSW index file. Default: false.
+    /// Enabling this option will trade the search speed for disk usage by reducing amount of
+    /// random seeks during the search.
+    /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_vectors: Option<bool>,
 }
 
-#[derive(
-    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge, PartialEq, Eq, Hash,
-)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 pub struct WalConfigDiff {
     /// Size of a single WAL segment in MB
     #[validate(range(min = 1))]
@@ -105,7 +86,7 @@ pub struct WalConfigDiff {
     pub wal_retain_closed: Option<usize>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 pub struct CollectionParamsDiff {
     /// Number of replicas for each shard
     pub replication_factor: Option<NonZeroU32>,
@@ -121,11 +102,13 @@ pub struct CollectionParamsDiff {
     pub on_disk_payload: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct OptimizersConfigDiff {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+    #[validate(range(min = 0.0, max = 1.0))]
     pub deleted_threshold: Option<f64>,
     /// The minimal number of vectors in a segment, required to perform segment optimization
+    #[validate(range(min = 100))]
     pub vacuum_min_vector_number: Option<usize>,
     /// Target amount of segments optimizer will try to keep.
     /// Real amount of segments may vary depending on multiple parameters:
@@ -220,16 +203,244 @@ impl PartialEq for OptimizersConfigDiff {
 
 impl Eq for OptimizersConfigDiff {}
 
-impl DiffConfig<HnswConfig> for HnswConfigDiff {}
+impl DiffConfig<HnswConfigDiff> for HnswConfig {
+    fn update(&self, diff: &HnswConfigDiff) -> Self {
+        let HnswConfigDiff {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads,
+            on_disk,
+            payload_m,
+            copy_vectors,
+        } = diff;
 
-impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {}
+        HnswConfig {
+            m: m.unwrap_or(self.m),
+            ef_construct: ef_construct.unwrap_or(self.ef_construct),
+            full_scan_threshold: full_scan_threshold.unwrap_or(self.full_scan_threshold),
+            max_indexing_threads: max_indexing_threads.unwrap_or(self.max_indexing_threads),
+            on_disk: on_disk.or(self.on_disk),
+            payload_m: payload_m.or(self.payload_m),
+            copy_vectors: copy_vectors.or(self.copy_vectors),
+        }
+    }
+}
 
-impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {
-    fn update(self, config: &OptimizersConfig) -> CollectionResult<OptimizersConfig>
-    where
-        Self: Sized + Serialize + DeserializeOwned + Merge,
-    {
-        let Self {
+impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
+    fn update(&self, diff: &HnswConfigDiff) -> Self {
+        let HnswConfigDiff {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads,
+            on_disk,
+            payload_m,
+            copy_vectors,
+        } = diff;
+
+        HnswConfigDiff {
+            m: m.or(self.m),
+            ef_construct: ef_construct.or(self.ef_construct),
+            full_scan_threshold: full_scan_threshold.or(self.full_scan_threshold),
+            max_indexing_threads: max_indexing_threads.or(self.max_indexing_threads),
+            on_disk: on_disk.or(self.on_disk),
+            payload_m: payload_m.or(self.payload_m),
+            copy_vectors: copy_vectors.or(self.copy_vectors),
+        }
+    }
+}
+
+impl DiffConfig<OptimizersConfigDiff> for OptimizersConfig {
+    fn update(&self, diff: &OptimizersConfigDiff) -> Self {
+        let OptimizersConfigDiff {
+            deleted_threshold,
+            vacuum_min_vector_number,
+            default_segment_number,
+            max_segment_size,
+            memmap_threshold,
+            indexing_threshold,
+            flush_interval_sec,
+            max_optimization_threads,
+        } = diff;
+
+        OptimizersConfig {
+            deleted_threshold: deleted_threshold.unwrap_or(self.deleted_threshold),
+            vacuum_min_vector_number: vacuum_min_vector_number
+                .unwrap_or(self.vacuum_min_vector_number),
+            default_segment_number: default_segment_number.unwrap_or(self.default_segment_number),
+            max_segment_size: max_segment_size.or(self.max_segment_size),
+            memmap_threshold: memmap_threshold.or(self.memmap_threshold),
+            indexing_threshold: indexing_threshold.or(self.indexing_threshold),
+            flush_interval_sec: flush_interval_sec.unwrap_or(self.flush_interval_sec),
+            max_optimization_threads: max_optimization_threads
+                .map_or(self.max_optimization_threads, From::from),
+        }
+    }
+}
+
+impl DiffConfig<WalConfigDiff> for WalConfig {
+    fn update(&self, diff: &WalConfigDiff) -> Self {
+        let WalConfigDiff {
+            wal_capacity_mb,
+            wal_segments_ahead,
+            wal_retain_closed,
+        } = diff;
+
+        WalConfig {
+            wal_capacity_mb: wal_capacity_mb.unwrap_or(self.wal_capacity_mb),
+            wal_segments_ahead: wal_segments_ahead.unwrap_or(self.wal_segments_ahead),
+            wal_retain_closed: wal_retain_closed.unwrap_or(self.wal_retain_closed),
+        }
+    }
+}
+
+impl DiffConfig<CollectionParamsDiff> for CollectionParams {
+    fn update(&self, diff: &CollectionParamsDiff) -> Self {
+        let CollectionParamsDiff {
+            replication_factor,
+            write_consistency_factor,
+            read_fan_out_factor,
+            on_disk_payload,
+        } = diff;
+
+        CollectionParams {
+            replication_factor: replication_factor.unwrap_or(self.replication_factor),
+            write_consistency_factor: write_consistency_factor
+                .unwrap_or(self.write_consistency_factor),
+            read_fan_out_factor: read_fan_out_factor.or(self.read_fan_out_factor),
+            on_disk_payload: on_disk_payload.unwrap_or(self.on_disk_payload),
+            shard_number: self.shard_number,
+            sharding_method: self.sharding_method,
+            sparse_vectors: self.sparse_vectors.clone(),
+            vectors: self.vectors.clone(),
+        }
+    }
+}
+
+impl DiffConfig<StrictModeConfig> for StrictModeConfig {
+    fn update(&self, diff: &StrictModeConfig) -> Self {
+        let StrictModeConfig {
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+            search_max_oversampling,
+            upsert_max_batchsize,
+            max_collection_vector_size_bytes,
+            read_rate_limit,
+            write_rate_limit,
+            max_collection_payload_size_bytes,
+            max_points_count,
+            filter_max_conditions,
+            condition_max_size,
+            multivector_config,
+            sparse_config,
+            max_payload_index_count,
+        } = diff;
+
+        StrictModeConfig {
+            enabled: enabled.or(self.enabled),
+            max_query_limit: max_query_limit.or(self.max_query_limit),
+            max_timeout: max_timeout.or(self.max_timeout),
+            unindexed_filtering_retrieve: unindexed_filtering_retrieve
+                .or(self.unindexed_filtering_retrieve),
+            unindexed_filtering_update: unindexed_filtering_update
+                .or(self.unindexed_filtering_update),
+            search_max_hnsw_ef: search_max_hnsw_ef.or(self.search_max_hnsw_ef),
+            search_allow_exact: search_allow_exact.or(self.search_allow_exact),
+            search_max_oversampling: search_max_oversampling.or(self.search_max_oversampling),
+            upsert_max_batchsize: upsert_max_batchsize.or(self.upsert_max_batchsize),
+            max_collection_vector_size_bytes: max_collection_vector_size_bytes
+                .or(self.max_collection_vector_size_bytes),
+            read_rate_limit: read_rate_limit.or(self.read_rate_limit),
+            write_rate_limit: write_rate_limit.or(self.write_rate_limit),
+            max_collection_payload_size_bytes: max_collection_payload_size_bytes
+                .or(self.max_collection_payload_size_bytes),
+            max_points_count: max_points_count.or(self.max_points_count),
+            filter_max_conditions: filter_max_conditions.or(self.filter_max_conditions),
+            condition_max_size: condition_max_size.or(self.condition_max_size),
+            multivector_config: multivector_config
+                .as_ref()
+                .or(self.multivector_config.as_ref())
+                .cloned(),
+            sparse_config: sparse_config
+                .as_ref()
+                .or(self.sparse_config.as_ref())
+                .cloned(),
+            max_payload_index_count: max_payload_index_count.or(self.max_payload_index_count),
+        }
+    }
+}
+
+impl From<HnswConfig> for HnswConfigDiff {
+    fn from(config: HnswConfig) -> Self {
+        let HnswConfig {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads,
+            on_disk,
+            payload_m,
+            copy_vectors,
+        } = config;
+
+        HnswConfigDiff {
+            m: Some(m),
+            ef_construct: Some(ef_construct),
+            full_scan_threshold: Some(full_scan_threshold),
+            max_indexing_threads: Some(max_indexing_threads),
+            on_disk,
+            payload_m,
+            copy_vectors,
+        }
+    }
+}
+
+impl From<WalConfig> for WalConfigDiff {
+    fn from(config: WalConfig) -> Self {
+        let WalConfig {
+            wal_capacity_mb,
+            wal_segments_ahead,
+            wal_retain_closed,
+        } = config;
+
+        WalConfigDiff {
+            wal_capacity_mb: Some(wal_capacity_mb),
+            wal_segments_ahead: Some(wal_segments_ahead),
+            wal_retain_closed: Some(wal_retain_closed),
+        }
+    }
+}
+
+impl From<CollectionParams> for CollectionParamsDiff {
+    fn from(config: CollectionParams) -> Self {
+        let CollectionParams {
+            replication_factor,
+            write_consistency_factor,
+            read_fan_out_factor,
+            on_disk_payload,
+            shard_number: _,
+            sharding_method: _,
+            sparse_vectors: _,
+            vectors: _,
+        } = config;
+
+        CollectionParamsDiff {
+            replication_factor: Some(replication_factor),
+            write_consistency_factor: Some(write_consistency_factor),
+            read_fan_out_factor,
+            on_disk_payload: Some(on_disk_payload),
+        }
+    }
+}
+
+impl From<OptimizersConfig> for OptimizersConfigDiff {
+    fn from(config: OptimizersConfig) -> Self {
+        let OptimizersConfig {
             deleted_threshold,
             vacuum_min_vector_number,
             default_segment_number,
@@ -239,119 +450,20 @@ impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {
             indexing_threshold,
             flush_interval_sec,
             max_optimization_threads,
-        } = self;
+        } = config;
 
-        Ok(OptimizersConfig {
-            deleted_threshold: deleted_threshold.unwrap_or(config.deleted_threshold),
-            vacuum_min_vector_number: vacuum_min_vector_number
-                .unwrap_or(config.vacuum_min_vector_number),
-            default_segment_number: default_segment_number.unwrap_or(config.default_segment_number),
-            max_segment_size: max_segment_size.or(config.max_segment_size),
+        Self {
+            deleted_threshold: Some(deleted_threshold),
+            vacuum_min_vector_number: Some(vacuum_min_vector_number),
+            default_segment_number: Some(default_segment_number),
+            max_segment_size,
             #[expect(deprecated)]
-            memmap_threshold: memmap_threshold.or(config.memmap_threshold),
-            indexing_threshold: indexing_threshold.or(config.indexing_threshold),
-            flush_interval_sec: flush_interval_sec.unwrap_or(config.flush_interval_sec),
-            max_optimization_threads: max_optimization_threads
-                .map_or(config.max_optimization_threads, From::from),
-        })
-    }
-}
-
-impl DiffConfig<WalConfig> for WalConfigDiff {}
-
-impl DiffConfig<CollectionParams> for CollectionParamsDiff {}
-
-impl DiffConfig<StrictModeConfig> for StrictModeConfig {}
-
-impl From<HnswConfig> for HnswConfigDiff {
-    fn from(config: HnswConfig) -> Self {
-        HnswConfigDiff::from_full(&config).unwrap()
-    }
-}
-
-impl From<OptimizersConfig> for OptimizersConfigDiff {
-    fn from(config: OptimizersConfig) -> Self {
-        OptimizersConfigDiff::from_full(&config).unwrap()
-    }
-}
-
-impl From<WalConfig> for WalConfigDiff {
-    fn from(config: WalConfig) -> Self {
-        WalConfigDiff::from_full(&config).unwrap()
-    }
-}
-
-impl From<CollectionParams> for CollectionParamsDiff {
-    fn from(config: CollectionParams) -> Self {
-        CollectionParamsDiff::from_full(&config).unwrap()
-    }
-}
-
-pub fn from_full<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Serialize>(
-    full_config: &T,
-) -> CollectionResult<Y> {
-    let json = serde_json::to_value(full_config)?;
-    let res = serde_json::from_value(json)?;
-    Ok(res)
-}
-
-/// Merge first level of JSON values, if diff values present explicitly
-///
-/// Example:
-///
-/// base: {"a": 1, "b": 2}
-/// diff: {"a": 3}
-/// result: {"a": 3, "b": 2}
-///
-/// base: {"a": 1, "b": 2}
-/// diff: {"a": null}
-/// result: {"a": 1, "b": 2}
-fn merge_level_0(base: &mut Value, diff: Value) {
-    match (base, diff) {
-        (base @ &mut Value::Object(_), Value::Object(diff)) => {
-            let base = base.as_object_mut().unwrap();
-            for (k, v) in diff {
-                if !v.is_null() {
-                    base.insert(k, v);
-                }
-            }
+            memmap_threshold,
+            indexing_threshold,
+            flush_interval_sec: Some(flush_interval_sec),
+            max_optimization_threads: max_optimization_threads.map(MaxOptimizationThreads::Threads),
         }
-        (_base, _diff) => {}
     }
-}
-
-/// Hacky way to update configuration structures with diff-updates.
-/// Intended to only be used in non critical for speed places.
-/// TODO: replace with proc macro
-pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Serialize + Merge>(
-    config: &T,
-    update: Y,
-) -> CollectionResult<T> {
-    let mut config_values = serde_json::to_value(config)?;
-    let diff_values = serde_json::to_value(&update)?;
-    merge_level_0(&mut config_values, diff_values);
-    let res = serde_json::from_value(config_values)?;
-    Ok(res)
-}
-
-/// Hacky way to figure out if the given configuration is considered empty
-///
-/// The following types are considered empty:
-/// - Null
-/// - Empty string
-/// - Array or object with zero items
-///
-/// Intended to only be used in non-critical for speed places.
-pub fn is_empty<T: Serialize>(config: &T) -> CollectionResult<bool> {
-    let config_values = serde_json::to_value(config)?;
-
-    Ok(match config_values {
-        Value::Null => true,
-        Value::String(value) => value.is_empty(),
-        Value::Array(values) => values.is_empty(),
-        Value::Object(values) => values.is_empty(),
-        Value::Bool(_) | Value::Number(_) => false,
-    })
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
@@ -411,7 +523,7 @@ mod tests {
             on_disk_payload: None,
         };
 
-        let new_params = diff.update(&params).unwrap();
+        let new_params = params.update(&diff);
 
         assert_eq!(new_params.replication_factor.get(), 1);
         assert_eq!(new_params.write_consistency_factor.get(), 2);
@@ -422,7 +534,7 @@ mod tests {
     fn test_hnsw_update() {
         let base_config = HnswConfig::default();
         let update: HnswConfigDiff = serde_json::from_str(r#"{ "m": 32 }"#).unwrap();
-        let new_config = update.update(&base_config).unwrap();
+        let new_config = base_config.update(&update);
         assert_eq!(new_config.m, 32)
     }
 
@@ -440,7 +552,7 @@ mod tests {
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();
-        let new_config = update.update(&base_config).unwrap();
+        let new_config = base_config.update(&update);
         assert_eq!(new_config.indexing_threshold, Some(10000))
     }
 
@@ -464,7 +576,7 @@ mod tests {
         };
 
         let update: OptimizersConfigDiff = serde_json::from_str(json_diff).unwrap();
-        let new_config = update.update(&base_config).unwrap();
+        let new_config = base_config.update(&update);
 
         assert_eq!(new_config.max_optimization_threads, expected);
     }
@@ -473,7 +585,7 @@ mod tests {
     fn test_wal_config() {
         let base_config = WalConfig::default();
         let update: WalConfigDiff = serde_json::from_str(r#"{ "wal_segments_ahead": 2 }"#).unwrap();
-        let new_config = update.update(&base_config).unwrap();
+        let new_config = base_config.update(&update);
         assert_eq!(new_config.wal_segments_ahead, 2)
     }
 }

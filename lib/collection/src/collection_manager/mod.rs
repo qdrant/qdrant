@@ -4,7 +4,6 @@ pub mod optimizers;
 pub mod segments_searcher;
 
 pub mod probabilistic_search_sampling;
-mod search_result_aggregator;
 
 #[cfg(test)]
 pub(crate) mod fixtures;

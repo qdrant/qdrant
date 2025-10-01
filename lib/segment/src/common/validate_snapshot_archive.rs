@@ -1,5 +1,7 @@
+use std::io;
 use std::path::Path;
-use std::{fs, io};
+
+use fs_err as fs;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 

@@ -20,7 +20,6 @@ use segment::types::{
     Distance, HnswConfig, MultiVectorConfig, QuantizationConfig, StrictModeConfigOutput,
     WithPayloadInterface,
 };
-use sparse::common::sparse_vector::{SparseVector, validate_sparse_vector_impl};
 use tonic::Status;
 
 use super::cluster_ops::ReshardingDirection;
@@ -51,9 +50,9 @@ use crate::operations::config_diff::{
 use crate::operations::point_ops::{FilterSelector, PointIdsList, PointsSelector, WriteOrdering};
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
-    LocalShardInfo, OptimizersStatus, RecommendRequestInternal, RecordInternal, RemoteShardInfo,
-    ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
+    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CollectionWarning,
+    CountResult, LocalShardInfo, OptimizersStatus, RecommendRequestInternal, RecordInternal,
+    RemoteShardInfo, ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionCoreSearchRequest;
@@ -182,7 +181,7 @@ pub fn try_discover_request_from_grpc(
         shard_key_selector,
     } = value;
 
-    let target = target.map(TryInto::try_into).transpose()?;
+    let target = target.map(RecommendExample::try_from).transpose()?;
 
     let context = context
         .into_iter()
@@ -241,6 +240,7 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             max_indexing_threads,
             on_disk,
             payload_m,
+            copy_vectors,
         } = value;
         Self {
             m: m.map(|v| v as usize),
@@ -249,6 +249,7 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             max_indexing_threads: max_indexing_threads.map(|v| v as usize),
             on_disk,
             payload_m: payload_m.map(|v| v as usize),
+            copy_vectors,
         }
     }
 }
@@ -262,6 +263,7 @@ impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
             max_indexing_threads,
             on_disk,
             payload_m,
+            copy_vectors,
         } = value;
         Self {
             m: m.map(|v| v as u64),
@@ -270,6 +272,7 @@ impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
             max_indexing_threads: max_indexing_threads.map(|v| v as u64),
             on_disk,
             payload_m: payload_m.map(|v| v as u64),
+            copy_vectors,
         }
     }
 }
@@ -377,7 +380,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
         let CollectionInfo {
             status,
             optimizer_status,
-            vectors_count,
+            warnings,
             indexed_vectors_count,
             points_count,
             segments_count,
@@ -414,6 +417,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             max_indexing_threads,
             on_disk,
             payload_m,
+            copy_vectors,
         } = hnsw_config;
 
         let CollectionParams {
@@ -444,7 +448,6 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     api::grpc::qdrant::OptimizerStatus { ok: false, error }
                 }
             }),
-            vectors_count: vectors_count.map(|count| count as u64),
             indexed_vectors_count: indexed_vectors_count.map(|count| count as u64),
             points_count: points_count.map(|count| count as u64),
             segments_count: segments_count as u64,
@@ -496,6 +499,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     max_indexing_threads: Some(max_indexing_threads as u64),
                     on_disk,
                     payload_m: payload_m.map(|v| v as u64),
+                    copy_vectors,
                 }),
                 optimizer_config: Some(api::grpc::qdrant::OptimizersConfigDiff {
                     deleted_threshold: Some(deleted_threshold),
@@ -532,7 +536,25 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.into()))
                 .collect(),
+            warnings: warnings
+                .into_iter()
+                .map(api::grpc::qdrant::CollectionWarning::from)
+                .collect(),
         }
+    }
+}
+
+impl From<CollectionWarning> for api::grpc::qdrant::CollectionWarning {
+    fn from(value: CollectionWarning) -> Self {
+        let CollectionWarning { message } = value;
+        Self { message }
+    }
+}
+
+impl From<api::grpc::qdrant::CollectionWarning> for CollectionWarning {
+    fn from(value: api::grpc::qdrant::CollectionWarning) -> Self {
+        let api::grpc::qdrant::CollectionWarning { message } = value;
+        Self { message }
     }
 }
 
@@ -838,12 +860,12 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                 let api::grpc::qdrant::CollectionInfo {
                     status,
                     optimizer_status,
-                    vectors_count,
                     indexed_vectors_count,
                     points_count,
                     segments_count,
                     config,
                     payload_schema,
+                    warnings,
                 } = collection_info_response;
                 Ok(Self {
                     status: CollectionStatus::try_from(status)?,
@@ -859,7 +881,6 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                             }
                         }
                     },
-                    vectors_count: vectors_count.map(|count| count as usize),
                     indexed_vectors_count: indexed_vectors_count.map(|count| count as usize),
                     points_count: points_count.map(|count| count as usize),
                     segments_count: segments_count as usize,
@@ -875,6 +896,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                         .into_iter()
                         .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
                         .try_collect()?,
+                    warnings: warnings.into_iter().map(CollectionWarning::from).collect(),
                 })
             }
         }
@@ -1023,7 +1045,7 @@ impl<'a> From<CollectionCoreSearchRequest<'a>> for api::grpc::qdrant::CoreSearch
         } = request;
         Self {
             collection_name: collection_id,
-            query: Some(query.clone().into()),
+            query: Some(api::grpc::QueryEnum::from(query.clone())),
             filter: filter.clone().map(|f| f.into()),
             limit: *limit as u64,
             with_vectors: with_vector.clone().map(|wv| wv.into()),
@@ -1075,7 +1097,7 @@ impl TryFrom<api::grpc::qdrant::TargetVector> for RecommendExample {
             .ok_or_else(|| Status::invalid_argument("Target vector is malformed"))
             .and_then(|target| match target {
                 api::grpc::qdrant::target_vector::Target::Single(vector_example) => {
-                    Ok(vector_example.try_into()?)
+                    RecommendExample::try_from(vector_example)
                 }
             })
     }
@@ -1154,7 +1176,7 @@ impl TryFrom<api::grpc::qdrant::Vector> for RecommendExample {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::Vector) -> Result<Self, Self::Error> {
-        let vector: VectorInternal = value.try_into()?;
+        let vector: VectorInternal = VectorInternal::try_from(value)?;
         match vector {
             VectorInternal::Dense(vector) => Ok(Self::Dense(vector)),
             VectorInternal::Sparse(vector) => Ok(Self::Sparse(vector)),
@@ -1181,27 +1203,7 @@ impl TryFrom<api::grpc::qdrant::VectorExample> for RecommendExample {
                     Ok(Self::PointId(id.try_into()?))
                 }
                 api::grpc::qdrant::vector_example::Example::Vector(vector) => {
-                    let api::grpc::qdrant::Vector {
-                        data,
-                        indices,
-                        vectors_count: _,
-                        vector: _,
-                    } = vector;
-                    match indices {
-                        Some(indices) => {
-                            let api::grpc::qdrant::SparseIndices { data: indices } = indices;
-                            validate_sparse_vector_impl(&indices, &data).map_err(|e| {
-                                Status::invalid_argument(format!(
-                                    "Sparse indices does not match sparse vector conditions: {e}"
-                                ))
-                            })?;
-                            Ok(Self::Sparse(SparseVector {
-                                indices,
-                                values: data,
-                            }))
-                        }
-                        None => Ok(Self::Dense(data)),
-                    }
+                    Ok(RecommendExample::try_from(vector)?)
                 }
             })
     }
@@ -1233,23 +1235,23 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
         } = value;
         let positive_ids = positive
             .into_iter()
-            .map(TryInto::try_into)
+            .map(RecommendExample::try_from)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
         let positive_vectors = positive_vectors
             .into_iter()
-            .map(TryInto::try_into)
+            .map(RecommendExample::try_from)
             .collect::<Result<_, _>>()?;
         let positive = [positive_ids, positive_vectors].concat();
 
         let negative_ids = negative
             .into_iter()
-            .map(TryInto::try_into)
+            .map(RecommendExample::try_from)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
         let negative_vectors = negative_vectors
             .into_iter()
-            .map(TryInto::try_into)
+            .map(RecommendExample::try_from)
             .collect::<Result<_, _>>()?;
         let negative = [negative_ids, negative_vectors].concat();
 

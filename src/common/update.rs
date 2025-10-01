@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use api::rest::models::InferenceUsage;
 use api::rest::*;
@@ -6,18 +7,19 @@ use collection::collection::Collection;
 use collection::operations::conversions::write_ordering_from_proto;
 use collection::operations::point_ops::*;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{CollectionResult, UpdateResult};
+use collection::operations::types::{CollectionError, CollectionResult, UpdateResult};
 use collection::operations::vector_ops::*;
 use collection::operations::verification::*;
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
-use segment::types::{PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
+use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
 use serde::{Deserialize, Serialize};
 use shard::operations::payload_ops::*;
 use shard::operations::*;
 use storage::content_manager::collection_meta_ops::*;
+use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -71,6 +73,7 @@ impl InternalUpdateParams {
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct UpdateOperations {
+    #[validate(nested)]
     pub operations: Vec<UpdateOperation>,
 }
 
@@ -171,6 +174,47 @@ impl StrictModeVerification for UpdateOperation {
                     .await
             }
         }
+    }
+}
+
+impl StrictModeVerification for CreateFieldIndex {
+    async fn check_custom(
+        &self,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
+    ) -> CollectionResult<()> {
+        if let Some(max_payload_index_count) = strict_mode_config.max_payload_index_count {
+            let collection_info = collection.info(&ShardSelectorInternal::All).await?;
+            if collection_info.payload_schema.len() >= max_payload_index_count {
+                return Err(CollectionError::strict_mode(
+                    format!(
+                        "Collection already has the maximum number of payload indices ({max_payload_index_count})"
+                    ),
+                    "Please delete an existing index before creating a new one.",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn indexed_filter_write(&self) -> Option<&Filter> {
+        None
+    }
+
+    fn query_limit(&self) -> Option<usize> {
+        None
+    }
+
+    fn indexed_filter_read(&self) -> Option<&Filter> {
+        None
+    }
+
+    fn request_exact(&self) -> Option<bool> {
+        None
+    }
+
+    fn request_search_params(&self) -> Option<&segment::types::SearchParams> {
+        None
     }
 }
 
@@ -766,6 +810,19 @@ pub async fn do_create_index(
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
+    // Default consensus timeout will be used
+    let wait_timeout: Option<Duration> = None; // ToDo: make it configurable
+
+    // Check strict mode before submitting consensus operation
+    let pass = check_strict_mode(
+        &operation,
+        wait_timeout.map(|d| d.as_secs() as usize),
+        &collection_name,
+        &dispatcher,
+        &access,
+    )
+    .await?;
+
     let Some(field_schema) = operation.field_schema else {
         return Err(StorageError::bad_request(
             "Can't auto-detect field type, please specify `field_schema` in the request",
@@ -777,12 +834,6 @@ pub async fn do_create_index(
         field_name: operation.field_name.clone(),
         field_schema: field_schema.clone(),
     });
-
-    // Default consensus timeout will be used
-    let wait_timeout = None; // ToDo: make it configurable
-
-    // Nothing to verify here.
-    let pass = new_unchecked_verification_pass();
 
     let toc = dispatcher.toc(&access, &pass).clone();
 
