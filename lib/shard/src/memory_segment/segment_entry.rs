@@ -333,7 +333,7 @@ impl SegmentEntry for MemorySegment {
     }
 
     fn config(&self) -> &SegmentConfig {
-        &self.wrapped_config
+        &self.config
     }
 
     fn is_appendable(&self) -> bool {

@@ -1,7 +1,13 @@
 pub mod segment_entry;
 pub mod snapshot_entry;
 
+use std::sync::Arc;
+
+use parking_lot::RwLock;
+use segment::common::operation_error::OperationResult;
+use segment::segment_constructor::build_segment;
 use segment::types::*;
+use tempfile::TempDir;
 
 use crate::locked_segment::LockedSegment;
 
@@ -15,6 +21,7 @@ pub type LockedIndexChanges = super::proxy_segment::LockedIndexChanges;
 #[derive(Debug)]
 pub struct MemorySegment {
     // TODO: naive implementation, replace with proper in-memory variant
+    // TODO: don't wrap in rw-lock?
     pub wrapped_segment: LockedSegment,
 
     /// Lowest persisted version
@@ -32,16 +39,20 @@ pub struct MemorySegment {
     // TODO: remove? /// May contain points which are not in wrapped_segment,
     // TODO: remove? /// because the set is shared among all proxy segments
     // TODO: remove? deleted_points: LockedRmSet,
-    wrapped_config: SegmentConfig,
+    config: SegmentConfig,
+
+    #[allow(dead_code)]
+    temp_path: TempDir,
 }
 
 impl MemorySegment {
     // TODO: change into function that creates proper in-memory variant
-    pub fn new(
-        wrapped_segment: LockedSegment,
-        // deleted_points: LockedRmSet,
-        // changed_indexes: LockedIndexChanges,
-    ) -> Self {
+    pub fn new(last_version: SeqNumberType, config: SegmentConfig) -> OperationResult<Self> {
+        let temp_path = TempDir::new().expect("failed to create temp dir for memory segment");
+        let segment = build_segment(temp_path.path(), &config, false)?;
+
+        // TODO: configure payload schema in this segment
+
         // let deleted_mask = match &wrapped_segment {
         //     LockedSegment::Original(raw_segment) => {
         //         let raw_segment_guard = raw_segment.read();
@@ -58,17 +69,15 @@ impl MemorySegment {
         //     }
         // };
 
-        // TODO: use persisted version instead!
-        let persisted_version = wrapped_segment.get().read().version();
-        let wrapped_config = wrapped_segment.get().read().config().clone();
-        MemorySegment {
-            wrapped_segment,
-            persisted_version,
+        Ok(MemorySegment {
+            wrapped_segment: LockedSegment::Original(Arc::new(RwLock::new(segment))),
+            persisted_version: last_version,
             // deleted_mask,
             // changed_indexes,
             // deleted_points,
-            wrapped_config,
-        }
+            config,
+            temp_path,
+        })
     }
 
     // /// Updates the deleted mask with the given point offset
