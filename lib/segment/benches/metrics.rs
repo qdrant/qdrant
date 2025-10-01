@@ -428,6 +428,9 @@ fn half_metrics_bench(c: &mut Criterion) {
 }
 
 fn single_metrics_bench(c: &mut Criterion) {
+    const COUNT: usize = 16;
+    const DIM: usize = 512;
+
     let mut group = c.benchmark_group("float-metrics-bench-group");
 
     let mut rng = StdRng::seed_from_u64(42);
