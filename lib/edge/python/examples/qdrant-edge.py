@@ -19,7 +19,29 @@ config = SegmentConfig(
 shard = Shard(".", config)
 
 shard.update(UpdateOperation.upsert_points([
-    Point(PointId.num(1), Vector.single([6.0, 9.0, 4.0, 2.0]), None),
+    Point(
+        PointId.num(1),
+        Vector.single([6.0, 9.0, 4.0, 2.0]),
+        Payload({
+            "null": None,
+            "str": "string",
+            "uint": 42,
+            "int": -69,
+            "float": 4.20,
+            "bool": True,
+            "obj": {
+                "null": None,
+                "str": "string",
+                "uint": 42,
+                "int": -69,
+                "float": 4.20,
+                "bool": True,
+                "obj": {},
+                "arr": [],
+            },
+            "arr": [None, "string", 42, -69, 4.20, True, {}, []],
+        }),
+    ),
 ]))
 
 points = shard.search(SearchRequest(
@@ -34,3 +56,4 @@ points = shard.search(SearchRequest(
 ))
 
 print(points[0].vector)
+print(points[0].payload)

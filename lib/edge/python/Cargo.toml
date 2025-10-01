@@ -15,7 +15,9 @@ crate-type = ["cdylib"]
 edge = { path = ".." }
 segment = { path = "../../segment", default-features = false }
 shard = { path = "../../shard" }
+sparse = { path = "../../sparse" }
 
+serde_json = { workspace = true }
 uuid = { workspace = true }
 
 [dependencies.derive_more]
