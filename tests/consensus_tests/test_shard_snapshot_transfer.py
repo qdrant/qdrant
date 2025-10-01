@@ -183,7 +183,9 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
     # seed port to reuse the same port for the restarted nodes
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
 
-    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
+    print("peer_dirs: ", peer_dirs)
+
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, default_segment_number=32)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
         peer_api_uris=peer_api_uris
