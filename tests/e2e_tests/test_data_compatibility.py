@@ -4,7 +4,7 @@ import pytest
 import requests
 from pathlib import Path
 
-from e2e_tests.conftest import QdrantContainerConfig, qdrant_container_factory
+from e2e_tests.conftest import QdrantContainerConfig
 from e2e_tests.client_utils import ClientUtils
 from e2e_tests.utils import extract_archive
 
@@ -12,7 +12,7 @@ from e2e_tests.utils import extract_archive
 class TestStorageCompatibility:
     """Test storage and snapshot compatibility with defined previous Qdrant versions."""
     
-    PREV_PATCH_VERSION = "v1.14.0"
+    PREV_PATCH_VERSION = "v1.14.1"
     PREV_MINOR_VERSION = "v1.15.4"
     
     EXPECTED_COLLECTIONS = [
