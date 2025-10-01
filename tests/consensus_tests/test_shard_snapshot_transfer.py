@@ -191,6 +191,8 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris
     )
 
+    upsert_random_points(peer_api_uris[0], 10)
+
     # Insert some initial number of points
     upsert_random_points(peer_api_uris[0], 10_000)
 
