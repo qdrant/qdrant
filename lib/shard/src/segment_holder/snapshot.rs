@@ -85,6 +85,10 @@ impl SegmentHolder {
                 SegmentVersion::save(segment_path)?;
             }
             LockedSegment::Proxy(_) => unreachable!(),
+            LockedSegment::Memory(segment) => {
+                let segment_path = &segment.read().current_path;
+                SegmentVersion::save(segment_path)?;
+            }
         }
 
         // Replace all segments with proxies
@@ -136,7 +140,7 @@ impl SegmentHolder {
 
         let proxy_segment = match proxy_segment {
             LockedSegment::Proxy(proxy_segment) => proxy_segment,
-            LockedSegment::Original(_) => {
+            LockedSegment::Original(_) | LockedSegment::Memory(_) => {
                 log::warn!(
                     "Unproxying segment {segment_id} that is not proxified, that is unexpected, skipping",
                 );
@@ -193,7 +197,7 @@ impl SegmentHolder {
             .iter()
             .filter_map(|(segment_id, proxy_segment)| match proxy_segment {
                 LockedSegment::Proxy(proxy_segment) => Some((segment_id, proxy_segment)),
-                LockedSegment::Original(_) => None,
+                LockedSegment::Original(_) | LockedSegment::Memory(_) => None,
             }).for_each(|(proxy_id, proxy_segment)| {
             if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
                 log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
@@ -221,6 +225,8 @@ impl SegmentHolder {
                 }
                 // If already unproxied, do nothing
                 LockedSegment::Original(_) => {}
+                // Not a proxy, do nothing
+                LockedSegment::Memory(_) => {}
             }
         }
 

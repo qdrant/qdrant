@@ -115,6 +115,11 @@ pub trait SegmentOptimizer {
                         "Proxy segment is not expected here".to_string(),
                     ));
                 }
+                LockedSegment::Memory(_) => {
+                    return Err(CollectionError::service_error(
+                        "Memory segment is not expected here".to_string(),
+                    ));
+                }
             };
 
             let locked_segment = segment.read();
@@ -214,6 +219,11 @@ pub trait SegmentOptimizer {
                 LockedSegment::Proxy(_) => {
                     return Err(CollectionError::service_error(
                         "Proxy segment is not expected here".to_string(),
+                    ));
+                }
+                LockedSegment::Memory(_) => {
+                    return Err(CollectionError::service_error(
+                        "Memory segment is not expected here".to_string(),
                     ));
                 }
             };
@@ -369,6 +379,9 @@ pub trait SegmentOptimizer {
                             segments_lock.swap_new(wrapped_segment, &[proxy_id]);
                         restored_segment_ids.push(restored_id);
                     }
+                    LockedSegment::Memory(_) => {
+                        log::warn!("Attempt to unwrap memory segment! Should not happen.")
+                    }
                 }
             }
         }
@@ -440,6 +453,9 @@ pub trait SegmentOptimizer {
                 LockedSegment::Original(o) => o.clone(),
                 LockedSegment::Proxy(_) => {
                     panic!("Trying to optimize a segment that is already being optimized!")
+                }
+                LockedSegment::Memory(_) => {
+                    panic!("Trying to optimize a memory segment!")
                 }
             })
             .collect();
@@ -675,7 +691,7 @@ pub trait SegmentOptimizer {
                 let segment_path = &segment.read().current_path;
                 SegmentVersion::save(segment_path)?;
             }
-            LockedSegment::Proxy(_) => unreachable!(),
+            LockedSegment::Proxy(_) | LockedSegment::Memory(_) => unreachable!(),
         }
 
         let proxy_ids: Vec<_> = {

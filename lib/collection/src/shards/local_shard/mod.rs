@@ -760,6 +760,11 @@ impl LocalShard {
                         "Proxy segment found in check_data_consistency",
                     ));
                 }
+                LockedSegment::Memory(_) => {
+                    return Err(CollectionError::service_error(
+                        "Memory segment found in check_data_consistency",
+                    ));
+                }
             }
         }
         Ok(())

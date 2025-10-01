@@ -303,7 +303,7 @@ where
                 operation(segment)
             }
             // All segments to snapshot should be proxy, warn if this is not the case
-            LockedSegment::Original(segment) => {
+            LockedSegment::Original(segment) | LockedSegment::Memory(segment) => {
                 debug_assert!(
                     false,
                     "Reached non-proxy segment while applying function to proxies, this should not happen, ignoring",

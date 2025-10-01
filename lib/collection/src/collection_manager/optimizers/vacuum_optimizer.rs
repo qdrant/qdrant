@@ -93,7 +93,7 @@ impl VacuumOptimizer {
     fn littered_ratio_segment(&self, segment: &LockedSegment) -> Option<f64> {
         let segment_entry = match segment {
             LockedSegment::Original(segment) => segment,
-            LockedSegment::Proxy(_) => return None,
+            LockedSegment::Proxy(_) | LockedSegment::Memory(_) => return None,
         };
         let read_segment = segment_entry.read();
 
@@ -134,7 +134,7 @@ impl VacuumOptimizer {
         // We can only work with original segments
         let real_segment = match segment {
             LockedSegment::Original(segment) => segment.read(),
-            LockedSegment::Proxy(_) => return None,
+            LockedSegment::Proxy(_) | LockedSegment::Memory(_) => return None,
         };
 
         // In this segment, check the index of each named vector for a high deletion ratio.

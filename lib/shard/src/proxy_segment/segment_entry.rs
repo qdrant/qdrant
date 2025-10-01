@@ -234,6 +234,26 @@ impl SegmentEntry for ProxySegment {
                 }
                 None
             }
+            LockedSegment::Memory(raw_segment) => {
+                let point_offset = raw_segment.read().get_internal_id(point_id);
+                if point_offset.is_some() {
+                    let prev = self.deleted_points.write().insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
+                        )
+                    }
+                }
+                point_offset
+            }
         };
 
         self.set_deleted_offset(point_offset);
