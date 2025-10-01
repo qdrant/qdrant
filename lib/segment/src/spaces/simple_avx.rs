@@ -166,10 +166,7 @@ pub(crate) unsafe fn cosine_preprocess_avx(vector: DenseVector) -> DenseVector {
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
-pub(crate) unsafe fn dot_similarity_avx(
-    v1: &[VectorElementType],
-    v2: &[VectorElementType],
-) -> ScoreType {
+pub unsafe fn dot_similarity_avx(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     unsafe {
         let n = v1.len();
         let m = n - (n % 32);
