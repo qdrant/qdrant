@@ -17,7 +17,7 @@ pub unsafe fn dot_similarity_avx512(
     v1: &[VectorElementType],
     v2: &[VectorElementType],
 ) -> ScoreType {
-    const STEP_SIZE: usize = 64;
+    const STEP_SIZE: usize = 16;
 
     unsafe {
         let n = v1.len();
@@ -27,35 +27,17 @@ pub unsafe fn dot_similarity_avx512(
         let mut ptr2: *const f32 = v2.as_ptr();
 
         let mut sum512_1: __m512 = _mm512_setzero_ps();
-        let mut sum512_2: __m512 = _mm512_setzero_ps();
-        let mut sum512_3: __m512 = _mm512_setzero_ps();
-        let mut sum512_4: __m512 = _mm512_setzero_ps();
 
         let mut i: usize = 0;
         while i < m {
             sum512_1 = _mm512_fmadd_ps(_mm512_loadu_ps(ptr1), _mm512_loadu_ps(ptr2), sum512_1);
-            sum512_2 = _mm512_fmadd_ps(
-                _mm512_loadu_ps(ptr1.add(16)),
-                _mm512_loadu_ps(ptr2.add(16)),
-                sum512_2,
-            );
-            sum512_3 = _mm512_fmadd_ps(
-                _mm512_loadu_ps(ptr1.add(32)),
-                _mm512_loadu_ps(ptr2.add(32)),
-                sum512_3,
-            );
-            sum512_4 = _mm512_fmadd_ps(
-                _mm512_loadu_ps(ptr1.add(48)),
-                _mm512_loadu_ps(ptr2.add(48)),
-                sum512_4,
-            );
 
             ptr1 = ptr1.add(STEP_SIZE);
             ptr2 = ptr2.add(STEP_SIZE);
             i += STEP_SIZE;
         }
 
-        let mut result = four_way_hsum_512(sum512_1, sum512_2, sum512_3, sum512_4);
+        let mut result = hsum512_ps_avx512(sum512_1);
 
         for i in 0..n - m {
             result += (*ptr1.add(i)) * (*ptr2.add(i));
