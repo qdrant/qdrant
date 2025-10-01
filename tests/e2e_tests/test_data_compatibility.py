@@ -12,8 +12,8 @@ from e2e_tests.utils import extract_archive
 class TestStorageCompatibility:
     """Test storage and snapshot compatibility with defined previous Qdrant versions."""
     
-    PREV_PATCH_VERSION = "v1.14.0"
-    PREV_MINOR_VERSION = "v1.13.5"
+    PREV_PATCH_VERSION = "v1.14.1"
+    PREV_MINOR_VERSION = "v1.15.4"
     
     EXPECTED_COLLECTIONS = [
         "test_collection_vector_memory",
@@ -79,24 +79,32 @@ class TestStorageCompatibility:
     @staticmethod
     def _check_collections(host: str, port: int) -> bool:
         """Check that all collections are loaded properly."""
+        client = ClientUtils(host=host, port=port)
+
         try:
-            client = ClientUtils(host=host, port=port)
-            
             collections = client.list_collections_names()
-            
-            for collection in collections:
-                try:
-                    collection_info = client.get_collection_info_dict(collection)
-                    if collection_info["status"] != "ok":
-                        return False
-                except Exception:
-                    return False
-            
-            return True
-            
         except Exception as e:
-            print(f"Error checking collections: {e}")
+            print(f"Error listing collections: {e}")
             return False
+
+        expected = set(TestStorageCompatibility.EXPECTED_COLLECTIONS)
+        found = set(collections)
+        missing = expected - found
+        if missing:
+            print(f"Missing expected collections: {sorted(missing)}")
+            return False
+
+        for collection in expected:
+            try:
+                collection_info = client.get_collection_info_dict(collection)
+                if collection_info["status"] != "ok":
+                    print(f"Collection {collection} returned status {collection_info['status']}")
+                    return False
+            except Exception as error:
+                print(f"Failed to get collection info for {collection}: {error}")
+                return False
+        return True
+
 
     @pytest.mark.parametrize("version", [PREV_PATCH_VERSION, PREV_MINOR_VERSION])
     def test_storage_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version, qdrant_container_factory):
