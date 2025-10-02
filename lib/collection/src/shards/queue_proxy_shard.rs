@@ -414,7 +414,13 @@ impl Inner {
         wal_keep_from: Arc<AtomicU64>,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
-        let start_from = wrapped_shard.wal.wal.lock().await.last_index() + 1;
+        // If nothing else is specified, we need to keep all WAL entries, which might be
+        // potentially not yet applied(persisted) with in the storage.
+        //
+        // We assume, that snapshot made from this point forward is guaranteed to have all
+        // previous updates applied, as they are already acknowledged in the WAL, and it is
+        // equivalent to killing the node right now and trying to recover from the snapshot.
+        let start_from = wrapped_shard.wal.wal.lock().await.first_index();
         Self::new_from_version(
             wrapped_shard,
             remote_shard,
