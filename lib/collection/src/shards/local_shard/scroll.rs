@@ -18,7 +18,7 @@ use tokio::time::error::Elapsed;
 
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
-use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::collection_manager::segments_retriever::SegmentsRetriever;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
     CollectionError, CollectionResult, QueryScrollRequestInternal, RecordInternal, ScrollOrder,
@@ -198,7 +198,7 @@ impl LocalShard {
         let timeout = timeout.saturating_sub(start.elapsed());
         let mut records_map = tokio::time::timeout(
             timeout,
-            SegmentsSearcher::retrieve(
+            SegmentsRetriever::retrieve(
                 segments,
                 &point_ids,
                 &with_payload,
@@ -294,7 +294,7 @@ impl LocalShard {
         // Fetch with the requested vector and payload
         let records_map = tokio::time::timeout(
             timeout,
-            SegmentsSearcher::retrieve(
+            SegmentsRetriever::retrieve(
                 segments,
                 &point_ids,
                 &with_payload,
@@ -434,7 +434,7 @@ impl LocalShard {
         let timeout = timeout.saturating_sub(start.elapsed());
         let records_map = tokio::time::timeout(
             timeout,
-            SegmentsSearcher::retrieve(
+            SegmentsRetriever::retrieve(
                 segments,
                 &selected_points,
                 &with_payload,

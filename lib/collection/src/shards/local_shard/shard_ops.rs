@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 use tokio::time::Instant;
 use tokio::time::error::Elapsed;
 
-use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::collection_manager::segments_retriever::SegmentsRetriever;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{
@@ -236,11 +236,12 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
+        let scroll_lock = self.scroll_read_lock.read().await;
         self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || request.ids.len())?;
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let records_map = tokio::time::timeout(
             timeout,
-            SegmentsSearcher::retrieve(
+            SegmentsRetriever::retrieve(
                 self.segments.clone(),
                 &request.ids,
                 with_payload,
@@ -251,6 +252,8 @@ impl ShardOperation for LocalShard {
         )
         .await
         .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
+
+        drop(scroll_lock);
 
         let ordered_records = request
             .ids
