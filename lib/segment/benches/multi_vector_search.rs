@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_multi_vector};
@@ -26,7 +26,6 @@ use tempfile::Builder;
 mod prof;
 
 const NUM_POINTS: usize = 10_000;
-const NUM_VECTORS_PER_POINT: usize = 16;
 const VECTOR_DIM: usize = 128;
 const TOP: usize = 10;
 
@@ -35,38 +34,53 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("multi-vector-search-group");
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let hnsw_index = make_segment_index(&mut rnd, Dot);
-    group.bench_function("hnsw-multivec-search-dot", |b| {
-        b.iter_batched(
-            || random_multi_vector(&mut rnd, VECTOR_DIM, NUM_VECTORS_PER_POINT).into(),
-            |query| {
-                let results = hnsw_index
-                    .search(&[&query], None, TOP, None, &Default::default())
-                    .unwrap();
-                assert_eq!(results[0].len(), TOP);
-            },
-            BatchSize::SmallInput,
-        )
-    });
+    for num_vectors_per_point in [16, 128, 256] {
+        group.bench_with_input(
+            BenchmarkId::new("hnsw-multivec-search-dot", num_vectors_per_point),
+            &num_vectors_per_point,
+            |b, &num_vectors_per_point| {
+                let hnsw_index = make_segment_index(&mut rnd, Dot, num_vectors_per_point);
 
-    let hnsw_index = make_segment_index(&mut rnd, Euclid);
-    group.bench_function("hnsw-multivec-search-euclidean", |b| {
-        b.iter_batched(
-            || random_multi_vector(&mut rnd, VECTOR_DIM, NUM_VECTORS_PER_POINT).into(),
-            |query| {
-                let results = hnsw_index
-                    .search(&[&query], None, TOP, None, &Default::default())
-                    .unwrap();
-                assert_eq!(results[0].len(), TOP);
+                b.iter_batched(
+                    || random_multi_vector(&mut rnd, VECTOR_DIM, num_vectors_per_point).into(),
+                    |query| {
+                        let results = hnsw_index
+                            .search(&[&query], None, TOP, None, &Default::default())
+                            .unwrap();
+                        assert_eq!(results[0].len(), TOP);
+                    },
+                    BatchSize::SmallInput,
+                )
             },
-            BatchSize::SmallInput,
-        )
-    });
+        );
 
+        group.bench_with_input(
+            BenchmarkId::new("hnsw-multivec-search-euclidean", num_vectors_per_point),
+            &num_vectors_per_point,
+            |b, &num_vectors_per_point| {
+                let hnsw_index = make_segment_index(&mut rnd, Euclid, num_vectors_per_point);
+
+                b.iter_batched(
+                    || random_multi_vector(&mut rnd, VECTOR_DIM, num_vectors_per_point).into(),
+                    |query| {
+                        let results = hnsw_index
+                            .search(&[&query], None, TOP, None, &Default::default())
+                            .unwrap();
+                        assert_eq!(results[0].len(), TOP);
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
     group.finish();
 }
 
-fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWIndex {
+fn make_segment_index<R: Rng + ?Sized>(
+    rng: &mut R,
+    distance: Distance,
+    num_vectors_per_point: usize,
+) -> HNSWIndex {
     let stopped = AtomicBool::new(false);
     let segment_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -93,7 +107,7 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
     let mut segment = build_segment(segment_dir.path(), &segment_config, true).unwrap();
     for n in 0..NUM_POINTS {
         let idx = (n as u64).into();
-        let multi_vec = random_multi_vector(rng, VECTOR_DIM, NUM_VECTORS_PER_POINT);
+        let multi_vec = random_multi_vector(rng, VECTOR_DIM, num_vectors_per_point);
         let named_vectors = only_default_multi_vector(&multi_vec);
         segment
             .upsert_point(n as SeqNumberType, idx, named_vectors, &hw_counter)
