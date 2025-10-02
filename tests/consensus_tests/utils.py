@@ -177,7 +177,7 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
 
     # Wrap with systemd-run to throttle CPU
     # Flatten into a single shell command
-    wrapped_cmd = ["systemd-run", "--user", "--scope", "-p", "CPUQuota=20%", "--"] + args
+    wrapped_cmd = ["systemd-run", "--user", "--scope", "-p", "CPUQuota=70%", "--"] + args
     proc = Popen(wrapped_cmd, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     return get_uri(http_port)
@@ -217,7 +217,7 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
 
     # Wrap with systemd-run to throttle CPU
     # Flatten into a single shell command
-    wrapped_cmd = ["systemd-run", "--user", "--scope", "-p", "CPUQuota=20%", "--"] + args
+    wrapped_cmd = ["systemd-run", "--user", "--scope", "-p", "CPUQuota=70%", "--"] + args
     proc = Popen(wrapped_cmd, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     return get_uri(http_port), bootstrap_uri
