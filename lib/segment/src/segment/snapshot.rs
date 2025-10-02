@@ -42,8 +42,8 @@ impl SnapshotEntry for Segment {
             return Ok(());
         }
 
-        // flush segment to capture latest state
-        self.flush(true, false)?;
+        // force flush segment to capture latest state
+        self.flush(true, true)?;
 
         let include_files = match manifest {
             None => HashSet::new(),
