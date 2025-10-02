@@ -459,7 +459,9 @@ impl Inner {
     /// likely won't be updated. In the worst case this might cause double sending operations.
     /// This should be fine as operations are idempotent.
     pub async fn transfer_all_missed_updates(&self) -> CollectionResult<()> {
-        while !self.transfer_wal_batch().await? {}
+        while !self.transfer_wal_batch().await? {
+            log::trace!("transfer_all_missed_updates in progress");
+        }
 
         // Set the WAL version to keep to the next item we should transfer
         let transfer_from = self.transfer_from.load(Ordering::Relaxed);
@@ -561,6 +563,7 @@ impl Inner {
     ///
     /// Providing `None` will release this limitation.
     fn set_wal_keep_from(&self, version: Option<u64>) {
+        log::trace!("set_wal_keep_from {version:?}");
         let version = version.unwrap_or(u64::MAX);
         self.wal_keep_from.store(version, Ordering::Relaxed);
     }
