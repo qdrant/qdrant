@@ -8,13 +8,16 @@ use common::flags::FeatureFlags;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_multi_vector};
+use segment::data_types::vectors::{
+    DEFAULT_VECTOR_NAME, TypedMultiDenseVectorRef, only_default_multi_vector,
+};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_multi_vector;
 use segment::index::VectorIndex;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::segment_constructor::{VectorIndexBuildArgs, build_segment};
+use segment::spaces::simple::DotProductMetric;
 use segment::types::Distance::{Dot, Euclid};
 use segment::types::{
     Distance, HnswConfig, HnswGlobalConfig, Indexes, MultiVectorConfig, SegmentConfig,
@@ -152,10 +155,47 @@ fn make_segment_index<R: Rng + ?Sized>(
     hnsw_index
 }
 
+// An attempt to benchmark just the multivector dot product calculation itself, as fast as possible.
+fn optimistic_multi_vector_dot_benchmark(c: &mut Criterion) {
+    use segment::vector_storage::query_scorer::score_max_similarity;
+
+    let mut group = c.benchmark_group("optimisitic-multi-vector-dot-product-group");
+    let mut rnd = StdRng::seed_from_u64(42);
+
+    for num_vectors_per_point in [16, 128, 256] {
+        group.bench_with_input(
+            BenchmarkId::new("optimistic-multivec-dot", num_vectors_per_point),
+            &num_vectors_per_point,
+            |b, &num_vectors_per_point| {
+                let size = num_vectors_per_point * VECTOR_DIM;
+                // both target and search vector are allocated side by side in memory to avoid cache aliasing effects.
+                // cache line aligned allocation.
+                let mut data = aligned_vec::AVec::<f32>::with_capacity(64, 2 * size);
+                for _ in 0..2 * size {
+                    data.push(rnd.random());
+                }
+                let (target, search) = data.split_at_mut(size);
+                let target = TypedMultiDenseVectorRef {
+                    flattened_vectors: target,
+                    dim: VECTOR_DIM,
+                };
+                let search = TypedMultiDenseVectorRef {
+                    flattened_vectors: search,
+                    dim: VECTOR_DIM,
+                };
+
+                b.iter(|| {
+                    score_max_similarity::<f32, DotProductMetric>(target, search);
+                })
+            },
+        );
+    }
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
-    targets = multi_vector_search_benchmark
+    targets = multi_vector_search_benchmark, optimistic_multi_vector_dot_benchmark
 }
 
 criterion_main!(benches);
