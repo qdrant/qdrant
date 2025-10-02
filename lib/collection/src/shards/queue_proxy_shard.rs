@@ -414,7 +414,7 @@ impl Inner {
         wal_keep_from: Arc<AtomicU64>,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
-        let start_from = wrapped_shard.wal.wal.lock().await.last_index() + 1;
+        let start_from = wrapped_shard.wal.wal.lock().await.first_index();
         Self::new_from_version(
             wrapped_shard,
             remote_shard,
