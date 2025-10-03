@@ -14,7 +14,6 @@ use common::types::PointOffsetType;
 use itertools::Itertools as _;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::OperationResult;
-use segment::entry::entry_point::SegmentEntry;
 use segment::types::*;
 
 use crate::locked_segment::LockedSegment;
@@ -28,7 +27,6 @@ pub type LockedIndexChanges = Arc<RwLock<ProxyIndexChanges>>;
 /// It writes all changed records into a temporary `write_segment` and keeps track on changed points
 #[derive(Debug)]
 pub struct ProxySegment {
-    pub write_segment: LockedSegment,
     pub wrapped_segment: LockedSegment,
     /// Internal mask of deleted points, specific to the wrapped segment
     /// Present if the wrapped segment is a plain segment
@@ -40,12 +38,15 @@ pub struct ProxySegment {
     /// because the set is shared among all proxy segments
     deleted_points: LockedRmSet,
     wrapped_config: SegmentConfig,
+
+    /// Keeps track if the wrapped segment has pending changes
+    /// If so, we can't discard WAL for newer than version of wrapped segment
+    version: SeqNumberType,
 }
 
 impl ProxySegment {
     pub fn new(
         segment: LockedSegment,
-        write_segment: LockedSegment,
         deleted_points: LockedRmSet,
         changed_indexes: LockedIndexChanges,
     ) -> Self {
@@ -60,24 +61,30 @@ impl ProxySegment {
                 None
             }
         };
-        let wrapped_config = segment.get().read().config().clone();
+
+        let (wrapped_config, version) = {
+            let read_segment = segment.get().read();
+            (read_segment.config().clone(), read_segment.version())
+        };
+
         ProxySegment {
-            write_segment,
             wrapped_segment: segment,
             deleted_mask,
             changed_indexes,
             deleted_points,
             wrapped_config,
+            version,
         }
     }
 
     /// Ensure that write segment have same indexes as wrapped segment
     pub fn replicate_field_indexes(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         hw_counter: &HardwareCounterCell,
+        segment_to_update: &LockedSegment,
     ) -> OperationResult<()> {
-        let existing_indexes = self.write_segment.get().read().get_indexed_fields();
+        let existing_indexes = segment_to_update.get().read().get_indexed_fields();
         let expected_indexes = self.wrapped_segment.get().read().get_indexed_fields();
 
         // Add missing indexes
@@ -86,12 +93,12 @@ impl ProxySegment {
 
             if existing_schema != Some(expected_schema) {
                 if existing_schema.is_some() {
-                    self.write_segment
+                    segment_to_update
                         .get()
                         .write()
                         .delete_field_index(op_num, expected_field)?;
                 }
-                self.write_segment.get().write().create_field_index(
+                segment_to_update.get().write().create_field_index(
                     op_num,
                     expected_field,
                     Some(expected_schema),
@@ -103,7 +110,7 @@ impl ProxySegment {
         // Remove extra indexes
         for existing_field in existing_indexes.keys() {
             if !expected_indexes.contains_key(existing_field) {
-                self.write_segment
+                segment_to_update
                     .get()
                     .write()
                     .delete_field_index(op_num, existing_field)?;
@@ -127,91 +134,6 @@ impl ProxySegment {
             }
             _ => false,
         }
-    }
-
-    fn move_if_exists(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        let deleted_points_guard = self.deleted_points.upgradable_read();
-
-        let (point_offset, local_version) = {
-            let (wrapped_segment, point_offset): (
-                Arc<RwLock<dyn SegmentEntry>>,
-                Option<PointOffsetType>,
-            ) = match &self.wrapped_segment {
-                LockedSegment::Original(raw_segment) => {
-                    let point_offset = raw_segment.read().get_internal_id(point_id);
-                    (raw_segment.clone(), point_offset)
-                }
-                LockedSegment::Proxy(sub_proxy) => (sub_proxy.clone(), None),
-            };
-
-            let wrapped_segment_guard = wrapped_segment.read();
-
-            // Since `deleted_points` are shared between multiple ProxySegments,
-            // It is possible that some other Proxy moved its point with different version already
-            // If this is the case, there are multiple scenarios:
-            // - Local point doesn't exist or already removed locally -> do nothing
-            // - Already moved version is higher than the current one -> mark local as removed
-            // - Already moved version is less than what we have in current proxy -> overwrite
-
-            // Point doesn't exist in wrapped segment - do nothing
-            let Some(local_version) = wrapped_segment_guard.point_version(point_id) else {
-                return Ok(false);
-            };
-
-            // Equal or higher point version is already moved into write segment - delete from
-            // wrapped segment and do not move it again
-            if deleted_points_guard
-                .get(&point_id)
-                .is_some_and(|&deleted| deleted.local_version >= local_version)
-            {
-                drop(deleted_points_guard);
-                self.set_deleted_offset(point_offset);
-                return Ok(false);
-            }
-
-            let (all_vectors, payload) = (
-                wrapped_segment_guard.all_vectors(point_id, hw_counter)?,
-                wrapped_segment_guard.payload(point_id, hw_counter)?,
-            );
-
-            {
-                let segment_arc = self.write_segment.get();
-                let mut write_segment = segment_arc.write();
-
-                write_segment.upsert_point(op_num, point_id, all_vectors, hw_counter)?;
-                if !payload.is_empty() {
-                    write_segment.set_full_payload(op_num, point_id, &payload, hw_counter)?;
-                }
-            }
-
-            (point_offset, local_version)
-        };
-
-        {
-            let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
-            let prev = deleted_points_write.insert(
-                point_id,
-                ProxyDeletedPoint {
-                    local_version,
-                    operation_version: op_num,
-                },
-            );
-            if let Some(prev) = prev {
-                debug_assert!(
-                    prev.operation_version < op_num,
-                    "Overriding deleted flag {prev:?} with older op_num:{op_num}",
-                )
-            }
-        }
-
-        self.set_deleted_offset(point_offset);
-
-        Ok(true)
     }
 
     fn add_deleted_points_condition_to_filter(

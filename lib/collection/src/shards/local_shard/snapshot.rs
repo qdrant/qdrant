@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
@@ -221,8 +220,6 @@ pub fn snapshot_all_segments(
     // Snapshotting may take long-running read locks on segments blocking incoming writes, do
     // this through proxied segments to allow writes to continue.
 
-    let mut snapshotted_segments = HashSet::<String>::new();
-
     proxy_all_segments_and_apply(
         segments,
         segments_path,
@@ -230,13 +227,7 @@ pub fn snapshot_all_segments(
         payload_index_schema,
         |segment| {
             let read_segment = segment.read();
-            read_segment.take_snapshot(
-                temp_dir,
-                tar,
-                format,
-                manifest,
-                &mut snapshotted_segments,
-            )?;
+            read_segment.take_snapshot(temp_dir, tar, format, manifest)?;
             Ok(())
         },
         update_lock,

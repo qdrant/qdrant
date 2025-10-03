@@ -30,17 +30,10 @@ impl SnapshotEntry for Segment {
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<&SnapshotManifest>,
-        snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
         let segment_id = self.segment_id()?;
 
         log::debug!("Taking snapshot of segment {segment_id}");
-
-        if !snapshotted_segments.insert(segment_id.to_string()) {
-            // Already snapshotted.
-            log::debug!("Segment {segment_id} is already snapshotted!");
-            return Ok(());
-        }
 
         // force flush segment to capture latest state
         self.flush(true, true)?;

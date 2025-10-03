@@ -61,9 +61,8 @@ impl SegmentHolder {
         let mut new_proxies = Vec::with_capacity(segment_ids.len());
         for segment_id in segment_ids {
             let segment = segments_lock.get(segment_id).unwrap();
-            let mut proxy = ProxySegment::new(
+            let proxy = ProxySegment::new(
                 segment.clone(),
-                tmp_segment.clone(),
                 // In this case, each proxy has their own set of deleted points
                 // We cannot share deletes because they're propagated to different wrapped
                 // segments, and we unproxy at different times
@@ -73,7 +72,7 @@ impl SegmentHolder {
 
             // Write segment is fresh, so it has no operations
             // Operation with number 0 will be applied
-            proxy.replicate_field_indexes(0, &hw_counter)?;
+            proxy.replicate_field_indexes(0, &hw_counter, &tmp_segment)?;
             new_proxies.push((segment_id, proxy));
         }
 
@@ -91,12 +90,12 @@ impl SegmentHolder {
         // We cannot fail past this point to prevent only having some segments proxified
         let mut proxies = Vec::with_capacity(new_proxies.len());
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
-        for (segment_id, mut proxy) in new_proxies {
+        for (segment_id, proxy) in new_proxies {
             // Replicate field indexes the second time, because optimized segments could have
             // been changed. The probability is small, though, so we can afford this operation
             // under the full collection write lock
             let op_num = proxy.version();
-            if let Err(err) = proxy.replicate_field_indexes(op_num, &hw_counter) {
+            if let Err(err) = proxy.replicate_field_indexes(op_num, &hw_counter, &tmp_segment) {
                 log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
             }
 
@@ -108,6 +107,10 @@ impl SegmentHolder {
                 .expect("failed to get segment from segment holder we just swapped in");
             proxies.push((segment_id, locked_proxy_segment));
         }
+
+        // Make sure at least one appendable segment exists
+        write_segments.add_new_locked(tmp_segment.clone());
+
         let segments_lock = RwLockWriteGuard::downgrade_to_upgradable(write_segments);
 
         Ok((proxies, tmp_segment, segments_lock))
