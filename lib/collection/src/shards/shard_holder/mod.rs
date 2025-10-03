@@ -64,6 +64,7 @@ pub struct ShardHolder {
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access, does not use locking
     shard_id_to_key_mapping: HashMap<ShardId, ShardKey>,
+    fallback_shard_key: Option<ShardKey>,
 }
 
 pub type LockedShardHolder = RwLock<ShardHolder>;
@@ -107,6 +108,7 @@ impl ShardHolder {
             rings,
             key_mapping,
             shard_id_to_key_mapping,
+            fallback_shard_key: None, // Some(ShardKey::Keyword("fallback".into())), // ToDo: Take from collection params
         })
     }
 
@@ -321,22 +323,45 @@ impl ShardHolder {
         self.shards.values_mut()
     }
 
+    pub fn get_hashring_router(
+        &self,
+        shard_key: &Option<ShardKey>,
+    ) -> CollectionResult<&HashRingRouter> {
+        let matching_hashring = self.rings.get(shard_key);
+
+        if let Some(matching_hashring) = matching_hashring {
+            return Ok(matching_hashring);
+        }
+
+        // If shard key is specified but no matching ring was found
+        // Check if there is a fallback ring
+        if let Some(fallback_shard_key) = &self.fallback_shard_key {
+            // Use the fallback shard key if it exists
+            return if let Some(fallback_ring) = self.rings.get(&Some(fallback_shard_key.clone())) {
+                Ok(fallback_ring)
+            } else {
+                // If no fallback ring, error out
+                Err(CollectionError::bad_request(format!(
+                    "fallback shard `{fallback_shard_key}` is not created"
+                )))
+            };
+        }
+
+        if let Some(shard_key) = shard_key {
+            Err(CollectionError::bad_input(format!(
+                "Shard key `{shard_key}` not found. Create fallback or pass valid shard key"
+            )))
+        } else {
+            Err(CollectionError::bad_input("No shards exist".to_string()))
+        }
+    }
+
     pub fn split_by_shard<O: SplitByShard + Clone>(
         &self,
         operation: O,
         shard_keys_selection: &Option<ShardKey>,
     ) -> CollectionResult<Vec<(&ShardReplicaSet, O)>> {
-        let Some(hashring) = self.rings.get(&shard_keys_selection.clone()) else {
-            return if let Some(shard_key) = shard_keys_selection {
-                Err(CollectionError::bad_input(format!(
-                    "Shard key {shard_key} not found"
-                )))
-            } else {
-                Err(CollectionError::bad_input(
-                    "Shard key not specified".to_string(),
-                ))
-            };
-        };
+        let hashring = self.get_hashring_router(shard_keys_selection)?;
 
         if hashring.is_empty() {
             return Err(CollectionError::bad_input(
@@ -512,12 +537,40 @@ impl ShardHolder {
         })
     }
 
+    fn get_shard_ids_by_key_opt(&self, shard_key: &ShardKey) -> Option<HashSet<ShardId>> {
+        self.key_mapping.read().get(shard_key).cloned()
+    }
+
     pub fn get_shard_ids_by_key(&self, shard_key: &ShardKey) -> CollectionResult<HashSet<ShardId>> {
-        match self.key_mapping.read().get(shard_key).cloned() {
-            None => Err(CollectionError::bad_request(format!(
+        match self.get_shard_ids_by_key_opt(shard_key) {
+            None => Err(CollectionError::bad_input(format!(
                 "Shard key {shard_key} not found"
             ))),
             Some(ids) => Ok(ids),
+        }
+    }
+
+    pub fn get_shard_ids_by_key_with_fallback<'a>(
+        &'a self,
+        shard_key: &'a ShardKey,
+    ) -> CollectionResult<(Option<&'a ShardKey>, HashSet<ShardId>)> {
+        match self.get_shard_ids_by_key_opt(shard_key) {
+            Some(ids) => Ok((Some(shard_key), ids)),
+            None => {
+                if let Some(fallback_shard_key) = &self.fallback_shard_key {
+                    if let Ok(fallback_ids) = self.get_shard_ids_by_key(fallback_shard_key) {
+                        Ok((Some(fallback_shard_key), fallback_ids))
+                    } else {
+                        Err(CollectionError::bad_request(format!(
+                            "Shard key {shard_key} not found and fallback shard key {fallback_shard_key} is not created",
+                        )))
+                    }
+                } else {
+                    Err(CollectionError::bad_request(format!(
+                        "Shard key {shard_key} not found"
+                    )))
+                }
+            }
         }
     }
 
@@ -550,9 +603,12 @@ impl ShardHolder {
                 }
             }
             ShardSelectorInternal::ShardKey(shard_key) => {
-                for shard_id in self.get_shard_ids_by_key(shard_key)? {
+                let (selected_shard_key, shard_ids) =
+                    self.get_shard_ids_by_key_with_fallback(shard_key)?;
+
+                for shard_id in shard_ids {
                     if let Some(replica_set) = self.shards.get(&shard_id) {
-                        res.push((replica_set, Some(shard_key)));
+                        res.push((replica_set, selected_shard_key));
                     } else {
                         debug_assert!(false, "Shard id {shard_id} not found")
                     }
@@ -560,9 +616,12 @@ impl ShardHolder {
             }
             ShardSelectorInternal::ShardKeys(shard_keys) => {
                 for shard_key in shard_keys {
-                    for shard_id in self.get_shard_ids_by_key(shard_key)? {
+                    let (selected_shard_key, shard_ids) =
+                        self.get_shard_ids_by_key_with_fallback(shard_key)?;
+
+                    for shard_id in shard_ids {
                         if let Some(replica_set) = self.shards.get(&shard_id) {
-                            res.push((replica_set, Some(shard_key)));
+                            res.push((replica_set, selected_shard_key));
                         } else {
                             debug_assert!(false, "Shard id {shard_id} not found")
                         }
