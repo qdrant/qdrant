@@ -394,6 +394,9 @@ impl UpdateHandler {
                     permit_callback(false);
                 });
 
+                // Optimizer has been started, so we need to increment the run-counter.
+                optimizer.increment_run_counter();
+
                 let optimizer = optimizer.clone();
                 let optimizers_log = optimizers_log.clone();
                 let total_optimized_points = total_optimized_points.clone();

@@ -1,4 +1,6 @@
 use api::rest::models::HardwareUsage;
+use collection::collection_manager::optimizers::TrackerStatus;
+use collection::shards::telemetry::OptimizerRunCounters;
 use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
@@ -173,6 +175,77 @@ impl MetricsProvider for CollectionsTelemetry {
             "total number of vectors in all collections",
             MetricType::GAUGE,
             vec![gauge(vector_count as f64, &[])],
+        ));
+
+        let mut optimizer_counter_metrics = vec![];
+
+        let mut total_optimizations_running = 0;
+
+        for collection in self.collections.iter().flatten() {
+            let collection = match collection {
+                CollectionTelemetryEnum::Full(collection_telemetry) => collection_telemetry,
+                CollectionTelemetryEnum::Aggregated(_) => {
+                    continue;
+                }
+            };
+
+            total_optimizations_running += collection
+                .shards
+                .iter()
+                .flatten()
+                .filter_map(|i| i.local.as_ref())
+                .flat_map(|i| i.optimizations.log.iter())
+                .flatten()
+                .filter(|i| i.status == TrackerStatus::Optimizing)
+                .count();
+
+            // Sum the optimization triggers over all shards of this collection.
+            let optimizer_triggers = collection
+                .shards
+                .iter()
+                .flatten()
+                .filter_map(|i| i.local.as_ref())
+                .map(|i| i.optimizations.runs)
+                .fold(OptimizerRunCounters::default(), |total, state| {
+                    total + state
+                });
+
+            let mut add_optimizer_metric = |name: &str, value: usize| {
+                if value > 0 {
+                    optimizer_counter_metrics.push(counter(
+                        value as f64,
+                        &[("id", &collection.id), ("optimizer", name)],
+                    ));
+                }
+            };
+
+            let OptimizerRunCounters {
+                vacuum,
+                merge,
+                index,
+                config_mismatch,
+            } = optimizer_triggers;
+
+            add_optimizer_metric("config-mismatch", config_mismatch);
+            add_optimizer_metric("index", index);
+            add_optimizer_metric("merge", merge);
+            add_optimizer_metric("vacuum", vacuum);
+        }
+
+        if !optimizer_counter_metrics.is_empty() {
+            metrics.push(metric_family(
+                "collections_optimizer_run_count",
+                "number of optimization runs per optimizer",
+                MetricType::COUNTER,
+                optimizer_counter_metrics,
+            ));
+        }
+
+        metrics.push(metric_family(
+            "optimizer_total_processes_running",
+            "number of optimization processes running in total",
+            MetricType::GAUGE,
+            vec![gauge(total_optimizations_running as f64, &[])],
         ));
     }
 }

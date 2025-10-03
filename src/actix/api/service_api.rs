@@ -46,6 +46,7 @@ fn telemetry(
         let detail = TelemetryDetail {
             level: details_level,
             histograms: false,
+            optimizer_logs: false,
         };
         let telemetry_collector = telemetry_collector.lock().await;
         let telemetry_data = telemetry_collector.prepare_data(&access, detail).await;
@@ -81,6 +82,7 @@ async fn metrics(
             TelemetryDetail {
                 level: DetailsLevel::Level3,
                 histograms: true,
+                optimizer_logs: true,
             },
         )
         .await;

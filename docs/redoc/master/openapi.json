@@ -12765,6 +12765,7 @@
         "type": "object",
         "required": [
           "optimizations",
+          "runs",
           "status"
         ],
         "properties": {
@@ -12780,6 +12781,9 @@
               "$ref": "#/components/schemas/TrackerTelemetry"
             },
             "nullable": true
+          },
+          "runs": {
+            "$ref": "#/components/schemas/OptimizerRunCounters"
           }
         }
       },
@@ -12857,6 +12861,37 @@
             "additionalProperties": false
           }
         ]
+      },
+      "OptimizerRunCounters": {
+        "type": "object",
+        "required": [
+          "config_mismatch",
+          "index",
+          "merge",
+          "vacuum"
+        ],
+        "properties": {
+          "vacuum": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "merge": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "index": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "config_mismatch": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
       },
       "RemoteShardTelemetry": {
         "type": "object",
