@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::time::Duration;
 
-use api::conversions::json::{json_path_from_proto, payload_to_proto};
+use api::conversions::json::json_path_from_proto;
 use api::grpc::conversions::{
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
     from_grpc_dist,
@@ -20,6 +20,7 @@ use segment::types::{
     Distance, HnswConfig, MultiVectorConfig, QuantizationConfig, StrictModeConfigOutput,
     WithPayloadInterface,
 };
+use shard::retrieve::record_internal::RecordInternal;
 use tonic::Status;
 
 use super::cluster_ops::ReshardingDirection;
@@ -51,8 +52,8 @@ use crate::operations::point_ops::{FilterSelector, PointIdsList, PointsSelector,
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CollectionWarning,
-    CountResult, LocalShardInfo, OptimizersStatus, RecommendRequestInternal, RecordInternal,
-    RemoteShardInfo, ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
+    CountResult, LocalShardInfo, OptimizersStatus, RecommendRequestInternal, RemoteShardInfo,
+    ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionCoreSearchRequest;
@@ -555,25 +556,6 @@ impl From<api::grpc::qdrant::CollectionWarning> for CollectionWarning {
     fn from(value: api::grpc::qdrant::CollectionWarning) -> Self {
         let api::grpc::qdrant::CollectionWarning { message } = value;
         Self { message }
-    }
-}
-
-impl From<RecordInternal> for api::grpc::qdrant::RetrievedPoint {
-    fn from(record: RecordInternal) -> Self {
-        let RecordInternal {
-            id,
-            payload,
-            vector,
-            shard_key,
-            order_value,
-        } = record;
-        Self {
-            id: Some(id.into()),
-            payload: payload.map(payload_to_proto).unwrap_or_default(),
-            vectors: vector.map(api::grpc::qdrant::VectorsOutput::from),
-            shard_key: shard_key.map(convert_shard_key_to_grpc),
-            order_value: order_value.map(From::from),
-        }
     }
 }
 

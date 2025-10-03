@@ -13,6 +13,7 @@ use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
+use shard::retrieve::record_internal::RecordInternal;
 use tokio::runtime::Handle;
 use tokio::time::error::Elapsed;
 
@@ -21,7 +22,7 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
-    CollectionError, CollectionResult, QueryScrollRequestInternal, RecordInternal, ScrollOrder,
+    CollectionError, CollectionResult, QueryScrollRequestInternal, ScrollOrder,
 };
 
 impl LocalShard {

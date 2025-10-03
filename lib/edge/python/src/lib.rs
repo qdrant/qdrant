@@ -56,6 +56,23 @@ impl PyShard {
         let points = points.into_iter().map(PyScoredPoint).collect();
         Ok(points)
     }
+
+    pub fn retrieve(
+        &self,
+        ids: Vec<PyPointId>,
+        with_payload: Option<PyWithPayload>,
+        with_vector: Option<PyWithVector>,
+    ) -> PyResult<Vec<PyPoint>> {
+        let ids: Vec<_> = ids.into_iter().map(PointIdType::from).collect();
+        self.0.retrieve(
+            &ids,
+            with_payload.map(WithPayloadInterface::from),
+            with_vector.map(WithVector::from),
+        );
+        todo!()
+        // let points = points.into_iter().map(PyPoint).collect();
+        // Ok(points)
+    }
 }
 
 #[pyclass(name = "PointId")]

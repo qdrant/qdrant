@@ -55,6 +55,7 @@ issues = { path = "../common/issues" }
 memory = { path = "../common/memory" }
 segment = { path = "../segment", default-features = false }
 collection = { path = "../collection" }
+shard = { path = "../shard" }
 api = { path = "../api" }
 futures = { workspace = true }
 anyhow = "1.0.100"

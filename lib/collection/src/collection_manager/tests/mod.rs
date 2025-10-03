@@ -13,6 +13,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::types::{ExtendedPointId, PayloadContainer, PointIdType, WithPayload, WithVector};
+use shard::retrieve::record_internal::RecordInternal;
 use shard::update::{delete_points, set_payload, upsert_points};
 use tempfile::Builder;
 
@@ -24,7 +25,6 @@ use crate::collection_manager::holders::segment_holder::{
 };
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
-use crate::operations::types::RecordInternal;
 
 mod test_search_aggregation;
 

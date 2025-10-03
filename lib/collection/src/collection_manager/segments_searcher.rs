@@ -19,6 +19,7 @@ use segment::types::{
     VectorName, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::query::query_enum::QueryEnum;
+use shard::retrieve::record_internal::RecordInternal;
 use shard::search_result_aggregator::BatchResultAggregator;
 use tinyvec::TinyVec;
 use tokio::runtime::Handle;
@@ -29,9 +30,7 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::config::CollectionConfigInternal;
-use crate::operations::types::{
-    CollectionResult, CoreSearchRequestBatch, Modifier, RecordInternal,
-};
+use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, Modifier};
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
 type BatchOffset = usize;
