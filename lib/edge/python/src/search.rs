@@ -1,6 +1,7 @@
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::data_types::vectors::*;
+use segment::json_path::JsonPath;
 use segment::types::*;
 use shard::query::query_enum::QueryEnum;
 use shard::search::*;
@@ -75,13 +76,18 @@ impl PyQueryVector {
     pub fn dense(vector: Vec<f32>) -> Self {
         Self(VectorInternal::Dense(vector))
     }
+
+    #[staticmethod]
+    pub fn sparse(vector: PySparseVector) -> Self {
+        Self(VectorInternal::Sparse(vector.into()))
+    }
 }
 
 impl PyQueryVector {
     fn _variants(query: VectorInternal) {
         match query {
             VectorInternal::Dense(_) => (),
-            VectorInternal::Sparse(_) => todo!(),     // TODO!
+            VectorInternal::Sparse(_) => (),
             VectorInternal::MultiDense(_) => todo!(), // TODO!
         }
     }
@@ -97,12 +103,41 @@ impl PyFilter {
 }
 
 #[pyclass(name = "SearchParams")]
-#[derive(Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into)]
 pub struct PySearchParams(SearchParams);
 
 #[pymethods]
 impl PySearchParams {
-    // TODO!
+    #[new]
+    pub fn new(
+        hnsw_ef: Option<usize>,
+        exact: bool,
+        quantization: Option<PyQuantizationSearchParams>,
+        indexed_only: bool,
+    ) -> Self {
+        Self(SearchParams {
+            hnsw_ef,
+            exact,
+            quantization: quantization.map(Into::into),
+            indexed_only,
+        })
+    }
+}
+
+#[pyclass(name = "QuantizationSearchParams")]
+#[derive(Copy, Clone, Debug, Into)]
+pub struct PyQuantizationSearchParams(QuantizationSearchParams);
+
+#[pymethods]
+impl PyQuantizationSearchParams {
+    #[new]
+    pub fn new(ignore: bool, rescore: Option<bool>, oversampling: Option<f64>) -> Self {
+        Self(QuantizationSearchParams {
+            ignore,
+            rescore,
+            oversampling,
+        })
+    }
 }
 
 #[pyclass(name = "WithVector")]
@@ -112,13 +147,13 @@ pub struct PyWithVector(WithVector);
 #[pymethods]
 impl PyWithVector {
     #[new]
-    fn new(with_vector: bool) -> Self {
+    pub fn new(with_vector: bool) -> Self {
         Self(WithVector::Bool(with_vector))
     }
 
     #[staticmethod]
-    fn selector(vectors: Vec<VectorNameBuf>) -> Self {
-        Self(WithVector::Selector(vectors)) // TODO?
+    pub fn selector(vectors: Vec<VectorNameBuf>) -> Self {
+        Self(WithVector::Selector(vectors))
     }
 }
 
@@ -126,7 +161,7 @@ impl PyWithVector {
     fn _variants(with_vector: WithVector) {
         match with_vector {
             WithVector::Bool(_) => (),
-            WithVector::Selector(_) => (), // TODO?
+            WithVector::Selector(_) => (),
         }
     }
 }
@@ -141,15 +176,76 @@ impl PyWithPayload {
     pub fn new(with_payload: bool) -> Self {
         Self(WithPayloadInterface::Bool(with_payload))
     }
+
+    #[staticmethod]
+    pub fn fields(fields: Vec<PyJsonPath>) -> Self {
+        let fields = fields.into_iter().map(Into::into).collect(); // TODO: Transmute!?
+        Self(WithPayloadInterface::Fields(fields))
+    }
+
+    #[staticmethod]
+    pub fn selector(selector: PyPayloadSelector) -> Self {
+        Self(WithPayloadInterface::Selector(selector.into()))
+    }
 }
 
 impl PyWithPayload {
     fn _variants(with_payload: WithPayloadInterface) {
         match with_payload {
             WithPayloadInterface::Bool(_) => (),
-            WithPayloadInterface::Fields(_) => todo!(), // TODO!
-            WithPayloadInterface::Selector(_) => todo!(), // TODO!
+            WithPayloadInterface::Fields(_) => (),
+            WithPayloadInterface::Selector(_) => (),
         }
+    }
+}
+
+#[pyclass(name = "PayloadSelector")]
+#[derive(Clone, Debug, Into)]
+pub struct PyPayloadSelector(PayloadSelector);
+
+#[pymethods]
+impl PyPayloadSelector {
+    #[staticmethod]
+    pub fn include(fields: Vec<PyJsonPath>) -> Self {
+        let include = PayloadSelectorInclude {
+            include: fields.into_iter().map(Into::into).collect(), // TODO: Transmute!?
+        };
+
+        Self(PayloadSelector::Include(include))
+    }
+
+    #[staticmethod]
+    pub fn exclude(fields: Vec<PyJsonPath>) -> Self {
+        let exclude = PayloadSelectorExclude {
+            exclude: fields.into_iter().map(Into::into).collect(), // TODO: Transmute!?
+        };
+
+        Self(PayloadSelector::Exclude(exclude))
+    }
+}
+
+impl PyPayloadSelector {
+    fn _variants(payload_selector: PayloadSelector) {
+        match payload_selector {
+            PayloadSelector::Include(_) => (),
+            PayloadSelector::Exclude(_) => (),
+        }
+    }
+}
+
+#[pyclass(name = "JsonPath")]
+#[derive(Clone, Debug, Into)]
+pub struct PyJsonPath(JsonPath);
+
+#[pymethods]
+impl PyJsonPath {
+    #[new]
+    pub fn new(json_path: &str) -> super::PyResult<Self> {
+        let json_path = json_path.parse().map_err(|()| {
+            OperationError::validation_error(format!("{json_path} is not a valid JSON path"))
+        })?;
+
+        Ok(Self(json_path))
     }
 }
 
@@ -160,22 +256,22 @@ pub struct PyScoredPoint(pub ScoredPoint);
 #[pymethods]
 impl PyScoredPoint {
     #[getter]
-    fn id(&self) -> PyPointId {
+    pub fn id(&self) -> PyPointId {
         PyPointId(self.0.id)
     }
 
     #[getter]
-    fn version(&self) -> u64 {
+    pub fn version(&self) -> u64 {
         self.0.version
     }
 
     #[getter]
-    fn score(&self) -> f32 {
+    pub fn score(&self) -> f32 {
         self.0.score
     }
 
     #[getter]
-    fn vector(&self) -> Option<DenseVector> {
+    pub fn vector(&self) -> Option<DenseVector> {
         let Some(vector) = &self.0.vector else {
             return None;
         };
@@ -187,7 +283,7 @@ impl PyScoredPoint {
     }
 
     #[getter]
-    fn payload(&self) -> Option<PyPayload> {
+    pub fn payload(&self) -> Option<PyPayload> {
         self.0.payload.clone().map(PyPayload)
     }
 }

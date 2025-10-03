@@ -1829,7 +1829,9 @@ dependencies = [
  "edge",
  "pyo3",
  "segment",
+ "serde_json",
  "shard",
+ "sparse",
  "uuid",
 ]
 
