@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
@@ -165,7 +165,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     let tar =
         tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
     segment
-        .take_snapshot(temp_dir.path(), &tar, format, None, &mut HashSet::new())
+        .take_snapshot(temp_dir.path(), &tar, format, None)
         .unwrap();
     tar.blocking_finish().unwrap();
 

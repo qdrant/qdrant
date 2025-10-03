@@ -392,16 +392,8 @@ pub trait SegmentOptimizer {
         &self,
         segments: &LockedSegmentHolder,
         proxy_ids: &[SegmentId],
-        temp_segment: LockedSegment,
     ) -> OperationResult<()> {
         self.unwrap_proxy(segments, proxy_ids);
-        if !temp_segment.get().read().is_empty() {
-            let mut write_segments = segments.write();
-            write_segments.add_new_locked(temp_segment);
-        } else {
-            // Temp segment is already removed from proxy, so nobody could write to it in between
-            temp_segment.drop_data()?;
-        }
         Ok(())
     }
 
@@ -622,6 +614,14 @@ pub trait SegmentOptimizer {
         // Solution in the middle - is a upgradable lock. It ensures consistency after the check and allows to perform read operation.
         let segments_lock = segments.upgradable_read();
 
+        // Find appendable segments other than optimized ones
+        //
+        // If there are such segments - we can avoid creating a temp segment
+        // If there are none, we need to create a new empty segment to allow writes during optimization
+        let appendable_segments_ids = segments_lock.appendable_segments_ids();
+        let has_appendable_segments_except_optimized =
+            appendable_segments_ids.iter().any(|id| !ids.contains(id));
+
         let optimizing_segments: Vec<_> = ids
             .iter()
             .cloned()
@@ -647,15 +647,17 @@ pub trait SegmentOptimizer {
 
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation, no measurement needed!
 
-        let tmp_segment = self.temp_segment(false)?;
+        let extra_cow_segment_opt = has_appendable_segments_except_optimized
+            .then(|| self.temp_segment(false))
+            .transpose()?;
+
         let proxy_deleted_points = proxy_segment::LockedRmSet::default();
         let proxy_index_changes = proxy_segment::LockedIndexChanges::default();
 
         let mut proxies = Vec::new();
         for sg in optimizing_segments.iter() {
-            let mut proxy = ProxySegment::new(
+            let proxy = ProxySegment::new(
                 sg.clone(),
-                tmp_segment.clone(),
                 // In this case, all proxies share their set of deleted points
                 // We can share deletes because they're all propagated to the same optimized
                 // segment, and we unproxy all at the same time
@@ -664,25 +666,29 @@ pub trait SegmentOptimizer {
             );
             // Wrapped segment is fresh, so it has no operations
             // Operation with number 0 will be applied
-            proxy.replicate_field_indexes(0, &hw_counter)?;
+            if let Some(extra_cow_segment) = &extra_cow_segment_opt {
+                proxy.replicate_field_indexes(0, &hw_counter, extra_cow_segment)?;
+            }
+
             proxies.push(proxy);
         }
 
         // Save segment version once all payload indices have been converted
         // If this ends up not being saved due to a crash, the segment will not be used
-        match &tmp_segment {
-            LockedSegment::Original(segment) => {
+        match &extra_cow_segment_opt {
+            Some(LockedSegment::Original(segment)) => {
                 let segment_path = &segment.read().current_path;
                 SegmentVersion::save(segment_path)?;
             }
-            LockedSegment::Proxy(_) => unreachable!(),
+            Some(LockedSegment::Proxy(_)) => unreachable!(),
+            None => {}
         }
 
         let proxy_ids: Vec<_> = {
             // Exclusive lock for the segments operations.
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
             let mut proxy_ids = Vec::new();
-            for (mut proxy, idx) in proxies.into_iter().zip(ids.iter().cloned()) {
+            for (proxy, idx) in proxies.into_iter().zip(ids.iter().cloned()) {
                 // During optimization, we expect that logical point data in the wrapped segment is
                 // not changed at all. But this would be possible if we wrap another proxy segment,
                 // because it can share state through it's write segment. To prevent this we assert
@@ -699,9 +705,16 @@ pub trait SegmentOptimizer {
                 // because optimized segments could have been changed.
                 // The probability is small, though,
                 // so we can afford this operation under the full collection write lock
-                proxy.replicate_field_indexes(0, &hw_counter)?; // Slow only in case the index is change in the gap between two calls
+                if let Some(extra_cow_segment) = &extra_cow_segment_opt {
+                    proxy.replicate_field_indexes(0, &hw_counter, extra_cow_segment)?; // Slow only in case the index is change in the gap between two calls
+                }
                 proxy_ids.push(write_segments.swap_new(proxy, &[idx]).0);
             }
+
+            if let Some(extra_cow_segment) = extra_cow_segment_opt {
+                write_segments.add_new_locked(extra_cow_segment);
+            }
+
             proxy_ids
         };
 
@@ -721,7 +734,7 @@ pub trait SegmentOptimizer {
             Err(err) => {
                 // Properly cancel optimization on all error kinds
                 // Unwrap proxies and add temp segment to holder
-                self.handle_cancellation(&segments, &proxy_ids, tmp_segment)?;
+                self.handle_cancellation(&segments, &proxy_ids)?;
                 return Err(err);
             }
         };
@@ -735,34 +748,17 @@ pub trait SegmentOptimizer {
             "swapped different number of proxies on unwrap, missing or incorrect segment IDs?",
         );
 
-        let has_appendable_segments = write_segments_guard.has_appendable_segment();
-
         // Release reference counter for each optimized segment
         drop(optimizing_segments);
 
-        // Append a temp segment to collection if it is not empty or there is no other appendable segment
-        if !has_appendable_segments || !tmp_segment.get().read().is_empty() {
-            write_segments_guard.add_new_locked(tmp_segment);
+        // Unlock collection for search and updates
+        // After the collection is unlocked - we can remove data as slow as we want
+        drop(write_segments_guard);
 
-            // Unlock collection for search and updates
-            // After the collection is unlocked - we can remove data as slow as we want
-            drop(write_segments_guard);
-
-            // Only remove data after we ensure the consistency of the collection.
-            // If remove fails - we will still have operational collection with reported error.
-            for proxy in proxies {
-                proxy.drop_data()?;
-            }
-        } else {
-            // Unlock collection for search and updates
-            // After the collection is unlocked - we can remove data as slow as we want
-            drop(write_segments_guard);
-
-            // Proxy contains pointer to the `tmp_segment`, so they should be removed first
-            for proxy in proxies {
-                proxy.drop_data()?;
-            }
-            tmp_segment.drop_data()?;
+        // Only remove data after we ensure the consistency of the collection.
+        // If remove fails - we will still have operational collection with reported error.
+        for proxy in proxies {
+            proxy.drop_data()?;
         }
 
         timer.set_success(true);
