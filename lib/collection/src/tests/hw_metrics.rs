@@ -7,6 +7,7 @@ use common::save_on_disk::SaveOnDisk;
 use rand::rngs::ThreadRng;
 use rand::{RngCore, rng};
 use segment::data_types::vectors::{NamedQuery, VectorInternal, VectorStructInternal};
+use shard::query::query_enum::QueryEnum;
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -15,7 +16,6 @@ use crate::operations::CollectionUpdateOperations;
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
 };
-use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CoreSearchRequest, CoreSearchRequestBatch};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;

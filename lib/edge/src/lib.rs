@@ -214,6 +214,7 @@ impl Shard {
         result.map(|_| ())
     }
 
+    /// This method is DEPRECATED and should be replaced with query.
     pub fn search(&self, search: CoreSearchRequest) -> OperationResult<Vec<ScoredPoint>> {
         let segments: Vec<_> = self
             .segments

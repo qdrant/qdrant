@@ -4,11 +4,11 @@ use common::types::ScoreType;
 use ordered_float::OrderedFloat;
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
+use shard::query::query_enum::QueryEnum;
 
 use super::shard_query::{
     MmrInternal, SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
-use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, QueryScrollRequestInternal, ScrollOrder,
 };
@@ -437,10 +437,10 @@ mod tests {
     use segment::types::{
         Condition, FieldCondition, Filter, Match, SearchParams, WithPayloadInterface, WithVector,
     };
+    use shard::query::query_enum::QueryEnum;
     use sparse::common::sparse_vector::SparseVector;
 
     use super::*;
-    use crate::operations::query_enum::QueryEnum;
     use crate::operations::universal_query::shard_query::FusionInternal;
 
     #[test]

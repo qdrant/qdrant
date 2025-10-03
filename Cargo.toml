@@ -312,6 +312,7 @@ members = [
     "lib/collection",
     "lib/common/*",
     "lib/edge",
+    "lib/edge/python",
     "lib/gridstore",
     "lib/macros",
     "lib/posting_list",

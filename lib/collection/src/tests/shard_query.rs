@@ -6,11 +6,11 @@ use common::save_on_disk::SaveOnDisk;
 use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
+use shard::query::query_enum::QueryEnum;
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
-use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::CollectionError;
 use crate::operations::universal_query::shard_query::{
     FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
