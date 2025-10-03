@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
+use semver::Version;
+use std::sync::LazyLock;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
@@ -10,7 +12,15 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
 
+// Default batch size for older nodes
 pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
+// Larger batch size for newer nodes supporting batch updates
+pub(super) const TRANSFER_BATCH_SIZE_LARGE: usize = 1000;
+// Number of batches to combine into a single API call
+pub(super) const TRANSFER_BATCH_COUNT: usize = 5;
+
+static MINIMAL_VERSION_FOR_BATCH_TRANSFER: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.14.1-dev").unwrap());
 
 /// Orchestrate shard transfer by streaming records
 ///
@@ -77,29 +87,75 @@ pub(super) async fn transfer_stream_records(
     // Transfer contents batch by batch
     log::trace!("Transferring points to shard {shard_id} by streaming records");
 
+    // Check if the remote supports batch updates and adjust batch size accordingly
+    let supports_batch_transfer = remote_shard.check_version(&MINIMAL_VERSION_FOR_BATCH_TRANSFER);
+    let batch_size = if supports_batch_transfer {
+        TRANSFER_BATCH_SIZE_LARGE
+    } else {
+        TRANSFER_BATCH_SIZE
+    };
+    
+    log::debug!(
+        "Using batch size of {} for transfer to peer {}",
+        batch_size,
+        remote_peer_id
+    );
+    
     let mut offset = None;
 
-    loop {
-        let shard_holder = shard_holder.read().await;
+    if supports_batch_transfer {
+        log::debug!(
+            "Using batch API with {} batches per request for transfer to peer {}",
+            TRANSFER_BATCH_COUNT,
+            remote_peer_id
+        );
+        
+        loop {
+            let shard_holder = shard_holder.read().await;
 
-        let Some(replica_set) = shard_holder.get_shard(shard_id) else {
-            // Forward proxy gone?!
-            // That would be a programming error.
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} is not found"
-            )));
-        };
+            let Some(replica_set) = shard_holder.get_shard(shard_id) else {
+                return Err(CollectionError::service_error(format!(
+                    "Shard {shard_id} is not found"
+                )));
+            };
 
-        let (new_offset, count) = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, false)
-            .await?;
+            // Use multiple batches per API call for more efficient transfer
+            let (new_offset, count) = replica_set
+                .transfer_multiple_batches(offset, batch_size, TRANSFER_BATCH_COUNT, None, false)
+                .await?;
 
-        offset = new_offset;
-        progress.lock().add(count);
+            offset = new_offset;
+            progress.lock().add(count);
 
-        // If this is the last batch, finalize
-        if offset.is_none() {
-            break;
+            // If this is the last batch, finalize
+            if offset.is_none() {
+                break;
+            }
+        }
+    } else {
+        // Fall back to regular single-batch transfers for older nodes
+        loop {
+            let shard_holder = shard_holder.read().await;
+
+            let Some(replica_set) = shard_holder.get_shard(shard_id) else {
+                // Forward proxy gone?!
+                // That would be a programming error.
+                return Err(CollectionError::service_error(format!(
+                    "Shard {shard_id} is not found"
+                )));
+            };
+
+            let (new_offset, count) = replica_set
+                .transfer_batch(offset, batch_size, None, false)
+                .await?;
+
+            offset = new_offset;
+            progress.lock().add(count);
+
+            // If this is the last batch, finalize
+            if offset.is_none() {
+                break;
+            }
         }
     }
 
