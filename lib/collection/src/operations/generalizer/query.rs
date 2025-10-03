@@ -1,6 +1,6 @@
 use segment::data_types::vectors::{MultiDenseVectorInternal, NamedQuery, VectorInternal};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
-use shard::search::QueryEnum;
+use shard::query::query_enum::QueryEnum;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
 

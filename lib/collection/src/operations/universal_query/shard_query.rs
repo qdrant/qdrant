@@ -16,10 +16,10 @@ use segment::types::{
 };
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use serde::Serialize;
+use shard::query::query_enum::QueryEnum;
 use tonic::Status;
 
 use crate::config::CollectionParams;
-use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::CollectionResult;
 use crate::operations::universal_query::formula::{ExpressionInternal, FormulaInternal};
 /// Internal response type for a universal query request.

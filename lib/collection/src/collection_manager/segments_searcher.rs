@@ -18,6 +18,7 @@ use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
     VectorName, WithPayload, WithPayloadInterface, WithVector,
 };
+use shard::query::query_enum::QueryEnum;
 use shard::search_result_aggregator::BatchResultAggregator;
 use tinyvec::TinyVec;
 use tokio::runtime::Handle;
@@ -28,7 +29,6 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::config::CollectionConfigInternal;
-use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{
     CollectionResult, CoreSearchRequestBatch, Modifier, RecordInternal,
 };

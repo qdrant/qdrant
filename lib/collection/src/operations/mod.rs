@@ -20,7 +20,7 @@ pub mod vector_params_builder;
 pub mod verification;
 
 pub mod query_enum {
-    pub use shard::search::QueryEnum;
+    pub use shard::query::query_enum::QueryEnum;
 }
 
 use std::collections::HashMap;

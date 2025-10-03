@@ -10,5 +10,6 @@ pub mod wal;
 
 #[cfg(feature = "testing")]
 pub mod fixtures;
+pub mod query;
 
 pub type PeerId = u64;

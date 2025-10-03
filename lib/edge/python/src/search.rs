@@ -2,6 +2,7 @@ use derive_more::Into;
 use pyo3::prelude::*;
 use segment::data_types::vectors::*;
 use segment::types::*;
+use shard::query::query_enum::QueryEnum;
 use shard::search::*;
 
 use super::*;
