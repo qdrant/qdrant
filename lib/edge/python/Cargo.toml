@@ -1,0 +1,27 @@
+[package]
+name = "edge-py"
+version = "0.1.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+
+
+[lib]
+name = "qdrant_edge"
+crate-type = ["cdylib"]
+
+
+[dependencies]
+edge = { path = ".." }
+segment = { path = "../../segment", default-features = false }
+shard = { path = "../../shard" }
+
+uuid = { workspace = true }
+
+[dependencies.derive_more]
+version = "2.0"
+features = ["into"]
+
+[dependencies.pyo3]
+version = "0.26"
+features = ["uuid"]

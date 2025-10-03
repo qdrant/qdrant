@@ -13,6 +13,7 @@ use segment::types::{
 };
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use serde::Serialize;
+use shard::query::query_enum::QueryEnum;
 
 use super::formula::FormulaInternal;
 use super::shard_query::{
@@ -20,7 +21,6 @@ use super::shard_query::{
 };
 use crate::common::fetch_vectors::ReferencedVectors;
 use crate::lookup::WithLookup;
-use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
 use crate::recommendations::avg_vector_for_recommendation;

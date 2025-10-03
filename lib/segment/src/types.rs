@@ -1629,7 +1629,9 @@ impl SparseVectorStorageType {
 }
 
 /// Config of single sparse vector data storage
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Anonymize)]
+#[derive(
+    Copy, Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Anonymize,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVectorDataConfig {
     /// Sparse inverted index config
