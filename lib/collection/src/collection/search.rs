@@ -9,6 +9,7 @@ use itertools::{Either, Itertools};
 use segment::types::{
     ExtendedPointId, Filter, Order, ScoredPoint, WithPayloadInterface, WithVector,
 };
+use shard::retrieve::record_internal::RecordInternal;
 use tokio::time::Instant;
 
 use super::Collection;

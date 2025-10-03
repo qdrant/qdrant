@@ -6,6 +6,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::*;
+use shard::retrieve::record_internal::RecordInternal;
 use tokio::runtime::Handle;
 
 use crate::operations::OperationWithClockTag;

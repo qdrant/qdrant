@@ -14,6 +14,7 @@ use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
     WithPayloadInterface, WithVector,
 };
+use shard::retrieve::record_internal::RecordInternal;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
@@ -25,8 +26,8 @@ use crate::operations::point_ops::{
 };
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal, RecordInternal,
-    UpdateResult, UpdateStatus,
+    CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal, UpdateResult,
+    UpdateStatus,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::{

@@ -23,10 +23,9 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::{CancelledError, OperationError};
 use segment::data_types::groups::GroupId;
-use segment::data_types::order_by::{OrderBy, OrderValue};
+use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct, VectorRef,
-    VectorStructInternal,
+    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct,
 };
 use segment::types::{
     Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
@@ -54,7 +53,6 @@ use super::ClockTag;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
-use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::ReplicaState;
@@ -134,46 +132,6 @@ pub struct CollectionWarning {
     /// Warning message
     #[anonymize(true)] // Might contain vector names
     pub message: String,
-}
-
-/// Point data
-#[derive(Clone, Debug, PartialEq)]
-pub struct RecordInternal {
-    /// Id of the point
-    pub id: PointIdType,
-    /// Payload - values assigned to the point
-    pub payload: Option<Payload>,
-    /// Vector of the point
-    pub vector: Option<VectorStructInternal>,
-    /// Shard Key
-    pub shard_key: Option<ShardKey>,
-    /// Order value, if used for order_by
-    pub order_value: Option<OrderValue>,
-}
-
-/// Warn: panics if the vector is empty
-impl TryFrom<RecordInternal> for PointStructPersisted {
-    type Error = String;
-
-    fn try_from(record: RecordInternal) -> Result<Self, Self::Error> {
-        let RecordInternal {
-            id,
-            payload,
-            vector,
-            shard_key: _,
-            order_value: _,
-        } = record;
-
-        if vector.is_none() {
-            return Err("Vector is empty".to_string());
-        }
-
-        Ok(Self {
-            id,
-            payload,
-            vector: VectorStructPersisted::from(vector.unwrap()),
-        })
-    }
 }
 
 // Version of the collection config we can present to the user
@@ -1442,21 +1400,6 @@ impl From<tempfile::PathPersistError> for CollectionError {
 }
 
 pub type CollectionResult<T> = Result<T, CollectionError>;
-
-impl RecordInternal {
-    pub fn get_vector_by_name(&self, name: &VectorName) -> Option<VectorRef<'_>> {
-        match &self.vector {
-            Some(VectorStructInternal::Single(vector)) => {
-                (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(vector))
-            }
-            Some(VectorStructInternal::MultiDense(vectors)) => {
-                (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(vectors))
-            }
-            Some(VectorStructInternal::Named(vectors)) => vectors.get(name).map(VectorRef::from),
-            None => None,
-        }
-    }
-}
 
 #[derive(
     Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,

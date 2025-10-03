@@ -6,10 +6,11 @@ use std::rc::Rc;
 use itertools::Itertools;
 use segment::data_types::facets::{FacetResponse, FacetValue};
 use segment::types::{Payload, ScoredPoint};
+use shard::retrieve::record_internal::RecordInternal;
 use tinyvec::TinyVec;
 
 use crate::common::transpose_iterator::transposed_iter;
-use crate::operations::types::{CountResult, RecordInternal};
+use crate::operations::types::CountResult;
 use crate::operations::universal_query::shard_query::ShardQueryResponse;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

@@ -7,6 +7,7 @@ use shard::query::query_enum::QueryEnum;
 use shard::search::*;
 
 use super::*;
+use crate::interface::py_vector::PySparseVector;
 
 #[pyclass(name = "SearchRequest")]
 #[derive(Clone, Debug, Into)]

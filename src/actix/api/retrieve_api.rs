@@ -4,14 +4,13 @@ use actix_web::{Responder, get, post, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{
-    PointRequest, PointRequestInternal, RecordInternal, ScrollRequest,
-};
+use collection::operations::types::{PointRequest, PointRequestInternal, ScrollRequest};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface};
 use serde::Deserialize;
+use shard::retrieve::record_internal::RecordInternal;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_timeout,
 };

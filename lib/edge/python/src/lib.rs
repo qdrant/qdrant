@@ -1,4 +1,5 @@
 pub mod config;
+pub mod interface;
 pub mod search;
 pub mod update;
 
@@ -14,6 +15,7 @@ use uuid::Uuid;
 use self::config::*;
 use self::search::*;
 use self::update::*;
+use crate::interface::py_record::PyRecord;
 
 #[pymodule]
 mod qdrant_edge {
@@ -24,12 +26,16 @@ mod qdrant_edge {
         PyVectorStorageDatatype, PyVectorStorageType,
     };
     #[pymodule_export]
+    use super::interface::py_record::PyRecord;
+    #[pymodule_export]
+    use super::interface::py_vector::PyVector;
+    #[pymodule_export]
     use super::search::{
         PyFilter, PyQuery, PyQueryVector, PyScoredPoint, PySearchParams, PySearchRequest,
         PyWithPayload, PyWithVector,
     };
     #[pymodule_export]
-    use super::update::{PyPoint, PyUpdateOperation, PyVector};
+    use super::update::{PyPoint, PyUpdateOperation};
     #[pymodule_export]
     use super::{PyPayload, PyPointId, PyShard};
 }
@@ -54,6 +60,23 @@ impl PyShard {
     pub fn search(&self, search: PySearchRequest) -> PyResult<Vec<PyScoredPoint>> {
         let points = self.0.search(search.into())?;
         let points = points.into_iter().map(PyScoredPoint).collect();
+        Ok(points)
+    }
+
+    pub fn retrieve(
+        &self,
+        ids: Vec<PyPointId>,
+        with_payload: Option<PyWithPayload>,
+        with_vector: Option<PyWithVector>,
+    ) -> PyResult<Vec<PyRecord>> {
+        let ids: Vec<_> = ids.into_iter().map(PointIdType::from).collect();
+        let records = self.0.retrieve(
+            &ids,
+            with_payload.map(WithPayloadInterface::from),
+            with_vector.map(WithVector::from),
+        )?;
+
+        let points = records.into_iter().map(PyRecord).collect();
         Ok(points)
     }
 }

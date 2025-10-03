@@ -8,15 +8,14 @@ use futures::Future;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use serde::Serialize;
+use shard::retrieve::record_internal::RecordInternal;
 use tokio::sync::RwLockReadGuard;
 use types::PseudoId;
 
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
-use crate::operations::types::{
-    CollectionError, CollectionResult, PointRequestInternal, RecordInternal,
-};
+use crate::operations::types::{CollectionError, CollectionResult, PointRequestInternal};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct WithLookup {

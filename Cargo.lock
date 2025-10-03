@@ -6397,6 +6397,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
+ "shard",
  "strum",
  "tap",
  "tar",

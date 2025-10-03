@@ -18,6 +18,7 @@ use futures::TryStreamExt as _;
 use futures::stream::FuturesUnordered;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::types::{ScoredPoint, ShardKey};
+use shard::retrieve::record_internal::RecordInternal;
 
 use super::TableOfContent;
 use crate::content_manager::errors::{StorageError, StorageResult};

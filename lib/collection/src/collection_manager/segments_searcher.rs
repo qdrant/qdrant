@@ -1,7 +1,5 @@
 use std::collections::BTreeSet;
-use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -11,14 +9,15 @@ use futures::{FutureExt, TryStreamExt};
 use itertools::Itertools;
 use ordered_float::Float;
 use segment::common::operation_error::OperationError;
-use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
-use segment::data_types::vectors::{QueryVector, VectorStructInternal};
+use segment::data_types::vectors::QueryVector;
 use segment::types::{
-    Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
-    VectorName, WithPayload, WithPayloadInterface, WithVector,
+    Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, VectorName,
+    WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::query::query_enum::QueryEnum;
+use shard::retrieve::record_internal::RecordInternal;
+use shard::retrieve::retrieve_blocking::retrieve_blocking;
 use shard::search_result_aggregator::BatchResultAggregator;
 use tinyvec::TinyVec;
 use tokio::runtime::Handle;
@@ -29,9 +28,7 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::config::CollectionConfigInternal;
-use crate::operations::types::{
-    CollectionResult, CoreSearchRequestBatch, Modifier, RecordInternal,
-};
+use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, Modifier};
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
 type BatchOffset = usize;
@@ -381,7 +378,7 @@ impl SegmentsSearcher {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
         let stopping_guard = StoppingGuard::new();
-        runtime_handle
+        let points = runtime_handle
             .spawn_blocking({
                 let segments = segments.clone();
                 let points = points.to_vec();
@@ -390,7 +387,7 @@ impl SegmentsSearcher {
                 let is_stopped = stopping_guard.get_is_stopped();
                 // TODO create one Task per segment level retrieve
                 move || {
-                    Self::retrieve_blocking(
+                    retrieve_blocking(
                         segments,
                         &points,
                         &with_payload,
@@ -400,78 +397,8 @@ impl SegmentsSearcher {
                     )
                 }
             })
-            .await?
-    }
-
-    pub fn retrieve_blocking(
-        segments: LockedSegmentHolder,
-        points: &[PointIdType],
-        with_payload: &WithPayload,
-        with_vector: &WithVector,
-        is_stopped: &AtomicBool,
-        hw_measurement_acc: HwMeasurementAcc,
-    ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
-        let mut point_version: AHashMap<PointIdType, SeqNumberType> = Default::default();
-        let mut point_records: AHashMap<PointIdType, RecordInternal> = Default::default();
-
-        let hw_counter = hw_measurement_acc.get_counter_cell();
-
-        segments
-            .read()
-            .read_points(points, is_stopped, |id, segment| {
-                let version = segment.point_version(id).ok_or_else(|| {
-                    OperationError::service_error(format!("No version for point {id}"))
-                })?;
-
-                // If we already have the latest point version, keep that and continue
-                let version_entry = point_version.entry(id);
-                if matches!(&version_entry, Entry::Occupied(entry) if *entry.get() >= version) {
-                    return Ok(true);
-                }
-
-                point_records.insert(
-                    id,
-                    RecordInternal {
-                        id,
-                        payload: if with_payload.enable {
-                            if let Some(selector) = &with_payload.payload_selector {
-                                Some(selector.process(segment.payload(id, &hw_counter)?))
-                            } else {
-                                Some(segment.payload(id, &hw_counter)?)
-                            }
-                        } else {
-                            None
-                        },
-                        vector: {
-                            match with_vector {
-                                WithVector::Bool(true) => {
-                                    let vectors = segment.all_vectors(id, &hw_counter)?;
-                                    Some(VectorStructInternal::from(vectors))
-                                }
-                                WithVector::Bool(false) => None,
-                                WithVector::Selector(vector_names) => {
-                                    let mut selected_vectors = NamedVectors::default();
-                                    for vector_name in vector_names {
-                                        if let Some(vector) =
-                                            segment.vector(vector_name, id, &hw_counter)?
-                                        {
-                                            selected_vectors.insert(vector_name.clone(), vector);
-                                        }
-                                    }
-                                    Some(VectorStructInternal::from(selected_vectors))
-                                }
-                            }
-                        },
-                        shard_key: None,
-                        order_value: None,
-                    },
-                );
-                *version_entry.or_default() = version;
-
-                Ok(true)
-            })?;
-
-        Ok(point_records)
+            .await??;
+        Ok(points)
     }
 
     pub async fn read_filtered(
@@ -767,6 +694,8 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &VectorName) -> Op
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicBool;
+
     use ahash::AHashSet;
     use api::rest::SearchRequestInternal;
     use common::counter::hardware_counter::HardwareCounterCell;
@@ -964,7 +893,7 @@ mod tests {
     fn test_retrieve() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
-        let records = SegmentsSearcher::retrieve_blocking(
+        let records = retrieve_blocking(
             Arc::new(segment_holder),
             &[1.into(), 2.into(), 3.into()],
             &WithPayload::from(true),

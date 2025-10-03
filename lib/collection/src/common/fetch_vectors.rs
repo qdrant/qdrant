@@ -8,6 +8,7 @@ use futures::Future;
 use futures::future::try_join_all;
 use segment::data_types::vectors::{VectorInternal, VectorRef};
 use segment::types::{PointIdType, VectorName, VectorNameBuf, WithPayloadInterface, WithVector};
+use shard::retrieve::record_internal::RecordInternal;
 use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
@@ -16,7 +17,7 @@ use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    CollectionError, CollectionResult, PointRequestInternal, RecommendExample, RecordInternal,
+    CollectionError, CollectionResult, PointRequestInternal, RecommendExample,
 };
 use crate::operations::universal_query::collection_query::{
     CollectionQueryRequest, CollectionQueryResolveRequest, Query, VectorInputInternal,
