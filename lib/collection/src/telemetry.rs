@@ -6,6 +6,7 @@ use segment::types::{HnswConfig, Payload, QuantizationConfig, StrictModeConfigOu
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::collection_manager::optimizers::TrackerStatus;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::types::{OptimizersStatus, ReshardingInfo, ShardTransferInfo};
 use crate::optimizers_builder::OptimizersConfig;
@@ -50,6 +51,20 @@ impl CollectionTelemetry {
             .filter_map(|shard| shard.local.as_ref())
             .map(|x| x.num_vectors.unwrap_or(0))
             .sum()
+    }
+
+    /// Amount of optimizers currently running.
+    ///
+    /// Note: A `DetailsLevel` of 4 or setting `telemetry_detail.optimizer_logs` to true is required.
+    ///       Otherwise, this function will return 0, which may not be correct.
+    pub fn count_optimizers_running(&self) -> usize {
+        self.shards
+            .iter()
+            .flatten()
+            .filter_map(|replica_set| replica_set.local.as_ref())
+            .flat_map(|local_shard| local_shard.optimizations.log.iter().flatten())
+            .filter(|log| log.status == TrackerStatus::Optimizing)
+            .count()
     }
 }
 
