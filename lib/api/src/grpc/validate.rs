@@ -215,6 +215,43 @@ impl Validate for grpc::update_operation::Update {
     }
 }
 
+impl Validate for grpc::points_update_operation::Operation {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::points_update_operation::Operation::Upsert(point_struct_list) => {
+                point_struct_list.validate()
+            }
+            grpc::points_update_operation::Operation::DeleteDeprecated(points_selector) => {
+                points_selector.validate()
+            }
+            grpc::points_update_operation::Operation::SetPayload(set_payload) => {
+                set_payload.validate()
+            }
+            grpc::points_update_operation::Operation::OverwritePayload(overwrite_payload) => {
+                overwrite_payload.validate()
+            }
+            grpc::points_update_operation::Operation::DeletePayload(delete_payload) => {
+                delete_payload.validate()
+            }
+            grpc::points_update_operation::Operation::ClearPayloadDeprecated(points_selector) => {
+                points_selector.validate()
+            }
+            grpc::points_update_operation::Operation::UpdateVectors(update_vectors) => {
+                update_vectors.validate()
+            }
+            grpc::points_update_operation::Operation::DeleteVectors(delete_vectors) => {
+                delete_vectors.validate()
+            }
+            grpc::points_update_operation::Operation::DeletePoints(delete_points) => {
+                delete_points.validate()
+            }
+            grpc::points_update_operation::Operation::ClearPayload(clear_payload) => {
+                clear_payload.validate()
+            }
+        }
+    }
+}
+
 impl Validate for grpc::FieldCondition {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let grpc::FieldCondition {
