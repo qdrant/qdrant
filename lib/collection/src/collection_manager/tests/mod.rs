@@ -17,7 +17,6 @@ use shard::retrieve::retrieve_blocking::retrieve_blocking;
 use shard::update::{delete_points, set_payload, upsert_points};
 use tempfile::Builder;
 
-use super::holders::proxy_segment;
 use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{
@@ -32,11 +31,7 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId) -> SegmentId {
 
     let optimizing_segment = write_segments.get(sid).unwrap().clone();
 
-    let proxy = ProxySegment::new(
-        optimizing_segment,
-        proxy_segment::LockedRmSet::default(),
-        proxy_segment::LockedIndexChanges::default(),
-    );
+    let proxy = ProxySegment::new(optimizing_segment);
 
     let (new_id, _replaced_segments) = write_segments.swap_new(proxy, &[sid]);
     new_id
@@ -397,19 +392,12 @@ fn test_proxy_shared_updates() {
         .set_payload(10, idx2, &old_payload, &None, &hw_counter)
         .unwrap();
 
-    let deleted_points = proxy_segment::LockedRmSet::default();
-    let changed_indexes = proxy_segment::LockedIndexChanges::default();
-
     let locked_segment_1 = LockedSegment::new(segment1);
     let locked_segment_2 = LockedSegment::new(segment2);
 
-    let proxy_segment_1 = ProxySegment::new(
-        locked_segment_1,
-        Arc::clone(&deleted_points),
-        Arc::clone(&changed_indexes),
-    );
+    let proxy_segment_1 = ProxySegment::new(locked_segment_1);
 
-    let proxy_segment_2 = ProxySegment::new(locked_segment_2, deleted_points, changed_indexes);
+    let proxy_segment_2 = ProxySegment::new(locked_segment_2);
 
     let mut holder = SegmentHolder::default();
 
@@ -539,19 +527,13 @@ fn test_proxy_shared_updates_same_version() {
         .set_payload(10, idx2, &old_payload, &None, &hw_counter)
         .unwrap();
 
-    let deleted_points = proxy_segment::LockedRmSet::default();
-    let changed_indexes = proxy_segment::LockedIndexChanges::default();
 
     let locked_segment_1 = LockedSegment::new(segment1);
     let locked_segment_2 = LockedSegment::new(segment2);
 
-    let proxy_segment_1 = ProxySegment::new(
-        locked_segment_1,
-        Arc::clone(&deleted_points),
-        Arc::clone(&changed_indexes),
-    );
+    let proxy_segment_1 = ProxySegment::new(locked_segment_1);
 
-    let proxy_segment_2 = ProxySegment::new(locked_segment_2, deleted_points, changed_indexes);
+    let proxy_segment_2 = ProxySegment::new(locked_segment_2);
 
     let mut holder = SegmentHolder::default();
 

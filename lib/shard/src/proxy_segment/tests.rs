@@ -64,11 +64,7 @@ fn test_search_batch_equivalence_single() {
         .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter)
         .unwrap();
 
-    let mut proxy_segment = ProxySegment::new(
-        original_segment,
-        LockedRmSet::default(),
-        LockedIndexChanges::default(),
-    );
+    let mut proxy_segment = ProxySegment::new(original_segment);
 
     proxy_segment
         .delete_point(102, 1.into(), &hw_counter)
@@ -118,11 +114,7 @@ fn test_search_batch_equivalence_single_random() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let original_segment = LockedSegment::new(random_segment(dir.path(), 100, 200, 4));
 
-    let proxy_segment = ProxySegment::new(
-        original_segment,
-        LockedRmSet::default(),
-        LockedIndexChanges::default(),
-    );
+    let proxy_segment = ProxySegment::new(original_segment);
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
     let search_result = proxy_segment
@@ -166,11 +158,7 @@ fn test_search_batch_equivalence_multi_random() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let original_segment = LockedSegment::new(random_segment(dir.path(), 100, 200, 4));
 
-    let proxy_segment = ProxySegment::new(
-        original_segment,
-        LockedRmSet::default(),
-        LockedIndexChanges::default(),
-    );
+    let proxy_segment = ProxySegment::new(original_segment);
 
     let q1 = [1.0, 1.0, 1.0, 0.1];
     let q2 = [1.0, 1.0, 0.1, 0.1];
@@ -219,11 +207,7 @@ fn test_search_batch_equivalence_multi_random() {
 }
 
 fn wrap_proxy(original_segment: LockedSegment) -> ProxySegment {
-    ProxySegment::new(
-        original_segment,
-        LockedRmSet::default(),
-        LockedIndexChanges::default(),
-    )
+    ProxySegment::new(original_segment)
 }
 
 #[test]
@@ -309,11 +293,7 @@ fn test_sync_indexes() {
         )
         .unwrap();
 
-    let proxy_segment = ProxySegment::new(
-        original_segment.clone(),
-        LockedRmSet::default(),
-        LockedIndexChanges::default(),
-    );
+    let proxy_segment = ProxySegment::new(original_segment.clone());
 
     let hw_cell = HardwareCounterCell::new();
 
@@ -372,18 +352,11 @@ fn test_take_snapshot() {
     let original_segment = LockedSegment::new(build_segment_1(dir.path()));
     let original_segment_2 = LockedSegment::new(build_segment_2(dir.path()));
 
-    let deleted_points = LockedRmSet::default();
-    let changed_indexes = LockedIndexChanges::default();
-
     let hw_cell = HardwareCounterCell::new();
 
-    let mut proxy_segment = ProxySegment::new(
-        original_segment,
-        Arc::clone(&deleted_points),
-        Arc::clone(&changed_indexes),
-    );
+    let mut proxy_segment = ProxySegment::new(original_segment);
 
-    let proxy_segment2 = ProxySegment::new(original_segment_2, deleted_points, changed_indexes);
+    let proxy_segment2 = ProxySegment::new(original_segment_2);
 
     proxy_segment.delete_point(102, 1.into(), &hw_cell).unwrap();
 
@@ -422,11 +395,7 @@ fn test_point_vector_count() {
 
     let hw_cell = HardwareCounterCell::new();
 
-    let mut proxy_segment = ProxySegment::new(
-        original_segment,
-        LockedRmSet::default(),
-        LockedIndexChanges::default(),
-    );
+    let mut proxy_segment = ProxySegment::new(original_segment);
 
     // We have 5 points by default, assert counts
     let segment_info = proxy_segment.info();
@@ -496,11 +465,7 @@ fn test_point_vector_count_multivec() {
 
     let original_segment = LockedSegment::new(original_segment);
 
-    let mut proxy_segment = ProxySegment::new(
-        original_segment,
-        LockedRmSet::default(),
-        LockedIndexChanges::default(),
-    );
+    let mut proxy_segment = ProxySegment::new(original_segment);
 
     // Assert counts from original segment
     let segment_info = proxy_segment.info();
@@ -595,11 +560,7 @@ fn test_proxy_segment_flush() {
 
     let locked_wrapped_segment = LockedSegment::new(build_segment_1(tmp_dir.path()));
 
-    let mut proxy_segment = ProxySegment::new(
-        locked_wrapped_segment.clone(),
-        LockedRmSet::default(),
-        LockedIndexChanges::default(),
-    );
+    let mut proxy_segment = ProxySegment::new(locked_wrapped_segment.clone());
 
     let flushed_version_1 = proxy_segment.flush(true, false).unwrap();
 

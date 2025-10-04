@@ -188,6 +188,16 @@ impl SegmentHolder {
         (new_id, self.remove(remove_ids))
     }
 
+    pub fn swap_new_locked(
+        &mut self,
+        segment: LockedSegment,
+        remove_ids: &[SegmentId],
+    ) -> (SegmentId, Vec<LockedSegment>)
+    {
+        let new_id = self.add_new_locked(segment);
+        (new_id, self.remove(remove_ids))
+    }
+
     /// Replace an existing segment
     ///
     /// # Arguments
@@ -688,7 +698,10 @@ impl SegmentHolder {
                     return Ok(false);
                 }
 
-                let is_applied = if update_nonappendable || write_segment.is_appendable() {
+                let can_apply_operation = !write_segment.is_proxy()
+                    && (update_nonappendable || write_segment.is_appendable());
+
+                let is_applied = if can_apply_operation {
                     point_operation(point_id, write_segment)?
                 } else {
                     self.aloha_random_write(
@@ -697,6 +710,8 @@ impl SegmentHolder {
                             let mut all_vectors =
                                 write_segment.all_vectors(point_id, hw_counter)?;
                             let mut payload = write_segment.payload(point_id, hw_counter)?;
+
+                            eprintln!("moving payload = {:#?}", payload);
 
                             point_cow_operation(point_id, &mut all_vectors, &mut payload);
 

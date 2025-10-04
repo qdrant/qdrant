@@ -742,7 +742,7 @@ fn test_proxy_propagate_older_delete_to_wrapped() {
     match (&outer_proxies[0].1, &outer_proxies[1].1) {
         (LockedSegment::Proxy(first), LockedSegment::Proxy(second)) => {
             assert_eq!(
-                first.read().get_deleted_points().read().deref(),
+                first.read().get_deleted_points(),
                 &AHashMap::from_iter([(
                     pid,
                     ProxyDeletedPoint {
@@ -754,7 +754,7 @@ fn test_proxy_propagate_older_delete_to_wrapped() {
                 )]),
             );
             assert_eq!(
-                second.read().get_deleted_points().read().deref(),
+                second.read().get_deleted_points(),
                 &AHashMap::from_iter([(
                     pid,
                     ProxyDeletedPoint {
