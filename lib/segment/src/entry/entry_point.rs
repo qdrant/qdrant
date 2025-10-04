@@ -31,6 +31,8 @@ pub trait SegmentEntry: SnapshotEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
+    fn is_proxy(&self) -> bool;
+
     /// Get version of specified point
     ///
     /// Returns `None` if point does not exist or is soft-deleted.

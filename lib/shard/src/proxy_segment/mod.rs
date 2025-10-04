@@ -5,21 +5,18 @@ pub mod snapshot_entry;
 mod tests;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use ahash::AHashMap;
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools as _;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::OperationResult;
 use segment::types::*;
 
 use crate::locked_segment::LockedSegment;
 
-pub type LockedRmSet = Arc<RwLock<AHashMap<PointIdType, ProxyDeletedPoint>>>;
-pub type LockedIndexChanges = Arc<RwLock<ProxyIndexChanges>>;
+pub type DeletedPoints = AHashMap<PointIdType, ProxyDeletedPoint>;
 
 /// This object is a wrapper around read-only segment.
 ///
@@ -32,11 +29,11 @@ pub struct ProxySegment {
     /// Present if the wrapped segment is a plain segment
     /// Used for faster deletion checks
     deleted_mask: Option<BitVec>,
-    changed_indexes: LockedIndexChanges,
+    changed_indexes: ProxyIndexChanges,
     /// Points which should no longer used from wrapped_segment
     /// May contain points which are not in wrapped_segment,
     /// because the set is shared among all proxy segments
-    deleted_points: LockedRmSet,
+    deleted_points: DeletedPoints,
     wrapped_config: SegmentConfig,
 
     /// Keeps track if the wrapped segment has pending changes
@@ -47,8 +44,6 @@ pub struct ProxySegment {
 impl ProxySegment {
     pub fn new(
         segment: LockedSegment,
-        deleted_points: LockedRmSet,
-        changed_indexes: LockedIndexChanges,
     ) -> Self {
         let deleted_mask = match &segment {
             LockedSegment::Original(raw_segment) => {
@@ -70,8 +65,8 @@ impl ProxySegment {
         ProxySegment {
             wrapped_segment: segment,
             deleted_mask,
-            changed_indexes,
-            deleted_points,
+            changed_indexes: ProxyIndexChanges::default(),
+            deleted_points: AHashMap::new(),
             wrapped_config,
             version,
         }
@@ -171,7 +166,7 @@ impl ProxySegment {
     /// This is required if making both the wrapped segment and the writable segment available in a
     /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
     /// required.
-    pub fn propagate_to_wrapped(&self) -> OperationResult<()> {
+    pub fn propagate_to_wrapped(&mut self) -> OperationResult<()> {
         // Important: we must not keep a write lock on the wrapped segment for the duration of this
         // function to prevent a deadlock. The search functions conflict with it trying to take a
         // read lock on the wrapped segment as well while already holding the deleted points lock
@@ -186,10 +181,9 @@ impl ProxySegment {
         // Lock ordering is important here and must match the flush function to prevent a deadlock
         {
             let op_num = wrapped_segment.version();
-            let changed_indexes = self.changed_indexes.upgradable_read();
-            if !changed_indexes.is_empty() {
+            if !self.changed_indexes.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for (field_name, change) in changed_indexes.iter_ordered() {
+                    for (field_name, change) in self.changed_indexes.iter_ordered() {
                         debug_assert!(
                             change.version() >= op_num,
                             "proxied index change should have newer version than segment",
@@ -215,17 +209,16 @@ impl ProxySegment {
                     }
                     OperationResult::Ok(())
                 })?;
-                RwLockUpgradableReadGuard::upgrade(changed_indexes).clear();
+                self.changed_indexes.clear();
             }
         }
 
         // Propagate deleted points
         // Lock ordering is important here and must match the flush function to prevent a deadlock
         {
-            let deleted_points = self.deleted_points.upgradable_read();
-            if !deleted_points.is_empty() {
+            if !self.deleted_points.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for (point_id, versions) in deleted_points.iter() {
+                    for (point_id, versions) in self.deleted_points.iter() {
                         // Note:
                         // Queued deletes may have an older version than what is currently in the
                         // wrapped segment. Such deletes are ignored because the point in the
@@ -240,7 +233,7 @@ impl ProxySegment {
                     }
                     OperationResult::Ok(())
                 })?;
-                RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
+                self.deleted_points.clear();
 
                 // Note: We do not clear the deleted mask here, as it provides
                 // no performance advantage and does not affect the correctness of search.
@@ -251,9 +244,12 @@ impl ProxySegment {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub fn get_deleted_points(&self) -> &LockedRmSet {
+    pub fn get_deleted_points(&self) -> &DeletedPoints {
         &self.deleted_points
+    }
+
+    pub fn get_index_changes(&self) -> &ProxyIndexChanges {
+        &self.changed_indexes
     }
 }
 
@@ -310,9 +306,15 @@ impl ProxyIndexChanges {
     pub fn iter_unordered(&self) -> impl Iterator<Item = (&PayloadKeyType, &ProxyIndexChange)> {
         self.changes.iter()
     }
+
+    pub fn merge(&mut self, other: &Self) {
+        for (key, change) in &other.changes {
+            self.changes.insert(key.clone(), change.clone());
+        }
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ProxyIndexChange {
     Create(PayloadFieldSchema, SeqNumberType),
     Delete(SeqNumberType),

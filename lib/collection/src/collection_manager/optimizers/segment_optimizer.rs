@@ -1,9 +1,10 @@
-use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
-use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-
+use crate::collection_manager::holders::proxy_segment::{ProxyIndexChange, ProxySegment};
+use crate::collection_manager::holders::segment_holder::{
+    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
+};
+use crate::config::CollectionParams;
+use crate::operations::config_diff::DiffConfig;
+use crate::operations::types::{CollectionError, CollectionResult};
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -25,14 +26,11 @@ use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
 };
-
-use crate::collection_manager::holders::proxy_segment::{self, ProxyIndexChange, ProxySegment};
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
-};
-use crate::config::CollectionParams;
-use crate::operations::config_diff::DiffConfig;
-use crate::operations::types::{CollectionError, CollectionResult};
+use shard::proxy_segment::{DeletedPoints, ProxyIndexChanges};
+use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
+use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -415,8 +413,7 @@ pub trait SegmentOptimizer {
     fn build_new_segment(
         &self,
         optimizing_segments: &[LockedSegment],
-        proxy_deleted_points: proxy_segment::LockedRmSet,
-        proxy_changed_indexes: proxy_segment::LockedIndexChanges,
+        proxies: &[LockedSegment],
         permit: ResourcePermit, // IO resources for copying data
         resource_budget: ResourceBudget,
         stopped: &AtomicBool,
@@ -462,9 +459,11 @@ pub trait SegmentOptimizer {
             )?;
         }
 
+        let proxy_index_changes = self.proxy_index_changes(proxies);
+
         // Apply index changes to segment builder
         // Indexes are only used for defragmentation in segment builder, so versions are ignored
-        for (field_name, change) in proxy_changed_indexes.read().iter_unordered() {
+        for (field_name, change) in proxy_index_changes.iter_unordered() {
             match change {
                 ProxyIndexChange::Create(schema, _) => {
                     segment_builder.add_indexed_field(field_name.to_owned(), schema.to_owned());
@@ -532,16 +531,13 @@ pub trait SegmentOptimizer {
             segment_builder.build(indexing_permit, stopped, &mut rng, hw_counter)?;
 
         // Delete points
-        let deleted_points_snapshot = proxy_deleted_points
-            .read()
-            .iter()
-            .map(|(point_id, versions)| (*point_id, *versions))
-            .collect::<Vec<_>>();
+        let deleted_points_snapshot = self.proxy_deleted_points(proxies);
+        let proxy_index_changes = self.proxy_index_changes(proxies);
 
         // Apply index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored
         let old_optimized_segment_version = optimized_segment.version();
-        for (field_name, change) in proxy_changed_indexes.read().iter_ordered() {
+        for (field_name, change) in proxy_index_changes.iter_ordered() {
             debug_assert!(
                 change.version() >= old_optimized_segment_version,
                 "proxied index change should have newer version than segment",
@@ -651,19 +647,9 @@ pub trait SegmentOptimizer {
             .then(|| self.temp_segment(false))
             .transpose()?;
 
-        let proxy_deleted_points = proxy_segment::LockedRmSet::default();
-        let proxy_index_changes = proxy_segment::LockedIndexChanges::default();
-
         let mut proxies = Vec::new();
         for sg in optimizing_segments.iter() {
-            let proxy = ProxySegment::new(
-                sg.clone(),
-                // In this case, all proxies share their set of deleted points
-                // We can share deletes because they're all propagated to the same optimized
-                // segment, and we unproxy all at the same time
-                Arc::clone(&proxy_deleted_points),
-                Arc::clone(&proxy_index_changes),
-            );
+            let proxy = ProxySegment::new(sg.clone());
             // Wrapped segment is fresh, so it has no operations
             // Operation with number 0 will be applied
             if let Some(extra_cow_segment) = &extra_cow_segment_opt {
@@ -683,6 +669,8 @@ pub trait SegmentOptimizer {
             Some(LockedSegment::Proxy(_)) => unreachable!(),
             None => {}
         }
+
+        let mut locked_proxies: Vec<LockedSegment> = Vec::with_capacity(proxies.len());
 
         let proxy_ids: Vec<_> = {
             // Exclusive lock for the segments operations.
@@ -708,7 +696,14 @@ pub trait SegmentOptimizer {
                 if let Some(extra_cow_segment) = &extra_cow_segment_opt {
                     proxy.replicate_field_indexes(0, &hw_counter, extra_cow_segment)?; // Slow only in case the index is change in the gap between two calls
                 }
-                proxy_ids.push(write_segments.swap_new(proxy, &[idx]).0);
+
+                let locked_proxy = LockedSegment::from(proxy);
+                proxy_ids.push(
+                    write_segments
+                        .swap_new_locked(locked_proxy.clone(), &[idx])
+                        .0,
+                );
+                locked_proxies.push(locked_proxy);
             }
 
             if let Some(extra_cow_segment) = extra_cow_segment_opt {
@@ -722,8 +717,7 @@ pub trait SegmentOptimizer {
         let result = self.optimize_segment_propagate_changes(
             &segments,
             &optimizing_segments,
-            Arc::clone(&proxy_deleted_points),
-            Arc::clone(&proxy_index_changes),
+            &locked_proxies,
             permit,
             resource_budget,
             stopped,
@@ -766,6 +760,55 @@ pub trait SegmentOptimizer {
         Ok(point_count)
     }
 
+    /// Accumulates approximate set of points deleted in a given set of proxies
+    ///
+    /// This list is not synchronized (if not externally enforced),
+    /// but guarantees that it contains at least all points deleted in the proxies
+    /// before the call to this function.
+    fn proxy_deleted_points(&self, proxies: &[LockedSegment]) -> DeletedPoints {
+        let mut deleted_points = DeletedPoints::new();
+        for proxy_segment in proxies {
+            match proxy_segment {
+                LockedSegment::Original(_) => {
+                    log::error!("Reading raw segment, while proxy expected");
+                    debug_assert!(false, "Reading raw segment, while proxy expected");
+                }
+                LockedSegment::Proxy(proxy) => {
+                    let proxy_read = proxy.read();
+                    for (point_id, versions) in proxy_read.get_deleted_points() {
+                        let entry = deleted_points.entry(*point_id).or_insert(*versions);
+                        entry.operation_version =
+                            entry.operation_version.max(versions.operation_version);
+                        entry.local_version = entry.local_version.max(versions.local_version);
+                    }
+                }
+            }
+        }
+        deleted_points
+    }
+
+    /// Accumulates index changes made in a given set of proxies
+    ///
+    /// This list is not synchronized (if not externally enforced),
+    /// but guarantees that it contains at least all index changes made in the proxies
+    /// before the call to this function.
+    fn proxy_index_changes(&self, proxies: &[LockedSegment]) -> ProxyIndexChanges {
+        let mut index_changes = ProxyIndexChanges::default();
+        for proxy_segment in proxies {
+            match proxy_segment {
+                LockedSegment::Original(_) => {
+                    log::error!("Reading raw segment, while proxy expected");
+                    debug_assert!(false, "Reading raw segment, while proxy expected");
+                }
+                LockedSegment::Proxy(proxy) => {
+                    let proxy_read = proxy.read();
+                    index_changes.merge(proxy_read.get_index_changes())
+                }
+            }
+        }
+        index_changes
+    }
+
     /// Create a single optimized segment from the given segments.
     ///
     /// All point deletes or payload index changes made during optimization are propagated to the
@@ -783,8 +826,7 @@ pub trait SegmentOptimizer {
         &self,
         segments: &'a LockedSegmentHolder,
         optimizing_segments: &[LockedSegment],
-        proxy_deleted_points: proxy_segment::LockedRmSet,
-        proxy_index_changes: proxy_segment::LockedIndexChanges,
+        proxies: &[LockedSegment],
         permit: ResourcePermit, // IO resources for copying data
         resource_budget: ResourceBudget,
         stopped: &AtomicBool,
@@ -799,8 +841,7 @@ pub trait SegmentOptimizer {
 
         let mut optimized_segment = self.build_new_segment(
             optimizing_segments,
-            Arc::clone(&proxy_deleted_points),
-            Arc::clone(&proxy_index_changes),
+            proxies,
             permit,
             resource_budget,
             stopped,
@@ -811,8 +852,7 @@ pub trait SegmentOptimizer {
         // - save already removed points while avoiding long read locks
         // - exclude already removed points from post-optimization removing
         let already_remove_points = {
-            let mut all_removed_points: HashSet<_> =
-                proxy_deleted_points.read().keys().copied().collect();
+            let mut all_removed_points = self.proxy_deleted_points(proxies);
             for existing_point in optimized_segment.iter_points() {
                 all_removed_points.remove(&existing_point);
             }
@@ -826,9 +866,11 @@ pub trait SegmentOptimizer {
         // This block locks all operations with collection. It should be fast
         let write_segments_guard = segments.write();
 
+        let proxy_index_changes = self.proxy_index_changes(proxies);
+
         // Apply index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored
-        for (field_name, change) in proxy_index_changes.read().iter_ordered() {
+        for (field_name, change) in proxy_index_changes.iter_ordered() {
             // Warn: change version might be lower than the segment version,
             // because we might already applied the change earlier in optimization.
             // Applied optimizations are not removed from `proxy_index_changes`.
@@ -853,10 +895,12 @@ pub trait SegmentOptimizer {
             check_process_stopped(stopped)?;
         }
 
-        let deleted_points = proxy_deleted_points.read();
+        let deleted_points = self.proxy_deleted_points(proxies);
+
         let points_diff = deleted_points
             .iter()
-            .filter(|&(point_id, _version)| !already_remove_points.contains(point_id));
+            .filter(|&(point_id, _version)| !already_remove_points.contains_key(point_id));
+
         for (&point_id, &versions) in points_diff {
             // In this specific case we're sure logical point data in the wrapped segment is not
             // changed at all. We ensure this with an assertion at time of proxying, which makes

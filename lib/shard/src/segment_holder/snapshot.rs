@@ -13,7 +13,7 @@ use segment::types::SegmentConfig;
 
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
-use crate::proxy_segment::{LockedIndexChanges, LockedRmSet, ProxySegment};
+use crate::proxy_segment::ProxySegment;
 use crate::segment_holder::{SegmentHolder, SegmentId};
 
 impl SegmentHolder {
@@ -63,11 +63,6 @@ impl SegmentHolder {
             let segment = segments_lock.get(segment_id).unwrap();
             let proxy = ProxySegment::new(
                 segment.clone(),
-                // In this case, each proxy has their own set of deleted points
-                // We cannot share deletes because they're propagated to different wrapped
-                // segments, and we unproxy at different times
-                LockedRmSet::default(),
-                LockedIndexChanges::default(),
             );
 
             // Write segment is fresh, so it has no operations
@@ -149,7 +144,7 @@ impl SegmentHolder {
 
         // Batch 1: propagate changes to wrapped segment with segment holder read lock
         {
-            if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
+            if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
                 log::error!(
                     "Propagating proxy segment {segment_id} changes to wrapped segment failed, ignoring: {err}",
                 );
@@ -162,7 +157,7 @@ impl SegmentHolder {
         // Propagate proxied changes to wrapped segment, take it out and swap with proxy
         // Important: put the wrapped segment back with its original segment ID
         let wrapped_segment = {
-            let proxy_segment = proxy_segment.read();
+            let mut proxy_segment = proxy_segment.write();
             if let Err(err) = proxy_segment.propagate_to_wrapped() {
                 log::error!(
                     "Propagating proxy segment {segment_id} changes to wrapped segment failed, ignoring: {err}",
@@ -198,7 +193,7 @@ impl SegmentHolder {
                 LockedSegment::Proxy(proxy_segment) => Some((segment_id, proxy_segment)),
                 LockedSegment::Original(_) => None,
             }).for_each(|(proxy_id, proxy_segment)| {
-            if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
+            if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
                 log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
             }
         });
@@ -212,7 +207,7 @@ impl SegmentHolder {
                 // Important: put the wrapped segment back with its original segment ID
                 LockedSegment::Proxy(proxy_segment) => {
                     let wrapped_segment = {
-                        let proxy_segment = proxy_segment.read();
+                        let mut proxy_segment = proxy_segment.write();
                         if let Err(err) = proxy_segment.propagate_to_wrapped() {
                             log::error!(
                                 "Propagating proxy segment {segment_id} changes to wrapped segment failed, ignoring: {err}",
