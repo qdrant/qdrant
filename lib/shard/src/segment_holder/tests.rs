@@ -728,12 +728,22 @@ fn test_proxy_propagate_older_delete_to_wrapped() {
 
     // Both the outer and inner tmp segment must have point
     assert_eq!(
-        outer_tmp_segment.get().read().point_version(pid),
+        outer_segments_lock
+            .get(outer_tmp_segment)
+            .unwrap()
+            .get()
+            .read()
+            .point_version(pid),
         Some(300),
         "shared outer tmp segment has point version 300 from latest upsert",
     );
     assert_eq!(
-        inner_tmp_segment.get().read().point_version(pid),
+        outer_segments_lock
+            .get(inner_tmp_segment)
+            .unwrap()
+            .get()
+            .read()
+            .point_version(pid),
         Some(100),
         "shared inner tmp segment has point version 100 from first upsert",
     );
@@ -780,7 +790,12 @@ fn test_proxy_propagate_older_delete_to_wrapped() {
 
     // Delete propagation at unproxy deleted version 210 from shared inner tmp segment which had version 100
     assert!(
-        !inner_tmp_segment.get().read().has_point(pid),
+        !outer_segments_lock
+            .get(inner_tmp_segment)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(pid),
         "inner tmp segment must not have point",
     );
 
@@ -806,12 +821,22 @@ fn test_proxy_propagate_older_delete_to_wrapped() {
         "last outer proxy has point version 300 through shared outer tmp segment",
     );
     assert_eq!(
-        outer_tmp_segment.get().read().point_version(pid),
+        outer_segments_lock
+            .get(outer_tmp_segment)
+            .unwrap()
+            .get()
+            .read()
+            .point_version(pid),
         Some(300),
         "outer tmp segment has point version 300",
     );
     assert_eq!(
-        inner_tmp_segment.get().read().point_version(pid),
+        outer_segments_lock
+            .get(inner_tmp_segment)
+            .unwrap()
+            .get()
+            .read()
+            .point_version(pid),
         Some(400),
         "inner tmp segment has point version 400 from latest upsert",
     );
@@ -840,8 +865,15 @@ fn test_proxy_propagate_older_delete_to_wrapped() {
         Some(400),
         "last outer proxy has point version 300 through shared outer tmp segment",
     );
+
     assert_eq!(
-        inner_tmp_segment.get().read().point_version(pid),
+        holder
+            .read()
+            .get(inner_tmp_segment)
+            .unwrap()
+            .get()
+            .read()
+            .point_version(pid),
         Some(400),
         "inner tmp segment has point version 400 from latest upsert",
     );

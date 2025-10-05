@@ -39,7 +39,7 @@ impl SegmentHolder {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<(
         Vec<(SegmentId, LockedSegment)>,
-        LockedSegment,
+        SegmentId,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
     )> {
         // This counter will be used to measure operations on temp segment,
@@ -61,9 +61,7 @@ impl SegmentHolder {
         let mut new_proxies = Vec::with_capacity(segment_ids.len());
         for segment_id in segment_ids {
             let segment = segments_lock.get(segment_id).unwrap();
-            let proxy = ProxySegment::new(
-                segment.clone(),
-            );
+            let proxy = ProxySegment::new(segment.clone());
 
             // Write segment is fresh, so it has no operations
             // Operation with number 0 will be applied
@@ -104,11 +102,11 @@ impl SegmentHolder {
         }
 
         // Make sure at least one appendable segment exists
-        write_segments.add_new_locked(tmp_segment.clone());
+        let temp_segment_id = write_segments.add_new_locked(tmp_segment);
 
         let segments_lock = RwLockWriteGuard::downgrade_to_upgradable(write_segments);
 
-        Ok((proxies, tmp_segment, segments_lock))
+        Ok((proxies, temp_segment_id, segments_lock))
     }
 
     /// Try to unproxy a single shard segment for [`proxy_all_segments_and_apply`].
@@ -175,7 +173,7 @@ impl SegmentHolder {
     pub fn unproxy_all_segments(
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         proxies: Vec<(SegmentId, LockedSegment)>,
-        tmp_segment: LockedSegment,
+        tmp_segment_id: SegmentId,
     ) -> OperationResult<()> {
         // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
         // wrapped segment back into the segment holder. This can be an expensive step if we
@@ -221,19 +219,9 @@ impl SegmentHolder {
                 LockedSegment::Original(_) => {}
             }
         }
-
-        // Finalize temporary segment we proxied writes to
-        // Append a temp segment to collection if it is not empty or there is no other appendable segment
-        if !write_segments.has_appendable_segment() || !tmp_segment.get().read().is_empty() {
-            log::trace!(
-                "Keeping temporary segment with {} points",
-                tmp_segment.get().read().available_point_count(),
-            );
-            write_segments.add_new_locked(tmp_segment);
-        } else {
-            log::trace!("Dropping temporary segment with no changes");
-            tmp_segment.drop_data()?;
-        }
+        debug_assert!(write_segments.get(tmp_segment_id).is_some(), "temp segment must exist");
+        // Remove temporary appendable segment, if we don't need it anymore
+        write_segments.remove_segment_if_not_needed(tmp_segment_id)?;
 
         Ok(())
     }

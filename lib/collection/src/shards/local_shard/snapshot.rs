@@ -272,7 +272,7 @@ where
 
     // Proxy all segments
     log::trace!("Proxying all shard segments to apply function");
-    let (mut proxies, tmp_segment, mut segments_lock) = SegmentHolder::proxy_all_segments(
+    let (mut proxies, tmp_segment_id, mut segments_lock) = SegmentHolder::proxy_all_segments(
         segments_lock,
         segments_path,
         segment_config,
@@ -338,7 +338,7 @@ where
     // Always do this to prevent leaving proxy segments behind
     log::trace!("Unproxying all shard segments after function is applied");
     let _update_guard = update_lock.blocking_write();
-    SegmentHolder::unproxy_all_segments(segments_lock, proxies, tmp_segment)?;
+    SegmentHolder::unproxy_all_segments(segments_lock, proxies, tmp_segment_id)?;
 
     result
 }

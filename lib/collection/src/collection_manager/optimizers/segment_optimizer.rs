@@ -1,10 +1,8 @@
-use crate::collection_manager::holders::proxy_segment::{ProxyIndexChange, ProxySegment};
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
-};
-use crate::config::CollectionParams;
-use crate::operations::config_diff::DiffConfig;
-use crate::operations::types::{CollectionError, CollectionResult};
+use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
+use std::path::Path;
+use std::sync::atomic::AtomicBool;
+
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -27,10 +25,14 @@ use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
 };
 use shard::proxy_segment::{DeletedPoints, ProxyIndexChanges};
-use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
-use std::path::Path;
-use std::sync::atomic::AtomicBool;
+
+use crate::collection_manager::holders::proxy_segment::{ProxyIndexChange, ProxySegment};
+use crate::collection_manager::holders::segment_holder::{
+    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
+};
+use crate::config::CollectionParams;
+use crate::operations::config_diff::DiffConfig;
+use crate::operations::types::{CollectionError, CollectionResult};
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -617,6 +619,7 @@ pub trait SegmentOptimizer {
         let appendable_segments_ids = segments_lock.appendable_segments_ids();
         let has_appendable_segments_except_optimized =
             appendable_segments_ids.iter().any(|id| !ids.contains(id));
+        let need_extra_cow_segment = !has_appendable_segments_except_optimized;
 
         let optimizing_segments: Vec<_> = ids
             .iter()
@@ -643,7 +646,7 @@ pub trait SegmentOptimizer {
 
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation, no measurement needed!
 
-        let extra_cow_segment_opt = has_appendable_segments_except_optimized
+        let extra_cow_segment_opt = need_extra_cow_segment
             .then(|| self.temp_segment(false))
             .transpose()?;
 
@@ -672,7 +675,7 @@ pub trait SegmentOptimizer {
 
         let mut locked_proxies: Vec<LockedSegment> = Vec::with_capacity(proxies.len());
 
-        let proxy_ids: Vec<_> = {
+        let (proxy_ids, cow_segment_id_opt): (Vec<_>, _) = {
             // Exclusive lock for the segments operations.
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
             let mut proxy_ids = Vec::new();
@@ -706,11 +709,10 @@ pub trait SegmentOptimizer {
                 locked_proxies.push(locked_proxy);
             }
 
-            if let Some(extra_cow_segment) = extra_cow_segment_opt {
-                write_segments.add_new_locked(extra_cow_segment);
-            }
+            let cow_segment_id_opt = extra_cow_segment_opt
+                .map(|extra_cow_segment| write_segments.add_new_locked(extra_cow_segment));
 
-            proxy_ids
+            (proxy_ids, cow_segment_id_opt)
         };
 
         // SLOW PART: create single optimized segment and propagate all new changes to it
@@ -742,12 +744,23 @@ pub trait SegmentOptimizer {
             "swapped different number of proxies on unwrap, missing or incorrect segment IDs?",
         );
 
+        if let Some(cow_segment_id) = cow_segment_id_opt {
+            debug_assert!(
+                write_segments_guard.get(cow_segment_id).is_some(),
+                "temporary COW segment must exist"
+            );
+            write_segments_guard.remove_segment_if_not_needed(cow_segment_id)?;
+        }
+
         // Release reference counter for each optimized segment
         drop(optimizing_segments);
 
         // Unlock collection for search and updates
         // After the collection is unlocked - we can remove data as slow as we want
         drop(write_segments_guard);
+
+        // Drop all pointers to proxies, so we can de-arc them
+        drop(locked_proxies);
 
         // Only remove data after we ensure the consistency of the collection.
         // If remove fails - we will still have operational collection with reported error.

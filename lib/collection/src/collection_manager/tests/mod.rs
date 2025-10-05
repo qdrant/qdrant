@@ -527,7 +527,6 @@ fn test_proxy_shared_updates_same_version() {
         .set_payload(10, idx2, &old_payload, &None, &hw_counter)
         .unwrap();
 
-
     let locked_segment_1 = LockedSegment::new(segment1);
     let locked_segment_2 = LockedSegment::new(segment2);
 
