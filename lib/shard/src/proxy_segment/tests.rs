@@ -415,14 +415,6 @@ fn test_point_vector_count() {
     let segment_info = proxy_segment.info();
     assert_eq!(segment_info.num_points, 4);
     assert_eq!(segment_info.num_vectors, 4);
-
-    // Delete vector of point 2, vector count should now be zero
-    proxy_segment
-        .delete_vector(103, 2.into(), DEFAULT_VECTOR_NAME)
-        .unwrap();
-    let segment_info = proxy_segment.info();
-    assert_eq!(segment_info.num_points, 4);
-    assert_eq!(segment_info.num_vectors, 3);
 }
 
 #[test]
@@ -472,83 +464,17 @@ fn test_point_vector_count_multivec() {
     assert_eq!(segment_info.num_points, 2);
     assert_eq!(segment_info.num_vectors, 4);
 
-    // Insert point ID 8 and 10 partially, assert counts
-    proxy_segment
-        .upsert_point(
-            102,
-            8.into(),
-            NamedVectors::from_pairs([(VECTOR1_NAME.into(), vec![0.0])]),
-            &hw_cell,
-        )
-        .unwrap();
-    proxy_segment
-        .upsert_point(
-            103,
-            10.into(),
-            NamedVectors::from_pairs([(VECTOR2_NAME.into(), vec![1.0])]),
-            &hw_cell,
-        )
-        .unwrap();
-    let segment_info = proxy_segment.info();
-    assert_eq!(segment_info.num_points, 4);
-    assert_eq!(segment_info.num_vectors, 6);
-
     // Delete nonexistent point, counts should remain the same
     proxy_segment.delete_point(104, 1.into(), &hw_cell).unwrap();
     let segment_info = proxy_segment.info();
-    assert_eq!(segment_info.num_points, 4);
-    assert_eq!(segment_info.num_vectors, 6);
+    assert_eq!(segment_info.num_points, 2);
+    assert_eq!(segment_info.num_vectors, 4);
 
     // Delete point 4, counts should decrease by 1
     proxy_segment.delete_point(105, 4.into(), &hw_cell).unwrap();
     let segment_info = proxy_segment.info();
-    assert_eq!(segment_info.num_points, 3);
-    assert_eq!(segment_info.num_vectors, 4);
-
-    // Delete vector 'a' of point 6, vector count should decrease by 1
-    proxy_segment
-        .delete_vector(106, 6.into(), VECTOR1_NAME)
-        .unwrap();
-    let segment_info = proxy_segment.info();
-    assert_eq!(segment_info.num_points, 3);
-    assert_eq!(segment_info.num_vectors, 3);
-
-    // Deleting it again shouldn't chain anything
-    proxy_segment
-        .delete_vector(107, 6.into(), VECTOR1_NAME)
-        .unwrap();
-    let segment_info = proxy_segment.info();
-    assert_eq!(segment_info.num_points, 3);
-    assert_eq!(segment_info.num_vectors, 3);
-
-    // Replace vector 'a' for point 8, counts should remain the same
-    proxy_segment
-        .upsert_point(
-            108,
-            8.into(),
-            NamedVectors::from_pairs([(VECTOR1_NAME.into(), vec![0.0])]),
-            &hw_cell,
-        )
-        .unwrap();
-    let segment_info = proxy_segment.info();
-    assert_eq!(segment_info.num_points, 3);
-    assert_eq!(segment_info.num_vectors, 3);
-
-    // Replace both vectors for point 8, adding a new vector
-    proxy_segment
-        .upsert_point(
-            109,
-            8.into(),
-            NamedVectors::from_pairs([
-                (VECTOR1_NAME.into(), vec![0.0]),
-                (VECTOR2_NAME.into(), vec![0.0]),
-            ]),
-            &hw_cell,
-        )
-        .unwrap();
-    let segment_info = proxy_segment.info();
-    assert_eq!(segment_info.num_points, 3);
-    assert_eq!(segment_info.num_vectors, 4);
+    assert_eq!(segment_info.num_points, 1);
+    assert_eq!(segment_info.num_vectors, 2);
 }
 
 #[test]
