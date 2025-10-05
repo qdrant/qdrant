@@ -42,9 +42,7 @@ pub struct ProxySegment {
 }
 
 impl ProxySegment {
-    pub fn new(
-        segment: LockedSegment,
-    ) -> Self {
+    pub fn new(segment: LockedSegment) -> Self {
         let deleted_mask = match &segment {
             LockedSegment::Original(raw_segment) => {
                 let raw_segment_guard = raw_segment.read();

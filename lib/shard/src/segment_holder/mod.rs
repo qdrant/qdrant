@@ -192,8 +192,7 @@ impl SegmentHolder {
         &mut self,
         segment: LockedSegment,
         remove_ids: &[SegmentId],
-    ) -> (SegmentId, Vec<LockedSegment>)
-    {
+    ) -> (SegmentId, Vec<LockedSegment>) {
         let new_id = self.add_new_locked(segment);
         (new_id, self.remove(remove_ids))
     }
@@ -711,8 +710,6 @@ impl SegmentHolder {
                                 write_segment.all_vectors(point_id, hw_counter)?;
                             let mut payload = write_segment.payload(point_id, hw_counter)?;
 
-                            eprintln!("moving payload = {:#?}", payload);
-
                             point_cow_operation(point_id, &mut all_vectors, &mut payload);
 
                             appendable_write_segment.upsert_point(
@@ -991,6 +988,40 @@ impl SegmentHolder {
         }
 
         Ok(LockedSegment::new(segment))
+    }
+
+    /// Method tries to remove the segment with the given ID under the following conditions:
+    ///
+    /// - The segment exists in the holder, if not - it is ignored.
+    /// - The segment is a raw segment and not some special proxy segment.
+    /// - The segment is empty.
+    /// - We are not removing the last appendable segment.
+    ///
+    /// Returns `true` if the segment was removed, `false` otherwise.
+    pub fn remove_segment_if_not_needed(&mut self, segment_id: SegmentId) -> OperationResult<bool> {
+        let tmp_segment = {
+            let segments = self.remove(&[segment_id]);
+            if segments.len() != 1 {
+                // Seems like segment is already removed, ignore
+                return Ok(false);
+            }
+            segments.into_iter().next().unwrap()
+        };
+
+        // Finalize temporary segment we proxied writes to
+        // Append a temp segment to collection if it is not empty or there is no other appendable segment
+        if !self.has_appendable_segment() || !tmp_segment.get().read().is_empty() {
+            log::trace!(
+                "Keeping temporary segment with {} points",
+                tmp_segment.get().read().available_point_count(),
+            );
+            self.add_existing_locked(segment_id, tmp_segment);
+            Ok(false)
+        } else {
+            log::trace!("Dropping temporary segment with no changes");
+            tmp_segment.drop_data()?;
+            Ok(true)
+        }
     }
 
     pub fn report_optimizer_error<E: ToString>(&mut self, error: E) {
