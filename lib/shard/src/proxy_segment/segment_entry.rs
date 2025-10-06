@@ -150,8 +150,7 @@ impl SegmentEntry for ProxySegment {
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
-            "Upsert is disabled for proxy segments: operation {} on point {}",
-            op_num, point_id,
+            "Upsert is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
     }
 
@@ -220,8 +219,7 @@ impl SegmentEntry for ProxySegment {
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
-            "Update vectors is disabled for proxy segments: operation {} on point {}",
-            op_num, point_id,
+            "Update vectors is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
     }
 
@@ -232,8 +230,7 @@ impl SegmentEntry for ProxySegment {
         _vector_name: &VectorName,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
-            "Delete vector is disabled for proxy segments: operation {} on point {}",
-            op_num, point_id
+            "Delete vector is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
     }
 
@@ -245,8 +242,7 @@ impl SegmentEntry for ProxySegment {
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
-            "Set full payload is disabled for proxy segments: operation {} on point {}",
-            op_num, point_id,
+            "Set full payload is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
     }
 
@@ -259,8 +255,7 @@ impl SegmentEntry for ProxySegment {
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
-            "Set payload is disabled for proxy segments: operation {} on point {}",
-            op_num, point_id
+            "Set payload is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
     }
 
@@ -272,8 +267,7 @@ impl SegmentEntry for ProxySegment {
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
-            "Delete payload is disabled for proxy segments: operation {} on point {}",
-            op_num, point_id
+            "Delete payload is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
     }
 
@@ -284,8 +278,7 @@ impl SegmentEntry for ProxySegment {
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
-            "Clear payload is disabled for proxy segments: operation {} on point {}",
-            op_num, point_id
+            "Clear payload is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
     }
 
