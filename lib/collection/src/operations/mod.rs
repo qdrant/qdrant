@@ -2,7 +2,6 @@ pub mod cluster_ops;
 pub mod config_diff;
 pub mod consistency_params;
 pub mod conversions;
-pub mod conversions_rest;
 pub mod generalizer;
 pub mod loggable;
 pub mod operation_effect;
