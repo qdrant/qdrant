@@ -570,6 +570,33 @@ impl ShardHolder {
                     }
                 }
             }
+            ShardSelectorInternal::ShardKeyWithFallback(key) => {
+
+                let shard_key_to_ids_mapping = self.get_shard_key_to_ids_mapping();
+
+                let (shard_ids, used_shard_key) = shard_key_to_ids_mapping
+                    .get(&key.target)
+                    .map(|shard_ids| (shard_ids.clone(), &key.target))
+                    .or_else(|| {
+                        shard_key_to_ids_mapping
+                            .get(&key.fallback)
+                            .map(|shard_ids| (shard_ids.clone(), &key.fallback))
+                    })
+                    .ok_or_else(|| {
+                        CollectionError::bad_request(format!(
+                            "Neither target shard key {} nor fallback shard key {} exist",
+                            key.target, key.fallback
+                        ))
+                    })?;
+
+                for shard_id in shard_ids {
+                    if let Some(replica_set) = self.shards.get(&shard_id) {
+                        res.push((replica_set, Some(&used_shard_key)));
+                    } else {
+                        debug_assert!(false, "Shard id {shard_id} not found")
+                    }
+                }
+            }
             ShardSelectorInternal::ShardId(shard_id) => {
                 if let Some(replica_set) = self.shards.get(shard_id) {
                     res.push((replica_set, self.shard_id_to_key_mapping.get(shard_id)));

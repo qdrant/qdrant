@@ -398,12 +398,19 @@ pub struct Batch {
     pub payloads: Option<Vec<Option<Payload>>>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+pub struct ShardKeyWithFallback {
+    pub target: ShardKey,
+    pub fallback: ShardKey,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq, Hash)]
 #[serde(untagged)]
 #[serde(expecting = "Expected a string or an integer")]
 pub enum ShardKeySelector {
     ShardKey(ShardKey),
     ShardKeys(Vec<ShardKey>),
+    ShardKeyWithFallback(ShardKeyWithFallback),
     // ToDo: select by pattern
 }
 
