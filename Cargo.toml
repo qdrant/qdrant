@@ -229,7 +229,7 @@ log = "0.4.28"
 memmap2 = "0.9.8"
 nix = { version = "0.29", features = ["fs", "feature"] }
 num-traits = "0.2.19"
-ordered-float = { version = "5.0.0", features = ["serde", "schemars"] }
+ordered-float = { version = "5.1.0", features = ["serde", "schemars"] }
 rayon = "1.11.0"
 parking_lot = { version = "0.12.4", features = ["deadlock_detection", "serde"] }
 ph = "0.8.5"
