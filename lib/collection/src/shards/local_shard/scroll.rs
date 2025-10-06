@@ -125,7 +125,7 @@ impl LocalShard {
             .map(|record| ScoredPoint {
                 id: record.id,
                 version: 0,
-                score: 0.0,
+                score: 1.0,
                 payload: record.payload,
                 vector: record.vector,
                 shard_key: record.shard_key,
