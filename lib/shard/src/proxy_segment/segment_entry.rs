@@ -488,11 +488,8 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {
-        if self.deleted_points.contains_key(&point_id) {
-            false
-        } else {
-            self.wrapped_segment.get().read().has_point(point_id)
-        }
+        !self.deleted_points.contains_key(&point_id)
+            && self.wrapped_segment.get().read().has_point(point_id)
     }
 
     fn is_empty(&self) -> bool {
