@@ -1000,17 +1000,20 @@ impl SegmentHolder {
     /// Returns `true` if the segment was removed, `false` otherwise.
     pub fn remove_segment_if_not_needed(&mut self, segment_id: SegmentId) -> OperationResult<bool> {
         let tmp_segment = {
-            let segments = self.remove(&[segment_id]);
-            if segments.len() != 1 {
+            let mut segments = self.remove(&[segment_id]);
+            if segments.is_empty() {
                 // Seems like segment is already removed, ignore
                 return Ok(false);
             }
-            segments.into_iter().next().unwrap()
+            assert_eq!(segments.len(), 1, "expected exactly one segment");
+            segments.pop().unwrap()
         };
 
-        // Finalize temporary segment we proxied writes to
         // Append a temp segment to collection if it is not empty or there is no other appendable segment
-        if !self.has_appendable_segment() || !tmp_segment.get().read().is_empty() {
+        if !self.has_appendable_segment()
+            || !tmp_segment.get().read().is_empty()
+            || !tmp_segment.is_original()
+        {
             log::trace!(
                 "Keeping temporary segment with {} points",
                 tmp_segment.get().read().available_point_count(),
