@@ -183,8 +183,12 @@ pub(super) async fn transfer_snapshot(
     };
 
     // Queue proxy local shard
+    // Queue operations starting from the last acknowledged WAL version, not from the latest
+    // available version. Since we're transferring files from disk, we must queue from the last
+    // acknowleged version to not miss any changes pending flush.
+    let from_version = replica_set.wal_acknowledged_version().await?;
     replica_set
-        .queue_proxify_local(remote_shard.clone(), None, progress)
+        .queue_proxify_local(remote_shard.clone(), from_version, progress)
         .await?;
 
     debug_assert!(

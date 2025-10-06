@@ -499,4 +499,15 @@ impl ShardReplicaSet {
 
         local_shard.wal_version().await
     }
+
+    pub async fn wal_acknowledged_version(&self) -> CollectionResult<Option<u64>> {
+        let local_shard_read = self.local.read().await;
+        let Some(local_shard) = local_shard_read.deref() else {
+            return Err(CollectionError::service_error(
+                "Cannot get WAL acknowleged version, shard replica set does not have local shard",
+            ));
+        };
+
+        local_shard.wal_acknowledged_version().await
+    }
 }

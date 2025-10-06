@@ -300,6 +300,30 @@ impl Shard {
         }
     }
 
+    pub async fn wal_acknowledged_version(&self) -> CollectionResult<Option<u64>> {
+        match self {
+            Self::Local(local_shard) => {
+                local_shard
+                    .wal
+                    .wal_acknowledged_version()
+                    .await
+                    .map_err(|err| {
+                        CollectionError::service_error(format!(
+                            "Cannot get WAL acknowledged version on {}: {err}",
+                            self.variant_name(),
+                        ))
+                    })
+            }
+
+            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+                Err(CollectionError::service_error(format!(
+                    "Cannot get WAL acknowledged version on {}",
+                    self.variant_name(),
+                )))
+            }
+        }
+    }
+
     pub async fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,

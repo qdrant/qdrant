@@ -118,6 +118,15 @@ impl RecoverableWal {
         )
     }
 
+    pub async fn wal_acknowledged_version(&self) -> Result<Option<u64>, WalDeltaError> {
+        let wal = self.wal.lock().await;
+        if wal.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(wal.first_index()))
+        }
+    }
+
     pub async fn wal_version(&self) -> Result<Option<u64>, WalDeltaError> {
         let wal = self.wal.lock().await;
         if wal.is_empty() {
