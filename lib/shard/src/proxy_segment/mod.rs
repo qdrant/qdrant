@@ -4,8 +4,6 @@ pub mod snapshot_entry;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
-
 use ahash::AHashMap;
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -266,7 +264,7 @@ pub struct ProxyDeletedPoint {
 
 #[derive(Debug, Default)]
 pub struct ProxyIndexChanges {
-    changes: HashMap<PayloadKeyType, ProxyIndexChange>,
+    changes: AHashMap<PayloadKeyType, ProxyIndexChange>,
 }
 
 impl ProxyIndexChanges {
