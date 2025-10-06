@@ -219,10 +219,12 @@ impl SegmentHolder {
                 LockedSegment::Original(_) => {}
             }
         }
+
         debug_assert!(
             write_segments.get(tmp_segment_id).is_some(),
-            "temp segment must exist"
+            "temp segment must exist",
         );
+
         // Remove temporary appendable segment, if we don't need it anymore
         write_segments.remove_segment_if_not_needed(tmp_segment_id)?;
 
