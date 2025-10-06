@@ -6,6 +6,7 @@ use futures::FutureExt as _;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::*;
+use shard::retrieve::record_internal::RecordInternal;
 
 use super::ShardReplicaSet;
 use crate::operations::consistency_params::ReadConsistency;
