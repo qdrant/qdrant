@@ -571,7 +571,6 @@ impl ShardHolder {
                 }
             }
             ShardSelectorInternal::ShardKeyWithFallback(key) => {
-
                 let shard_key_to_ids_mapping = self.get_shard_key_to_ids_mapping();
 
                 let (shard_ids, used_shard_key) = shard_key_to_ids_mapping
@@ -591,7 +590,7 @@ impl ShardHolder {
 
                 for shard_id in shard_ids {
                     if let Some(replica_set) = self.shards.get(&shard_id) {
-                        res.push((replica_set, Some(&used_shard_key)));
+                        res.push((replica_set, Some(used_shard_key)));
                     } else {
                         debug_assert!(false, "Shard id {shard_id} not found")
                     }
