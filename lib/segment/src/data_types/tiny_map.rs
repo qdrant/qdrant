@@ -102,8 +102,12 @@ where
             .map(|(_, v)| v)
     }
 
-    pub fn remove(&mut self, key: &K) -> Option<V> {
-        let found = self.list.iter().position(|(k, _)| k == key);
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+    where
+        K: borrow::Borrow<Q>,
+        Q: Eq + ?Sized,
+    {
+        let found = self.list.iter().position(|(k, _)| k.borrow() == key);
         match found {
             Some(i) => {
                 let (_, v) = self.list.remove(i);

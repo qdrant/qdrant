@@ -229,6 +229,12 @@ impl SegmentEntry for ProxySegment {
         point_id: PointIdType,
         _vector_name: &VectorName,
     ) -> OperationResult<bool> {
+        // Print current stack trace for easier debugging of unexpected calls
+
+        println!("Stack trace for delete_vector call:");
+        let backtrace = std::backtrace::Backtrace::capture();
+        println!("{backtrace}");
+
         Err(OperationError::service_error(format!(
             "Delete vector is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
