@@ -265,7 +265,7 @@ serde_json = { version = "~1.0", features = ["preserve_order"] }
 strum = { version = "0.27.2", features = ["derive"] }
 tap = "1.0.1"
 tar = "0.4.41"
-tempfile = "3.22.0"
+tempfile = "3.23.0"
 tokio = { version = "1.47.1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io", "io-util"] }
 tonic = { version = "0.11.0", features = ["gzip", "tls"] }
