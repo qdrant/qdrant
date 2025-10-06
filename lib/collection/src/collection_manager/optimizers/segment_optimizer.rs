@@ -375,19 +375,18 @@ pub trait SegmentOptimizer {
         restored_segment_ids
     }
 
-    /// Unwraps proxy, adds temp segment into collection
+    /// Unwraps proxy, puts wrapped segment back into local shard
     ///
     /// # Arguments
     ///
     /// * `segments` - all registered segments of the collection
     /// * `proxy_ids` - currently used proxies
-    /// * `temp_segment` - currently used temporary segment
     ///
     /// # Result
     ///
-    /// Rolls back optimization state.
-    /// All processed changes will still be there, but the collection should be returned into state
-    /// before optimization.
+    /// Drops any optimized state, and rolls back the segments to before optimizing. All new
+    /// changes since optimizing remain available as they were written to other appendable
+    /// segments.
     fn handle_cancellation(
         &self,
         segments: &LockedSegmentHolder,
@@ -747,7 +746,7 @@ pub trait SegmentOptimizer {
         if let Some(cow_segment_id) = cow_segment_id_opt {
             debug_assert!(
                 write_segments_guard.get(cow_segment_id).is_some(),
-                "temporary COW segment must exist"
+                "temporary CoW segment must exist"
             );
             write_segments_guard.remove_segment_if_not_needed(cow_segment_id)?;
         }
