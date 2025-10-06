@@ -626,6 +626,12 @@ impl SegmentEntry for ProxySegment {
         let wrapped_segment_guard = wrapped_segment.read();
         let persisted_version = wrapped_segment_guard.flush(sync, force)?;
 
+        debug_assert_eq!(
+            persisted_version,
+            wrapped_segment_guard.version(),
+            "wrapped segment must be flushed upto the current wrapped segment version",
+        );
+
         Ok(persisted_version)
     }
 
