@@ -134,6 +134,9 @@ def test_partial_snapshot_empty(tmp_path: pathlib.Path):
 
     write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1000, recover_read= True)
 
+    # Don't let asynchronous optimizations mess with our test
+    wait_collection_green(write_peer, COLLECTION)
+
     # Collection snapshot doesn't affect partial snapshot recovery timestamp
     recovery_ts = get_telemetry_collections(read_peer)[0]['shards'][0]['partial_snapshot']['recovery_timestamp']
     assert recovery_ts == 0
@@ -258,9 +261,6 @@ def bootstrap_collection(peer_url, shards = 1, bootstrap_points = 0):
 
     if bootstrap_points > 0:
         upsert(peer_url, bootstrap_points)
-
-    # Don't let asynchronous optimizations mess with our tests
-    wait_collection_green(peer_url, COLLECTION)
 
 def recover_collection(peer_url: str, recover_from_url: str):
     snapshot_url = create_collection_snapshot(recover_from_url)
