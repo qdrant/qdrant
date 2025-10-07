@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
+use segment::types::Filter;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
@@ -29,6 +30,7 @@ pub(super) async fn transfer_stream_records(
     shard_id: ShardId,
     remote_shard: RemoteShard,
     collection_id: &CollectionId,
+    filter: Option<Filter>,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     let cutoff;
@@ -46,7 +48,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         replica_set
-            .proxify_local(remote_shard.clone(), None)
+            .proxify_local(remote_shard.clone(), None, filter)
             .await?;
 
         // Don't increment hardware usage for internal operations

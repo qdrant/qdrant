@@ -53,6 +53,8 @@ pub struct ForwardProxyShard {
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
+    // ToDo: Transfer points only if they match the filter
+    filter: Option<Filter>,
 }
 
 impl ForwardProxyShard {
@@ -61,14 +63,16 @@ impl ForwardProxyShard {
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         resharding_hash_ring: Option<HashRingRouter>,
+        filter: Option<Filter>,
     ) -> Self {
         // Validate that `ForwardProxyShard` initialized correctly
 
         debug_assert!({
             let is_regular = shard_id == remote_shard.id && resharding_hash_ring.is_none();
             let is_resharding = shard_id != remote_shard.id && resharding_hash_ring.is_some();
+            let is_replicating_points = shard_id != remote_shard.id && filter.is_some();
 
-            is_regular || is_resharding
+            is_regular || is_resharding || is_replicating_points
         });
 
         if shard_id == remote_shard.id && resharding_hash_ring.is_some() {
@@ -83,6 +87,7 @@ impl ForwardProxyShard {
             wrapped_shard,
             remote_shard,
             resharding_hash_ring,
+            filter,
             update_lock: Mutex::new(()),
         }
     }

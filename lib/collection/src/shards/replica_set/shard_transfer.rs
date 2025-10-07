@@ -2,7 +2,7 @@ use std::ops::Deref as _;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use segment::types::PointIdType;
+use segment::types::{Filter, PointIdType};
 
 use super::ShardReplicaSet;
 use crate::hash_ring::HashRingRouter;
@@ -24,6 +24,7 @@ impl ShardReplicaSet {
         &self,
         remote_shard: RemoteShard,
         resharding_hash_ring: Option<HashRingRouter>,
+        filter: Option<Filter>,
     ) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
@@ -83,6 +84,7 @@ impl ShardReplicaSet {
             local_shard,
             remote_shard,
             resharding_hash_ring,
+            filter,
         );
         let _ = local.insert(Shard::ForwardProxy(proxy_shard));
 
@@ -469,7 +471,8 @@ impl ShardReplicaSet {
         };
 
         let (local_shard, remote_shard) = queue_proxy.forget_updates_and_finalize();
-        let forward_proxy = ForwardProxyShard::new(self.shard_id, local_shard, remote_shard, None);
+        let forward_proxy =
+            ForwardProxyShard::new(self.shard_id, local_shard, remote_shard, None, None);
         let _ = local.insert(Shard::ForwardProxy(forward_proxy));
 
         Ok(())
