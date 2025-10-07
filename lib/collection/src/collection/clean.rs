@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
+use ahash::AHashMap;
 use cancel::{CancellationToken, DropGuard};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::RwLock;
@@ -35,7 +36,7 @@ const CLEAN_BATCH_SIZE: usize = 5_000;
 /// completes. Once it completes it does not have to be run again on restart.
 #[derive(Default)]
 pub(super) struct ShardCleanTasks {
-    tasks: Arc<RwLock<HashMap<ShardId, ShardCleanTask>>>,
+    tasks: Arc<RwLock<AHashMap<ShardId, ShardCleanTask>>>,
 }
 
 impl ShardCleanTasks {
@@ -172,7 +173,7 @@ impl ShardCleanTasks {
     ///
     /// Only includes shards we've triggered cleaning for. On restart, or when invalidating shards,
     /// items are removed from the list.
-    pub fn statuses(&self) -> HashMap<ShardId, ShardCleanStatus> {
+    pub fn statuses(&self) -> AHashMap<ShardId, ShardCleanStatus> {
         self.tasks
             .read()
             .iter()

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use ahash::AHashMap;
 use api::rest::ShardKeySelector;
 use itertools::izip;
 use schemars::JsonSchema;
@@ -129,7 +130,7 @@ impl SplitByShard for ConditionalInsertOperationInternal {
 impl SplitByShard for BatchPersisted {
     fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
         let batch = self;
-        let mut batch_by_shard: HashMap<ShardId, BatchPersisted> = HashMap::new();
+        let mut batch_by_shard: AHashMap<ShardId, BatchPersisted> = AHashMap::new();
         let BatchPersisted {
             ids,
             vectors,

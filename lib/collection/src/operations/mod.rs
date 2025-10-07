@@ -22,8 +22,7 @@ pub mod query_enum {
     pub use shard::query::query_enum::QueryEnum;
 }
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use segment::types::ExtendedPointId;
 pub use shard::operations::*;
 
@@ -99,7 +98,7 @@ where
     I: IntoIterator<Item = O>,
     F: Fn(&O) -> ExtendedPointId,
 {
-    let mut op_vec_by_shard: HashMap<ShardId, Vec<O>> = HashMap::new();
+    let mut op_vec_by_shard: AHashMap<ShardId, Vec<O>> = AHashMap::new();
     for operation in iter {
         for shard_id in point_to_shards(&id_extractor(&operation), ring) {
             op_vec_by_shard

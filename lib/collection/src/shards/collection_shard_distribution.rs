@@ -1,11 +1,13 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+
+use ahash::AHashMap;
 
 use crate::collection_state::ShardInfo;
 use crate::shards::shard::{PeerId, ShardId};
 
 #[derive(Debug, Clone)]
 pub struct CollectionShardDistribution {
-    pub shards: HashMap<ShardId, HashSet<PeerId>>,
+    pub shards: AHashMap<ShardId, HashSet<PeerId>>,
 }
 
 impl CollectionShardDistribution {
@@ -17,7 +19,7 @@ impl CollectionShardDistribution {
         }
     }
 
-    pub fn from_shards_info(shards_info: HashMap<ShardId, ShardInfo>) -> Self {
+    pub fn from_shards_info(shards_info: AHashMap<ShardId, ShardInfo>) -> Self {
         Self {
             shards: shards_info
                 .into_iter()
