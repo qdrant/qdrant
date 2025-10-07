@@ -230,13 +230,13 @@ def extract_archive(archive_file: Path, extract_to: Path, cleanup_archive: bool 
         elif file_name.endswith(('.tar.xz', '.tar.gz', '.tar.bz2', '.tgz', '.tbz2')):
             # Handle compressed tar files
             with tarfile.open(archive_file, 'r:*') as tar:
-                tar.extractall(path=extract_to)
+                tar.extractall(path=extract_to, filter='data')
                 print(f"Extracted {archive_file} to {extract_to}")
 
         elif file_name.endswith('.tar'):
             # Handle uncompressed tar files
             with tarfile.open(archive_file, 'r:') as tar:
-                tar.extractall(path=extract_to)
+                tar.extractall(path=extract_to, filter='data')
                 print(f"Extracted {archive_file} to {extract_to}")
 
         elif file_name.endswith('.zip'):
