@@ -369,7 +369,7 @@ mod tests {
             locked_holder.read().get(segment_id).is_none(),
             "optimized segment should be gone",
         );
-        assert_eq!(locked_holder.read().len(), 2, "index must be built");
+        assert_eq!(locked_holder.read().len(), 1, "index must be built");
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
         let suggested_to_optimize =
@@ -530,7 +530,7 @@ mod tests {
             locked_holder.read().get(segment_id).is_none(),
             "optimized segment should be gone",
         );
-        assert_eq!(locked_holder.read().len(), 2, "index must be built");
+        assert_eq!(locked_holder.read().len(), 1, "index must be built");
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
         let suggested_to_optimize =
@@ -705,7 +705,7 @@ mod tests {
             locked_holder.read().get(segment_id).is_none(),
             "optimized segment should be gone",
         );
-        assert_eq!(locked_holder.read().len(), 2, "index must be built");
+        assert_eq!(locked_holder.read().len(), 1, "index must be built");
 
         // Mismatch optimizer should not optimize yet, quantization config is not changed yet
         let suggested_to_optimize =

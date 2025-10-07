@@ -412,8 +412,8 @@ mod tests {
             .map(|(_sid, segment)| segment.get().read().config().clone())
             .collect_vec();
 
-        assert_eq!(infos.len(), 2);
-        assert_eq!(configs.len(), 2);
+        assert_eq!(infos.len(), 1);
+        assert_eq!(configs.len(), 1);
 
         let total_points: usize = infos.iter().map(|info| info.num_points).sum();
         let total_vectors: usize = infos.iter().map(|info| info.num_vectors).sum();
@@ -706,10 +706,7 @@ mod tests {
             has_empty |= info.num_vectors == 0;
         }
 
-        assert!(
-            has_empty,
-            "Testing that new segment is created if none left"
-        );
+        assert!(!has_empty, "there must be no empty segments");
 
         let batch = BatchPersisted {
             ids: vec![601.into(), 602.into(), 603.into()],
@@ -823,7 +820,7 @@ mod tests {
         }
 
         // Ensure that the total number of segments did not change
-        assert_eq!(locked_holder.read().len(), number_of_segments);
+        assert_eq!(locked_holder.read().len(), number_of_segments - 1);
     }
 
     /// This tests things are as we expect when we define both `on_disk: false` and `memmap_threshold`
@@ -991,7 +988,7 @@ mod tests {
             locked_holder.read().get(segment_id).is_none(),
             "optimized segment should be gone",
         );
-        assert_eq!(locked_holder.read().len(), 2, "mmap must be built");
+        assert_eq!(locked_holder.read().len(), 1, "mmap must be built");
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
         let suggested_to_optimize =

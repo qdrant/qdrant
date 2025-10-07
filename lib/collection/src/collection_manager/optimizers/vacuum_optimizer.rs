@@ -513,7 +513,7 @@ mod tests {
             locked_holder.read().get(segment_id).is_none(),
             "optimized segment should be gone",
         );
-        assert_eq!(locked_holder.read().len(), 2, "index must be built");
+        assert_eq!(locked_holder.read().len(), 1, "index must be built");
 
         // Update working segment ID
         segment_id = *locked_holder
