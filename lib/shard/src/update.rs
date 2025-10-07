@@ -30,24 +30,39 @@ pub fn process_point_operation(
     point_operation: PointOperations,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
+    let mut segments_read = segments.read();
+
+    // Add appendable segment if we don't have any
+    if !segments_read.has_appendable_segment() {
+        log::debug!("Eagerly creating appendable segment because none exists");
+
+        drop(segments_read);
+
+        let segments_write = segments.write();
+
+        // TODO: create new appendable segment here!
+
+        segments_read = RwLockWriteGuard::downgrade(segments_write);
+    }
+
     match point_operation {
         PointOperations::UpsertPoints(operation) => {
             let points = operation.into_point_vec();
-            let res = upsert_points(&segments.read(), op_num, points.iter(), hw_counter)?;
+            let res = upsert_points(&segments_read, op_num, points.iter(), hw_counter)?;
             Ok(res)
         }
         PointOperations::UpsertPointsConditional(operation) => {
-            conditional_upsert(&segments.read(), op_num, operation, hw_counter)
+            conditional_upsert(&segments_read, op_num, operation, hw_counter)
         }
         PointOperations::DeletePoints { ids } => {
-            delete_points(&segments.read(), op_num, &ids, hw_counter)
+            delete_points(&segments_read, op_num, &ids, hw_counter)
         }
         PointOperations::DeletePointsByFilter(filter) => {
-            delete_points_by_filter(&segments.read(), op_num, &filter, hw_counter)
+            delete_points_by_filter(&segments_read, op_num, &filter, hw_counter)
         }
         PointOperations::SyncPoints(operation) => {
             let (deleted, new, updated) = sync_points(
-                &segments.read(),
+                &segments_read,
                 op_num,
                 operation.from_id,
                 operation.to_id,
