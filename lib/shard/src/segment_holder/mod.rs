@@ -308,7 +308,7 @@ impl SegmentHolder {
 
     /// Get a random appendable segment
     ///
-    /// If you want the smallest segment, use `random_appendable_segment_with_capacity` instead.
+    /// If you want the smallest segment, use `random_appendable_segment` instead.
     pub fn random_appendable_segment(&self) -> Option<LockedSegment> {
         let segment_ids: Vec<_> = self.appendable_segments_ids();
         segment_ids
