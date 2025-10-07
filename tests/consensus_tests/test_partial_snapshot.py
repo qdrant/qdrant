@@ -259,6 +259,9 @@ def bootstrap_collection(peer_url, shards = 1, bootstrap_points = 0):
     if bootstrap_points > 0:
         upsert(peer_url, bootstrap_points)
 
+    # Don't let asynchronous optimizations mess with our tests
+    wait_collection_green(peer_url, COLLECTION)
+
 def recover_collection(peer_url: str, recover_from_url: str):
     snapshot_url = create_collection_snapshot(recover_from_url)
     recover_collection_snapshot(peer_url, snapshot_url)
