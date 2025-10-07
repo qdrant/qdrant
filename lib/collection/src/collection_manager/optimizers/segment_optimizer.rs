@@ -618,6 +618,7 @@ pub trait SegmentOptimizer {
 
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation, no measurement needed!
 
+        // TODO: optimize!
         let mut proxies = Vec::new();
         for sg in optimizing_segments.iter() {
             let proxy = ProxySegment::new(sg.clone());

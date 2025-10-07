@@ -820,6 +820,7 @@ mod tests {
         }
 
         // Ensure that the total number of segments did not change
+        // TODO: update this?
         assert_eq!(locked_holder.read().len(), number_of_segments - 1);
     }
 

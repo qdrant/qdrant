@@ -42,6 +42,15 @@ impl SegmentHolder {
         // which is part of internal process and can be ignored
         let hw_counter = HardwareCounterCell::disposable();
 
+        // TODO: remove!
+        // // Create temporary appendable segment to direct all proxy writes into
+        // let tmp_segment = segments_lock.build_tmp_segment(
+        //     segments_path,
+        //     segment_config,
+        //     payload_index_schema,
+        //     false,
+        // )?;
+
         // List all segments we want to snapshot
         let segment_ids = segments_lock.segment_ids();
 
@@ -51,15 +60,35 @@ impl SegmentHolder {
             let segment = segments_lock.get(segment_id).unwrap();
             let proxy = ProxySegment::new(segment.clone());
 
+            // TODO: remove: // Write segment is fresh, so it has no operations
+            // TODO: remove: // Operation with number 0 will be applied
+            // TODO: remove: proxy.replicate_field_indexes(0, &hw_counter, &tmp_segment)?;
             new_proxies.push((segment_id, proxy));
         }
 
+        // TODO: remove: // Save segment version once all payload indices have been converted
+        // TODO: remove: // If this ends up not being saved due to a crash, the segment will not be used
+        // TODO: remove: match &tmp_segment {
+        // TODO: remove:     LockedSegment::Original(segment) => {
+        // TODO: remove:         let segment_path = &segment.read().current_path;
+        // TODO: remove:         SegmentVersion::save(segment_path)?;
+        // TODO: remove:     }
+        // TODO: remove:     LockedSegment::Proxy(_) => unreachable!(),
+        // TODO: remove: }
 
         // Replace all segments with proxies
         // We cannot fail past this point to prevent only having some segments proxified
         let mut proxies = Vec::with_capacity(new_proxies.len());
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
         for (segment_id, proxy) in new_proxies {
+            // TODO: remove: // Replicate field indexes the second time, because optimized segments could have
+            // TODO: remove: // been changed. The probability is small, though, so we can afford this operation
+            // TODO: remove: // under the full collection write lock
+            // TODO: remove: let op_num = proxy.version();
+            // TODO: remove: if let Err(err) = proxy.replicate_field_indexes(op_num, &hw_counter, &tmp_segment) {
+            // TODO: remove:     log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
+            // TODO: remove: }
+
             // We must keep existing segment IDs because ongoing optimizations might depend on the mapping being the same
             write_segments.replace(segment_id, proxy)?;
             let locked_proxy_segment = write_segments
@@ -68,6 +97,9 @@ impl SegmentHolder {
                 .expect("failed to get segment from segment holder we just swapped in");
             proxies.push((segment_id, locked_proxy_segment));
         }
+
+        // TODO: remove: // Make sure at least one appendable segment exists
+        // TODO: remove: let temp_segment_id = write_segments.add_new_locked(tmp_segment);
 
         let segments_lock = RwLockWriteGuard::downgrade_to_upgradable(write_segments);
 
