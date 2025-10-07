@@ -1,7 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use api::rest::OrderByInterface;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -68,7 +69,7 @@ async fn fixture() -> Collection {
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
 
     let collection_name = "test".to_string();
-    let shards: HashMap<ShardId, HashSet<PeerId>> = (0..SHARD_COUNT)
+    let shards: AHashMap<ShardId, HashSet<PeerId>> = (0..SHARD_COUNT)
         .map(|i| (i, HashSet::from([PEER_ID])))
         .collect();
 

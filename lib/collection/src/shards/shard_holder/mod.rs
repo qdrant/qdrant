@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use ahash::AHashMap;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
@@ -56,14 +57,14 @@ const RESHARDING_STATE_FILE: &str = "resharding_state.json";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 
 pub struct ShardHolder {
-    shards: HashMap<ShardId, ShardReplicaSet>,
+    shards: AHashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
     pub(crate) rings: HashMap<Option<ShardKey>, HashRingRouter>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access, does not use locking
-    shard_id_to_key_mapping: HashMap<ShardId, ShardKey>,
+    shard_id_to_key_mapping: AHashMap<ShardId, ShardKey>,
 }
 
 pub type LockedShardHolder = RwLock<ShardHolder>;
@@ -87,7 +88,7 @@ impl ShardHolder {
         // TODO(shardkey): Remove once the old shardkey format has been removed entirely.
         Self::migrate_shard_key_if_needed(&key_mapping)?;
 
-        let mut shard_id_to_key_mapping = HashMap::new();
+        let mut shard_id_to_key_mapping = AHashMap::new();
 
         for (shard_key, shard_ids) in key_mapping.read().iter() {
             for shard_id in shard_ids {
@@ -100,7 +101,7 @@ impl ShardHolder {
         let (shard_transfer_changes, _) = broadcast::channel(64);
 
         Ok(Self {
-            shards: HashMap::new(),
+            shards: AHashMap::new(),
             shard_transfers,
             shard_transfer_changes,
             resharding_state,
@@ -120,7 +121,7 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn get_shard_id_to_key_mapping(&self) -> &HashMap<ShardId, ShardKey> {
+    pub fn get_shard_id_to_key_mapping(&self) -> &AHashMap<ShardId, ShardKey> {
         &self.shard_id_to_key_mapping
     }
 
@@ -278,7 +279,7 @@ impl ShardHolder {
         &mut self,
         shard_ids: HashSet<ShardId>,
         shard_key_mapping: ShardKeyMapping,
-        extra_shards: HashMap<ShardId, ShardReplicaSet>,
+        extra_shards: AHashMap<ShardId, ShardReplicaSet>,
     ) -> CollectionResult<()> {
         self.shards.extend(extra_shards.into_iter());
 
@@ -616,7 +617,7 @@ impl ShardHolder {
         {
             ShardingMethod::Auto => {
                 let ids_list = (0..shard_number).collect::<Vec<_>>();
-                let shard_id_to_key_mapping = HashMap::new();
+                let shard_id_to_key_mapping = AHashMap::new();
                 (ids_list, shard_id_to_key_mapping)
             }
             ShardingMethod::Custom => {
