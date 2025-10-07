@@ -544,14 +544,13 @@ fn test_double_proxies() {
     let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
         Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
 
-    let (inner_proxies, inner_tmp_segment, inner_segments_lock) =
-        SegmentHolder::proxy_all_segments(
-            holder.upgradable_read(),
-            segments_dir.path(),
-            None,
-            schema.clone(),
-        )
-        .unwrap();
+    let (inner_proxies, inner_segments_lock) = SegmentHolder::proxy_all_segments(
+        holder.upgradable_read(),
+        segments_dir.path(),
+        None,
+        schema.clone(),
+    )
+    .unwrap();
 
     // check inner proxy contains points
     let points = inner_proxies[0]
@@ -569,7 +568,7 @@ fn test_double_proxies() {
         .delete_point(10, 1.into(), &hw_counter)
         .unwrap();
 
-    let (outer_proxies, outer_tmp_segment, outer_segments_lock) =
+    let (outer_proxies, outer_segments_lock) =
         SegmentHolder::proxy_all_segments(inner_segments_lock, segments_dir.path(), None, schema)
             .unwrap();
 
@@ -600,12 +599,10 @@ fn test_double_proxies() {
     assert!(has_point, "Point should be present in double proxy");
 
     // Unproxy once
-    SegmentHolder::unproxy_all_segments(outer_segments_lock, outer_proxies, outer_tmp_segment)
-        .unwrap();
+    SegmentHolder::unproxy_all_segments(outer_segments_lock, outer_proxies).unwrap();
 
     // Unproxy twice
-    SegmentHolder::unproxy_all_segments(holder.upgradable_read(), inner_proxies, inner_tmp_segment)
-        .unwrap();
+    SegmentHolder::unproxy_all_segments(holder.upgradable_read(), inner_proxies).unwrap();
 
     let after_segment_ids = holder
         .read()

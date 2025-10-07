@@ -990,43 +990,6 @@ impl SegmentHolder {
         Ok(LockedSegment::new(segment))
     }
 
-    /// Method tries to remove the segment with the given ID under the following conditions:
-    ///
-    /// - The segment exists in the holder, if not - it is ignored.
-    /// - The segment is a raw segment and not some special proxy segment.
-    /// - The segment is empty.
-    /// - We are not removing the last appendable segment.
-    ///
-    /// Returns `true` if the segment was removed, `false` otherwise.
-    pub fn remove_segment_if_not_needed(&mut self, segment_id: SegmentId) -> OperationResult<bool> {
-        let tmp_segment = {
-            let mut segments = self.remove(&[segment_id]);
-            if segments.is_empty() {
-                // Seems like segment is already removed, ignore
-                return Ok(false);
-            }
-            assert_eq!(segments.len(), 1, "expected exactly one segment");
-            segments.pop().unwrap()
-        };
-
-        // Append a temp segment to collection if it is not empty or there is no other appendable segment
-        if !self.has_appendable_segment()
-            || !tmp_segment.get().read().is_empty()
-            || !tmp_segment.is_original()
-        {
-            log::trace!(
-                "Keeping temporary segment with {} points",
-                tmp_segment.get().read().available_point_count(),
-            );
-            self.add_existing_locked(segment_id, tmp_segment);
-            Ok(false)
-        } else {
-            log::trace!("Dropping temporary segment with no changes");
-            tmp_segment.drop_data()?;
-            Ok(true)
-        }
-    }
-
     pub fn report_optimizer_error<E: ToString>(&mut self, error: E) {
         // Save only the first error
         // If is more likely to be the real cause of all further problems
