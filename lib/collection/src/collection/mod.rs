@@ -732,6 +732,7 @@ impl Collection {
                     sync: true,
                     // For automatic shard transfers, always select some default method from this point on
                     method: Some(shard_transfer_method),
+                    filter: None,
                 };
 
                 if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {

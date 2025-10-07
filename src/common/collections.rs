@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,8 +7,8 @@ use api::rest::models::{CollectionDescription, CollectionsResponse};
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
-    ReplicateShardOperation, ReshardingDirection, RestartTransfer, RestartTransferOperation,
-    StartResharding,
+    ReplicatePointsOperation, ReplicateShardOperation, ReshardingDirection, RestartTransfer,
+    RestartTransferOperation, StartResharding,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -19,7 +19,9 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
-use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
+use collection::shards::transfer::{
+    ShardTransfer, ShardTransferKey, ShardTransferMethod, ShardTransferRestart,
+};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
@@ -276,6 +278,7 @@ pub async fn do_update_collection_cluster(
                             from: move_shard.from_peer_id,
                             sync: false,
                             method: move_shard.method,
+                            filter: None,
                         }),
                     ),
                     access,
@@ -312,6 +315,47 @@ pub async fn do_update_collection_cluster(
                             from: replicate_shard.from_peer_id,
                             sync: true,
                             method: replicate_shard.method,
+                            filter: None,
+                        }),
+                    ),
+                    access,
+                    wait_timeout,
+                )
+                .await
+        }
+        ClusterOperations::ReplicatePoints(ReplicatePointsOperation { replicate_points }) => {
+            // validate shard to replicate
+            if !collection
+                .contains_shard(replicate_points.from_shard_id)
+                .await
+            {
+                return Err(StorageError::BadRequest {
+                    description: format!(
+                        "Shard {} of {} does not exist",
+                        replicate_points.from_shard_id, collection_name
+                    ),
+                });
+            };
+
+            // validate target peer exists
+            validate_peer_exists(replicate_points.to_peer_id)?;
+
+            // validate source peer exists
+            validate_peer_exists(replicate_points.from_peer_id)?;
+
+            // submit operation to consensus
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::TransferShard(
+                        collection_name,
+                        Start(ShardTransfer {
+                            shard_id: replicate_points.from_shard_id,
+                            to_shard_id: Some(replicate_points.to_shard_id),
+                            from: replicate_points.from_peer_id,
+                            to: replicate_points.to_peer_id,
+                            sync: true,
+                            method: Some(ShardTransferMethod::FilteredStreamRecords),
+                            filter: Some(replicate_points.filter),
                         }),
                     ),
                     access,

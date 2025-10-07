@@ -135,6 +135,7 @@ impl TableOfContent {
                 to: to_peer,
                 sync,
                 method,
+                filter: None,
             };
             let operation = ConsensusOperations::start_transfer(collection_name, transfer_request);
             proposal_sender.send(operation)?;

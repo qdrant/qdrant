@@ -3547,6 +3547,8 @@ pub struct Filter {
     pub must_not: Option<Vec<Condition>>,
 }
 
+impl Eq for Filter {}
+
 impl Filter {
     pub fn new_should(condition: Condition) -> Self {
         Filter {

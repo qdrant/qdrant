@@ -205,20 +205,21 @@ pub struct ReplicatePointsOperation {
 #[serde(rename_all = "snake_case")]
 pub struct ReplicatePoints {
     pub filter: Filter,
-    pub from_shard_key: ShardKey,
-    pub to_shard_key: ShardKey,
+    pub from_shard_id: ShardId,
+    pub to_shard_id: ShardId,
     pub from_peer_id: PeerId,
     pub to_peer_id: PeerId,
 }
 
 impl Validate for ReplicatePoints {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_shard_different_peers(
-            self.from_peer_id,
-            self.to_peer_id,
-            self.from_shard_id,
-            Some(self.to_shard_id),
-        )
+        // validate_shard_different_peers(
+        //     self.from_peer_id,
+        //     self.to_peer_id,
+        //     self.from_shard_key,
+        //     Some(self.to_shard_key),
+        // )
+        Ok(())
     }
 }
 
