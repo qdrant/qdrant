@@ -8,7 +8,6 @@ use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_disk_size;
 use fs_err as fs;
-use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
@@ -18,8 +17,7 @@ use segment::common::operation_time_statistics::{
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
-use segment::segment::{Segment, SegmentVersion};
-use segment::segment_constructor::build_segment;
+use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
@@ -84,22 +82,6 @@ pub trait SegmentOptimizer {
     ) -> Vec<SegmentId>;
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator>;
-
-    /// Build temp segment
-    fn temp_segment(&self, save_version: bool) -> CollectionResult<LockedSegment> {
-        let collection_params = self.collection_params();
-        let quantization_config = self.quantization_config();
-        let config = SegmentConfig {
-            vector_data: collection_params.to_base_vector_data(quantization_config.as_ref())?,
-            sparse_vector_data: collection_params.to_sparse_vector_data()?,
-            payload_storage_type: collection_params.payload_storage_type(),
-        };
-        Ok(LockedSegment::new(build_segment(
-            self.segments_path(),
-            &config,
-            save_version,
-        )?))
-    }
 
     /// Returns error if segment size is larger than available disk space
     fn check_segments_size(&self, optimizing_segments: &[LockedSegment]) -> CollectionResult<()> {
@@ -611,15 +593,6 @@ pub trait SegmentOptimizer {
         // Solution in the middle - is a upgradable lock. It ensures consistency after the check and allows to perform read operation.
         let segments_lock = segments.upgradable_read();
 
-        // Find appendable segments other than optimized ones
-        //
-        // If there are such segments - we can avoid creating a temp segment
-        // If there are none, we need to create a new empty segment to allow writes during optimization
-        let appendable_segments_ids = segments_lock.appendable_segments_ids();
-        let has_appendable_segments_except_optimized =
-            appendable_segments_ids.iter().any(|id| !ids.contains(id));
-        let need_extra_cow_segment = !has_appendable_segments_except_optimized;
-
         let optimizing_segments: Vec<_> = ids
             .iter()
             .cloned()
@@ -645,36 +618,15 @@ pub trait SegmentOptimizer {
 
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation, no measurement needed!
 
-        let extra_cow_segment_opt = need_extra_cow_segment
-            .then(|| self.temp_segment(false))
-            .transpose()?;
-
         let mut proxies = Vec::new();
         for sg in optimizing_segments.iter() {
             let proxy = ProxySegment::new(sg.clone());
-            // Wrapped segment is fresh, so it has no operations
-            // Operation with number 0 will be applied
-            if let Some(extra_cow_segment) = &extra_cow_segment_opt {
-                proxy.replicate_field_indexes(0, &hw_counter, extra_cow_segment)?;
-            }
-
             proxies.push(proxy);
-        }
-
-        // Save segment version once all payload indices have been converted
-        // If this ends up not being saved due to a crash, the segment will not be used
-        match &extra_cow_segment_opt {
-            Some(LockedSegment::Original(segment)) => {
-                let segment_path = &segment.read().current_path;
-                SegmentVersion::save(segment_path)?;
-            }
-            Some(LockedSegment::Proxy(_)) => unreachable!(),
-            None => {}
         }
 
         let mut locked_proxies: Vec<LockedSegment> = Vec::with_capacity(proxies.len());
 
-        let (proxy_ids, cow_segment_id_opt): (Vec<_>, _) = {
+        let proxy_ids = {
             // Exclusive lock for the segments operations.
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
             let mut proxy_ids = Vec::new();
@@ -691,14 +643,6 @@ pub trait SegmentOptimizer {
                     "during optimization, wrapped segment in a proxy segment must not be another proxy segment",
                 );
 
-                // replicate_field_indexes for the second time,
-                // because optimized segments could have been changed.
-                // The probability is small, though,
-                // so we can afford this operation under the full collection write lock
-                if let Some(extra_cow_segment) = &extra_cow_segment_opt {
-                    proxy.replicate_field_indexes(0, &hw_counter, extra_cow_segment)?; // Slow only in case the index is change in the gap between two calls
-                }
-
                 let locked_proxy = LockedSegment::from(proxy);
                 proxy_ids.push(
                     write_segments
@@ -708,10 +652,7 @@ pub trait SegmentOptimizer {
                 locked_proxies.push(locked_proxy);
             }
 
-            let cow_segment_id_opt = extra_cow_segment_opt
-                .map(|extra_cow_segment| write_segments.add_new_locked(extra_cow_segment));
-
-            (proxy_ids, cow_segment_id_opt)
+            proxy_ids
         };
 
         // SLOW PART: create single optimized segment and propagate all new changes to it
@@ -742,12 +683,6 @@ pub trait SegmentOptimizer {
             proxy_ids.len(),
             "swapped different number of proxies on unwrap, missing or incorrect segment IDs?",
         );
-
-        if let Some(cow_segment_id) = cow_segment_id_opt {
-            // Temp segment might be taken into another parallel optimization
-            // so it is not necessary exist by this time
-            write_segments_guard.remove_segment_if_not_needed(cow_segment_id)?;
-        }
 
         // Release reference counter for each optimized segment
         drop(optimizing_segments);
