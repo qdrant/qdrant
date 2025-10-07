@@ -4,8 +4,7 @@ use std::iter::{self, Chain, Once};
 use common::math::fast_sigmoid;
 use common::types::ScoreType;
 use itertools::Itertools;
-use serde::ser::SerializeStruct;
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 
 use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;

@@ -10,6 +10,9 @@ mod reco_query;
 
 pub use context_query::{ContextPair, ContextQuery};
 pub use discovery_query::DiscoveryQuery;
+pub use feedback_query::{
+    FeedbackPair, FeedbackQuery, TrainedCoefficients as FeedbackTrainedCoefficients,
+};
 pub use reco_query::{RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery};
 
 pub trait TransformInto<Output, T = DenseVector, U = DenseVector> {

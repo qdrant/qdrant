@@ -5,7 +5,6 @@ use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 use itertools::Itertools;
 use serde::Serialize;
-use serde::ser::SerializeStruct;
 
 use super::context_query::ContextPair;
 use super::{Query, TransformInto};
