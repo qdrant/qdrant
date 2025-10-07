@@ -7,7 +7,6 @@ use half::f16;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
-use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
@@ -756,7 +755,7 @@ impl BatchVectorStructInternal {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Hash)]
 pub struct NamedQuery<TQuery> {
     pub query: TQuery,
     pub using: Option<VectorNameBuf>,
@@ -812,27 +811,6 @@ impl<T> Named for NamedQuery<T> {
 impl<T: Validate> Validate for NamedQuery<T> {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         self.query.validate()
-    }
-}
-
-impl<T: Serialize> Serialize for NamedQuery<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let Self { query, using } = self;
-        let mut state = serializer.serialize_struct("NamedQuery", 2)?;
-        state.serialize_field("query", query)?;
-        state.serialize_field("using", using)?;
-        state.end()
-    }
-}
-
-impl<T: Hash> Hash for NamedQuery<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let Self { query, using } = self;
-        query.hash(state);
-        using.hash(state);
     }
 }
 

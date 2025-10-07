@@ -25,32 +25,10 @@ impl<T> ContextPair<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Hash)]
 pub struct DiscoveryQuery<T> {
     pub target: T,
     pub pairs: Vec<ContextPair<T>>,
-}
-
-impl<T: Serialize> Serialize for DiscoveryQuery<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let Self { target, pairs } = self;
-
-        let mut state = serializer.serialize_struct("DiscoveryQuery", 2)?;
-        state.serialize_field("target", target)?;
-        state.serialize_field("pairs", pairs)?;
-        state.end()
-    }
-}
-
-impl<T: Hash> Hash for DiscoveryQuery<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let Self { target, pairs } = self;
-        target.hash(state);
-        pairs.hash(state);
-    }
 }
 
 impl<T> DiscoveryQuery<T> {
