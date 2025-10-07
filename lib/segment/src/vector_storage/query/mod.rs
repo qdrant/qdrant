@@ -5,6 +5,7 @@ use crate::data_types::vectors::DenseVector;
 
 mod context_query;
 mod discovery_query;
+mod feedback_query;
 mod reco_query;
 
 pub use context_query::{ContextPair, ContextQuery};
