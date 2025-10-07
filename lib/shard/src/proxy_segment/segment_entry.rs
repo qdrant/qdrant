@@ -230,11 +230,6 @@ impl SegmentEntry for ProxySegment {
         _vector_name: &VectorName,
     ) -> OperationResult<bool> {
         // Print current stack trace for easier debugging of unexpected calls
-
-        println!("Stack trace for delete_vector call:");
-        let backtrace = std::backtrace::Backtrace::capture();
-        println!("{backtrace}");
-
         Err(OperationError::service_error(format!(
             "Delete vector is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
@@ -632,9 +627,8 @@ impl SegmentEntry for ProxySegment {
         let wrapped_segment_guard = wrapped_segment.read();
         let persisted_version = wrapped_segment_guard.flush(sync, force)?;
 
-        debug_assert_eq!(
-            persisted_version,
-            wrapped_segment_guard.version(),
+        debug_assert!(
+            !sync || (persisted_version == wrapped_segment_guard.version()),
             "wrapped segment must be flushed upto the current wrapped segment version",
         );
 
