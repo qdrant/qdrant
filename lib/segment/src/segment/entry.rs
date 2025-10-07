@@ -39,6 +39,10 @@ impl SegmentEntry for Segment {
         self.version.unwrap_or(0)
     }
 
+    fn is_proxy(&self) -> bool {
+        false
+    }
+
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
         let id_tracker = self.id_tracker.borrow();
         id_tracker

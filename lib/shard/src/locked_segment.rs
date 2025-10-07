@@ -57,6 +57,13 @@ impl LockedSegment {
         }
     }
 
+    pub fn is_original(&self) -> bool {
+        match self {
+            LockedSegment::Original(_) => true,
+            LockedSegment::Proxy(_) => false,
+        }
+    }
+
     /// Consume the LockedSegment and drop the underlying segment data.
     /// Operation fails if the segment is used by other thread for longer than `timeout`.
     pub fn drop_data(self) -> OperationResult<()> {

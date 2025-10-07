@@ -69,9 +69,13 @@ pub fn process_vector_operation(
         VectorOperations::UpdateVectors(update_vectors) => {
             update_vectors_conditional(&segments.read(), op_num, update_vectors, hw_counter)
         }
-        VectorOperations::DeleteVectors(ids, vector_names) => {
-            delete_vectors(&segments.read(), op_num, &ids.points, &vector_names)
-        }
+        VectorOperations::DeleteVectors(ids, vector_names) => delete_vectors(
+            &segments.read(),
+            op_num,
+            &ids.points,
+            &vector_names,
+            hw_counter,
+        ),
         VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
             delete_vectors_by_filter(&segments.read(), op_num, &filter, &vector_names, hw_counter)
         }
@@ -553,23 +557,31 @@ pub fn delete_vectors(
     op_num: SeqNumberType,
     points: &[PointIdType],
     vector_names: &[VectorNameBuf],
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_deleted_points = 0;
 
     for batch in points.chunks(VECTOR_OP_BATCH_SIZE) {
-        let deleted_points = segments.apply_points(
+        let modified_points = segments.apply_points_with_conditional_move(
+            op_num,
             batch,
-            |_| (),
-            |id, _idx, write_segment, ()| {
+            |id, write_segment| {
                 let mut res = true;
                 for name in vector_names {
                     res &= write_segment.delete_vector(op_num, id, name)?;
                 }
                 Ok(res)
             },
+            |_, owned_vectors, _| {
+                for name in vector_names {
+                    owned_vectors.remove_ref(name);
+                }
+            },
+            |_| false,
+            hw_counter,
         )?;
-
-        total_deleted_points += deleted_points;
+        check_unprocessed_points(batch, &modified_points)?;
+        total_deleted_points += modified_points.len();
     }
 
     Ok(total_deleted_points)
@@ -584,7 +596,8 @@ pub fn delete_vectors_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    let vectors_deleted = delete_vectors(segments, op_num, &affected_points, vector_names)?;
+    let vectors_deleted =
+        delete_vectors(segments, op_num, &affected_points, vector_names, hw_counter)?;
 
     if vectors_deleted == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
