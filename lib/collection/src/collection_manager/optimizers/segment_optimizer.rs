@@ -744,10 +744,8 @@ pub trait SegmentOptimizer {
         );
 
         if let Some(cow_segment_id) = cow_segment_id_opt {
-            debug_assert!(
-                write_segments_guard.get(cow_segment_id).is_some(),
-                "temporary CoW segment must exist"
-            );
+            // Temp segment might be taken into another parallel optimization
+            // so it is not necessary exist by this time
             write_segments_guard.remove_segment_if_not_needed(cow_segment_id)?;
         }
 
