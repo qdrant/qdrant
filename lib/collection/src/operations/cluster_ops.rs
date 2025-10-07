@@ -216,8 +216,8 @@ impl Validate for ReplicatePoints {
         // validate_shard_different_peers(
         //     self.from_peer_id,
         //     self.to_peer_id,
-        //     self.from_shard_key,
-        //     Some(self.to_shard_key),
+        //     self.from_shard_id,
+        //     Some(self.to_shard_id),
         // )
         Ok(())
     }

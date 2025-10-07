@@ -1584,6 +1584,9 @@ impl From<api::grpc::qdrant::ShardTransferMethod> for ShardTransferMethod {
             api::grpc::qdrant::ShardTransferMethod::ReshardingStreamRecords => {
                 ShardTransferMethod::ReshardingStreamRecords
             }
+            api::grpc::qdrant::ShardTransferMethod::FilteredStreamRecords => {
+                ShardTransferMethod::FilteredStreamRecords
+            }
         }
     }
 }
