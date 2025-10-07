@@ -34,8 +34,8 @@ pub struct ProxySegment {
     deleted_points: DeletedPoints,
     wrapped_config: SegmentConfig,
 
-    /// Keeps track if the wrapped segment has pending changes
-    /// If so, we can't discard WAL for newer than version of wrapped segment
+    /// Version of the last change in this proxy, considering point deletes and payload index
+    /// changes. Defaults to the version of the wrapped segment.
     version: SeqNumberType,
 }
 
