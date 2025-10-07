@@ -34,6 +34,7 @@ pub(super) async fn transfer_stream_records(
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     let cutoff;
+    let mut hashring = None;
 
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
 
@@ -46,6 +47,21 @@ pub(super) async fn transfer_stream_records(
                 "Shard {shard_id} cannot be proxied because it does not exist"
             )));
         };
+
+        if filter.is_some() {
+            // When using filters, we can't just transfer all records, we need to make sure that they
+            // also respect the hash ring of the destination shard key.
+            let target_shard_key = shard_holder
+                .get_shard_id_to_key_mapping()
+                .get(&remote_shard.id)
+                .cloned();
+
+            hashring = Some(shard_holder.rings.get(&target_shard_key).cloned().ok_or_else(|| {
+                CollectionError::service_error(format!(
+                    "Records {shard_id} cannot be transferred with filters, failed to get shard hash ring"
+                ))
+            })?);
+        }
 
         replica_set
             .proxify_local(remote_shard.clone(), None, filter)
@@ -93,7 +109,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         let (new_offset, count) = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, false)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, hashring.as_ref(), false)
             .await?;
 
         offset = new_offset;
@@ -107,7 +123,7 @@ pub(super) async fn transfer_stream_records(
 
     // Update cutoff point on remote shard, disallow recovery before it
     //
-    // We provide it our last seen clocks from just before transferrinmg the content batches, and
+    // We provide it our last seen clocks from just before transferring the content batches, and
     // not our current last seen clocks. We're sure that after the transfer the remote must have
     // seen all point data for those clocks. While we cannot guarantee the remote has all point
     // data for our current last seen clocks because some operations may still be in flight.

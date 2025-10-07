@@ -44,14 +44,19 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
     upsert_random_points(peer_api_uris[0], 100, shard_key="default")
 
     # Transfer shard from one node to another
-    filter = {}
+    filter = {"should": {"key": "city", "match": {"value": "London"}}}
+
+    expected_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", filter=filter)
+    initial_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant")
+    assert expected_count > 0
+    assert initial_count == 0 # no points in tenant shard key before transfer
 
     # Move points from from_shard_id to to_shard_id
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
         json={
             "replicate_points": {
-                # "filter": filter,
+                "filter": filter,
                 "from_shard_key": "default",
                 "to_shard_key": "tenant",
             }
@@ -69,10 +74,6 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
     assert number_local_shards == 2
 
     # Point counts must be consistent across shard keys for given filter
-    for shard_key in ["default", "tenant"]:
-        r = requests.post(
-            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points/count",
-            json={"exact": True, "filter": filter, "shard_key": shard_key},
-        )
-        assert_http_ok(r)
-        assert r.json()["result"]["count"] == 100
+    default_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", filter=filter)
+    tenant_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant")
+    assert default_filtered_count == tenant_count == expected_count

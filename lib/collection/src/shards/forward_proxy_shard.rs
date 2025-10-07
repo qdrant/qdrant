@@ -136,8 +136,14 @@ impl ForwardProxyShard {
 
         let (points, next_page_offset) = match hashring_filter {
             Some(hashring_filter) => {
-                self.read_batch_with_hashring(offset, batch_size, hashring_filter, runtime_handle)
-                    .await?
+                self.read_batch_with_filters(
+                    offset,
+                    batch_size,
+                    hashring_filter,
+                    self.filter.as_ref(),
+                    runtime_handle,
+                )
+                .await?
             }
             None => self.read_batch(offset, batch_size, runtime_handle).await?,
         };
@@ -217,7 +223,7 @@ impl ForwardProxyShard {
 
     /// Read a batch of points using a hash ring to transfer to the remote shard
     ///
-    /// Only the points that satisfy the hash ring filter will be transferred.
+    /// Only the points that satisfy the hash ring filter and the provided payload_filter will be transferred.
     ///
     /// This applies oversampling in case of resharding to account for points that will be filtered
     /// out by the hash ring. Each batch of points should therefore be roughly `batch_size`, but it
@@ -233,11 +239,12 @@ impl ForwardProxyShard {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    async fn read_batch_with_hashring(
+    async fn read_batch_with_filters(
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
         hashring_filter: &HashRingRouter,
+        payload_filter: Option<&Filter>,
         runtime_handle: &Handle,
     ) -> CollectionResult<(Vec<PointStructPersisted>, Option<PointIdType>)> {
         // Oversample batch size to account for points that will be filtered out by the hash ring
@@ -266,7 +273,7 @@ impl ForwardProxyShard {
                 limit,
                 &WithPayloadInterface::Bool(false),
                 &WithVector::Bool(false),
-                None,
+                payload_filter,
                 runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
@@ -435,8 +442,44 @@ impl ShardOperation for ForwardProxyShard {
             };
 
             op.map(|op| OperationWithClockTag::new(op, tag))
+        // } else if let Some(filter) = self.filter {
+        //     // ToDo: Check if the point ID satisfies hashring
+
+        //     // Transfer points only if they match the filter:
+        //     let points = match &operation.operation {
+        //         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        //             PointInsertOperationsInternal::PointsList(points),
+        //         )) => points
+        //             .iter()
+        //             .filter(|point| filter.check(&point.id, point.payload.as_ref()))
+        //             .cloned()
+        //             .collect(),
+        //         CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(
+        //             PointSyncOperation { points, .. },
+        //         )) => points
+        //             .iter()
+        //             .filter(|point| filter.check(&point.id, point.payload.as_ref()))
+        //             .cloned()
+        //             .collect(),
+        //         _ => {
+        //             log::warn!("ForwardProxyShard with filter can only transfer point insert operations");
+
+        //             vec![]
+        //         }
+        //     };
+
+        //     if points.is_empty() {
+        //         None
+        //     } else {
+        //         Some(OperationWithClockTag::new(
+        //             CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        //                 PointInsertOperationsInternal::PointsList(points),
+        //             )),
+        //             operation.clock_tag, // Preserve the clock tag, because we are forwarding to the same shard.
+        //         ))
+        //     }
         } else {
-            // If `ForwardProxyShard::resharding_hash_ring` is `None`, we assume that proxy is used
+            // If `ForwardProxyShard` `resharding_hash_ring` and `filter` are `None`, we assume that proxy is used
             // during *regular* shard transfer, so operation can be forwarded as-is, without any
             // additional handling.
 
