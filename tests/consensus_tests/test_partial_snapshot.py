@@ -132,10 +132,7 @@ def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
 def test_partial_snapshot_empty(tmp_path: pathlib.Path):
     assert_project_root()
 
-    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1000, recover_read= True)
-
-    # Don't let asynchronous optimizations mess with our test
-    wait_collection_green(write_peer, COLLECTION)
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1000, recover_read= True, wait_for_green = True)
 
     # Collection snapshot doesn't affect partial snapshot recovery timestamp
     recovery_ts = get_telemetry_collections(read_peer)[0]['shards'][0]['partial_snapshot']['recovery_timestamp']
@@ -215,14 +212,16 @@ def test_partial_snapshot_recreate_payload_field_index(tmp_path: pathlib.Path):
     assert_http_ok(resp)
 
 
-def bootstrap_peers(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, recover_read = False):
-    write_peer = bootstrap_write_peer(tmp, shards, bootstrap_points)
+def bootstrap_peers(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, recover_read = False, wait_for_green = False):
+    write_peer = bootstrap_write_peer(tmp, shards, bootstrap_points, wait_for_green=wait_for_green)
     read_peer = bootstrap_read_peer(tmp, shards, write_peer if recover_read else None)
     return write_peer, read_peer
 
-def bootstrap_write_peer(tmp: pathlib.Path, shards = 1, bootstrap_points = 0):
+def bootstrap_write_peer(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, wait_for_green = False):
     write_peer = bootstrap_peer(tmp / "write", 6331, "write_")
     bootstrap_collection(write_peer, shards, bootstrap_points)
+    if wait_for_green:
+        wait_collection_green(write_peer, collection_name=COLLECTION)
     return write_peer
 
 def bootstrap_read_peer(tmp: pathlib.Path, shards = 1, recover_from_url: str | None = None):

@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
@@ -221,8 +220,6 @@ pub fn snapshot_all_segments(
     // Snapshotting may take long-running read locks on segments blocking incoming writes, do
     // this through proxied segments to allow writes to continue.
 
-    let mut snapshotted_segments = HashSet::<String>::new();
-
     proxy_all_segments_and_apply(
         segments,
         segments_path,
@@ -230,13 +227,7 @@ pub fn snapshot_all_segments(
         payload_index_schema,
         |segment| {
             let read_segment = segment.read();
-            read_segment.take_snapshot(
-                temp_dir,
-                tar,
-                format,
-                manifest,
-                &mut snapshotted_segments,
-            )?;
+            read_segment.take_snapshot(temp_dir, tar, format, manifest)?;
             Ok(())
         },
         update_lock,
@@ -281,7 +272,7 @@ where
 
     // Proxy all segments
     log::trace!("Proxying all shard segments to apply function");
-    let (mut proxies, tmp_segment, mut segments_lock) = SegmentHolder::proxy_all_segments(
+    let (mut proxies, tmp_segment_id, mut segments_lock) = SegmentHolder::proxy_all_segments(
         segments_lock,
         segments_path,
         segment_config,
@@ -347,7 +338,7 @@ where
     // Always do this to prevent leaving proxy segments behind
     log::trace!("Unproxying all shard segments after function is applied");
     let _update_guard = update_lock.blocking_write();
-    SegmentHolder::unproxy_all_segments(segments_lock, proxies, tmp_segment)?;
+    SegmentHolder::unproxy_all_segments(segments_lock, proxies, tmp_segment_id)?;
 
     result
 }

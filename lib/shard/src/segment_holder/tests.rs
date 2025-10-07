@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use rand::Rng;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal, only_default_vector};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -12,7 +12,6 @@ use tempfile::Builder;
 
 use super::*;
 use crate::fixtures::*;
-use crate::proxy_segment::ProxyDeletedPoint;
 
 #[test]
 fn test_add_and_swap() {
@@ -528,7 +527,9 @@ fn test_double_proxies() {
 
     let mut holder = SegmentHolder::default();
 
-    let _sid1 = holder.add_new(segment1);
+    let locked_segment1 = LockedSegment::from(segment1);
+
+    let _sid1 = holder.add_new_locked(locked_segment1.clone());
 
     let holder = Arc::new(RwLock::new(holder));
 
@@ -572,18 +573,31 @@ fn test_double_proxies() {
         SegmentHolder::proxy_all_segments(inner_segments_lock, segments_dir.path(), None, schema)
             .unwrap();
 
-    // Writing to outer proxy segment
-    outer_proxies[0]
-        .1
-        .get()
-        .write()
-        .upsert_point(
-            100,
-            1.into(),
-            only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
-            &hw_counter,
-        )
-        .unwrap();
+    let mut has_point = false;
+    for (_proxy_id, proxy) in &outer_proxies {
+        let proxy_read = proxy.get().read();
+
+        if proxy_read.has_point(2.into()) {
+            has_point = true;
+            let payload = proxy_read.payload(2.into(), &hw_counter).unwrap();
+
+            assert!(
+                payload.0.get("color").is_some(),
+                "Payload should be readable in double proxy"
+            );
+            drop(proxy_read);
+
+            proxy
+                .get()
+                .write()
+                .delete_point(11, 2.into(), &hw_counter)
+                .unwrap();
+
+            break;
+        }
+    }
+
+    assert!(has_point, "Point should be present in double proxy");
 
     // Unproxy once
     SegmentHolder::unproxy_all_segments(outer_segments_lock, outer_proxies, outer_tmp_segment)
@@ -603,289 +617,15 @@ fn test_double_proxies() {
     let diff: HashSet<_> = after_segment_ids.difference(&before_segment_ids).collect();
     assert_eq!(
         diff.len(),
-        1,
-        "There should be one new segment after unproxying"
-    );
-}
-
-/// Test proxy propagating older delete to wrapped segment is sound
-///
-/// A specific scenario that asserts the delete propagation logic is sound. It tries to propagate
-/// an older delete version to a wrapped segment that already has a newer point version. It
-/// previously had a faulty debug assertion in place that triggers in this case.
-///
-/// This scenario is possible if:
-/// - there are at least two layers of two proxies
-/// - one of the outer proxies is unproxied half way
-/// - a new point version is upserted through the unproxied segment (now being the inner proxy)
-///
-/// See: <https://github.com/qdrant/qdrant/pull/7208>
-#[test]
-fn test_proxy_propagate_older_delete_to_wrapped() {
-    let hw_counter = HardwareCounterCell::disposable();
-
-    let pid = ExtendedPointId::from(1);
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let segment1 = empty_segment(dir.path());
-    let segment2 = empty_segment(dir.path());
-
-    let mut holder = SegmentHolder::default();
-
-    let sid1 = holder.add_new(segment1);
-    let sid2 = holder.add_new(segment2);
-
-    let holder = Arc::new(RwLock::new(holder));
-
-    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
-    let payload_schema_file = dir.path().join("payload.schema");
-    let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
-        Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
-
-    // Create inner proxies, we have two of them
-    let (inner_proxies, inner_tmp_segment, inner_segments_lock) =
-        SegmentHolder::proxy_all_segments(
-            holder.upgradable_read(),
-            segments_dir.path(),
-            None,
-            schema.clone(),
-        )
-        .unwrap();
-    assert_eq!(inner_proxies.len(), 2);
-
-    // Insert version 100 in first inner proxy
-    inner_proxies[0]
-        .1
-        .get()
-        .write()
-        .upsert_point(
-            100,
-            pid,
-            only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
-            &hw_counter,
-        )
-        .unwrap();
-
-    // Create outer proxies, we have two of them
-    let (mut outer_proxies, outer_tmp_segment, mut outer_segments_lock) =
-        SegmentHolder::proxy_all_segments(inner_segments_lock, segments_dir.path(), None, schema)
-            .unwrap();
-    assert_eq!(outer_proxies.len(), 2);
-
-    // Insert version 200 then delete version 210 in first outer proxy
-    outer_proxies[0]
-        .1
-        .get()
-        .write()
-        .upsert_point(
-            200,
-            pid,
-            only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
-            &hw_counter,
-        )
-        .unwrap();
-    outer_proxies[0]
-        .1
-        .get()
-        .write()
-        .delete_point(210, pid, &hw_counter)
-        .unwrap();
-
-    // First outer proxy has point deleted, second outer proxy still has it
-    assert!(
-        !outer_proxies[0].1.get().read().has_point(pid),
-        "first proxy must not have point",
-    );
-    assert_eq!(
-        outer_proxies[1].1.get().read().point_version(pid),
-        Some(100),
-        "second outer proxy must have point version 100 through shared inner tmp segment",
+        0,
+        "There should be no new segment after unproxying"
     );
 
-    // Insert version 300 in second outer proxy
-    outer_proxies[1]
-        .1
-        .get()
-        .write()
-        .upsert_point(
-            300,
-            pid,
-            only_default_vector(&[1.0, 1.0, 1.0, 1.0]),
-            &hw_counter,
-        )
-        .unwrap();
+    let has_point_1 = locked_segment1.get().read().has_point(1.into()); // Deleted in inner proxy
+    let has_point_2 = locked_segment1.get().read().has_point(2.into()); // Deleted in outer proxy
+    let has_point_3 = locked_segment1.get().read().has_point(3.into()); // Not deleted
 
-    // Both outer proxies must have point
-    assert_eq!(
-        outer_proxies[0].1.get().read().point_version(pid),
-        Some(300),
-        "second outer proxy must have point version 300, latest upsert through shared outer tmp segment",
-    );
-    assert_eq!(
-        outer_proxies[1].1.get().read().point_version(pid),
-        Some(300),
-        "second outer proxy must have point version 300, latest upsert through shared outer tmp segment",
-    );
-
-    // Both the outer and inner tmp segment must have point
-    assert_eq!(
-        outer_tmp_segment.get().read().point_version(pid),
-        Some(300),
-        "shared outer tmp segment has point version 300 from latest upsert",
-    );
-    assert_eq!(
-        inner_tmp_segment.get().read().point_version(pid),
-        Some(100),
-        "shared inner tmp segment has point version 100 from first upsert",
-    );
-
-    // Assert both outer proxies have delete markers we expect
-    match (&outer_proxies[0].1, &outer_proxies[1].1) {
-        (LockedSegment::Proxy(first), LockedSegment::Proxy(second)) => {
-            assert_eq!(
-                first.read().get_deleted_points().read().deref(),
-                &AHashMap::from_iter([(
-                    pid,
-                    ProxyDeletedPoint {
-                        // Delete version 210 in first outer proxy
-                        operation_version: 210,
-                        // Delete version 210 in first outer proxy
-                        local_version: 210,
-                    }
-                )]),
-            );
-            assert_eq!(
-                second.read().get_deleted_points().read().deref(),
-                &AHashMap::from_iter([(
-                    pid,
-                    ProxyDeletedPoint {
-                        // Initial upsert version 100 through shared inner tmp segment
-                        local_version: 100,
-                        // Latest upsert version 300 did CoW to shared outer tmp segment
-                        operation_version: 300,
-                    }
-                )]),
-            );
-        }
-        _ => unreachable!(),
-    }
-
-    // Unproxy only first outer proxy
-    // Happens in `proxy_all_segments_and_apply` function that immediately tries to unproxy
-    // proxy segments it has applied an operation on, without waiting until all proxy segments
-    // have applied the operation.
-    let (unproxy_id, unproxy_segment) = outer_proxies.remove(0);
-    outer_segments_lock =
-        SegmentHolder::try_unproxy_segment(outer_segments_lock, unproxy_id, unproxy_segment)
-            .expect("should always succeed");
-
-    // Delete propagation at unproxy deleted version 210 from shared inner tmp segment which had version 100
-    assert!(
-        !inner_tmp_segment.get().read().has_point(pid),
-        "inner tmp segment must not have point",
-    );
-
-    // Insert point version 400 into now unproxied segment (which now became the first inner proxy)
-    outer_segments_lock
-        .get(unproxy_id)
-        .unwrap()
-        .get()
-        .write()
-        .upsert_point(
-            400,
-            pid,
-            only_default_vector(&[1.0, 1.0, 1.0, 1.0]),
-            &hw_counter,
-        )
-        .unwrap();
-
-    // Last outer proxy still views point version 300
-    // Shared inner tmp segment has point version 400 from latest upsert
-    assert_eq!(
-        outer_proxies[0].1.get().read().point_version(pid),
-        Some(300),
-        "last outer proxy has point version 300 through shared outer tmp segment",
-    );
-    assert_eq!(
-        outer_tmp_segment.get().read().point_version(pid),
-        Some(300),
-        "outer tmp segment has point version 300",
-    );
-    assert_eq!(
-        inner_tmp_segment.get().read().point_version(pid),
-        Some(400),
-        "inner tmp segment has point version 400 from latest upsert",
-    );
-
-    // Unproxy last outer proxy
-    //
-    // The proxy will propagate its queued deletes to wrapped segment:
-    // It will try to delete point version 300, but it's wrapped segment already has point version
-    // 400 which is shared through the inner tmp segment. Because the delete version is older, it
-    // will not delete the newer point.
-    // The faulty debug assertion assumed the wrapped segment could not change and therefore delete
-    // version must always be newer. This is not true, because if the wrapped segment is also a
-    // proxy it can share state with other segments. If these other segments receive updates, the
-    // wrapped segment might view newer point versions.
-    SegmentHolder::unproxy_all_segments(outer_segments_lock, outer_proxies, outer_tmp_segment)
-        .unwrap();
-
-    // Inner proxies and shared inner tmp segment all see point version 400
-    assert_eq!(
-        inner_proxies[0].1.get().read().point_version(pid),
-        Some(400),
-        "last outer proxy has point version 300 through shared outer tmp segment",
-    );
-    assert_eq!(
-        inner_proxies[1].1.get().read().point_version(pid),
-        Some(400),
-        "last outer proxy has point version 300 through shared outer tmp segment",
-    );
-    assert_eq!(
-        inner_tmp_segment.get().read().point_version(pid),
-        Some(400),
-        "inner tmp segment has point version 400 from latest upsert",
-    );
-
-    // Unproxy inner proxies
-    // Note: in our current codebase we don't unproxy like this twice
-    eprintln!("\n\n\nUNPROXY INNER PROXIES");
-    SegmentHolder::unproxy_all_segments(holder.upgradable_read(), inner_proxies, inner_tmp_segment)
-        .unwrap();
-
-    // Original segments should not have point, newly added tmp segment does have the point
-    assert_eq!(
-        holder.read().len(),
-        4,
-        "segment holder must have 4 segments, 2 original plus 2 temporary",
-    );
-    assert!(
-        !holder.read().get(sid1).unwrap().get().read().has_point(pid),
-        "first original segment must not have the point",
-    );
-    assert!(
-        !holder.read().get(sid2).unwrap().get().read().has_point(pid),
-        "second original segment must not have the point",
-    );
-    assert_eq!(
-        holder
-            .read()
-            .get(sid2 + 1)
-            .unwrap()
-            .get()
-            .read()
-            .point_version(pid),
-        Some(300),
-        "outer tmp segment still has point version 300",
-    );
-    assert_eq!(
-        holder
-            .read()
-            .get(sid2 + 2)
-            .unwrap()
-            .get()
-            .read()
-            .point_version(pid),
-        Some(400),
-        "inner tmp segment must have latest point version 400",
-    );
+    assert!(!has_point_1, "Point 1 should be deleted");
+    assert!(!has_point_2, "Point 2 should be deleted");
+    assert!(has_point_3, "Point 3 should be present");
 }

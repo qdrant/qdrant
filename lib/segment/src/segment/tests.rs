@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -209,7 +208,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     let tar =
         tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
     segment
-        .take_snapshot(temp_dir.path(), &tar, format, None, &mut HashSet::new())
+        .take_snapshot(temp_dir.path(), &tar, format, None)
         .unwrap();
     tar.blocking_finish().unwrap();
 
