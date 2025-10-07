@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops;
 
+use ahash::AHashMap;
 use itertools::Itertools;
 use segment::types::ShardKey;
 use serde::{Deserialize, Serialize};
@@ -35,7 +36,7 @@ impl ops::DerefMut for ShardKeyMapping {
 
 impl ShardKeyMapping {
     /// Get an inverse mapping, all shard IDs and their key
-    pub fn shard_id_to_shard_key(&self) -> HashMap<ShardId, ShardKey> {
+    pub fn shard_id_to_shard_key(&self) -> AHashMap<ShardId, ShardKey> {
         self.shard_key_to_shard_ids
             .iter()
             .flat_map(|(shard_key, shard_ids)| {

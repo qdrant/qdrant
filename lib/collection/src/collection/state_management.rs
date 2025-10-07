@@ -1,5 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
+use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 
 use crate::collection::Collection;
@@ -184,10 +185,10 @@ impl Collection {
 
     async fn apply_shard_info(
         &self,
-        shards: HashMap<ShardId, ShardInfo>,
+        shards: AHashMap<ShardId, ShardInfo>,
         shards_key_mapping: ShardKeyMapping,
     ) -> CollectionResult<()> {
-        let mut extra_shards: HashMap<ShardId, ShardReplicaSet> = HashMap::new();
+        let mut extra_shards: AHashMap<ShardId, ShardReplicaSet> = AHashMap::new();
 
         let shard_ids = shards.keys().copied().collect::<HashSet<_>>();
 

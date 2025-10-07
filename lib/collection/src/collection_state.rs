@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
@@ -18,7 +19,7 @@ pub struct ShardInfo {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct State {
     pub config: CollectionConfigInternal,
-    pub shards: HashMap<ShardId, ShardInfo>,
+    pub shards: AHashMap<ShardId, ShardInfo>,
     pub resharding: Option<ReshardState>,
     #[serde(default)]
     pub transfers: HashSet<ShardTransfer>,

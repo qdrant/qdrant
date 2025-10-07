@@ -1,7 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use common::budget::ResourceBudget;
 use segment::types::Distance;
 use tempfile::Builder;
@@ -63,7 +64,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
 
     let collection_name = "test".to_string();
     let collection_name_rec = "test_rec".to_string();
-    let mut shards = HashMap::new();
+    let mut shards = AHashMap::new();
     shards.insert(0, HashSet::from([1]));
     shards.insert(1, HashSet::from([1]));
     shards.insert(2, HashSet::from([10_000])); // remote shard
