@@ -7,10 +7,13 @@ openssl req \
   -nodes \
   -x509 \
   -subj "/C=US/ST=State/L=City/O=Qdrant" \
+  -addext "keyUsage = critical, keyCertSign, cRLSign" \
+  -addext "basicConstraints = critical, CA:TRUE" \
   -keyout cakey.pem \
   -out cacert.pem
 
 openssl genrsa -out key.pem 2048
+chmod 644 key.pem
 
 openssl req \
   -new -key key.pem \
