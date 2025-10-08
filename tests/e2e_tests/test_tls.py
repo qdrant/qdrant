@@ -86,13 +86,13 @@ class TestTLS:
             
             # Run grpcurl from within the Docker network
             grpcurl_cmd = [
-                "docker", "run", "--rm", 
+                "docker", "run", "--rm",
                 f"--network={network_name}",
-                "-v", f"{cert_dir}:/tls_path",
-                "-v", f"{proto_dir}:/proto",
+                "-v", f"{cert_dir}:/tls_path:ro",
+                "-v", f"{proto_dir}:/proto:ro",
                 "fullstorydev/grpcurl",
                 "-cacert", "/tls_path/cacert.pem",
-                "-cert", "/tls_path/cert.pem", 
+                "-cert", "/tls_path/cert.pem",
                 "-key", "/tls_path/key.pem",
                 "-import-path", "/proto",
                 "-proto", "qdrant.proto",
