@@ -174,7 +174,8 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 Ok(async_raw_scorer_from_query_scorer(query_scorer, storage))
             }
             QueryVector::Feedback(feedback_query) => {
-                let feedback_query: FeedbackQuery<DenseVector> = feedback_query.transform_into()?;
+                let feedback_query: FeedbackQuery<DenseVector, _> =
+                    feedback_query.transform_into()?;
                 let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                     feedback_query,
                     storage,

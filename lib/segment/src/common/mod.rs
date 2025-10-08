@@ -83,7 +83,7 @@ fn check_query_vector(
                 check_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }
-        QueryVector::Feedback(feedback_query) => {
+        QueryVector::FeedbackLinear(feedback_query) => {
             feedback_query.flat_iter().try_for_each(|vector| {
                 check_vector_against_config(VectorRef::from(vector), vector_config)
             })?
@@ -117,7 +117,7 @@ fn check_query_sparse_vector(
                 check_sparse_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }
-        QueryVector::Feedback(feedback_query) => {
+        QueryVector::FeedbackLinear(feedback_query) => {
             feedback_query.flat_iter().try_for_each(|vector| {
                 check_sparse_vector_against_config(VectorRef::from(vector), vector_config)
             })?

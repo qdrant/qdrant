@@ -47,7 +47,7 @@ impl<T> FeedbackPair<T> {
 
 /// Trained coefficients for the formula. Specific to a triplet of dataset-smallmodel-bigmodel.
 #[derive(Debug, Clone, PartialEq, Serialize, Hash)]
-pub struct TrainedCoefficients {
+pub struct LinearFeedbackFormula {
     pub a: OrderedFloat<f32>,
     pub b: OrderedFloat<f32>,
     pub c: OrderedFloat<f32>,
@@ -55,7 +55,7 @@ pub struct TrainedCoefficients {
 
 /// Query for relevance feedback scoring
 #[derive(Debug, Clone, PartialEq, Serialize, Hash)]
-pub struct FeedbackQuery<T> {
+pub struct FeedbackQuery<T, TFormula> {
     /// The original query vector.
     pub query: T,
 
@@ -63,19 +63,15 @@ pub struct FeedbackQuery<T> {
     pub feedback_pairs: Vec<FeedbackPair<T>>,
 
     /// Trained coefficients for the formula.
-    pub coefficients: TrainedCoefficients,
+    pub formula: TFormula,
 }
 
-impl<T> FeedbackQuery<T> {
-    pub fn new(
-        query: T,
-        feedback_pairs: Vec<FeedbackPair<T>>,
-        coefficients: TrainedCoefficients,
-    ) -> Self {
+impl<T, TFormula> FeedbackQuery<T, TFormula> {
+    pub fn new(query: T, feedback_pairs: Vec<FeedbackPair<T>>, formula: TFormula) -> Self {
         Self {
             query,
             feedback_pairs,
-            coefficients,
+            formula,
         }
     }
 
@@ -87,15 +83,17 @@ impl<T> FeedbackQuery<T> {
     }
 }
 
-impl<T, U> TransformInto<FeedbackQuery<U>, T, U> for FeedbackQuery<T> {
-    fn transform<F>(self, mut f: F) -> OperationResult<FeedbackQuery<U>>
+impl<T, U, TFormula> TransformInto<FeedbackQuery<U, TFormula>, T, U>
+    for FeedbackQuery<T, TFormula>
+{
+    fn transform<F>(self, mut f: F) -> OperationResult<FeedbackQuery<U, TFormula>>
     where
         F: FnMut(T) -> OperationResult<U>,
     {
         let Self {
             query,
             feedback_pairs,
-            coefficients,
+            formula,
         } = self;
         Ok(FeedbackQuery::new(
             f(query)?,
@@ -103,31 +101,33 @@ impl<T, U> TransformInto<FeedbackQuery<U>, T, U> for FeedbackQuery<T> {
                 .into_iter()
                 .map(|pair| pair.transform(&mut f))
                 .try_collect()?,
-            coefficients,
+            formula,
         ))
     }
 }
 
-#[inline]
-fn pair_formula(confidence: f32, delta: f32, coefficients: &TrainedCoefficients) -> f32 {
-    let TrainedCoefficients {
-        a: _,
-        b: OrderedFloat(b),
-        c: OrderedFloat(c),
-    } = coefficients;
+impl LinearFeedbackFormula {
+    #[inline]
+    fn pair_score(&self, confidence: f32, delta: f32) -> f32 {
+        let Self {
+            a: _,
+            b: OrderedFloat(b),
+            c: OrderedFloat(c),
+        } = self;
 
-    confidence.powf(*b) * c * delta
+        confidence.powf(*b) * c * delta
+    }
 }
 
-impl<T> Query<T> for FeedbackQuery<T> {
+impl<T> Query<T> for FeedbackQuery<T, LinearFeedbackFormula> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         let Self {
             query,
             feedback_pairs,
-            coefficients,
+            formula,
         } = self;
 
-        let mut score = coefficients.a.0 * similarity(query);
+        let mut score = formula.a.0 * similarity(query);
 
         for pair in feedback_pairs {
             let FeedbackPair {
@@ -138,7 +138,7 @@ impl<T> Query<T> for FeedbackQuery<T> {
 
             let delta = similarity(positive) - similarity(negative);
 
-            score += pair_formula(confidence.0, delta, coefficients);
+            score += formula.pair_score(confidence.0, delta);
         }
 
         score
