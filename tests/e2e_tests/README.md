@@ -1,3 +1,10 @@
+# TLS test
+
+## Regenerate certificates
+
+1. run `PROJECT_ROOT/tests/e2e_tests/test_data/gen.sh`
+2. replace old certificates in `PROJECT_ROOT/tests/e2e_tests/test_data/cert` with the newly generated ones
+
 # Data compatibility test
 
 In order to detect quickly breakage of storage compatibility, we check that the current code understands the storage format from the latest stable release.
