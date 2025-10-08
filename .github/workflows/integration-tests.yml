@@ -28,7 +28,7 @@ jobs:
           shared-key: integration-tests
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.13'
       - name: Install dependencies
         run: |
           sudo apt-get install clang
@@ -60,7 +60,7 @@ jobs:
         run: sudo apt-get install clang
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.13'
       - name: Install dependencies
         run: |
           curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION
@@ -91,7 +91,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.13'
       - name: Install dependencies
         run: |
           curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION
@@ -234,7 +234,7 @@ jobs:
           lfs: true  # Fetch LFS files automatically
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.13'
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Install Poetry
