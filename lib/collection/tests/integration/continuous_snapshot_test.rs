@@ -193,12 +193,12 @@ async fn test_continuous_snapshot() {
                     assert_eq!(set_result.status, UpdateStatus::Completed);
                 }
 
-                // Retrieve one point at a time again with payload
+                // Retrieve one point at a time again with payload & vector
                 for i in 0..points_count {
                     let retrieve_point = PointRequestInternal {
                         ids: vec![i.into()],
                         with_payload: Some(true.into()),
-                        with_vector: WithVector::Bool(false),
+                        with_vector: WithVector::Bool(true),
                     };
                     let hw_counter = HwMeasurementAcc::disposable();
                     let retrieve_result = collection
@@ -211,6 +211,8 @@ async fn test_continuous_snapshot() {
                         )
                         .await?;
                     assert_eq!(retrieve_result.len(), 1);
+                    assert!(retrieve_result[0].vector.is_some(), "missing vector");
+                    assert!(retrieve_result[0].payload.is_some(), "missing payload");
                 }
             }
             CollectionResult::Ok(())
