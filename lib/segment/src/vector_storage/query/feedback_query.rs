@@ -10,13 +10,13 @@ use crate::common::operation_error::OperationResult;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Hash)]
 pub struct FeedbackPair<T> {
-    /// A vector with higher by golden score.
+    /// A vector with higher feedback score.
     pub positive: T,
 
-    /// A vector with lower by golden score.
+    /// A vector with lower feedback score.
     pub negative: T,
 
-    /// The difference in score between the pair of vectors.
+    /// The difference in feedback score between the pair of vectors.
     pub confidence: OrderedFloat<f32>,
 }
 
@@ -111,7 +111,7 @@ impl<T, U> TransformInto<FeedbackQuery<U>, T, U> for FeedbackQuery<T> {
 #[inline]
 fn pair_formula(confidence: f32, delta: f32, coefficients: &TrainedCoefficients) -> f32 {
     let TrainedCoefficients {
-        a: OrderedFloat(_a),
+        a: _,
         b: OrderedFloat(b),
         c: OrderedFloat(c),
     } = coefficients;
