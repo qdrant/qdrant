@@ -57,7 +57,7 @@ pub struct LinearFeedbackFormula {
 #[derive(Debug, Clone, PartialEq, Serialize, Hash)]
 pub struct FeedbackQuery<T, TFormula> {
     /// The original query vector.
-    pub query: T,
+    pub target: T,
 
     /// Pairs of results with higher difference in their golden score.
     pub feedback_pairs: Vec<FeedbackPair<T>>,
@@ -67,9 +67,9 @@ pub struct FeedbackQuery<T, TFormula> {
 }
 
 impl<T, TFormula> FeedbackQuery<T, TFormula> {
-    pub fn new(query: T, feedback_pairs: Vec<FeedbackPair<T>>, formula: TFormula) -> Self {
+    pub fn new(target: T, feedback_pairs: Vec<FeedbackPair<T>>, formula: TFormula) -> Self {
         Self {
-            query,
+            target,
             feedback_pairs,
             formula,
         }
@@ -79,7 +79,7 @@ impl<T, TFormula> FeedbackQuery<T, TFormula> {
         self.feedback_pairs
             .iter()
             .flat_map(|pair| pair.iter())
-            .chain(std::iter::once(&self.query))
+            .chain(std::iter::once(&self.target))
     }
 }
 
@@ -91,12 +91,12 @@ impl<T, U, TFormula> TransformInto<FeedbackQuery<U, TFormula>, T, U>
         F: FnMut(T) -> OperationResult<U>,
     {
         let Self {
-            query,
+            target,
             feedback_pairs,
             formula,
         } = self;
         Ok(FeedbackQuery::new(
-            f(query)?,
+            f(target)?,
             feedback_pairs
                 .into_iter()
                 .map(|pair| pair.transform(&mut f))
@@ -122,12 +122,12 @@ impl LinearFeedbackFormula {
 impl<T> Query<T> for FeedbackQuery<T, LinearFeedbackFormula> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         let Self {
-            query,
+            target,
             feedback_pairs,
             formula,
         } = self;
 
-        let mut score = formula.a.0 * similarity(query);
+        let mut score = formula.a.0 * similarity(target);
 
         for pair in feedback_pairs {
             let FeedbackPair {
