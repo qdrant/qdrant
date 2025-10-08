@@ -1,7 +1,4 @@
-import multiprocessing
 import pathlib
-import random
-from time import sleep
 
 from .fixtures import upsert_random_points, create_collection
 from .utils import *
