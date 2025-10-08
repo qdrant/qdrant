@@ -53,8 +53,6 @@ pub struct ForwardProxyShard {
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
-    // ToDo: Transfer points only if they match the filter
-    filter: Option<Filter>,
 }
 
 impl ForwardProxyShard {
@@ -87,7 +85,6 @@ impl ForwardProxyShard {
             wrapped_shard,
             remote_shard,
             resharding_hash_ring,
-            filter,
             update_lock: Mutex::new(()),
         }
     }
