@@ -489,6 +489,7 @@ pub enum SearchType {
     RecommendSumScores,
     Discover,
     Context,
+    FeedbackLinear,
 }
 
 impl From<&QueryEnum> for SearchType {
@@ -499,6 +500,7 @@ impl From<&QueryEnum> for SearchType {
             QueryEnum::RecommendSumScores(_) => Self::RecommendSumScores,
             QueryEnum::Discover(_) => Self::Discover,
             QueryEnum::Context(_) => Self::Context,
+            QueryEnum::FeedbackLinear(_) => Self::FeedbackLinear,
         }
     }
 }

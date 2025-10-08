@@ -64,7 +64,6 @@ message InferenceObject {
   map<string, Value> options = 3; // Model options
 }
 
-// Legacy vector format, which determines the vector type by the configuration of its fields.
 message Vector {
   repeated float data = 1; // Vector data (flatten for multi vectors), deprecated
   optional SparseIndices indices = 2; // Sparse indices for sparse vectors, deprecated

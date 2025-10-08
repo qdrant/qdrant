@@ -8,6 +8,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_data::HardwareData;
 use common::types::ScoreType;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use segment::common::operation_error::OperationError;
 use segment::data_types::index::{
     BoolIndexType, DatetimeIndexType, FloatIndexType, GeoIndexType, IntegerIndexType,
@@ -19,7 +20,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
-use segment::vector_storage::query as segment_query;
+use segment::vector_storage::query::{self as segment_query, LinearFeedbackStrategy};
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
 use tonic::Status;
 use uuid::Uuid;
@@ -2763,6 +2764,66 @@ impl TryFrom<raw_query::Discovery>
     }
 }
 
+impl From<segment_query::FeedbackQuery<VectorInternal, LinearFeedbackStrategy>>
+    for raw_query::Feedback
+{
+    fn from(value: segment_query::FeedbackQuery<VectorInternal, LinearFeedbackStrategy>) -> Self {
+        let segment_query::FeedbackQuery {
+            target,
+            feedback_pairs,
+            strategy,
+        } = value;
+
+        Self {
+            target: Some(target.into()),
+            feedback_pairs: feedback_pairs.into_iter().map_into().collect(),
+            strategy: Some(grpc::FeedbackStrategy {
+                variant: Some(grpc::feedback_strategy::Variant::Linear(strategy.into())),
+            }),
+        }
+    }
+}
+
+impl From<segment_query::FeedbackPair<VectorInternal>> for raw_query::FeedbackPair {
+    fn from(value: segment_query::FeedbackPair<VectorInternal>) -> Self {
+        let segment_query::FeedbackPair {
+            positive,
+            negative,
+            confidence,
+        } = value;
+
+        Self {
+            positive: Some(positive.into()),
+            negative: Some(negative.into()),
+            confidence: confidence.0,
+        }
+    }
+}
+
+impl TryFrom<raw_query::FeedbackPair>
+    for segment_query::FeedbackPair<segment_vectors::VectorInternal>
+{
+    type Error = Status;
+    fn try_from(value: raw_query::FeedbackPair) -> Result<Self, Self::Error> {
+        let raw_query::FeedbackPair {
+            positive,
+            negative,
+            confidence,
+        } = value;
+        Ok(Self {
+            positive: positive
+                .map(segment_vectors::VectorInternal::try_from)
+                .transpose()?
+                .ok_or_else(|| Status::invalid_argument("No positive vector provided"))?,
+            negative: negative
+                .map(segment_vectors::VectorInternal::try_from)
+                .transpose()?
+                .ok_or_else(|| Status::invalid_argument("No negative vector provided"))?,
+            confidence: OrderedFloat(confidence),
+        })
+    }
+}
+
 impl TryFrom<SearchPoints> for rest::SearchRequestInternal {
     type Error = Status;
 
@@ -3075,6 +3136,30 @@ impl From<HardwareUsage> for HardwareData {
             payload_index_io_write: payload_index_io_write as usize,
             vector_io_read: vector_io_read as usize,
             vector_io_write: vector_io_write as usize,
+        }
+    }
+}
+
+impl From<LinearFeedbackStrategy> for grpc::LinearFeedbackStrategy {
+    fn from(value: LinearFeedbackStrategy) -> Self {
+        let LinearFeedbackStrategy { a, b, c } = value;
+
+        Self {
+            a: a.0,
+            b: b.0,
+            c: c.0,
+        }
+    }
+}
+
+impl From<grpc::LinearFeedbackStrategy> for LinearFeedbackStrategy {
+    fn from(value: grpc::LinearFeedbackStrategy) -> Self {
+        let grpc::LinearFeedbackStrategy { a, b, c } = value;
+
+        Self {
+            a: OrderedFloat(a),
+            b: OrderedFloat(b),
+            c: OrderedFloat(c),
         }
     }
 }

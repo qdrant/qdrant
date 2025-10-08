@@ -1,5 +1,8 @@
 use segment::data_types::vectors::{MultiDenseVectorInternal, NamedQuery, VectorInternal};
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use segment::vector_storage::query::{
+    ContextPair, ContextQuery, DiscoveryQuery, FeedbackPair, FeedbackQuery, LinearFeedbackStrategy,
+    RecoQuery,
+};
 use shard::query::query_enum::QueryEnum;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
@@ -109,6 +112,9 @@ impl Generalizer for QueryEnum {
             }
             QueryEnum::Discover(disocover) => QueryEnum::Discover(disocover.remove_details()),
             QueryEnum::Context(context) => QueryEnum::Context(context.remove_details()),
+            QueryEnum::FeedbackLinear(feedback) => {
+                QueryEnum::FeedbackLinear(feedback.remove_details())
+            }
         }
     }
 }
@@ -189,6 +195,47 @@ impl<T: Generalizer> Generalizer for RecoQuery<T> {
         Self {
             positives: positives.iter().map(|p| p.remove_details()).collect(),
             negatives: negatives.iter().map(|p| p.remove_details()).collect(),
+        }
+    }
+}
+
+impl<T: Generalizer, TStrategy: Generalizer> Generalizer for FeedbackQuery<T, TStrategy> {
+    fn remove_details(&self) -> Self {
+        let FeedbackQuery {
+            target,
+            feedback_pairs,
+            strategy,
+        } = self;
+        Self {
+            target: target.remove_details(),
+            feedback_pairs: feedback_pairs.iter().map(|p| p.remove_details()).collect(),
+            strategy: strategy.remove_details(),
+        }
+    }
+}
+
+impl<T: Generalizer> Generalizer for FeedbackPair<T> {
+    fn remove_details(&self) -> Self {
+        let FeedbackPair {
+            positive,
+            negative,
+            confidence: _,
+        } = self;
+        Self {
+            positive: positive.remove_details(),
+            negative: negative.remove_details(),
+            confidence: 0.0.into(),
+        }
+    }
+}
+
+impl Generalizer for LinearFeedbackStrategy {
+    fn remove_details(&self) -> Self {
+        let LinearFeedbackStrategy { a: _, b: _, c: _ } = self;
+        Self {
+            a: 0.0.into(),
+            b: 0.0.into(),
+            c: 0.0.into(),
         }
     }
 }

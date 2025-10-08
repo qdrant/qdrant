@@ -817,9 +817,8 @@ impl<T: Validate> Validate for NamedQuery<T> {
     }
 }
 
-impl NamedQuery<RecoQuery<VectorInternal>> {
-    pub fn new(query: RecoQuery<VectorInternal>, using: Option<VectorNameBuf>) -> Self {
-        // TODO: maybe validate there is no sparse vector without vector name
+impl<TQuery> NamedQuery<TQuery> {
+    pub fn new(query: TQuery, using: Option<VectorNameBuf>) -> Self {
         NamedQuery { query, using }
     }
 }
