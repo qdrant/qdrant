@@ -109,19 +109,14 @@ impl<T, U> TransformInto<FeedbackQuery<U>, T, U> for FeedbackQuery<T> {
 }
 
 #[inline]
-fn linear_formula(
-    score: f32,
-    confidence: f32,
-    delta: f32,
-    coefficients: &TrainedCoefficients,
-) -> f32 {
+fn pair_formula(confidence: f32, delta: f32, coefficients: &TrainedCoefficients) -> f32 {
     let TrainedCoefficients {
-        a: OrderedFloat(a),
+        a: OrderedFloat(_a),
         b: OrderedFloat(b),
         c: OrderedFloat(c),
     } = coefficients;
 
-    a * score + confidence.powf(*b) * c * delta
+    confidence.powf(*b) * c * delta
 }
 
 impl<T> Query<T> for FeedbackQuery<T> {
@@ -132,22 +127,20 @@ impl<T> Query<T> for FeedbackQuery<T> {
             coefficients,
         } = self;
 
-        let mut rescore = 0.0;
-        for (idx, pair) in feedback_pairs.iter().enumerate() {
+        let mut score = coefficients.a.0 * similarity(query);
+
+        for pair in feedback_pairs {
             let FeedbackPair {
                 positive,
                 negative,
                 confidence,
             } = pair;
 
-            // Only use the score if it is the first feedback pair
-            let score = if idx == 0 { similarity(query) } else { 0.0 };
-
             let delta = similarity(positive) - similarity(negative);
 
-            rescore += linear_formula(score, confidence.0, delta, coefficients);
+            score += pair_formula(confidence.0, delta, coefficients);
         }
 
-        rescore
+        score
     }
 }
