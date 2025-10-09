@@ -3,8 +3,7 @@ use pyo3::prelude::*;
 use shard::operations::point_ops::*;
 use shard::operations::{CollectionUpdateOperations, point_ops};
 
-use super::*;
-use crate::interface::py_vector::PyVector;
+use crate::*;
 
 #[pyclass(name = "UpdateOperation")]
 #[derive(Clone, Debug, Into)]

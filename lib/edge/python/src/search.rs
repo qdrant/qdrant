@@ -6,8 +6,7 @@ use segment::types::*;
 use shard::query::query_enum::QueryEnum;
 use shard::search::*;
 
-use super::*;
-use crate::interface::py_vector::PySparseVector;
+use crate::*;
 
 #[pyclass(name = "SearchRequest")]
 #[derive(Clone, Debug, Into)]

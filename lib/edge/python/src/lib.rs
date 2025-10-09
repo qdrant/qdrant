@@ -1,6 +1,6 @@
 pub mod config;
-pub mod interface;
 pub mod search;
+pub mod types;
 pub mod update;
 
 use std::path::PathBuf;
@@ -14,8 +14,8 @@ use uuid::Uuid;
 
 use self::config::*;
 use self::search::*;
+use self::types::*;
 use self::update::*;
-use crate::interface::py_record::PyRecord;
 
 #[pymodule]
 mod qdrant_edge {
@@ -26,14 +26,12 @@ mod qdrant_edge {
         PyVectorStorageDatatype, PyVectorStorageType,
     };
     #[pymodule_export]
-    use super::interface::py_record::PyRecord;
-    #[pymodule_export]
-    use super::interface::py_vector::PyVector;
-    #[pymodule_export]
     use super::search::{
         PyFilter, PyQuery, PyQueryVector, PyScoredPoint, PySearchParams, PySearchRequest,
         PyWithPayload, PyWithVector,
     };
+    #[pymodule_export]
+    use super::types::{PyRecord, PyVector};
     #[pymodule_export]
     use super::update::{PyPoint, PyUpdateOperation};
     #[pymodule_export]

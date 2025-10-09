@@ -4,8 +4,7 @@ use segment::data_types::order_by::OrderValue;
 use shard::operations::point_ops::VectorStructPersisted;
 use shard::retrieve::record_internal::RecordInternal;
 
-use crate::interface::py_vector::PyVector;
-use crate::{PyPayload, PyPointId};
+use crate::*;
 
 #[pyclass(name = "Record")]
 #[derive(Clone, Debug, Into)]
