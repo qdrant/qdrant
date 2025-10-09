@@ -537,11 +537,15 @@ def check_collection_cluster(peer_url, collection_name):
 
 def check_strict_mode_enabled(peer_api_uri: str, collection_name: str) -> bool:
     collection_info = get_collection_info(peer_api_uri, collection_name)
+    if "strict_mode_config" not in collection_info["config"]:
+        return False
     strict_mode_enabled = collection_info["config"]["strict_mode_config"]["enabled"]
     return strict_mode_enabled == True
 
 def check_strict_mode_disabled(peer_api_uri: str, collection_name: str) -> bool:
     collection_info = get_collection_info(peer_api_uri, collection_name)
+    if "strict_mode_config" not in collection_info["config"]:
+        return True
     strict_mode_enabled = collection_info["config"]["strict_mode_config"]["enabled"]
     return strict_mode_enabled == False
 
