@@ -65,6 +65,12 @@ impl Collection {
             .shard_transfers
             .read()
             .clone();
+        for transfer in shard_transfers.intersection(&old_transfers) {
+            log::debug!("Aborting shard transfer: {transfer:?}");
+        }
+        for transfer in old_transfers.difference(&shard_transfers) {
+            log::debug!("Aborting shard transfer: {transfer:?}");
+        }
         for transfer in shard_transfers.difference(&old_transfers) {
             if transfer.from == this_peer_id {
                 // Abort transfer as sender should not learn about the transfer from snapshot
@@ -72,7 +78,6 @@ impl Collection {
                 abort_transfer(transfer.clone());
                 // Since we remove the transfer from our list below, we don't invoke regular abort logic on this node
                 // Do it here explicitly so we don't miss a silent abort change
-                log::debug!("Aborting shard transfer: {transfer:?}");
                 let _ = self
                     .shards_holder
                     .read()
