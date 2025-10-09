@@ -16,6 +16,8 @@ use crate::encoded_vectors::{
     DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
+use crate::rotation::Rotation;
+use crate::shifter::Shifter;
 
 pub const ALIGNMENT: usize = 16;
 
@@ -37,6 +39,9 @@ struct Metadata {
     offset: f32,
     multiplier: f32,
     vector_parameters: VectorParameters,
+
+    rotation: Rotation,
+    shifter: Shifter,
 }
 
 impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
@@ -55,6 +60,21 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     ) -> Result<Self, EncodingError> {
         let actual_dim = Self::get_actual_dim(vector_parameters);
 
+        let shifter = Shifter::new(
+            orig_data.clone(),
+            vector_parameters,
+            meta_path.map(|p| p.parent().unwrap()),
+        );
+        let rotation = Rotation::new(
+            orig_data.clone().map(|v| {
+                let mut v = v.as_ref().to_owned();
+                shifter.shift(&mut v);
+                v
+            }),
+            vector_parameters,
+            meta_path.map(|p| p.parent().unwrap()),
+        );
+
         if count == 0 {
             let metadata = Metadata {
                 actual_dim,
@@ -62,6 +82,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 offset: 0.0,
                 multiplier: 0.0,
                 vector_parameters: vector_parameters.clone(),
+                rotation,
+                shifter,
             };
             if let Some(meta_path) = meta_path {
                 meta_path
@@ -92,10 +114,16 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         }
 
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
-        let (alpha, offset) = Self::find_alpha_offset_size_dim(orig_data.clone());
+        let t_data = orig_data.clone().map(|v| {
+            let mut v = v.as_ref().to_owned();
+            shifter.shift(&mut v);
+            rotation.rotate(&mut v);
+            v
+        });
+        let (alpha, offset) = Self::find_alpha_offset_size_dim(t_data.clone());
         let (alpha, offset) = if let Some(quantile) = quantile {
             if let Some((min, max)) =
-                find_quantile_interval(orig_data.clone(), vector_parameters.dim, count, quantile)
+                find_quantile_interval(t_data.clone(), vector_parameters.dim, count, quantile)
             {
                 Self::alpha_offset_from_min_max(min, max)
             } else {
@@ -109,6 +137,11 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
             }
+
+            let mut vector = vector.as_ref().to_owned();
+            let sum = shifter.shift(&mut vector);
+            rotation.rotate(&mut vector);
+            let vector = vector.as_slice();
 
             let mut encoded_vector = Vec::with_capacity(actual_dim + std::mem::size_of::<f32>());
             encoded_vector.extend_from_slice(&f32::default().to_ne_bytes());
@@ -143,9 +176,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 }
             };
             let vector_offset = if vector_parameters.invert {
-                -vector_offset
+                -vector_offset - sum
             } else {
-                vector_offset
+                vector_offset + sum
             };
             encoded_vector[0..std::mem::size_of::<f32>()]
                 .copy_from_slice(&vector_offset.to_ne_bytes());
@@ -176,6 +209,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             offset,
             multiplier,
             vector_parameters: vector_parameters.clone(),
+            rotation,
+            shifter,
         };
         if let Some(meta_path) = meta_path {
             meta_path
@@ -374,6 +409,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     }
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryU8 {
+        let mut query = query.to_owned();
+        let sum = self.metadata.shifter.shift(&mut query);
+        self.metadata.rotation.rotate(&mut query);
+        let query = query.as_slice();
+
         let dim = query.len();
         let mut query: Vec<_> = query
             .iter()
@@ -407,9 +447,9 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
             }
         };
         let offset = if self.metadata.vector_parameters.invert {
-            -offset
+            -offset - sum
         } else {
-            offset
+            offset + sum
         };
         EncodedQueryU8 {
             offset,

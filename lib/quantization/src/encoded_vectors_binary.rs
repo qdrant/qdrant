@@ -426,7 +426,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             meta_path.map(|p| p.parent().unwrap()),
         );
         let rotation = Rotation::new(
-            orig_data.clone(),
+            orig_data.clone().map(|v| {
+                let mut v = v.as_ref().to_owned();
+                shifter.shift(&mut v);
+                v
+            }),
             vector_parameters,
             meta_path.map(|p| p.parent().unwrap()),
         );
