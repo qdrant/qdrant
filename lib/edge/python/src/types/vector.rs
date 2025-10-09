@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use derive_more::Into;
-use pyo3::{pyclass, pymethods, FromPyObject, IntoPyObject};
+use pyo3::{FromPyObject, IntoPyObject, pyclass, pymethods};
 use segment::data_types::vectors::DenseVector;
 use segment::types::VectorNameBuf;
 use shard::operations::point_ops::{VectorPersisted, VectorStructPersisted};

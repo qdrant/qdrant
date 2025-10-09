@@ -1,8 +1,9 @@
-use crate::types::{PyPayload, PyPointId, PyVector};
 use derive_more::Into;
 use pyo3::{PyErr, pyclass, pymethods};
 use segment::types::{Payload, PointIdType};
 use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
+
+use crate::types::{PyPayload, PyPointId, PyVector};
 
 #[pyclass(name = "Point")]
 #[derive(Clone, Debug, Into)]
@@ -23,7 +24,7 @@ impl PyPoint {
 
     #[getter]
     pub fn id(&self) -> PyPointId {
-        PyPointId::from(self.0.id.clone())
+        PyPointId::from(self.0.id)
     }
 
     #[getter]
