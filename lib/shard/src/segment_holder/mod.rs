@@ -846,7 +846,7 @@ impl SegmentHolder {
             "Must flush appendable segments first",
         );
 
-        // Start with the max_persisted_vesrion at the set overwrite value, which may just be 0
+        // Start with the max_persisted_version at the set overwrite value, which may just be 0
         // Any of the segments we flush may increase this if they have a higher persisted version
         // The overwrite is required to ensure we acknowledge no-op operations in WAL that didn't hit any segment
         let mut max_persisted_version: SeqNumberType = self
@@ -869,7 +869,11 @@ impl SegmentHolder {
 
             if segment_version > segment_persisted_version {
                 has_unsaved = true;
-                min_unsaved_version = min(min_unsaved_version, segment_persisted_version);
+                // The lowest unsaved change is the first version *after* the newly persisted one.
+                min_unsaved_version = min(
+                    min_unsaved_version,
+                    segment_persisted_version.saturating_add(1),
+                );
             }
 
             max_persisted_version = max(max_persisted_version, segment_persisted_version);
@@ -890,7 +894,9 @@ impl SegmentHolder {
             log::trace!(
                 "Some segments have unsaved changes, lowest unsaved version: {min_unsaved_version}"
             );
-            Ok(min_unsaved_version)
+            // Return the version *before* the lowest unsaved change, so WAL can acknowledge up to that
+            // version as persisted.
+            Ok(min_unsaved_version - 1)
         } else {
             log::trace!(
                 "All segments flushed successfully, max persisted version: {max_persisted_version}"
