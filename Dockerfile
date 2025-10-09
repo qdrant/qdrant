@@ -91,7 +91,8 @@ ARG TARGET_CPU
 # Enable GPU support
 ARG GPU
 
-# jemalloc' base 2 log of page size
+# jemalloc' base 2 log of page size.  For example, for the ordinary 4k page size, use 12;
+# for 16k, use 14; for 64k, use 16.  It corresponds to jemalloc's `--with-lg-page` configure argument.
 ARG JEMALLOC_SYS_WITH_LG_PAGE
 
 # Download and extract web UI
