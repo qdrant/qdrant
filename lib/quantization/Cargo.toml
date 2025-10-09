@@ -31,6 +31,8 @@ io = { path = "../common/io" }
 strum = { workspace = true }
 bytemuck = { workspace = true }
 parking_lot = { workspace = true }
+ordered-float = { workspace = true }
+plotters = "0.3.7"
 
 [dev-dependencies]
 quantization = { path = ".", features = ["testing"] }

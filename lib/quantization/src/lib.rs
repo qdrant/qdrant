@@ -5,6 +5,8 @@ pub mod encoded_vectors_pq;
 pub mod encoded_vectors_u8;
 pub mod kmeans;
 pub mod quantile;
+pub mod rotation;
+pub mod shifter;
 pub mod vector_stats;
 
 use std::fmt::Display;

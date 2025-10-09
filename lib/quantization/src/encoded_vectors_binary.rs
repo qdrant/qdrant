@@ -14,12 +14,13 @@ use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
 use crate::encoded_vectors::validate_vector_parameters;
+use crate::rotation::Rotation;
+use crate::shifter::Shifter;
 use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedVectors, EncodingError,
     VectorParameters,
 };
-
 pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
@@ -118,6 +119,9 @@ struct Metadata {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     vector_stats: Option<VectorStats>,
+
+    rotation: Rotation,
+    shifter: Shifter,
 }
 
 pub trait BitsStoreType:
@@ -394,7 +398,7 @@ impl BitsStoreType for u128 {
         if !size.is_multiple_of(bits_count) {
             result += 1;
         }
-        result
+        result + 1
     }
 }
 
@@ -416,6 +420,17 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
 
+        let shifter = Shifter::new(
+            orig_data.clone(),
+            vector_parameters,
+            meta_path.map(|p| p.parent().unwrap()),
+        );
+        let rotation = Rotation::new(
+            orig_data.clone(),
+            vector_parameters,
+            meta_path.map(|p| p.parent().unwrap()),
+        );
+
         let storage_encoding_needs_states = match encoding {
             Encoding::OneBit => false,
             // Requires stats for bit boundaries
@@ -428,7 +443,15 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         };
 
         let vector_stats = if storage_encoding_needs_states || query_encoding_needs_stats {
-            Some(VectorStats::build(orig_data.clone(), vector_parameters))
+            Some(VectorStats::build(
+                orig_data.clone().map(|v| {
+                    let mut v = v.as_ref().to_owned();
+                    shifter.shift(&mut v);
+                    rotation.rotate(&mut v);
+                    v
+                }),
+                vector_parameters,
+            ))
         } else {
             None
         };
@@ -438,7 +461,13 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                 return Err(EncodingError::Stopped);
             }
 
-            let encoded_vector = Self::encode_vector(vector.as_ref(), &vector_stats, encoding);
+            let encoded_vector = Self::encode_vector(
+                vector.as_ref(),
+                &vector_stats,
+                &shifter,
+                &rotation,
+                encoding,
+            );
             let encoded_vector_slice = encoded_vector.encoded_vector.as_slice();
             let bytes = transmute_to_u8_slice(encoded_vector_slice);
             storage_builder.push_vector_data(bytes).map_err(|e| {
@@ -455,6 +484,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             encoding,
             query_encoding,
             vector_stats,
+            rotation,
+            shifter,
         };
         if let Some(meta_path) = meta_path {
             meta_path
@@ -499,6 +530,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     fn encode_vector(
         vector: &[f32],
         vector_stats: &Option<VectorStats>,
+        shifter: &Shifter,
+        rotation: &Rotation,
         encoding: Encoding,
     ) -> EncodedBinVector<TBitsStoreType> {
         let encoded_vector_size =
@@ -506,14 +539,27 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                 / std::mem::size_of::<TBitsStoreType>();
         let mut encoded_vector = vec![Default::default(); encoded_vector_size];
 
+        let mut vector = vector.to_owned();
+        let sum = shifter.shift(&mut vector);
+        rotation.rotate(&mut vector);
+        let vector = vector.as_slice();
+
+        let sum_bytes = sum.to_ne_bytes();
+        unsafe {
+            let p = encoded_vector.as_mut_ptr();
+            std::ptr::copy_nonoverlapping(sum_bytes.as_ptr(), p as *mut u8, sum_bytes.len());
+        }
+
         match encoding {
-            Encoding::OneBit => Self::encode_one_bit_vector(vector, &mut encoded_vector),
+            Encoding::OneBit => Self::encode_one_bit_vector(vector, &mut encoded_vector[1..]),
             Encoding::TwoBits => {
-                Self::encode_two_bits_vector(vector, &mut encoded_vector, vector_stats)
+                Self::encode_two_bits_vector(vector, &mut encoded_vector[1..], vector_stats)
             }
-            Encoding::OneAndHalfBits => {
-                Self::encode_one_and_half_bits_vector(vector, &mut encoded_vector, vector_stats)
-            }
+            Encoding::OneAndHalfBits => Self::encode_one_and_half_bits_vector(
+                vector,
+                &mut encoded_vector[1..],
+                vector_stats,
+            ),
         }
 
         EncodedBinVector { encoded_vector }
@@ -637,36 +683,61 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     fn encode_query_vector(
         query: &[f32],
         vector_stats: &Option<VectorStats>,
+        shifter: &Shifter,
+        rotation: &Rotation,
         encoding: Encoding,
         query_encoding: QueryEncoding,
     ) -> EncodedQueryBQ<TBitsStoreType> {
         match query_encoding {
-            QueryEncoding::SameAsStorage => {
-                EncodedQueryBQ::Binary(Self::encode_vector(query, vector_stats, encoding))
+            QueryEncoding::SameAsStorage => EncodedQueryBQ::Binary(Self::encode_vector(
+                query,
+                vector_stats,
+                shifter,
+                rotation,
+                encoding,
+            )),
+            QueryEncoding::Scalar8bits => {
+                EncodedQueryBQ::Scalar8bits(Self::encode_scalar_query_vector(
+                    query,
+                    shifter,
+                    rotation,
+                    encoding,
+                    u8::BITS as usize,
+                ))
             }
-            QueryEncoding::Scalar8bits => EncodedQueryBQ::Scalar8bits(
-                Self::encode_scalar_query_vector(query, encoding, u8::BITS as usize),
-            ),
-            QueryEncoding::Scalar4bits => EncodedQueryBQ::Scalar4bits(
-                Self::encode_scalar_query_vector(query, encoding, (u8::BITS / 2) as usize),
-            ),
+            QueryEncoding::Scalar4bits => {
+                EncodedQueryBQ::Scalar4bits(Self::encode_scalar_query_vector(
+                    query,
+                    shifter,
+                    rotation,
+                    encoding,
+                    (u8::BITS / 2) as usize,
+                ))
+            }
         }
     }
 
     fn encode_scalar_query_vector(
         query: &[f32],
+        shifter: &Shifter,
+        rotation: &Rotation,
         encoding: Encoding,
         bits_count: usize,
     ) -> EncodedScalarVector<TBitsStoreType> {
+        let mut query = query.to_owned();
+        let sum = shifter.shift(&mut query);
+        rotation.rotate(&mut query);
+        let query = query.as_slice();
+
         match encoding {
-            Encoding::OneBit => Self::_encode_scalar_query_vector(query, bits_count),
+            Encoding::OneBit => Self::_encode_scalar_query_vector(query, bits_count, sum),
             Encoding::TwoBits => {
                 // For two bits encoding we need to extend the query vector
                 let mut extended_query = Vec::with_capacity(query.len() * 2);
                 // Copy the original query vector twice: for first and second bits in 2bit BQ encoding
                 extended_query.extend_from_slice(query);
                 extended_query.extend_from_slice(query);
-                Self::_encode_scalar_query_vector(&extended_query, bits_count)
+                Self::_encode_scalar_query_vector(&extended_query, bits_count, sum)
             }
             Encoding::OneAndHalfBits => {
                 // For one and half bits encoding we need to extend the query vector
@@ -678,7 +749,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                         .chunks(2)
                         .map(|v| if v.len() == 2 { v[0].max(v[1]) } else { v[0] }),
                 );
-                Self::_encode_scalar_query_vector(&extended_query, bits_count)
+                Self::_encode_scalar_query_vector(&extended_query, bits_count, sum)
             }
         }
     }
@@ -686,9 +757,16 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     fn _encode_scalar_query_vector(
         query: &[f32],
         bits_count: usize,
+        sum: f32,
     ) -> EncodedScalarVector<TBitsStoreType> {
-        let encoded_query_size = TBitsStoreType::get_storage_size(query.len().max(1)) * bits_count;
+        let encoded_query_size = TBitsStoreType::get_storage_size(query.len().max(1) * bits_count);
         let mut encoded_query: Vec<TBitsStoreType> = vec![Default::default(); encoded_query_size];
+
+        let sum_bytes = sum.to_ne_bytes();
+        unsafe {
+            let p = encoded_query.as_mut_ptr();
+            std::ptr::copy_nonoverlapping(sum_bytes.as_ptr(), p as *mut u8, sum_bytes.len());
+        }
 
         let max_abs_value = query.iter().map(|x| x.abs()).fold(0.0, f32::max);
         let (min, max) = (-max_abs_value, max_abs_value);
@@ -710,7 +788,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
                 let quantized = TBitsStoreType::from_usize(quantized).unwrap_or_default();
                 for b in 0..bits_count {
                     let bit_value = ((quantized >> b) & TBitsStoreType::one()) << shift;
-                    encoded_query[bits_count * chunk_index + b] |= bit_value;
+                    encoded_query[1 + bits_count * chunk_index + b] |= bit_value;
                 }
             }
         }
@@ -760,6 +838,20 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         // | 1 | 0 | 0    | 1
         // | 1 | 1 | 1    | 0
 
+        let vector_f32 = bytemuck::cast_slice::<TBitsStoreType, u8>(vector);
+        let vector_f32 = f32::from_ne_bytes(vector_f32[0..4].try_into().unwrap());
+        let query_f32 = bytemuck::cast_slice::<TBitsStoreType, u8>(query);
+        let query_f32 = f32::from_ne_bytes(query_f32[0..4].try_into().unwrap());
+        let mean_sqr_sum = self
+            .metadata
+            .vector_stats
+            .as_ref()
+            .map(|stats| stats.mean_sqr_sum)
+            .unwrap_or(0.0);
+
+        let vector = &vector[1..];
+        let query = &query[1..];
+
         let xor_product = if query_bits_count == 1 {
             TBitsStoreType::xor_popcnt(vector, query) as f32
         } else {
@@ -770,7 +862,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         let dim = self.metadata.vector_parameters.dim as f32;
         let zeros_count = dim - xor_product;
 
-        match (
+        let r = match (
             self.metadata.vector_parameters.distance_type,
             self.metadata.vector_parameters.invert,
         ) {
@@ -780,7 +872,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             // This also results in exact ordering as L1 and L2 but reversed.
             (DistanceType::L1 | DistanceType::L2, true) => zeros_count - xor_product,
             (DistanceType::L1 | DistanceType::L2, false) => xor_product - zeros_count,
-        }
+        };
+        r - vector_f32 - query_f32 + mean_sqr_sum
     }
 
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
@@ -824,6 +917,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         Self::encode_query_vector(
             query,
             &self.metadata.vector_stats,
+            &self.metadata.shifter,
+            &self.metadata.rotation,
             self.metadata.encoding,
             self.metadata.query_encoding,
         )
@@ -883,8 +978,13 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         vector: &[f32],
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        let encoded_vector =
-            Self::encode_vector(vector, &self.metadata.vector_stats, self.metadata.encoding);
+        let encoded_vector = Self::encode_vector(
+            vector,
+            &self.metadata.vector_stats,
+            &self.metadata.shifter,
+            &self.metadata.rotation,
+            self.metadata.encoding,
+        );
         self.encoded_vectors.upsert_vector(
             id,
             bytemuck::cast_slice(encoded_vector.encoded_vector.as_slice()),

@@ -5,6 +5,7 @@ use crate::VectorParameters;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorStats {
     pub elements_stats: Vec<VectorElementStats>,
+    pub mean_sqr_sum: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +35,7 @@ impl VectorStats {
         // The Welford's Algorithm.
         let mut stats = VectorStats {
             elements_stats: vec![VectorElementStats::default(); vector_params.dim],
+            mean_sqr_sum: 0.0,
         };
 
         // For internal calculations use higher precision.
@@ -87,6 +89,8 @@ impl VectorStats {
             };
             element_stats.mean = *means as f32;
         }
+
+        stats.mean_sqr_sum = means.iter().map(|m| (m * m) as f32).sum();
 
         stats
     }
