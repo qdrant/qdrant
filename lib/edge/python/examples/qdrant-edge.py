@@ -1,5 +1,6 @@
 import os
 import shutil
+import uuid
 from qdrant_edge import *
 
 config = SegmentConfig(
@@ -30,9 +31,9 @@ shard = Shard(DATA_DIRECTORY, config)
 
 shard.update(UpdateOperation.upsert_points([
     Point(
-        PointId.num(1),
+        1,
         Vector.single([6.0, 9.0, 4.0, 2.0]),
-        Payload({
+        {
             "null": None,
             "str": "string",
             "uint": 42,
@@ -50,7 +51,21 @@ shard.update(UpdateOperation.upsert_points([
                 "arr": [],
             },
             "arr": [None, "string", 42, -69, 4.20, True, {}, []],
-        }),
+        },
+    ),
+    Point(
+        "e9408f2b-b917-4af1-ab75-d97ac6b2c047",
+        Vector.single([6.0, 9.0, 4.0, 2.0]),
+        {
+            "hello": "world"
+        },
+    ),
+    Point(
+        uuid.uuid4(),
+        Vector.single([6.0, 9.0, 4.0, 2.0]),
+        {
+            "hello": "world"
+        },
     ),
 ]))
 
@@ -68,7 +83,7 @@ points = shard.search(SearchRequest(
 for point in points:
     print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
 
-retrieve = shard.retrieve(ids=[PointId.num(1)], with_vector=WithVector(True), with_payload=WithPayload(True))
+retrieve = shard.retrieve(ids=[1], with_vector=WithVector(True), with_payload=WithPayload(True))
 
 for point in retrieve:
     print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}")
