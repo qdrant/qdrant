@@ -561,6 +561,7 @@ impl Inner {
     ///
     /// Providing `None` will release this limitation.
     fn set_wal_keep_from(&self, version: Option<u64>) {
+        log::trace!("set_wal_keep_from {version:?}");
         let version = version.unwrap_or(u64::MAX);
         self.wal_keep_from.store(version, Ordering::Relaxed);
     }
