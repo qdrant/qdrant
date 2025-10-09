@@ -3,8 +3,7 @@ use pyo3::prelude::*;
 use shard::operations::point_ops::*;
 use shard::operations::{CollectionUpdateOperations, point_ops};
 
-use super::*;
-use crate::interface::py_vector::PyVector;
+use crate::*;
 
 #[pyclass(name = "UpdateOperation")]
 #[derive(Clone, Debug, Into)]
@@ -32,13 +31,13 @@ pub struct PyPoint(PointStructPersisted);
 #[pymethods]
 impl PyPoint {
     #[new]
-    pub fn new(id: PyPointId, vector: PyVector, payload: Option<PyPayload>) -> Self {
+    pub fn new(id: PyPointId, vector: PyVector, payload: Option<PyPayload>) -> Result<Self, PyErr> {
         let point = PointStructPersisted {
-            id: id.into(),
-            vector: vector.into(),
-            payload: payload.map(Into::into),
+            id: PointIdType::try_from(id)?,
+            vector: VectorStructPersisted::from(vector),
+            payload: payload.map(Payload::from),
         };
 
-        Self(point)
+        Ok(Self(point))
     }
 }

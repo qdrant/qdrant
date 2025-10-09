@@ -4,8 +4,7 @@ use segment::data_types::order_by::OrderValue;
 use shard::operations::point_ops::VectorStructPersisted;
 use shard::retrieve::record_internal::RecordInternal;
 
-use crate::interface::py_vector::PyVector;
-use crate::{PyPayload, PyPointId};
+use crate::*;
 
 #[pyclass(name = "Record")]
 #[derive(Clone, Debug, Into)]
@@ -15,7 +14,7 @@ pub struct PyRecord(pub RecordInternal);
 impl PyRecord {
     #[getter]
     pub fn id(&self) -> PyPointId {
-        PyPointId(self.0.id)
+        PyPointId::from(self.0.id)
     }
 
     #[getter]
@@ -30,8 +29,8 @@ impl PyRecord {
     }
 
     #[getter]
-    pub fn payload(&self) -> Option<PyPayload> {
-        self.0.payload.clone().map(PyPayload)
+    pub fn payload(&self) -> Option<&PyPayload> {
+        self.0.payload.as_ref().map(PyPayload::from_ref)
     }
 
     #[getter]
