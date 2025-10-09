@@ -31,9 +31,9 @@ mod qdrant_edge {
         PyWithPayload, PyWithVector,
     };
     #[pymodule_export]
-    use super::types::{PyRecord, PyVector};
+    use super::types::{PyRecord, PyPoint, PySparseVector};
     #[pymodule_export]
-    use super::update::{PyPoint, PyUpdateOperation};
+    use super::update::{PyUpdateOperation};
 }
 
 #[pyclass(name = "Shard")]

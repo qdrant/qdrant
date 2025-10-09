@@ -25,7 +25,7 @@ impl PyRecord {
 
         let vector_persisted = VectorStructPersisted::from(vector.clone());
 
-        Some(PyVector(vector_persisted))
+        Some(PyVector::from(vector_persisted))
     }
 
     #[getter]

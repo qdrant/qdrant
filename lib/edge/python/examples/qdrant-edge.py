@@ -7,7 +7,7 @@ config = SegmentConfig(
     vector_data={
         "": VectorDataConfig(
             size=4,
-            distance=Distance.COSINE,
+            distance=Distance.DOT,
             storage_type=VectorStorageType.CHUNKED_MMAP,
             index=Indexes.PLAIN,
             quantization_config=None,
@@ -32,7 +32,7 @@ shard = Shard(DATA_DIRECTORY, config)
 shard.update(UpdateOperation.upsert_points([
     Point(
         1,
-        Vector.single([6.0, 9.0, 4.0, 2.0]),
+        [6.0, 9.0, 4.0, 2.0],
         {
             "null": None,
             "str": "string",
@@ -55,19 +55,33 @@ shard.update(UpdateOperation.upsert_points([
     ),
     Point(
         "e9408f2b-b917-4af1-ab75-d97ac6b2c047",
-        Vector.single([6.0, 9.0, 4.0, 2.0]),
+        [6.0, 9.0, 3.0, -2.0],
         {
             "hello": "world"
         },
     ),
     Point(
         uuid.uuid4(),
-        Vector.single([6.0, 9.0, 4.0, 2.0]),
+        Vector.single([1.0, 6.0, 4.0, 2.0]),
         {
             "hello": "world"
         },
     ),
 ]))
+
+some_other_points = [
+    Point(10, [[1,2,3], [3, 4, 5]], {}),
+    Point(11, {
+        "sparse": SparseVector(indices=[0, 2], values=[1.0, 3.0])
+    }, {}),
+]
+
+
+# Test points conversion into internal representation and back
+for point in some_other_points:
+    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}")
+
+print("---- Search ----")
 
 points = shard.search(SearchRequest(
     query=Query.nearest(QueryVector.dense([1.0, 1.0, 1.0, 1.0]), None),
@@ -82,6 +96,8 @@ points = shard.search(SearchRequest(
 
 for point in points:
     print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
+
+print("---- Retrieve ----")
 
 retrieve = shard.retrieve(ids=[1], with_vector=WithVector(True), with_payload=WithPayload(True))
 
