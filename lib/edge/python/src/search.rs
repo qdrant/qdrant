@@ -241,7 +241,7 @@ pub struct PyJsonPath(JsonPath);
 #[pymethods]
 impl PyJsonPath {
     #[new]
-    pub fn new(json_path: &str) -> super::PyResult<Self> {
+    pub fn new(json_path: &str) -> super::Result<Self> {
         let json_path = json_path.parse().map_err(|()| {
             OperationError::validation_error(format!("{json_path} is not a valid JSON path"))
         })?;

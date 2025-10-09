@@ -47,17 +47,17 @@ pub struct PyShard(edge::Shard);
 #[pymethods]
 impl PyShard {
     #[new]
-    pub fn load(path: PathBuf, config: Option<PySegmentConfig>) -> PyResult<Self> {
+    pub fn load(path: PathBuf, config: Option<PySegmentConfig>) -> Result<Self> {
         let shard = edge::Shard::load(&path, config.map(Into::into))?;
         Ok(Self(shard))
     }
 
-    pub fn update(&self, operation: PyUpdateOperation) -> PyResult<()> {
+    pub fn update(&self, operation: PyUpdateOperation) -> Result<()> {
         self.0.update(operation.into())?;
         Ok(())
     }
 
-    pub fn search(&self, search: PySearchRequest) -> PyResult<Vec<PyScoredPoint>> {
+    pub fn search(&self, search: PySearchRequest) -> Result<Vec<PyScoredPoint>> {
         let points = self.0.search(search.into())?;
         let points = points.into_iter().map(PyScoredPoint).collect();
         Ok(points)
@@ -68,7 +68,7 @@ impl PyShard {
         ids: Vec<PyPointId>,
         with_payload: Option<PyWithPayload>,
         with_vector: Option<PyWithVector>,
-    ) -> PyResult<Vec<PyRecord>> {
+    ) -> Result<Vec<PyRecord>> {
         let ids: Vec<_> = ids.into_iter().map(PointIdType::from).collect();
         let records = self.0.retrieve(
             &ids,
@@ -181,7 +181,7 @@ fn payload_value_from_py(val: &Bound<'_, PyAny>) -> pyo3::PyResult<serde_json::V
     )))
 }
 
-pub type PyResult<T, E = PyError> = std::result::Result<T, E>;
+pub type Result<T, E = PyError> = std::result::Result<T, E>;
 
 #[derive(Debug)]
 pub struct PyError(OperationError);
