@@ -91,6 +91,9 @@ ARG TARGET_CPU
 # Enable GPU support
 ARG GPU
 
+# jemalloc' base 2 log of page size
+ARG JEMALLOC_SYS_WITH_LG_PAGE
+
 # Download and extract web UI
 COPY tools/ tools/
 COPY docs/ docs/
@@ -104,6 +107,7 @@ COPY --from=planner /qdrant/recipe.json recipe.json
 RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER ${TARGET_CPU:+-C target-cpu=}$TARGET_CPU $RUSTFLAGS" \
+    JEMALLOC_SYS_WITH_LG_PAGE="${JEMALLOC_SYS_WITH_LG_PAGE}" \
     xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace ${GPU:+--features=gpu} --recipe-path recipe.json
 
 COPY . .
