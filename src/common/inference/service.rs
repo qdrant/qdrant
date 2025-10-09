@@ -276,6 +276,11 @@ impl InferenceService {
                     "Authentication failed for inference service ({status}): {response_body}",
                 )))
             }
+            status @ reqwest::StatusCode::TOO_MANY_REQUESTS => {
+                Err(StorageError::service_error(format!(
+                    "Too many requests for inference service ({status}): {response_body}",
+                )))
+            }
             status @ (reqwest::StatusCode::INTERNAL_SERVER_ERROR
             | reqwest::StatusCode::SERVICE_UNAVAILABLE
             | reqwest::StatusCode::GATEWAY_TIMEOUT) => Err(StorageError::service_error(format!(
