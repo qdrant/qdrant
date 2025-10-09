@@ -32,7 +32,7 @@ shard.update(UpdateOperation.upsert_points([
     Point(
         1,
         Vector.single([6.0, 9.0, 4.0, 2.0]),
-        Payload({
+        {
             "null": None,
             "str": "string",
             "uint": 42,
@@ -50,7 +50,7 @@ shard.update(UpdateOperation.upsert_points([
                 "arr": [],
             },
             "arr": [None, "string", 42, -69, 4.20, True, {}, []],
-        }),
+        },
     ),
 ]))
 

@@ -5,7 +5,6 @@ pub mod update;
 
 use std::path::PathBuf;
 
-use derive_more::Into;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use segment::common::operation_error::OperationError;
@@ -18,6 +17,8 @@ use self::update::*;
 
 #[pymodule]
 mod qdrant_edge {
+    #[pymodule_export]
+    use super::PyShard;
     #[pymodule_export]
     use super::config::{
         PyDistance, PyIndexes, PyMultiVectorComparator, PyMultiVectorConfig, PyPayloadStorageType,
@@ -33,8 +34,6 @@ mod qdrant_edge {
     use super::types::{PyRecord, PyVector};
     #[pymodule_export]
     use super::update::{PyPoint, PyUpdateOperation};
-    #[pymodule_export]
-    use super::{PyPayload, PyShard};
 }
 
 #[pyclass(name = "Shard")]
@@ -76,89 +75,6 @@ impl PyShard {
         let points = records.into_iter().map(PyRecord).collect();
         Ok(points)
     }
-}
-
-#[pyclass(name = "Payload")]
-#[derive(Clone, Debug, Into)]
-pub struct PyPayload(Payload);
-
-#[pymethods]
-impl PyPayload {
-    #[new]
-    fn new(dict: Bound<'_, pyo3::types::PyDict>) -> pyo3::PyResult<Self> {
-        let obj = payload_object_from_py(&dict)?;
-        Ok(Self(Payload(obj)))
-    }
-}
-
-fn payload_object_from_py(
-    dict: &Bound<'_, pyo3::types::PyDict>,
-) -> pyo3::PyResult<serde_json::Map<String, serde_json::Value>> {
-    let mut object = serde_json::Map::with_capacity(dict.len());
-
-    for (key, value) in dict {
-        let key = key.extract()?;
-        let value = payload_value_from_py(&value)?;
-        object.insert(key, value);
-    }
-
-    Ok(object)
-}
-
-fn payload_array_from_py(
-    list: &Bound<'_, pyo3::types::PyList>,
-) -> pyo3::PyResult<Vec<serde_json::Value>> {
-    let mut array = Vec::with_capacity(list.len());
-
-    for value in list {
-        let value = payload_value_from_py(&value)?;
-        array.push(value);
-    }
-
-    Ok(array)
-}
-
-fn payload_value_from_py(val: &Bound<'_, PyAny>) -> pyo3::PyResult<serde_json::Value> {
-    if val.is_none() {
-        return Ok(serde_json::Value::Null);
-    }
-
-    if let Ok(dict) = val.cast() {
-        let obj = payload_object_from_py(dict)?;
-        return Ok(serde_json::Value::Object(obj));
-    }
-
-    if let Ok(list) = val.cast() {
-        let arr = payload_array_from_py(list)?;
-        return Ok(serde_json::Value::Array(arr));
-    }
-
-    if let Ok(str) = val.extract() {
-        return Ok(serde_json::Value::String(str));
-    }
-
-    if let Ok(uint) = val.extract() {
-        let num = serde_json::Number::from_u128(uint).unwrap(); // TODO?
-        return Ok(serde_json::Value::Number(num));
-    }
-
-    if let Ok(int) = val.extract() {
-        let num = serde_json::Number::from_i128(int).unwrap(); // TODO?
-        return Ok(serde_json::Value::Number(num));
-    }
-
-    if let Ok(float) = val.extract() {
-        let num = serde_json::Number::from_f64(float).unwrap(); // TODO?
-        return Ok(serde_json::Value::Number(num));
-    }
-
-    if let Ok(bool) = val.extract() {
-        return Ok(serde_json::Value::Bool(bool));
-    }
-
-    Err(PyErr::new::<PyException, _>(format!(
-        "failed to convert Python object {val} into payload value"
-    )))
 }
 
 pub type Result<T, E = PyError> = std::result::Result<T, E>;
