@@ -55,7 +55,7 @@ You may also configure certain Docker arguments to fine tune your image:
 + `RUSTFLAGS` -- define `rustc` compilation flags;
 + `LINKER` -- define linker in `RUSTFLAGS`;
 + `TARGET_CPU` -- define `target-cpu` in `RUSTFLAGS`;
-+ `JEMALLOC_SYS_PAGE_SIZE` -- define jemalloc's page size in base 2 log; may be
++ `JEMALLOC_SYS_WITH_LG_PAGE` -- define jemalloc's page size in base 2 log; may be
   useful when compiling for some ARM machines;
 + `GPU` -- add GPU support, either `nvidia` or `amd`.
 
