@@ -1,5 +1,6 @@
 import os
 import shutil
+import uuid
 from qdrant_edge import *
 
 config = SegmentConfig(
@@ -53,12 +54,19 @@ shard.update(UpdateOperation.upsert_points([
         },
     ),
     Point(
-            "e9408f2b-b917-4af1-ab75-d97ac6b2c047",
-            Vector.single([6.0, 9.0, 4.0, 2.0]),
-            {
-                "hello": "world"
-            },
-        ),
+        "e9408f2b-b917-4af1-ab75-d97ac6b2c047",
+        Vector.single([6.0, 9.0, 4.0, 2.0]),
+        {
+            "hello": "world"
+        },
+    ),
+    Point(
+        uuid.uuid4(),
+        Vector.single([6.0, 9.0, 4.0, 2.0]),
+        {
+            "hello": "world"
+        },
+    ),
 ]))
 
 points = shard.search(SearchRequest(

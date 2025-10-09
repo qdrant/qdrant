@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 #[derive(Clone, Debug, IntoPyObject, FromPyObject)]
 pub enum PyPointId {
-    // Put Int first so ints don't get parsed as floats (since f64 can extract from ints).
     NumId(u64),
-    Uuid(String),
+    UuidString(String),
+    Uuid(Uuid),
 }
 
 impl TryFrom<PyPointId> for PointIdType {
@@ -15,7 +15,7 @@ impl TryFrom<PyPointId> for PointIdType {
     fn try_from(value: PyPointId) -> Result<Self, Self::Error> {
         match value {
             PyPointId::NumId(id) => Ok(PointIdType::NumId(id)),
-            PyPointId::Uuid(uuid_string) => {
+            PyPointId::UuidString(uuid_string) => {
                 let uuid = Uuid::parse_str(&uuid_string).map_err(|_| {
                     PyErr::new::<PyException, _>(format!(
                         "failed to parse string {uuid_string} into UUID for point ID"
@@ -23,6 +23,7 @@ impl TryFrom<PyPointId> for PointIdType {
                 })?;
                 Ok(PointIdType::Uuid(uuid))
             }
+            PyPointId::Uuid(uuid) => Ok(PointIdType::Uuid(uuid)),
         }
     }
 }
@@ -31,7 +32,7 @@ impl From<PointIdType> for PyPointId {
     fn from(value: PointIdType) -> Self {
         match value {
             PointIdType::NumId(id) => PyPointId::NumId(id),
-            PointIdType::Uuid(uuid) => PyPointId::Uuid(uuid.to_string()),
+            PointIdType::Uuid(uuid) => PyPointId::Uuid(uuid),
         }
     }
 }
