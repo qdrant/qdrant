@@ -283,7 +283,7 @@ impl PyScoredPoint {
     }
 
     #[getter]
-    pub fn payload(&self) -> Option<PyPayload> {
-        self.0.payload.clone().map(PyPayload)
+    pub fn payload(&self) -> Option<&PyPayload> {
+        self.0.payload.as_ref().map(PyPayload::from_ref)
     }
 }
