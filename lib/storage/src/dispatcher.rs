@@ -196,7 +196,8 @@ impl Dispatcher {
                 CollectionMetaOperations::CreateShardKey(op) => {
                     let collection_name: CollectionName = op.collection_name.clone();
                     let shard_key = op.shard_key.clone();
-                    Some((collection_name, shard_key))
+                    let initial_state = op.initial_state;
+                    Some((collection_name, shard_key, initial_state))
                 }
                 _ => None,
             };
@@ -221,11 +222,18 @@ impl Dispatcher {
             }
 
             // Wait for shards activation
-            if let Some((collection_name, shard_key)) = create_shard_key {
-                let remaining_timeout =
-                    wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
-                self.wait_for_shard_key_activation(collection_name, shard_key, remaining_timeout)
+            if let Some((collection_name, shard_key, initial_state)) = create_shard_key {
+                // Only do if initial state is not set
+                if initial_state.is_none() {
+                    let remaining_timeout =
+                        wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
+                    self.wait_for_shard_key_activation(
+                        collection_name,
+                        shard_key,
+                        remaining_timeout,
+                    )
                     .await?;
+                }
             };
 
             // On some operations, synchronize all nodes to ensure all are ready for point operations
