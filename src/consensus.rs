@@ -627,6 +627,27 @@ impl Consensus {
     fn advance_node_impl(&mut self, message: Message) -> anyhow::Result<()> {
         match message {
             Message::FromClient(ConsensusOperations::AddPeer { peer_id, uri }) => {
+                let existing_peers = self.broker.consensus_state.peer_address_by_id();
+                let new_peer_uri = uri.parse::<Uri>().unwrap(); // TODO: do not unwrap!
+
+                let existing_peer_uris = existing_peers
+                    .into_iter()
+                    .map(|(peer_id, url)| (url, peer_id))
+                    .collect::<HashMap<_, _>>();
+
+                match existing_peer_uris.get(&new_peer_uri) {
+                    // Peer with this peer ID and URI is already registered - good
+                    Some(existing_peer_id) if existing_peer_id == &peer_id => {}
+                    // Peer URI is already used by another peer - bad
+                    Some(existing_peer_id) => {
+                        return Err(anyhow!(
+                            "peer URI {uri} already used by peer {existing_peer_id}, remove it first or use a different URI"
+                        ));
+                    }
+                    // Peer URI is new, add it - good
+                    None => {}
+                }
+
                 let mut change = ConfChangeV2::default();
 
                 change.set_changes(vec![raft_proto::new_conf_change_single(
