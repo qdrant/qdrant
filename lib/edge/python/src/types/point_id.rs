@@ -11,7 +11,12 @@ impl<'py> FromPyObject<'py> for PyPointId {
     fn extract_bound(point_id: &Bound<'py, PyAny>) -> PyResult<Self> {
         let point_id = if let Ok(id) = point_id.extract() {
             Self(PointIdType::NumId(id))
-        } else if let Ok(uuid) = point_id.extract() {
+        } else if let Ok(uuid_string) = point_id.extract() {
+            let uuid = uuid::Uuid::parse_str(uuid_string).map_err(|_| {
+                PyErr::new::<PyException, _>(format!(
+                    "failed to parse string {uuid_string} into UUID for point ID"
+                ))
+            })?;
             Self(PointIdType::Uuid(uuid))
         } else {
             return Err(PyErr::new::<PyException, _>(format!(

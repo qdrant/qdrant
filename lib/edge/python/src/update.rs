@@ -33,9 +33,9 @@ impl PyPoint {
     #[new]
     pub fn new(id: PyPointId, vector: PyVector, payload: Option<PyPayload>) -> Self {
         let point = PointStructPersisted {
-            id: id.into(),
-            vector: vector.into(),
-            payload: payload.map(Into::into),
+            id: PointIdType::from(id),
+            vector: VectorStructPersisted::from(vector),
+            payload: payload.map(Payload::from),
         };
 
         Self(point)

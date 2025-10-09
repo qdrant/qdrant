@@ -6,6 +6,7 @@ use segment::data_types::vectors::DenseVector;
 use segment::types::VectorNameBuf;
 use shard::operations::point_ops::{VectorPersisted, VectorStructPersisted};
 use sparse::common::sparse_vector::SparseVector;
+use sparse::common::types::{DimId, DimWeight};
 
 #[pyclass(name = "Vector")]
 #[derive(Clone, Debug, Into)]
@@ -84,17 +85,17 @@ pub struct PySparseVector(SparseVector);
 #[pymethods]
 impl PySparseVector {
     #[new]
-    pub fn new(indices: Vec<u32>, values: Vec<f32>) -> Self {
+    pub fn new(indices: Vec<DimId>, values: Vec<DimWeight>) -> Self {
         Self(SparseVector { indices, values })
     }
 
     #[getter]
-    pub fn indices(&self) -> Vec<u32> {
+    pub fn indices(&self) -> Vec<DimId> {
         self.0.indices.clone()
     }
 
     #[getter]
-    pub fn values(&self) -> Vec<f32> {
+    pub fn values(&self) -> Vec<DimWeight> {
         self.0.values.clone()
     }
 }

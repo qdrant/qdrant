@@ -52,6 +52,13 @@ shard.update(UpdateOperation.upsert_points([
             "arr": [None, "string", 42, -69, 4.20, True, {}, []],
         },
     ),
+    Point(
+            "e9408f2b-b917-4af1-ab75-d97ac6b2c047",
+            Vector.single([6.0, 9.0, 4.0, 2.0]),
+            {
+                "hello": "world"
+            },
+        ),
 ]))
 
 points = shard.search(SearchRequest(
