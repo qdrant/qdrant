@@ -10,7 +10,6 @@ use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use segment::common::operation_error::OperationError;
 use segment::types::*;
-use uuid::Uuid;
 
 use self::config::*;
 use self::search::*;
@@ -35,7 +34,7 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::update::{PyPoint, PyUpdateOperation};
     #[pymodule_export]
-    use super::{PyPayload, PyPointId, PyShard};
+    use super::{PyPayload, PyShard};
 }
 
 #[pyclass(name = "Shard")]
@@ -76,23 +75,6 @@ impl PyShard {
 
         let points = records.into_iter().map(PyRecord).collect();
         Ok(points)
-    }
-}
-
-#[pyclass(name = "PointId")]
-#[derive(Clone, Debug, Into)]
-pub struct PyPointId(PointIdType);
-
-#[pymethods]
-impl PyPointId {
-    #[staticmethod]
-    pub fn num(id: u64) -> Self {
-        Self(PointIdType::NumId(id))
-    }
-
-    #[staticmethod]
-    pub fn uuid(uuid: Uuid) -> Self {
-        Self(PointIdType::Uuid(uuid))
     }
 }
 

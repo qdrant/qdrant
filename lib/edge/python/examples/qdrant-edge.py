@@ -30,7 +30,7 @@ shard = Shard(DATA_DIRECTORY, config)
 
 shard.update(UpdateOperation.upsert_points([
     Point(
-        PointId.num(1),
+        1,
         Vector.single([6.0, 9.0, 4.0, 2.0]),
         Payload({
             "null": None,
