@@ -94,7 +94,7 @@ def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env["QDRANT__CLUSTER__P2P__PORT"] = str(p2p_port)
     env["QDRANT__SERVICE__HTTP_PORT"] = str(http_port)
     env["QDRANT__SERVICE__GRPC_PORT"] = str(grpc_port)
-    env["QDRANT__LOG_LEVEL"] = "DEBUG,raft::raft=info"
+    env["QDRANT__LOG_LEVEL"] = "TRACE,raft::raft=info,actix_http=info,tonic=info,want=info,mio=info"
     env["QDRANT__SERVICE__HARDWARE_REPORTING"] = "true"
 
     if is_coverage_mode():
@@ -175,6 +175,9 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
     if reinit:
         args.append("--reinit")
 
+    # Wrap with systemd-run to throttle CPU to investigate issues
+    # wrapped_cmd = ["systemd-run", "--user", "--scope", "-p", "CPUQuota=20%", "--"] + args
+    # proc = Popen(wrapped_cmd, env=env, cwd=peer_dir, stdout=log_file)
     proc = Popen(args, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     return get_uri(http_port)
@@ -212,6 +215,9 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
     if reinit:
         args.append("--reinit")
 
+    # Wrap with systemd-run to throttle CPU to investigate issues
+    # wrapped_cmd = ["systemd-run", "--user", "--scope", "-p", "CPUQuota=20%", "--"] + args
+    # proc = Popen(wrapped_cmd, env=env, cwd=peer_dir, stdout=log_file)
     proc = Popen(args, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     return get_uri(http_port), bootstrap_uri
@@ -800,3 +806,28 @@ def replicate_shard(source_uri, collection_name, shard_id, source_peer_id, targe
             }
         })
     assert_http_ok(r)
+
+
+def check_data_consistency(data):
+
+    assert(len(data) > 1)
+
+    for i in range(len(data) - 1):
+        j = i + 1
+
+        data_i = data[i]
+        data_j = data[j]
+
+        if data_i != data_j:
+            ids_i = set(x.get("id") for x in data_i)
+            ids_j = set(x.get("id") for x in data_j)
+
+            diff = ids_i - ids_j
+
+            if len(diff) < 100:
+                print(f"Diff between {i} and {j}: {diff}")
+            else:
+                sample = list(diff)[:32]
+                print(f"Diff len between {i} and {j}: {len(diff)}, sample: {sample}")
+
+            assert False, "Data on all nodes should be consistent"

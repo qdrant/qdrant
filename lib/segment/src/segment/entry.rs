@@ -633,6 +633,7 @@ impl SegmentEntry for Segment {
             }
             (Some(version), Some(persisted_version)) => {
                 if !force && version == persisted_version {
+                    log::trace!("not flushing because version == persisted_version");
                     // Segment is already flushed
                     return Ok(persisted_version);
                 }
