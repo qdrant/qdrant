@@ -1339,12 +1339,6 @@ impl ReplicaState {
     }
 }
 
-// impl From<i32> for ReplicaState {
-//     fn from(state: i32) -> Self {
-//         (state).into()
-//     }
-// }
-
 /// Represents a change in replica set, due to scaling of `replication_factor`
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum Change {

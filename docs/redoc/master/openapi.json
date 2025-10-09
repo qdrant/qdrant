@@ -13552,6 +13552,17 @@
               "minimum": 0
             },
             "nullable": true
+          },
+          "initial_state": {
+            "description": "Initial state of the shards for this key If not specified, will be `Active`",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplicaState"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

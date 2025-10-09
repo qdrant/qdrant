@@ -777,6 +777,7 @@
 | shards_number | [uint32](#uint32) | optional | Number of shards to create per shard key |
 | replication_factor | [uint32](#uint32) | optional | Number of replicas of each shard to create |
 | placement | [uint64](#uint64) | repeated | List of peer ids, allowed to create shards. If empty - all peers are allowed |
+| initial_state | [ReplicaState](#qdrant-ReplicaState) | optional | Initial state of created replicas. If empty - Initializing/Active state will be used |
 
 
 
