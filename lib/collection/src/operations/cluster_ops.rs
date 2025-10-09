@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::{Validate, ValidationErrors};
 
+use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::transfer::ShardTransferMethod;
 
@@ -79,6 +80,9 @@ pub struct CreateShardingKey {
     /// List of peer ids, that can be used to place shards for this key
     /// If not specified, will be randomly placed among all peers
     pub placement: Option<Vec<PeerId>>,
+    /// Initial state of the shards for this key
+    /// If not specified, will be `Active`
+    pub initial_state: Option<ReplicaState>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]

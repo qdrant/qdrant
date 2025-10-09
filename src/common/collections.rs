@@ -444,6 +444,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         shard_key: create_sharding_key.shard_key,
                         placement: exact_placement,
+                        initial_state: create_sharding_key.initial_state,
                     }),
                     access,
                     wait_timeout,

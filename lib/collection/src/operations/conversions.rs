@@ -1615,7 +1615,9 @@ impl TryFrom<api::grpc::qdrant::CreateShardKey> for CreateShardingKey {
             shards_number,
             replication_factor,
             placement,
+            initial_state,
         } = op;
+
         let res = CreateShardingKey {
             shard_key: shard_key
                 .and_then(convert_shard_key_from_grpc)
@@ -1633,6 +1635,7 @@ impl TryFrom<api::grpc::qdrant::CreateShardKey> for CreateShardingKey {
                     Status::invalid_argument(format!("Replication factor cannot be zero: {err}"))
                 })?,
             placement: (!placement.is_empty()).then_some(placement),
+            initial_state: initial_state.and_then(|v| ReplicaState::try_from(v).ok()),
         };
         Ok(res)
     }
