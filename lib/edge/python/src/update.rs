@@ -31,13 +31,13 @@ pub struct PyPoint(PointStructPersisted);
 #[pymethods]
 impl PyPoint {
     #[new]
-    pub fn new(id: PyPointId, vector: PyVector, payload: Option<PyPayload>) -> Self {
+    pub fn new(id: PyPointId, vector: PyVector, payload: Option<PyPayload>) -> Result<Self, PyErr> {
         let point = PointStructPersisted {
-            id: PointIdType::from(id),
+            id: PointIdType::try_from(id)?,
             vector: VectorStructPersisted::from(vector),
             payload: payload.map(Payload::from),
         };
 
-        Self(point)
+        Ok(Self(point))
     }
 }

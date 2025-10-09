@@ -1,42 +1,37 @@
-use derive_more::Into;
-use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use segment::types::PointIdType;
+use uuid::Uuid;
 
-#[derive(Clone, Debug, Into)]
-pub struct PyPointId(pub PointIdType);
+#[derive(Clone, Debug, IntoPyObject, FromPyObject)]
+pub enum PyPointId {
+    // Put Int first so ints don't get parsed as floats (since f64 can extract from ints).
+    NumId(u64),
+    Uuid(String),
+}
 
-impl<'py> FromPyObject<'py> for PyPointId {
-    fn extract_bound(point_id: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let point_id = if let Ok(id) = point_id.extract() {
-            Self(PointIdType::NumId(id))
-        } else if let Ok(uuid_string) = point_id.extract() {
-            let uuid = uuid::Uuid::parse_str(uuid_string).map_err(|_| {
-                PyErr::new::<PyException, _>(format!(
-                    "failed to parse string {uuid_string} into UUID for point ID"
-                ))
-            })?;
-            Self(PointIdType::Uuid(uuid))
-        } else {
-            return Err(PyErr::new::<PyException, _>(format!(
-                "failed to convert Python object {point_id} into point ID"
-            )));
-        };
-
-        Ok(point_id)
+impl TryFrom<PyPointId> for PointIdType {
+    type Error = PyErr;
+    fn try_from(value: PyPointId) -> Result<Self, Self::Error> {
+        match value {
+            PyPointId::NumId(id) => Ok(PointIdType::NumId(id)),
+            PyPointId::Uuid(uuid_string) => {
+                let uuid = Uuid::parse_str(&uuid_string).map_err(|_| {
+                    PyErr::new::<PyException, _>(format!(
+                        "failed to parse string {uuid_string} into UUID for point ID"
+                    ))
+                })?;
+                Ok(PointIdType::Uuid(uuid))
+            }
+        }
     }
 }
 
-impl<'py> IntoPyObject<'py> for PyPointId {
-    type Target = PyAny;
-    type Output = Bound<'py, Self::Target>;
-    type Error = PyErr; // Infallible
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        match self.0 {
-            PointIdType::NumId(id) => id.into_bound_py_any(py),
-            PointIdType::Uuid(uuid) => uuid.into_bound_py_any(py),
+impl From<PointIdType> for PyPointId {
+    fn from(value: PointIdType) -> Self {
+        match value {
+            PointIdType::NumId(id) => PyPointId::NumId(id),
+            PointIdType::Uuid(uuid) => PyPointId::Uuid(uuid.to_string()),
         }
     }
 }
