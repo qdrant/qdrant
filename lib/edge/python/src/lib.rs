@@ -26,12 +26,9 @@ mod qdrant_edge {
         PyVectorStorageDatatype, PyVectorStorageType,
     };
     #[pymodule_export]
-    use super::search::{
-        PyFilter, PyQuery, PyQueryVector, PyScoredPoint, PySearchParams, PySearchRequest,
-        PyWithPayload, PyWithVector,
-    };
+    use super::search::{PyScoredPoint, PySearchParams, PySearchRequest};
     #[pymodule_export]
-    use super::types::{PyRecord, PyVector};
+    use super::types::{PyRecord, PySparseVector};
     #[pymodule_export]
     use super::update::{PyPoint, PyUpdateOperation};
 }
@@ -55,7 +52,7 @@ impl PyShard {
 
     pub fn search(&self, search: PySearchRequest) -> Result<Vec<PyScoredPoint>> {
         let points = self.0.search(search.into())?;
-        let points = points.into_iter().map(PyScoredPoint).collect();
+        let points = PyScoredPoint::from_rust_vec(points);
         Ok(points)
     }
 
@@ -71,7 +68,7 @@ impl PyShard {
             with_payload.map(WithPayloadInterface::from),
             with_vector.map(WithVector::from),
         )?;
-        let points = points.into_iter().map(PyRecord).collect();
+        let points = PyRecord::from_rust_vec(points);
         Ok(points)
     }
 }
