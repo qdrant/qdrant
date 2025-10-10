@@ -143,6 +143,7 @@ console-subscriber = { version = "0.4.1", default-features = false, features = [
 ], optional = true }
 tracing-tracy = { version = "0.11.4", features = ["ondemand"], optional = true }
 actix-web-extras = "0.1.0"
+semver.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Pyroscope integration

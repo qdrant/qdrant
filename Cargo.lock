@@ -4887,6 +4887,7 @@ dependencies = [
  "schemars",
  "sealed_test",
  "segment",
+ "semver",
  "serde",
  "serde_cbor",
  "serde_json",
