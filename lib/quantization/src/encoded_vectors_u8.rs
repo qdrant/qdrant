@@ -42,6 +42,7 @@ struct Metadata {
 
     rotation: Rotation,
     shifter: Shifter,
+    min_max: (f32, f32),
 }
 
 impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
@@ -84,6 +85,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 vector_parameters: vector_parameters.clone(),
                 rotation,
                 shifter,
+                min_max: (0.0, 0.0),
             };
             if let Some(meta_path) = meta_path {
                 meta_path
@@ -120,7 +122,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             rotation.rotate(&mut v);
             v
         });
-        let (alpha, offset) = Self::find_alpha_offset_size_dim(t_data.clone());
+        let (alpha, offset, min_value, max_value) =
+            Self::find_alpha_offset_size_dim(t_data.clone());
         let (alpha, offset) = if let Some(quantile) = quantile {
             if let Some((min, max)) =
                 find_quantile_interval(t_data.clone(), vector_parameters.dim, count, quantile)
@@ -211,6 +214,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             vector_parameters: vector_parameters.clone(),
             rotation,
             shifter,
+            min_max: (min_value, max_value),
         };
         if let Some(meta_path) = meta_path {
             meta_path
@@ -331,9 +335,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
     fn find_alpha_offset_size_dim<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-    ) -> (f32, f32) {
+    ) -> (f32, f32, f32, f32) {
         let (min, max) = find_min_max_from_iter(orig_data);
-        Self::alpha_offset_from_min_max(min, max)
+        let (a, b) = Self::alpha_offset_from_min_max(min, max);
+        (a, b, min, max)
     }
 
     fn alpha_offset_from_min_max(min: f32, max: f32) -> (f32, f32) {
