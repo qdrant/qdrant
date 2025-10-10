@@ -250,22 +250,24 @@ def test_reject_rejoin_cluster_same_uri(tmp_path: pathlib.Path, uris_in_env):
         elif os.path.isdir(file_path):
             shutil.rmtree(file_path)
 
-    # Restart last node
-    broken_peer_port = 10000 + 2 * 100 # same port this peer used before
-    new_url = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, port=broken_peer_port, uris_in_env=uris_in_env)
-    peer_api_uris[-1] = new_url
+    for i in range(2):
+        # Restart last node
+        broken_peer_port = 10000 + 2 * 100 # same port this peer used before
+        new_url = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, port=broken_peer_port, uris_in_env=uris_in_env)
+        peer_api_uris[-1] = new_url
 
-    # Expect the process to crash, it cannot join the cluster with the same URL
-    # Expect exit code 101, see <https://doc.rust-lang.org/std/macro.panic.html#current-implementation>
-    processes[-1].proc.wait(timeout=20)
-    assert processes[-1].proc.returncode == 101
+        # Expect the process to crash, it cannot join the cluster with the same URL
+        # Expect exit code 101, see <https://doc.rust-lang.org/std/macro.panic.html#current-implementation>
+        processes[-1].proc.wait(timeout=20)
+        assert processes[-1].proc.returncode == 101
+        processes.pop().kill()
 
-    # Cluster consensus still have the same number of peers
-    cluster_info = get_cluster_info(peer_api_uris[0])
-    assert len(cluster_info['peers']) == N_PEERS
+        # Cluster consensus still have the same number of peers
+        cluster_info = get_cluster_info(peer_api_uris[0])
+        assert len(cluster_info['peers']) == N_PEERS
 
-    # The broken peer must still have the same peer ID and state (uri) in consensus
-    assert cluster_info['peers'][str(broken_peer_id)] == broken_peer_state
+        # The broken peer must still have the same peer ID and state (uri) in consensus
+        assert cluster_info['peers'][str(broken_peer_id)] == broken_peer_state
 
 
 def rejoin_cluster_test(
