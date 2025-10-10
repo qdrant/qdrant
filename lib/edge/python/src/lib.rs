@@ -95,6 +95,6 @@ impl From<OperationError> for PyError {
 
 impl From<PyError> for PyErr {
     fn from(err: PyError) -> Self {
-        PyErr::new::<PyException, _>(err.0.to_string())
+        PyException::new_err(err.0.to_string())
     }
 }
