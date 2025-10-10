@@ -100,6 +100,16 @@ impl StorageError {
         }
     }
 
+    pub fn rate_limit_exceeded(
+        description: impl Into<String>,
+        retry_after: Option<Duration>,
+    ) -> StorageError {
+        StorageError::RateLimitExceeded {
+            description: description.into(),
+            retry_after,
+        }
+    }
+
     /// Used to override the `description` field of the resulting `StorageError`
     pub fn from_inconsistent_shard_failure(
         err: CollectionError,
