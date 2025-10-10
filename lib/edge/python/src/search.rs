@@ -1,7 +1,10 @@
+use std::mem;
+
 use derive_more::Into;
+use pyo3::IntoPyObjectExt as _;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use segment::data_types::vectors::*;
-use segment::json_path::JsonPath;
+use segment::data_types::vectors::NamedQuery;
 use segment::types::*;
 use shard::query::query_enum::QueryEnum;
 use shard::search::*;
@@ -39,67 +42,30 @@ impl PySearchRequest {
     }
 }
 
-#[pyclass(name = "Query")]
 #[derive(Clone, Debug, Into)]
 pub struct PyQuery(QueryEnum);
 
-#[pymethods]
-impl PyQuery {
-    #[staticmethod]
-    pub fn nearest(query: PyQueryVector, using: Option<String>) -> Self {
-        Self(QueryEnum::Nearest(NamedQuery {
-            query: query.into(),
-            using,
-        }))
+impl<'py> FromPyObject<'py> for PyQuery {
+    fn extract_bound(query: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let query = if let Ok(single) = query.extract() {
+            QueryEnum::Nearest(NamedQuery::default_dense(single))
+        } else {
+            return Err(PyValueError::new_err(format!(
+                "failed to convert Python object {query} into query"
+            )));
+        };
+
+        Ok(Self(query))
     }
 }
 
-impl PyQuery {
-    fn _variants(query: QueryEnum) {
-        match query {
-            QueryEnum::Nearest(_) => (),
-            QueryEnum::RecommendBestScore(_) => todo!(), // TODO!
-            QueryEnum::RecommendSumScores(_) => todo!(), // TODO!
-            QueryEnum::Discover(_) => todo!(),           // TODO!
-            QueryEnum::Context(_) => todo!(),            // TODO!
-        }
-    }
-}
-
-#[pyclass(name = "QueryVector")]
-#[derive(Clone, Debug, Into)]
-pub struct PyQueryVector(VectorInternal);
-
-#[pymethods]
-impl PyQueryVector {
-    #[staticmethod]
-    pub fn dense(vector: Vec<f32>) -> Self {
-        Self(VectorInternal::Dense(vector))
-    }
-
-    #[staticmethod]
-    pub fn sparse(vector: PySparseVector) -> Self {
-        Self(VectorInternal::Sparse(vector.into()))
-    }
-}
-
-impl PyQueryVector {
-    fn _variants(query: VectorInternal) {
-        match query {
-            VectorInternal::Dense(_) => (),
-            VectorInternal::Sparse(_) => (),
-            VectorInternal::MultiDense(_) => todo!(), // TODO!
-        }
-    }
-}
-
-#[pyclass(name = "Filter")]
 #[derive(Clone, Debug, Into)]
 pub struct PyFilter(Filter);
 
-#[pymethods]
-impl PyFilter {
-    // TODO!
+impl<'py> FromPyObject<'py> for PyFilter {
+    fn extract_bound(_filter: &Bound<'py, PyAny>) -> PyResult<Self> {
+        todo!()
+    }
 }
 
 #[pyclass(name = "SearchParams")]
@@ -140,124 +106,110 @@ impl PyQuantizationSearchParams {
     }
 }
 
-#[pyclass(name = "WithVector")]
 #[derive(Clone, Debug, Into)]
 pub struct PyWithVector(WithVector);
 
-#[pymethods]
-impl PyWithVector {
-    #[new]
-    pub fn new(with_vector: bool) -> Self {
-        Self(WithVector::Bool(with_vector))
-    }
+impl<'py> FromPyObject<'py> for PyWithVector {
+    fn extract_bound(with_vector: &Bound<'py, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Helper {
+            Bool(bool),
+            Selector(Vec<String>),
+        }
 
-    #[staticmethod]
-    pub fn selector(vectors: Vec<VectorNameBuf>) -> Self {
-        Self(WithVector::Selector(vectors))
+        let with_vector = match with_vector.extract()? {
+            Helper::Bool(bool) => WithVector::Bool(bool),
+            Helper::Selector(vectors) => WithVector::Selector(vectors),
+        };
+
+        Ok(Self(with_vector))
     }
 }
 
-impl PyWithVector {
-    fn _variants(with_vector: WithVector) {
-        match with_vector {
-            WithVector::Bool(_) => (),
-            WithVector::Selector(_) => (),
+impl<'py> IntoPyObject<'py> for PyWithVector {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible?
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        IntoPyObject::into_pyobject(&self, py)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyWithVector {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible?
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match &self.0 {
+            WithVector::Bool(bool) => bool.into_bound_py_any(py),
+            WithVector::Selector(vectors) => vectors.into_bound_py_any(py),
         }
     }
 }
 
-#[pyclass(name = "WithPayload")]
 #[derive(Clone, Debug, Into)]
 pub struct PyWithPayload(WithPayloadInterface);
 
-#[pymethods]
-impl PyWithPayload {
-    #[new]
-    pub fn new(with_payload: bool) -> Self {
-        Self(WithPayloadInterface::Bool(with_payload))
-    }
-
-    #[staticmethod]
-    pub fn fields(fields: Vec<PyJsonPath>) -> Self {
-        let fields = fields.into_iter().map(Into::into).collect(); // TODO: Transmute!?
-        Self(WithPayloadInterface::Fields(fields))
-    }
-
-    #[staticmethod]
-    pub fn selector(selector: PyPayloadSelector) -> Self {
-        Self(WithPayloadInterface::Selector(selector.into()))
-    }
-}
-
-impl PyWithPayload {
-    fn _variants(with_payload: WithPayloadInterface) {
-        match with_payload {
-            WithPayloadInterface::Bool(_) => (),
-            WithPayloadInterface::Fields(_) => (),
-            WithPayloadInterface::Selector(_) => (),
+impl<'py> FromPyObject<'py> for PyWithPayload {
+    fn extract_bound(with_payload: &Bound<'py, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Helper {
+            Bool(bool),
+            // TODO: `Fields(Vec<JsonPath>)`!
+            // TODO: `Selector(PayloadSelector)`!
         }
-    }
-}
 
-#[pyclass(name = "PayloadSelector")]
-#[derive(Clone, Debug, Into)]
-pub struct PyPayloadSelector(PayloadSelector);
-
-#[pymethods]
-impl PyPayloadSelector {
-    #[staticmethod]
-    pub fn include(fields: Vec<PyJsonPath>) -> Self {
-        let include = PayloadSelectorInclude {
-            include: fields.into_iter().map(Into::into).collect(), // TODO: Transmute!?
+        let with_payload = match with_payload.extract()? {
+            Helper::Bool(bool) => WithPayloadInterface::Bool(bool),
         };
 
-        Self(PayloadSelector::Include(include))
-    }
-
-    #[staticmethod]
-    pub fn exclude(fields: Vec<PyJsonPath>) -> Self {
-        let exclude = PayloadSelectorExclude {
-            exclude: fields.into_iter().map(Into::into).collect(), // TODO: Transmute!?
-        };
-
-        Self(PayloadSelector::Exclude(exclude))
+        Ok(Self(with_payload))
     }
 }
 
-impl PyPayloadSelector {
-    fn _variants(payload_selector: PayloadSelector) {
-        match payload_selector {
-            PayloadSelector::Include(_) => (),
-            PayloadSelector::Exclude(_) => (),
+impl<'py> IntoPyObject<'py> for PyWithPayload {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible?
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        IntoPyObject::into_pyobject(&self, py)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyWithPayload {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible?
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match &self.0 {
+            WithPayloadInterface::Bool(bool) => bool.into_bound_py_any(py),
+            WithPayloadInterface::Fields(_fields) => todo!(),
+            WithPayloadInterface::Selector(_selector) => todo!(),
         }
-    }
-}
-
-#[pyclass(name = "JsonPath")]
-#[derive(Clone, Debug, Into)]
-pub struct PyJsonPath(JsonPath);
-
-#[pymethods]
-impl PyJsonPath {
-    #[new]
-    pub fn new(json_path: &str) -> super::Result<Self> {
-        let json_path = json_path.parse().map_err(|()| {
-            OperationError::validation_error(format!("{json_path} is not a valid JSON path"))
-        })?;
-
-        Ok(Self(json_path))
     }
 }
 
 #[pyclass(name = "ScoredPoint")]
 #[derive(Clone, Debug, Into)]
+#[repr(transparent)]
 pub struct PyScoredPoint(pub ScoredPoint);
+
+impl PyScoredPoint {
+    pub fn from_rust_vec(points: Vec<ScoredPoint>) -> Vec<Self> {
+        // `PyScoredPoint` has transparent representation, so transmuting is safe
+        unsafe { mem::transmute(points) }
+    }
+}
 
 #[pymethods]
 impl PyScoredPoint {
     #[getter]
     pub fn id(&self) -> PyPointId {
-        PyPointId::from(self.0.id)
+        PyPointId(self.0.id)
     }
 
     #[getter]
@@ -271,15 +223,8 @@ impl PyScoredPoint {
     }
 
     #[getter]
-    pub fn vector(&self) -> Option<DenseVector> {
-        let Some(vector) = &self.0.vector else {
-            return None;
-        };
-
-        match vector {
-            VectorStructInternal::Single(vec) => Some(vec.clone()),
-            _ => None, // TODO!
-        }
+    pub fn vector(&self) -> Option<&PyVectorInternal> {
+        self.0.vector.as_ref().map(PyVectorInternal::from_ref)
     }
 
     #[getter]

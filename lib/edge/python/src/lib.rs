@@ -26,12 +26,9 @@ mod qdrant_edge {
         PyVectorStorageDatatype, PyVectorStorageType,
     };
     #[pymodule_export]
-    use super::search::{
-        PyFilter, PyQuery, PyQueryVector, PyScoredPoint, PySearchParams, PySearchRequest,
-        PyWithPayload, PyWithVector,
-    };
+    use super::search::{PyScoredPoint, PySearchParams, PySearchRequest};
     #[pymodule_export]
-    use super::types::{PyRecord, PyVector};
+    use super::types::{PyRecord, PySparseVector};
     #[pymodule_export]
     use super::update::{PyPoint, PyUpdateOperation};
 }
@@ -55,29 +52,23 @@ impl PyShard {
 
     pub fn search(&self, search: PySearchRequest) -> Result<Vec<PyScoredPoint>> {
         let points = self.0.search(search.into())?;
-        let points = points.into_iter().map(PyScoredPoint).collect();
+        let points = PyScoredPoint::from_rust_vec(points);
         Ok(points)
     }
 
     pub fn retrieve(
         &self,
-        ids: Vec<PyPointId>,
+        point_ids: Vec<PyPointId>,
         with_payload: Option<PyWithPayload>,
         with_vector: Option<PyWithVector>,
-    ) -> Result<Vec<PyRecord>, PyErr> {
-        let ids_res: Result<Vec<_>, _> = ids.into_iter().map(PointIdType::try_from).collect();
-        let ids = ids_res?;
-
-        let records = self
-            .0
-            .retrieve(
-                &ids,
-                with_payload.map(WithPayloadInterface::from),
-                with_vector.map(WithVector::from),
-            )
-            .map_err(PyError::from)?;
-
-        let points = records.into_iter().map(PyRecord).collect();
+    ) -> Result<Vec<PyRecord>> {
+        let point_ids = PyPointId::into_rust_vec(point_ids);
+        let points = self.0.retrieve(
+            &point_ids,
+            with_payload.map(WithPayloadInterface::from),
+            with_vector.map(WithVector::from),
+        )?;
+        let points = PyRecord::from_rust_vec(points);
         Ok(points)
     }
 }
@@ -95,6 +86,6 @@ impl From<OperationError> for PyError {
 
 impl From<PyError> for PyErr {
     fn from(err: PyError) -> Self {
-        PyErr::new::<PyException, _>(err.0.to_string())
+        PyException::new_err(err.0.to_string())
     }
 }

@@ -2,7 +2,7 @@ use std::mem;
 
 use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
-use pyo3::exceptions::PyException;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFloat, PyInt, PyList};
 use segment::types::*;
@@ -62,8 +62,8 @@ fn value_from_py(val: &Bound<PyAny>) -> PyResult<serde_json::Value> {
         let obj = object_from_py(dict)?;
         serde_json::Value::Object(obj)
     } else {
-        return Err(PyErr::new::<PyException, _>(format!(
-            "failed to convert Python object {val} into payload value"
+        return Err(PyValueError::new_err(format!(
+            "failed to convert Python object {val} into payload value type"
         )));
     };
 
@@ -88,11 +88,13 @@ fn number_from_py(num: &Bound<PyAny>) -> PyResult<serde_json::Number> {
         serde_json::Number::from(int)
     } else if let Ok(float) = num.extract() {
         serde_json::Number::from_f64(float).ok_or_else(|| {
-            PyErr::new::<PyException, _>(format!("failed to convert {float} into payload number"))
+            PyValueError::new_err(format!(
+                "failed to convert {float} into payload number type"
+            ))
         })?
     } else {
-        return Err(PyErr::new::<PyException, _>(format!(
-            "failed to convert Python object {num} into payload number"
+        return Err(PyValueError::new_err(format!(
+            "failed to convert Python object {num} into payload number type"
         )));
     };
 
