@@ -64,20 +64,14 @@ impl PyShard {
         ids: Vec<PyPointId>,
         with_payload: Option<PyWithPayload>,
         with_vector: Option<PyWithVector>,
-    ) -> Result<Vec<PyRecord>, PyErr> {
-        let ids_res: Result<Vec<_>, _> = ids.into_iter().map(PointIdType::try_from).collect();
-        let ids = ids_res?;
-
-        let records = self
-            .0
-            .retrieve(
-                &ids,
-                with_payload.map(WithPayloadInterface::from),
-                with_vector.map(WithVector::from),
-            )
-            .map_err(PyError::from)?;
-
-        let points = records.into_iter().map(PyRecord).collect();
+    ) -> Result<Vec<PyRecord>> {
+        let point_ids = PyPointId::into_rust_vec(ids);
+        let points = self.0.retrieve(
+            &point_ids,
+            with_payload.map(WithPayloadInterface::from),
+            with_vector.map(WithVector::from),
+        )?;
+        let points = points.into_iter().map(PyRecord).collect();
         Ok(points)
     }
 }

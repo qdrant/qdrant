@@ -1,38 +1,67 @@
-use pyo3::exceptions::PyException;
+use std::mem;
+
+use derive_more::Into;
+use pyo3::IntoPyObjectExt as _;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::types::PointIdType;
 use uuid::Uuid;
 
-#[derive(Clone, Debug, IntoPyObject, FromPyObject)]
-pub enum PyPointId {
-    NumId(u64),
-    UuidString(String),
-    Uuid(Uuid),
-}
+#[derive(Copy, Clone, Debug, Into)]
+#[repr(transparent)]
+pub struct PyPointId(pub PointIdType);
 
-impl TryFrom<PyPointId> for PointIdType {
-    type Error = PyErr;
-    fn try_from(value: PyPointId) -> Result<Self, Self::Error> {
-        match value {
-            PyPointId::NumId(id) => Ok(PointIdType::NumId(id)),
-            PyPointId::UuidString(uuid_string) => {
-                let uuid = Uuid::parse_str(&uuid_string).map_err(|_| {
-                    PyErr::new::<PyException, _>(format!(
-                        "failed to parse string {uuid_string} into UUID for point ID"
-                    ))
-                })?;
-                Ok(PointIdType::Uuid(uuid))
-            }
-            PyPointId::Uuid(uuid) => Ok(PointIdType::Uuid(uuid)),
-        }
+impl PyPointId {
+    pub fn into_rust_vec(point_ids: Vec<PyPointId>) -> Vec<PointIdType> {
+        // `PyPointId` has transparent representation, so transmuting is safe
+        unsafe { mem::transmute(point_ids) }
     }
 }
 
-impl From<PointIdType> for PyPointId {
-    fn from(value: PointIdType) -> Self {
-        match value {
-            PointIdType::NumId(id) => PyPointId::NumId(id),
-            PointIdType::Uuid(uuid) => PyPointId::Uuid(uuid),
+impl<'py> FromPyObject<'py> for PyPointId {
+    fn extract_bound(point_id: &Bound<'py, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Helper {
+            NumId(u64),
+            Uuid(Uuid),
+            UuidStr(String),
+        }
+
+        let point_id = match point_id.extract()? {
+            Helper::NumId(id) => PointIdType::NumId(id),
+            Helper::Uuid(uuid) => PointIdType::Uuid(uuid),
+            Helper::UuidStr(uuid_str) => {
+                let uuid = Uuid::parse_str(&uuid_str).map_err(|err| {
+                    PyValueError::new_err(format!("failed to parse {uuid_str} as UUID: {err}"))
+                })?;
+
+                PointIdType::Uuid(uuid)
+            }
+        };
+
+        Ok(Self(point_id))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for PyPointId {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        IntoPyObject::into_pyobject(&self, py)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyPointId {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match &self.0 {
+            PointIdType::NumId(id) => id.into_bound_py_any(py),
+            PointIdType::Uuid(uuid) => uuid.into_bound_py_any(py),
         }
     }
 }

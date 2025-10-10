@@ -14,7 +14,7 @@ pub struct PyRecord(pub RecordInternal);
 impl PyRecord {
     #[getter]
     pub fn id(&self) -> PyPointId {
-        PyPointId::from(self.0.id)
+        PyPointId(self.0.id)
     }
 
     #[getter]

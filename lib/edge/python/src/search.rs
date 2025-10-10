@@ -257,7 +257,7 @@ pub struct PyScoredPoint(pub ScoredPoint);
 impl PyScoredPoint {
     #[getter]
     pub fn id(&self) -> PyPointId {
-        PyPointId::from(self.0.id)
+        PyPointId(self.0.id)
     }
 
     #[getter]
