@@ -11,6 +11,7 @@ pub mod operations;
 pub mod optimizers_builder;
 pub mod problems;
 pub mod recommendations;
+pub mod relevance_feedback;
 pub mod shards;
 pub mod telemetry;
 mod update_handler;

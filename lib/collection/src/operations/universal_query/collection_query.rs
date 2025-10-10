@@ -11,7 +11,9 @@ use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, SearchParams, VectorName,
     VectorNameBuf, WithPayloadInterface, WithVector,
 };
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use segment::vector_storage::query::{
+    ContextPair, ContextQuery, DiscoveryQuery, LinearFeedbackStrategy, RecoQuery,
+};
 use serde::Serialize;
 use shard::query::query_enum::QueryEnum;
 
@@ -24,6 +26,7 @@ use crate::lookup::WithLookup;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
 use crate::recommendations::avg_vector_for_recommendation;
+use crate::relevance_feedback::extract_feedback_pairs;
 
 const DEFAULT_MMR_LAMBDA: f32 = 0.5;
 
@@ -165,6 +168,7 @@ pub enum VectorQuery<T> {
     RecommendSumScores(RecoQuery<T>),
     Discover(DiscoveryQuery<T>),
     Context(ContextQuery<T>),
+    Feedback(FeedbackQuery<T>),
 }
 
 impl<T> VectorQuery<T> {
@@ -178,6 +182,7 @@ impl<T> VectorQuery<T> {
             | VectorQuery::RecommendSumScores(query) => Box::new(query.flat_iter()),
             VectorQuery::Discover(query) => Box::new(query.flat_iter()),
             VectorQuery::Context(query) => Box::new(query.flat_iter()),
+            VectorQuery::Feedback(query) => Box::new(query.flat_iter()),
         }
     }
 }
@@ -192,6 +197,33 @@ pub struct NearestWithMmr<T> {
 pub struct Mmr {
     pub diversity: Option<f32>,
     pub candidates_limit: Option<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FeedbackQuery<T> {
+    pub target: T,
+    pub feedback: Vec<ScoredItem<T>>,
+    pub strategy: FeedbackStrategy,
+}
+
+impl<T> FeedbackQuery<T> {
+    fn flat_iter(&self) -> impl Iterator<Item = &T> {
+        self.feedback
+            .iter()
+            .map(|item| &item.item)
+            .chain(std::iter::once(&self.target))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScoredItem<T> {
+    pub item: T,
+    pub score: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FeedbackStrategy {
+    Linear { a: f32, b: f32, c: f32 },
 }
 
 impl VectorQuery<VectorInputInternal> {
@@ -307,6 +339,33 @@ impl VectorQuery<VectorInputInternal> {
 
                 Ok(VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }))
             }
+            VectorQuery::Feedback(FeedbackQuery {
+                target,
+                feedback,
+                strategy,
+            }) => {
+                let target = ids_to_vectors
+                    .resolve_reference(lookup_collection, lookup_vector_name, target)
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))?;
+
+                let feedback = feedback
+                    .into_iter()
+                    .map(|ScoredItem { item, score }| {
+                        Ok(ScoredItem {
+                            item: ids_to_vectors
+                                .resolve_reference(lookup_collection, lookup_vector_name, item)
+                                .ok_or_else(|| vector_not_found_error(lookup_vector_name))?,
+                            score,
+                        })
+                    })
+                    .collect::<CollectionResult<_>>()?;
+
+                Ok(VectorQuery::Feedback(FeedbackQuery {
+                    target,
+                    feedback,
+                    strategy,
+                }))
+            }
         }
     }
 
@@ -381,6 +440,14 @@ impl VectorQuery<VectorInternal> {
             VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr: _ }) => {
                 nearest.preprocess();
             }
+            VectorQuery::Feedback(FeedbackQuery {
+                target,
+                feedback,
+                strategy: _,
+            }) => {
+                target.preprocess();
+                feedback.iter_mut().for_each(|item| item.item.preprocess());
+            }
         }
         self
     }
@@ -424,6 +491,29 @@ impl VectorQuery<VectorInternal> {
                     ),
                     candidates_limit: candidates_limit.unwrap_or(request_limit),
                 }));
+            }
+            VectorQuery::Feedback(FeedbackQuery {
+                target,
+                feedback,
+                strategy,
+            }) => {
+                let feedback_pairs = extract_feedback_pairs(feedback, DEFAULT_NUM_PAIRS);
+                match strategy {
+                    FeedbackStrategy::Linear { a, b, c } => {
+                        QueryEnum::FeedbackLinear(NamedQuery::new(
+                            segment::vector_storage::query::FeedbackQuery {
+                                target,
+                                feedback_pairs,
+                                strategy: LinearFeedbackStrategy {
+                                    a: a.into(),
+                                    b: b.into(),
+                                    c: c.into(),
+                                },
+                            },
+                            using,
+                        ))
+                    }
+                }
             }
         };
 
