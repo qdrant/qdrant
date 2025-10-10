@@ -134,6 +134,7 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     ///
     /// * `until_index` - the newest no longer required record sequence number
     pub fn ack(&mut self, until_index: u64) -> Result<()> {
+        log::trace!("WAL ACK until {}", until_index);
         // Truncate WAL
         self.wal
             .prefix_truncate(until_index)
