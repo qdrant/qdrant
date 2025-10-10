@@ -1,13 +1,25 @@
 import os
 import shutil
 import uuid
+
 from qdrant_edge import *
 
+print("---- Load shard ----")
+
+DATA_DIRECTORY = "./data"
+
+# Clear and recreate data directory
+if os.path.exists(DATA_DIRECTORY):
+    shutil.rmtree(DATA_DIRECTORY)
+
+os.makedirs(DATA_DIRECTORY)
+
+# Load Qdrant Edge shard
 config = SegmentConfig(
     vector_data={
         "": VectorDataConfig(
             size=4,
-            distance=Distance.COSINE,
+            distance=Distance.DOT,
             storage_type=VectorStorageType.CHUNKED_MMAP,
             index=Indexes.PLAIN,
             quantization_config=None,
@@ -19,20 +31,14 @@ config = SegmentConfig(
     payload_storage_type=PayloadStorageType.IN_RAM_MMAP,
 )
 
-DATA_DIRECTORY = "./data"
-
-# Clear and recreate data directory
-
-if os.path.exists(DATA_DIRECTORY):
-    shutil.rmtree(DATA_DIRECTORY)
-os.makedirs(DATA_DIRECTORY)
-
 shard = Shard(DATA_DIRECTORY, config)
+
+print("---- Upsert ----")
 
 shard.update(UpdateOperation.upsert_points([
     Point(
         1,
-        Vector.single([6.0, 9.0, 4.0, 2.0]),
+        [6.0, 9.0, 4.0, 2.0],
         {
             "null": None,
             "str": "string",
@@ -55,35 +61,39 @@ shard.update(UpdateOperation.upsert_points([
     ),
     Point(
         "e9408f2b-b917-4af1-ab75-d97ac6b2c047",
-        Vector.single([6.0, 9.0, 4.0, 2.0]),
+        [6.0, 9.0, 3.0, -2.0],
         {
             "hello": "world"
         },
     ),
     Point(
         uuid.uuid4(),
-        Vector.single([6.0, 9.0, 4.0, 2.0]),
+        [1.0, 6.0, 4.0, 2.0],
         {
             "hello": "world"
         },
     ),
 ]))
 
+print("---- Search ----")
+
 points = shard.search(SearchRequest(
-    query=Query.nearest(QueryVector.dense([1.0, 1.0, 1.0, 1.0]), None),
+    query=[1.0, 1.0, 1.0, 1.0],
     filter=None,
     params=None,
     limit=10,
     offset=0,
-    with_vector=WithVector(True),
-    with_payload=WithPayload(True),
+    with_vector=True,
+    with_payload=True,
     score_threshold=None,
 ))
 
 for point in points:
     print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
 
-retrieve = shard.retrieve(ids=[1], with_vector=WithVector(True), with_payload=WithPayload(True))
+print("---- Retrieve ----")
 
-for point in retrieve:
+points = shard.retrieve(point_ids=[1], with_vector=True, with_payload=True)
+
+for point in points:
     print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}")

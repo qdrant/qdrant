@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::common::operation_error::OperationResult;
 use segment::types::{ExtendedPointId, WithPayload, WithPayloadInterface, WithVector};
@@ -9,7 +11,7 @@ use crate::Shard;
 impl Shard {
     pub fn retrieve(
         &self,
-        ids: &[ExtendedPointId],
+        point_ids: &[ExtendedPointId],
         with_payload: Option<WithPayloadInterface>,
         with_vector: Option<WithVector>,
     ) -> OperationResult<Vec<RecordInternal>> {
@@ -17,24 +19,20 @@ impl Shard {
             WithPayload::from(with_payload.unwrap_or(WithPayloadInterface::Bool(true)));
         let with_vector = with_vector.unwrap_or(WithVector::Bool(false));
 
-        let never_stopped = std::sync::atomic::AtomicBool::new(false);
-
-        let hw_measurement = HwMeasurementAcc::disposable();
-
-        let mut retrieve_result = retrieve_blocking(
+        let mut points = retrieve_blocking(
             self.segments.clone(),
-            ids,
+            point_ids,
             &with_payload,
             &with_vector,
-            &never_stopped,
-            hw_measurement,
+            &AtomicBool::new(false),
+            HwMeasurementAcc::disposable(),
         )?;
 
-        let response: Vec<_> = ids
+        let points: Vec<_> = point_ids
             .iter()
-            .filter_map(|idx| retrieve_result.remove(idx))
+            .filter_map(|id| points.remove(id))
             .collect();
 
-        Ok(response)
+        Ok(points)
     }
 }
