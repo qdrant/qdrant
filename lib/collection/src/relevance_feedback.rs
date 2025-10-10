@@ -3,11 +3,14 @@ use segment::vector_storage::query::FeedbackPair;
 
 use crate::operations::universal_query::collection_query::ScoredItem;
 
+pub const DEFAULT_NUM_PAIRS: usize = 3;
+
 /// Extracts pairs of points, ranked by score difference in descending order.
 ///
 /// Assumes scoring order is BiggerIsBetter
 pub fn extract_feedback_pairs<TVector: Clone>(
     mut feedback: Vec<ScoredItem<TVector>>,
+    num_pairs: usize,
 ) -> Vec<FeedbackPair<TVector>> {
     feedback.sort_by_key(|item| OrderedFloat(-item.score));
 
@@ -19,9 +22,10 @@ pub fn extract_feedback_pairs<TVector: Clone>(
     let mut front_idx = 0;
     let mut back_idx = feedback.len() - 1;
 
-    let mut feedback_pairs = Vec::with_capacity(feedback.len() / 2);
+    let max_num_pairs = num_pairs.min(feedback.len() / 2);
+    let mut feedback_pairs = Vec::with_capacity(max_num_pairs);
 
-    while front_idx < back_idx {
+    while front_idx < back_idx && feedback_pairs.len() < max_num_pairs {
         let front = &feedback[front_idx];
         let back = &feedback[back_idx];
 
@@ -46,11 +50,12 @@ mod tests {
 
     use super::extract_feedback_pairs;
     use crate::operations::universal_query::collection_query::ScoredItem;
+    use crate::relevance_feedback::DEFAULT_NUM_PAIRS;
 
     #[test]
     fn test_extract_feedback_pairs_empty() {
         let feedback: Vec<ScoredItem<i32>> = vec![];
-        let pairs = extract_feedback_pairs(feedback);
+        let pairs = extract_feedback_pairs(feedback, DEFAULT_NUM_PAIRS);
         assert!(pairs.is_empty());
     }
 
@@ -60,7 +65,7 @@ mod tests {
             item: 1,
             score: 0.5,
         }];
-        let pairs = extract_feedback_pairs(feedback);
+        let pairs = extract_feedback_pairs(feedback, DEFAULT_NUM_PAIRS);
         assert!(pairs.is_empty());
     }
 
@@ -76,7 +81,7 @@ mod tests {
                 score: 0.2,
             },
         ];
-        let pairs = extract_feedback_pairs(feedback);
+        let pairs = extract_feedback_pairs(feedback, DEFAULT_NUM_PAIRS);
 
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].positive, 1);
@@ -104,7 +109,7 @@ mod tests {
                 score: 0.2,
             },
         ];
-        let pairs = extract_feedback_pairs(feedback);
+        let pairs = extract_feedback_pairs(feedback, DEFAULT_NUM_PAIRS);
 
         assert_eq!(pairs.len(), 2);
 
@@ -143,7 +148,7 @@ mod tests {
                 score: 0.1,
             },
         ];
-        let pairs = extract_feedback_pairs(feedback);
+        let pairs = extract_feedback_pairs(feedback.clone(), DEFAULT_NUM_PAIRS);
 
         assert_eq!(pairs.len(), 2);
 
@@ -156,6 +161,10 @@ mod tests {
         assert_eq!(pairs[1].positive, 2);
         assert_eq!(pairs[1].negative, 4);
         assert_eq!(pairs[1].confidence, OrderedFloat(0.5));
+
+        // Check we respect num_pairs
+        let pairs = extract_feedback_pairs(feedback, 1);
+        assert_eq!(pairs.len(), 1);
     }
 
     #[test]
@@ -178,7 +187,7 @@ mod tests {
                 score: 0.0,
             },
         ];
-        let pairs = extract_feedback_pairs(feedback);
+        let pairs = extract_feedback_pairs(feedback, DEFAULT_NUM_PAIRS);
 
         assert_eq!(pairs.len(), 2);
 
@@ -212,7 +221,7 @@ mod tests {
                 score: 0.2,
             },
         ];
-        let pairs = extract_feedback_pairs(feedback);
+        let pairs = extract_feedback_pairs(feedback, DEFAULT_NUM_PAIRS);
 
         assert_eq!(pairs.len(), 2);
 
@@ -247,7 +256,7 @@ mod tests {
                 score: 0.5,
             },
         ];
-        let pairs = extract_feedback_pairs(feedback);
+        let pairs = extract_feedback_pairs(feedback, DEFAULT_NUM_PAIRS);
 
         assert_eq!(pairs.len(), 2);
 

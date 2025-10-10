@@ -26,7 +26,7 @@ use crate::lookup::WithLookup;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
 use crate::recommendations::avg_vector_for_recommendation;
-use crate::relevance_feedback::extract_feedback_pairs;
+use crate::relevance_feedback::{DEFAULT_NUM_PAIRS, extract_feedback_pairs};
 
 const DEFAULT_MMR_LAMBDA: f32 = 0.5;
 
