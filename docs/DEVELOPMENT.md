@@ -41,6 +41,31 @@ Make sure to mount it as a volume, otherwise docker will drop it with the contai
 
 Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
 
+#### Docker image build parameters
+
+As it was mentioned before, you can build your own Qdrant docker image with
+
+```bash
+docker build . --tag=qdrant/qdrant
+```
+
+You may also configure certain Docker arguments to fine tune your image:
+
++ `FEATURES` -- define cargo features;
++ `RUSTFLAGS` -- define `rustc` compilation flags;
++ `LINKER` -- define linker in `RUSTFLAGS`;
++ `TARGET_CPU` -- define `target-cpu` in `RUSTFLAGS`;
++ `JEMALLOC_SYS_WITH_LG_PAGE` -- define jemalloc's page size in base 2 log; may be
+  useful when compiling for some ARM machines; it corresponds to jemalloc's
+  `--with-lg-page` configure argument.
++ `GPU` -- add GPU support, either `nvidia` or `amd`.
+
+For example:
+
+```bash
+docker build . --tag=qdrant/qdrant \
+    --build-arg TARGET_CPU=native --build-arg GPU=amd
+```
 
 ### Local development
 #### Linux/Debian/MacOS
