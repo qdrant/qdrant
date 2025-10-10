@@ -12,7 +12,7 @@ pub fn extract_feedback_pairs<TVector: Clone>(
     feedback.sort_by_key(|item| OrderedFloat(-item.score));
 
     if feedback.len() < 2 {
-        return Vec::new()
+        return Vec::new();
     }
 
     // Pair front and back items until we run out of them
@@ -132,7 +132,7 @@ mod tests {
             },
             ScoredItem {
                 item: 3,
-                score: 0.5,  // Middle item - should be ignored
+                score: 0.5, // Middle item - should be ignored
             },
             ScoredItem {
                 item: 4,
