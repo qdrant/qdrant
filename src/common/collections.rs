@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use api::grpc::qdrant::CollectionExists;
@@ -16,7 +16,7 @@ use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
 };
 use collection::operations::verification::new_unchecked_verification_pass;
-use collection::shards::replica_set;
+use collection::shards::replica_set::{self, ReplicaState};
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
@@ -33,6 +33,9 @@ use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
 use uuid::Uuid;
+
+static CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE: LazyLock<semver::Version> =
+    LazyLock::new(|| semver::Version::parse("1.14.2-dev").unwrap());
 
 pub async fn do_collection_exists(
     toc: &TableOfContent,
@@ -438,13 +441,27 @@ pub async fn do_update_collection_cluster(
             let exact_placement =
                 generate_even_placement(peers_pool, shard_number, replication_factor);
 
+            let toc = dispatcher.toc(&access, &pass);
+            let use_initializing_state = toc.is_distributed()
+                && toc
+                    .get_channel_service()
+                    .all_peers_at_version(&CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE);
+
+            let init_state = if let Some(initial_state) = create_sharding_key.initial_state {
+                initial_state
+            } else if use_initializing_state {
+                ReplicaState::Initializing
+            } else {
+                ReplicaState::Active
+            };
+
             dispatcher
                 .submit_collection_meta_op(
                     CollectionMetaOperations::CreateShardKey(CreateShardKey {
                         collection_name,
                         shard_key: create_sharding_key.shard_key,
                         placement: exact_placement,
-                        initial_state: create_sharding_key.initial_state,
+                        initial_state: init_state,
                     }),
                     access,
                     wait_timeout,

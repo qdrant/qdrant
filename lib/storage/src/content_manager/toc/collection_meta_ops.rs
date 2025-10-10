@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::LazyLock;
 
 use collection::collection_state;
 use collection::config::ShardingMethod;
@@ -19,9 +18,6 @@ use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-
-static CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE: LazyLock<semver::Version> =
-    LazyLock::new(|| semver::Version::parse("1.14.2-dev").unwrap());
 
 impl TableOfContent {
     pub(super) fn perform_collection_meta_op_sync(
@@ -624,22 +620,13 @@ impl TableOfContent {
     }
 
     async fn create_shard_key(&self, operation: CreateShardKey) -> Result<(), StorageError> {
-        let use_initializing_state = self.is_distributed()
-            && self
-                .get_channel_service()
-                .all_peers_at_version(&CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE);
-
-        let init_state = if let Some(initial_state) = operation.initial_state {
-            initial_state
-        } else if use_initializing_state {
-            ReplicaState::Initializing
-        } else {
-            ReplicaState::Active
-        };
-
         self.get_collection_unchecked(&operation.collection_name)
             .await?
-            .create_shard_key(operation.shard_key, operation.placement, init_state)
+            .create_shard_key(
+                operation.shard_key,
+                operation.placement,
+                operation.initial_state,
+            )
             .await?;
 
         Ok(())

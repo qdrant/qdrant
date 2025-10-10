@@ -386,7 +386,7 @@ pub struct CreateShardKey {
     pub collection_name: String,
     pub shard_key: ShardKey,
     pub placement: ShardsPlacement,
-    pub initial_state: Option<ReplicaState>,
+    pub initial_state: ReplicaState,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
