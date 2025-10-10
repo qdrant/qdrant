@@ -79,7 +79,7 @@ async fn test_shard_query_rrf_rescoring() {
     assert!(matches!(sources_scores, Err(err) if err == expected_error));
 
     // RRF query with single prefetch
-    let nearest_query = QueryEnum::Nearest(NamedQuery::new_from_vector(
+    let nearest_query = QueryEnum::Nearest(NamedQuery::new(
         VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
         DEFAULT_VECTOR_NAME,
     ));
@@ -249,7 +249,7 @@ async fn test_shard_query_vector_rescoring() {
         .await
         .unwrap();
 
-    let nearest_query = QueryEnum::Nearest(NamedQuery::new_from_vector(
+    let nearest_query = QueryEnum::Nearest(NamedQuery::new(
         VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
         DEFAULT_VECTOR_NAME,
     ));
@@ -387,7 +387,7 @@ async fn test_shard_query_payload_vector() {
         .await
         .unwrap();
 
-    let nearest_query = QueryEnum::Nearest(NamedQuery::new_from_vector(
+    let nearest_query = QueryEnum::Nearest(NamedQuery::new(
         VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
         DEFAULT_VECTOR_NAME,
     ));

@@ -391,33 +391,25 @@ impl VectorQuery<VectorInternal> {
         request_limit: usize,
     ) -> CollectionResult<ScoringQuery> {
         let query_enum = match self {
-            VectorQuery::Nearest(vector) => {
-                QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using))
-            }
+            VectorQuery::Nearest(vector) => QueryEnum::Nearest(NamedQuery::new(vector, using)),
             VectorQuery::RecommendAverageVector(reco) => {
                 // Get average vector
                 let search_vector = avg_vector_for_recommendation(
                     reco.positives.iter().map(VectorRef::from),
                     reco.negatives.iter().map(VectorRef::from).peekable(),
                 )?;
-                QueryEnum::Nearest(NamedQuery::new_from_vector(search_vector, using))
+                QueryEnum::Nearest(NamedQuery::new(search_vector, using))
             }
-            VectorQuery::RecommendBestScore(reco) => QueryEnum::RecommendBestScore(NamedQuery {
-                query: reco,
-                using: Some(using),
-            }),
-            VectorQuery::RecommendSumScores(reco) => QueryEnum::RecommendSumScores(NamedQuery {
-                query: reco,
-                using: Some(using),
-            }),
-            VectorQuery::Discover(discover) => QueryEnum::Discover(NamedQuery {
-                query: discover,
-                using: Some(using),
-            }),
-            VectorQuery::Context(context) => QueryEnum::Context(NamedQuery {
-                query: context,
-                using: Some(using),
-            }),
+            VectorQuery::RecommendBestScore(reco) => {
+                QueryEnum::RecommendBestScore(NamedQuery::new(reco, using))
+            }
+            VectorQuery::RecommendSumScores(reco) => {
+                QueryEnum::RecommendSumScores(NamedQuery::new(reco, using))
+            }
+            VectorQuery::Discover(discover) => {
+                QueryEnum::Discover(NamedQuery::new(discover, using))
+            }
+            VectorQuery::Context(context) => QueryEnum::Context(NamedQuery::new(context, using)),
             VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }) => {
                 let Mmr {
                     diversity,
