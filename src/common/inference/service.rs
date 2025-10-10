@@ -1,8 +1,10 @@
 use std::fmt::Display;
 use std::hash::Hash;
+use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
+use actix_web::http::header::HttpDate;
 use api::rest::models::InferenceUsage;
 use api::rest::{Document, Image, InferenceObject};
 use collection::operations::point_ops::VectorPersisted;
@@ -248,11 +250,20 @@ impl InferenceService {
             .get(reqwest::header::RETRY_AFTER)
             .and_then(|value| value.to_str().ok())
             .and_then(|value| {
+                // Check if the value is a valid duration in seconds
                 if let Ok(seconds) = value.parse::<u64>() {
-                    Some(Duration::from_secs(seconds))
-                } else {
-                    None
+                    return Some(Duration::from_secs(seconds));
                 }
+
+                // Check if the value is a valid Date
+                if let Ok(http_date) = value.parse::<HttpDate>() {
+                    let ts = SystemTime::from(http_date);
+                    if let Ok(diff) = ts.duration_since(SystemTime::now()) {
+                        return Some(diff);
+                    }
+                }
+
+                None
             })
     }
 
