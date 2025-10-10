@@ -590,6 +590,7 @@ impl<V> Gridstore<V> {
         for page in &self.pages {
             page.populate();
         }
+        self.tracker.read().populate();
         self.bitmask.read().populate()?;
         Ok(())
     }

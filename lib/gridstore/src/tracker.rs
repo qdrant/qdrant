@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashMap;
 use memmap2::MmapMut;
-use memory::madvise::{Advice, AdviceSetting};
+use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops::{
     create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8,
 };
@@ -308,6 +308,10 @@ impl Tracker {
         }
 
         pointer_opt
+    }
+
+    pub fn populate(&self) {
+        self.mmap.populate();
     }
 }
 
