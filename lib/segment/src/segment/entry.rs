@@ -607,6 +607,10 @@ impl SegmentEntry for Segment {
         self.appendable_flag
     }
 
+    fn is_inner_appendable(&self) -> bool {
+        self.is_appendable()
+    }
+
     fn flusher(&self, force: bool) -> Option<Flusher> {
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
 

@@ -627,6 +627,10 @@ impl SegmentEntry for ProxySegment {
         false
     }
 
+    fn is_inner_appendable(&self) -> bool {
+        self.wrapped_segment.get().read().is_inner_appendable()
+    }
+
     fn flusher(&self, force: bool) -> Option<Flusher> {
         let wrapped_segment = self.wrapped_segment.get();
         let wrapped_segment_guard = wrapped_segment.read();
