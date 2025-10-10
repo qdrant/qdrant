@@ -61,11 +61,11 @@ impl PyShard {
 
     pub fn retrieve(
         &self,
-        ids: Vec<PyPointId>,
+        point_ids: Vec<PyPointId>,
         with_payload: Option<PyWithPayload>,
         with_vector: Option<PyWithVector>,
     ) -> Result<Vec<PyRecord>> {
-        let point_ids = PyPointId::into_rust_vec(ids);
+        let point_ids = PyPointId::into_rust_vec(point_ids);
         let points = self.0.retrieve(
             &point_ids,
             with_payload.map(WithPayloadInterface::from),

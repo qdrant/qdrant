@@ -83,7 +83,7 @@ points = shard.search(SearchRequest(
 for point in points:
     print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
 
-retrieve = shard.retrieve(ids=[1], with_vector=WithVector(True), with_payload=WithPayload(True))
+retrieve = shard.retrieve(point_ids=[1], with_vector=WithVector(True), with_payload=WithPayload(True))
 
 for point in retrieve:
     print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}")
