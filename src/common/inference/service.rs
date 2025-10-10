@@ -257,9 +257,10 @@ impl InferenceService {
                 // Check if the value is a valid Date
                 if let Ok(http_date) = value.parse::<HttpDate>() {
                     let ts = SystemTime::from(http_date);
-                    if let Ok(diff) = ts.duration_since(SystemTime::now()) {
-                        return Some(diff);
-                    }
+                    return ts
+                        .duration_since(SystemTime::now())
+                        .ok()
+                        .map(|d| d.max(Duration::ZERO));
                 }
 
                 None
