@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
+use segment::common::Flusher;
 use segment::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::facets::{FacetParams, FacetValue};
@@ -24,6 +25,10 @@ use crate::locked_segment::LockedSegment;
 impl SegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
         cmp::max(self.wrapped_segment.get().read().version(), self.version)
+    }
+
+    fn persistent_version(&self) -> SeqNumberType {
+        self.wrapped_segment.get().read().persistent_version()
     }
 
     fn is_proxy(&self) -> bool {
@@ -622,17 +627,10 @@ impl SegmentEntry for ProxySegment {
         false
     }
 
-    fn flush(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
+    fn flusher(&self, force: bool) -> Option<Flusher> {
         let wrapped_segment = self.wrapped_segment.get();
         let wrapped_segment_guard = wrapped_segment.read();
-        let persisted_version = wrapped_segment_guard.flush(sync, force)?;
-
-        debug_assert!(
-            !sync || (persisted_version == wrapped_segment_guard.version()),
-            "wrapped segment must be flushed upto the current wrapped segment version",
-        );
-
-        Ok(persisted_version)
+        wrapped_segment_guard.flusher(force)
     }
 
     fn drop_data(self) -> OperationResult<()> {

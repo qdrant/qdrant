@@ -623,7 +623,6 @@ fn create_segment(
         error_status: None,
         #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
-        flush_thread: Mutex::new(None),
     })
 }
 

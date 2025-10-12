@@ -488,13 +488,13 @@ fn test_proxy_segment_flush() {
 
     let mut proxy_segment = ProxySegment::new(locked_wrapped_segment.clone());
 
-    let flushed_version_1 = proxy_segment.flush(true, false).unwrap();
+    let flushed_version_1 = proxy_segment.flush(false).unwrap();
 
     proxy_segment
         .delete_point(100, 2.into(), &HardwareCounterCell::new())
         .unwrap();
 
-    let flushed_version_2 = proxy_segment.flush(true, false).unwrap();
+    let flushed_version_2 = proxy_segment.flush(false).unwrap();
 
     assert_eq!(flushed_version_2, flushed_version_1);
 

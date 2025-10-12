@@ -9,21 +9,20 @@ use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::save_on_disk::SaveOnDisk;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment_constructor::build_segment;
-use segment::types::{
-    ExtendedPointId, Payload, PointIdType, SegmentConfig, SegmentType, SeqNumberType,
-};
+use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
 use smallvec::{SmallVec, smallvec};
 
 use crate::locked_segment::LockedSegment;
@@ -70,6 +69,10 @@ pub struct SegmentHolder {
     /// An example for this are operations that don't modify any points but could be expensive to recover from during WAL recovery.
     /// To acknowledge them in WAL, we overwrite the max_persisted value in `Self::flush_all` with the segment version stored here.
     max_persisted_segment_version_overwrite: AtomicU64,
+
+    /// Holder for a thread, which does flushing of all segments sequentially.
+    /// This is used to avoid multiple concurrent flushes.
+    pub flush_thread: Mutex<Option<JoinHandle<OperationResult<()>>>>,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -787,6 +790,86 @@ impl SegmentHolder {
             .chain(non_appendable_segments)
     }
 
+    // Joins flush thread if exists
+    // Returns lock to guarantee that there will be no other flush in a different thread
+    pub(super) fn lock_flushing(
+        &self,
+    ) -> OperationResult<parking_lot::MutexGuard<'_, Option<JoinHandle<OperationResult<()>>>>> {
+        let mut lock = self.flush_thread.lock();
+        let mut join_handle: Option<JoinHandle<OperationResult<()>>> = None;
+        std::mem::swap(&mut join_handle, &mut lock);
+        if let Some(join_handle) = join_handle {
+            // Flush result was reported to segment, so we don't need this value anymore
+            join_handle
+                .join()
+                .map_err(|_err| OperationError::service_error("failed to join flush thread"))??;
+        }
+        Ok(lock)
+    }
+
+    pub(super) fn is_background_flushing(&self) -> bool {
+        let lock = self.flush_thread.lock();
+        if let Some(join_handle) = lock.as_ref() {
+            !join_handle.is_finished()
+        } else {
+            false
+        }
+    }
+
+    /// Calculates the version of the segments that is safe to acknowledge in WAL
+    ///
+    /// If there are unsaved changes after flush - detects lowest unsaved change version.
+    /// If all changes are saved - returns max version.
+    fn get_max_persisted_version(
+        &self,
+        segment_reads: Vec<RwLockReadGuard<'_, dyn SegmentEntry>>,
+        lock_order: Vec<SegmentId>,
+    ) -> OperationResult<SeqNumberType> {
+        // Start with the max_persisted_vesrion at the set overwrite value, which may just be 0
+        // Any of the segments we flush may increase this if they have a higher persisted version
+        // The overwrite is required to ensure we acknowledge no-op operations in WAL that didn't hit any segment
+        //
+        // Only affects returned version if all changes are saved
+        let mut max_persisted_version: SeqNumberType = self
+            .max_persisted_segment_version_overwrite
+            .load(Ordering::Relaxed);
+
+        let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
+        let mut has_unsaved = false;
+
+        // Flush and release each segment
+        for (read_segment, segment_id) in segment_reads.into_iter().zip(lock_order.into_iter()) {
+            let segment_version = read_segment.version();
+            let segment_persisted_version = read_segment.persistent_version();
+
+            log::trace!(
+                "Flushed segment {segment_id}:{:?} version: {segment_version} to persisted: {segment_persisted_version}",
+                &read_segment.data_path(),
+            );
+
+            if segment_version > segment_persisted_version {
+                has_unsaved = true;
+                min_unsaved_version = min(min_unsaved_version, segment_persisted_version);
+            }
+
+            max_persisted_version = max(max_persisted_version, segment_persisted_version);
+
+            drop(read_segment);
+        }
+
+        if has_unsaved {
+            log::trace!(
+                "Some segments have unsaved changes, lowest unsaved version: {min_unsaved_version}"
+            );
+            Ok(min_unsaved_version)
+        } else {
+            log::trace!(
+                "All segments flushed successfully, max persisted version: {max_persisted_version}"
+            );
+            Ok(max_persisted_version)
+        }
+    }
+
     /// Flushes all segments and returns maximum version to persist
     ///
     /// Before flushing, this read-locks all segments. It prevents writes to all not-yet-flushed
@@ -846,57 +929,37 @@ impl SegmentHolder {
             "Must flush appendable segments first",
         );
 
-        // Start with the max_persisted_vesrion at the set overwrite value, which may just be 0
-        // Any of the segments we flush may increase this if they have a higher persisted version
-        // The overwrite is required to ensure we acknowledge no-op operations in WAL that didn't hit any segment
-        let mut max_persisted_version: SeqNumberType = self
-            .max_persisted_segment_version_overwrite
-            .load(Ordering::Relaxed);
-
-        let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
-        let mut has_unsaved = false;
-        let mut proxy_segments = vec![];
-
-        // Flush and release each segment
-        for (read_segment, segment_id) in segment_reads.into_iter().zip(lock_order.into_iter()) {
-            let segment_version = read_segment.version();
-            let segment_persisted_version = read_segment.flush(sync, force)?;
-
-            log::trace!(
-                "Flushed segment {segment_id}:{:?} version: {segment_version} to persisted: {segment_persisted_version}",
-                &read_segment.data_path(),
-            );
-
-            if segment_version > segment_persisted_version {
-                has_unsaved = true;
-                min_unsaved_version = min(min_unsaved_version, segment_persisted_version);
-            }
-
-            max_persisted_version = max(max_persisted_version, segment_persisted_version);
-
-            // Release segment read-lock right away now or keep it until the end
-            match read_segment.segment_type() {
-                // Regular segment: release now to allow new writes
-                SegmentType::Plain | SegmentType::Indexed => drop(read_segment),
-                // Proxy segment: release at the end, proxy segments may share the write segment
-                // Prevent new updates from changing write segment on yet-to-be-flushed proxies
-                SegmentType::Special => proxy_segments.push(read_segment),
-            }
+        if !sync && self.is_background_flushing() {
+            // There is already a background flush ongoing, return current max persisted version
+            return self.get_max_persisted_version(segment_reads, lock_order);
         }
 
-        drop(proxy_segments);
+        let mut background_flush_lock = self.lock_flushing()?;
 
-        if has_unsaved {
-            log::trace!(
-                "Some segments have unsaved changes, lowest unsaved version: {min_unsaved_version}"
-            );
-            Ok(min_unsaved_version)
+        if sync {
+            for read_segment in segment_reads.iter() {
+                read_segment.flush(force)?;
+            }
         } else {
-            log::trace!(
-                "All segments flushed successfully, max persisted version: {max_persisted_version}"
+            let flushers: Vec<_> = segment_reads
+                .iter()
+                .filter_map(|read_segment| read_segment.flusher(force))
+                .collect();
+
+            *background_flush_lock = Some(
+                std::thread::Builder::new()
+                    .name("background_flush".to_string())
+                    .spawn(move || {
+                        for flusher in flushers {
+                            flusher()?;
+                        }
+                        Ok(())
+                    })
+                    .unwrap(),
             );
-            Ok(max_persisted_version)
         }
+
+        self.get_max_persisted_version(segment_reads, lock_order)
     }
 
     /// Grab the RwLock's for all the given segment IDs.

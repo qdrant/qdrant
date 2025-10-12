@@ -200,7 +200,7 @@ fn ordered_deletion_test() {
         let mut segment = build_segment_1(dir.path());
         segment.delete_point(6, 5.into(), &hw_counter).unwrap();
         segment.delete_point(6, 4.into(), &hw_counter).unwrap();
-        segment.flush(true, false).unwrap();
+        segment.flush(false).unwrap();
         segment.current_path.clone()
     };
 
@@ -234,7 +234,7 @@ fn skip_deleted_segment() {
         let mut segment = build_segment_1(dir.path());
         segment.delete_point(6, 5.into(), &hw_counter).unwrap();
         segment.delete_point(6, 4.into(), &hw_counter).unwrap();
-        segment.flush(true, false).unwrap();
+        segment.flush(false).unwrap();
         segment.current_path.clone()
     };
 
