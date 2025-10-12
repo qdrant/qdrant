@@ -232,6 +232,9 @@ storage:
   max_collections: null
 
 service:
+  # By default these will be 5 sec, assign value if needed here
+  # keep_alive_sec: 60
+  # request_timeout_sec: 60
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32
 
