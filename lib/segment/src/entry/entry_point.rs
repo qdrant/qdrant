@@ -269,11 +269,10 @@ pub trait SegmentEntry: SnapshotEntry {
     /// Returns a function, which when called, will flush all pending changes to disk.
     /// If there are currently no changes to flush, returns None.
     /// If `force` is true, will return a flusher even if there are no changes to flush.
-    ///
-    /// Returned function returns maximum version number which is guaranteed to be persisted.
     fn flusher(&self, force: bool) -> Option<Flusher>;
 
     /// Immediately flush all changes to disk and return persisted version.
+    /// Blocks the current thread.
     fn flush(&self, force: bool) -> OperationResult<SeqNumberType> {
         if let Some(flusher) = self.flusher(force) {
             flusher()?;

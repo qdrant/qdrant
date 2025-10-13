@@ -67,6 +67,7 @@ pub struct Segment {
     /// If None, there were no updates and segment is empty
     pub version: Option<SeqNumberType>,
     /// Latest persisted version
+    /// Locked structure on which we hold the lock during flush to prevent concurrent flushes
     pub persisted_version: Arc<Mutex<Option<SeqNumberType>>>,
     /// Path of the storage root
     pub current_path: PathBuf,
