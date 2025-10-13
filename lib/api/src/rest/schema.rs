@@ -653,6 +653,9 @@ pub enum Query {
 
     /// Sample points from the collection, non-deterministically.
     Sample(SampleQuery),
+
+    /// Use feedback from an oracle to improve the results
+    Feedback(FeedbackQuery),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -723,6 +726,12 @@ pub struct FormulaQuery {
 pub struct SampleQuery {
     #[validate(nested)]
     pub sample: Sample,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct FeedbackQuery {
+    pub feedback: FeedbackInput,
 }
 
 /// Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
@@ -861,6 +870,35 @@ impl ContextPair {
     pub fn iter(&self) -> impl Iterator<Item = &VectorInput> {
         std::iter::once(&self.positive).chain(std::iter::once(&self.negative))
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct FeedbackInput {
+    pub target: VectorInput,
+    #[validate(nested)]
+    pub feedback: Vec<FeedbackItem>,
+    #[validate(nested)]
+    pub strategy: FeedbackStrategy,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct FeedbackItem {
+    pub vector: VectorInput,
+    pub score: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedbackStrategy {
+    Simple(SimpleFeedbackStrategy),
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct SimpleFeedbackStrategy {
+    pub a: f32,
+    #[validate(range(min = 0.0))]
+    pub b: f32,
+    pub c: f32,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

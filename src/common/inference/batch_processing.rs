@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use api::rest::{
-    ContextInput, ContextPair, DiscoverInput, Prefetch, Query, QueryGroupsRequestInternal,
-    QueryInterface, QueryRequestInternal, RecommendInput, VectorInput,
+    ContextInput, ContextPair, DiscoverInput, FeedbackInput, Prefetch, Query,
+    QueryGroupsRequestInternal, QueryInterface, QueryRequestInternal, RecommendInput, VectorInput,
 };
 
 use super::service::{InferenceData, InferenceInput, InferenceRequest};
@@ -86,6 +86,13 @@ fn collect_recommend_input(recommend: &RecommendInput, batch: &mut BatchAccum) {
     }
 }
 
+fn collect_feedback_input(feedback: &FeedbackInput, batch: &mut BatchAccum) {
+    collect_vector_input(&feedback.target, batch);
+    for item in &feedback.feedback {
+        collect_vector_input(&item.vector, batch);
+    }
+}
+
 fn collect_query(query: &Query, batch: &mut BatchAccum) {
     match query {
         Query::Nearest(nearest) => collect_vector_input(&nearest.nearest, batch),
@@ -98,6 +105,7 @@ fn collect_query(query: &Query, batch: &mut BatchAccum) {
                 }
             }
         }
+        Query::Feedback(feedback) => collect_feedback_input(&feedback.feedback, batch),
         Query::OrderBy(_)
         | Query::Fusion(_)
         | Query::Rrf(_)

@@ -2,8 +2,8 @@ use api::rest::models::InferenceUsage;
 use api::rest::schema as rest;
 use collection::lookup::WithLookup;
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Mmr, NearestWithMmr,
-    Query, VectorInputInternal, VectorQuery,
+    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
+    FeedbackStrategy, Mmr, NearestWithMmr, Query, ScoredItem, VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
@@ -11,7 +11,7 @@ use ordered_float::OrderedFloat;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
-use storage::content_manager::errors::StorageError;
+use storage::content_manager::errors::{StorageError, StorageResult};
 
 use crate::common::inference::batch_processing::{
     collect_query_groups_request, collect_query_request,
@@ -195,7 +195,7 @@ fn convert_vector_input_with_inferred(
 fn convert_query_with_inferred(
     query: rest::QueryInterface,
     inferred: &BatchAccumInferred,
-) -> Result<Query, StorageError> {
+) -> StorageResult<Query> {
     let query = rest::Query::from(query);
     match query {
         rest::Query::Nearest(rest::NearestQuery { nearest, mmr }) => {
@@ -271,6 +271,32 @@ fn convert_query_with_inferred(
         rest::Query::Rrf(rrf) => Ok(Query::Fusion(FusionInternal::from(rrf.rrf))),
         rest::Query::Formula(formula) => Ok(Query::Formula(FormulaInternal::from(formula))),
         rest::Query::Sample(sample) => Ok(Query::Sample(SampleInternal::from(sample.sample))),
+        rest::Query::Feedback(feedback) => {
+            let rest::FeedbackInput {
+                target,
+                feedback,
+                strategy,
+            } = feedback.feedback;
+
+            let target = convert_vector_input_with_inferred(target, inferred)?;
+            let feedback = feedback
+                .into_iter()
+                .map(|item| {
+                    Ok(ScoredItem {
+                        item: convert_vector_input_with_inferred(item.vector, inferred)?,
+                        score: item.score,
+                    })
+                })
+                .collect::<StorageResult<Vec<_>>>()?;
+
+            let strategy = FeedbackStrategy::from(strategy);
+
+            Ok(Query::Vector(VectorQuery::Feedback(FeedbackInternal {
+                target,
+                feedback,
+                strategy,
+            })))
+        }
     }
 }
 

@@ -15346,6 +15346,9 @@
           },
           {
             "$ref": "#/components/schemas/SampleQuery"
+          },
+          {
+            "$ref": "#/components/schemas/FeedbackQuery"
           }
         ]
       },
@@ -15934,6 +15937,94 @@
         "enum": [
           "random"
         ]
+      },
+      "FeedbackQuery": {
+        "type": "object",
+        "required": [
+          "feedback"
+        ],
+        "properties": {
+          "feedback": {
+            "$ref": "#/components/schemas/FeedbackInput"
+          }
+        }
+      },
+      "FeedbackInput": {
+        "type": "object",
+        "required": [
+          "feedback",
+          "strategy",
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/VectorInput"
+          },
+          "feedback": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedbackItem"
+            }
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/FeedbackStrategy"
+          }
+        }
+      },
+      "FeedbackItem": {
+        "type": "object",
+        "required": [
+          "score",
+          "vector"
+        ],
+        "properties": {
+          "vector": {
+            "$ref": "#/components/schemas/VectorInput"
+          },
+          "score": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
+      "FeedbackStrategy": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "simple"
+            ],
+            "properties": {
+              "simple": {
+                "$ref": "#/components/schemas/SimpleFeedbackStrategy"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "SimpleFeedbackStrategy": {
+        "type": "object",
+        "required": [
+          "a",
+          "b",
+          "c"
+        ],
+        "properties": {
+          "a": {
+            "type": "number",
+            "format": "float"
+          },
+          "b": {
+            "type": "number",
+            "format": "float",
+            "minimum": 0
+          },
+          "c": {
+            "type": "number",
+            "format": "float"
+          }
+        }
       },
       "QueryRequestBatch": {
         "type": "object",

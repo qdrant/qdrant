@@ -4,8 +4,8 @@ use api::grpc::qdrant::query::Variant;
 use api::grpc::{InferenceUsage, qdrant as grpc};
 use api::rest::{self, LookupLocation, RecommendStrategy};
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Mmr, NearestWithMmr,
-    Query, VectorInputInternal, VectorQuery,
+    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
+    FeedbackStrategy, Mmr, NearestWithMmr, Query, ScoredItem, VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
@@ -310,6 +310,43 @@ fn convert_query_with_inferred(
             };
 
             Query::Vector(VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }))
+        }
+        Variant::Feedback(feedback) => {
+            let grpc::FeedbackInput {
+                target,
+                feedback,
+                strategy,
+            } = feedback;
+
+            let target = target.ok_or_else(|| Status::invalid_argument("target is missing"))?;
+            let target = convert_vector_input_with_inferred(target, inferred)?;
+
+            let feedback = feedback
+                .into_iter()
+                .map(|item| {
+                    let vector = convert_vector_input_with_inferred(
+                        item.vector.ok_or_else(|| {
+                            Status::invalid_argument("feedback vector is missing")
+                        })?,
+                        inferred,
+                    )?;
+
+                    Ok(ScoredItem {
+                        item: vector,
+                        score: item.score,
+                    })
+                })
+                .collect::<Result<Vec<_>, Status>>()?;
+
+            let strategy =
+                strategy.ok_or_else(|| Status::invalid_argument("strategy is missing"))?;
+            let strategy = FeedbackStrategy::try_from(strategy)?;
+
+            Query::Vector(VectorQuery::Feedback(FeedbackInternal {
+                target,
+                feedback,
+                strategy,
+            }))
         }
     };
 

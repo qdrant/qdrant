@@ -8,6 +8,7 @@ use super::{
     Batch, BatchVectorStruct, ContextInput, Expression, FormulaQuery, Fusion, NamedVectorStruct,
     OrderByInterface, PointVectors, Query, QueryInterface, RecommendInput, Sample, VectorInput,
 };
+use crate::rest::FeedbackStrategy;
 
 impl Validate for NamedVectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
@@ -40,6 +41,7 @@ impl Validate for Query {
             Query::Formula(formula) => formula.validate(),
             Query::OrderBy(order_by) => order_by.validate(),
             Query::Sample(sample) => sample.validate(),
+            Query::Feedback(feedback) => feedback.validate(),
         }
     }
 }
@@ -92,6 +94,15 @@ impl Validate for ContextInput {
     }
 }
 
+impl Validate for FeedbackStrategy {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            FeedbackStrategy::Simple(simple_feedback_strategy) => {
+                simple_feedback_strategy.validate()
+            }
+        }
+    }
+}
 impl Validate for Fusion {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
