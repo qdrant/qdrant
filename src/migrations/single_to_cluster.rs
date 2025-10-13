@@ -125,6 +125,7 @@ pub async fn handle_existing_collections(
                             collection_name: collection_name.to_string(),
                             shard_key: shard_key.clone(),
                             placement,
+                            initial_state: None, // Initial state can't be set during migration
                         },
                     ))
                 }

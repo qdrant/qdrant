@@ -629,7 +629,9 @@ impl TableOfContent {
                 .get_channel_service()
                 .all_peers_at_version(&CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE);
 
-        let init_state = if use_initializing_state {
+        let init_state = if let Some(initial_state) = operation.initial_state {
+            initial_state
+        } else if use_initializing_state {
             ReplicaState::Initializing
         } else {
             ReplicaState::Active
