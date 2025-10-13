@@ -407,6 +407,17 @@ pub async fn do_update_collection_cluster(
                 .unwrap_or(state.config.params.replication_factor)
                 .get() as usize;
 
+            if let Some(initial_state) = create_sharding_key.initial_state {
+                match initial_state {
+                    replica_set::ReplicaState::Active | replica_set::ReplicaState::Partial => {}
+                    _ => {
+                        return Err(StorageError::bad_request(format!(
+                            "Initial state cannot be {initial_state:?}, only Active or Partial are allowed",
+                        )));
+                    }
+                }
+            }
+
             let shard_keys_mapping = state.shards_key_mapping;
             if shard_keys_mapping.contains_key(&create_sharding_key.shard_key) {
                 return Err(StorageError::BadRequest {
@@ -444,6 +455,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         shard_key: create_sharding_key.shard_key,
                         placement: exact_placement,
+                        initial_state: create_sharding_key.initial_state,
                     }),
                     access,
                     wait_timeout,
