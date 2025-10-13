@@ -11,7 +11,9 @@ use collection::operations::types::{
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
-use collection::shards::transfer::{PointTransfer, ShardTransfer, ShardTransferKey, ShardTransferRestart};
+use collection::shards::transfer::{
+    PointTransfer, ShardTransfer, ShardTransferKey, ShardTransferRestart,
+};
 use collection::shards::{CollectionId, replica_set};
 use schemars::JsonSchema;
 use segment::types::{
