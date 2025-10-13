@@ -12,7 +12,7 @@ use segment::types::{
     VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{
-    ContextPair, ContextQuery, DiscoveryQuery, LinearFeedbackStrategy, RecoQuery,
+    ContextPair, ContextQuery, DiscoveryQuery, RecoQuery, SimpleFeedbackStrategy,
 };
 use serde::Serialize;
 use shard::query::query_enum::QueryEnum;
@@ -223,7 +223,7 @@ pub struct ScoredItem<T> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FeedbackStrategy {
-    Linear { a: f32, b: f32, c: f32 },
+    Simple { a: f32, b: f32, c: f32 },
 }
 
 impl VectorQuery<VectorInputInternal> {
@@ -499,12 +499,12 @@ impl VectorQuery<VectorInternal> {
             }) => {
                 let feedback_pairs = extract_feedback_pairs(feedback, DEFAULT_NUM_PAIRS);
                 match strategy {
-                    FeedbackStrategy::Linear { a, b, c } => {
-                        QueryEnum::FeedbackLinear(NamedQuery::new(
+                    FeedbackStrategy::Simple { a, b, c } => {
+                        QueryEnum::FeedbackSimple(NamedQuery::new(
                             segment::vector_storage::query::FeedbackQuery {
                                 target,
                                 feedback_pairs,
-                                strategy: LinearFeedbackStrategy {
+                                strategy: SimpleFeedbackStrategy {
                                     a: a.into(),
                                     b: b.into(),
                                     c: c.into(),
