@@ -113,6 +113,95 @@ pub trait GraphLayersBase {
         Ok(search_context.nearest)
     }
 
+    /// Variation of [`GraphLayersBase::search_on_level`] that implements the
+    /// ACORN-1 algorithm.
+    fn search_on_level_acorn(
+        &self,
+        level_entry: ScoredPointOffset,
+        level: usize,
+        ef: usize,
+        points_scorer: &mut FilteredScorer,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+        // Each node in `hop1_visited_list` either:
+        // a) Non-deleted node that going to be scored and added to
+        //    `search_context` for further expansion. (or already added)
+        // b) Deleted node that scheduled for exploration for 2-hop neighbors.
+        let mut hop1_visited_list = self.get_visited_list_from_pool();
+        hop1_visited_list.check_and_update_visited(level_entry.idx);
+
+        // Nodes in `hop2_visited_list` are already explored as 2-hop neighbors.
+        // Being in this list doesn't prevent the node to be handled again as
+        // 1-hop neighbor.
+        let mut hop2_visited_list = self.get_visited_list_from_pool();
+
+        let mut search_context = SearchContext::new(ef);
+        search_context.process_candidate(level_entry);
+
+        // Limit is per neighbor.
+        let limit = self.get_m(level);
+
+        let mut to_score = Vec::with_capacity(limit * limit.min(16));
+        let mut to_explore = Vec::with_capacity(limit * limit.min(16));
+
+        while let Some(candidate) = search_context.candidates.pop() {
+            check_process_stopped(is_stopped)?;
+
+            if candidate.score < search_context.lower_bound() {
+                break;
+            }
+
+            to_explore.clear();
+            to_score.clear();
+
+            // Collect 1-hop neighbors (direct neighbors)
+            _ = self.try_for_each_link(candidate.idx, level, |hop1| {
+                if hop1_visited_list.check_and_update_visited(hop1) {
+                    return ControlFlow::Continue(());
+                }
+
+                if points_scorer.filters().check_vector(hop1) {
+                    to_score.push(hop1);
+                    if to_score.len() >= limit {
+                        return ControlFlow::Break(());
+                    }
+                } else {
+                    to_explore.push(hop1);
+                }
+                ControlFlow::Continue(())
+            });
+
+            // Collect 2-hop neighbors (neighbors of neighbors)
+            for &hop1 in to_explore.iter() {
+                check_process_stopped(is_stopped)?;
+
+                let total_limit = to_score.len() + limit;
+                _ = self.try_for_each_link(hop1, level, |hop2| {
+                    if hop1_visited_list.check(hop2)
+                        || hop2_visited_list.check_and_update_visited(hop2)
+                    {
+                        return ControlFlow::Continue(());
+                    }
+
+                    if points_scorer.filters().check_vector(hop2) {
+                        hop1_visited_list.check_and_update_visited(hop2);
+                        to_score.push(hop2);
+                        if to_score.len() >= total_limit {
+                            return ControlFlow::Break(());
+                        }
+                    }
+                    ControlFlow::Continue(())
+                });
+            }
+
+            points_scorer
+                .score_points_unfiltered(&to_score)
+                .for_each(|score_point| search_context.process_candidate(score_point));
+        }
+
+        Ok(search_context.nearest)
+    }
+
     /// Greedy searches for entry point of level `target_level`.
     /// Beam size is 1.
     fn search_entry(
