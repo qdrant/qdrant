@@ -43,6 +43,7 @@ def create_shard(
         shard_number=1,
         replication_factor=1,
         placement=None,
+        initial_state=None,
         timeout=10
 ):
     r_batch = requests.put(
@@ -51,6 +52,7 @@ def create_shard(
             "shards_number": shard_number,
             "replication_factor": replication_factor,
             "placement": placement,
+            "initial_state": initial_state,
         })
     assert_http_ok(r_batch)
 
@@ -330,6 +332,54 @@ def test_create_shard_key_read_availability(tmp_path: pathlib.Path):
 
     # Assert that all search requests succeeded while custom shard was being created
     assert all(search_future.result() for search_future in concurrent.futures.as_completed(search_futures))
+
+def test_shard_key_initial_state_partial(tmp_path: pathlib.Path):
+    """
+    Creates shard key with initial_state set to Partial. Asserts that shard is created in Partial state.
+    """
+    assert_project_root()
+
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+
+    create_collection_with_custom_sharding(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=3)
+    wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris)
+
+    # Wait until all peers submit their metadata to consensus
+    wait_for_peer_metadata(peer_api_uris[0])
+
+    # Trying to create shard with initial state other than Active or Partial must fail
+    with pytest.raises(Exception) as e:
+        create_shard(
+            peer_api_uris[0],
+            COLLECTION_NAME,
+            shard_key="bar",
+            shard_number=1,
+            replication_factor=1,
+            initial_state="Dead",
+        )
+
+    assert "Bad request: Initial state cannot be Dead, only Active or Partial are allowed" in str(e.value)
+
+    # Create shard with initial_state = Partial
+    create_shard(
+        peer_api_uris[0],
+        COLLECTION_NAME,
+        shard_key="foo",
+        shard_number=1,
+        replication_factor=1,
+        initial_state="Partial",
+    )
+
+    # Check that all shards are in Partial state
+    def check_partial_state():
+        info = get_collection_cluster_info(peer_api_uris[-1], COLLECTION_NAME)
+        for shard in info['local_shards'] + info['remote_shards']:
+            if shard['shard_key'] == "foo":
+                return shard['state'] == "Partial"
+        return False
+
+    wait_for(check_partial_state)
+
 
 def wait_for_peer_metadata(peer_url: str):
     try:
