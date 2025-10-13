@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::cmp::max;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -56,6 +57,15 @@ pub trait GraphLayersBase {
     fn for_each_link<F>(&self, point_id: PointOffsetType, level: usize, f: F)
     where
         F: FnMut(PointOffsetType);
+
+    fn try_for_each_link<F>(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+        f: F,
+    ) -> ControlFlow<(), ()>
+    where
+        F: FnMut(PointOffsetType) -> ControlFlow<(), ()>;
 
     /// Get M based on current level
     fn get_m(&self, level: usize) -> usize;
@@ -315,6 +325,18 @@ impl GraphLayersBase for GraphLayers {
         F: FnMut(PointOffsetType),
     {
         self.links.links(point_id, level).for_each(f);
+    }
+
+    fn try_for_each_link<F>(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+        f: F,
+    ) -> ControlFlow<(), ()>
+    where
+        F: FnMut(PointOffsetType) -> ControlFlow<(), ()>,
+    {
+        self.links.links(point_id, level).try_for_each(f)
     }
 
     fn get_m(&self, level: usize) -> usize {
