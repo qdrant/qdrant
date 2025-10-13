@@ -878,7 +878,7 @@ mod tests {
             max_indexing_threads: 0,
             on_disk: None,
             payload_m: None,
-            copy_vectors: None,
+            inline_storage: None,
         };
 
         {

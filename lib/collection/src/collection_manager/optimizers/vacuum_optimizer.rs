@@ -468,7 +468,7 @@ mod tests {
             max_indexing_threads: 0,
             on_disk: None,
             payload_m: None,
-            copy_vectors: None,
+            inline_storage: None,
         };
 
         let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);

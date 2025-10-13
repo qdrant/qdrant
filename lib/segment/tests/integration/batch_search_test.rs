@@ -142,7 +142,7 @@ fn test_batch_and_single_request_equivalency() {
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
-        copy_vectors: None,
+        inline_storage: None,
     };
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);

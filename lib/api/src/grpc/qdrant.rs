@@ -419,7 +419,7 @@ pub struct HnswConfigDiff {
     /// random seeks during the search.
     /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
     #[prost(bool, optional, tag = "7")]
-    pub copy_vectors: ::core::option::Option<bool>,
+    pub inline_storage: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
