@@ -331,7 +331,7 @@ fn test_byte_storage_binary_quantization_hnsw(
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
-        copy_vectors: None,
+        inline_storage: None,
     };
 
     let permit_cpu_count = 1; // single-threaded for deterministic build

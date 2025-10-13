@@ -99,7 +99,7 @@ fn _test_filterable_hnsw(
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
-        copy_vectors: None,
+        inline_storage: None,
     };
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;

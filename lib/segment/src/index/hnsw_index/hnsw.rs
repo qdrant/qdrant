@@ -613,7 +613,7 @@ impl HNSWIndex {
         let is_on_disk = true;
 
         let graph_links_vectors = hnsw_config
-            .copy_vectors
+            .inline_storage
             .unwrap_or_default()
             .then(|| {
                 // NOTE: the configuration is silently ignored if try_new fails.
