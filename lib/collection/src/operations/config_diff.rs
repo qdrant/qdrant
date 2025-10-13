@@ -72,7 +72,7 @@ pub struct HnswConfigDiff {
     /// random seeks during the search.
     /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub copy_vectors: Option<bool>,
+    pub inline_storage: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
@@ -212,7 +212,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfig {
             max_indexing_threads,
             on_disk,
             payload_m,
-            copy_vectors,
+            inline_storage,
         } = diff;
 
         HnswConfig {
@@ -222,7 +222,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfig {
             max_indexing_threads: max_indexing_threads.unwrap_or(self.max_indexing_threads),
             on_disk: on_disk.or(self.on_disk),
             payload_m: payload_m.or(self.payload_m),
-            copy_vectors: copy_vectors.or(self.copy_vectors),
+            inline_storage: inline_storage.or(self.inline_storage),
         }
     }
 }
@@ -236,7 +236,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
             max_indexing_threads,
             on_disk,
             payload_m,
-            copy_vectors,
+            inline_storage,
         } = diff;
 
         HnswConfigDiff {
@@ -246,7 +246,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
             max_indexing_threads: max_indexing_threads.or(self.max_indexing_threads),
             on_disk: on_disk.or(self.on_disk),
             payload_m: payload_m.or(self.payload_m),
-            copy_vectors: copy_vectors.or(self.copy_vectors),
+            inline_storage: inline_storage.or(self.inline_storage),
         }
     }
 }
@@ -385,7 +385,7 @@ impl From<HnswConfig> for HnswConfigDiff {
             max_indexing_threads,
             on_disk,
             payload_m,
-            copy_vectors,
+            inline_storage,
         } = config;
 
         HnswConfigDiff {
@@ -395,7 +395,7 @@ impl From<HnswConfig> for HnswConfigDiff {
             max_indexing_threads: Some(max_indexing_threads),
             on_disk,
             payload_m,
-            copy_vectors,
+            inline_storage,
         }
     }
 }

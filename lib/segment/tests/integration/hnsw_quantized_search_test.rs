@@ -116,7 +116,7 @@ fn hnsw_quantized_search_test(
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
-        copy_vectors: None,
+        inline_storage: None,
     };
 
     let permit_cpu_count = 1; // single-threaded for deterministic build
@@ -423,7 +423,7 @@ fn test_build_hnsw_using_quantization() {
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
-        copy_vectors: None,
+        inline_storage: None,
     });
 
     let permit_cpu_count = num_rayon_threads(0);

@@ -117,7 +117,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                     max_indexing_threads: 2,
                     on_disk: Some(true), // mmap index
                     payload_m: None,
-                    copy_vectors: None,
+                    inline_storage: None,
                 }),
                 quantization_config: None,
                 multivector_config: None,

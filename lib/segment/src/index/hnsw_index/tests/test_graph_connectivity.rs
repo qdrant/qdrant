@@ -59,7 +59,7 @@ fn test_graph_connectivity() {
         max_indexing_threads: 4,
         on_disk: Some(false),
         payload_m: None,
-        copy_vectors: None,
+        inline_storage: None,
     };
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);

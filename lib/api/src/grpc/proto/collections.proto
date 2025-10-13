@@ -205,7 +205,7 @@ message HnswConfigDiff {
      random seeks during the search.
      Requires quantized vectors to be enabled. Multi-vectors are not supported.
   */
-  optional bool copy_vectors = 7;
+  optional bool inline_storage = 7;
 }
 
 message SparseIndexConfig {

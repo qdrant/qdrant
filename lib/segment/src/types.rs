@@ -622,7 +622,7 @@ pub struct HnswConfig {
     /// random seeks during the search.
     /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub copy_vectors: Option<bool>,
+    pub inline_storage: Option<bool>,
 }
 
 impl HnswConfig {
@@ -642,7 +642,7 @@ impl HnswConfig {
             max_indexing_threads: _,
             payload_m,
             on_disk,
-            copy_vectors,
+            inline_storage,
         } = self.clone();
 
         m != other.m
@@ -653,7 +653,7 @@ impl HnswConfig {
             // this to just reload the collection rather than optimizing it again as a whole just
             // to flip this flag
             || on_disk != other.on_disk
-            || copy_vectors != other.copy_vectors
+            || inline_storage != other.inline_storage
     }
 }
 
@@ -1259,7 +1259,7 @@ impl Default for HnswConfig {
             max_indexing_threads: 0,
             on_disk: Some(false),
             payload_m: None,
-            copy_vectors: None,
+            inline_storage: None,
         }
     }
 }

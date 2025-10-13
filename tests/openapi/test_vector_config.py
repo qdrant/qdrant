@@ -224,20 +224,24 @@ def test_disable_indexing(on_disk_vectors):
 @pytest.mark.parametrize(
     "config_name,vector_config,expected_warnings",
     [
-        ("no_copy_vectors", {}, 0),
+        ("no_inline_storage", {}, 0),
         (
             "valid_config",
             {
-                "hnsw_config": {"copy_vectors": True},
+                "hnsw_config": {"inline_storage": True},
                 "quantization_config": {"scalar": {"type": "int8"}},
             },
             0,
         ),
-        ("copy_vectors_no_quant", {"hnsw_config": {"copy_vectors": True}}, 1),
         (
-            "copy_vectors_multivec",
+            "inline_storage_no_quant",
+            {"hnsw_config": {"inline_storage": True}},
+            1,
+        ),
+        (
+            "inline_storage_multivec",
             {
-                "hnsw_config": {"copy_vectors": True},
+                "hnsw_config": {"inline_storage": True},
                 "multivector_config": {"comparator": "max_sim"},
             },
             2,
