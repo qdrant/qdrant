@@ -1917,6 +1917,15 @@ checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
 name = "erased-serde"
+version = "0.3.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c138974f9d5e7fe373eb04df7cae98833802ae4b11c24ac7039a21d5af4b26c"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "erased-serde"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55d05712b2d8d88102bc9868020c9e5c7a1f5527c452b9b97450a1d006140ba7"
@@ -5950,7 +5959,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9faf48a4a2d2693be24c6289dbe26552776eb7737074e6722891fadbe6c5058"
 dependencies = [
- "erased-serde",
+ "erased-serde 0.4.2",
  "serde",
  "serde_core",
  "typeid",
@@ -6240,12 +6249,12 @@ checksum = "826167069c09b99d56f31e9ae5c99049e932a98c9dc2dac47645b08dbbf76ba7"
 
 [[package]]
 name = "slog"
-version = "2.8.0"
+version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "713701148774f80b669126b7f7becffcab60d78bfc5ff1e18c02baabbf8b1ff9"
+checksum = "9b3b8565691b22d2bdfc066426ed48f837fc0c5f2c8cad8d9718f7f99d6995c1"
 dependencies = [
  "anyhow",
- "erased-serde",
+ "erased-serde 0.3.31",
  "rustversion",
  "serde_core",
 ]
@@ -7175,7 +7184,7 @@ version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c43148481c7b66502c48f35b8eef38b6ccdc7a9f04bd4cc294226d901ccc9bc7"
 dependencies = [
- "erased-serde",
+ "erased-serde 0.4.2",
  "inventory",
  "once_cell",
  "serde",
