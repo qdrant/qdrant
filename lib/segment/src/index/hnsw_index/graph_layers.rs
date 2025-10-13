@@ -1,13 +1,15 @@
 use std::borrow::Cow;
 use std::cmp::max;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::iterator_ext::IteratorTryFold;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use fs_err as fs;
 use io::file_operations::{atomic_save, read_bin};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use serde::{Deserialize, Serialize};
 
 use super::HnswM;
@@ -56,6 +58,15 @@ pub trait GraphLayersBase {
     fn for_each_link<F>(&self, point_id: PointOffsetType, level: usize, f: F)
     where
         F: FnMut(PointOffsetType);
+
+    fn try_for_each_link<F>(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+        f: F,
+    ) -> ControlFlow<(), ()>
+    where
+        F: FnMut(PointOffsetType) -> ControlFlow<(), ()>;
 
     /// Get M based on current level
     fn get_m(&self, level: usize) -> usize;
@@ -315,6 +326,21 @@ impl GraphLayersBase for GraphLayers {
         F: FnMut(PointOffsetType),
     {
         self.links.links(point_id, level).for_each(f);
+    }
+
+    fn try_for_each_link<F>(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+        f: F,
+    ) -> ControlFlow<(), ()>
+    where
+        F: FnMut(PointOffsetType) -> ControlFlow<(), ()>,
+    {
+        match self.links.links(point_id, level) {
+            Either::Left(mut l) => l.try_for_each(f),
+            Either::Right(mut r) => r.try_for_each_simple(f),
+        }
     }
 
     fn get_m(&self, level: usize) -> usize {

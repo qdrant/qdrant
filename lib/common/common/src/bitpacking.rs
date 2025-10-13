@@ -66,6 +66,7 @@ impl<'a> BitWriter<'a> {
 
 /// Reads bits from `u8` slice.
 /// It's like [`std::io::Read`], but for bits rather than bytes.
+#[derive(Copy, Clone)]
 pub struct BitReader<'a> {
     input: &'a [u8],
     buf: Buf,

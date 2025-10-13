@@ -5,6 +5,7 @@ use std::rc::Rc;
 use common::bitpacking::{BitReader, BitWriter};
 use common::bitpacking_links::iterate_packed_links;
 use common::bitpacking_ordered;
+use common::iterator_ext::IteratorTryFold;
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::{Rng as _, SeedableRng as _};
@@ -110,20 +111,43 @@ fn benchmarks_bitpacking_links() -> impl IntoBenchmarks {
         })
     });
 
-    [b.benchmark_fn("bitpacking_links/read", move |b, state| {
-        let mut rng = rand::rng();
-        b.iter(move || {
-            let idx = rng.random_range(1..state.items.len());
-            iterate_packed_links(
-                &state.links[state.items[idx - 1].offset..state.items[idx].offset],
-                state.items[idx].bits_per_unsorted,
-                state.items[idx].sorted_count,
-            )
-            .for_each(|x| {
-                black_box(x);
-            });
-        })
-    })]
+    [
+        b.benchmark_fn("bitpacking_links/read", move |b, state| {
+            let mut rng = rand::rng();
+            b.iter(move || {
+                let idx = rng.random_range(1..state.items.len());
+                iterate_packed_links(
+                    &state.links[state.items[idx - 1].offset..state.items[idx].offset],
+                    state.items[idx].bits_per_unsorted,
+                    state.items[idx].sorted_count,
+                )
+                .for_each(|x| {
+                    black_box(x);
+                });
+            })
+        }),
+        b.benchmark_fn("bitpacking_links/read_32", move |b, state| {
+            let mut rng = rand::rng();
+            b.iter(move || {
+                let idx = rng.random_range(1..state.items.len());
+                let mut n = 0;
+                iterate_packed_links(
+                    &state.links[state.items[idx - 1].offset..state.items[idx].offset],
+                    state.items[idx].bits_per_unsorted,
+                    state.items[idx].sorted_count,
+                )
+                .try_for_each_simple(|x| {
+                    black_box(x);
+                    n += 1;
+                    if n >= 32 {
+                        std::ops::ControlFlow::Break(())
+                    } else {
+                        std::ops::ControlFlow::Continue(())
+                    }
+                });
+            })
+        }),
+    ]
 }
 
 fn benchmarks_ordered() -> impl IntoBenchmarks {

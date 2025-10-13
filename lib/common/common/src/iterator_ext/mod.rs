@@ -1,5 +1,6 @@
 #[cfg(any(test, feature = "testing"))]
 use std::fmt::Debug;
+use std::ops::ControlFlow;
 
 use check_stopped::CheckStopped;
 use on_final_count::OnFinalCount;
@@ -55,12 +56,45 @@ pub trait IteratorExt: Iterator {
     }
 }
 
+pub trait IteratorTryFold: Iterator {
+    /// Similar to [`Iterator::try_fold()`], but works on [`ControlFlow`]
+    /// rather than [`std::ops::Try`], making it implementable on stable Rust.
+    #[inline]
+    fn try_fold_simple<Acc, F, R>(&mut self, acc: Acc, f: F) -> ControlFlow<R, Acc>
+    where
+        F: FnMut(Acc, Self::Item) -> ControlFlow<R, Acc>,
+        Self: Sized,
+    {
+        self.try_fold(acc, f)
+    }
+
+    /// Similar to [`Iterator::try_for_each()`].
+    #[inline]
+    fn try_for_each_simple<F, R>(&mut self, f: F) -> ControlFlow<R>
+    where
+        F: FnMut(Self::Item) -> ControlFlow<R>,
+        Self: Sized,
+    {
+        #[inline]
+        fn call<T, R>(mut f: impl FnMut(T) -> R) -> impl FnMut((), T) -> R {
+            move |(), x| f(x)
+        }
+
+        self.try_fold_simple((), call(f))
+    }
+}
+
 impl<I: Iterator> IteratorExt for I {}
 
-/// Checks that [`Iterator::fold()`] yields same values as [`Iterator::next()`].
-/// Panics if it is not.
+/// Checks that the following methods are consistent with each other:
+///
+/// - [`Iterator::next()`]
+/// - [`Iterator::fold()`]
+/// - [`IteratorTryFold::try_fold_simple()`]
+///
+/// Panics if they are not.
 #[cfg(any(test, feature = "testing"))]
-pub fn check_iterator_fold<I: Iterator, F: Fn() -> I>(mk_iter: F)
+pub fn check_iterator_fold<I: IteratorTryFold + Clone>(iter: I)
 where
     I::Item: PartialEq + Debug,
 {
@@ -68,32 +102,32 @@ where
 
     // Treat values returned by `next()` as reference.
     let mut reference_values = Vec::new();
-    let mut iter = mk_iter();
-    #[expect(
-        clippy::while_let_on_iterator,
-        reason = "Reference implementation: call bare-bones `next()` explicitly"
-    )]
-    while let Some(value) = iter.next() {
-        reference_values.push(value);
+    {
+        let mut iter = iter.clone();
+        #[expect(
+            clippy::while_let_on_iterator,
+            reason = "Reference implementation: call bare-bones `next()` explicitly"
+        )]
+        while let Some(value) = iter.next() {
+            reference_values.push(value);
+        }
+
+        // Check that `next()` after exhaustion returns None.
+        for _ in 0..EXTRA_COUNT {
+            assert!(
+                iter.next().is_none(),
+                "Iterator returns values after it's exhausted",
+            );
+        }
     }
 
-    // Check that `next()` after exhaustion returns None.
-    for _ in 0..EXTRA_COUNT {
-        assert!(
-            iter.next().is_none(),
-            "Iterator returns values after it's exhausted",
-        );
-    }
-    drop(iter);
-
-    // Check `fold()` yields same values as `next()`.
-    let mut values_for_fold = Vec::new();
+    let mut values = Vec::new();
     for split_at in 0..reference_values.len() + EXTRA_COUNT {
-        let mut iter = mk_iter();
-        values_for_fold.clear();
+        let mut iter = iter.clone();
+        values.clear();
 
         for _ in 0..split_at.min(reference_values.len()) {
-            values_for_fold.push(iter.next().expect("not enough values"));
+            values.push(iter.next().expect("not enough values"));
         }
         // Call `next()` a few times to check that these extra calls won't break
         // `fold()`.
@@ -101,13 +135,53 @@ where
             assert!(iter.next().is_none());
         }
 
-        let acc = iter.fold(values_for_fold.len(), |acc, value| {
-            assert_eq!(acc, values_for_fold.len());
-            values_for_fold.push(value);
+        // Check `fold()`. The `values` vec consists of two parts:
+        //
+        // │ from `.next()`     │ from `.fold()`     │
+        // ├────────────────────┼────────────────────┤
+        // 0                 split_at      reference_values.len()
+        let acc = iter.clone().fold(values.len(), |acc, value| {
+            assert_eq!(acc, values.len());
+            values.push(value);
             acc + 1
         });
-        assert_eq!(reference_values, values_for_fold);
-        assert_eq!(acc, values_for_fold.len());
+        assert_eq!(reference_values, values);
+        assert_eq!(acc, values.len());
+
+        // Check `try_fold_simple()`. The `values` vec consists of three parts:
+        //
+        // │ from `.next()`   │ from `.try_fold_simple()`   │ from `.next()`   │
+        // ├──────────────────┼─────────────────────────────┼──────────────────┤
+        // 0               split_at                     split_at2    reference_values.len()
+        for split_at2 in (split_at + 1..=reference_values.len() + 1).take(EXTRA_COUNT) {
+            // Reuse the first part by cloning the iterator.
+            let mut iter = iter.clone();
+            values.truncate(split_at);
+
+            // Second part: `try_fold_simple()`.
+            let acc = iter.try_fold_simple(split_at, |acc, value| {
+                assert_eq!(acc, values.len());
+                values.push(value);
+                if values.len() >= split_at2 {
+                    return ControlFlow::<(), usize>::Break(());
+                }
+                ControlFlow::<(), usize>::Continue(acc + 1)
+            });
+            if split_at2 > reference_values.len() {
+                assert_eq!(&reference_values, &values);
+                assert_eq!(acc, ControlFlow::Continue(reference_values.len()));
+            } else {
+                assert_eq!(&reference_values[..split_at2], values);
+                assert_eq!(acc, ControlFlow::Break(()));
+            }
+
+            // Third part: continue with `next()`.
+            for i in split_at2..reference_values.len() {
+                let value = iter.next().expect("not enough values");
+                assert_eq!(&reference_values[i], &value);
+            }
+            assert!(iter.next().is_none());
+        }
     }
 }
 

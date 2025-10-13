@@ -1,4 +1,7 @@
+use std::ops::ControlFlow;
+
 use crate::bitpacking::{BitReader, BitWriter, make_bitmask, packed_bits};
+use crate::iterator_ext::IteratorTryFold;
 
 /// To simplify value counting, each value should be at least one byte.
 /// Otherwise the count could would be ambiguous, e.g., a 2-byte slice of 5-bit
@@ -134,6 +137,7 @@ pub fn packed_links_size(
 
 /// Iterator over links packed with [`pack_links`].
 /// Created by [`iterate_packed_links`].
+#[derive(Clone)]
 pub struct PackedLinksIterator<'a> {
     reader: BitReader<'a>,
     bits_per_unsorted: u8,
@@ -210,6 +214,34 @@ impl Iterator for PackedLinksIterator<'_> {
     }
 }
 
+impl IteratorTryFold for PackedLinksIterator<'_> {
+    #[inline]
+    fn try_fold_simple<Acc, F, R>(&mut self, mut acc: Acc, mut f: F) -> ControlFlow<R, Acc>
+    where
+        F: FnMut(Acc, Self::Item) -> ControlFlow<R, Acc>,
+    {
+        if self.remaining_bits > self.remaining_bits_target {
+            loop {
+                let value = self.next_sorted();
+                let crossed = self.remaining_bits <= self.remaining_bits_target;
+                if crossed {
+                    self.reader.set_bits(self.bits_per_unsorted);
+                }
+                acc = f(acc, value)?;
+                if crossed {
+                    break;
+                }
+            }
+        }
+
+        while let Some(value) = self.next_unsorted() {
+            acc = f(acc, value)?;
+        }
+
+        ControlFlow::Continue(acc)
+    }
+}
+
 impl ExactSizeIterator for PackedLinksIterator<'_> {}
 
 #[cfg(test)]
@@ -280,18 +312,14 @@ mod tests {
 
             let mut unpacked = Vec::new();
             let iter = iterate_packed_links(&links, bits_per_unsorted, sorted_count);
-            iter.for_each(|value| unpacked.push(value));
+            iter.clone().for_each(|value| unpacked.push(value));
 
             raw_links_orig[..sorted_count.min(total_count)].sort_unstable();
             assert_eq!(raw_links_orig, unpacked);
             assert_eq!(raw_links_updated, unpacked);
 
-            check_iterator_fold(|| iterate_packed_links(&links, bits_per_unsorted, sorted_count));
-            check_exact_size_iterator_len(iterate_packed_links(
-                &links,
-                bits_per_unsorted,
-                sorted_count,
-            ));
+            check_iterator_fold(iter.clone());
+            check_exact_size_iterator_len(iter.clone());
 
             for _ in 0..10 {
                 let len = packed_links_size(&links, bits_per_unsorted, sorted_count, total_count);
