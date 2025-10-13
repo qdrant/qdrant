@@ -223,7 +223,8 @@ impl Dispatcher {
 
             // Wait for shards activation
             if let Some((collection_name, shard_key, initial_state)) = create_shard_key {
-                // Only do if initial state is not set
+                // Only do if initial state is not set because we only wanted to wait for Active since introducing
+                // the Initial state which needs a transition to Active.
                 if initial_state.is_none() {
                     let remaining_timeout =
                         wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
