@@ -1,4 +1,5 @@
 import io
+import os
 import pathlib
 import shutil
 from time import sleep
@@ -199,6 +200,76 @@ def test_rejoin_recover_origin(tmp_path: pathlib.Path):
     assert len(info["remote_shards"]) == shards
 
 
+@pytest.mark.parametrize("uris_in_env", [False, True])
+def test_reject_rejoin_cluster_same_uri(tmp_path: pathlib.Path, uris_in_env):
+    """
+    A peer cannot join the cluster when its URI conflicts with a peer that is
+    already registered in consensus.
+
+    Allowing that would mean that multiple peer IDs live on the same URI, which
+    introduces all kinds of problems.
+
+    In practice this can happen if the storage directory of a peer is
+    accidentally wiped or lost. Because it has no Raft s tate, it will try to
+    re-join the cluster again on start with the same URI. The cluster must
+    reject it and startup of the peer must fail.
+
+    To resolve the situation the broken peer must either be restored. Otherwise
+    it must explicitly be removed from consensus first to allow it to join
+    again.
+    """
+
+    assert_project_root()
+
+    # Start cluster
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000, uris_in_env=uris_in_env)
+
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
+    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
+    upsert_random_points(peer_api_uris[0], 100)
+
+    # Cluster consensus must have exactly N_PEERS peers
+    cluster_info = get_cluster_info(peer_api_uris[0])
+    assert len(cluster_info['peers']) == N_PEERS
+
+    # Persist peer ID and state of broken peer
+    broken_peer_id = get_cluster_info(peer_api_uris[-1])['peer_id']
+    broken_peer_state = cluster_info['peers'][str(broken_peer_id)]
+
+    # Stop last node
+    p = processes.pop()
+    p.kill()
+
+    # Wipe storage to break the last peer
+    # On restart it will try to join the cluster again
+    storage_path = peer_dirs[-1] / 'storage'
+    for filename in os.listdir(storage_path):
+        file_path = os.path.join(storage_path, filename)
+        if os.path.isfile(file_path) or os.path.islink(file_path):
+            os.unlink(file_path)
+        elif os.path.isdir(file_path):
+            shutil.rmtree(file_path)
+
+    for i in range(2):
+        # Restart last node
+        broken_peer_port = 10000 + 2 * 100 # same port this peer used before
+        new_url = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, port=broken_peer_port, uris_in_env=uris_in_env)
+        peer_api_uris[-1] = new_url
+
+        # Expect the process to crash, it cannot join the cluster with the same URL
+        # Expect exit code 101, see <https://doc.rust-lang.org/std/macro.panic.html#current-implementation>
+        processes[-1].proc.wait(timeout=20)
+        assert processes[-1].proc.returncode == 101
+        processes.pop().kill()
+
+        # Cluster consensus still have the same number of peers
+        cluster_info = get_cluster_info(peer_api_uris[0])
+        assert len(cluster_info['peers']) == N_PEERS
+
+        # The broken peer must still have the same peer ID and state (uri) in consensus
+        assert cluster_info['peers'][str(broken_peer_id)] == broken_peer_state
+
+
 def rejoin_cluster_test(
     tmp_path: pathlib.Path,
     start_cluster: Callable[[pathlib.Path, int], tuple[list[str], list[pathlib.Path], str]],
@@ -355,3 +426,9 @@ def add_new_peer(tmp_path: pathlib.Path, peer_idx: int, bootstrap_uri: str, coll
         wait_collection_on_all_peers(collection, [peer_uri])
 
     return peer_uri, peer_dir
+
+
+def get_cluster_info(peer_uri: str):
+    resp = requests.get(f"{peer_uri}/cluster")
+    assert_http_ok(resp)
+    return resp.json()['result']
