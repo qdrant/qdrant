@@ -14,6 +14,7 @@ pub struct VectorElementStats {
     pub max: f32,
     pub mean: f32,
     pub stddev: f32,
+    pub i: usize,
 }
 
 impl Default for VectorElementStats {
@@ -23,6 +24,7 @@ impl Default for VectorElementStats {
             max: f32::MIN,
             mean: 0.0,
             stddev: 0.0,
+            i: 0,
         }
     }
 }
@@ -37,6 +39,9 @@ impl VectorStats {
             elements_stats: vec![VectorElementStats::default(); vector_params.dim],
             mean_sqr_sum: 0.0,
         };
+        for (i, element_stats) in stats.elements_stats.iter_mut().enumerate() {
+            element_stats.i = i;
+        }
 
         // For internal calculations use higher precision.
         let mut m2 = vec![0.0f64; vector_params.dim];

@@ -16,12 +16,31 @@ impl Shifter {
         vector_params: &VectorParameters,
         debug_path: Option<&Path>,
     ) -> Self {
-        if data.clone().next().is_none() {
+        let skip = std::env::var("SKIP_SHIFTING")
+            .unwrap_or_default()
+            .trim()
+            .parse()
+            .unwrap_or(0)
+            == 1;
+
+        if skip {
+            log::info!("Skipping shifting as per environment variable");
+        }
+
+        if data.clone().next().is_none() || skip {
             return Self { vector_stats: None };
         }
 
-        if let Some(debug_path) = debug_path {
+        //let debug_path = debug_path.map(|p| p.join(format!("orig_histograms")));
+        if let Some(debug_path) = &debug_path {
             std::fs::create_dir_all(debug_path).ok();
+            //    for dim in 0..vector_params.dim {
+            //        let numbers = data
+            //            .clone()
+            //            .map(|v| v.as_ref()[dim])
+            //            .collect::<Vec<f32>>();
+            //        crate::rotation::plot_histogram(&numbers, &debug_path.join(format!("orig_histogram_{dim}.png")), None).unwrap();
+            //    }
         }
 
         let vector_stats = VectorStats::build(data, vector_params);

@@ -5156,6 +5156,7 @@ dependencies = [
  "criterion",
  "fs-err",
  "io",
+ "log",
  "memory",
  "num-traits",
  "num_threads",
