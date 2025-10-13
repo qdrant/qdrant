@@ -545,6 +545,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
         let mut vector = vector.to_owned();
         let sum = shifter.shift(&mut vector);
+        let sum = 0.0f32;
         rotation.rotate(&mut vector);
         let vector = vector.as_slice();
 
@@ -659,6 +660,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             max: _,
             mean,
             stddev,
+            i: _,
         } = element_stats;
 
         let sd = *stddev;
@@ -730,6 +732,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     ) -> EncodedScalarVector<TBitsStoreType> {
         let mut query = query.to_owned();
         let sum = shifter.shift(&mut query);
+        let sum = 0.0f32;
         rotation.rotate(&mut query);
         let query = query.as_slice();
 
