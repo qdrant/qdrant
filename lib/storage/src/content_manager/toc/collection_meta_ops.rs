@@ -89,6 +89,13 @@ impl TableOfContent {
                     .await
                     .map(|_| true)
             }
+            CollectionMetaOperations::TransferPoints(collection, operation) => {
+                log::debug!("Replicating points {operation:?} of {collection}");
+
+                self.handle_points_transfer(collection, operation)
+                    .await
+                    .map(|_| true)
+            }
             CollectionMetaOperations::TransferShard(collection, operation) => {
                 log::debug!("Transfer shard {operation:?} of {collection}");
 
@@ -371,6 +378,25 @@ impl TableOfContent {
             }
         }
 
+        Ok(())
+    }
+
+    async fn handle_points_transfer(
+        &self,
+        collection_id: CollectionId,
+        replicate_operation: PointTransferOperation,
+    ) -> Result<(), StorageError> {
+        let collection = self.get_collection_unchecked(&collection_id).await?;
+        let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
+            return Err(StorageError::service_error(
+                "Can't handle replication, this is a single node deployment",
+            ));
+        };
+
+        match replicate_operation {
+            PointTransferOperation::Start(key) => {}
+            PointTransferOperation::Finish(key) => {}
+        };
         Ok(())
     }
 

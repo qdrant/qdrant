@@ -103,6 +103,14 @@ impl ShardTransfer {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PointTransfer {
+    pub from_peer_id: Vec<PeerId>,
+    pub from_shard_id: Vec<ShardId>,
+    pub to_peer_id: PeerId,
+    pub to_shard_id: ShardId,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShardTransferRestart {
     pub shard_id: ShardId,
     #[serde(default, skip_serializing_if = "Option::is_none")]

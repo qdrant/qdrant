@@ -11,7 +11,7 @@ use collection::operations::types::{
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
-use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
+use collection::shards::transfer::{PointTransfer, ShardTransfer, ShardTransferKey, ShardTransferRestart};
 use collection::shards::{CollectionId, replica_set};
 use schemars::JsonSchema;
 use segment::types::{
@@ -354,6 +354,12 @@ pub enum ShardTransferOperations {
     },
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
+pub enum PointTransferOperation {
+    Start(PointTransfer),
+    Finish(PointTransfer),
+}
+
 /// Sets the state of shard replica
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub struct SetShardReplicaState {
@@ -408,6 +414,7 @@ pub enum CollectionMetaOperations {
     ChangeAliases(ChangeAliasesOperation),
     Resharding(CollectionId, ReshardingOperation),
     TransferShard(CollectionId, ShardTransferOperations),
+    TransferPoints(CollectionId, PointTransferOperation),
     SetShardReplicaState(SetShardReplicaState),
     CreateShardKey(CreateShardKey),
     DropShardKey(DropShardKey),
