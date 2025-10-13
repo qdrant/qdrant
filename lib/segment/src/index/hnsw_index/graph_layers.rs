@@ -114,6 +114,83 @@ pub trait GraphLayersBase {
         Ok(search_context.nearest)
     }
 
+    fn search_on_level_acorn1(
+        &self,
+        level_entry: ScoredPointOffset,
+        level: usize,
+        ef: usize,
+        points_scorer: &mut FilteredScorer,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+        let mut visited_list = self.get_visited_list_from_pool();
+        visited_list.check_and_update_visited(level_entry.idx);
+
+        let mut expanded_list = self.get_visited_list_from_pool();
+
+        let mut search_context = SearchContext::new(ef);
+        search_context.process_candidate(level_entry);
+
+        let limit = self.get_m(level) * 8;
+
+        let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(limit);
+        let mut points_ids_to_expand = Vec::with_capacity(self.get_m(level) * 2);
+
+        while let Some(candidate) = search_context.candidates.pop() {
+            check_process_stopped(is_stopped)?;
+
+            if candidate.score < search_context.lower_bound() {
+                break;
+            }
+
+            points_ids.clear();
+            expanded_list.next_iteration();
+
+            // Collect 1-hop neighbors (direct neighbors)
+            self.for_each_link(candidate.idx, level, |link| {
+                if visited_list.check(link) || expanded_list.check_and_update_visited(link) {
+                    return;
+                }
+
+                if points_scorer.filters().check_vector(link) {
+                    if points_ids.len() < limit {
+                        points_ids.push(link);
+                    }
+                } else {
+                    points_ids_to_expand.push(link);
+                }
+            });
+
+            // Collect 2-hop neighbors (neighbors of neighbors)
+            for &neighbor in &points_ids_to_expand {
+                let r = self.try_for_each_link(neighbor, level, |link| {
+                    if visited_list.check(link) || expanded_list.check_and_update_visited(link) {
+                        return ControlFlow::Continue(());
+                    }
+
+                    if points_scorer.filters().check_vector(link) {
+                        points_ids.push(link);
+                        if points_ids.len() >= limit {
+                            return ControlFlow::Break(());
+                        }
+                    }
+                    ControlFlow::Continue(())
+                });
+                if r.is_break() {
+                    break;
+                }
+            }
+
+            points_scorer
+                .score_points_unfiltered(&points_ids)
+                .for_each(|score_point| {
+                    search_context.process_candidate(score_point);
+                    visited_list.check_and_update_visited(score_point.idx);
+                });
+        }
+
+        Ok(search_context.nearest)
+    }
+
     /// Greedy searches for entry point of level `target_level`.
     /// Beam size is 1.
     fn search_entry(
