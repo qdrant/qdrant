@@ -9,8 +9,8 @@ use rand::rngs::StdRng;
 
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::IdTracker;
 use crate::id_tracker::point_mappings::PointMappings;
+use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker};
 use crate::types::{PointIdType, SeqNumberType};
 
 /// A non-persistent ID tracker for faster and more efficient building of `ImmutableIdTracker`.
@@ -79,7 +79,20 @@ impl IdTracker for InMemoryIdTracker {
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        self.mappings.drop(external_id);
+        let internal_id = self.mappings.drop(external_id);
+        if let Some(internal_id) = internal_id {
+            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+        }
+        Ok(())
+    }
+
+    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+        if let Some(external_id) = self.mappings.external_id(internal_id) {
+            self.mappings.drop(external_id);
+        }
+
+        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+
         Ok(())
     }
 
@@ -142,25 +155,15 @@ impl IdTracker for InMemoryIdTracker {
         "in memory id tracker"
     }
 
-    fn cleanup_versions(&mut self) -> OperationResult<()> {
-        let mut to_remove = Vec::new();
-        for internal_id in self.iter_internal() {
-            if self.internal_version(internal_id).is_none() {
-                if let Some(external_id) = self.external_id(internal_id) {
-                    to_remove.push(external_id);
-                } else {
-                    debug_assert!(false, "internal id {internal_id} has no external id");
-                }
-            }
-        }
-        for external_id in to_remove {
-            self.drop(external_id)?;
-            #[cfg(debug_assertions)] // Only for dev builds
-            {
-                log::debug!("dropped version for point {external_id} without version");
-            }
-        }
-        Ok(())
+    fn iter_internal_versions(
+        &self,
+    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
+        Box::new(
+            self.internal_to_version
+                .iter()
+                .enumerate()
+                .map(|(i, version)| (i as PointOffsetType, *version)),
+        )
     }
 
     fn files(&self) -> Vec<PathBuf> {

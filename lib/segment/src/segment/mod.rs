@@ -104,9 +104,11 @@ impl fmt::Debug for VectorData {
 
 impl Drop for Segment {
     fn drop(&mut self) {
-        if let Err(flushing_err) = self.lock_flushing() {
-            log::error!("Failed to flush segment during drop: {flushing_err}");
-        }
+        // This should trigger test failure, as instead of nice shutdown
+        // We discard flushing process
+        // if let Err(flushing_err) = self.lock_flushing() {
+        //     log::error!("Failed to flush segment during drop: {flushing_err}");
+        // }
 
         // Try to remove everything from the disk cache, as it might pollute the cache
         if let Err(e) = self.payload_storage.borrow().clear_cache() {

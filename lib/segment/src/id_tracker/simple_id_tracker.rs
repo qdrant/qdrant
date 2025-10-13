@@ -231,6 +231,15 @@ impl IdTracker for SimpleIdTracker {
         Ok(())
     }
 
+    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+        if let Some(external_id) = self.mappings.external_id(internal_id) {
+            self.mappings.drop(external_id);
+            self.delete_key(&external_id)?;
+        }
+
+        Ok(())
+    }
+
     fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
         self.mappings.iter_external()
     }
@@ -288,25 +297,15 @@ impl IdTracker for SimpleIdTracker {
         self.mappings.deleted()
     }
 
-    fn cleanup_versions(&mut self) -> OperationResult<()> {
-        let mut to_remove = Vec::new();
-        for internal_id in self.iter_internal() {
-            if self.internal_version(internal_id).is_none() {
-                if let Some(external_id) = self.external_id(internal_id) {
-                    to_remove.push(external_id);
-                } else {
-                    debug_assert!(false, "internal id {internal_id} has no external id");
-                }
-            }
-        }
-        for external_id in to_remove {
-            self.drop(external_id)?;
-            #[cfg(debug_assertions)]
-            {
-                log::debug!("dropped version for point {external_id} without version");
-            }
-        }
-        Ok(())
+    fn iter_internal_versions(
+        &self,
+    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
+        Box::new(
+            self.internal_to_version
+                .iter()
+                .enumerate()
+                .map(|(i, version)| (i as PointOffsetType, *version)),
+        )
     }
 
     fn name(&self) -> &'static str {
