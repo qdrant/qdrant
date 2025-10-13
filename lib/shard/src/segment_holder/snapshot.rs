@@ -57,17 +57,15 @@ impl SegmentHolder {
         // List all segments we want to snapshot
         let mut segment_ids = segments_lock.segment_ids();
 
-        // Re-sort segments for flush ordering
-        // We MUST flush appendable segments first, even if the segment is proxified
-        // Inverts appendable state in sorting to put appendable segments first
+        // Re-sort segments for flush ordering, required to guarantee data consistency
         // TODO: sort in a better place to not lock each segment
         segment_ids.sort_by_cached_key(|segment_id| {
-            !segments_lock
+            segments_lock
                 .get(*segment_id)
                 .unwrap()
                 .get()
                 .read()
-                .is_inner_appendable()
+                .flush_ordering()
         });
 
         // Create proxy for all segments

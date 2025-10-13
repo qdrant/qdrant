@@ -14,7 +14,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::{QueryVector, VectorInternal};
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{SegmentEntry, SegmentFlushOrdering};
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
@@ -627,8 +627,13 @@ impl SegmentEntry for ProxySegment {
         false
     }
 
-    fn is_inner_appendable(&self) -> bool {
-        self.wrapped_segment.get().read().is_inner_appendable()
+    fn flush_ordering(&self) -> SegmentFlushOrdering {
+        self.wrapped_segment
+            .get()
+            .read()
+            .flush_ordering()
+            // Mark flush ordering as proxy
+            .proxy()
     }
 
     fn flusher(&self, force: bool) -> Option<Flusher> {

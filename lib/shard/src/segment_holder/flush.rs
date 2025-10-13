@@ -70,10 +70,8 @@ impl SegmentHolder {
             "Must flush appendable segments first",
         );
 
-        // Re-sort segments for flush ordering
-        // We MUST flush appendable segments first, even if the segment is proxified
-        // Inverts appendable state in sorting to put appendable segments first
-        segment_reads.sort_by_cached_key(|segment| !segment.is_inner_appendable());
+        // Re-sort segments for flush ordering, required to guarantee data consistency
+        segment_reads.sort_by_cached_key(|segment| segment.flush_ordering());
 
         if !sync && self.is_background_flushing() {
             // There is already a background flush ongoing, return current max persisted version
