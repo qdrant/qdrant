@@ -1,8 +1,9 @@
 use std::fmt::Display;
 use std::hash::Hash;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
+use actix_web::http::header::HttpDate;
 use api::rest::models::InferenceUsage;
 use api::rest::{Document, Image, InferenceObject};
 use collection::operations::point_ops::VectorPersisted;
@@ -188,11 +189,12 @@ impl InferenceService {
 
         let response = self.client.post(url).json(&request).send().await;
 
-        let (response_body, status) = match response {
+        let (response_body, status, retry_after) = match response {
             Ok(response) => {
                 let status = response.status();
+                let retry_after = Self::parse_retry_after(response.headers());
                 match response.text().await {
-                    Ok(body) => (body, status),
+                    Ok(body) => (body, status, retry_after),
                     Err(err) => {
                         return Err(StorageError::service_error(format!(
                             "Failed to read inference response body: {err}"
@@ -202,7 +204,7 @@ impl InferenceService {
             }
             Err(error) => {
                 if let Some(status) = error.status() {
-                    (error.to_string(), status)
+                    (error.to_string(), status, None)
                 } else {
                     return Err(StorageError::service_error(format!(
                         "Failed to send inference request: {error}"
@@ -211,7 +213,7 @@ impl InferenceService {
             }
         };
 
-        Self::handle_inference_response(status, &response_body)
+        Self::handle_inference_response(status, &response_body, retry_after)
     }
 
     fn merge_local_and_remote_result(
@@ -242,9 +244,33 @@ impl InferenceService {
         }
     }
 
+    fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+        headers
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| {
+                // Check if the value is a valid duration in seconds
+                if let Ok(seconds) = value.parse::<u64>() {
+                    return Some(Duration::from_secs(seconds));
+                }
+
+                // Check if the value is a valid Date
+                if let Ok(http_date) = value.parse::<HttpDate>() {
+                    let ts = SystemTime::from(http_date);
+                    return ts
+                        .duration_since(SystemTime::now())
+                        .ok()
+                        .map(|d| d.max(Duration::ZERO));
+                }
+
+                None
+            })
+    }
+
     pub(crate) fn handle_inference_response(
         status: reqwest::StatusCode,
         response_body: &str,
+        retry_after: Option<Duration>,
     ) -> Result<InferenceResponse, StorageError> {
         match status {
             reqwest::StatusCode::OK => {
@@ -275,6 +301,12 @@ impl InferenceService {
                 Err(StorageError::service_error(format!(
                     "Authentication failed for inference service ({status}): {response_body}",
                 )))
+            }
+            status @ reqwest::StatusCode::TOO_MANY_REQUESTS => {
+                Err(StorageError::rate_limit_exceeded(
+                    format!("Too many requests for inference service ({status}): {response_body}"),
+                    retry_after,
+                ))
             }
             status @ (reqwest::StatusCode::INTERNAL_SERVER_ERROR
             | reqwest::StatusCode::SERVICE_UNAVAILABLE

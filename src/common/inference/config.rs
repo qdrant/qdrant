@@ -8,7 +8,7 @@ pub struct InferenceConfig {
     pub token: Option<String>,
 }
 
-fn default_inference_timeout() -> u64 {
+const fn default_inference_timeout() -> u64 {
     10
 }
 
