@@ -142,26 +142,9 @@ impl SegmentEntry for Segment {
             None => Ok(false),
             Some(internal_id) => {
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
-                    // Mark point as deleted, drop mapping
-                    segment
-                        .payload_index
-                        .borrow_mut()
-                        .clear_payload(internal_id, hw_counter)?;
+                    segment.delete_point_internal(internal_id, hw_counter)?;
+
                     segment.version_tracker.set_payload(Some(op_num));
-
-                    segment.id_tracker.borrow_mut().drop(point_id)?;
-
-                    // Before, we propagated point deletions to also delete its vectors. This turns
-                    // out to be problematic because this sometimes makes us loose vector data
-                    // because we cannot control the order of segment flushes.
-                    // Disabled until we properly fix it or find a better way to clean up old
-                    // vectors.
-                    //
-                    // // Propagate point deletion to all its vectors
-                    // for vector_data in segment.vector_data.values() {
-                    //     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    //     vector_storage.delete_vector(internal_id)?;
-                    // }
 
                     Ok((true, Some(internal_id)))
                 })

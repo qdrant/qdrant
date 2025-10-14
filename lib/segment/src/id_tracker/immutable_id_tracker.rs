@@ -17,13 +17,13 @@ use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::IdTracker;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::external_to_internal::CompressedExternalToInternal;
 use crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::point_mappings::FileEndianess;
+use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker};
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
 pub const DELETED_FILE_NAME: &str = "id_tracker.deleted";
@@ -390,17 +390,15 @@ impl IdTracker for ImmutableIdTracker {
         internal_id: PointOffsetType,
         version: SeqNumberType,
     ) -> OperationResult<()> {
-        if self.external_id(internal_id).is_some() {
-            let has_version = self.internal_to_version.has(internal_id);
-            debug_assert!(
-                has_version,
-                "Can't extend version list in immutable tracker",
-            );
-            if has_version {
-                self.internal_to_version.set(internal_id, version);
-                self.internal_to_version_wrapper
-                    .set(internal_id as usize, version);
-            }
+        let has_version = self.internal_to_version.has(internal_id);
+        debug_assert!(
+            has_version,
+            "Can't extend version list in immutable tracker",
+        );
+        if has_version {
+            self.internal_to_version.set(internal_id, version);
+            self.internal_to_version_wrapper
+                .set(internal_id as usize, version);
         }
 
         Ok(())
@@ -427,7 +425,19 @@ impl IdTracker for ImmutableIdTracker {
 
         if let Some(internal_id) = internal_id {
             self.deleted_wrapper.set(internal_id as usize, true);
+            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
+
+        Ok(())
+    }
+
+    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+        if let Some(external_id) = self.mappings.external_id(internal_id) {
+            self.mappings.drop(external_id);
+        }
+
+        self.deleted_wrapper.set(internal_id as usize, true);
+        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
 
         Ok(())
     }
@@ -490,25 +500,10 @@ impl IdTracker for ImmutableIdTracker {
         "immutable id tracker"
     }
 
-    fn cleanup_versions(&mut self) -> OperationResult<()> {
-        let mut to_remove = Vec::new();
-        for internal_id in self.iter_internal() {
-            if self.internal_version(internal_id).is_none() {
-                if let Some(external_id) = self.external_id(internal_id) {
-                    to_remove.push(external_id);
-                } else {
-                    debug_assert!(false, "internal id {internal_id} has no external id");
-                }
-            }
-        }
-        for external_id in to_remove {
-            self.drop(external_id)?;
-            #[cfg(debug_assertions)] // Only for dev builds
-            {
-                log::debug!("dropped version for point {external_id} without version");
-            }
-        }
-        Ok(())
+    fn iter_internal_versions(
+        &self,
+    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
+        Box::new(self.internal_to_version.iter())
     }
 
     fn files(&self) -> Vec<PathBuf> {

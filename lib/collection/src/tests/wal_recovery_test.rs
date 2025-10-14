@@ -14,6 +14,8 @@ use crate::tests::fixtures::*;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_from_indexed_payload() {
+    //  Init the logger
+    let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
     let config = create_collection_config();

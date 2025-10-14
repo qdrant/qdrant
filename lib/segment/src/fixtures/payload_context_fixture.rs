@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::iter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -83,10 +84,15 @@ impl IdTracker for FixtureIdTracker {
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        let internal_id = self.internal_id(external_id).unwrap() as usize;
-        if !self.deleted.replace(internal_id, true) {
+        let internal_id = self.internal_id(external_id).unwrap();
+        self.drop_internal(internal_id)
+    }
+
+    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+        if !self.deleted.replace(internal_id as usize, true) {
             self.deleted_count += 1;
         }
+        self.set_internal_version(internal_id, 0)?;
         Ok(())
     }
 
@@ -172,8 +178,15 @@ impl IdTracker for FixtureIdTracker {
         &self.deleted
     }
 
-    fn cleanup_versions(&mut self) -> OperationResult<()> {
-        Ok(())
+    fn iter_internal_versions(
+        &self,
+    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
+        Box::new(iter::empty())
+    }
+
+    fn fix_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
+        // This structure does not support cleaning up orphan versions
+        Ok(vec![])
     }
 
     fn name(&self) -> &'static str {

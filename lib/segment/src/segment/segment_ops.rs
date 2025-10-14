@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::thread::JoinHandle;
 
@@ -299,6 +299,33 @@ impl Segment {
         Ok(applied)
     }
 
+    pub fn delete_point_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        // Mark point as deleted, drop mapping
+        self.payload_index
+            .borrow_mut()
+            .clear_payload(internal_id, hw_counter)?;
+
+        self.id_tracker.borrow_mut().drop_internal(internal_id)?;
+
+        // Before, we propagated point deletions to also delete its vectors. This turns
+        // out to be problematic because this sometimes makes us lose vector data
+        // because we cannot control the order of segment flushes.
+        // Disabled until we properly fix it or find a better way to clean up old
+        // vectors.
+        //
+        // // Propagate point deletion to all its vectors
+        // for vector_data in segment.vector_data.values() {
+        //     let mut vector_storage = vector_data.vector_storage.borrow_mut();
+        //     vector_storage.delete_vector(internal_id)?;
+        // }
+
+        Ok(())
+    }
+
     fn bump_segment_version(&mut self, op_num: SeqNumberType) {
         self.version.replace(max(op_num, self.version.unwrap_or(0)));
     }
@@ -469,49 +496,24 @@ impl Segment {
     /// Removes partially persisted points.
     pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
         // Get rid of versionless points.
-        self.cleanup_versions()?;
+        let ids_to_clean = self.fix_id_tracker_inconsistencies()?;
 
-        // Get rid of unmapped points.
-        let mut internal_ids_to_delete = HashSet::new();
-        let id_tracker = self.id_tracker.borrow();
-        for internal_id in id_tracker.iter_ids() {
-            if id_tracker.external_id(internal_id).is_none() {
-                internal_ids_to_delete.insert(internal_id);
-            }
-        }
+        // There are some leftovers to clean from segment.
+        // After that we need to set internal version to 0, so that
+        // we won't need to clean them again.
 
-        if !internal_ids_to_delete.is_empty() {
-            log::info!(
-                "Found {} points in vector storage without external id - those will be deleted",
-                internal_ids_to_delete.len(),
-            );
+        // This is internal operation, no hw measurement needed
+        let disposable_hw_counter = HardwareCounterCell::disposable();
+        if !ids_to_clean.is_empty() {
+            log::debug!("cleaning up {} points without version", ids_to_clean.len());
 
-            for internal_id in &internal_ids_to_delete {
-                // Drop removed points from payload index
-                self.payload_index
-                    .borrow_mut()
-                    .clear_payload(*internal_id, &HardwareCounterCell::disposable())?; // Internal operation. No hw measurement needed
-                self.version_tracker.set_payload(None); // 🤔
-
-                // Drop removed points from vector storage
-                for (vector_name, vector_data) in &self.vector_data {
-                    let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    vector_storage.delete_vector(*internal_id)?;
-                    self.version_tracker.set_vector(vector_name, None); // 🤔
-                }
+            for internal_id in ids_to_clean {
+                self.delete_point_internal(internal_id, &disposable_hw_counter)?;
             }
 
-            // We do not drop version here, because it is already not loaded into memory.
-            // There are no explicit mapping between internal ID and version, so all dangling
-            // versions will be ignored automatically.
-            // Those versions could be overwritten by new points, but it is not a problem.
-            // They will also be deleted by the next optimization.
-        }
-
-        // Flush entire segment if needed
-        if !internal_ids_to_delete.is_empty() {
             self.flush(true, true)?;
         }
+
         Ok(())
     }
 
@@ -651,8 +653,10 @@ impl Segment {
         self.id_tracker.borrow().total_point_count()
     }
 
-    pub fn cleanup_versions(&mut self) -> OperationResult<()> {
-        self.id_tracker.borrow_mut().cleanup_versions()
+    /// Fixes inconsistencies in the ID tracker, if any.
+    /// Returns list of IDs, which should be removed from segment
+    pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
+        self.id_tracker.borrow_mut().fix_inconsistencies()
     }
 }
 

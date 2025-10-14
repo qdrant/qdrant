@@ -1,4 +1,5 @@
 use ahash::AHashMap;
+use common::types::PointOffsetType;
 
 use crate::types::SeqNumberType;
 
@@ -91,6 +92,16 @@ impl CompressedVersions {
             lower_bytes,
             upper_bytes,
         }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (PointOffsetType, SeqNumberType)> + '_ {
+        self.lower_bytes.iter().enumerate().map(|(index, &lower)| {
+            let upper = *self.upper_bytes.get(&(index as u32)).unwrap_or(&0);
+            (
+                index as PointOffsetType,
+                Self::version_from_parts(lower, upper),
+            )
+        })
     }
 }
 
