@@ -927,6 +927,8 @@ impl UpdateHandler {
         mut stop_receiver: oneshot::Receiver<()>,
         shard_path: PathBuf,
     ) {
+        let mut flush_handler: Option<JoinHandle<()>> = None;
+
         loop {
             // Stop flush worker on signal or if sender was dropped
             // Even if timer did not finish
@@ -937,6 +939,9 @@ impl UpdateHandler {
 
             if stop {
                 log::debug!("Stopping flush worker for shard {}", shard_path.display());
+                if let Some(handle) = flush_handler.take() {
+                    handle.await.ok();
+                }
                 return;
             }
 
@@ -946,7 +951,7 @@ impl UpdateHandler {
             let clocks_clone = clocks.clone();
             let shard_path_clone = shard_path.clone();
 
-            tokio::task::spawn_blocking(move || {
+            flush_handler = Some(tokio::task::spawn_blocking(move || {
                 Self::flush_worker_internal(
                     segments_clone,
                     wal_clone,
@@ -954,7 +959,7 @@ impl UpdateHandler {
                     clocks_clone,
                     shard_path_clone,
                 )
-            });
+            }));
         }
     }
 
