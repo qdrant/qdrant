@@ -90,6 +90,7 @@ pub struct HNSWIndex {
     graph: GraphLayers,
     searches_telemetry: HNSWSearchesTelemetry,
     is_on_disk: bool,
+    hnsw_global_config: HnswGlobalConfig,
 }
 
 #[derive(Debug)]
@@ -136,7 +137,7 @@ impl HNSWIndex {
             quantized_vectors,
             payload_index,
             hnsw_config,
-            hnsw_global_config: _,
+            hnsw_global_config,
         } = args;
 
         let config_path = HnswGraphConfig::get_config_path(path);
@@ -182,6 +183,7 @@ impl HNSWIndex {
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
             is_on_disk,
+            hnsw_global_config: hnsw_global_config.clone(),
         })
     }
 
@@ -663,6 +665,7 @@ impl HNSWIndex {
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
             is_on_disk,
+            hnsw_global_config: hnsw_global_config.clone(),
         })
     }
 
@@ -1029,7 +1032,7 @@ impl HNSWIndex {
                 points_scorer,
                 custom_entry_points,
                 &is_stopped,
-                false,
+                self.hnsw_global_config.use_acorn,
             )?;
 
             postprocess_search_result(

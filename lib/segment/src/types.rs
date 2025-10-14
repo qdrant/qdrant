@@ -665,12 +665,16 @@ pub struct HnswGlobalConfig {
     /// To disable healing completely, set this value to `0.0`.
     #[validate(range(min = 0.0, max = 1.0))]
     pub healing_threshold: f64,
+
+    /// Use ACORN-1 during search.
+    pub use_acorn: bool,
 }
 
 impl Default for HnswGlobalConfig {
     fn default() -> Self {
         Self {
             healing_threshold: 0.3,
+            use_acorn: false,
         }
     }
 }
