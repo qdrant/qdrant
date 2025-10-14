@@ -61,14 +61,14 @@ impl ForwardProxyShard {
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         resharding_hash_ring: Option<HashRingRouter>,
-        filter: Option<Filter>,
+        _filter: Option<Filter>,
     ) -> Self {
         // Validate that `ForwardProxyShard` initialized correctly
 
         debug_assert!({
             let is_regular = shard_id == remote_shard.id && resharding_hash_ring.is_none();
             let is_resharding = shard_id != remote_shard.id && resharding_hash_ring.is_some();
-            let is_replicating_points = shard_id != remote_shard.id && filter.is_some();
+            let is_replicating_points = shard_id != remote_shard.id; // Assume its replicating points if shard IDs are different
 
             is_regular || is_resharding || is_replicating_points
         });
@@ -86,6 +86,7 @@ impl ForwardProxyShard {
             remote_shard,
             resharding_hash_ring,
             update_lock: Mutex::new(()),
+            // todo: add filter field and use it to filter points in `update` method
         }
     }
 
