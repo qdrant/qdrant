@@ -173,7 +173,7 @@ impl Dispatcher {
 
                 // TODO(resharding): Do we need/want to synchronize `Resharding` operations?
                 CollectionMetaOperations::Resharding(_, _) => false,
-                CollectionMetaOperations::TransferPoints(_, _) => false,
+                CollectionMetaOperations::MultiSourceTransferShard(_, _) => false,
 
                 // No need to sync nodes for other operations
                 CollectionMetaOperations::UpdateCollection(_)

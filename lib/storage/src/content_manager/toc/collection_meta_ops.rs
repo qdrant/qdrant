@@ -89,10 +89,10 @@ impl TableOfContent {
                     .await
                     .map(|_| true)
             }
-            CollectionMetaOperations::TransferPoints(collection, operation) => {
-                log::debug!("Replicating points {operation:?} of {collection}");
+            CollectionMetaOperations::MultiSourceTransferShard(collection, operation) => {
+                log::debug!("Transferring shards {operation:?} of {collection}");
 
-                self.handle_points_transfer(collection, operation)
+                self.handle_multi_source_transfer(collection, operation)
                     .await
                     .map(|_| true)
             }
@@ -381,10 +381,10 @@ impl TableOfContent {
         Ok(())
     }
 
-    async fn handle_points_transfer(
+    async fn handle_multi_source_transfer(
         &self,
         collection_id: CollectionId,
-        replicate_operation: PointTransferOperation,
+        operation: MultiSourceTransferShardOperation,
     ) -> Result<(), StorageError> {
         let collection = self.get_collection_unchecked(&collection_id).await?;
         let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
@@ -393,9 +393,22 @@ impl TableOfContent {
             ));
         };
 
-        match replicate_operation {
-            PointTransferOperation::Start(key) => {}
-            PointTransferOperation::Finish(key) => {}
+        match operation {
+            MultiSourceTransferShardOperation::Start(key) => {
+                let shard_consensus = match self.toc_dispatcher.lock().as_ref() {
+                    Some(consensus) => Box::new(consensus.clone()),
+                    None => {
+                        return Err(StorageError::service_error(
+                            "Can't handle transfer, this is a single node deployment",
+                        ));
+                    }
+                };
+
+                collection.start_multi_source_transfer_shard(key, shard_consensus).await?;
+            }
+            MultiSourceTransferShardOperation::Finish(key) => {
+                collection.finish_multi_source_transfer_shard(key).await?;
+            }
         };
         Ok(())
     }
@@ -485,7 +498,7 @@ impl TableOfContent {
                 };
 
                 let shard_consensus = match self.toc_dispatcher.lock().as_ref() {
-                    Some(consensus) => Box::new(consensus.clone()),
+                    Some(consensus) => Arc::new(consensus.clone()),
                     None => {
                         return Err(StorageError::service_error(
                             "Can't handle transfer, this is a single node deployment",

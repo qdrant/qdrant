@@ -77,7 +77,7 @@ pub(super) async fn transfer_wal_delta(
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
-    consensus: &dyn ShardTransferConsensus,
+    consensus: Box<&dyn ShardTransferConsensus>,
     collection_id: &CollectionId,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;

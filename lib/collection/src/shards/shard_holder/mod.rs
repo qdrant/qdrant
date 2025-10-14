@@ -53,11 +53,12 @@ use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
+use crate::shards::transfer::{MultiSourceTransfer, ShardTransfer, ShardTransferKey};
 use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
+const MULTI_SOURCE_TRANSFERS_STATE_FILE: &str = "multi_source_transfers.json";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 
 pub struct ShardHolder {
@@ -65,6 +66,7 @@ pub struct ShardHolder {
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
+    pub(crate) multi_source_transfers_state: SaveOnDisk<Option<HashSet<MultiSourceTransfer>>>,
     /// Hash rings per shard key
     ///
     /// In case of auto sharding, this only hash a `None` hash ring. In case of custom sharding,
@@ -88,6 +90,8 @@ impl ShardHolder {
             SaveOnDisk::load_or_init_default(collection_path.join(SHARD_TRANSFERS_FILE))?;
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
             SaveOnDisk::load_or_init_default(collection_path.join(RESHARDING_STATE_FILE))?;
+        let multi_source_transfers_state: SaveOnDisk<Option<HashSet<MultiSourceTransfer>>> =
+            SaveOnDisk::load_or_init_default(collection_path.join(MULTI_SOURCE_TRANSFERS_STATE_FILE))?;
 
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
             SaveOnDisk::load_or_init_default(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
@@ -115,6 +119,7 @@ impl ShardHolder {
             shard_transfers,
             shard_transfer_changes,
             resharding_state,
+            multi_source_transfers_state,
             rings,
             key_mapping,
             shard_id_to_key_mapping,
