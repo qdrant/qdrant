@@ -75,6 +75,8 @@ impl SegmentHolder {
             return self.get_max_persisted_version(segment_reads, lock_order);
         }
 
+        // This lock also prevents multiple parallel sync flushes
+        // as it is exclusive
         let mut background_flush_lock = self.lock_flushing()?;
 
         if sync {
