@@ -356,7 +356,8 @@ pub async fn do_update_collection_cluster(
             // Don't support filters for now
             if filter.is_some() {
                 return Err(StorageError::BadRequest {
-                    description: "Filtering for replicating points is not supported yet".to_string(),
+                    description: "Filtering for replicating points is not supported yet"
+                        .to_string(),
                 });
             }
 
