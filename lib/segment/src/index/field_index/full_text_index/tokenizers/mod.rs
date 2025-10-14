@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::sync::Arc;
+mod ascii_folding;
 mod japanese;
 mod multilingual;
 mod stemmer;
 pub mod tokens_processor;
-mod ascii_folding;
 
 use multilingual::MultilingualTokenizer;
 pub use stemmer::Stemmer;
@@ -105,7 +105,8 @@ impl PrefixTokenizer {
             .filter(|token| !token.is_empty())
             .for_each(|word| {
                 // Apply ASCII folding if enabled
-                let mut word_cow: Cow<'a, str> = tokens_processor.fold_if_enabled(Cow::Borrowed(word));
+                let mut word_cow: Cow<'a, str> =
+                    tokens_processor.fold_if_enabled(Cow::Borrowed(word));
 
                 // Handle lowercase
                 if tokens_processor.lowercase {
@@ -302,7 +303,8 @@ mod tests {
     #[test]
     fn test_prefix_query_tokenizer() {
         let text = "hello, мир!";
-        let tokens_processor = TokensProcessor::new(true, false, Default::default(), None, None, Some(4));
+        let tokens_processor =
+            TokensProcessor::new(true, false, Default::default(), None, None, Some(4));
 
         let mut tokens = Vec::new();
         PrefixTokenizer::tokenize_query(text, &tokens_processor, |token| tokens.push(token));
@@ -330,7 +332,8 @@ mod tests {
         // Test stopwords getting applied
         let filter =
             StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["の", "は"])), false);
-        let tokens_processor = TokensProcessor::new(true, false, Arc::new(filter), None, None, None);
+        let tokens_processor =
+            TokensProcessor::new(true, false, Arc::new(filter), None, None, None);
         MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
@@ -355,7 +358,8 @@ mod tests {
 
         // Test stopwords getting applied
         let filter = StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["是"])), false);
-        let tokens_processor = TokensProcessor::new(true, false, Arc::new(filter), None, None, None);
+        let tokens_processor =
+            TokensProcessor::new(true, false, Arc::new(filter), None, None, None);
         MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 3);
@@ -749,22 +753,41 @@ mod tests {
     fn test_ascii_folding_prefix_tokenizer() {
         let text = "ação";
         // With folding disabled: prefixes should preserve accents
-        let tokens_processor_disabled = TokensProcessor::new(true, false, Default::default(), None, Some(1), Some(4));
+        let tokens_processor_disabled =
+            TokensProcessor::new(true, false, Default::default(), None, Some(1), Some(4));
         let mut tokens_disabled = Vec::new();
-        PrefixTokenizer::tokenize(text, &tokens_processor_disabled, |t| tokens_disabled.push(t.to_string()));
-        assert!(tokens_disabled.contains(&"a".to_string()) || tokens_disabled.contains(&"a".to_string()));
+        PrefixTokenizer::tokenize(text, &tokens_processor_disabled, |t| {
+            tokens_disabled.push(t.to_string())
+        });
+        assert!(
+            tokens_disabled.contains(&"a".to_string())
+                || tokens_disabled.contains(&"a".to_string())
+        );
         // Because the first char is 'a', but next prefixes should include accented letters
-        assert!(tokens_disabled.iter().any(|t| t.starts_with("aç")) || tokens_disabled.iter().any(|t| t.contains('ç')));
+        assert!(
+            tokens_disabled.iter().any(|t| t.starts_with("aç"))
+                || tokens_disabled.iter().any(|t| t.contains('ç'))
+        );
 
         // With folding enabled: prefixes should be ASCII-only (acao, acao prefixes)
-        let tokens_processor_enabled = TokensProcessor::new(true, true, Default::default(), None, Some(1), Some(4));
+        let tokens_processor_enabled =
+            TokensProcessor::new(true, true, Default::default(), None, Some(1), Some(4));
         let mut tokens_enabled = Vec::new();
-        PrefixTokenizer::tokenize(text, &tokens_processor_enabled, |t| tokens_enabled.push(t.to_string()));
+        PrefixTokenizer::tokenize(text, &tokens_processor_enabled, |t| {
+            tokens_enabled.push(t.to_string())
+        });
         // We expect prefixes like a, ac, aca, acao
         assert!(tokens_enabled.contains(&"a".to_string()));
         assert!(tokens_enabled.contains(&"ac".to_string()));
-        assert!(tokens_enabled.contains(&"aca".to_string()) || tokens_enabled.contains(&"acao".to_string()));
-        assert!(tokens_enabled.iter().all(|t| t.chars().all(|c| c.is_ascii())));
+        assert!(
+            tokens_enabled.contains(&"aca".to_string())
+                || tokens_enabled.contains(&"acao".to_string())
+        );
+        assert!(
+            tokens_enabled
+                .iter()
+                .all(|t| t.chars().all(|c| c.is_ascii()))
+        );
     }
 
     #[test]
