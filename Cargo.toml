@@ -95,7 +95,7 @@ rustls-pki-types = "1.12.0"
 rustls-pemfile = "2.2.0"
 prometheus = { version = "0.14.0", default-features = false }
 validator = { workspace = true }
-jsonwebtoken = "9.3.1"
+jsonwebtoken = { version = "10.0", features = ["rust_crypto"] }
 
 murmur3 = { git = "https://github.com/stusmall/murmur3", rev = "2c39087" }
 
