@@ -842,7 +842,8 @@ impl UpdateHandler {
 
                     let res = match operation_result {
                         Ok(Ok(update_res)) => optimize_sender
-                            .blocking_send(OptimizerSignal::Operation(op_num))
+                            .send(OptimizerSignal::Operation(op_num))
+                            .await
                             .and(Ok(update_res))
                             .map_err(|send_err| send_err.into()),
                         Ok(Err(err)) => Err(err),
