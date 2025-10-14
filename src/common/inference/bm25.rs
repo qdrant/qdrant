@@ -129,6 +129,7 @@ fn new_token_processor_from_config(value: TextPreprocessingConfig) -> TokensProc
 
     TokensProcessor::new(
         lowercase,
+        false,
         Arc::new(StopwordsFilter::new(&stopwords_config, lowercase)),
         stemmer,
         min_token_len,

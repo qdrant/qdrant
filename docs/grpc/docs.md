@@ -1729,6 +1729,7 @@ Note: 1kB = 1 vector of size 256. |
 | stopwords | [StopwordsSet](#qdrant-StopwordsSet) | optional | Stopwords for the text index |
 | phrase_matching | [bool](#bool) | optional | If true - support phrase matching. |
 | stemmer | [StemmingAlgorithm](#qdrant-StemmingAlgorithm) | optional | Set an algorithm for stemming. |
+| ascii_folding | [bool](#bool) | optional | Set an algorithm for ascii folding. |
 
 
 

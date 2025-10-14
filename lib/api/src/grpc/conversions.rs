@@ -215,6 +215,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
             min_token_len,
             max_token_len,
             lowercase,
+            ascii_folding,
             phrase_matching,
             on_disk,
             stopwords,
@@ -231,6 +232,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
             index_params: Some(IndexParams::TextIndexParams(TextIndexParams {
                 tokenizer: tokenizer as i32,
                 lowercase,
+                ascii_folding,
                 min_token_len: min_token_len.map(|x| x as u64),
                 max_token_len: max_token_len.map(|x| x as u64),
                 phrase_matching,
@@ -503,6 +505,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
         let TextIndexParams {
             tokenizer,
             lowercase,
+            ascii_folding,
             min_token_len,
             max_token_len,
             phrase_matching,
@@ -531,6 +534,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
                 .map(|x| x.try_into())
                 .unwrap_or_else(|_| Err(Status::invalid_argument("unknown tokenizer type")))?,
             lowercase,
+            ascii_folding,
             min_token_len: min_token_len.map(|x| x as usize),
             max_token_len: max_token_len.map(|x| x as usize),
             phrase_matching,
