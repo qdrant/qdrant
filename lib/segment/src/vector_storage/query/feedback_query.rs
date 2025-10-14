@@ -130,7 +130,7 @@ impl<T> Query<T> for FeedbackQuery<T, SimpleFeedbackStrategy> {
     /// where
     /// - `confidence_pair` means the difference in feedback score of the pair,
     /// - `delta_pair` is the difference in similarity score between the target
-    /// and positive/negative vectors e.g. `similarity(positive) - similarity(negative)`
+    ///   and positive/negative vectors e.g. `similarity(positive) - similarity(negative)`
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         let Self {
             target,
