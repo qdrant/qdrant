@@ -35,9 +35,6 @@ impl SnapshotEntry for Segment {
 
         log::debug!("Taking snapshot of segment {segment_id}");
 
-        // force flush segment to capture latest state
-        self.flush(true)?;
-
         let include_files = match manifest {
             None => HashSet::new(),
 
