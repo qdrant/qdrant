@@ -197,9 +197,9 @@ async fn test_partial_flush_recovery() {
         .await
         .unwrap();
 
-    shard.full_flush();
-
     shard.stop_flush_worker().await;
+
+    shard.full_flush();
 
     let delete_point_op = delete_point_operation(4);
     shard
