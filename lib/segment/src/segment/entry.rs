@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::thread;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
@@ -10,7 +9,9 @@ use fs_err as fs;
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
-use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
+use crate::common::{
+    Flusher, check_named_vectors, check_query_vectors, check_stopped, check_vector_name,
+};
 use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
@@ -37,6 +38,10 @@ use crate::vector_storage::VectorStorage;
 impl SegmentEntry for Segment {
     fn version(&self) -> SeqNumberType {
         self.version.unwrap_or(0)
+    }
+
+    fn persistent_version(&self) -> SeqNumberType {
+        (*self.persisted_version.lock()).unwrap_or(0)
     }
 
     fn is_proxy(&self) -> bool {
@@ -602,23 +607,19 @@ impl SegmentEntry for Segment {
         self.appendable_flag
     }
 
-    fn flush(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
+    fn flusher(&self, force: bool) -> Option<Flusher> {
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
-        if !sync && self.is_background_flushing() {
-            return Ok(current_persisted_version.unwrap_or(0));
-        }
 
-        let mut background_flush_lock = self.lock_flushing()?;
         match (self.version, current_persisted_version) {
             (None, _) => {
                 // Segment is empty, nothing to flush
-                return Ok(current_persisted_version.unwrap_or(0));
+                return None;
             }
             (Some(version), Some(persisted_version)) => {
                 if !force && version == persisted_version {
                     log::trace!("not flushing because version == persisted_version");
                     // Segment is already flushed
-                    return Ok(persisted_version);
+                    return None;
                 }
             }
             (_, _) => {}
@@ -717,26 +718,29 @@ impl SegmentEntry for Segment {
             id_tracker_versions_flusher().map_err(|err| {
                 OperationError::service_error(format!("Failed to flush id_tracker versions: {err}"))
             })?;
+
+            let mut current_persisted_version_guard = persisted_version.lock();
+            let persisted_version_value_opt = *current_persisted_version_guard;
+
+            if persisted_version_value_opt > state.version {
+                debug_assert!(
+                    persisted_version_value_opt.is_some(),
+                    "Persisted version should never be None if it's greater than state.version"
+                );
+                // Another flush beat us to it
+                return Ok(());
+            }
+
             Self::save_state(&state, &current_path).map_err(|err| {
                 OperationError::service_error(format!("Failed to flush segment state: {err}"))
             })?;
-            *persisted_version.lock() = state.version;
 
+            *current_persisted_version_guard = state.version;
             debug_assert!(state.version.is_some());
-            Ok(state.version.unwrap_or(0))
+            Ok(())
         };
 
-        if sync {
-            flush_op()
-        } else {
-            *background_flush_lock = Some(
-                thread::Builder::new()
-                    .name("background_flush".to_string())
-                    .spawn(flush_op)
-                    .unwrap(),
-            );
-            Ok(current_persisted_version.unwrap_or(0))
-        }
+        Some(Box::new(flush_op))
     }
 
     fn drop_data(self) -> OperationResult<()> {

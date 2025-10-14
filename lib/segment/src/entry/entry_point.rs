@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
 
+use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
@@ -30,6 +31,9 @@ use crate::types::{
 pub trait SegmentEntry: SnapshotEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
+
+    /// Get current persistent version of the segment
+    fn persistent_version(&self) -> SeqNumberType;
 
     fn is_proxy(&self) -> bool;
 
@@ -262,11 +266,19 @@ pub trait SegmentEntry: SnapshotEntry {
     /// Get current stats of the segment
     fn is_appendable(&self) -> bool;
 
-    /// Flushes current segment state into a persistent storage, if possible
-    /// if sync == true, block current thread while flushing
-    ///
-    /// Returns maximum version number which is guaranteed to be persisted.
-    fn flush(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType>;
+    /// Returns a function, which when called, will flush all pending changes to disk.
+    /// If there are currently no changes to flush, returns None.
+    /// If `force` is true, will return a flusher even if there are no changes to flush.
+    fn flusher(&self, force: bool) -> Option<Flusher>;
+
+    /// Immediately flush all changes to disk and return persisted version.
+    /// Blocks the current thread.
+    fn flush(&self, force: bool) -> OperationResult<SeqNumberType> {
+        if let Some(flusher) = self.flusher(force) {
+            flusher()?;
+        }
+        Ok(self.persistent_version())
+    }
 
     /// Removes all persisted data and forces to destroy segment
     fn drop_data(self) -> OperationResult<()>;

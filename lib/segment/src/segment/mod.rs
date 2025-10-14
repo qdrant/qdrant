@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::thread::JoinHandle;
 
 use atomic_refcell::AtomicRefCell;
 use io::storage_version::StorageVersion;
@@ -26,7 +25,7 @@ use parking_lot::Mutex;
 use rocksdb::DB;
 
 use self::version_tracker::VersionTracker;
-use crate::common::operation_error::{OperationResult, SegmentFailedState};
+use crate::common::operation_error::SegmentFailedState;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::VectorIndexEnum;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -68,6 +67,7 @@ pub struct Segment {
     /// If None, there were no updates and segment is empty
     pub version: Option<SeqNumberType>,
     /// Latest persisted version
+    /// Locked structure on which we hold the lock during flush to prevent concurrent flushes
     pub persisted_version: Arc<Mutex<Option<SeqNumberType>>>,
     /// Path of the storage root
     pub current_path: PathBuf,
@@ -87,7 +87,6 @@ pub struct Segment {
     pub error_status: Option<SegmentFailedState>,
     #[cfg(feature = "rocksdb")]
     pub database: Option<Arc<parking_lot::RwLock<DB>>>,
-    pub flush_thread: Mutex<Option<JoinHandle<OperationResult<SeqNumberType>>>>,
 }
 
 pub struct VectorData {
@@ -104,14 +103,6 @@ impl fmt::Debug for VectorData {
 
 impl Drop for Segment {
     fn drop(&mut self) {
-        // This should trigger test failure, as instead of nice shutdown
-        // We discard flushing process
-        // Note: it is required for RocksDB, as it panics otherwise
-        #[cfg(feature = "rocksdb")]
-        if let Err(flushing_err) = self.lock_flushing() {
-            log::error!("Failed to flush segment during drop: {flushing_err}");
-        }
-
         // Try to remove everything from the disk cache, as it might pollute the cache
         if let Err(e) = self.payload_storage.borrow().clear_cache() {
             log::error!("Failed to clear cache of payload_storage: {e}");
@@ -146,7 +137,9 @@ impl Drop for Segment {
 }
 
 #[cfg(feature = "rocksdb")]
-pub fn destroy_rocksdb(path: &std::path::Path) -> OperationResult<()> {
+pub fn destroy_rocksdb(
+    path: &std::path::Path,
+) -> crate::common::operation_error::OperationResult<()> {
     rocksdb::DB::destroy(&Default::default(), path).map_err(|err| {
         crate::common::operation_error::OperationError::service_error(format!(
             "failed to destroy RocksDB at {}: {err}",
