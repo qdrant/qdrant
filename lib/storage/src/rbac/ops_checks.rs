@@ -161,7 +161,7 @@ impl CollectionAccessView<'_> {
             }) => {
                 self.check_vector_input(target)?;
                 for item in feedback {
-                    self.check_vector_input(&item.item)?;
+                    self.check_vector_input(&item.vector)?;
                 }
             }
         };

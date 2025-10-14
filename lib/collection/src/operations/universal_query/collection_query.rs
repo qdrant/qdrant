@@ -12,7 +12,7 @@ use segment::types::{
     VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{
-    ContextPair, ContextQuery, DiscoveryQuery, RecoQuery, SimpleFeedbackStrategy,
+    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, RecoQuery, SimpleFeedbackStrategy,
 };
 use serde::Serialize;
 use shard::query::query_enum::QueryEnum;
@@ -26,7 +26,6 @@ use crate::lookup::WithLookup;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
 use crate::recommendations::avg_vector_for_recommendation;
-use crate::relevance_feedback::{DEFAULT_NUM_PAIRS, extract_feedback_pairs};
 
 const DEFAULT_MMR_LAMBDA: f32 = 0.5;
 
@@ -202,7 +201,7 @@ pub struct Mmr {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FeedbackQuery<T> {
     pub target: T,
-    pub feedback: Vec<ScoredItem<T>>,
+    pub feedback: Vec<FeedbackItem<T>>,
     pub strategy: FeedbackStrategy,
 }
 
@@ -210,15 +209,9 @@ impl<T> FeedbackQuery<T> {
     fn flat_iter(&self) -> impl Iterator<Item = &T> {
         self.feedback
             .iter()
-            .map(|item| &item.item)
+            .map(|item| &item.vector)
             .chain(std::iter::once(&self.target))
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct ScoredItem<T> {
-    pub item: T,
-    pub score: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -350,10 +343,10 @@ impl VectorQuery<VectorInputInternal> {
 
                 let feedback = feedback
                     .into_iter()
-                    .map(|ScoredItem { item, score }| {
-                        Ok(ScoredItem {
-                            item: ids_to_vectors
-                                .resolve_reference(lookup_collection, lookup_vector_name, item)
+                    .map(|FeedbackItem { vector, score }| {
+                        Ok(FeedbackItem {
+                            vector: ids_to_vectors
+                                .resolve_reference(lookup_collection, lookup_vector_name, vector)
                                 .ok_or_else(|| vector_not_found_error(lookup_vector_name))?,
                             score,
                         })
@@ -446,7 +439,9 @@ impl VectorQuery<VectorInternal> {
                 strategy: _,
             }) => {
                 target.preprocess();
-                feedback.iter_mut().for_each(|item| item.item.preprocess());
+                feedback
+                    .iter_mut()
+                    .for_each(|item| item.vector.preprocess());
             }
         }
         self
@@ -496,25 +491,20 @@ impl VectorQuery<VectorInternal> {
                 target,
                 feedback,
                 strategy,
-            }) => {
-                let feedback_pairs = extract_feedback_pairs(feedback, DEFAULT_NUM_PAIRS);
-                match strategy {
-                    FeedbackStrategy::Simple { a, b, c } => {
-                        QueryEnum::FeedbackSimple(NamedQuery::new(
-                            segment::vector_storage::query::FeedbackQuery {
-                                target,
-                                feedback_pairs,
-                                strategy: SimpleFeedbackStrategy {
-                                    a: a.into(),
-                                    b: b.into(),
-                                    c: c.into(),
-                                },
-                            },
-                            using,
-                        ))
-                    }
-                }
-            }
+            }) => match strategy {
+                FeedbackStrategy::Simple { a, b, c } => QueryEnum::FeedbackSimple(NamedQuery::new(
+                    segment::vector_storage::query::FeedbackQueryInternal {
+                        target,
+                        feedback,
+                        strategy: SimpleFeedbackStrategy {
+                            a: a.into(),
+                            b: b.into(),
+                            c: c.into(),
+                        },
+                    },
+                    using,
+                )),
+            },
         };
 
         Ok(ScoringQuery::Vector(query_enum))
