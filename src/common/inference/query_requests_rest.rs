@@ -3,14 +3,16 @@ use api::rest::schema as rest;
 use collection::lookup::WithLookup;
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
-    FeedbackStrategy, Mmr, NearestWithMmr, Query, ScoredItem, VectorInputInternal, VectorQuery,
+    FeedbackStrategy, Mmr, NearestWithMmr, Query, VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
 use ordered_float::OrderedFloat;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use segment::vector_storage::query::{
+    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, RecoQuery,
+};
 use storage::content_manager::errors::{StorageError, StorageResult};
 
 use crate::common::inference::batch_processing::{
@@ -282,9 +284,9 @@ fn convert_query_with_inferred(
             let feedback = feedback
                 .into_iter()
                 .map(|item| {
-                    Ok(ScoredItem {
-                        item: convert_vector_input_with_inferred(item.vector, inferred)?,
-                        score: item.score,
+                    Ok(FeedbackItem {
+                        vector: convert_vector_input_with_inferred(item.vector, inferred)?,
+                        score: item.score.into(),
                     })
                 })
                 .collect::<StorageResult<Vec<_>>>()?;

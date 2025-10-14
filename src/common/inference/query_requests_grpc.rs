@@ -5,7 +5,7 @@ use api::grpc::{InferenceUsage, qdrant as grpc};
 use api::rest::{self, LookupLocation, RecommendStrategy};
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
-    FeedbackStrategy, Mmr, NearestWithMmr, Query, ScoredItem, VectorInputInternal, VectorQuery,
+    FeedbackStrategy, Mmr, NearestWithMmr, Query, VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
@@ -13,7 +13,9 @@ use ordered_float::OrderedFloat;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
 use segment::types::{Filter, PointIdType, SearchParams};
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use segment::vector_storage::query::{
+    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, RecoQuery,
+};
 use tonic::Status;
 
 use crate::common::inference::batch_processing_grpc::{
@@ -331,9 +333,9 @@ fn convert_query_with_inferred(
                         inferred,
                     )?;
 
-                    Ok(ScoredItem {
-                        item: vector,
-                        score: item.score,
+                    Ok(FeedbackItem {
+                        vector,
+                        score: item.score.into(),
                     })
                 })
                 .collect::<Result<Vec<_>, Status>>()?;

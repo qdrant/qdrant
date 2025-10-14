@@ -294,11 +294,11 @@ message RawQuery {
 
   message Feedback {
     RawVector target = 1;
-    repeated FeedbackItem feedback = 2;
+    repeated RawFeedbackItem feedback = 2;
     FeedbackStrategy strategy = 3;
   }
 
-  message FeedbackItem {
+  message RawFeedbackItem {
     RawVector vector = 1;
     float score = 2;
   }

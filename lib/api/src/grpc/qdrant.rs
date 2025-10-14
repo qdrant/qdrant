@@ -10559,14 +10559,14 @@ pub mod raw_query {
         #[prost(message, optional, tag = "1")]
         pub target: ::core::option::Option<super::RawVector>,
         #[prost(message, repeated, tag = "2")]
-        pub feedback: ::prost::alloc::vec::Vec<FeedbackItem>,
+        pub feedback: ::prost::alloc::vec::Vec<RawFeedbackItem>,
         #[prost(message, optional, tag = "3")]
         pub strategy: ::core::option::Option<super::FeedbackStrategy>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct FeedbackItem {
+    pub struct RawFeedbackItem {
         #[prost(message, optional, tag = "1")]
         pub vector: ::core::option::Option<super::RawVector>,
         #[prost(float, tag = "2")]
