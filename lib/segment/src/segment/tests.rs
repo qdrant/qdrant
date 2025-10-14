@@ -204,6 +204,8 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
         .and_then(|f| f.to_str())
         .unwrap();
 
+    segment.flush(true).unwrap();
+
     // snapshotting!
     let tar =
         tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
