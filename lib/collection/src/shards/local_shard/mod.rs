@@ -12,6 +12,9 @@ mod telemetry;
 #[cfg(test)]
 mod snapshot_tests;
 
+#[cfg(feature = "testing")]
+pub mod testing;
+
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
