@@ -56,7 +56,7 @@ disallowed-methods = [
   { path = "std::path::Path::read_dir", replacement = "fs_err::read_dir" },
   { path = "std::path::Path::read_link", replacement = "fs_err::read_link" },
   { path = "std::path::Path::symlink_metadata", replacement = "fs_err::symlink_metadata" },
-  { path = "std::path::Path::try_exists", replacement = "fs_err::PathExt::fs_err_try_exists" },
+  { path = "std::path::Path::try_exists", replacement = "fs_err::exists" },
   { path = "tokio::fs::File::create", replacement = "fs_err::tokio::File::create" },
   { path = "tokio::fs::File::create_new", replacement = "fs_err::tokio::File::create_new" },
   { path = "tokio::fs::File::from_std", replacement = "fs_err::tokio::File::from_std" },
@@ -89,8 +89,6 @@ disallowed-methods = [
   { path = "tokio::fs::symlink_dir", replacement = "fs_err::tokio::symlink_dir", allow-invalid = true },
   { path = "tokio::fs::symlink_file", replacement = "fs_err::tokio::symlink_file", allow-invalid = true },
   { path = "tokio::fs::symlink_metadata", replacement = "fs_err::tokio::symlink_metadata" },
+  { path = "tokio::fs::try_exists", replacement = "fs_err::tokio::try_exists" },
   { path = "tokio::fs::write", replacement = "fs_err::tokio::write" },
-
-  # The following is not yet available in fs_err
-  # { path = "tokio::fs::try_exists", replacement = "fs_err::tokio::try_exists" },
 ]
