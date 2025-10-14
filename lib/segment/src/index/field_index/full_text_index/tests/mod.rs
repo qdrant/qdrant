@@ -164,7 +164,7 @@ fn test_prefix_search() {
         stopwords: None,
         on_disk: None,
         stemmer: None,
-        ascii_folding: Some(false),
+        ascii_folding: None,
     };
 
     let mut index =
@@ -214,7 +214,7 @@ fn test_phrase_matching() {
         phrase_matching: Some(true), // Enable phrase matching
         stopwords: None,
         stemmer: None,
-        ascii_folding: Some(false),
+        ascii_folding: None,
     };
 
     let mut mutable_index =
@@ -318,9 +318,9 @@ fn test_ascii_folding_in_full_text_index_word() {
         tokenizer: TokenizerType::Word,
         min_token_len: None,
         max_token_len: None,
-        lowercase: Some(true),
+        lowercase: None,
         on_disk: None,
-        phrase_matching: Some(false),
+        phrase_matching: None,
         stopwords: None,
         stemmer: None,
         ascii_folding: Some(true),
