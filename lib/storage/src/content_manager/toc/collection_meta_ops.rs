@@ -387,11 +387,6 @@ impl TableOfContent {
         operation: MultiSourceTransferShardOperation,
     ) -> Result<(), StorageError> {
         let collection = self.get_collection_unchecked(&collection_id).await?;
-        let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
-            return Err(StorageError::service_error(
-                "Can't handle replication, this is a single node deployment",
-            ));
-        };
 
         match operation {
             MultiSourceTransferShardOperation::Start(key) => {
