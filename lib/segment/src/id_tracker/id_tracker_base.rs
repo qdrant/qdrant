@@ -23,6 +23,7 @@ use crate::types::{PointIdType, SeqNumberType};
 const SEED: u64 = 0b1011000011011110001110010101001010001011001101001010010001111010;
 
 /// This version should be assigned to a point when it is deleted.
+/// It does not mean a point with this version is always deleted.
 pub const DELETED_POINT_VERSION: SeqNumberType = 0;
 
 /// Trait for point ids tracker.

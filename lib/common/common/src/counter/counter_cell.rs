@@ -121,7 +121,7 @@ impl<'a> OptionalCounterCell<'a> {
 /// Usually this is not a problem because it is still a very fast operation. In loops or hot-paths however
 /// it can become a considerable overhead we want to avoid as much as possible.
 ///
-/// You should always prefer this over manually counting a loop because we might loose values when returning
+/// You should always prefer this over manually counting a loop because we might lose values when returning
 /// on an error, early-return or add such code in future and forget to adjust.
 ///
 ///

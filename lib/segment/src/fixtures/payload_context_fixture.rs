@@ -185,6 +185,7 @@ impl IdTracker for FixtureIdTracker {
     }
 
     fn cleanup_versions(&mut self) -> OperationResult<Vec<PointOffsetType>> {
+        // This structure does not support cleaning up orphan versions
         Ok(vec![])
     }
 

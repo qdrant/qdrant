@@ -85,12 +85,12 @@ impl MappingChangeType {
 /// Mutable in-memory ID tracker with simple file based backing storage
 ///
 /// This ID tracker simply persists all recorded point mapping and versions changes to disk by
-/// appending these changes to a file. When loading, all mappings and versions are deduplicated in memory so
-/// that only the latest mappings for a point are kept.
+/// appending these changes to a file. When loading, all mappings and versions are deduplicated in
+/// memory so that only the latest mappings for a point are kept.
 ///
 /// This structure may grow forever by collecting changes. It therefore relies on the optimization
-/// processes in Qdrant to eventually vacuum the segment this ID  tracker belongs to.
-/// Reoptimization will clear all collected changes and start from scratch.
+/// processes in Qdrant to eventually vacuum the segment this ID tracker belongs to. Reoptimization
+/// will clear all collected changes and start from scratch.
 ///
 /// This ID tracker primarily replaces [`SimpleIdTracker`], so that we can eliminate the use of
 /// RocksDB.

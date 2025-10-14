@@ -649,7 +649,7 @@ impl LocalShard {
             "Recovering shard {} starting reading WAL from {} up to {}",
             self.path.display(),
             wal.first_index(),
-            wal.last_index()
+            wal.last_index(),
         );
 
         bar.set_message(format!("Recovering collection {collection_id}"));
