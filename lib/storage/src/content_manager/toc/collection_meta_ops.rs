@@ -500,7 +500,7 @@ impl TableOfContent {
                 };
 
                 let shard_consensus = match self.toc_dispatcher.lock().as_ref() {
-                    Some(consensus) => Arc::new(consensus.clone()),
+                    Some(consensus) => Box::new(consensus.clone()),
                     None => {
                         return Err(StorageError::service_error(
                             "Can't handle transfer, this is a single node deployment",

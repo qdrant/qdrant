@@ -549,7 +549,7 @@ impl Collection {
         consensus: Box<dyn ShardTransferConsensus>,
     ) -> CollectionResult<()> {
         // Set the state in the shard holder
-        let mut shard_holder = self.shards_holder.write().await;
+        // let mut shard_holder = self.shards_holder.write().await;
         // And call the function to start a normal transfer
         // shard_holder.multi_source_transfers_state.;
 
@@ -560,24 +560,29 @@ impl Collection {
             .map(|(&peer_id, shard_id)| (peer_id, shard_id))
             .collect::<Vec<_>>();
 
-        // Register the multi-source transfer state
-        for (peer_id, shard_id) in &source_replicas {
-            self.start_shard_transfer(
-                ShardTransfer {
-                    shard_id: *shard_id,
-                    to_shard_id: Some(transfer.to_shard_id),
-                    from: *peer_id,
-                    to: transfer.to_peer_id,
-                    method: Some(ShardTransferMethod::StreamRecords),
-                    sync: true,
-                },
-                consensus.clone(),
-                self.path.join("temp"),
-                async {},
-                async {},
-            )
-            .await?;
-        }
+        // todo: do multiple transfers at once
+        // todo: save state for finished transfers to do more than one at a time
+        let first_source = source_replicas
+            .first()
+            .ok_or_else(|| CollectionError::bad_input("No source replicas provided"))?;
+
+        let (peer_id, shard_id) = first_source;
+
+        self.start_shard_transfer(
+            ShardTransfer {
+                shard_id: *shard_id,
+                to_shard_id: Some(transfer.to_shard_id),
+                from: *peer_id,
+                to: transfer.to_peer_id,
+                method: Some(ShardTransferMethod::StreamRecords),
+                sync: true,
+            },
+            consensus,
+            self.path.join("temp"),
+            async {},
+            async {},
+        )
+        .await?;
 
         Ok(())
     }
