@@ -295,7 +295,7 @@ impl JsonPath {
         let mut result = String::with_capacity(MAX_LENGTH);
 
         BASE32_DNSSEC.encode_append(
-            &Sha256::digest(text.as_bytes()).as_slice()[0..(HASH_LENGTH * 5).div_ceil(8)],
+            &Sha256::digest(text.as_bytes())[0..(HASH_LENGTH * 5).div_ceil(8)],
             &mut result,
         );
         debug_assert_eq!(result.len(), HASH_LENGTH);
