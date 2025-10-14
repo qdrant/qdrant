@@ -13,6 +13,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use crate::locked_segment::LockedSegment;
+use crate::payload_index_schema::PayloadIndexSchema;
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
@@ -22,12 +24,10 @@ use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
+use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
 use smallvec::{SmallVec, smallvec};
-
-use crate::locked_segment::LockedSegment;
-use crate::payload_index_schema::PayloadIndexSchema;
 
 pub type SegmentId = usize;
 
@@ -74,6 +74,14 @@ pub struct SegmentHolder {
     /// Holder for a thread, which does flushing of all segments sequentially.
     /// This is used to avoid multiple concurrent flushes.
     pub flush_thread: Mutex<Option<JoinHandle<OperationResult<()>>>>,
+}
+
+impl Drop for SegmentHolder {
+    fn drop(&mut self) {
+        if let Err(flushing_err) = self.lock_flushing() {
+            log::error!("Failed to flush segments holder during drop: {flushing_err}");
+        }
+    }
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
