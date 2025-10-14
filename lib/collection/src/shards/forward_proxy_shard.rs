@@ -88,7 +88,6 @@ impl ForwardProxyShard {
             resharding_hash_ring,
             filter: filter.map(Box::new),
             update_lock: Mutex::new(()),
-            // todo: attach filter field and use it to filter points in `update` method
         }
     }
 
@@ -445,43 +444,9 @@ impl ShardOperation for ForwardProxyShard {
             };
 
             op.map(|op| OperationWithClockTag::new(op, tag))
-        // } else if let Some(filter) = self.filter {
-        //     // ToDo: Check if the point ID satisfies hashring
-
-        //     // Transfer points only if they match the filter:
-        //     let points = match &operation.operation {
-        //         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        //             PointInsertOperationsInternal::PointsList(points),
-        //         )) => points
-        //             .iter()
-        //             .filter(|point| filter.check(&point.id, point.payload.as_ref()))
-        //             .cloned()
-        //             .collect(),
-        //         CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(
-        //             PointSyncOperation { points, .. },
-        //         )) => points
-        //             .iter()
-        //             .filter(|point| filter.check(&point.id, point.payload.as_ref()))
-        //             .cloned()
-        //             .collect(),
-        //         _ => {
-        //             log::warn!("ForwardProxyShard with filter can only transfer point insert operations");
-
-        //             vec![]
-        //         }
-        //     };
-
-        //     if points.is_empty() {
-        //         None
-        //     } else {
-        //         Some(OperationWithClockTag::new(
-        //             CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        //                 PointInsertOperationsInternal::PointsList(points),
-        //             )),
-        //             operation.clock_tag, // Preserve the clock tag, because we are forwarding to the same shard.
-        //         ))
-        //     }
         } else {
+            // ToDo: Handle `filter` case before this else block
+
             // If `ForwardProxyShard` `resharding_hash_ring` and `filter` are `None`, we assume that proxy is used
             // during *regular* shard transfer, so operation can be forwarded as-is, without any
             // additional handling.
