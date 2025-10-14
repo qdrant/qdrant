@@ -380,7 +380,7 @@ pub async fn do_update_collection_cluster(
                             to: to_peer_id,
                             sync: true,
                             method: Some(ShardTransferMethod::FilteredStreamRecords),
-                            filter: filter,
+                            filter,
                         }),
                     ),
                     access,
