@@ -257,6 +257,8 @@ pub fn snapshot_all_segments(
 ///
 /// It is recommended to provide collection parameters. The segment configuration will be
 /// sourced from it.
+///
+/// Before snapshotting all segments are forcefully flushed to ensure all data is persisted.
 pub fn proxy_all_segments_and_apply<F>(
     segments: LockedSegmentHolder,
     segments_path: &Path,
@@ -269,6 +271,8 @@ where
     F: FnMut(&RwLock<dyn SegmentEntry>) -> OperationResult<()>,
 {
     let segments_lock = segments.upgradable_read();
+
+    segments_lock.flush_all(true, true)?;
 
     // Proxy all segments
     log::trace!("Proxying all shard segments to apply function");
