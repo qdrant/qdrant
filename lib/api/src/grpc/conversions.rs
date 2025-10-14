@@ -2764,19 +2764,21 @@ impl TryFrom<raw_query::Discovery>
     }
 }
 
-impl From<segment_query::FeedbackQuery<VectorInternal, SimpleFeedbackStrategy>>
+impl From<segment_query::FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>>
     for raw_query::Feedback
 {
-    fn from(value: segment_query::FeedbackQuery<VectorInternal, SimpleFeedbackStrategy>) -> Self {
-        let segment_query::FeedbackQuery {
+    fn from(
+        value: segment_query::FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>,
+    ) -> Self {
+        let segment_query::FeedbackQueryInternal {
             target,
-            feedback_pairs,
+            feedback,
             strategy,
         } = value;
 
         Self {
             target: Some(target.into()),
-            feedback_pairs: feedback_pairs.into_iter().map_into().collect(),
+            feedback: feedback.into_iter().map_into().collect(),
             strategy: Some(grpc::FeedbackStrategy {
                 variant: Some(grpc::feedback_strategy::Variant::Simple(strategy.into())),
             }),
@@ -2784,42 +2786,28 @@ impl From<segment_query::FeedbackQuery<VectorInternal, SimpleFeedbackStrategy>>
     }
 }
 
-impl From<segment_query::FeedbackPair<VectorInternal>> for raw_query::FeedbackPair {
-    fn from(value: segment_query::FeedbackPair<VectorInternal>) -> Self {
-        let segment_query::FeedbackPair {
-            positive,
-            negative,
-            confidence,
-        } = value;
+impl From<segment_query::FeedbackItem<VectorInternal>> for raw_query::FeedbackItem {
+    fn from(value: segment_query::FeedbackItem<VectorInternal>) -> Self {
+        let segment_query::FeedbackItem { vector, score } = value;
 
         Self {
-            positive: Some(positive.into()),
-            negative: Some(negative.into()),
-            confidence: confidence.0,
+            vector: Some(vector.into()),
+            score: score.into(),
         }
     }
 }
 
-impl TryFrom<raw_query::FeedbackPair>
-    for segment_query::FeedbackPair<segment_vectors::VectorInternal>
+impl TryFrom<raw_query::FeedbackItem>
+    for segment_query::FeedbackItem<segment_vectors::VectorInternal>
 {
     type Error = Status;
-    fn try_from(value: raw_query::FeedbackPair) -> Result<Self, Self::Error> {
-        let raw_query::FeedbackPair {
-            positive,
-            negative,
-            confidence,
-        } = value;
+    fn try_from(value: raw_query::FeedbackItem) -> Result<Self, Self::Error> {
+        let raw_query::FeedbackItem { vector, score } = value;
         Ok(Self {
-            positive: positive
-                .map(segment_vectors::VectorInternal::try_from)
-                .transpose()?
-                .ok_or_else(|| Status::invalid_argument("No positive vector provided"))?,
-            negative: negative
-                .map(segment_vectors::VectorInternal::try_from)
-                .transpose()?
-                .ok_or_else(|| Status::invalid_argument("No negative vector provided"))?,
-            confidence: OrderedFloat(confidence),
+            vector: vector
+                .ok_or_else(|| Status::invalid_argument("No vector provided"))?
+                .try_into()?,
+            score: score.into(),
         })
     }
 }

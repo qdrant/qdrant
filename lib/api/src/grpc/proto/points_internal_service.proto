@@ -269,14 +269,13 @@ message RawQuery {
 
   message Feedback {
       RawVector target = 1;
-      repeated FeedbackPair feedback_pairs = 2;
+      repeated FeedbackItem feedback = 2;
       FeedbackStrategy strategy = 3;
   }
 
-  message FeedbackPair {
-      RawVector positive = 1;
-      RawVector negative = 2;
-      float confidence = 3;
+  message FeedbackItem {
+      RawVector vector = 1;
+      float score = 2;
   }
 
   oneof variant {

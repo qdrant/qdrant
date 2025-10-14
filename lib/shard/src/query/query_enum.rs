@@ -2,7 +2,7 @@ use api::grpc::qdrant as grpc;
 use segment::data_types::vectors::{DenseVector, Named, NamedQuery, QueryVector, VectorInternal};
 use segment::types::VectorName;
 use segment::vector_storage::query::{
-    ContextQuery, DiscoveryQuery, FeedbackQuery, RecoQuery, SimpleFeedbackStrategy,
+    ContextQuery, DiscoveryQuery, FeedbackQueryInternal, RecoQuery, SimpleFeedbackStrategy,
 };
 use serde::Serialize;
 use sparse::common::sparse_vector::SparseVector;
@@ -15,7 +15,7 @@ pub enum QueryEnum {
     RecommendSumScores(NamedQuery<RecoQuery<VectorInternal>>),
     Discover(NamedQuery<DiscoveryQuery<VectorInternal>>),
     Context(NamedQuery<ContextQuery<VectorInternal>>),
-    FeedbackSimple(NamedQuery<FeedbackQuery<VectorInternal, SimpleFeedbackStrategy>>),
+    FeedbackSimple(NamedQuery<FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>>),
 }
 
 impl QueryEnum {

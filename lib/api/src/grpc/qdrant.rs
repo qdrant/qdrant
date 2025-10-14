@@ -10213,22 +10213,18 @@ pub mod raw_query {
         #[prost(message, optional, tag = "1")]
         pub target: ::core::option::Option<super::RawVector>,
         #[prost(message, repeated, tag = "2")]
-        pub feedback_pairs: ::prost::alloc::vec::Vec<FeedbackPair>,
+        pub feedback: ::prost::alloc::vec::Vec<FeedbackItem>,
         #[prost(message, optional, tag = "3")]
         pub strategy: ::core::option::Option<super::FeedbackStrategy>,
     }
     #[derive(serde::Serialize)]
-    #[derive(validator::Validate)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct FeedbackPair {
+    pub struct FeedbackItem {
         #[prost(message, optional, tag = "1")]
-        pub positive: ::core::option::Option<super::RawVector>,
-        #[prost(message, optional, tag = "2")]
-        pub negative: ::core::option::Option<super::RawVector>,
-        #[prost(float, tag = "3")]
-        #[validate(range(min = 0.0))]
-        pub confidence: f32,
+        pub vector: ::core::option::Option<super::RawVector>,
+        #[prost(float, tag = "2")]
+        pub score: f32,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]

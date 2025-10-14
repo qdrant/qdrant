@@ -1,6 +1,6 @@
 use segment::data_types::vectors::{MultiDenseVectorInternal, NamedQuery, VectorInternal};
 use segment::vector_storage::query::{
-    ContextPair, ContextQuery, DiscoveryQuery, FeedbackPair, FeedbackQuery, RecoQuery,
+    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, FeedbackQueryInternal, RecoQuery,
     SimpleFeedbackStrategy,
 };
 use shard::query::query_enum::QueryEnum;
@@ -199,32 +199,27 @@ impl<T: Generalizer> Generalizer for RecoQuery<T> {
     }
 }
 
-impl<T: Generalizer, TStrategy: Generalizer> Generalizer for FeedbackQuery<T, TStrategy> {
+impl<T: Generalizer, TStrategy: Generalizer> Generalizer for FeedbackQueryInternal<T, TStrategy> {
     fn remove_details(&self) -> Self {
-        let FeedbackQuery {
+        let Self {
             target,
-            feedback_pairs,
+            feedback,
             strategy,
         } = self;
         Self {
             target: target.remove_details(),
-            feedback_pairs: feedback_pairs.iter().map(|p| p.remove_details()).collect(),
+            feedback: feedback.iter().map(|p| p.remove_details()).collect(),
             strategy: strategy.remove_details(),
         }
     }
 }
 
-impl<T: Generalizer> Generalizer for FeedbackPair<T> {
+impl<T: Generalizer> Generalizer for FeedbackItem<T> {
     fn remove_details(&self) -> Self {
-        let FeedbackPair {
-            positive,
-            negative,
-            confidence: _,
-        } = self;
+        let FeedbackItem { vector, score: _ } = self;
         Self {
-            positive: positive.remove_details(),
-            negative: negative.remove_details(),
-            confidence: 0.0.into(),
+            vector: vector.remove_details(),
+            score: 0.0.into(),
         }
     }
 }
