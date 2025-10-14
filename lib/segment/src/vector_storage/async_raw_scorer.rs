@@ -13,7 +13,7 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, Manhat
 use crate::types::Distance;
 use crate::vector_storage::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
 use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
-use crate::vector_storage::query::FeedbackQuery;
+use crate::vector_storage::query::FeedbackQueryInternal;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::{RawScorer, VectorStorage as _};
@@ -174,8 +174,9 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 Ok(async_raw_scorer_from_query_scorer(query_scorer, storage))
             }
             QueryVector::FeedbackSimple(feedback_query) => {
-                let feedback_query: FeedbackQuery<DenseVector, _> =
+                let feedback_query: FeedbackQueryInternal<DenseVector, _> =
                     feedback_query.transform_into()?;
+                let feedback_query = feedback_query.into_scorer();
                 let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                     feedback_query,
                     storage,

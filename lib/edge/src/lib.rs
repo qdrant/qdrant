@@ -291,7 +291,6 @@ impl Shard {
                     point.score = distance.postprocess_score(point.score);
                 }
             }
-
             QueryVector::RecommendBestScore(_) => (),
             QueryVector::RecommendSumScores(_) => (),
             QueryVector::Discovery(_) => (),
