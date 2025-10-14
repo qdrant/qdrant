@@ -91,7 +91,9 @@ impl ShardHolder {
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
             SaveOnDisk::load_or_init_default(collection_path.join(RESHARDING_STATE_FILE))?;
         let multi_source_transfers_state: SaveOnDisk<Option<HashSet<MultiSourceTransfer>>> =
-            SaveOnDisk::load_or_init_default(collection_path.join(MULTI_SOURCE_TRANSFERS_STATE_FILE))?;
+            SaveOnDisk::load_or_init_default(
+                collection_path.join(MULTI_SOURCE_TRANSFERS_STATE_FILE),
+            )?;
 
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
             SaveOnDisk::load_or_init_default(collection_path.join(SHARD_KEY_MAPPING_FILE))?;

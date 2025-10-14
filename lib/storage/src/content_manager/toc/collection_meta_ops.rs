@@ -404,7 +404,9 @@ impl TableOfContent {
                     }
                 };
 
-                collection.start_multi_source_transfer_shard(key, shard_consensus).await?;
+                collection
+                    .start_multi_source_transfer_shard(key, shard_consensus)
+                    .await?;
             }
             MultiSourceTransferShardOperation::Finish(key) => {
                 collection.finish_multi_source_transfer_shard(key).await?;
