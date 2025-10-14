@@ -1027,6 +1027,7 @@ impl HNSWIndex {
                 points_scorer,
                 custom_entry_points,
                 &is_stopped,
+                false,
             )?;
 
             postprocess_search_result(

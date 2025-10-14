@@ -759,7 +759,7 @@ mod tests {
         let scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
-            .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+            .search(top, ef, scorer, None, &DEFAULT_STOPPED, false)
             .unwrap();
 
         assert_eq!(reference_top.into_sorted_vec(), graph_search);
@@ -865,7 +865,7 @@ mod tests {
         let scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
-            .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+            .search(top, ef, scorer, None, &DEFAULT_STOPPED, false)
             .unwrap();
         assert_eq!(reference_top.into_sorted_vec(), graph_search);
     }

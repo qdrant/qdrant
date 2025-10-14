@@ -96,7 +96,7 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
         .map(|query| {
             let scorer = vector_holder.scorer(query.clone());
             graph_layers
-                .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+                .search(top, ef, scorer, None, &DEFAULT_STOPPED, false)
                 .unwrap()
         })
         .collect_vec();
