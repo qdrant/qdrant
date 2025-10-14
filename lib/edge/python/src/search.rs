@@ -67,7 +67,7 @@ impl PyQuery {
             QueryEnum::RecommendSumScores(_) => todo!(), // TODO!
             QueryEnum::Discover(_) => todo!(),           // TODO!
             QueryEnum::Context(_) => todo!(),            // TODO!
-            QueryEnum::FeedbackLinear(_) => todo!(),     // TODO!
+            QueryEnum::FeedbackSimple(_) => todo!(),     // TODO!
         }
     }
 }
