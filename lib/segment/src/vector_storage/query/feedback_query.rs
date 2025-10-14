@@ -28,16 +28,24 @@ impl<T> FeedbackItem<T> {
     }
 }
 
+/// Akin to external representation of the query. Unoptimized for scoring.
+///
+/// Call `into_query` to get the type implementing `Query` trait.
 #[derive(Clone, Debug)]
 pub struct FeedbackQueryInternal<T, TStrategy> {
+    /// The original query vector.
     pub target: T,
+
+    /// Pairs of results with higher difference in their feedback score.
     pub feedback: Vec<FeedbackItem<T>>,
+
+    /// How to handle the feedback
     pub strategy: TStrategy,
 }
 
 impl<T: Clone> FeedbackQueryInternal<T, SimpleFeedbackStrategy> {
-    pub fn into_scorer(self) -> FeedbackScorer<T, SimpleFeedbackStrategy> {
-        FeedbackScorer::new(self.target, self.feedback, self.strategy)
+    pub fn into_query(self) -> FeedbackQuery<T, SimpleFeedbackStrategy> {
+        FeedbackQuery::new(self.target, self.feedback, self.strategy)
     }
 }
 
@@ -84,10 +92,6 @@ pub struct PrecomputedFeedbackPair<T> {
 }
 
 impl<T> PrecomputedFeedbackPair<T> {
-    pub fn iter_vectors(&self) -> impl Iterator<Item = &T> {
-        [&self.positive, &self.negative].into_iter()
-    }
-
     pub fn transform<F, U>(self, mut f: F) -> OperationResult<PrecomputedFeedbackPair<U>>
     where
         F: FnMut(T) -> OperationResult<U>,
@@ -156,18 +160,18 @@ impl SimpleFeedbackStrategy {
 
 /// Query for relevance feedback scoring
 #[derive(Debug, Clone, PartialEq, Serialize, Hash)]
-pub struct FeedbackScorer<TVector, TStrategy> {
+pub struct FeedbackQuery<TVector, TStrategy> {
     /// The original query vector.
-    pub target: TVector,
+    target: TVector,
 
-    /// Pairs of results with higher difference in their golden score.
-    pub feedback_pairs: Vec<PrecomputedFeedbackPair<TVector>>,
+    /// Pairs of results with higher difference in their feedback score.
+    feedback_pairs: Vec<PrecomputedFeedbackPair<TVector>>,
 
-    /// Formula to use.
-    pub strategy: TStrategy,
+    /// How to handle the feedback
+    strategy: TStrategy,
 }
 
-impl<TVector: Clone> FeedbackScorer<TVector, SimpleFeedbackStrategy> {
+impl<TVector: Clone> FeedbackQuery<TVector, SimpleFeedbackStrategy> {
     pub fn new(
         target: TVector,
         feedback: Vec<FeedbackItem<TVector>>,
@@ -183,10 +187,10 @@ impl<TVector: Clone> FeedbackScorer<TVector, SimpleFeedbackStrategy> {
     }
 }
 
-impl<T, U, TStrategy> TransformInto<FeedbackScorer<U, TStrategy>, T, U>
-    for FeedbackScorer<T, TStrategy>
+impl<T, U, TStrategy> TransformInto<FeedbackQuery<U, TStrategy>, T, U>
+    for FeedbackQuery<T, TStrategy>
 {
-    fn transform<F>(self, mut f: F) -> OperationResult<FeedbackScorer<U, TStrategy>>
+    fn transform<F>(self, mut f: F) -> OperationResult<FeedbackQuery<U, TStrategy>>
     where
         F: FnMut(T) -> OperationResult<U>,
     {
@@ -195,7 +199,7 @@ impl<T, U, TStrategy> TransformInto<FeedbackScorer<U, TStrategy>, T, U>
             feedback_pairs,
             strategy,
         } = self;
-        Ok(FeedbackScorer {
+        Ok(FeedbackQuery {
             target: f(target)?,
             feedback_pairs: feedback_pairs
                 .into_iter()
@@ -206,7 +210,7 @@ impl<T, U, TStrategy> TransformInto<FeedbackScorer<U, TStrategy>, T, U>
     }
 }
 
-impl<T> Query<T> for FeedbackScorer<T, SimpleFeedbackStrategy> {
+impl<T> Query<T> for FeedbackQuery<T, SimpleFeedbackStrategy> {
     /// This follows the following formula:
     ///
     /// $ a * score + \sum{confidence_pair ^b * c * delta_pair} $

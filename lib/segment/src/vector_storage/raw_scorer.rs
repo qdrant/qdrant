@@ -204,7 +204,7 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
             let feedback_query: FeedbackQueryInternal<SparseVector, _> =
                 feedback_query.transform_into()?;
             let query_scorer = SparseCustomQueryScorer::<_, _>::new(
-                feedback_query.into_scorer(),
+                feedback_query.into_query(),
                 vector_storage,
                 hardware_counter,
             );
@@ -319,7 +319,7 @@ fn new_scorer_with_metric<
             let feedback_query: FeedbackQueryInternal<DenseVector, _> =
                 feedback_query.transform_into()?;
             let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
-                feedback_query.into_scorer(),
+                feedback_query.into_query(),
                 vector_storage,
                 hardware_counter_cell,
             );
@@ -434,7 +434,7 @@ fn new_multi_scorer_with_metric<
             let feedback_query: FeedbackQueryInternal<MultiDenseVectorInternal, _> =
                 feedback_query.transform_into()?;
             let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
-                feedback_query.into_scorer(),
+                feedback_query.into_query(),
                 vector_storage,
                 hardware_counter,
             );

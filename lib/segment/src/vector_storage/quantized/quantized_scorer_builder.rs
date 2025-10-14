@@ -221,7 +221,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 let feedback_query: FeedbackQueryInternal<DenseVector, _> =
                     feedback_query.transform_into()?;
                 let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
-                    feedback_query.into_scorer(),
+                    feedback_query.into_query(),
                     quantized_storage,
                     quantization_config,
                     hardware_counter,
@@ -311,7 +311,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     feedback_query.transform_into()?;
                 let query_scorer =
                     QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _>::new_multi(
-                        feedback_query.into_scorer(),
+                        feedback_query.into_query(),
                         quantized_multivector_storage,
                         quantization_config,
                         hardware_counter,
