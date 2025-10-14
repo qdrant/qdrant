@@ -22,6 +22,10 @@ use crate::types::{PointIdType, SeqNumberType};
 /// would otherwise be introduced by HNSW/ID tracker point sampling.
 const SEED: u64 = 0b1011000011011110001110010101001010001011001101001010010001111010;
 
+/// This version should be assigned to a point when it is deleted.
+/// It does not mean a point with this version is always deleted.
+pub const DELETED_POINT_VERSION: SeqNumberType = 0;
+
 /// Trait for point ids tracker.
 ///
 /// This tracker is used to convert external (i.e. user-facing) point id into internal point id
@@ -55,6 +59,10 @@ pub trait IdTracker: fmt::Debug {
 
     /// Drop mapping
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()>;
+
+    /// Same as `drop`, but by internal ID
+    /// If mapping doesn't exist, still removes( unsets ) version.
+    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()>;
 
     /// Iterate over all external IDs
     ///
@@ -156,10 +164,54 @@ pub trait IdTracker: fmt::Debug {
         )
     }
 
+    /// Iterate over all stored internal versions, even if they were deleted
+    /// Required for cleanup on segment open
+    fn iter_internal_versions(
+        &self,
+    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>;
+
     /// Finds inconsistencies between id mapping and versions storage.
     /// It might happen that point doesn't have version due to un-flushed WAL.
     /// This method makes those points usable again.
-    fn cleanup_versions(&mut self) -> OperationResult<()>;
+    ///
+    /// Returns a list of internal ids, that have non-zero versions, but are missing in the id mapping.
+    /// Those points should be removed from all other parts of the segment.
+    fn fix_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
+        // Points with mapping, but no version.
+        // Can happen if insertion didn't complete.
+        // We need to remove mapping and assume the point is going to be re-inserted by WAL.
+        let mut to_remove = Vec::new();
+
+        // Points with version, but no mapping.
+        // Can happen if point was deleted, but version (and likely the storage) wasn't cleaned up.
+        // We return those points to the caller to clean up the storage.
+        let mut to_return = Vec::new();
+
+        for (internal_id, version) in self.iter_internal_versions() {
+            if version != DELETED_POINT_VERSION && self.external_id(internal_id).is_none() {
+                to_return.push(internal_id);
+            }
+        }
+
+        for internal_id in self.iter_internal() {
+            if self.internal_version(internal_id).is_none() {
+                if let Some(external_id) = self.external_id(internal_id) {
+                    to_remove.push(external_id);
+                    to_return.push(internal_id);
+                } else {
+                    debug_assert!(false, "internal id {internal_id} has no external id");
+                }
+            }
+        }
+        for external_id in to_remove {
+            self.drop(external_id)?;
+            #[cfg(debug_assertions)]
+            {
+                log::debug!("dropped version for point {external_id} without version");
+            }
+        }
+        Ok(to_return)
+    }
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -268,6 +320,16 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop(external_id),
             #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.drop(external_id),
+        }
+    }
+
+    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
         }
     }
 
@@ -398,13 +460,25 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn cleanup_versions(&mut self) -> OperationResult<()> {
+    fn iter_internal_versions(
+        &self,
+    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.cleanup_versions(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.cleanup_versions(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.cleanup_versions(),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
             #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.cleanup_versions(),
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
+        }
+    }
+
+    fn fix_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
         }
     }
 

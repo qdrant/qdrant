@@ -41,6 +41,8 @@ use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
 };
+use shard::operations::CollectionUpdateOperations;
+use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::wal::SerdeWal;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
@@ -587,7 +589,7 @@ impl LocalShard {
 
         drop(config); // release `shared_config` from borrow checker
 
-        let collection = LocalShard::new(
+        let local_shard = LocalShard::new(
             collection_id,
             segment_holder,
             collection_config,
@@ -603,7 +605,23 @@ impl LocalShard {
         )
         .await;
 
-        Ok(collection)
+        local_shard.insert_fake_operation().await?;
+
+        Ok(local_shard)
+    }
+
+    /// This operation inserts an empty operation into WAL.
+    /// Operation does nothing, but takes a spot in WAL.
+    /// We need it mostly to force WAL to start with something besides zero as a first operation number.
+    pub async fn insert_fake_operation(&self) -> CollectionResult<()> {
+        let mut operation = OperationWithClockTag {
+            operation: CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::from(vec![]),
+            )),
+            clock_tag: None,
+        };
+        self.wal.lock_and_write(&mut operation).await?;
+        Ok(())
     }
 
     pub async fn stop_flush_worker(&self) {
@@ -628,9 +646,10 @@ impl LocalShard {
         bar.set_style(progress_style);
 
         log::debug!(
-            "Recovering shard {} starting reading WAL from {}",
+            "Recovering shard {} starting reading WAL from {} up to {}",
             self.path.display(),
             wal.first_index(),
+            wal.last_index(),
         );
 
         bar.set_message(format!("Recovering collection {collection_id}"));

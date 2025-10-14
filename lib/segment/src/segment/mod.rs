@@ -104,6 +104,10 @@ impl fmt::Debug for VectorData {
 
 impl Drop for Segment {
     fn drop(&mut self) {
+        // This should trigger test failure, as instead of nice shutdown
+        // We discard flushing process
+        // Note: it is required for RocksDB, as it panics otherwise
+        #[cfg(feature = "rocksdb")]
         if let Err(flushing_err) = self.lock_flushing() {
             log::error!("Failed to flush segment during drop: {flushing_err}");
         }
