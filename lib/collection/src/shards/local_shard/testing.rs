@@ -18,4 +18,9 @@ impl LocalShard {
             }
         }
     }
+
+    pub fn full_flush(&self) {
+        let segments = self.segments.read();
+        segments.flush_all(true, true).unwrap();
+    }
 }

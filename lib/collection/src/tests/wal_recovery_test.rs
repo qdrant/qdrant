@@ -197,7 +197,7 @@ async fn test_partial_flush_recovery() {
         .await
         .unwrap();
 
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    shard.full_flush();
 
     shard.stop_flush_worker().await;
 
