@@ -213,11 +213,10 @@ fs-err = { version = "3.1.3", features = ["tokio"] }
 futures = "0.3.31"
 futures-util = "0.3.31"
 generic-tests = "0.1.3"
-half = { version = "2.6.0", features = [
+half = { version = "2.7.0", features = [
     "alloc",
     "serde",
     "num-traits",
-    "zerocopy",
 ] }
 http = "1.3.1"
 humantime = "2.3.0"
