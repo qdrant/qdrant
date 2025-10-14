@@ -1,4 +1,4 @@
-// #[cfg(target_os = "linux")]
+#[cfg(target_os = "linux")]
 pub mod async_raw_scorer;
 mod chunked_mmap_vectors;
 pub mod chunked_vectors;
