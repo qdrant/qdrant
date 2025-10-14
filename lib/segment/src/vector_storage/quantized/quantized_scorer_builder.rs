@@ -217,7 +217,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 );
                 raw_scorer_from_query_scorer(query_scorer)
             }
-            QueryVector::FeedbackLinear(feedback_query) => {
+            QueryVector::FeedbackSimple(feedback_query) => {
                 let feedback_query: FeedbackQuery<DenseVector, _> =
                     feedback_query.transform_into()?;
                 let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
@@ -306,7 +306,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     );
                 raw_scorer_from_query_scorer(query_scorer)
             }
-            QueryVector::FeedbackLinear(feedback_query) => {
+            QueryVector::FeedbackSimple(feedback_query) => {
                 let feedback_query: FeedbackQuery<MultiDenseVectorInternal, _> =
                     feedback_query.transform_into()?;
                 let query_scorer =

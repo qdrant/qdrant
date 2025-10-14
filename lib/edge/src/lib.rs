@@ -296,7 +296,7 @@ impl Shard {
             QueryVector::RecommendSumScores(_) => (),
             QueryVector::Discovery(_) => (),
             QueryVector::Context(_) => (),
-            QueryVector::FeedbackLinear(_) => (),
+            QueryVector::FeedbackSimple(_) => (),
         }
 
         if let Some(score_threshold) = score_threshold {
