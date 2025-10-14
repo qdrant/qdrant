@@ -103,7 +103,7 @@ mod tests {
     use crate::fixtures::index_fixtures::TestRawScorerProducer;
     use crate::fixtures::payload_fixtures::random_vector;
     use crate::index::hnsw_index::HnswM;
-    use crate::index::hnsw_index::graph_layers::GraphLayers;
+    use crate::index::hnsw_index::graph_layers::{GraphLayers, SearchAlgorithm};
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::graph_links::GraphLinksFormatParam;
     use crate::types::Distance;
@@ -214,13 +214,27 @@ mod tests {
             let scorer = test.vector_holder.scorer(search_vector.clone());
 
             let search_result_gpu = graph
-                .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+                .search(
+                    top,
+                    ef,
+                    SearchAlgorithm::Hnsw,
+                    scorer,
+                    None,
+                    &DEFAULT_STOPPED,
+                )
                 .unwrap();
 
             let scorer = test.vector_holder.scorer(search_vector.clone());
 
             let search_result_cpu = ref_graph
-                .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+                .search(
+                    top,
+                    ef,
+                    SearchAlgorithm::Hnsw,
+                    scorer,
+                    None,
+                    &DEFAULT_STOPPED,
+                )
                 .unwrap();
 
             let mut gpu_set = HashSet::default();

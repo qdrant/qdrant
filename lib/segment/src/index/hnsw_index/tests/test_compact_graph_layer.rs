@@ -7,7 +7,7 @@ use rand::prelude::StdRng;
 use rstest::rstest;
 
 use crate::fixtures::index_fixtures::random_vector;
-use crate::index::hnsw_index::graph_layers::GraphLayersBase;
+use crate::index::hnsw_index::graph_layers::{GraphLayersBase, SearchAlgorithm};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_links::GraphLinksFormat;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -96,7 +96,14 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
         .map(|query| {
             let scorer = vector_holder.scorer(query.clone());
             graph_layers
-                .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+                .search(
+                    top,
+                    ef,
+                    SearchAlgorithm::Hnsw,
+                    scorer,
+                    None,
+                    &DEFAULT_STOPPED,
+                )
                 .unwrap()
         })
         .collect_vec();

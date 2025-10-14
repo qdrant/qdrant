@@ -20,6 +20,8 @@ use super::graph_links::{GraphLinks, GraphLinksFormatParam};
 use super::links_container::{ItemsBuffer, LinksContainer};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
+#[cfg(test)]
+use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase};
 use crate::index::hnsw_index::graph_links::serialize_graph_links;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -759,7 +761,14 @@ mod tests {
         let scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
-            .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+            .search(
+                top,
+                ef,
+                SearchAlgorithm::Hnsw,
+                scorer,
+                None,
+                &DEFAULT_STOPPED,
+            )
             .unwrap();
 
         assert_eq!(reference_top.into_sorted_vec(), graph_search);
@@ -865,7 +874,14 @@ mod tests {
         let scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
-            .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+            .search(
+                top,
+                ef,
+                SearchAlgorithm::Hnsw,
+                scorer,
+                None,
+                &DEFAULT_STOPPED,
+            )
             .unwrap();
         assert_eq!(reference_top.into_sorted_vec(), graph_search);
     }
