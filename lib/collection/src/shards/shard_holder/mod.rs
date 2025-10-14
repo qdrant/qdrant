@@ -635,7 +635,7 @@ impl ShardHolder {
             // Check if shard is fully initialized on disk
             // The initialization flag should be absent for a well-formed replica set
             let initializing_flag = shard_initializing_flag_path(collection_path, shard_id);
-            let is_dirty_shard = tokio::fs::try_exists(&initializing_flag)
+            let is_dirty_shard = tokio_fs::try_exists(&initializing_flag)
                 .await
                 .unwrap_or(false);
 

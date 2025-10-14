@@ -8,7 +8,6 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use fs_err as fs;
-use fs_err::PathExt;
 use io::storage_version::{StorageVersion as _, VERSION_FILE};
 use itertools::Itertools;
 use semver::Version;
@@ -117,7 +116,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             (config, inverted_index, indices_tracker)
         } else {
             Self::try_load(path).or_else(|e| {
-                if path.fs_err_try_exists().unwrap_or(true) {
+                if fs::exists(path).unwrap_or(true) {
                     log::warn!("Failed to load {path:?}, rebuilding: {e}");
 
                     // Drop index completely.
