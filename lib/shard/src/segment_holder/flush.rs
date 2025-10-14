@@ -164,7 +164,6 @@ impl SegmentHolder {
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
 
-        // Flush and release each segment
         for (read_segment, segment_id) in segment_reads.into_iter().zip(lock_order.into_iter()) {
             let segment_version = read_segment.version();
             let segment_persisted_version = read_segment.persistent_version();
