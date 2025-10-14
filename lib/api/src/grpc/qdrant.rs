@@ -2122,7 +2122,7 @@ pub enum ShardTransferMethod {
     WalDelta = 2,
     /// Stream shard records in batches for resharding
     ReshardingStreamRecords = 3,
-    /// Stream shard records that match a filter in batches
+    /// Stream shard records that match a filter
     FilteredStreamRecords = 4,
 }
 impl ShardTransferMethod {

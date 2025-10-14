@@ -7,8 +7,8 @@ use api::rest::models::{CollectionDescription, CollectionsResponse};
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
-    ReplicatePointsOperation, ReplicateShardOperation, ReshardingDirection, RestartTransfer,
-    RestartTransferOperation, StartResharding,
+    ReplicatePoints, ReplicatePointsOperation, ReplicateShardOperation, ReshardingDirection,
+    RestartTransfer, RestartTransferOperation, StartResharding,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -324,24 +324,41 @@ pub async fn do_update_collection_cluster(
                 .await
         }
         ClusterOperations::ReplicatePoints(ReplicatePointsOperation { replicate_points }) => {
-            // validate shard to replicate
-            if !collection
-                .contains_shard(replicate_points.from_shard_id)
-                .await
-            {
+            let ReplicatePoints {
+                filter: _,
+                from_shard_key,
+                to_shard_key,
+            } = replicate_points;
+
+            // validate shard key exists
+            let from_replicas = collection.get_replicas(&from_shard_key).await?;
+            let to_replicas = collection.get_replicas(&to_shard_key).await?;
+
+            // Allow replication only shard keys with exactly one source (for now) and destination replica
+            if from_replicas.len() != 1 {
                 return Err(StorageError::BadRequest {
                     description: format!(
-                        "Shard {} of {} does not exist",
-                        replicate_points.from_shard_id, collection_name
+                        "Only replicating from shard keys with exactly one replica is supported. Shard key {from_shard_key} has {} replicas",
+                        from_replicas.len()
                     ),
                 });
-            };
+            }
 
-            // validate target peer exists
-            validate_peer_exists(replicate_points.to_peer_id)?;
+            if to_replicas.len() != 1 {
+                return Err(StorageError::BadRequest {
+                    description: format!(
+                        "Only replicating to shard keys with exactly one replica is supported. Shard key {to_shard_key} has {} replicas",
+                        to_replicas.len()
+                    ),
+                });
+            }
 
-            // validate source peer exists
-            validate_peer_exists(replicate_points.from_peer_id)?;
+            let (from_shard_id, from_peer_id) = from_replicas[0];
+            let (to_shard_id, to_peer_id) = to_replicas[0];
+
+            // validate source & target peers exist
+            validate_peer_exists(to_peer_id)?;
+            validate_peer_exists(from_peer_id)?;
 
             // submit operation to consensus
             dispatcher
@@ -349,10 +366,10 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::TransferShard(
                         collection_name,
                         Start(ShardTransfer {
-                            shard_id: replicate_points.from_shard_id,
-                            to_shard_id: Some(replicate_points.to_shard_id),
-                            from: replicate_points.from_peer_id,
-                            to: replicate_points.to_peer_id,
+                            shard_id: from_shard_id,
+                            to_shard_id: Some(to_shard_id),
+                            from: from_peer_id,
+                            to: to_peer_id,
                             sync: true,
                             method: Some(ShardTransferMethod::FilteredStreamRecords),
                             filter: Some(replicate_points.filter),
