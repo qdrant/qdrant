@@ -176,7 +176,7 @@ pub trait IdTracker: fmt::Debug {
     ///
     /// Returns a list of internal ids, that have non-zero versions, but are missing in the id mapping.
     /// Those points should be removed from all other parts of the segment.
-    fn cleanup_versions(&mut self) -> OperationResult<Vec<PointOffsetType>> {
+    fn fix_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
         // Points with mapping, but no version.
         // Can happen if insertion didn't complete.
         // We need to remove mapping and assume the point is going to be re-inserted by WAL.
@@ -472,13 +472,13 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn cleanup_versions(&mut self) -> OperationResult<Vec<PointOffsetType>> {
+    fn fix_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.cleanup_versions(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.cleanup_versions(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.cleanup_versions(),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
             #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.cleanup_versions(),
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
         }
     }
 

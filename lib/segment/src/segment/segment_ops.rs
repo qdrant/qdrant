@@ -496,7 +496,7 @@ impl Segment {
     /// Removes partially persisted points.
     pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
         // Get rid of versionless points.
-        let ids_to_clean = self.cleanup_versions()?;
+        let ids_to_clean = self.fix_id_tracker_inconsistencies()?;
 
         // There are some leftovers to clean from segment.
         // After that we need to set internal version to 0, so that
@@ -653,9 +653,10 @@ impl Segment {
         self.id_tracker.borrow().total_point_count()
     }
 
+    /// Fixes inconsistencies in the ID tracker, if any.
     /// Returns list of IDs, which should be removed from segment
-    pub fn cleanup_versions(&mut self) -> OperationResult<Vec<PointOffsetType>> {
-        self.id_tracker.borrow_mut().cleanup_versions()
+    pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
+        self.id_tracker.borrow_mut().fix_inconsistencies()
     }
 }
 
