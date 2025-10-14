@@ -1091,13 +1091,17 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn flusher(&self) -> Flusher {
-        let mut flushers = Vec::new();
+        // Most field indices have either 2 or 3 indices (including null), we also have an extra
+        // payload storage flusher. Overallocate to save potential reallocations.
+        let mut flushers = Vec::with_capacity(self.field_indexes.len() * 3 + 1);
+
         for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
                 flushers.push(index.flusher());
             }
         }
         flushers.push(self.payload.borrow().flusher());
+
         Box::new(move || {
             for flusher in flushers {
                 match flusher() {
@@ -1112,12 +1116,12 @@ impl PayloadIndex for StructPayloadIndex {
                         );
                         debug_assert!(
                             false,
-                            "Missing column family should not happen during testing"
+                            "Missing column family should not happen during testing",
                         );
                     }
                     Err(err) => {
                         return Err(OperationError::service_error(format!(
-                            "Failed to flush payload_index: {err}"
+                            "Failed to flush payload_index: {err}",
                         )));
                     }
                 }

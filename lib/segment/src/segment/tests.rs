@@ -276,37 +276,6 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
 }
 
 #[test]
-fn test_background_flush() {
-    let data = r#"
-        {
-            "name": "John Doe",
-            "age": 43,
-            "metadata": {
-                "height": 50,
-                "width": 60
-            }
-        }"#;
-
-    let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-
-    let hw_counter = HardwareCounterCell::new();
-
-    let mut segment = build_simple_segment(segment_base_dir.path(), 2, Distance::Dot).unwrap();
-    segment
-        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
-        .unwrap();
-
-    let payload: Payload = serde_json::from_str(data).unwrap();
-    segment
-        .set_full_payload(0, 0.into(), &payload, &hw_counter)
-        .unwrap();
-    segment.flush(false, false).unwrap();
-
-    // call flush second time to check that background flush finished successful
-    segment.flush(true, false).unwrap();
-}
-
-#[test]
 fn test_check_consistency() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;

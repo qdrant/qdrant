@@ -1,3 +1,4 @@
+mod flush;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -9,21 +10,20 @@ use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::save_on_disk::SaveOnDisk;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment_constructor::build_segment;
-use segment::types::{
-    ExtendedPointId, Payload, PointIdType, SegmentConfig, SegmentType, SeqNumberType,
-};
+use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
 use smallvec::{SmallVec, smallvec};
 
 use crate::locked_segment::LockedSegment;
@@ -70,6 +70,18 @@ pub struct SegmentHolder {
     /// An example for this are operations that don't modify any points but could be expensive to recover from during WAL recovery.
     /// To acknowledge them in WAL, we overwrite the max_persisted value in `Self::flush_all` with the segment version stored here.
     max_persisted_segment_version_overwrite: AtomicU64,
+
+    /// Holder for a thread, which does flushing of all segments sequentially.
+    /// This is used to avoid multiple concurrent flushes.
+    pub flush_thread: Mutex<Option<JoinHandle<OperationResult<()>>>>,
+}
+
+impl Drop for SegmentHolder {
+    fn drop(&mut self) {
+        if let Err(flushing_err) = self.lock_flushing() {
+            log::error!("Failed to flush segments holder during drop: {flushing_err}");
+        }
+    }
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -771,149 +783,6 @@ impl SegmentHolder {
             }
         }
         Ok(read_points)
-    }
-
-    /// Defines flush ordering for segments.
-    ///
-    /// Flush appendable segments first, then non-appendable.
-    /// This is done to ensure that all data, transferred from non-appendable segments to appendable segments
-    /// is persisted, before marking records in non-appendable segments as removed.
-    fn segment_flush_ordering(&self) -> impl Iterator<Item = SegmentId> {
-        let appendable_segments = self.appendable_segments_ids();
-        let non_appendable_segments = self.non_appendable_segments_ids();
-
-        appendable_segments
-            .into_iter()
-            .chain(non_appendable_segments)
-    }
-
-    /// Flushes all segments and returns maximum version to persist
-    ///
-    /// Before flushing, this read-locks all segments. It prevents writes to all not-yet-flushed
-    /// segments during flushing. All locked segments are flushed and released one by one.
-    ///
-    /// If there are unsaved changes after flush - detects lowest unsaved change version.
-    /// If all changes are saved - returns max version.
-    pub fn flush_all(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
-        let lock_order: Vec<_> = self.segment_flush_ordering().collect();
-
-        // Grab and keep to segment RwLock's until the end of this function
-        let segments = self.segment_locks(lock_order.iter().cloned())?;
-
-        // We can never have zero segments
-        // Having zero segments could permanently corrupt the WAL by acknowledging u64::MAX
-        assert!(
-            !segments.is_empty(),
-            "must always have at least one segment",
-        );
-
-        // Read-lock all segments before flushing any, must prevent any writes to any segment
-        // That is to prevent any copy-on-write operation on two segments from occurring in between
-        // flushing the two segments. If that would happen, segments could end up in an
-        // inconsistent state on disk that is not recoverable after a crash.
-        //
-        // E.g.: we have a point on an immutable segment. If we use a set-payload operation, we do
-        // copy-on-write. The point from immutable segment A is deleted, the updated point is
-        // stored on appendable segment B.
-        // Because of flush ordering segment B (appendable) is flushed before segment A
-        // (not-appendable). If the copy-on-write operation happens in between, the point is
-        // deleted from A but the new point in B is not persisted. We cannot recover this by
-        // replaying the WAL in case of a crash because the point in A does not exist anymore,
-        // making copy-on-write impossible.
-        // Locking all segments prevents copy-on-write operations from occurring in between
-        // flushes.
-        //
-        // WARNING: Ordering is very important here. Specifically:
-        // - We MUST lock non-appendable first, then appendable.
-        // - We MUST flush appendable first, then non-appendable
-        // Because of this, two rev(erse) calls are used below here.
-        //
-        // Locking must happen in this order because `apply_points_to_appendable` can take two
-        // write locks, also in this order. If we'd use different ordering we will eventually end
-        // up with a deadlock.
-        let mut segment_reads: Vec<_> = segments
-            .iter()
-            .rev()
-            .map(|segment| Self::aloha_lock_segment_read(segment))
-            .collect();
-        segment_reads.reverse();
-
-        // Assert we flush appendable segments first
-        debug_assert!(
-            segment_reads
-                .windows(2)
-                .all(|s| s[0].is_appendable() || !s[1].is_appendable()),
-            "Must flush appendable segments first",
-        );
-
-        // Start with the max_persisted_vesrion at the set overwrite value, which may just be 0
-        // Any of the segments we flush may increase this if they have a higher persisted version
-        // The overwrite is required to ensure we acknowledge no-op operations in WAL that didn't hit any segment
-        let mut max_persisted_version: SeqNumberType = self
-            .max_persisted_segment_version_overwrite
-            .load(Ordering::Relaxed);
-
-        let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
-        let mut has_unsaved = false;
-        let mut proxy_segments = vec![];
-
-        // Flush and release each segment
-        for (read_segment, segment_id) in segment_reads.into_iter().zip(lock_order.into_iter()) {
-            let segment_version = read_segment.version();
-            let segment_persisted_version = read_segment.flush(sync, force)?;
-
-            log::trace!(
-                "Flushed segment {segment_id}:{:?} version: {segment_version} to persisted: {segment_persisted_version}",
-                &read_segment.data_path(),
-            );
-
-            if segment_version > segment_persisted_version {
-                has_unsaved = true;
-                min_unsaved_version = min(min_unsaved_version, segment_persisted_version);
-            }
-
-            max_persisted_version = max(max_persisted_version, segment_persisted_version);
-
-            // Release segment read-lock right away now or keep it until the end
-            match read_segment.segment_type() {
-                // Regular segment: release now to allow new writes
-                SegmentType::Plain | SegmentType::Indexed => drop(read_segment),
-                // Proxy segment: release at the end, proxy segments may share the write segment
-                // Prevent new updates from changing write segment on yet-to-be-flushed proxies
-                SegmentType::Special => proxy_segments.push(read_segment),
-            }
-        }
-
-        drop(proxy_segments);
-
-        if has_unsaved {
-            log::trace!(
-                "Some segments have unsaved changes, lowest unsaved version: {min_unsaved_version}"
-            );
-            Ok(min_unsaved_version)
-        } else {
-            log::trace!(
-                "All segments flushed successfully, max persisted version: {max_persisted_version}"
-            );
-            Ok(max_persisted_version)
-        }
-    }
-
-    /// Grab the RwLock's for all the given segment IDs.
-    fn segment_locks(
-        &self,
-        segment_ids: impl IntoIterator<Item = SegmentId>,
-    ) -> OperationResult<Vec<&RwLock<dyn SegmentEntry>>> {
-        segment_ids
-            .into_iter()
-            .map(|segment_id| {
-                self.get(segment_id)
-                    .ok_or_else(|| {
-                        OperationError::service_error(format!("No segment with ID {segment_id}"))
-                    })
-                    .map(LockedSegment::get)
-            })
-            .collect()
     }
 
     /// Create a new appendable segment and add it to the segment holder.
