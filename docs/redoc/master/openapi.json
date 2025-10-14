@@ -11542,7 +11542,7 @@
             ]
           },
           {
-            "description": "Shard transfer for : stream all records in batches until all points satisfying the filter are transferred.",
+            "description": "Stream all records in batches until all points satisfying the filter are transferred.",
             "type": "string",
             "enum": [
               "filtered_stream_records"
@@ -13703,35 +13703,25 @@
       "ReplicatePoints": {
         "type": "object",
         "required": [
-          "filter",
-          "from_peer_id",
-          "from_shard_id",
-          "to_peer_id",
-          "to_shard_id"
+          "from_shard_key",
+          "to_shard_key"
         ],
         "properties": {
           "filter": {
-            "$ref": "#/components/schemas/Filter"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
-          "from_shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0
+          "from_shard_key": {
+            "$ref": "#/components/schemas/ShardKey"
           },
-          "to_shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0
-          },
-          "from_peer_id": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "to_peer_id": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
+          "to_shard_key": {
+            "$ref": "#/components/schemas/ShardKey"
           }
         }
       },

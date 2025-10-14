@@ -325,7 +325,7 @@ pub async fn do_update_collection_cluster(
         }
         ClusterOperations::ReplicatePoints(ReplicatePointsOperation { replicate_points }) => {
             let ReplicatePoints {
-                filter: _,
+                filter,
                 from_shard_key,
                 to_shard_key,
             } = replicate_points;
@@ -353,6 +353,13 @@ pub async fn do_update_collection_cluster(
                 });
             }
 
+            // Don't support filters for now
+            if filter.is_some() {
+                return Err(StorageError::BadRequest {
+                    description: "Filtering for replicating points is not supported yet".to_string(),
+                });
+            }
+
             let (from_shard_id, from_peer_id) = from_replicas[0];
             let (to_shard_id, to_peer_id) = to_replicas[0];
 
@@ -372,7 +379,7 @@ pub async fn do_update_collection_cluster(
                             to: to_peer_id,
                             sync: true,
                             method: Some(ShardTransferMethod::FilteredStreamRecords),
-                            filter: Some(replicate_points.filter),
+                            filter: filter,
                         }),
                     ),
                     access,

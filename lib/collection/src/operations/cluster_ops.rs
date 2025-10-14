@@ -204,7 +204,7 @@ pub struct ReplicatePointsOperation {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ReplicatePoints {
-    pub filter: Filter,
+    pub filter: Option<Filter>,
     pub from_shard_key: ShardKey,
     pub to_shard_key: ShardKey,
 }
