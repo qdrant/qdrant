@@ -61,21 +61,27 @@ pub trait GraphLayersBase {
     fn get_m(&self, level: usize) -> usize;
 
     /// Greedy search for closest points within a single graph layer
-    fn _search_on_level(
+    fn search_on_level(
         &self,
-        searcher: &mut SearchContext,
+        level_entry: ScoredPointOffset,
         level: usize,
-        visited_list: &mut VisitedListHandle,
+        ef: usize,
         points_scorer: &mut FilteredScorer,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<()> {
+    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+        let mut visited_list = self.get_visited_list_from_pool();
+        visited_list.check_and_update_visited(level_entry.idx);
+
+        let mut search_context = SearchContext::new(ef);
+        search_context.process_candidate(level_entry);
+
         let limit = self.get_m(level);
         let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(2 * limit);
 
-        while let Some(candidate) = searcher.candidates.pop() {
+        while let Some(candidate) = search_context.candidates.pop() {
             check_process_stopped(is_stopped)?;
 
-            if candidate.score < searcher.lower_bound() {
+            if candidate.score < search_context.lower_bound() {
                 break;
             }
 
@@ -89,34 +95,11 @@ pub trait GraphLayersBase {
             points_scorer
                 .score_points(&mut points_ids, limit)
                 .for_each(|score_point| {
-                    searcher.process_candidate(score_point);
+                    search_context.process_candidate(score_point);
                     visited_list.check_and_update_visited(score_point.idx);
                 });
         }
 
-        Ok(())
-    }
-
-    fn search_on_level(
-        &self,
-        level_entry: ScoredPointOffset,
-        level: usize,
-        ef: usize,
-        points_scorer: &mut FilteredScorer,
-        is_stopped: &AtomicBool,
-    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
-        let mut visited_list = self.get_visited_list_from_pool();
-        visited_list.check_and_update_visited(level_entry.idx);
-        let mut search_context = SearchContext::new(ef);
-        search_context.process_candidate(level_entry);
-
-        self._search_on_level(
-            &mut search_context,
-            level,
-            &mut visited_list,
-            points_scorer,
-            is_stopped,
-        )?;
         Ok(search_context.nearest)
     }
 
