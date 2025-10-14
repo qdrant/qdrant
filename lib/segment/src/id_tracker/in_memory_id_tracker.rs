@@ -79,20 +79,20 @@ impl IdTracker for InMemoryIdTracker {
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        let internal_id = self.mappings.drop(external_id);
-        if let Some(internal_id) = internal_id {
+        // Unset version first because it still requires the mapping to exist
+        if let Some(internal_id) = self.internal_id(external_id) {
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
+        self.mappings.drop(external_id);
         Ok(())
     }
 
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+        // Unset version first because it still requires the mapping to exist
+        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
         }
-
-        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
-
         Ok(())
     }
 
