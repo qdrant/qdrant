@@ -4,44 +4,15 @@ use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 use itertools::Itertools;
 use serde::Serialize;
-use serde::ser::SerializeStruct;
 
 use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Hash)]
 pub struct RecoQuery<T> {
     pub positives: Vec<T>,
     pub negatives: Vec<T>,
-}
-
-impl<T: Serialize> Serialize for RecoQuery<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let Self {
-            positives,
-            negatives,
-        } = self;
-
-        let mut state = serializer.serialize_struct("RecoQuery", 2)?;
-        state.serialize_field("positives", positives)?;
-        state.serialize_field("negatives", negatives)?;
-        state.end()
-    }
-}
-
-impl<T: Hash> Hash for RecoQuery<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let Self {
-            positives,
-            negatives,
-        } = self;
-        positives.hash(state);
-        negatives.hash(state);
-    }
 }
 
 impl<T> RecoQuery<T> {

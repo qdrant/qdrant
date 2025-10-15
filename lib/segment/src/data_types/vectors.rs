@@ -7,7 +7,6 @@ use half::f16;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
-use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
@@ -18,7 +17,10 @@ use super::primitive::PrimitiveVectorElement;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::transpose_map_into_named_vector;
 use crate::types::{VectorName, VectorNameBuf};
-use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
+use crate::vector_storage::query::{
+    ContextQuery, DiscoveryQuery, FeedbackQueryInternal, RecoQuery, SimpleFeedbackStrategy,
+    TransformInto,
+};
 
 /// How many dimensions of a sparse vector are considered to be a single unit for cost estimation.
 const SPARSE_DIMS_COST_UNIT: usize = 64;
@@ -756,7 +758,7 @@ impl BatchVectorStructInternal {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Hash)]
 pub struct NamedQuery<TQuery> {
     pub query: TQuery,
     pub using: Option<VectorNameBuf>,
@@ -815,27 +817,6 @@ impl<T: Validate> Validate for NamedQuery<T> {
     }
 }
 
-impl<T: Serialize> Serialize for NamedQuery<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let Self { query, using } = self;
-        let mut state = serializer.serialize_struct("NamedQuery", 2)?;
-        state.serialize_field("query", query)?;
-        state.serialize_field("using", using)?;
-        state.end()
-    }
-}
-
-impl<T: Hash> Hash for NamedQuery<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let Self { query, using } = self;
-        query.hash(state);
-        using.hash(state);
-    }
-}
-
 impl NamedQuery<RecoQuery<VectorInternal>> {
     pub fn new(query: RecoQuery<VectorInternal>, using: Option<VectorNameBuf>) -> Self {
         // TODO: maybe validate there is no sparse vector without vector name
@@ -850,6 +831,7 @@ pub enum QueryVector {
     RecommendSumScores(RecoQuery<VectorInternal>),
     Discovery(DiscoveryQuery<VectorInternal>),
     Context(ContextQuery<VectorInternal>),
+    FeedbackSimple(FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>),
 }
 
 impl TransformInto<QueryVector, VectorInternal, VectorInternal> for QueryVector {
@@ -867,6 +849,7 @@ impl TransformInto<QueryVector, VectorInternal, VectorInternal> for QueryVector 
             }
             QueryVector::Discovery(v) => Ok(QueryVector::Discovery(v.transform(&mut f)?)),
             QueryVector::Context(v) => Ok(QueryVector::Context(v.transform(&mut f)?)),
+            QueryVector::FeedbackSimple(v) => Ok(QueryVector::FeedbackSimple(v.transform(&mut f)?)),
         }
     }
 }

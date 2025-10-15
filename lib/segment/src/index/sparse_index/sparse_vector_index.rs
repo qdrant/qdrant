@@ -504,7 +504,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             QueryVector::RecommendBestScore(_)
             | QueryVector::RecommendSumScores(_)
             | QueryVector::Discovery(_)
-            | QueryVector::Context(_) => {
+            | QueryVector::Context(_)
+            | QueryVector::FeedbackSimple(_) => {
                 let _timer = if filter.is_some() {
                     ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_plain)
                 } else {

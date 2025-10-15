@@ -17,7 +17,8 @@ use crate::vector_storage::quantized::quantized_multi_custom_query_scorer::Quant
 use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
 use crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffsets;
 use crate::vector_storage::query::{
-    ContextQuery, DiscoveryQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
+    ContextQuery, DiscoveryQuery, FeedbackQueryInternal, RecoBestScoreQuery, RecoQuery,
+    RecoSumScoresQuery, TransformInto,
 };
 use crate::vector_storage::{RawScorer, raw_scorer_from_query_scorer};
 
@@ -216,6 +217,17 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 );
                 raw_scorer_from_query_scorer(query_scorer)
             }
+            QueryVector::FeedbackSimple(feedback_query) => {
+                let feedback_query: FeedbackQueryInternal<DenseVector, _> =
+                    feedback_query.transform_into()?;
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
+                    feedback_query.into_query(),
+                    quantized_storage,
+                    quantization_config,
+                    hardware_counter,
+                );
+                raw_scorer_from_query_scorer(query_scorer)
+            }
         }
     }
 
@@ -288,6 +300,18 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 let query_scorer =
                     QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _>::new_multi(
                         context_query,
+                        quantized_multivector_storage,
+                        quantization_config,
+                        hardware_counter,
+                    );
+                raw_scorer_from_query_scorer(query_scorer)
+            }
+            QueryVector::FeedbackSimple(feedback_query) => {
+                let feedback_query: FeedbackQueryInternal<MultiDenseVectorInternal, _> =
+                    feedback_query.transform_into()?;
+                let query_scorer =
+                    QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _>::new_multi(
+                        feedback_query.into_query(),
                         quantized_multivector_storage,
                         quantization_config,
                         hardware_counter,

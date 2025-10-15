@@ -4,38 +4,16 @@ use std::iter::{self, Chain, Once};
 use common::math::fast_sigmoid;
 use common::types::ScoreType;
 use itertools::Itertools;
-use serde::ser::SerializeStruct;
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 
 use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Hash)]
 pub struct ContextPair<T> {
     pub positive: T,
     pub negative: T,
-}
-
-impl<T: Serialize> Serialize for ContextPair<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let Self { positive, negative } = self;
-        let mut state = serializer.serialize_struct("ContextPair", 2)?;
-        state.serialize_field("positive", positive)?;
-        state.serialize_field("negative", negative)?;
-        state.end()
-    }
-}
-
-impl<T: Hash> Hash for ContextPair<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let Self { positive, negative } = self;
-        positive.hash(state);
-        negative.hash(state);
-    }
 }
 
 impl<T> ContextPair<T> {
@@ -104,28 +82,9 @@ impl<T> From<(T, T)> for ContextPair<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Hash)]
 pub struct ContextQuery<T> {
     pub pairs: Vec<ContextPair<T>>,
-}
-
-impl<T: Serialize> Serialize for ContextQuery<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let Self { pairs } = self;
-        let mut state = serializer.serialize_struct("ContextQuery", 1)?;
-        state.serialize_field("pairs", pairs)?;
-        state.end()
-    }
-}
-
-impl<T: Hash> Hash for ContextQuery<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let Self { pairs } = self;
-        pairs.hash(state);
-    }
 }
 
 impl<T> ContextQuery<T> {

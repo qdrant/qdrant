@@ -291,11 +291,11 @@ impl Shard {
                     point.score = distance.postprocess_score(point.score);
                 }
             }
-
             QueryVector::RecommendBestScore(_) => (),
             QueryVector::RecommendSumScores(_) => (),
             QueryVector::Discovery(_) => (),
             QueryVector::Context(_) => (),
+            QueryVector::FeedbackSimple(_) => (),
         }
 
         if let Some(score_threshold) = score_threshold {
