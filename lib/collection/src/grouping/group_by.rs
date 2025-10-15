@@ -28,9 +28,7 @@ use crate::operations::types::{
 use crate::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
 };
-use crate::operations::universal_query::shard_query::{
-    ScoringQuery, ShardPrefetch, ShardQueryRequest,
-};
+use crate::operations::universal_query::shard_query::{self, ShardPrefetch, ShardQueryRequest};
 use crate::recommendations::recommend_into_core_search;
 
 const MAX_GET_GROUPS_REQUESTS: usize = 5;
@@ -319,7 +317,8 @@ pub async fn group_by(
 ) -> CollectionResult<Vec<PointGroup>> {
     let start = std::time::Instant::now();
     let collection_params = collection.collection_config.read().await.params.clone();
-    let score_ordering = ScoringQuery::order(request.source.query.as_ref(), &collection_params)?;
+    let score_ordering =
+        shard_query::query_result_order(request.source.query.as_ref(), &collection_params)?;
 
     let mut aggregator = GroupsAggregator::new(
         request.groups,
