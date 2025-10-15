@@ -215,17 +215,15 @@ impl UpdateHandler {
         let scroll_read_lock = self.scroll_read_lock.clone();
         let update_tracker = self.update_tracker.clone();
         let collection_name = self.collection_name.clone();
-        self.update_worker = Some(self.runtime_handle.spawn_blocking(move || {
-            Self::update_worker_fn(
-                collection_name,
-                update_receiver,
-                tx,
-                wal,
-                segments,
-                scroll_read_lock,
-                update_tracker,
-            )
-        }));
+        self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
+            collection_name,
+            update_receiver,
+            tx,
+            wal,
+            segments,
+            scroll_read_lock,
+            update_tracker,
+        )));
 
         let segments = self.segments.clone();
         let wal = self.wal.clone();
@@ -756,7 +754,51 @@ impl UpdateHandler {
         }
     }
 
-    fn update_worker_fn(
+    #[allow(clippy::too_many_arguments)]
+    fn update_worker_internal(
+        collection_name: CollectionId,
+        operation: CollectionUpdateOperations,
+        op_num: SeqNumberType,
+        wait: bool,
+        wal: LockedWal,
+        segments: LockedSegmentHolder,
+        update_operation_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
+        hw_measurements: HwMeasurementAcc,
+    ) -> CollectionResult<usize> {
+        // If wait flag is set, explicitly flush WAL first
+        if wait {
+            wal.blocking_lock().flush().map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Can't flush WAL before operation {op_num} - {err}"
+                ))
+            })?;
+        }
+
+        let start_time = Instant::now();
+
+        // This represents the operation without vectors and payloads for logging purposes
+        // Do not use for anything else
+        let loggable_operation = operation.remove_details();
+
+        let result = CollectionUpdater::update(
+            &segments,
+            op_num,
+            operation,
+            update_operation_lock.clone(),
+            update_tracker.clone(),
+            &hw_measurements.get_counter_cell(),
+        );
+
+        let duration = start_time.elapsed();
+
+        log_request_to_collector(&collection_name, duration, move || loggable_operation);
+
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn update_worker_fn(
         collection_name: CollectionId,
         mut receiver: Receiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
@@ -765,7 +807,7 @@ impl UpdateHandler {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) {
-        while let Some(signal) = receiver.blocking_recv() {
+        while let Some(signal) = receiver.recv().await {
             match signal {
                 UpdateSignal::Operation(OperationData {
                     op_num,
@@ -774,47 +816,35 @@ impl UpdateHandler {
                     wait,
                     hw_measurements,
                 }) => {
-                    let flush_res = if wait {
-                        wal.blocking_lock().flush().map_err(|err| {
-                            CollectionError::service_error(format!(
-                                "Can't flush WAL before operation {op_num} - {err}"
-                            ))
-                        })
-                    } else {
-                        Ok(())
-                    };
+                    let collection_name_clone = collection_name.clone();
+                    let wal_clone = wal.clone();
+                    let segments_clone = segments.clone();
+                    let update_operation_lock_clone = update_operation_lock.clone();
+                    let update_tracker_clone = update_tracker.clone();
 
-                    let operation_result = flush_res.and_then(|_| {
-                        let start_time = Instant::now();
-
-                        // This represents the operation without vectors and payloads for logging purposes
-                        // Do not use for anything else
-                        let loggable_operation = operation.remove_details();
-
-                        let result = CollectionUpdater::update(
-                            &segments,
-                            op_num,
+                    let operation_result = tokio::task::spawn_blocking(move || {
+                        Self::update_worker_internal(
+                            collection_name_clone,
                             operation,
-                            update_operation_lock.clone(),
-                            update_tracker.clone(),
-                            &hw_measurements.get_counter_cell(),
-                        );
-
-                        let duration = start_time.elapsed();
-
-                        log_request_to_collector(&collection_name, duration, move || {
-                            loggable_operation
-                        });
-
-                        result
-                    });
+                            op_num,
+                            wait,
+                            wal_clone,
+                            segments_clone,
+                            update_operation_lock_clone,
+                            update_tracker_clone,
+                            hw_measurements,
+                        )
+                    })
+                    .await;
 
                     let res = match operation_result {
-                        Ok(update_res) => optimize_sender
-                            .blocking_send(OptimizerSignal::Operation(op_num))
+                        Ok(Ok(update_res)) => optimize_sender
+                            .send(OptimizerSignal::Operation(op_num))
+                            .await
                             .and(Ok(update_res))
                             .map_err(|send_err| send_err.into()),
-                        Err(err) => Err(err),
+                        Ok(Err(err)) => Err(err),
+                        Err(err) => Err(CollectionError::from(err)),
                     };
 
                     if let Some(feedback) = sender {
@@ -825,12 +855,14 @@ impl UpdateHandler {
                 }
                 UpdateSignal::Stop => {
                     optimize_sender
-                        .blocking_send(OptimizerSignal::Stop)
+                        .send(OptimizerSignal::Stop)
+                        .await
                         .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
                     break;
                 }
                 UpdateSignal::Nop => optimize_sender
-                    .blocking_send(OptimizerSignal::Nop)
+                    .send(OptimizerSignal::Nop)
+                    .await
                     .unwrap_or_else(|_| {
                         log::info!(
                             "Can't notify optimizers, assume process is dead. Restart is required"
@@ -845,7 +877,8 @@ impl UpdateHandler {
         }
         // Transmitter was destroyed
         optimize_sender
-            .blocking_send(OptimizerSignal::Stop)
+            .send(OptimizerSignal::Stop)
+            .await
             .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
     }
 
