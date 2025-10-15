@@ -35,8 +35,11 @@ pub fn create_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
 pub fn create_update_runtime(max_optimization_threads: usize) -> io::Result<Runtime> {
     let mut update_runtime_builder = runtime::Builder::new_multi_thread();
 
+    let num_cpus = common::cpu::get_num_cpus();
+
     update_runtime_builder
         .enable_time()
+        .worker_threads(num_cpus)
         .thread_name_fn(move || {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let update_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
