@@ -43,19 +43,6 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
     # Insert some initial number of points
     upsert_random_points(peer_api_uris[0], 100, shard_key="default")
 
-    transfer_collection_cluster_info = get_collection_cluster_info(
-        peer_api_uris[0], COLLECTION_NAME
-    )
-    receiver_collection_cluster_info = get_collection_cluster_info(
-        peer_api_uris[-1], COLLECTION_NAME
-    )
-
-    from_peer_id = transfer_collection_cluster_info["peer_id"]
-    to_peer_id = receiver_collection_cluster_info["peer_id"]
-
-    from_shard_id = transfer_collection_cluster_info["local_shards"][0]["shard_id"]
-    to_shard_id = receiver_collection_cluster_info["local_shards"][-1]["shard_id"]
-
     # Transfer shard from one node to another
     filter = {}
 
@@ -64,11 +51,9 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
         json={
             "replicate_points": {
-                "filter": filter,
-                "from_shard_id": from_shard_id,
-                "to_shard_id": to_shard_id,
-                "from_peer_id": from_peer_id,
-                "to_peer_id": to_peer_id,
+                # "filter": filter,
+                "from_shard_key": "default",
+                "to_shard_key": "tenant",
             }
         },
     )
