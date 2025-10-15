@@ -1,9 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 
 use api::rest;
 use api::rest::GeoDistance;
 use common::types::ScoreType;
 use itertools::Itertools;
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::query_optimization::rescore_formula::parsed_formula::*;
 use segment::json_path::JsonPath;
 use segment::types::{Condition, GeoPoint};
@@ -58,13 +60,15 @@ impl ExpressionInternal {
         self,
         payload_vars: &mut HashSet<JsonPath>,
         conditions: &mut Vec<Condition>,
-    ) -> CollectionResult<ParsedExpression> {
+    ) -> OperationResult<ParsedExpression> {
         let expr = match self {
             ExpressionInternal::Constant(c) => {
                 ParsedExpression::Constant(PreciseScoreOrdered::from(PreciseScore::from(c)))
             }
             ExpressionInternal::Variable(var) => {
-                let var: VariableId = var.parse()?;
+                let var: VariableId = var
+                    .parse()
+                    .map_err(|msg| failed_to_parse("variable ID", &var, &msg))?;
                 if let VariableId::Payload(payload_var) = var.clone() {
                     payload_vars.insert(payload_var);
                 }
@@ -80,13 +84,11 @@ impl ExpressionInternal {
                 ParsedExpression::new_geo_distance(origin, to)
             }
             ExpressionInternal::Datetime(dt_str) => {
-                ParsedExpression::Datetime(DatetimeExpression::Constant(dt_str.parse().map_err(
-                    |err: chrono::ParseError| {
-                        CollectionError::bad_input(format!(
-                            "failed to parse date-time {dt_str:?}: {err}"
-                        ))
-                    },
-                )?))
+                ParsedExpression::Datetime(DatetimeExpression::Constant(
+                    dt_str
+                        .parse()
+                        .map_err(|err| failed_to_parse("date-time", &dt_str, err))?,
+                ))
             }
             ExpressionInternal::DatetimeKey(json_path) => {
                 payload_vars.insert(json_path.clone());
@@ -165,7 +167,7 @@ impl ExpressionInternal {
 }
 
 impl TryFrom<FormulaInternal> for ParsedFormula {
-    type Error = CollectionError;
+    type Error = OperationError;
 
     fn try_from(value: FormulaInternal) -> Result<Self, Self::Error> {
         let FormulaInternal { formula, defaults } = value;
@@ -178,8 +180,11 @@ impl TryFrom<FormulaInternal> for ParsedFormula {
         let defaults = defaults
             .into_iter()
             .map(|(key, value)| {
-                let key = key.as_str().parse()?;
-                CollectionResult::Ok((key, value))
+                let key = key
+                    .as_str()
+                    .parse()
+                    .map_err(|msg| failed_to_parse("variable ID", &key, &msg))?;
+                OperationResult::Ok((key, value))
             })
             .try_collect()?;
 
@@ -190,6 +195,10 @@ impl TryFrom<FormulaInternal> for ParsedFormula {
             defaults,
         })
     }
+}
+
+fn failed_to_parse(what: &str, value: &str, message: impl fmt::Display) -> OperationError {
+    OperationError::validation_error(format!("failed to parse {what} {value}: {message}"))
 }
 
 impl From<rest::FormulaQuery> for FormulaInternal {
