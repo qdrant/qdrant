@@ -28,7 +28,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::CollectionQueryRequest;
 use crate::operations::universal_query::shard_query::{
-    FusionInternal, MmrInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
+    self, FusionInternal, MmrInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
 
 /// A factor which determines if we need to use the 2-step search or not.
@@ -618,7 +618,8 @@ impl Collection {
             query_infos.into_iter().zip(all_shards_result_by_transposed)
         {
             // `shards_results` shape: [num_shards, num_scored_points]
-            let order = ScoringQuery::order(query_info.scoring_query, &collection_params)?;
+            let order =
+                shard_query::query_result_order(query_info.scoring_query, &collection_params)?;
             let number_of_shards = shards_results.len();
 
             // Equivalent to:
