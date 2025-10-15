@@ -1,15 +1,11 @@
-use api::conversions::json::proto_to_json;
-use api::grpc::conversions::grpc_condition_into_condition;
-use api::grpc::{DecayParamsExpression, qdrant as grpc};
+use api::grpc::qdrant as grpc;
 use common::types::ScoreType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
-use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    DecayKind, ParsedFormula,
-};
+use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::types::{
     Filter, Order, ScoredPoint, SearchParams, VectorName, VectorNameBuf, WithPayloadInterface,
     WithVector,
@@ -21,7 +17,7 @@ use tonic::Status;
 
 use crate::config::CollectionParams;
 use crate::operations::types::CollectionResult;
-use crate::operations::universal_query::formula::{ExpressionInternal, FormulaInternal};
+use crate::operations::universal_query::formula::FormulaInternal;
 /// Internal response type for a universal query request.
 ///
 /// Capable of returning multiple intermediate results if needed, like the case of RRF (Reciprocal Rank Fusion)
@@ -389,167 +385,6 @@ impl TryFrom<i32> for SampleInternal {
 
         Ok(SampleInternal::from(sample))
     }
-}
-
-impl TryFrom<api::grpc::qdrant::Formula> for FormulaInternal {
-    type Error = tonic::Status;
-
-    fn try_from(formula: api::grpc::qdrant::Formula) -> Result<Self, Self::Error> {
-        let api::grpc::qdrant::Formula {
-            expression,
-            defaults,
-        } = formula;
-
-        let expression = expression
-            .ok_or_else(|| tonic::Status::invalid_argument("missing field: expression"))?;
-
-        let expression = ExpressionInternal::try_from(expression)?;
-        let defaults = defaults
-            .into_iter()
-            .map(|(key, value)| {
-                let value = proto_to_json(value)?;
-                Result::<_, tonic::Status>::Ok((key, value))
-            })
-            .try_collect()?;
-
-        Ok(Self {
-            formula: expression,
-            defaults,
-        })
-    }
-}
-
-impl TryFrom<grpc::Expression> for ExpressionInternal {
-    type Error = tonic::Status;
-
-    fn try_from(expression: grpc::Expression) -> Result<Self, Self::Error> {
-        use grpc::expression::Variant;
-
-        let variant = expression
-            .variant
-            .ok_or_else(|| tonic::Status::invalid_argument("missing field: variant"))?;
-
-        let expression = match variant {
-            Variant::Constant(constant) => ExpressionInternal::Constant(constant),
-            Variant::Variable(variable) => ExpressionInternal::Variable(variable),
-            Variant::Condition(condition) => {
-                let condition = grpc_condition_into_condition(condition)?
-                    .ok_or_else(|| tonic::Status::invalid_argument("missing field: condition"))?;
-                ExpressionInternal::Condition(Box::new(condition))
-            }
-            Variant::GeoDistance(grpc::GeoDistance { origin, to }) => {
-                let origin = origin
-                    .ok_or_else(|| tonic::Status::invalid_argument("missing field: origin"))?
-                    .into();
-                let to = to
-                    .parse()
-                    .map_err(|_| tonic::Status::invalid_argument("invalid payload key"))?;
-                ExpressionInternal::GeoDistance { origin, to }
-            }
-            Variant::Datetime(dt_str) => ExpressionInternal::Datetime(dt_str),
-            Variant::DatetimeKey(dt_key) => {
-                let json_path = dt_key
-                    .parse()
-                    .map_err(|_| tonic::Status::invalid_argument("invalid payload key"))?;
-                ExpressionInternal::DatetimeKey(json_path)
-            }
-            Variant::Mult(grpc::MultExpression { mult }) => {
-                let mult = mult
-                    .into_iter()
-                    .map(ExpressionInternal::try_from)
-                    .try_collect()?;
-                ExpressionInternal::Mult(mult)
-            }
-            Variant::Sum(grpc::SumExpression { sum }) => {
-                let sum = sum
-                    .into_iter()
-                    .map(ExpressionInternal::try_from)
-                    .try_collect()?;
-                ExpressionInternal::Sum(sum)
-            }
-            Variant::Div(div) => {
-                let grpc::DivExpression {
-                    left,
-                    right,
-                    by_zero_default,
-                } = *div;
-
-                let left =
-                    *left.ok_or_else(|| tonic::Status::invalid_argument("missing field: left"))?;
-                let right = *right
-                    .ok_or_else(|| tonic::Status::invalid_argument("missing field: right"))?;
-
-                ExpressionInternal::Div {
-                    left: Box::new(left.try_into()?),
-                    right: Box::new(right.try_into()?),
-                    by_zero_default,
-                }
-            }
-            Variant::Neg(expression) => {
-                ExpressionInternal::Neg(Box::new((*expression).try_into()?))
-            }
-            Variant::Abs(expression) => {
-                ExpressionInternal::Abs(Box::new((*expression).try_into()?))
-            }
-            Variant::Sqrt(expression) => {
-                ExpressionInternal::Sqrt(Box::new((*expression).try_into()?))
-            }
-            Variant::Pow(pow_expression) => {
-                let grpc::PowExpression { base, exponent } = *pow_expression;
-                let raw_base =
-                    *base.ok_or_else(|| tonic::Status::invalid_argument("missing field: base"))?;
-                let raw_exponent = *exponent
-                    .ok_or_else(|| tonic::Status::invalid_argument("missing field: exponent"))?;
-
-                ExpressionInternal::Pow {
-                    base: Box::new(raw_base.try_into()?),
-                    exponent: Box::new(raw_exponent.try_into()?),
-                }
-            }
-            Variant::Exp(expression) => {
-                ExpressionInternal::Exp(Box::new((*expression).try_into()?))
-            }
-            Variant::Log10(expression) => {
-                ExpressionInternal::Log10(Box::new((*expression).try_into()?))
-            }
-            Variant::Ln(expression) => ExpressionInternal::Ln(Box::new((*expression).try_into()?)),
-            Variant::LinDecay(decay_params) => {
-                try_from_decay_params(*decay_params, DecayKind::Lin)?
-            }
-            Variant::ExpDecay(decay_params) => {
-                try_from_decay_params(*decay_params, DecayKind::Exp)?
-            }
-            Variant::GaussDecay(decay_params) => {
-                try_from_decay_params(*decay_params, DecayKind::Gauss)?
-            }
-        };
-
-        Ok(expression)
-    }
-}
-
-fn try_from_decay_params(
-    params: DecayParamsExpression,
-    kind: DecayKind,
-) -> Result<ExpressionInternal, Status> {
-    let grpc::DecayParamsExpression {
-        x,
-        target,
-        midpoint,
-        scale,
-    } = params;
-
-    let x = *x.ok_or_else(|| tonic::Status::invalid_argument("missing field: x"))?;
-
-    let target = target.map(|t| (*t).try_into()).transpose()?.map(Box::new);
-
-    Ok(ExpressionInternal::Decay {
-        kind,
-        x: Box::new(x.try_into()?),
-        target,
-        midpoint,
-        scale,
-    })
 }
 
 impl From<api::grpc::qdrant::Fusion> for FusionInternal {
