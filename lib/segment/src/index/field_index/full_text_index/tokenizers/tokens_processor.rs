@@ -64,7 +64,7 @@ impl TokensProcessor {
 
     pub fn process_token_cow<'a>(
         &self,
-        token: Cow<'a, str>,
+        mut token_cow: Cow<'a, str>,
         check_max_len: bool,
     ) -> Option<Cow<'a, str>> {
         let Self {
@@ -73,15 +73,17 @@ impl TokensProcessor {
             stemmer,
             min_token_len,
             max_token_len,
-            ..
+            ascii_folding,
         } = self;
 
-        if token.is_empty() {
+        if token_cow.is_empty() {
             return None;
         }
 
         // Handle ASCII folding (normalize accents)
-        let mut token_cow = self.fold_if_enabled(token);
+        if *ascii_folding {
+            token_cow = Cow::Owned(super::ascii_folding::fold_to_ascii(token_cow.as_ref()));
+        }
 
         // Handle lowercase
         if *lowercase {

@@ -105,8 +105,7 @@ impl PrefixTokenizer {
             .filter(|token| !token.is_empty())
             .for_each(|word| {
                 // Apply ASCII folding if enabled
-                let mut word_cow: Cow<'a, str> =
-                    tokens_processor.fold_if_enabled(Cow::Borrowed(word));
+                let mut word_cow = tokens_processor.fold_if_enabled(Cow::Borrowed(word));
 
                 // Handle lowercase
                 if tokens_processor.lowercase {
@@ -232,6 +231,8 @@ impl Tokenizer {
 #[cfg(test)]
 mod tests {
     use std::default::Default;
+
+    use itertools::Itertools;
 
     use super::*;
     use crate::data_types::index::{
@@ -706,6 +707,15 @@ mod tests {
     fn test_ascii_folding_word_tokenizer_on_off() {
         let text = "ação café jalapeño Über";
 
+        let expected_disabled = ["ação", "café", "jalapeño", "über"]
+            .into_iter()
+            .map(str::to_string)
+            .collect_vec();
+        let expected_enabled = ["acao", "cafe", "jalapeno", "uber"]
+            .into_iter()
+            .map(str::to_string)
+            .collect_vec();
+
         // ascii_folding disabled (default)
         let params_disabled = TextIndexParams {
             r#type: TextIndexType::Text,
@@ -722,10 +732,7 @@ mod tests {
         let tokenizer_disabled = Tokenizer::new_from_text_index_params(&params_disabled);
         let mut tokens_disabled = Vec::new();
         tokenizer_disabled.tokenize_doc(text, |token| tokens_disabled.push(token.to_string()));
-        assert!(tokens_disabled.contains(&"ação".to_string()));
-        assert!(tokens_disabled.contains(&"café".to_string()));
-        assert!(tokens_disabled.contains(&"jalapeño".to_string()));
-        assert!(tokens_disabled.contains(&"über".to_string()));
+        assert_eq!(tokens_disabled, expected_disabled);
 
         // ascii_folding enabled
         let params_enabled = TextIndexParams {
@@ -743,10 +750,7 @@ mod tests {
         let tokenizer_enabled = Tokenizer::new_from_text_index_params(&params_enabled);
         let mut tokens_enabled = Vec::new();
         tokenizer_enabled.tokenize_doc(text, |token| tokens_enabled.push(token.to_string()));
-        assert!(tokens_enabled.contains(&"acao".to_string()));
-        assert!(tokens_enabled.contains(&"cafe".to_string()));
-        assert!(tokens_enabled.contains(&"jalapeno".to_string()));
-        assert!(tokens_enabled.contains(&"uber".to_string()));
+        assert_eq!(tokens_enabled, expected_enabled);
     }
 
     #[test]
@@ -779,15 +783,9 @@ mod tests {
         // We expect prefixes like a, ac, aca, acao
         assert!(tokens_enabled.contains(&"a".to_string()));
         assert!(tokens_enabled.contains(&"ac".to_string()));
-        assert!(
-            tokens_enabled.contains(&"aca".to_string())
-                || tokens_enabled.contains(&"acao".to_string())
-        );
-        assert!(
-            tokens_enabled
-                .iter()
-                .all(|t| t.chars().all(|c| c.is_ascii()))
-        );
+        assert!(tokens_enabled.contains(&"aca".to_string()));
+        assert!(tokens_enabled.contains(&"acao".to_string()));
+        assert!(tokens_enabled.iter().all(|t| t.is_ascii()));
     }
 
     #[test]

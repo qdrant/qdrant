@@ -1097,7 +1097,7 @@ pub struct TextIndexParams {
     /// Set an algorithm for stemming.
     #[prost(message, optional, tag = "8")]
     pub stemmer: ::core::option::Option<StemmingAlgorithm>,
-    /// Set an algorithm for ascii folding.
+    /// If true, normalize tokens by folding accented characters to ASCII (e.g., "ação" -> "acao"). Default: false..
     #[prost(bool, optional, tag = "9")]
     pub ascii_folding: ::core::option::Option<bool>,
 }

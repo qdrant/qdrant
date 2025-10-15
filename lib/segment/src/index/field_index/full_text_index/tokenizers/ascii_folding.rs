@@ -464,5 +464,11 @@ mod tests {
             fold_to_ascii("“quote” — test １②⒊"),
             "\"quote\" - test 123."
         );
+
+        // japanese characters are unchanged
+        assert_eq!(
+            fold_to_ascii("日本語のテキストです。Qdrantのコードで単体テストで使用されています。"),
+            "日本語のテキストです。Qdrantのコードで単体テストで使用されています。"
+        );
     }
 }

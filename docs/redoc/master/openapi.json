@@ -7748,6 +7748,11 @@
             "type": "boolean",
             "nullable": true
           },
+          "ascii_folding": {
+            "description": "If true, normalize tokens by folding accented characters to ASCII (e.g., \"ação\" -> \"acao\"). Default: false.",
+            "type": "boolean",
+            "nullable": true
+          },
           "phrase_matching": {
             "description": "If true, support phrase matching. Default: false.",
             "type": "boolean",
@@ -10697,6 +10702,11 @@
           },
           "lowercase": {
             "description": "Lowercase the text before tokenization. Default is `true`.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "ascii_folding": {
+            "description": "If true, normalize tokens by folding accented characters to ASCII (e.g., \"ação\" -> \"acao\"). Default is `false`.",
             "type": "boolean",
             "nullable": true
           },
