@@ -766,38 +766,35 @@ impl UpdateHandler {
         update_tracker: UpdateTracker,
         hw_measurements: HwMeasurementAcc,
     ) -> CollectionResult<usize> {
-        let flush_res = if wait {
+        // If wait flag is set, explicitly flush WAL first
+        if wait {
             wal.blocking_lock().flush().map_err(|err| {
                 CollectionError::service_error(format!(
                     "Can't flush WAL before operation {op_num} - {err}"
                 ))
-            })
-        } else {
-            Ok(())
-        };
+            })?;
+        }
 
-        flush_res.and_then(|_| {
-            let start_time = Instant::now();
+        let start_time = Instant::now();
 
-            // This represents the operation without vectors and payloads for logging purposes
-            // Do not use for anything else
-            let loggable_operation = operation.remove_details();
+        // This represents the operation without vectors and payloads for logging purposes
+        // Do not use for anything else
+        let loggable_operation = operation.remove_details();
 
-            let result = CollectionUpdater::update(
-                &segments,
-                op_num,
-                operation,
-                update_operation_lock.clone(),
-                update_tracker.clone(),
-                &hw_measurements.get_counter_cell(),
-            );
+        let result = CollectionUpdater::update(
+            &segments,
+            op_num,
+            operation,
+            update_operation_lock.clone(),
+            update_tracker.clone(),
+            &hw_measurements.get_counter_cell(),
+        );
 
-            let duration = start_time.elapsed();
+        let duration = start_time.elapsed();
 
-            log_request_to_collector(&collection_name, duration, move || loggable_operation);
+        log_request_to_collector(&collection_name, duration, move || loggable_operation);
 
-            result
-        })
+        result
     }
 
     #[allow(clippy::too_many_arguments)]
