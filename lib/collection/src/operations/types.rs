@@ -18,15 +18,12 @@ use common::validation::validate_range_generic;
 use common::{defaults, save_on_disk};
 use io::file_operations::FileStorageError;
 use issues::IssueRecord;
-use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::{CancelledError, OperationError};
 use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct,
-};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, DenseVector};
 use segment::types::{
     Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
     PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey,
@@ -37,7 +34,6 @@ use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::{Error as JsonError, Map, Value};
-use shard::query::query_enum::QueryEnum;
 pub use shard::search::CoreSearchRequest;
 use shard::wal::WalError;
 use sparse::common::sparse_vector::SparseVector;
@@ -53,7 +49,6 @@ use super::ClockTag;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
-use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -1929,62 +1924,6 @@ pub enum NodeType {
     /// This is useful for nodes that are only used for writing data
     /// and backup purposes
     Listener,
-}
-
-impl From<SearchRequestInternal> for ShardQueryRequest {
-    fn from(value: SearchRequestInternal) -> Self {
-        let SearchRequestInternal {
-            vector,
-            filter,
-            score_threshold,
-            limit,
-            offset,
-            params,
-            with_vector,
-            with_payload,
-        } = value;
-
-        Self {
-            prefetches: vec![],
-            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::from(
-                NamedVectorStruct::from(vector),
-            )))),
-            filter,
-            score_threshold: score_threshold.map(OrderedFloat),
-            limit,
-            offset: offset.unwrap_or_default(),
-            params,
-            with_vector: with_vector.unwrap_or_default(),
-            with_payload: with_payload.unwrap_or_default(),
-        }
-    }
-}
-
-impl From<CoreSearchRequest> for ShardQueryRequest {
-    fn from(value: CoreSearchRequest) -> Self {
-        let CoreSearchRequest {
-            query,
-            filter,
-            score_threshold,
-            limit,
-            offset,
-            params,
-            with_vector,
-            with_payload,
-        } = value;
-
-        Self {
-            prefetches: vec![],
-            query: Some(ScoringQuery::Vector(query)),
-            filter,
-            score_threshold: score_threshold.map(OrderedFloat),
-            limit,
-            offset,
-            params,
-            with_vector: with_vector.unwrap_or_default(),
-            with_payload: with_payload.unwrap_or_default(),
-        }
-    }
 }
 
 /// All the unresolved issues in a Qdrant instance
