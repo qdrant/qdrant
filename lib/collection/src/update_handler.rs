@@ -928,17 +928,16 @@ impl UpdateHandler {
         shard_path: PathBuf,
     ) {
         loop {
-            // Stop flush worker on signal or if sender was dropped
-            // Even if timer did not finish
-            let stop = tokio::select! {
-                _ = tokio::time::sleep(Duration::from_secs(flush_interval_sec)) => false,
-                _ = &mut stop_receiver => true,
+            tokio::select! {
+                biased;
+                // Stop flush worker on signal or if sender was dropped
+                _ = &mut stop_receiver => {
+                    log::debug!("Stopping flush worker for shard {}", shard_path.display());
+                    return;
+                },
+                // Flush at the configured flush interval
+                _ = tokio::time::sleep(Duration::from_secs(flush_interval_sec)) => {},
             };
-
-            if stop {
-                log::debug!("Stopping flush worker for shard {}", shard_path.display());
-                return;
-            }
 
             let segments_clone = segments.clone();
             let wal_clone = wal.clone();
