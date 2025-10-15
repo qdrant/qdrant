@@ -594,7 +594,7 @@ impl Collection {
         let shard_holder = self.shards_holder.write().await;
 
         // todo: Add state validation like resharding
-        shard_holder.multi_source_transfers_state.write(|state| {
+        shard_holder.multi_source_transfer_state.write(|state| {
             debug_assert!(state.is_some(), "multi source transfer is not in progress");
             *state = None;
         })?;

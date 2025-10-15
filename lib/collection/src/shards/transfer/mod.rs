@@ -103,11 +103,18 @@ impl ShardTransfer {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MultiSourceTransferState {
+    pub transfer: MultiSourceTransfer,
+    pub completed_sources: Vec<(PeerId, ShardId)>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MultiSourceTransfer {
     pub from_peer_id: Vec<PeerId>,
     pub from_shard_id: Vec<ShardId>,
     pub to_peer_id: PeerId,
     pub to_shard_id: ShardId,
+    // todo: Add filter
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
