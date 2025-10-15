@@ -59,47 +59,6 @@ impl<'py> FromPyObject<'py> for PyQuery {
     }
 }
 
-impl PyQuery {
-    fn _variants(query: QueryEnum) {
-        match query {
-            QueryEnum::Nearest(_) => (),
-            QueryEnum::RecommendBestScore(_) => todo!(), // TODO!
-            QueryEnum::RecommendSumScores(_) => todo!(), // TODO!
-            QueryEnum::Discover(_) => todo!(),           // TODO!
-            QueryEnum::Context(_) => todo!(),            // TODO!
-            QueryEnum::FeedbackSimple(_) => todo!(),     // TODO!
-        }
-    }
-}
-
-#[pyclass(name = "QueryVector")]
-#[derive(Clone, Debug, Into)]
-pub struct PyQueryVector(VectorInternal);
-
-#[pymethods]
-impl PyQueryVector {
-    #[staticmethod]
-    pub fn dense(vector: Vec<f32>) -> Self {
-        Self(VectorInternal::Dense(vector))
-    }
-
-    #[staticmethod]
-    pub fn sparse(vector: PySparseVector) -> Self {
-        Self(VectorInternal::Sparse(vector.into()))
-    }
-}
-
-impl PyQueryVector {
-    fn _variants(query: VectorInternal) {
-        match query {
-            VectorInternal::Dense(_) => (),
-            VectorInternal::Sparse(_) => (),
-            VectorInternal::MultiDense(_) => todo!(), // TODO!
-        }
-    }
-}
-
-#[pyclass(name = "Filter")]
 #[derive(Clone, Debug, Into)]
 pub struct PyFilter(Filter);
 
