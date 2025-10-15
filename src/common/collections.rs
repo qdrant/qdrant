@@ -358,14 +358,6 @@ pub async fn do_update_collection_cluster(
                 });
             }
 
-            // Don't support filters for now
-            if filter.is_some() {
-                return Err(StorageError::BadRequest {
-                    description: "Filtering for replicating points is not supported yet"
-                        .to_string(),
-                });
-            }
-
             let (from_shard_id, from_peer_id) = from_replicas[0];
             let (to_shard_id, to_peer_id) = to_replicas[0];
 
