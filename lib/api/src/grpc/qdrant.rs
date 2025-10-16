@@ -2122,8 +2122,6 @@ pub enum ShardTransferMethod {
     WalDelta = 2,
     /// Stream shard records in batches for resharding
     ReshardingStreamRecords = 3,
-    /// Stream shard records that match a filter
-    FilteredStreamRecords = 4,
 }
 impl ShardTransferMethod {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2136,7 +2134,6 @@ impl ShardTransferMethod {
             ShardTransferMethod::Snapshot => "Snapshot",
             ShardTransferMethod::WalDelta => "WalDelta",
             ShardTransferMethod::ReshardingStreamRecords => "ReshardingStreamRecords",
-            ShardTransferMethod::FilteredStreamRecords => "FilteredStreamRecords",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2146,7 +2143,6 @@ impl ShardTransferMethod {
             "Snapshot" => Some(Self::Snapshot),
             "WalDelta" => Some(Self::WalDelta),
             "ReshardingStreamRecords" => Some(Self::ReshardingStreamRecords),
-            "FilteredStreamRecords" => Some(Self::FilteredStreamRecords),
             _ => None,
         }
     }
