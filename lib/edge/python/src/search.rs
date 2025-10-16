@@ -86,6 +86,7 @@ impl PySearchParams {
             exact,
             quantization: quantization.map(Into::into),
             indexed_only,
+            acorn: None, // TODO: expose to Python
         })
     }
 }

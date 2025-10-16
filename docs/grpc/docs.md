@@ -137,6 +137,7 @@
     - [NullValue](#qdrant-NullValue)
   
 - [points.proto](#points-proto)
+    - [AcornSearchParams](#qdrant-AcornSearchParams)
     - [BatchResult](#qdrant-BatchResult)
     - [ClearPayloadPoints](#qdrant-ClearPayloadPoints)
     - [Condition](#qdrant-Condition)
@@ -2434,6 +2435,26 @@ The JSON representation for `Value` is a JSON value.
 <p align="right"><a href="#top">Top</a></p>
 
 ## points.proto
+
+
+
+<a name="qdrant-AcornSearchParams"></a>
+
+### AcornSearchParams
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| enable | [bool](#bool) | optional | When enabled, the ACORN might be enabled for the HNSW search.
+
+Improves search recall for searches with multiple low-selectivity payload filters, at cost of performance. |
+| max_selectivity | [double](#double) | optional | Maximum selectivity of the filter to enable ACORN.
+
+0.0 for never, 1.0 for always. Default is 0.4. |
+
+
+
 
 
 
@@ -4738,6 +4759,7 @@ Parameterized reciprocal rank fusion
 | exact | [bool](#bool) | optional | Search without approximation. If set to true, search may run long but with exact results. |
 | quantization | [QuantizationSearchParams](#qdrant-QuantizationSearchParams) | optional | If set to true, search will ignore quantized vector data |
 | indexed_only | [bool](#bool) | optional | If enabled, the engine will only perform search among indexed or small segments. Using this option prevents slow searches in case of delayed index, but does not guarantee that all uploaded vectors will be included in search results |
+| acorn | [AcornSearchParams](#qdrant-AcornSearchParams) | optional | ACORN search params |
 
 
 

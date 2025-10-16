@@ -4846,6 +4846,22 @@ pub struct QuantizationSearchParams {
     #[validate(range(min = 1.0))]
     pub oversampling: ::core::option::Option<f64>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AcornSearchParams {
+    /// When enabled, the ACORN might be enabled for the HNSW search.
+    ///
+    /// Improves search recall for searches with multiple low-selectivity
+    /// payload filters, at cost of performance.
+    #[prost(bool, optional, tag = "1")]
+    pub enable: ::core::option::Option<bool>,
+    /// Maximum selectivity of the filter to enable ACORN.
+    ///
+    /// 0.0 for never, 1.0 for always. Default is 0.4.
+    #[prost(double, optional, tag = "2")]
+    pub max_selectivity: ::core::option::Option<f64>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4867,6 +4883,9 @@ pub struct SearchParams {
     /// guarantee that all uploaded vectors will be included in search results
     #[prost(bool, optional, tag = "4")]
     pub indexed_only: ::core::option::Option<bool>,
+    /// ACORN search params
+    #[prost(message, optional, tag = "5")]
+    pub acorn: ::core::option::Option<AcornSearchParams>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
