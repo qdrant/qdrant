@@ -61,21 +61,27 @@ pub trait GraphLayersBase {
     fn get_m(&self, level: usize) -> usize;
 
     /// Greedy search for closest points within a single graph layer
-    fn _search_on_level(
+    fn search_on_level(
         &self,
-        searcher: &mut SearchContext,
+        level_entry: ScoredPointOffset,
         level: usize,
-        visited_list: &mut VisitedListHandle,
+        ef: usize,
         points_scorer: &mut FilteredScorer,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<()> {
+    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+        let mut visited_list = self.get_visited_list_from_pool();
+        visited_list.check_and_update_visited(level_entry.idx);
+
+        let mut search_context = SearchContext::new(ef);
+        search_context.process_candidate(level_entry);
+
         let limit = self.get_m(level);
         let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(2 * limit);
 
-        while let Some(candidate) = searcher.candidates.pop() {
+        while let Some(candidate) = search_context.candidates.pop() {
             check_process_stopped(is_stopped)?;
 
-            if candidate.score < searcher.lower_bound() {
+            if candidate.score < search_context.lower_bound() {
                 break;
             }
 
@@ -89,34 +95,11 @@ pub trait GraphLayersBase {
             points_scorer
                 .score_points(&mut points_ids, limit)
                 .for_each(|score_point| {
-                    searcher.process_candidate(score_point);
+                    search_context.process_candidate(score_point);
                     visited_list.check_and_update_visited(score_point.idx);
                 });
         }
 
-        Ok(())
-    }
-
-    fn search_on_level(
-        &self,
-        level_entry: ScoredPointOffset,
-        level: usize,
-        ef: usize,
-        points_scorer: &mut FilteredScorer,
-        is_stopped: &AtomicBool,
-    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
-        let mut visited_list = self.get_visited_list_from_pool();
-        visited_list.check_and_update_visited(level_entry.idx);
-        let mut search_context = SearchContext::new(ef);
-        search_context.process_candidate(level_entry);
-
-        self._search_on_level(
-            &mut search_context,
-            level,
-            &mut visited_list,
-            points_scorer,
-            is_stopped,
-        )?;
         Ok(search_context.nearest)
     }
 
@@ -205,27 +188,32 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
         level: usize,
     ) -> (&[u8], impl Iterator<Item = (PointOffsetType, &[u8])> + '_);
 
-    /// Similar to [`GraphLayersBase::_search_on_level`].
-    #[allow(clippy::too_many_arguments)]
-    fn _search_on_level_with_vectors(
+    /// Similar to [`GraphLayersBase::search_on_level`].
+    fn search_on_level_with_vectors(
         &self,
-        links_searcher: &mut SearchContext,
-        base_searcher: &mut SearchContext,
+        level_entry: ScoredPointOffset,
         level: usize,
-        visited_list: &mut VisitedListHandle,
+        ef: usize,
         links_scorer: &FilteredBytesScorer,
         base_scorer: &dyn QueryScorerBytes,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<()> {
+    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+        let mut visited_list = self.get_visited_list_from_pool();
+        visited_list.check_and_update_visited(level_entry.idx);
+
+        let mut links_search_context = SearchContext::new(ef);
+        let mut base_search_context = SearchContext::new(ef);
+        links_search_context.process_candidate(level_entry);
+
         let limit = self.get_m(level);
         let mut points: Vec<(PointOffsetType, &[u8])> = Vec::with_capacity(2 * limit);
 
-        while let Some(candidate) = links_searcher.candidates.pop() {
+        while let Some(candidate) = links_search_context.candidates.pop() {
             check_process_stopped(is_stopped)?;
 
-            if candidate.score < links_searcher.lower_bound() {
+            if candidate.score < links_search_context.lower_bound() {
                 let (base_vector, _) = self.links_with_vectors(candidate.idx, level);
-                base_searcher.process_candidate(ScoredPointOffset {
+                base_search_context.process_candidate(ScoredPointOffset {
                     idx: candidate.idx,
                     score: base_scorer.score_bytes(base_vector),
                 });
@@ -239,7 +227,7 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
                     points.push((link, link_vector));
                 }
             });
-            base_searcher.process_candidate(ScoredPointOffset {
+            base_search_context.process_candidate(ScoredPointOffset {
                 idx: candidate.idx,
                 score: base_scorer.score_bytes(base_vector),
             });
@@ -247,39 +235,11 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
             links_scorer
                 .score_points(&mut points, limit)
                 .for_each(|score_point| {
-                    links_searcher.process_candidate(score_point);
+                    links_search_context.process_candidate(score_point);
                     visited_list.check_and_update_visited(score_point.idx);
                 });
         }
 
-        Ok(())
-    }
-
-    /// Similar to [`GraphLayersBase::search_on_level`].
-    fn search_on_level_with_vectors(
-        &self,
-        level_entry: ScoredPointOffset,
-        level: usize,
-        ef: usize,
-        links_scorer: &FilteredBytesScorer,
-        base_scorer: &dyn QueryScorerBytes,
-        is_stopped: &AtomicBool,
-    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
-        let mut visited_list = self.get_visited_list_from_pool();
-        visited_list.check_and_update_visited(level_entry.idx);
-        let mut links_search_context = SearchContext::new(ef);
-        let mut base_search_context = SearchContext::new(ef);
-        links_search_context.process_candidate(level_entry);
-
-        self._search_on_level_with_vectors(
-            &mut links_search_context,
-            &mut base_search_context,
-            level,
-            &mut visited_list,
-            links_scorer,
-            base_scorer,
-            is_stopped,
-        )?;
         Ok(base_search_context.nearest)
     }
 
