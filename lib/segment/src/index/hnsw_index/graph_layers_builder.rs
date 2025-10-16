@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use bitvec::prelude::BitVec;
 use common::ext::BitSliceExt;
+use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::{atomic_save, atomic_save_bin};
 use parking_lot::{Mutex, MutexGuard, RwLock};
@@ -21,7 +22,6 @@ use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase};
 use crate::index::hnsw_index::graph_links::serialize_graph_links;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 
 pub type LockedLinkContainer = RwLock<LinksContainer>;
@@ -470,36 +470,24 @@ impl GraphLayersBuilder {
         points_scorer: &mut FilteredScorer,
         mut level_entry: ScoredPointOffset,
     ) -> ScoredPointOffset {
-        let mut visited_list = self.get_visited_list_from_pool();
+        let nearest = self
+            .search_on_level(
+                level_entry,
+                curr_level,
+                self.ef_construct,
+                points_scorer,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
 
-        visited_list.check_and_update_visited(level_entry.idx);
-
-        let mut search_context = SearchContext::new(self.ef_construct);
-        search_context.process_candidate(level_entry);
-
-        self._search_on_level(
-            &mut search_context,
-            curr_level,
-            &mut visited_list,
-            points_scorer,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-
-        if let Some(the_nearest) = search_context.nearest.iter_unsorted().max() {
+        if let Some(the_nearest) = nearest.iter_unsorted().max() {
             level_entry = *the_nearest;
         }
 
         if self.use_heuristic {
-            self.link_with_heuristic(
-                point_id,
-                curr_level,
-                &visited_list,
-                points_scorer,
-                search_context,
-            );
+            self.link_with_heuristic(point_id, curr_level, points_scorer, nearest);
         } else {
-            self.link_without_heuristic(point_id, curr_level, points_scorer, search_context);
+            self.link_without_heuristic(point_id, curr_level, points_scorer, nearest);
         }
 
         level_entry
@@ -509,28 +497,15 @@ impl GraphLayersBuilder {
         &self,
         point_id: PointOffsetType,
         curr_level: usize,
-        visited_list: &VisitedListHandle,
         points_scorer: &FilteredScorer,
-        mut search_context: SearchContext,
+        nearest: FixedLengthPriorityQueue<ScoredPointOffset>,
     ) {
         let level_m = self.hnsw_m.level_m(curr_level);
         let scorer = |a, b| points_scorer.score_internal(a, b);
 
         let selected_nearest = {
+            let iter = nearest.into_iter_sorted();
             let mut existing_links = self.links_layers[point_id as usize][curr_level].write();
-            {
-                let ready_list = self.ready_list.read();
-                for existing_link in existing_links.iter() {
-                    if !visited_list.check(existing_link) && ready_list[existing_link as usize] {
-                        search_context.process_candidate(ScoredPointOffset {
-                            idx: existing_link,
-                            score: points_scorer.score_point(existing_link),
-                        });
-                    }
-                }
-            }
-
-            let iter = search_context.nearest.into_iter_sorted();
             existing_links.fill_from_sorted_with_heuristic(iter, level_m, scorer);
             existing_links.links().to_vec()
         };
@@ -549,11 +524,11 @@ impl GraphLayersBuilder {
         point_id: PointOffsetType,
         curr_level: usize,
         points_scorer: &FilteredScorer,
-        search_context: SearchContext,
+        nearest: FixedLengthPriorityQueue<ScoredPointOffset>,
     ) {
         let level_m = self.hnsw_m.level_m(curr_level);
         let scorer = |a, b| points_scorer.score_internal(a, b);
-        for nearest_point in search_context.nearest.iter_unsorted() {
+        for nearest_point in nearest.iter_unsorted() {
             {
                 let mut links = self.links_layers[point_id as usize][curr_level].write();
                 links.connect(nearest_point.idx, point_id, level_m, scorer);
