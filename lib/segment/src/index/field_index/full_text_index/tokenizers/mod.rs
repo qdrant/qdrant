@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::sync::Arc;
+mod ascii_folding;
 mod japanese;
 mod multilingual;
 mod stemmer;
@@ -103,11 +104,13 @@ impl PrefixTokenizer {
         text.split(|c| !char::is_alphanumeric(c))
             .filter(|token| !token.is_empty())
             .for_each(|word| {
-                let word_cow = if tokens_processor.lowercase {
-                    Cow::Owned(word.to_lowercase())
-                } else {
-                    Cow::Borrowed(word)
-                };
+                // Apply ASCII folding if enabled
+                let mut word_cow = tokens_processor.fold_if_enabled(Cow::Borrowed(word));
+
+                // Handle lowercase
+                if tokens_processor.lowercase {
+                    word_cow = Cow::Owned(word_cow.to_lowercase());
+                }
 
                 let word_cow = tokens_processor.stem_if_enabled(word_cow);
 
@@ -164,6 +167,7 @@ impl Tokenizer {
             min_token_len,
             max_token_len,
             lowercase,
+            ascii_folding,
             on_disk: _,
             phrase_matching: _,
             stopwords,
@@ -171,10 +175,12 @@ impl Tokenizer {
         } = params;
 
         let lowercase = lowercase.unwrap_or(true);
+        let ascii_folding = ascii_folding.unwrap_or(false);
         let stopwords_filter = Arc::new(StopwordsFilter::new(stopwords, lowercase));
 
         let tokens_processor = TokensProcessor::new(
             lowercase,
+            ascii_folding,
             stopwords_filter,
             stemmer.as_ref().map(Stemmer::from_algorithm),
             *min_token_len,
@@ -225,6 +231,8 @@ impl Tokenizer {
 #[cfg(test)]
 mod tests {
     use std::default::Default;
+
+    use itertools::Itertools;
 
     use super::*;
     use crate::data_types::index::{
@@ -278,7 +286,7 @@ mod tests {
     fn test_prefix_tokenizer() {
         let text = "hello, мир!";
         let tokens_processor =
-            TokensProcessor::new(true, Default::default(), None, Some(1), Some(4));
+            TokensProcessor::new(true, false, Default::default(), None, Some(1), Some(4));
 
         let mut tokens = Vec::new();
         PrefixTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
@@ -296,7 +304,8 @@ mod tests {
     #[test]
     fn test_prefix_query_tokenizer() {
         let text = "hello, мир!";
-        let tokens_processor = TokensProcessor::new(true, Default::default(), None, None, Some(4));
+        let tokens_processor =
+            TokensProcessor::new(true, false, Default::default(), None, None, Some(4));
 
         let mut tokens = Vec::new();
         PrefixTokenizer::tokenize_query(text, &tokens_processor, |token| tokens.push(token));
@@ -324,7 +333,8 @@ mod tests {
         // Test stopwords getting applied
         let filter =
             StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["の", "は"])), false);
-        let tokens_processor = TokensProcessor::new(true, Arc::new(filter), None, None, None);
+        let tokens_processor =
+            TokensProcessor::new(true, false, Arc::new(filter), None, None, None);
         MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 2);
@@ -349,7 +359,8 @@ mod tests {
 
         // Test stopwords getting applied
         let filter = StopwordsFilter::new(&Some(StopwordsInterface::new_custom(&["是"])), false);
-        let tokens_processor = TokensProcessor::new(true, Arc::new(filter), None, None, None);
+        let tokens_processor =
+            TokensProcessor::new(true, false, Arc::new(filter), None, None, None);
         MultilingualTokenizer::tokenize(text, &tokens_processor, |token| tokens.push(token));
         eprintln!("tokens = {tokens:#?}");
         assert_eq!(tokens.len(), 3);
@@ -397,6 +408,7 @@ mod tests {
             min_token_len: Some(1),
             max_token_len: Some(4),
             lowercase: Some(true),
+            ascii_folding: None,
             on_disk: None,
             phrase_matching: None,
             stopwords: None,
@@ -428,6 +440,7 @@ mod tests {
             min_token_len: None,
             max_token_len: None,
             lowercase: Some(true),
+            ascii_folding: None,
             on_disk: None,
             phrase_matching: None,
             stopwords: Some(StopwordsInterface::Language(Language::English)),
@@ -470,6 +483,7 @@ mod tests {
                 min_token_len: None,
                 max_token_len: None,
                 lowercase: Some(true),
+                ascii_folding: None,
                 on_disk: None,
                 phrase_matching: None,
                 stopwords: Some(StopwordsInterface::Language(Language::English)),
@@ -502,6 +516,7 @@ mod tests {
             min_token_len: None,
             max_token_len: None,
             lowercase: Some(true),
+            ascii_folding: None,
             on_disk: None,
             phrase_matching: None,
             stopwords: Some(StopwordsInterface::new_set(
@@ -540,6 +555,7 @@ mod tests {
             min_token_len: None,
             max_token_len: None,
             lowercase: Some(true),
+            ascii_folding: None,
             on_disk: None,
             phrase_matching: None,
             stopwords: Some(StopwordsInterface::new_custom(&["as", "the", "a"])),
@@ -578,6 +594,7 @@ mod tests {
             min_token_len: None,
             max_token_len: None,
             lowercase: Some(true),
+            ascii_folding: None,
             on_disk: None,
             phrase_matching: None,
             stopwords: Some(StopwordsInterface::Language(Language::English)),
@@ -613,6 +630,7 @@ mod tests {
             min_token_len: None,
             max_token_len: None,
             lowercase: Some(true),
+            ascii_folding: None,
             on_disk: None,
             phrase_matching: None,
             stopwords: Some(StopwordsInterface::new_set(
@@ -657,6 +675,7 @@ mod tests {
             min_token_len: None,
             max_token_len: None,
             lowercase: Some(false), // Case sensitivity is enabled
+            ascii_folding: None,
             on_disk: None,
             phrase_matching: None,
             stopwords: Some(StopwordsInterface::new_custom(&["the", "The", "LAZY"])),
@@ -685,10 +704,96 @@ mod tests {
     }
 
     #[test]
+    fn test_ascii_folding_word_tokenizer_on_off() {
+        let text = "ação café jalapeño Über";
+
+        let expected_disabled = ["ação", "café", "jalapeño", "über"]
+            .into_iter()
+            .map(str::to_string)
+            .collect_vec();
+        let expected_enabled = ["acao", "cafe", "jalapeno", "uber"]
+            .into_iter()
+            .map(str::to_string)
+            .collect_vec();
+
+        // ascii_folding disabled (default)
+        let params_disabled = TextIndexParams {
+            r#type: TextIndexType::Text,
+            tokenizer: TokenizerType::Word,
+            min_token_len: None,
+            max_token_len: None,
+            lowercase: Some(true),
+            ascii_folding: Some(false),
+            on_disk: None,
+            phrase_matching: None,
+            stopwords: None,
+            stemmer: None,
+        };
+        let tokenizer_disabled = Tokenizer::new_from_text_index_params(&params_disabled);
+        let mut tokens_disabled = Vec::new();
+        tokenizer_disabled.tokenize_doc(text, |token| tokens_disabled.push(token.to_string()));
+        assert_eq!(tokens_disabled, expected_disabled);
+
+        // ascii_folding enabled
+        let params_enabled = TextIndexParams {
+            r#type: TextIndexType::Text,
+            tokenizer: TokenizerType::Word,
+            min_token_len: None,
+            max_token_len: None,
+            lowercase: Some(true),
+            ascii_folding: Some(true),
+            on_disk: None,
+            phrase_matching: None,
+            stopwords: None,
+            stemmer: None,
+        };
+        let tokenizer_enabled = Tokenizer::new_from_text_index_params(&params_enabled);
+        let mut tokens_enabled = Vec::new();
+        tokenizer_enabled.tokenize_doc(text, |token| tokens_enabled.push(token.to_string()));
+        assert_eq!(tokens_enabled, expected_enabled);
+    }
+
+    #[test]
+    fn test_ascii_folding_prefix_tokenizer() {
+        let text = "ação";
+        // With folding disabled: prefixes should preserve accents
+        let tokens_processor_disabled =
+            TokensProcessor::new(true, false, Default::default(), None, Some(1), Some(4));
+        let mut tokens_disabled = Vec::new();
+        PrefixTokenizer::tokenize(text, &tokens_processor_disabled, |t| {
+            tokens_disabled.push(t.to_string())
+        });
+        assert!(
+            tokens_disabled.contains(&"a".to_string())
+                || tokens_disabled.contains(&"a".to_string())
+        );
+        // Because the first char is 'a', but next prefixes should include accented letters
+        assert!(
+            tokens_disabled.iter().any(|t| t.starts_with("aç"))
+                || tokens_disabled.iter().any(|t| t.contains('ç'))
+        );
+
+        // With folding enabled: prefixes should be ASCII-only (acao, acao prefixes)
+        let tokens_processor_enabled =
+            TokensProcessor::new(true, true, Default::default(), None, Some(1), Some(4));
+        let mut tokens_enabled = Vec::new();
+        PrefixTokenizer::tokenize(text, &tokens_processor_enabled, |t| {
+            tokens_enabled.push(t.to_string())
+        });
+        // We expect prefixes like a, ac, aca, acao
+        assert!(tokens_enabled.contains(&"a".to_string()));
+        assert!(tokens_enabled.contains(&"ac".to_string()));
+        assert!(tokens_enabled.contains(&"aca".to_string()));
+        assert!(tokens_enabled.contains(&"acao".to_string()));
+        assert!(tokens_enabled.iter().all(|t| t.is_ascii()));
+    }
+
+    #[test]
     fn test_stemming_snowball() {
         let input = "interestingly proceeding living";
         let mut tokens_processor = TokensProcessor::new(
             true,
+            false,
             Default::default(),
             Some(make_stemmer(SnowballLanguage::English)),
             None,

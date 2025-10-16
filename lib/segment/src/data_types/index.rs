@@ -199,6 +199,10 @@ pub struct TextIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lowercase: Option<bool>,
 
+    /// If true, normalize tokens by folding accented characters to ASCII (e.g., "ação" -> "acao"). Default: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ascii_folding: Option<bool>,
+
     /// If true, support phrase matching. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phrase_matching: Option<bool>,

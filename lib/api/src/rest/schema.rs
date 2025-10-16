@@ -223,6 +223,10 @@ pub struct TextPreprocessingConfig {
     /// Default is `true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lowercase: Option<bool>,
+    /// If true, normalize tokens by folding accented characters to ASCII (e.g., "ação" -> "acao").
+    /// Default is `false`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ascii_folding: Option<bool>,
     /// Configuration of the stopwords filter. Supports list of pre-defined languages and custom stopwords.
     /// Default: initialized for specified `language` or English if not specified.
     #[serde(default, skip_serializing_if = "Option::is_none")]

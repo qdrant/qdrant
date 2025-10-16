@@ -102,6 +102,7 @@ fn new_token_processor_from_config(value: TextPreprocessingConfig) -> TokensProc
     let TextPreprocessingConfig {
         language,
         lowercase,
+        ascii_folding,
         stopwords,
         stemmer,
         min_token_len,
@@ -109,6 +110,8 @@ fn new_token_processor_from_config(value: TextPreprocessingConfig) -> TokensProc
     } = value;
 
     let lowercase = lowercase.unwrap_or(true);
+
+    let ascii_folding = ascii_folding.unwrap_or(false);
 
     let language = language.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string());
 
@@ -129,6 +132,7 @@ fn new_token_processor_from_config(value: TextPreprocessingConfig) -> TokensProc
 
     TokensProcessor::new(
         lowercase,
+        ascii_folding,
         Arc::new(StopwordsFilter::new(&stopwords_config, lowercase)),
         stemmer,
         min_token_len,
