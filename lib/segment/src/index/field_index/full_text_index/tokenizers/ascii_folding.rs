@@ -25,6 +25,7 @@ pub fn fold_to_ascii(input: &str) -> String {
             None => out.push(ch),
         }
     }
+    out.shrink_to_fit();
     out
 }
 
