@@ -2174,7 +2174,6 @@ Resharding direction, scale up or down in number of shards
 | Snapshot | 1 | Snapshot the shard and recover it on the target peer |
 | WalDelta | 2 | Resolve WAL delta between peers and transfer the difference |
 | ReshardingStreamRecords | 3 | Stream shard records in batches for resharding |
-| FilteredStreamRecords | 4 | Stream shard records that match a filter |
 
 
 
