@@ -15,6 +15,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedF
 use segment::types::*;
 use segment::vector_storage::query::{
     ContextQuery, DiscoveryQuery, FeedbackItem, FeedbackQueryInternal, RecoQuery,
+    SimpleFeedbackStrategy,
 };
 use serde::Serialize;
 use tonic::Status;
@@ -331,7 +332,7 @@ fn query_enum_from_grpc_raw_query(
                     let feedback_query = FeedbackQueryInternal {
                         target,
                         feedback,
-                        strategy: strategy.into(),
+                        strategy: SimpleFeedbackStrategy::from(strategy),
                     };
                     let named = NamedQuery::new(feedback_query, using);
                     QueryEnum::FeedbackSimple(named)
