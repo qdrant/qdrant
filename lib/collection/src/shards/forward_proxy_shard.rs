@@ -52,7 +52,6 @@ pub struct ForwardProxyShard {
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
-    // ToDo: Transfer points only if they match the filter
     filter: Option<Box<Filter>>,
 }
 
@@ -138,16 +137,18 @@ impl ForwardProxyShard {
 
         let (points, next_page_offset) = match hashring_filter {
             Some(hashring_filter) => {
-                self.read_batch_with_filters(
+                self.read_batch_with_hashring_filter(
                     offset,
                     batch_size,
                     hashring_filter,
-                    self.filter.as_deref(),
                     runtime_handle,
                 )
                 .await?
             }
-            None => self.read_batch(offset, batch_size, runtime_handle).await?,
+            None => {
+                self.read_batch(offset, batch_size, self.filter.as_deref(), runtime_handle)
+                    .await?
+            }
         };
 
         // Only wait on last batch
@@ -157,6 +158,7 @@ impl ForwardProxyShard {
         // Use sync API to leverage potentially existing points
         // Normally use SyncPoints, to completely replace everything in the target shard
         // For resharding we need to merge points from multiple transfers, requiring a different operation
+        // Same when there is a filter, as we are only transferring a subset of points
         let point_operation = if !merge_points {
             PointOperations::SyncPoints(PointSyncOperation {
                 from_id: offset,
@@ -195,6 +197,7 @@ impl ForwardProxyShard {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
+        filter: Option<&Filter>,
         runtime_handle: &Handle,
     ) -> CollectionResult<(Vec<PointStructPersisted>, Option<PointIdType>)> {
         let limit = batch_size + 1;
@@ -206,7 +209,7 @@ impl ForwardProxyShard {
                 limit,
                 &WithPayloadInterface::Bool(true),
                 &WithVector::Bool(true),
-                None,
+                filter,
                 runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
@@ -241,12 +244,11 @@ impl ForwardProxyShard {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    async fn read_batch_with_filters(
+    async fn read_batch_with_hashring_filter(
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
         hashring_filter: &HashRingRouter,
-        payload_filter: Option<&Filter>,
         runtime_handle: &Handle,
     ) -> CollectionResult<(Vec<PointStructPersisted>, Option<PointIdType>)> {
         // Oversample batch size to account for points that will be filtered out by the hash ring
@@ -275,7 +277,7 @@ impl ForwardProxyShard {
                 limit,
                 &WithPayloadInterface::Bool(false),
                 &WithVector::Bool(false),
-                payload_filter,
+                None,
                 runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.

@@ -34,7 +34,6 @@ pub(super) async fn transfer_stream_records(
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     let cutoff;
-    let mut hashring = None;
     let merge_points = filter.is_some(); // if there are filters, transfers will be partial and hence need merging (instead of overriding)
 
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
@@ -48,21 +47,6 @@ pub(super) async fn transfer_stream_records(
                 "Shard {shard_id} cannot be proxied because it does not exist"
             )));
         };
-
-        if filter.is_some() {
-            // When using filters, we can't just transfer all records, we need to make sure that they
-            // also respect the hash ring of the destination shard key.
-            let target_shard_key = shard_holder
-                .get_shard_id_to_key_mapping()
-                .get(&remote_shard.id)
-                .cloned();
-
-            hashring = Some(shard_holder.rings.get(&target_shard_key).cloned().ok_or_else(|| {
-                CollectionError::service_error(format!(
-                    "Records {shard_id} cannot be transferred with filters, failed to get shard hash ring"
-                ))
-            })?);
-        }
 
         replica_set
             .proxify_local(remote_shard.clone(), None, filter)
@@ -110,7 +94,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         let (new_offset, count) = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, hashring.as_ref(), merge_points)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, merge_points)
             .await?;
 
         offset = new_offset;
