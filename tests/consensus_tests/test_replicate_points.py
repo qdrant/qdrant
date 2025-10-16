@@ -51,7 +51,6 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
     assert expected_count > 0
     assert initial_count == 0 # no points in tenant shard key before transfer
 
-    # Move points from from_shard_id to to_shard_id
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
         json={
