@@ -211,8 +211,16 @@ pub struct ReplicatePoints {
 
 impl Validate for ReplicatePoints {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        // todo: add more validation if needed
-        Ok(())
+        if self.from_shard_key != self.to_shard_key {
+            return Ok(());
+        }
+
+        let mut errors = ValidationErrors::new();
+        errors.add(
+            "to_shard_key",
+            validator::ValidationError::new("must be different from from_shard_key"),
+        );
+        Err(errors)
     }
 }
 
