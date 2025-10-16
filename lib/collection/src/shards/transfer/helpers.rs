@@ -203,9 +203,8 @@ pub fn validate_transfer(
         }
     } else if let Some(to_shard_id) = transfer.to_shard_id {
         return Err(CollectionError::bad_request(format!(
-            "Target shard {to_shard_id} can only be set for {:?} or {:?} transfers",
+            "Target shard {to_shard_id} can only be set for {:?} transfers",
             ShardTransferMethod::ReshardingStreamRecords,
-            ShardTransferMethod::FilteredStreamRecords
         )));
     }
 

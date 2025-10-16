@@ -385,7 +385,7 @@ pub async fn do_update_collection_cluster(
                             to: to_peer_id,
                             sync: true,
                             method: Some(ShardTransferMethod::StreamRecords),
-                            // Need to pass some filter, even if empty to differentiate between normal transfers and point replication
+                            // No filter supported yet but we need to pass some value to change behavior of shard transfer validation
                             filter: Some(Filter::new()),
                         }),
                     ),
