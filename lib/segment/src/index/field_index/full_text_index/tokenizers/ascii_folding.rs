@@ -2,6 +2,17 @@
 // Converts non-ASCII Latin letters and various symbols to ASCII equivalents.
 // This aims to be compatible with Lucene's mapping list used in ASCIIFoldingFilter.
 
+use std::borrow::Cow;
+
+pub fn fold_to_ascii_cow<'a>(input: Cow<'a, str>) -> Cow<'a, str> {
+    // Cheap check if already ASCII
+    if input.is_ascii() {
+        return input;
+    }
+
+    Cow::Owned(fold_to_ascii(input.as_ref()))
+}
+
 pub fn fold_to_ascii(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {

@@ -52,7 +52,7 @@ impl TokensProcessor {
     /// Applies ASCII folding if enabled. Converts accented characters to their ASCII equivalents.
     pub fn fold_if_enabled<'a>(&self, input: Cow<'a, str>) -> Cow<'a, str> {
         if self.ascii_folding {
-            Cow::Owned(super::ascii_folding::fold_to_ascii(input.as_ref()))
+            super::ascii_folding::fold_to_ascii_cow(input)
         } else {
             input
         }
@@ -82,7 +82,7 @@ impl TokensProcessor {
 
         // Handle ASCII folding (normalize accents)
         if *ascii_folding {
-            token_cow = Cow::Owned(super::ascii_folding::fold_to_ascii(token_cow.as_ref()));
+            token_cow = super::ascii_folding::fold_to_ascii_cow(token_cow);
         }
 
         // Handle lowercase
