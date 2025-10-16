@@ -5,6 +5,7 @@
 
 skip = [
     "**/stop_words/*.rs",
+    "./lib/segment/src/index/field_index/full_text_index/tokenizers/ascii_folding.rs", # contains character mappings
     "./static",
     "./tests/e2e_tests/test_data/cert/key.pem",
     "openapi.json", # openapi.json is typically a released version and could carry old typos

@@ -181,6 +181,7 @@ mod test {
     fn test_multilingual_stemming() {
         let tokens_processor = TokensProcessor::new(
             true,
+            false,
             Default::default(),
             Some(Stemmer::from_algorithm(&StemmingAlgorithm::Snowball(
                 SnowballParams {

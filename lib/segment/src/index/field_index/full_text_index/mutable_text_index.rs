@@ -413,6 +413,7 @@ mod tests {
             on_disk: None,
             stopwords: None,
             stemmer: None,
+            ascii_folding: None,
         };
 
         {

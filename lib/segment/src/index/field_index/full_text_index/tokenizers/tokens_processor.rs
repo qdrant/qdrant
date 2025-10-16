@@ -8,6 +8,7 @@ use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
 #[derive(Debug, Clone, Default)]
 pub struct TokensProcessor {
     pub lowercase: bool,
+    pub ascii_folding: bool,
     stopwords_filter: Arc<StopwordsFilter>, // TDOO(rocksdb): Remove once rocksdb has been removed!
     stemmer: Option<Stemmer>,
     pub min_token_len: Option<usize>,
@@ -17,6 +18,7 @@ pub struct TokensProcessor {
 impl TokensProcessor {
     pub fn new(
         lowercase: bool,
+        ascii_folding: bool,
         stopwords_filter: Arc<StopwordsFilter>,
         stemmer: Option<Stemmer>,
         min_token_len: Option<usize>,
@@ -24,6 +26,7 @@ impl TokensProcessor {
     ) -> Self {
         Self {
             lowercase,
+            ascii_folding,
             stopwords_filter,
             stemmer,
             min_token_len,
@@ -46,13 +49,22 @@ impl TokensProcessor {
         stemmer.stem(input)
     }
 
+    /// Applies ASCII folding if enabled. Converts accented characters to their ASCII equivalents.
+    pub fn fold_if_enabled<'a>(&self, input: Cow<'a, str>) -> Cow<'a, str> {
+        if self.ascii_folding {
+            super::ascii_folding::fold_to_ascii_cow(input)
+        } else {
+            input
+        }
+    }
+
     pub fn is_stopword(&self, token: &str) -> bool {
         self.stopwords_filter.is_stopword(token)
     }
 
     pub fn process_token_cow<'a>(
         &self,
-        token: Cow<'a, str>,
+        mut token_cow: Cow<'a, str>,
         check_max_len: bool,
     ) -> Option<Cow<'a, str>> {
         let Self {
@@ -61,18 +73,22 @@ impl TokensProcessor {
             stemmer,
             min_token_len,
             max_token_len,
+            ascii_folding,
         } = self;
 
-        if token.is_empty() {
+        if token_cow.is_empty() {
             return None;
         }
 
+        // Handle ASCII folding (normalize accents)
+        if *ascii_folding {
+            token_cow = super::ascii_folding::fold_to_ascii_cow(token_cow);
+        }
+
         // Handle lowercase
-        let mut token_cow = if *lowercase {
-            Cow::Owned(token.to_lowercase())
-        } else {
-            token
-        };
+        if *lowercase {
+            token_cow = Cow::Owned(token_cow.to_lowercase());
+        }
 
         // Handle stopwords
         if stopwords_filter.is_stopword(&token_cow) {

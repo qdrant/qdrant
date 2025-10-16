@@ -164,6 +164,7 @@ fn test_prefix_search() {
         stopwords: None,
         on_disk: None,
         stemmer: None,
+        ascii_folding: None,
     };
 
     let mut index =
@@ -213,6 +214,7 @@ fn test_phrase_matching() {
         phrase_matching: Some(true), // Enable phrase matching
         stopwords: None,
         stemmer: None,
+        ascii_folding: None,
     };
 
     let mut mutable_index =
@@ -304,4 +306,92 @@ fn test_phrase_matching() {
 
     check_matching(mutable_index);
     check_matching(mmap_index);
+}
+
+#[test]
+fn test_ascii_folding_in_full_text_index_word() {
+    let hw_counter = HardwareCounterCell::default();
+
+    let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+    let config_enabled = TextIndexParams {
+        r#type: TextIndexType::Text,
+        tokenizer: TokenizerType::Word,
+        min_token_len: None,
+        max_token_len: None,
+        lowercase: None,
+        on_disk: None,
+        phrase_matching: None,
+        stopwords: None,
+        stemmer: None,
+        ascii_folding: Some(true),
+    };
+    let config_disabled = TextIndexParams {
+        ascii_folding: Some(false),
+        ..config_enabled.clone()
+    };
+
+    // Index with folding enabled
+    let mut index_enabled =
+        FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config_enabled.clone(), true)
+            .unwrap()
+            .unwrap();
+
+    // Index with folding disabled (separate storage path)
+    let temp_dir2 = Builder::new().prefix("test_dir").tempdir().unwrap();
+    let mut index_disabled = FullTextIndex::new_gridstore(
+        temp_dir2.path().to_path_buf(),
+        config_disabled.clone(),
+        true,
+    )
+    .unwrap()
+    .unwrap();
+
+    // Documents containing accents
+    let docs = vec![
+        (0, "ação no coração".to_string()),
+        (1, "café com leite".to_string()),
+    ];
+
+    for (id, text) in &docs {
+        index_enabled
+            .add_many(*id as PointOffsetType, vec![text.clone()], &hw_counter)
+            .unwrap();
+        index_disabled
+            .add_many(*id as PointOffsetType, vec![text.clone()], &hw_counter)
+            .unwrap();
+    }
+
+    // ASCII-only queries should match only when folding is enabled
+    let query_enabled = index_enabled.parse_text_query("acao", &hw_counter).unwrap();
+    assert!(index_enabled.check_match(&query_enabled, 0));
+
+    let results_enabled: Vec<_> = index_enabled
+        .filter_query(query_enabled, &hw_counter)
+        .collect();
+    assert!(results_enabled.contains(&0));
+
+    let query_disabled_opt = index_disabled.parse_text_query("acao", &hw_counter);
+    // Query might still parse, but should not match anything
+    if let Some(query_disabled) = query_disabled_opt {
+        let results_disabled: Vec<_> = index_disabled
+            .filter_query(query_disabled, &hw_counter)
+            .collect();
+        assert!(!results_disabled.contains(&0));
+    }
+
+    // Non-folded query must work in both
+    let query_acento = index_enabled.parse_text_query("ação", &hw_counter).unwrap();
+    assert!(index_enabled.check_match(&query_acento, 0));
+    let results_acento: Vec<_> = index_enabled
+        .filter_query(query_acento, &hw_counter)
+        .collect();
+    assert!(results_acento.contains(&0));
+
+    let query_acento2 = index_disabled
+        .parse_text_query("ação", &hw_counter)
+        .unwrap();
+    let results_acento2: Vec<_> = index_disabled
+        .filter_query(query_acento2, &hw_counter)
+        .collect();
+    assert!(results_acento2.contains(&0));
 }

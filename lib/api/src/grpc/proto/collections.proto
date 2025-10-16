@@ -520,6 +520,7 @@ message TextIndexParams {
   optional StopwordsSet stopwords = 6; // Stopwords for the text index
   optional bool phrase_matching = 7; // If true - support phrase matching.
   optional StemmingAlgorithm stemmer = 8; // Set an algorithm for stemming.
+  optional bool ascii_folding = 9; // If true, normalize tokens by folding accented characters to ASCII (e.g., "ação" -> "acao"). Default: false.
 }
 
 message StemmingAlgorithm {
