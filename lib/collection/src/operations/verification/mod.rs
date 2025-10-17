@@ -8,15 +8,12 @@ mod recommend;
 mod search;
 mod update;
 
-pub mod operation_rate_cost {
-    pub use shard::query::scroll::{BASE_COST, filter_rate_cost};
-}
-
 use std::fmt::Display;
 
 use itertools::Itertools;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, SearchParams, StrictModeConfig};
+pub use shard::operation_rate_cost;
 
 use super::types::{CollectionError, CollectionResult};
 use crate::collection::Collection;
