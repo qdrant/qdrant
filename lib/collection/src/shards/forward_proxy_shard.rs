@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use ahash::HashSet;
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
@@ -446,9 +447,42 @@ impl ShardOperation for ForwardProxyShard {
             };
 
             op.map(|op| OperationWithClockTag::new(op, tag))
-        } else {
-            // ToDo: Handle `filter` case before this else block
+        } else if let Some(filter) = &self.filter {
+            // We need to modify the operation according to the filter before forwarding it.
+            // We have already written to local shard, so we can read points from there.
+            // Let's read local points with id filter to see which of them satisfy it
+            if let Some(point_ids) = operation.operation.point_ids() {
+                let filter = filter.clone();
 
+                let matching_local_points = self
+                    .wrapped_shard
+                    .scroll_by(
+                        None,
+                        usize::MAX,
+                        &WithPayloadInterface::Bool(false),
+                        &WithVector::Bool(false),
+                        Some(&filter.with_point_ids(point_ids)),
+                        &Handle::current(),
+                        None,
+                        None,                           // No timeout
+                        HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
+                    )
+                    .await?
+                    .into_iter()
+                    .map(|record| record.id)
+                    .collect::<HashSet<_>>();
+
+                // Modify original operation to only contain operations for matching points or global operations
+                let mut modified_operation = operation.clone();
+                modified_operation
+                    .operation
+                    .retain_point_ids(|point_id| matching_local_points.contains(point_id));
+
+                Some(modified_operation)
+            } else {
+                Some(operation) // No point IDs to filter, forward as-is
+            }
+        } else {
             // If `ForwardProxyShard` `resharding_hash_ring` and `filter` are `None`, we assume that proxy is used
             // during *regular* shard transfer, so operation can be forwarded as-is, without any
             // additional handling.

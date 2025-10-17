@@ -12,12 +12,12 @@ N_REPLICA = 1
 COLLECTION_NAME = "test_collection"
 
 
-def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, duration=None):
+def update_points_in_loop(peer_url, collection_name, shard_key=None, offset=0, throttle=False, duration=None):
     start = time.time()
     limit = 3
 
     while True:
-        upsert_random_points(peer_url, limit, collection_name, offset=offset)
+        upsert_random_points(peer_url, limit, collection_name, shard_key=shard_key, offset=offset)
         offset += limit
 
         if throttle:
@@ -26,8 +26,8 @@ def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, d
             break
 
 
-def run_update_points_in_background(peer_url, collection_name, init_offset=0, throttle=False, duration=None):
-    p = multiprocessing.Process(target=update_points_in_loop, args=(peer_url, collection_name, init_offset, throttle, duration))
+def run_update_points_in_background(peer_url, collection_name, shard_key=None, init_offset=0, throttle=False, duration=None):
+    p = multiprocessing.Process(target=update_points_in_loop, args=(peer_url, collection_name, shard_key, init_offset, throttle, duration))
     p.start()
     return p
 
