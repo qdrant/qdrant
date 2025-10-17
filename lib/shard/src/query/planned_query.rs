@@ -1,5 +1,6 @@
 use common::types::ScoreType;
 use ordered_float::OrderedFloat;
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
 
@@ -80,10 +81,10 @@ impl PlannedQuery {
         Self::default()
     }
 
-    pub fn add(&mut self, request: ShardQueryRequest) -> CollectionResult<()> {
+    pub fn add(&mut self, request: ShardQueryRequest) -> OperationResult<()> {
         let depth = request.prefetches_depth();
         if depth > MAX_PREFETCH_DEPTH {
-            return Err(CollectionError::bad_request(format!(
+            return Err(OperationError::validation_error(format!(
                 "prefetches depth {depth} exceeds max depth {MAX_PREFETCH_DEPTH}"
             )));
         }
@@ -152,7 +153,7 @@ impl PlannedQuery {
         with_payload: WithPayloadInterface,
         params: Option<SearchParams>,
         limit: usize,
-    ) -> Result<RootPlan, CollectionError> {
+    ) -> OperationResult<RootPlan> {
         // Everything must come from a single source.
         let sources = vec![leaf_source_from_scoring_query(
             &mut self.searches,
@@ -187,9 +188,9 @@ impl PlannedQuery {
         with_payload: WithPayloadInterface,
         params: Option<SearchParams>,
         limit: usize,
-    ) -> Result<RootPlan, CollectionError> {
+    ) -> OperationResult<RootPlan> {
         let rescoring_query = query.ok_or_else(|| {
-            CollectionError::bad_request("cannot have prefetches without a query".to_string())
+            OperationError::validation_error("cannot have prefetches without a query".to_string())
         })?;
 
         let sources =
@@ -250,7 +251,7 @@ fn recurse_prefetches(
     scrolls: &mut Vec<QueryScrollRequestInternal>,
     prefetches: Vec<ShardPrefetch>,
     propagate_filter: &Option<Filter>, // Global filter to apply to all prefetches
-) -> CollectionResult<Vec<Source>> {
+) -> OperationResult<Vec<Source>> {
     let mut sources = Vec::with_capacity(prefetches.len());
 
     for prefetch in prefetches {
@@ -282,7 +283,9 @@ fn recurse_prefetches(
             let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches, &filter)?;
 
             let rescore = query.ok_or_else(|| {
-                CollectionError::bad_request("cannot have prefetches without a query".to_string())
+                OperationError::validation_error(
+                    "cannot have prefetches without a query".to_string(),
+                )
             })?;
 
             let merge_plan = MergePlan {
@@ -315,7 +318,7 @@ fn leaf_source_from_scoring_query(
     params: Option<SearchParams>,
     score_threshold: Option<f32>,
     filter: Option<Filter>,
-) -> Result<Source, CollectionError> {
+) -> OperationResult<Source> {
     let source = match query {
         Some(ScoringQuery::Vector(query_enum)) => {
             let core_search = CoreSearchRequest {
@@ -335,7 +338,7 @@ fn leaf_source_from_scoring_query(
             Source::SearchesIdx(idx)
         }
         Some(ScoringQuery::Fusion(_)) => {
-            return Err(CollectionError::bad_request(
+            return Err(OperationError::validation_error(
                 "cannot apply Fusion without prefetches".to_string(),
             ));
         }
@@ -354,7 +357,7 @@ fn leaf_source_from_scoring_query(
             Source::ScrollsIdx(idx)
         }
         Some(ScoringQuery::Formula(_)) => {
-            return Err(CollectionError::bad_request(
+            return Err(OperationError::validation_error(
                 "cannot apply Formula without prefetches".to_string(),
             ));
         }
@@ -416,7 +419,7 @@ fn leaf_source_from_scoring_query(
 }
 
 impl TryFrom<Vec<ShardQueryRequest>> for PlannedQuery {
-    type Error = CollectionError;
+    type Error = OperationError;
 
     fn try_from(requests: Vec<ShardQueryRequest>) -> Result<Self, Self::Error> {
         let mut planned_query = Self::new();

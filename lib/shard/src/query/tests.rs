@@ -1,5 +1,6 @@
 use ahash::AHashSet;
 use ordered_float::OrderedFloat;
+use segment::common::operation_error::OperationError;
 use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::vectors::{MultiDenseVectorInternal, NamedQuery, VectorInternal};
 use segment::json_path::JsonPath;
@@ -473,9 +474,14 @@ fn test_detect_max_depth() {
 
     request.prefetches = vec![make_prefetches_at_depth(65)];
     assert_eq!(request.prefetches_depth(), 65);
+
     // assert error
-    let err_description = "prefetches depth 65 exceeds max depth 64".to_string();
-    matches!(PlannedQuery::try_from(vec![request]), Err(CollectionError::BadRequest { description}) if description == err_description);
+    assert_eq!(
+        PlannedQuery::try_from(vec![request]),
+        Err(OperationError::validation_error(
+            "prefetches depth 65 exceeds max depth 64"
+        )),
+    );
 }
 
 fn dummy_core_prefetch(limit: usize) -> ShardPrefetch {
