@@ -1654,8 +1654,8 @@ mod tests {
 
         // Large bounding box around the USA: (74.071028, 167), (18.7763, -66.885417)
         let bounding_box = GeoBoundingBox {
-            top_left: GeoPoint::new_unchecked(74.071028, 67.0),
-            bottom_right: GeoPoint::new_unchecked(18.7763, -66.885417),
+            top_left: GeoPoint::new_unchecked(167.0, 74.071028),
+            bottom_right: GeoPoint::new_unchecked(-66.885417, 18.7763),
         };
 
         // check with geo_radius

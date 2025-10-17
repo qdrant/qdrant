@@ -194,8 +194,8 @@ impl GeoHash {
 impl From<GeoPoint> for Coord<f64> {
     fn from(point: GeoPoint) -> Self {
         Self {
-            x: point.lat.0,
-            y: point.lon.0,
+            x: point.lon.0,
+            y: point.lat.0,
         }
     }
 }
