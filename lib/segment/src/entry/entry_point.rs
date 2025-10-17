@@ -153,11 +153,11 @@ pub trait SegmentEntry: SnapshotEntry {
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.
     ///
     /// Cancelled by `is_stopped` flag.
-    fn read_filtered<'a>(
-        &'a self,
+    fn read_filtered(
+        &self,
         offset: Option<PointIdType>,
         limit: Option<usize>,
-        filter: Option<&'a Filter>,
+        filter: Option<&Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType>;
