@@ -1,13 +1,12 @@
 pub mod retrieve;
 pub mod search;
+pub mod update;
 
-use std::fmt;
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
 use parking_lot::Mutex;
@@ -17,7 +16,6 @@ use segment::segment_constructor::load_segment;
 use segment::types::SegmentConfig;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
-use shard::update::*;
 use shard::wal::SerdeWal;
 use wal::WalOptions;
 
@@ -172,45 +170,6 @@ impl Shard {
     pub fn config(&self) -> &SegmentConfig {
         &self.config
     }
-
-    pub fn update(&self, operation: CollectionUpdateOperations) -> OperationResult<()> {
-        let mut wal = self.wal.lock();
-
-        let operation_id = wal.write(&operation).map_err(service_error)?;
-        let hw_counter = HardwareCounterCell::disposable();
-
-        let result = match operation {
-            CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(&self.segments, operation_id, point_operation, &hw_counter)
-            }
-            CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                process_vector_operation(
-                    &self.segments,
-                    operation_id,
-                    vector_operation,
-                    &hw_counter,
-                )
-            }
-            CollectionUpdateOperations::PayloadOperation(payload_operation) => {
-                process_payload_operation(
-                    &self.segments,
-                    operation_id,
-                    payload_operation,
-                    &hw_counter,
-                )
-            }
-            CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
-                process_field_index_operation(
-                    &self.segments,
-                    operation_id,
-                    &index_operation,
-                    &hw_counter,
-                )
-            }
-        };
-
-        result.map(|_| ())
-    }
 }
 
 fn default_wal_options() -> WalOptions {
@@ -219,8 +178,4 @@ fn default_wal_options() -> WalOptions {
         segment_queue_len: 0,
         retain_closed: NonZero::new(1).unwrap(),
     }
-}
-
-fn service_error(err: impl fmt::Display) -> OperationError {
-    OperationError::service_error(err.to_string())
 }
