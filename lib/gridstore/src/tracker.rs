@@ -15,6 +15,7 @@ pub type PageId = u32;
 const TRACKER_MEM_ADVICE: Advice = Advice::Random;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(C)]
 pub struct ValuePointer {
     /// Which page the value is stored in
     pub page_id: PageId,
