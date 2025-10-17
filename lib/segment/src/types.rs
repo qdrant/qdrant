@@ -3188,21 +3188,22 @@ impl Condition {
 pub struct CustomIdChecker(pub Arc<dyn CustomIdCheckerCondition + Send + Sync + 'static>);
 
 impl Hash for CustomIdChecker {
-    fn hash<H: hash::Hasher>(&self, _state: &mut H) {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
         // We cannot hash the inner function
         // This means that two different CustomIdChecker conditions will have the same hash,
         // but that's acceptable since we cannot do better, and only expected to be used
         // for logging and profiling purposes.
+        std::ptr::hash(Arc::as_ptr(&self.0), state);
     }
 }
 
 impl PartialEq for CustomIdChecker {
-    fn eq(&self, _other: &Self) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         // We cannot compare the inner function
         // This means that two different CustomIdChecker conditions will never be equal,
         // but that's acceptable since we cannot do better, and only expected to be used
         // for logging and profiling purposes.
-        false
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
