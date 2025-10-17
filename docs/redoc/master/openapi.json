@@ -11540,13 +11540,6 @@
             "enum": [
               "resharding_stream_records"
             ]
-          },
-          {
-            "description": "Stream all records in batches until all points satisfying the filter are transferred.",
-            "type": "string",
-            "enum": [
-              "filtered_stream_records"
-            ]
           }
         ]
       },
