@@ -147,8 +147,6 @@ pub enum ShardTransferMethod {
     /// Shard transfer for resharding: stream all records in batches until all points are
     /// transferred.
     ReshardingStreamRecords,
-    /// Stream all records in batches until all points satisfying the filter are transferred.
-    FilteredStreamRecords,
 }
 
 impl ShardTransferMethod {

@@ -59,7 +59,7 @@ pub async fn transfer_shard(
 
     match transfer_config.method.unwrap_or_default() {
         // Transfer shard record in batches
-        ShardTransferMethod::StreamRecords | ShardTransferMethod::FilteredStreamRecords => {
+        ShardTransferMethod::StreamRecords => {
             transfer_stream_records(
                 shard_holder.clone(),
                 progress,

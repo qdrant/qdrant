@@ -3550,6 +3550,15 @@ pub struct Filter {
 impl Eq for Filter {}
 
 impl Filter {
+    pub fn new() -> Self {
+        Filter {
+            should: None,
+            min_should: None,
+            must: None,
+            must_not: None,
+        }
+    }
+
     pub fn new_should(condition: Condition) -> Self {
         Filter {
             should: Some(vec![condition]),

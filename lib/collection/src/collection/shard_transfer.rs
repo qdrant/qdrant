@@ -81,9 +81,7 @@ impl Collection {
             let to_is_local = to_replica_set.is_local().await;
 
             let initial_state = match shard_transfer.method.unwrap_or_default() {
-                ShardTransferMethod::StreamRecords | ShardTransferMethod::FilteredStreamRecords => {
-                    ReplicaState::Partial
-                }
+                ShardTransferMethod::StreamRecords => ReplicaState::Partial,
 
                 ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta => {
                     ReplicaState::Recovery

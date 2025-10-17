@@ -25,6 +25,7 @@ use collection::shards::transfer::{
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
+use segment::types::Filter;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
@@ -379,8 +380,9 @@ pub async fn do_update_collection_cluster(
                             from: from_peer_id,
                             to: to_peer_id,
                             sync: true,
-                            method: Some(ShardTransferMethod::FilteredStreamRecords),
-                            filter,
+                            method: Some(ShardTransferMethod::StreamRecords),
+                            // Need to pass some filter, even if empty to differentiate between normal transfers and point replication
+                            filter: Some(Filter::new()),
                         }),
                     ),
                     access,
