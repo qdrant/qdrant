@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use ordered_float::OrderedFloat;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -165,8 +166,8 @@ fn test_gpu_filterable_hnsw() {
             Range {
                 lt: None,
                 gt: None,
-                gte: Some(f64::from(left_range)),
-                lte: Some(f64::from(right_range)),
+                gte: Some(OrderedFloat::from(f64::from(left_range))),
+                lte: Some(OrderedFloat::from(f64::from(right_range))),
             },
         )));
 
