@@ -46,8 +46,8 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
     # Transfer shard from one node to another
     filter = {"should": {"key": "city", "match": {"value": "London"}}}
 
-    expected_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", filter=filter)
-    initial_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant")
+    expected_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
+    initial_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
     assert expected_count > 0
     assert initial_count == 0 # no points in tenant shard key before transfer
 
@@ -73,6 +73,7 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
     assert number_local_shards == 2
 
     # Point counts must be consistent across shard keys for given filter
-    default_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", filter=filter)
-    tenant_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant")
-    assert default_filtered_count == tenant_count == expected_count
+    default_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
+    tenant_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
+    assert default_filtered_count == expected_count # original shard should remain unchanged
+    assert tenant_count == expected_count # new shard should also have the points
