@@ -11,6 +11,7 @@ use super::{RegionId, StorageConfig};
 
 /// Gaps of contiguous zeros in a bitmask region.
 #[derive(Debug, Clone, Eq, PartialEq)]
+#[repr(C)]
 pub struct RegionGaps {
     pub max: u16,
     pub leading: u16,

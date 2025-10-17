@@ -15,6 +15,7 @@ pub type PageId = u32;
 const TRACKER_MEM_ADVICE: Advice = Advice::Random;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(C)]
 pub struct ValuePointer {
     /// Which page the value is stored in
     pub page_id: PageId,
@@ -122,7 +123,7 @@ impl Tracker {
     /// The file is created with the default size if no size hint is given
     pub fn new(path: &Path, size_hint: Option<usize>) -> Self {
         let path = Self::tracker_file_name(path);
-        let size = size_hint.unwrap_or(Self::DEFAULT_SIZE);
+        let size = size_hint.unwrap_or(Self::DEFAULT_SIZE).next_power_of_two();
         assert!(size > size_of::<TrackerHeader>(), "Size hint is too small");
         create_and_ensure_length(&path, size).expect("Failed to create page tracker file");
         let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
@@ -222,18 +223,16 @@ impl Tracker {
         let start_offset =
             size_of::<TrackerHeader>() + point_offset * size_of::<Option<ValuePointer>>();
         let end_offset = start_offset + size_of::<Option<ValuePointer>>();
-        // check if file is long enough
+
+        // Grow tracker file if it isn't big enough
         if self.mmap.len() < end_offset {
-            // flush the current mmap
             self.mmap.flush().unwrap();
-            let missing_space = end_offset - self.mmap.len();
-            // reopen the file with a larger size
-            // account for missing size + extra to avoid resizing too often
-            let new_size = self.mmap.len() + missing_space + Self::DEFAULT_SIZE;
+            let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size).unwrap();
             self.mmap = open_write_mmap(&self.path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
                 .unwrap();
         }
+
         self.mmap[start_offset..end_offset].copy_from_slice(transmute_to_u8(&pointer));
     }
 
@@ -469,16 +468,20 @@ mod tests {
     }
 
     #[rstest]
-    #[case(10)]
-    #[case(100)]
-    #[case(1000)]
-    fn test_page_tracker_resize(#[case] initial_tracker_size: usize) {
+    #[case(10, 16)]
+    #[case(100, 128)]
+    #[case(1000, 1024)]
+    #[case(1024, 1024)]
+    fn test_page_tracker_resize(
+        #[case] desired_tracker_size: usize,
+        #[case] actual_tracker_size: usize,
+    ) {
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
 
-        let mut tracker = Tracker::new(path, Some(initial_tracker_size));
+        let mut tracker = Tracker::new(path, Some(desired_tracker_size));
         assert_eq!(tracker.mapping_len(), 0);
-        assert_eq!(tracker.mmap_file_size(), initial_tracker_size);
+        assert_eq!(tracker.mmap_file_size(), actual_tracker_size);
 
         for i in 0..100_000 {
             tracker.set(i, ValuePointer::new(i, i, i));
@@ -487,7 +490,7 @@ mod tests {
         tracker.write_pending_and_flush().unwrap();
 
         assert_eq!(tracker.mapping_len(), 100_000);
-        assert!(tracker.mmap_file_size() > initial_tracker_size);
+        assert!(tracker.mmap_file_size() > actual_tracker_size);
     }
 
     #[test]
