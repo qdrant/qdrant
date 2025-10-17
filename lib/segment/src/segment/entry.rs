@@ -689,7 +689,17 @@ impl SegmentEntry for Segment {
         //
         //  400
 
+        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+
         let flush_op = move || {
+            // Keep the guard till the end of the flush to prevent concurrent flushes
+            let is_alive_flush_guard = is_alive_flush_lock.lock();
+
+            if !*is_alive_flush_guard {
+                // Segment is removed, skip flush
+                return Ok(());
+            }
+
             // Flush mapping first to prevent having orphan internal ids.
             id_tracker_mapping_flusher().map_err(|err| {
                 OperationError::service_error(format!("Failed to flush id_tracker mapping: {err}"))
