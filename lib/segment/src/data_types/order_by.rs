@@ -88,12 +88,11 @@ impl OrderBy {
             .map(|start_from| match start_from {
                 // TODO: When we introduce integer ranges, we'll stop doing lossy conversion to f64 here
                 // Accepting an integer as start_from simplifies the client generation.
-                StartFrom::Integer(i) => RangeInterface::Float(
-                    self.direction()
-                        .as_range_from(OrderedFloat::from(*i as f64)),
-                ),
+                StartFrom::Integer(i) => {
+                    RangeInterface::Float(self.direction().as_range_from(OrderedFloat(*i as f64)))
+                }
                 StartFrom::Float(f) => {
-                    RangeInterface::Float(self.direction().as_range_from(OrderedFloat::from(*f)))
+                    RangeInterface::Float(self.direction().as_range_from(OrderedFloat(*f)))
                 }
                 StartFrom::Datetime(dt) => {
                     RangeInterface::DateTime(self.direction().as_range_from(*dt))

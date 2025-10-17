@@ -1138,7 +1138,7 @@ mod tests {
         let r_meters = 500_000.0;
         let geo_radius = GeoRadius {
             center: NYC,
-            radius: OrderedFloat::from(r_meters),
+            radius: OrderedFloat(r_meters),
         };
         let nyc_hashes = circle_hashes(&geo_radius, GEO_QUERY_MAX_REGION).unwrap();
         check_cardinality_match(
@@ -1202,7 +1202,7 @@ mod tests {
         let r_meters = 500_000.0;
         let geo_radius = GeoRadius {
             center: NYC,
-            radius: OrderedFloat::from(r_meters),
+            radius: OrderedFloat(r_meters),
         };
         check_geo_indexed_filtering(
             condition_for_geo_radius("test", geo_radius.clone()),
@@ -1286,7 +1286,7 @@ mod tests {
         // around NYC
         let nyc_geo_radius = GeoRadius {
             center: NYC,
-            radius: OrderedFloat::from(r_meters),
+            radius: OrderedFloat(r_meters),
         };
         let field_condition = condition_for_geo_radius("test", nyc_geo_radius.clone());
         let card = index.estimate_cardinality(&field_condition, &hw_counter);
@@ -1305,7 +1305,7 @@ mod tests {
         // around BERLIN
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
-            radius: OrderedFloat::from(r_meters),
+            radius: OrderedFloat(r_meters),
         };
         let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
         let card = index.estimate_cardinality(&field_condition, &hw_counter);
@@ -1325,7 +1325,7 @@ mod tests {
         // around TOKYO
         let tokyo_geo_radius = GeoRadius {
             center: TOKYO,
-            radius: OrderedFloat::from(r_meters),
+            radius: OrderedFloat(r_meters),
         };
         let field_condition = condition_for_geo_radius("test", tokyo_geo_radius.clone());
         let card = index.estimate_cardinality(&field_condition, &hw_counter);
@@ -1371,7 +1371,7 @@ mod tests {
 
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
-            radius: OrderedFloat::from(50_000.0), // Berlin <-> Potsdam is 27 km
+            radius: OrderedFloat(50_000.0), // Berlin <-> Potsdam is 27 km
         };
         // check with geo_radius
         let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
@@ -1446,7 +1446,7 @@ mod tests {
 
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
-            radius: OrderedFloat::from(50_000.0), // Berlin <-> Potsdam is 27 km
+            radius: OrderedFloat(50_000.0), // Berlin <-> Potsdam is 27 km
         };
 
         // check with geo_radius

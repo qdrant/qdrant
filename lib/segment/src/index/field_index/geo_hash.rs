@@ -263,12 +263,12 @@ pub fn encode_max_precision(lon: f64, lat: f64) -> Result<GeoHash, GeohashError>
 pub fn geo_hash_to_box(geo_hash: GeoHash) -> GeoBoundingBox {
     let rectangle = decode_bbox(EcoString::from(geo_hash).as_str()).unwrap();
     let top_left = GeoPoint {
-        lon: OrderedFloat::from(rectangle.min().x),
-        lat: OrderedFloat::from(rectangle.max().y),
+        lon: OrderedFloat(rectangle.min().x),
+        lat: OrderedFloat(rectangle.max().y),
     };
     let bottom_right = GeoPoint {
-        lon: OrderedFloat::from(rectangle.max().x),
-        lat: OrderedFloat::from(rectangle.min().y),
+        lon: OrderedFloat(rectangle.max().x),
+        lat: OrderedFloat(rectangle.min().y),
     };
 
     GeoBoundingBox {
@@ -562,12 +562,12 @@ fn minimum_bounding_rectangle_for_circle(circle: &GeoRadius) -> GeoBoundingBox {
     };
 
     let top_left = GeoPoint {
-        lat: OrderedFloat::from(max_lat),
-        lon: OrderedFloat::from(sphere_lon(min_lon)),
+        lat: OrderedFloat(max_lat),
+        lon: OrderedFloat(sphere_lon(min_lon)),
     };
     let bottom_right = GeoPoint {
-        lat: OrderedFloat::from(min_lat),
-        lon: OrderedFloat::from(sphere_lon(max_lon)),
+        lat: OrderedFloat(min_lat),
+        lon: OrderedFloat(sphere_lon(max_lon)),
     };
 
     GeoBoundingBox {
@@ -598,12 +598,12 @@ fn minimum_bounding_rectangle_for_boundary(boundary: &LineString) -> GeoBounding
     }
 
     let top_left = GeoPoint {
-        lon: OrderedFloat::from(min_lon),
-        lat: OrderedFloat::from(max_lat),
+        lon: OrderedFloat(min_lon),
+        lat: OrderedFloat(max_lat),
     };
     let bottom_right = GeoPoint {
-        lon: OrderedFloat::from(max_lon),
-        lat: OrderedFloat::from(min_lat),
+        lon: OrderedFloat(max_lon),
+        lat: OrderedFloat(min_lat),
     };
 
     GeoBoundingBox {
@@ -803,14 +803,14 @@ mod tests {
         // conversion to lon/lat http://geohash.co/
         // "dr5ruj4477kd"
         let top_left = GeoPoint {
-            lon: OrderedFloat::from(-74.00101399),
-            lat: OrderedFloat::from(40.76517460),
+            lon: OrderedFloat(-74.00101399),
+            lat: OrderedFloat(40.76517460),
         };
 
         // "dr5ru6ryw0cp"
         let bottom_right = GeoPoint {
-            lon: OrderedFloat::from(-73.98201792),
-            lat: OrderedFloat::from(40.75078539),
+            lon: OrderedFloat(-73.98201792),
+            lat: OrderedFloat(40.75078539),
         };
 
         let near_nyc_rectangle = GeoBoundingBox {
@@ -868,14 +868,14 @@ mod tests {
         // conversion to lon/lat http://geohash.co/
         // "ztnv2hjxn03k"
         let top_left = GeoPoint {
-            lat: OrderedFloat::from(74.071028),
-            lon: OrderedFloat::from(167.0),
+            lat: OrderedFloat(74.071028),
+            lon: OrderedFloat(167.0),
         };
 
         // "dr5ru7c02wnv"
         let bottom_right = GeoPoint {
-            lat: OrderedFloat::from(40.75798),
-            lon: OrderedFloat::from(-73.991516),
+            lat: OrderedFloat(40.75798),
+            lon: OrderedFloat(-73.991516),
         };
 
         let crossing_usa_rectangle = GeoBoundingBox {
@@ -968,7 +968,7 @@ mod tests {
                     rnd.random_range(LON_RANGE),
                     rnd.random_range(LAT_RANGE),
                 ),
-                radius: OrderedFloat::from(r_meters),
+                radius: OrderedFloat(r_meters),
             };
             let max_hashes = rnd.random_range(1..32);
             let hashes = circle_hashes(&query, max_hashes);
@@ -1091,8 +1091,8 @@ mod tests {
     fn test_lon_threshold() {
         let query = GeoRadius {
             center: GeoPoint {
-                lon: OrderedFloat::from(179.987181),
-                lat: OrderedFloat::from(44.9811609411936),
+                lon: OrderedFloat(179.987181),
+                lat: OrderedFloat(44.9811609411936),
             },
             radius: OrderedFloat(100000.),
         };
@@ -1114,8 +1114,8 @@ mod tests {
     fn wide_circle_meridian() {
         let query = GeoRadius {
             center: GeoPoint {
-                lon: OrderedFloat::from(-17.81718188959701),
-                lat: OrderedFloat::from(89.9811609411936),
+                lon: OrderedFloat(-17.81718188959701),
+                lat: OrderedFloat(89.9811609411936),
             },
             radius: OrderedFloat(9199.481636468849),
         };
@@ -1143,8 +1143,8 @@ mod tests {
     fn tight_circle_meridian() {
         let query = GeoRadius {
             center: GeoPoint {
-                lon: OrderedFloat::from(-17.81718188959701),
-                lat: OrderedFloat::from(89.9811609411936),
+                lon: OrderedFloat(-17.81718188959701),
+                lat: OrderedFloat(89.9811609411936),
             },
             radius: OrderedFloat(1000.0),
         };
@@ -1170,8 +1170,8 @@ mod tests {
     fn wide_circle_south_pole() {
         let query = GeoRadius {
             center: GeoPoint {
-                lon: OrderedFloat::from(155.85591760141335),
-                lat: OrderedFloat::from(-74.19418872656166),
+                lon: OrderedFloat(155.85591760141335),
+                lat: OrderedFloat(-74.19418872656166),
             },
             radius: OrderedFloat(7133.775526733084),
         };
@@ -1194,8 +1194,8 @@ mod tests {
     fn tight_circle_south_pole() {
         let query = GeoRadius {
             center: GeoPoint {
-                lon: OrderedFloat::from(155.85591760141335),
-                lat: OrderedFloat::from(-74.19418872656166),
+                lon: OrderedFloat(155.85591760141335),
+                lat: OrderedFloat(-74.19418872656166),
             },
             radius: OrderedFloat(1000.0),
         };
@@ -1325,8 +1325,8 @@ mod tests {
     fn turn_geo_hash_to_box() {
         let geo_box = geo_hash_to_box(GeoHash::new(b"dr5ruj4477kd").unwrap());
         let center = GeoPoint {
-            lat: OrderedFloat::from(40.76517460),
-            lon: OrderedFloat::from(-74.00101399),
+            lat: OrderedFloat(40.76517460),
+            lon: OrderedFloat(-74.00101399),
         };
         assert!(geo_box.check_point(&center));
     }
@@ -1365,8 +1365,8 @@ mod tests {
         // circle
         let sample_circle = GeoRadius {
             center: GeoPoint {
-                lon: OrderedFloat::from(179.987181),
-                lat: OrderedFloat::from(44.9811609411936),
+                lon: OrderedFloat(179.987181),
+                lat: OrderedFloat(44.9811609411936),
             },
             radius: OrderedFloat(100000.),
         };
@@ -1375,13 +1375,13 @@ mod tests {
 
         // rectangle
         let top_left = GeoPoint {
-            lon: OrderedFloat::from(-74.00101399),
-            lat: OrderedFloat::from(40.76517460),
+            lon: OrderedFloat(-74.00101399),
+            lat: OrderedFloat(40.76517460),
         };
 
         let bottom_right = GeoPoint {
-            lon: OrderedFloat::from(-73.98201792),
-            lat: OrderedFloat::from(40.75078539),
+            lon: OrderedFloat(-73.98201792),
+            lat: OrderedFloat(40.75078539),
         };
 
         let sample_rectangle = GeoBoundingBox {
@@ -1405,8 +1405,8 @@ mod tests {
     fn geo_radius_zero_division() {
         let circle = GeoRadius {
             center: GeoPoint {
-                lon: OrderedFloat::from(45.0),
-                lat: OrderedFloat::from(80.0),
+                lon: OrderedFloat(45.0),
+                lat: OrderedFloat(80.0),
             },
             radius: OrderedFloat(1000.0),
         };
@@ -1415,8 +1415,8 @@ mod tests {
 
         let circle2 = GeoRadius {
             center: GeoPoint {
-                lon: OrderedFloat::from(45.0),
-                lat: OrderedFloat::from(90.0),
+                lon: OrderedFloat(45.0),
+                lat: OrderedFloat(90.0),
             },
             radius: OrderedFloat(-1.0),
         };

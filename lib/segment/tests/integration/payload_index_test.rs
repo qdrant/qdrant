@@ -720,8 +720,8 @@ fn test_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
         Range {
             lt: None,
             gt: None,
-            gte: Some(OrderedFloat::from(50.)),
-            lte: Some(OrderedFloat::from(100.)),
+            gte: Some(OrderedFloat(50.)),
+            lte: Some(OrderedFloat(100.)),
         },
     )));
 
@@ -1031,7 +1031,7 @@ fn test_struct_payload_geo_radius_index(test_segments: &TestSegments) -> Result<
     let r_meters = rng.random_range(1.0..10000.0);
     let geo_radius = GeoRadius {
         center: GeoPoint::new_unchecked(rng.random_range(LON_RANGE), rng.random_range(LAT_RANGE)),
-        radius: OrderedFloat::from(r_meters),
+        radius: OrderedFloat(r_meters),
     };
 
     let condition = Condition::Field(FieldCondition::new_geo_radius(

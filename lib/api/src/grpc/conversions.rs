@@ -1736,7 +1736,7 @@ impl TryFrom<GeoRadius> for segment::types::GeoRadius {
                 radius,
             } => Ok(Self {
                 center: segment::types::GeoPoint::from(c),
-                radius: OrderedFloat::from(FloatPayloadType::from(radius)),
+                radius: OrderedFloat(FloatPayloadType::from(radius)),
             }),
             _ => Err(Status::invalid_argument("Malformed GeoRadius type")),
         }
@@ -1793,8 +1793,8 @@ impl From<GeoPoint> for segment::types::GeoPoint {
     fn from(value: GeoPoint) -> Self {
         let GeoPoint { lon, lat } = value;
         Self {
-            lon: OrderedFloat::from(lon),
-            lat: OrderedFloat::from(lat),
+            lon: OrderedFloat(lon),
+            lat: OrderedFloat(lat),
         }
     }
 }

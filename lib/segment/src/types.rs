@@ -3908,7 +3908,7 @@ mod tests {
     fn test_geo_radius_check_point() {
         let radius = GeoRadius {
             center: GeoPoint::new_unchecked(0.0, 0.0),
-            radius: OrderedFloat::from(80000.0),
+            radius: OrderedFloat(80000.0),
         };
 
         let inside_result = radius.check_point(&GeoPoint::new_unchecked(0.5, 0.5));

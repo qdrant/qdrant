@@ -31,10 +31,8 @@ fn random_range_filter<R: Rng + ?Sized>(rng: &mut R, key: &str) -> Filter {
         RangeCondition {
             lt: None,
             gt: None,
-            gte: Some(OrderedFloat::from(rng.random_range(0.0..MAX_RANGE / 2.0))),
-            lte: Some(OrderedFloat::from(
-                rng.random_range(MAX_RANGE / 2.0..MAX_RANGE),
-            )),
+            gte: Some(OrderedFloat(rng.random_range(0.0..MAX_RANGE / 2.0))),
+            lte: Some(OrderedFloat(rng.random_range(MAX_RANGE / 2.0..MAX_RANGE))),
         },
     )))
 }

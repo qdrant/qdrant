@@ -226,7 +226,7 @@ impl ValueChecker for Range<OrderedFloat<FloatPayloadType>> {
         match payload {
             Value::Number(num) => num
                 .as_f64()
-                .map(|number| self.check_range(OrderedFloat::from(number)))
+                .map(|number| self.check_range(OrderedFloat(number)))
                 .unwrap_or(false),
             _ => false,
         }
@@ -332,11 +332,11 @@ mod tests {
 
         let near_berlin_query = GeoRadius {
             center: GeoPoint::new_unchecked(13.413637, 52.521976),
-            radius: OrderedFloat::from(2000.0),
+            radius: OrderedFloat(2000.0),
         };
         let miss_geo_query = GeoRadius {
             center: GeoPoint::new_unchecked(20.423637, 52.511),
-            radius: OrderedFloat::from(2000.0),
+            radius: OrderedFloat(2000.0),
         };
 
         assert!(near_berlin_query.check(&berlin_and_moscow));

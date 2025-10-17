@@ -220,8 +220,8 @@ pub fn random_simple_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
             RangeCondition {
                 lt: None,
                 gt: None,
-                gte: Some(OrderedFloat::from(rnd_gen.random_range(INT_RANGE) as f64)),
-                lte: Some(OrderedFloat::from(rnd_gen.random_range(INT_RANGE) as f64)),
+                gte: Some(OrderedFloat(rnd_gen.random_range(INT_RANGE) as f64)),
+                lte: Some(OrderedFloat(rnd_gen.random_range(INT_RANGE) as f64)),
             },
         ))
     }

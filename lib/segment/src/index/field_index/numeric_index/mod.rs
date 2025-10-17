@@ -1001,19 +1001,19 @@ where
             if let Some(pre_lower_bound) = pre_lower_bound {
                 let range = Range {
                     lt: match upper_bound {
-                        Excluded(val) => Some(OrderedFloat::from(val.to_f64())),
+                        Excluded(val) => Some(OrderedFloat(val.to_f64())),
                         _ => None,
                     },
                     gt: match pre_lower_bound {
-                        Excluded(val) => Some(OrderedFloat::from(val.to_f64())),
+                        Excluded(val) => Some(OrderedFloat(val.to_f64())),
                         _ => None,
                     },
                     gte: match pre_lower_bound {
-                        Included(val) => Some(OrderedFloat::from(val.to_f64())),
+                        Included(val) => Some(OrderedFloat(val.to_f64())),
                         _ => None,
                     },
                     lte: match upper_bound {
-                        Included(val) => Some(OrderedFloat::from(val.to_f64())),
+                        Included(val) => Some(OrderedFloat(val.to_f64())),
                         _ => None,
                     },
                 };

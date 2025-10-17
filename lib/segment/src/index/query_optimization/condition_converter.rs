@@ -356,7 +356,7 @@ pub fn get_float_range_checkers(
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
             num_index.check_values_any(
                 point_id,
-                |value| range.check_range(OrderedFloat::from(*value)),
+                |value| range.check_range(OrderedFloat(*value)),
                 &hw_counter,
             )
         })),

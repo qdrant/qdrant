@@ -189,8 +189,8 @@ fn exact_search_test() {
             Range {
                 lt: None,
                 gt: None,
-                gte: Some(OrderedFloat::from(f64::from(left_range))),
-                lte: Some(OrderedFloat::from(f64::from(right_range))),
+                gte: Some(OrderedFloat(f64::from(left_range))),
+                lte: Some(OrderedFloat(f64::from(right_range))),
             },
         )));
 

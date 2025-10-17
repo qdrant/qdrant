@@ -61,7 +61,7 @@ async fn test_payload_missing_index_check() {
         JsonPath::from_str("location").unwrap(),
         GeoRadius {
             center: GeoPoint::new(12.0, 34.0).ok().unwrap(),
-            radius: OrderedFloat::from(50.0),
+            radius: OrderedFloat(50.0),
         },
     )));
 

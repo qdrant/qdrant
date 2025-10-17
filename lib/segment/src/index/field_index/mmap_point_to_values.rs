@@ -116,8 +116,8 @@ impl MmapValue for GeoPoint {
         let (lat, _) = f64::read_from_prefix(bytes).ok()?;
 
         Some(Self {
-            lon: OrderedFloat::from(lon),
-            lat: OrderedFloat::from(lat),
+            lon: OrderedFloat(lon),
+            lat: OrderedFloat(lat),
         })
     }
 
