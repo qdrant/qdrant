@@ -468,16 +468,20 @@ mod tests {
     }
 
     #[rstest]
-    #[case(10)]
-    #[case(100)]
-    #[case(1000)]
-    fn test_page_tracker_resize(#[case] initial_tracker_size: usize) {
+    #[case(10, 16)]
+    #[case(100, 128)]
+    #[case(1000, 1024)]
+    #[case(1024, 1024)]
+    fn test_page_tracker_resize(
+        #[case] desired_tracker_size: usize,
+        #[case] actual_tracker_size: usize,
+    ) {
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
 
-        let mut tracker = Tracker::new(path, Some(initial_tracker_size));
+        let mut tracker = Tracker::new(path, Some(desired_tracker_size));
         assert_eq!(tracker.mapping_len(), 0);
-        assert_eq!(tracker.mmap_file_size(), initial_tracker_size);
+        assert_eq!(tracker.mmap_file_size(), actual_tracker_size);
 
         for i in 0..100_000 {
             tracker.set(i, ValuePointer::new(i, i, i));
@@ -486,7 +490,7 @@ mod tests {
         tracker.write_pending_and_flush().unwrap();
 
         assert_eq!(tracker.mapping_len(), 100_000);
-        assert!(tracker.mmap_file_size() > initial_tracker_size);
+        assert!(tracker.mmap_file_size() > actual_tracker_size);
     }
 
     #[test]
