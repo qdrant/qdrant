@@ -14,7 +14,7 @@ lazy_static! {
 }
 
 /// Maximum number of segments to load concurrently when loading a collection.
-pub const MAX_CONCURRENT_SEGMENT_LOADS: usize = 8;
+pub const MAX_CONCURRENT_SEGMENT_LOADS: usize = 1;
 
 /// Number of retries for confirming a consensus operation.
 pub const CONSENSUS_CONFIRM_RETRIES: usize = 3;
