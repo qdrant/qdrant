@@ -261,6 +261,7 @@ impl Tracker {
             size_of::<TrackerHeader>() + point_offset as usize * size_of::<Option<ValuePointer>>();
         let end_offset = start_offset + size_of::<Option<ValuePointer>>();
         if end_offset > self.mmap.len() {
+            debug_assert!(false, "requested point offset in gridstore is out of bound");
             return None;
         }
         let page_pointer = transmute_from_u8(&self.mmap[start_offset..end_offset]);
