@@ -69,6 +69,10 @@ pub struct Segment {
     /// Latest persisted version
     /// Locked structure on which we hold the lock during flush to prevent concurrent flushes
     pub persisted_version: Arc<Mutex<Option<SeqNumberType>>>,
+    /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
+    /// Default value is true - means segment is alive and flushes can be performed.
+    /// If value is false - means segment was dropped and no further flush is required.
+    pub is_alive_flush_lock: Arc<Mutex<bool>>,
     /// Path of the storage root
     pub current_path: PathBuf,
     pub version_tracker: VersionTracker,
@@ -103,6 +107,9 @@ impl fmt::Debug for VectorData {
 
 impl Drop for Segment {
     fn drop(&mut self) {
+        // Wait for all background flush operations to finish
+        *self.is_alive_flush_lock.lock() = false;
+
         // Try to remove everything from the disk cache, as it might pollute the cache
         if let Err(e) = self.payload_storage.borrow().clear_cache() {
             log::error!("Failed to clear cache of payload_storage: {e}");
