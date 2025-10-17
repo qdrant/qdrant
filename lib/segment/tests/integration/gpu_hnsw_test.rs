@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use ordered_float::OrderedFloat;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::types::TelemetryDetail;
+use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
