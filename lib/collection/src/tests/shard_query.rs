@@ -73,8 +73,9 @@ async fn test_shard_query_rrf_rescoring() {
     let sources_scores = shard
         .query_batch(Arc::new(vec![query]), &current_runtime, None, hw_acc)
         .await;
-    let expected_error =
-        CollectionError::bad_request("cannot apply Fusion without prefetches".to_string());
+    let expected_error = CollectionError::bad_input(
+        "Validation failed: cannot apply Fusion without prefetches".to_string(),
+    );
     assert!(matches!(sources_scores, Err(err) if err == expected_error));
 
     // RRF query with single prefetch
