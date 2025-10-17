@@ -3,11 +3,14 @@ mod discovery;
 mod facet;
 mod local_shard;
 mod matrix;
-pub mod operation_rate_cost;
 mod query;
 mod recommend;
 mod search;
 mod update;
+
+pub mod operation_rate_cost {
+    pub use shard::query::scroll::{BASE_COST, filter_rate_cost};
+}
 
 use std::fmt::Display;
 
