@@ -549,6 +549,7 @@ impl<V: Blob> Gridstore<V> {
 
 impl<V> Gridstore<V> {
     /// The number of blocks needed for a given value bytes size
+    #[inline]
     fn blocks_for_value(value_size: usize, block_size: usize) -> u32 {
         value_size.div_ceil(block_size).try_into().unwrap()
     }
