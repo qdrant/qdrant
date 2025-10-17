@@ -476,12 +476,10 @@ fn test_detect_max_depth() {
     assert_eq!(request.prefetches_depth(), 65);
 
     // assert error
-    assert_eq!(
+    assert!(matches!(
         PlannedQuery::try_from(vec![request]),
-        Err(OperationError::validation_error(
-            "prefetches depth 65 exceeds max depth 64"
-        )),
-    );
+        Err(OperationError::ValidationError { description }) if description == "prefetches depth 65 exceeds max depth 64",
+    ));
 }
 
 fn dummy_core_prefetch(limit: usize) -> ShardPrefetch {
