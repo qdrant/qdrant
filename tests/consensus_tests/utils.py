@@ -317,7 +317,7 @@ def get_collection_info(peer_api_uri: str, collection_name: str) -> dict:
 
 
 def get_collection_point_count(peer_api_uri: str, collection_name: str, exact: bool = False,
-                               shard_key: Optional[str] = None, filter: Optional[str] = None) -> int:
+                               shard_key: Optional[str] = None, filter: Optional[dict] = None) -> int:
     r = requests.post(f"{peer_api_uri}/collections/{collection_name}/points/count", json={"exact": exact, "shard_key": shard_key, "filter": filter})
     assert_http_ok(r)
     res = r.json()["result"]["count"]
