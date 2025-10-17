@@ -25,7 +25,6 @@ use collection::shards::transfer::{
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
-use segment::types::Filter;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
@@ -377,8 +376,7 @@ pub async fn do_update_collection_cluster(
                             to: to_peer_id,
                             sync: true,
                             method: Some(ShardTransferMethod::StreamRecords),
-                            // No filter supported yet but we need to pass some value to change behavior of shard transfer validation
-                            filter: Some(Filter::new()),
+                            filter,
                         }),
                     ),
                     access,
