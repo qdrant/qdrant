@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::BufReader;
 use std::ops::ControlFlow;
 use std::path::PathBuf;
@@ -173,6 +174,44 @@ impl<V: Blob> Gridstore<V> {
         let page_tracker = Tracker::open(&base_path)?;
 
         let bitmask = Bitmask::open(&base_path, config)?;
+
+        // Sanity check if all pointers are pointing to something used in the bitmask
+        for (_offset, pointer) in page_tracker.iter_pointers() {
+            if let Some(pointer) = pointer {
+                assert!(pointer.length > 0);
+                let block_start = pointer.page_id as usize
+                    * (config.page_size_bytes / config.block_size_bytes)
+                    + (pointer.block_offset as usize);
+                let block_end: usize = block_start
+                    + Self::blocks_for_value(pointer.length as usize, config.block_size_bytes)
+                        as usize;
+                let range = block_start..block_end;
+                assert_eq!(
+                    bitmask.bitslice[range].count_zeros(),
+                    0,
+                    "should all be ones"
+                );
+            }
+        }
+
+        {
+            let mut used_pointers: HashMap<BlockOffset, Vec<(u32, ValuePointer)>> = HashMap::new();
+            for (offset, pointer) in page_tracker.iter_pointers() {
+                let Some(pointer) = pointer else {
+                    continue;
+                };
+
+                used_pointers
+                    .entry(pointer.block_offset)
+                    .or_default()
+                    .push((offset, pointer));
+            }
+            let duplicate_pointers = used_pointers
+                .into_iter()
+                .filter(|(_, pointers)| pointers.len() > 1)
+                .collect::<HashMap<BlockOffset, Vec<(u32, ValuePointer)>>>();
+            dbg!(duplicate_pointers);
+        }
 
         let num_pages = bitmask.infer_num_pages();
 

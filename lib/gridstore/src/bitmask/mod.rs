@@ -27,7 +27,7 @@ pub struct Bitmask {
     regions_gaps: BitmaskGaps,
 
     /// The actual bitmask. Each bit represents a block. A 1 means the block is used, a 0 means it is free.
-    bitslice: MmapBitSlice,
+    pub bitslice: MmapBitSlice,
 
     /// The path to the file containing the bitmask.
     path: PathBuf,
