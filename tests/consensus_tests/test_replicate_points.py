@@ -86,7 +86,7 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
 # can handle. The transfer must therefore finish in 30 seconds without issues.
 #
 # Test that data on the both sides is consistent
-@pytest.mark.parametrize("throttle_updates", [True])
+@pytest.mark.parametrize("throttle_updates", [True, False])
 def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, throttle_updates: bool):
     assert_project_root()
 
@@ -98,6 +98,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
         sharding_method="custom",
         shard_number=N_SHARDS,
         replication_factor=N_REPLICA,
+        indexing_threshold=None,
     )
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris
@@ -111,7 +112,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     )
 
     # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 100, shard_key="default")
+    upsert_random_points(peer_api_uris[0], 10000, shard_key="default")
 
     # Transfer shard from one node to another
     filter = {"should": {"key": "city", "match": {"value": "London"}}}
@@ -122,7 +123,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     assert initial_tenant_count == 0 # no points in tenant shard key before transfer
 
     # Start pushing new points to the cluster in parallel
-    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=100, throttle=throttle_updates)
+    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10000, throttle=throttle_updates)
 
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
@@ -136,12 +137,12 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     )
     assert_http_ok(r)
 
+    # Stop upserts before transfer finishes so we don't push extra points to "default"
+    sleep(1)
+    upload_process_1.kill()
+
     # Wait for end of transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
-
-    upload_process_1.kill()
-    sleep(1)
-
 
     receiver_collection_cluster_info = get_collection_cluster_info(
         peer_api_uris[-1], COLLECTION_NAME
@@ -152,5 +153,6 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     # Point counts must be consistent across shard keys for given filter
     src_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
     dest_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
-    assert src_filtered_count >= original_filtered_count # original shard also got new points
+
     assert dest_count == src_filtered_count # new shard should also have the same points
+    assert dest_count > original_filtered_count # new shard should have more points than before due to upserts during transfer

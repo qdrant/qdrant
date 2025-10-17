@@ -458,7 +458,7 @@ impl ShardOperation for ForwardProxyShard {
                     .wrapped_shard
                     .scroll_by(
                         None,
-                        usize::MAX,
+                        usize::MAX, // Todo: read in batches?
                         &WithPayloadInterface::Bool(false),
                         &WithVector::Bool(false),
                         Some(&filter.with_point_ids(point_ids)),
