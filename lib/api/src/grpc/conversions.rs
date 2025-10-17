@@ -8,6 +8,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_data::HardwareData;
 use common::types::ScoreType;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use segment::common::operation_error::OperationError;
 use segment::data_types::index::{
     BoolIndexType, DatetimeIndexType, FloatIndexType, GeoIndexType, IntegerIndexType,
@@ -696,7 +697,10 @@ impl From<(Instant, bool)> for CollectionOperationResponse {
 impl From<segment::types::GeoPoint> for GeoPoint {
     fn from(geo: segment::types::GeoPoint) -> Self {
         let segment::types::GeoPoint { lon, lat } = geo;
-        Self { lon, lat }
+        Self {
+            lon: lon.0,
+            lat: lat.0,
+        }
     }
 }
 
@@ -1672,7 +1676,7 @@ impl From<segment::types::FieldCondition> for FieldCondition {
         } = value;
 
         let (range, datetime_range) = match range {
-            Some(segment::types::RangeInterface::Float(range)) => (Some(range.into()), None),
+            Some(segment::types::RangeInterface::Float(range)) => (Some(Range::from(range)), None),
             Some(segment::types::RangeInterface::DateTime(range)) => (None, Some(range.into())),
             None => (None, None),
         };
@@ -1731,8 +1735,8 @@ impl TryFrom<GeoRadius> for segment::types::GeoRadius {
                 center: Some(c),
                 radius,
             } => Ok(Self {
-                center: c.into(),
-                radius: radius.into(),
+                center: segment::types::GeoPoint::from(c),
+                radius: OrderedFloat::from(FloatPayloadType::from(radius)),
             }),
             _ => Err(Status::invalid_argument("Malformed GeoRadius type")),
         }
@@ -1744,7 +1748,7 @@ impl From<segment::types::GeoRadius> for GeoRadius {
         let segment::types::GeoRadius { center, radius } = value;
         Self {
             center: Some(center.into()),
-            radius: radius as f32, // TODO lossy ok?
+            radius: radius.0 as f32, // TODO lossy ok?
         }
     }
 }
@@ -1788,7 +1792,10 @@ impl From<segment::types::GeoPolygon> for GeoPolygon {
 impl From<GeoPoint> for segment::types::GeoPoint {
     fn from(value: GeoPoint) -> Self {
         let GeoPoint { lon, lat } = value;
-        Self { lon, lat }
+        Self {
+            lon: OrderedFloat::from(lon),
+            lat: OrderedFloat::from(lat),
+        }
     }
 }
 
@@ -1810,17 +1817,27 @@ impl From<segment::types::GeoLineString> for GeoLineString {
     }
 }
 
-impl From<Range> for segment::types::Range<FloatPayloadType> {
+impl From<Range> for segment::types::Range<OrderedFloat<FloatPayloadType>> {
     fn from(value: Range) -> Self {
         let Range { lt, gt, gte, lte } = value;
-        Self { lt, gt, gte, lte }
+        Self {
+            lt: lt.map(OrderedFloat::from),
+            gt: gt.map(OrderedFloat::from),
+            gte: gte.map(OrderedFloat::from),
+            lte: lte.map(OrderedFloat::from),
+        }
     }
 }
 
-impl From<segment::types::Range<FloatPayloadType>> for Range {
-    fn from(value: segment::types::Range<FloatPayloadType>) -> Self {
+impl From<segment::types::Range<OrderedFloat<FloatPayloadType>>> for Range {
+    fn from(value: segment::types::Range<OrderedFloat<FloatPayloadType>>) -> Self {
         let segment::types::Range { lt, gt, gte, lte } = value;
-        Self { lt, gt, gte, lte }
+        Self {
+            lt: lt.map(FloatPayloadType::from),
+            gt: gt.map(FloatPayloadType::from),
+            gte: gte.map(FloatPayloadType::from),
+            lte: lte.map(FloatPayloadType::from),
+        }
     }
 }
 

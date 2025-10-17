@@ -165,7 +165,7 @@ where
 
         Condition::CustomIdChecker(cond) => id_tracker
             .and_then(|id_tracker| id_tracker.external_id(point_id))
-            .is_some_and(|point_id| cond.check(point_id)),
+            .is_some_and(|point_id| cond.0.check(point_id)),
 
         Condition::Filter(_) => unreachable!(),
     };
@@ -328,6 +328,7 @@ mod tests {
     use std::str::FromStr;
 
     use ahash::AHashSet;
+    use ordered_float::OrderedFloat;
 
     use super::*;
     use crate::id_tracker::IdTracker;
@@ -497,28 +498,16 @@ mod tests {
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
             JsonPath::new("location"),
             GeoBoundingBox {
-                top_left: GeoPoint {
-                    lon: 13.08835,
-                    lat: 52.67551,
-                },
-                bottom_right: GeoPoint {
-                    lon: 13.76116,
-                    lat: 52.33826,
-                },
+                top_left: GeoPoint::new_unchecked(13.08835, 52.67551),
+                bottom_right: GeoPoint::new_unchecked(13.76116, 52.33826),
             },
         ));
 
         let in_moscow = Condition::Field(FieldCondition::new_geo_bounding_box(
             JsonPath::new("location"),
             GeoBoundingBox {
-                top_left: GeoPoint {
-                    lon: 37.0366,
-                    lat: 56.1859,
-                },
-                bottom_right: GeoPoint {
-                    lon: 38.2532,
-                    lat: 55.317,
-                },
+                top_left: GeoPoint::new_unchecked(37.0366, 56.1859),
+                bottom_right: GeoPoint::new_unchecked(38.2532, 55.317),
             },
         ));
 
@@ -528,7 +517,7 @@ mod tests {
                 lt: None,
                 gt: None,
                 gte: None,
-                lte: Some(5.),
+                lte: Some(OrderedFloat(5.)),
             },
         ));
 
