@@ -28,32 +28,11 @@ pub struct PlannedQuery {
     pub scrolls: Vec<QueryScrollRequestInternal>,
 }
 
-/// Defines how to merge multiple [sources](Source)
 #[derive(Debug, PartialEq)]
-pub struct RescoreParams {
-    /// Alter the scores before selecting the best limit
-    pub rescore: ScoringQuery,
-
-    /// Keep this many points from the top
-    pub limit: usize,
-
-    /// Keep only points with better score than this threshold
-    pub score_threshold: Option<OrderedFloat<ScoreType>>,
-
-    /// Parameters for the rescore search request
-    pub params: Option<SearchParams>,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Source {
-    /// A reference offset into the main search batch
-    SearchesIdx(usize),
-
-    /// A reference offset into the scrolls list
-    ScrollsIdx(usize),
-
-    /// A nested prefetch
-    Prefetch(Box<MergePlan>),
+pub struct RootPlan {
+    pub merge_plan: MergePlan,
+    pub with_vector: WithVector,
+    pub with_payload: WithPayloadInterface,
 }
 
 #[derive(Debug, PartialEq)]
@@ -70,10 +49,31 @@ pub struct MergePlan {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct RootPlan {
-    pub merge_plan: MergePlan,
-    pub with_vector: WithVector,
-    pub with_payload: WithPayloadInterface,
+pub enum Source {
+    /// A reference offset into the main search batch
+    SearchesIdx(usize),
+
+    /// A reference offset into the scrolls list
+    ScrollsIdx(usize),
+
+    /// A nested prefetch
+    Prefetch(Box<MergePlan>),
+}
+
+/// Defines how to merge multiple [sources](Source)
+#[derive(Debug, PartialEq)]
+pub struct RescoreParams {
+    /// Alter the scores before selecting the best limit
+    pub rescore: ScoringQuery,
+
+    /// Keep this many points from the top
+    pub limit: usize,
+
+    /// Keep only points with better score than this threshold
+    pub score_threshold: Option<OrderedFloat<ScoreType>>,
+
+    /// Parameters for the rescore search request
+    pub params: Option<SearchParams>,
 }
 
 impl PlannedQuery {
