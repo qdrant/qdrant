@@ -123,7 +123,7 @@ impl Tracker {
     /// The file is created with the default size if no size hint is given
     pub fn new(path: &Path, size_hint: Option<usize>) -> Self {
         let path = Self::tracker_file_name(path);
-        let size = size_hint.unwrap_or(Self::DEFAULT_SIZE);
+        let size = size_hint.unwrap_or(Self::DEFAULT_SIZE).next_power_of_two();
         assert!(size > size_of::<TrackerHeader>(), "Size hint is too small");
         create_and_ensure_length(&path, size).expect("Failed to create page tracker file");
         let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
@@ -223,18 +223,16 @@ impl Tracker {
         let start_offset =
             size_of::<TrackerHeader>() + point_offset * size_of::<Option<ValuePointer>>();
         let end_offset = start_offset + size_of::<Option<ValuePointer>>();
-        // check if file is long enough
+
+        // Grow tracker file if it isn't big enough
         if self.mmap.len() < end_offset {
-            // flush the current mmap
             self.mmap.flush().unwrap();
-            let missing_space = end_offset - self.mmap.len();
-            // reopen the file with a larger size
-            // account for missing size + extra to avoid resizing too often
-            let new_size = self.mmap.len() + missing_space + Self::DEFAULT_SIZE;
+            let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size).unwrap();
             self.mmap = open_write_mmap(&self.path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
                 .unwrap();
         }
+
         self.mmap[start_offset..end_offset].copy_from_slice(transmute_to_u8(&pointer));
     }
 
