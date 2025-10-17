@@ -454,7 +454,7 @@ impl ShardOperation for ForwardProxyShard {
             if let Some(point_ids) = operation.operation.point_ids() {
                 let filter = filter.clone();
 
-                let matching_local_points = self
+                let matching_point_ids = self
                     .wrapped_shard
                     .scroll_by(
                         None,
@@ -476,7 +476,7 @@ impl ShardOperation for ForwardProxyShard {
                 let mut modified_operation = operation.clone();
                 modified_operation
                     .operation
-                    .retain_point_ids(|point_id| matching_local_points.contains(point_id));
+                    .retain_point_ids(|point_id| matching_point_ids.contains(point_id));
 
                 Some(modified_operation)
             } else {

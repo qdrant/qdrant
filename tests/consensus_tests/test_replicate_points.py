@@ -155,4 +155,4 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     dest_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
 
     assert dest_count == src_filtered_count # new shard should also have the same points
-    assert dest_count > original_filtered_count # new shard should have more points than before due to upserts during transfer
+    assert dest_count > original_filtered_count # more points than before due to upserts during transfer
