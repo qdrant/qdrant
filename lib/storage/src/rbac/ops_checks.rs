@@ -944,6 +944,7 @@ mod tests_ops {
             group_by: "path".parse().unwrap(),
             group_size: 100,
             limit: 100,
+            offset: 0,
             with_lookup: Some(WithLookup {
                 collection_name: "col2".to_string(),
                 with_payload: Some(WithPayloadInterface::Bool(true)),

@@ -1313,6 +1313,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
                 group_by: json_path_from_proto(&value.group_by)?,
                 limit: value.limit,
                 group_size: value.group_size,
+                offset: value.offset,
                 with_lookup: value.with_lookup.map(|l| l.try_into()).transpose()?,
             },
         })
