@@ -1061,10 +1061,12 @@ pub struct LookupLocation {
     pub shard_key: Option<ShardKeySelector>,
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn default_group_offset_u32() -> Option<u32> {
     Some(0)
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn default_group_offset_usize() -> Option<usize> {
     Some(0)
 }
