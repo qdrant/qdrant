@@ -27,8 +27,8 @@ impl PyRecord {
     }
 
     #[getter]
-    pub fn vector(&self) -> Option<&PyVectorInternal> {
-        self.0.vector.as_ref().map(PyVectorInternal::from_ref)
+    pub fn vector(&self) -> Option<PyVector> {
+        self.0.vector.clone().map(PyVector::from)
     }
 
     #[getter]
