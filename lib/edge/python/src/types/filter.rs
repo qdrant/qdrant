@@ -3,8 +3,9 @@ pub mod field_condition;
 pub mod geo;
 pub mod r#match;
 pub mod min_should;
+pub mod nested;
 pub mod range;
-mod value_count;
+pub mod value_count;
 
 use condition::PyCondition;
 use derive_more::Into;

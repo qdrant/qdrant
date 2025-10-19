@@ -6,10 +6,11 @@ use pyo3::{FromPyObject, IntoPyObject, PyErr, pyclass, pymethods};
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, FieldCondition, Filter, HasIdCondition, HasVectorCondition, IsEmptyCondition,
-    IsNullCondition, PayloadField, PointIdType, VectorNameBuf,
+    IsNullCondition, NestedCondition, PayloadField, PointIdType, VectorNameBuf,
 };
 
 use crate::types::filter::field_condition::PyFieldCondition;
+use crate::types::nested::PyNestedCondition;
 use crate::types::{PyFilter, PyPointId};
 
 #[derive(Clone, Debug, IntoPyObject, FromPyObject)]
@@ -20,6 +21,7 @@ pub enum PyCondition {
     IsNull(PyIsNullCondition),
     HasId(PyHasIdCondition),
     HasVector(PyHasVectorCondition),
+    Nested(PyNestedCondition),
     Filter(PyFilter),
 }
 
@@ -40,6 +42,9 @@ impl From<PyCondition> for Condition {
             }
             PyCondition::HasVector(has_vector_condition) => {
                 Condition::HasVector(HasVectorCondition::from(has_vector_condition))
+            }
+            PyCondition::Nested(nested_condition) => {
+                Condition::Nested(NestedCondition::from(nested_condition))
             }
             PyCondition::Filter(filter) => Condition::Filter(Filter::from(filter)),
         }
@@ -64,7 +69,9 @@ impl From<Condition> for PyCondition {
             Condition::HasVector(has_vector_condition) => {
                 PyCondition::HasVector(PyHasVectorCondition(has_vector_condition))
             }
-            Condition::Nested(_) => todo!(),
+            Condition::Nested(nested_condition) => {
+                PyCondition::Nested(PyNestedCondition(nested_condition))
+            }
             Condition::Filter(filter) => PyCondition::Filter(PyFilter(filter)),
             Condition::CustomIdChecker(_) => {
                 unreachable!("CustomIdChecker condition is not expected in Python bindings")
