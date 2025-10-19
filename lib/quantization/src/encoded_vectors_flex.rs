@@ -11,13 +11,13 @@ use memory::mmap_type::MmapFlusher;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
-use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{
     DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
+use crate::vector_stats::{VectorElementStats, VectorStats};
 
 pub const ALIGNMENT: usize = 16;
 
@@ -669,8 +669,6 @@ unsafe extern "C" {
     fn impl_score_l1_sse(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
 }
 
-
-
 pub const ROTATION_STEPS: usize = 1;
 
 #[derive(Serialize, Deserialize)]
@@ -688,7 +686,11 @@ impl Transform {
         vector_params: &VectorParameters,
         debug_path: Option<&Path>,
     ) -> Self {
-        let mean_sqr_sum = vector_stats.elements_stats.iter().map(|m| (m.mean * m.mean) as f32).sum();
+        let mean_sqr_sum = vector_stats
+            .elements_stats
+            .iter()
+            .map(|m| (m.mean * m.mean) as f32)
+            .sum();
         let stddevs = vector_stats
             .elements_stats
             .iter()
@@ -702,21 +704,21 @@ impl Transform {
 
                 let sd = *stddev;
 
-                if sd > f32::EPSILON {
-                    sd
-                } else {
-                    1.0
-                }
+                if sd > f32::EPSILON { sd } else { 1.0 }
             })
             .collect::<Vec<f32>>();
 
         let shifter = Shifter::new(vector_stats);
         if ROTATION_STEPS > 0 {
-            let rotation = Rotation::new(data.map(|v| {
-                let mut vector = v.as_ref().to_vec();
-                shifter.shift(&mut vector);
-                vector
-            }), vector_params, debug_path);
+            let rotation = Rotation::new(
+                data.map(|v| {
+                    let mut vector = v.as_ref().to_vec();
+                    shifter.shift(&mut vector);
+                    vector
+                }),
+                vector_params,
+                debug_path,
+            );
             Self {
                 rotation: Some(rotation),
                 shifter,
@@ -740,9 +742,7 @@ pub struct Shifter {
 }
 
 impl Shifter {
-    pub fn new(
-        vector_stats: &VectorStats,
-    ) -> Self {
+    pub fn new(vector_stats: &VectorStats) -> Self {
         let skip = std::env::var("SHIFTING")
             .unwrap_or_default()
             .trim()
@@ -776,7 +776,6 @@ impl Shifter {
     }
 }
 
-
 #[derive(Serialize, Deserialize)]
 pub struct Rotation {
     simple_rotations: Vec<SimpleRotation>,
@@ -808,11 +807,13 @@ impl Rotation {
                 let debug_path = debug_path.join(format!("orig_histograms"));
                 std::fs::create_dir_all(&debug_path).ok();
                 for dim in 0..vector_params.dim {
-                    let numbers = data
-                        .clone()
-                        .map(|v| v.as_ref()[dim])
-                        .collect::<Vec<f32>>();
-                    plot_histogram(&numbers, &debug_path.join(format!("orig_histogram_{dim}.png")), None).unwrap();
+                    let numbers = data.clone().map(|v| v.as_ref()[dim]).collect::<Vec<f32>>();
+                    plot_histogram(
+                        &numbers,
+                        &debug_path.join(format!("orig_histogram_{dim}.png")),
+                        None,
+                    )
+                    .unwrap();
                 }
             }
         }
@@ -860,12 +861,14 @@ impl SimpleRotation {
     ) -> Self {
         if let Some(debug_path) = debug_path {
             std::fs::create_dir_all(debug_path).ok();
-                for dim in 0..vector_params.dim {
-                let numbers = data
-                    .clone()
-                    .map(|v| v.as_ref()[dim])
-                    .collect::<Vec<f32>>();
-                plot_histogram(&numbers, &debug_path.join(format!("histogram_{dim}.png")), None).unwrap();
+            for dim in 0..vector_params.dim {
+                let numbers = data.clone().map(|v| v.as_ref()[dim]).collect::<Vec<f32>>();
+                plot_histogram(
+                    &numbers,
+                    &debug_path.join(format!("histogram_{dim}.png")),
+                    None,
+                )
+                .unwrap();
             }
         }
 
