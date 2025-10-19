@@ -28,6 +28,10 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::search::{PyScoredPoint, PySearchParams, PySearchRequest};
     #[pymodule_export]
+    use super::types::filter::{
+        PyFilter, field_condition::PyFieldCondition, r#match::PyMatchValue,
+    };
+    #[pymodule_export]
     use super::types::{PyPoint, PyRecord, PySparseVector};
     #[pymodule_export]
     use super::update::PyUpdateOperation;

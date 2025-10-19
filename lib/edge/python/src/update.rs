@@ -1,25 +1,9 @@
+pub mod upsert;
+
 use derive_more::Into;
 use pyo3::prelude::*;
-use shard::operations::point_ops::*;
-use shard::operations::{CollectionUpdateOperations, point_ops};
-
-use crate::*;
+use shard::operations::CollectionUpdateOperations;
 
 #[pyclass(name = "UpdateOperation")]
 #[derive(Clone, Debug, Into)]
 pub struct PyUpdateOperation(CollectionUpdateOperations);
-
-#[pymethods]
-impl PyUpdateOperation {
-    #[staticmethod]
-    pub fn upsert_points(points: Vec<PyPoint>) -> Self {
-        let points = points.into_iter().map(Into::into).collect();
-
-        let operation =
-            CollectionUpdateOperations::PointOperation(point_ops::PointOperations::UpsertPoints(
-                PointInsertOperationsInternal::PointsList(points),
-            ));
-
-        Self(operation)
-    }
-}

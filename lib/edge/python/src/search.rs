@@ -58,15 +58,6 @@ impl<'py> FromPyObject<'py> for PyQuery {
     }
 }
 
-#[derive(Clone, Debug, Into)]
-pub struct PyFilter(Filter);
-
-impl<'py> FromPyObject<'py> for PyFilter {
-    fn extract_bound(_filter: &Bound<'py, PyAny>) -> PyResult<Self> {
-        todo!()
-    }
-}
-
 #[pyclass(name = "SearchParams")]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PySearchParams(SearchParams);

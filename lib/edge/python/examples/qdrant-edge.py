@@ -106,6 +106,32 @@ points = shard.search(SearchRequest(
 for point in points:
     print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
 
+
+print("---- Search Fileter ----")
+
+search_filter = Filter(
+    must=[
+        FieldCondition.match(
+            key="hello",
+            match=MatchValue(value="world"),
+        )
+    ]
+)
+
+points = shard.search(SearchRequest(
+    query=[1.0, 1.0, 1.0, 1.0],
+    filter=search_filter,
+    params=None,
+    limit=10,
+    offset=0,
+    with_vector=True,
+    with_payload=True,
+    score_threshold=None,
+))
+
+for point in points:
+    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
+
 print("---- Retrieve ----")
 
 points = shard.retrieve(point_ids=[1], with_vector=True, with_payload=True)
