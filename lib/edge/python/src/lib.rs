@@ -32,6 +32,8 @@ mod qdrant_edge {
         PyMatchAny, PyMatchExcept, PyMatchPhrase, PyMatchText, PyMatchTextAny, PyMatchValue,
     };
     #[pymodule_export]
+    use super::types::filter::range::{PyRangeDateTime, PyRangeFloat};
+    #[pymodule_export]
     use super::types::filter::{PyFilter, field_condition::PyFieldCondition};
     #[pymodule_export]
     use super::types::{PyPoint, PyRecord, PySparseVector};

@@ -2,6 +2,7 @@ pub mod condition;
 pub mod field_condition;
 pub mod r#match;
 pub mod min_should;
+pub mod range;
 
 use condition::PyCondition;
 use derive_more::Into;
