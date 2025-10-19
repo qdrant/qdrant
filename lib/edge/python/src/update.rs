@@ -23,21 +23,3 @@ impl PyUpdateOperation {
         Self(operation)
     }
 }
-
-#[pyclass(name = "Point")]
-#[derive(Clone, Debug, Into)]
-pub struct PyPoint(PointStructPersisted);
-
-#[pymethods]
-impl PyPoint {
-    #[new]
-    pub fn new(id: PyPointId, vector: PyVector, payload: Option<PyPayload>) -> Result<Self, PyErr> {
-        let point = PointStructPersisted {
-            id: PointIdType::from(id),
-            vector: VectorStructPersisted::from(vector),
-            payload: payload.map(Payload::from),
-        };
-
-        Ok(Self(point))
-    }
-}
