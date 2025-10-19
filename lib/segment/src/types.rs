@@ -694,6 +694,35 @@ pub enum CompressionRatio {
 pub enum ScalarType {
     #[default]
     Int8,
+
+    U1,
+    U2,
+    U3,
+    U4,
+    U5,
+    U6,
+    U7,
+    U8,
+    U9,
+    U10,
+}
+
+impl ScalarType {
+    pub fn bits_per_dimension(&self) -> Option<usize> {
+        match self {
+            ScalarType::Int8 => None,
+            ScalarType::U1 => Some(1),
+            ScalarType::U2 => Some(2),
+            ScalarType::U3 => Some(3),
+            ScalarType::U4 => Some(4),
+            ScalarType::U5 => Some(5),
+            ScalarType::U6 => Some(6),
+            ScalarType::U7 => Some(7),
+            ScalarType::U8 => Some(8),
+            ScalarType::U9 => Some(9),
+            ScalarType::U10 => Some(10),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]

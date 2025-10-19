@@ -6,6 +6,7 @@ pub mod encoded_vectors_u8;
 pub mod kmeans;
 pub mod quantile;
 pub mod vector_stats;
+pub mod encoded_vectors_flex;
 
 use std::fmt::Display;
 use std::sync::{Arc, Condvar, Mutex};

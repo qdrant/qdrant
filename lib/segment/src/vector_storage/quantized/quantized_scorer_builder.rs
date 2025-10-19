@@ -119,6 +119,15 @@ impl<'a> QuantizedScorerBuilder<'a> {
             QuantizedVectorStorage::BinaryChunkedMmap(storage) => {
                 self.new_quantized_scorer::<TElement, TMetric>(storage)
             }
+            QuantizedVectorStorage::FlexRam(storage) => {
+                self.new_quantized_scorer::<TElement, TMetric>(storage)
+            }
+            QuantizedVectorStorage::FlexMmap(storage) => {
+                self.new_quantized_scorer::<TElement, TMetric>(storage)
+            }
+            QuantizedVectorStorage::FlexChunkedMmap(storage) => {
+                self.new_quantized_scorer::<TElement, TMetric>(storage)
+            }
             QuantizedVectorStorage::ScalarRamMulti(storage) => {
                 self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
             }
@@ -144,6 +153,15 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
             }
             QuantizedVectorStorage::BinaryChunkedMmapMulti(storage) => {
+                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+            }
+            QuantizedVectorStorage::FlexRamMulti(storage) => {
+                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+            }
+            QuantizedVectorStorage::FlexMmapMulti(storage) => {
+                self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
+            }
+            QuantizedVectorStorage::FlexChunkedMmapMulti(storage) => {
                 self.new_multi_quantized_scorer::<TElement, TMetric>(storage)
             }
         }
