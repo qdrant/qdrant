@@ -109,7 +109,7 @@ for point in points:
     print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
 
 
-print("---- Search Fileter ----")
+print("---- Search Filter ----")
 
 search_filter = Filter(
     must=[
