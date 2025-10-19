@@ -4,6 +4,7 @@ pub mod geo;
 pub mod r#match;
 pub mod min_should;
 pub mod range;
+mod value_count;
 
 use condition::PyCondition;
 use derive_more::Into;

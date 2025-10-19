@@ -5,6 +5,7 @@ use crate::types::PyFilter;
 use crate::types::filter::field_condition::PyFieldCondition;
 
 #[derive(Clone, Debug, IntoPyObject, FromPyObject)]
+#[allow(clippy::large_enum_variant)]
 pub enum PyCondition {
     Field(PyFieldCondition),
     Filter(PyFilter),
