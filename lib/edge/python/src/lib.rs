@@ -48,7 +48,7 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::types::filter::{PyFilter, field_condition::PyFieldCondition};
     #[pymodule_export]
-    use super::types::{PyPoint, PyRecord, PySparseVector};
+    use super::types::{PyPoint, PyPointVectors, PyRecord, PySparseVector};
     #[pymodule_export]
     use super::update::PyUpdateOperation;
 }
