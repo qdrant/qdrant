@@ -1062,7 +1062,7 @@ pub struct LookupLocation {
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn default_group_offset_u32() -> Option<u32> {
+fn default_group_offset_u64() -> Option<u64> {
     Some(0)
 }
 
@@ -1088,9 +1088,9 @@ pub struct BaseGroupRequest {
     pub limit: u32,
 
     /// Offset of the group to start returning results from.
-    #[serde(default = "default_group_offset_u32")]
-    #[schemars(default = "default_group_offset_u32")]
-    pub offset: Option<u32>,
+    #[serde(default = "default_group_offset_u64")]
+    #[schemars(default = "default_group_offset_u64")]
+    pub offset: Option<u64>,
 
     /// Look for points in another collection using the group ids
     pub with_lookup: Option<WithLookupInterface>,

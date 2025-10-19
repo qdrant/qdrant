@@ -14081,7 +14081,7 @@
           "offset": {
             "description": "Offset of the group to start returning results from. Default is 0.",
             "type": "integer",
-            "format": "uint32",
+            "format": "uint64",
             "minimum": 0,
             "default": 0
           }
@@ -14286,7 +14286,7 @@
           "offset": {
             "description": "Offset of the group to start returning results from. Default is 0.",
             "type": "integer",
-            "format": "uint32",
+            "format": "uint64",
             "minimum": 0,
             "default": 0
           }
