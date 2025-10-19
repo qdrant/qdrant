@@ -1,9 +1,11 @@
+use std::str::FromStr;
+
 use derive_more::Into;
 use pyo3::exceptions::PyValueError;
-use pyo3::{pyclass, pymethods, PyErr};
+use pyo3::{PyErr, pyclass, pymethods};
 use segment::json_path::JsonPath;
 use segment::types::{FieldCondition, Match};
-use std::str::FromStr;
+
 use crate::types::filter::r#match::PyMatch;
 
 #[pyclass(name = "FieldCondition")]
@@ -21,4 +23,3 @@ impl PyFieldCondition {
         Ok(Self(FieldCondition::new_match(key, internal_match)))
     }
 }
-

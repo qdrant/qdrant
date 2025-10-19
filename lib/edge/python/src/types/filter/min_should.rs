@@ -1,6 +1,7 @@
-use pyo3::{pyclass, pymethods};
 use derive_more::Into;
+use pyo3::{pyclass, pymethods};
 use segment::types::{Condition, MinShould};
+
 use crate::types::filter::condition::PyCondition;
 
 #[pyclass(name = "MinShould")]

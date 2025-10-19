@@ -1,5 +1,6 @@
 use pyo3::{FromPyObject, IntoPyObject};
 use segment::types::Condition;
+
 use crate::types::filter::field_condition::PyFieldCondition;
 
 #[derive(Clone, Debug, IntoPyObject, FromPyObject)]

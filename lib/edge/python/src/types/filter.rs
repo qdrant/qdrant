@@ -3,11 +3,12 @@ pub mod field_condition;
 pub mod r#match;
 pub mod min_should;
 
-use crate::types::filter::min_should::PyMinShould;
 use condition::PyCondition;
 use derive_more::Into;
 use pyo3::{PyErr, pyclass, pymethods};
 use segment::types::{Condition, Filter, MinShould};
+
+use crate::types::filter::min_should::PyMinShould;
 
 #[pyclass(name = "Filter")]
 #[derive(Clone, Debug, Into)]
@@ -24,23 +25,13 @@ impl PyFilter {
         must_not: Option<Vec<PyCondition>>,
         min_should: Option<PyMinShould>,
     ) -> Result<Self, PyErr> {
-        let must: Option<Vec<_>> = match must {
-            Some(must) => Some(must.into_iter().map(Condition::from).collect()),
-            None => None,
-        };
-        let should: Option<Vec<_>> = match should {
-            Some(should) => Some(should.into_iter().map(Condition::from).collect()),
-            None => None,
-        };
+        let must: Option<Vec<_>> = must.map(|must| must.into_iter().map(Condition::from).collect());
+        let should: Option<Vec<_>> =
+            should.map(|should| should.into_iter().map(Condition::from).collect());
+        let must_not: Option<Vec<_>> =
+            must_not.map(|must_not| must_not.into_iter().map(Condition::from).collect());
 
-        let must_not: Option<Vec<_>> = match must_not {
-            Some(must_not) => Some(must_not.into_iter().map(Condition::from).collect()),
-            None => None,
-        };
-        let min_should: Option<MinShould> = match min_should {
-            Some(min_should) => Some(min_should.0),
-            None => None,
-        };
+        let min_should: Option<MinShould> = min_should.map(|min_should| min_should.0);
 
         Ok(Self(Filter {
             should,

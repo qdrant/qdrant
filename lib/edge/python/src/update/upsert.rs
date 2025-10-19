@@ -1,12 +1,11 @@
+use pyo3::prelude::*;
+use segment::types::Filter;
+use shard::operations::point_ops::{PointInsertOperationsInternal, PointStructPersisted};
+use shard::operations::{CollectionUpdateOperations, point_ops};
+
 use crate::types::filter::PyFilter;
 use crate::types::point::PyPoint;
 use crate::update::PyUpdateOperation;
-use pyo3::prelude::*;
-use segment::types::Filter;
-use shard::operations::CollectionUpdateOperations;
-use shard::operations::point_ops;
-use shard::operations::point_ops::PointInsertOperationsInternal;
-use shard::operations::point_ops::PointStructPersisted;
 
 #[pymethods]
 impl PyUpdateOperation {

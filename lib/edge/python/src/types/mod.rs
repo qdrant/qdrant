@@ -1,13 +1,13 @@
+pub mod filter;
 pub mod payload;
 pub mod point;
 pub mod point_id;
 pub mod record;
 pub mod vector;
-pub mod filter;
 
+pub use filter::*;
 pub use payload::*;
 pub use point::*;
 pub use point_id::*;
 pub use record::*;
 pub use vector::*;
-pub use filter::*;

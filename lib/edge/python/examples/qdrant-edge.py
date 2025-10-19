@@ -113,7 +113,7 @@ search_filter = Filter(
     must=[
         FieldCondition.match(
             key="hello",
-            match=MatchValue(value="world"),
+            match=MatchTextAny(text_any="world"),
         )
     ]
 )
