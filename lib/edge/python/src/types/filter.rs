@@ -1,9 +1,9 @@
 pub mod condition;
 pub mod field_condition;
+pub mod geo;
 pub mod r#match;
 pub mod min_should;
 pub mod range;
-pub mod geo;
 
 use condition::PyCondition;
 use derive_more::Into;
