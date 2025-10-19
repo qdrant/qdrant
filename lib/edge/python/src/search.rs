@@ -5,9 +5,8 @@ use pyo3::IntoPyObjectExt as _;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::data_types::vectors::NamedQuery;
-use segment::types::*;
 use shard::query::query_enum::QueryEnum;
-use shard::search::*;
+use shard::search::CoreSearchRequest;
 
 use crate::*;
 
@@ -223,8 +222,8 @@ impl PyScoredPoint {
     }
 
     #[getter]
-    pub fn vector(&self) -> Option<&PyVectorInternal> {
-        self.0.vector.as_ref().map(PyVectorInternal::from_ref)
+    pub fn vector(&self) -> Option<PyVector> {
+        self.0.vector.clone().map(PyVector::from)
     }
 
     #[getter]

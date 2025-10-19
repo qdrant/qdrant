@@ -28,9 +28,9 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::search::{PyScoredPoint, PySearchParams, PySearchRequest};
     #[pymodule_export]
-    use super::types::{PyRecord, PySparseVector};
+    use super::types::{PyPoint, PyRecord, PySparseVector};
     #[pymodule_export]
-    use super::update::{PyPoint, PyUpdateOperation};
+    use super::update::PyUpdateOperation;
 }
 
 #[pyclass(name = "Shard")]
