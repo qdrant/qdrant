@@ -381,7 +381,7 @@ message SearchPointGroups {
   optional uint64 timeout = 14; // If set, overrides global timeout setting for this request. Unit is seconds.
   optional ShardKeySelector shard_key_selector = 15; // Specify in which shards to look for the points, if not specified - look in all shards
   optional SparseIndices sparse_indices = 16;
-  optional uint64 offset = 17; // Offset of the first group to return
+  optional uint32 offset = 17; // Offset of the first group to return
 }
 
 enum Direction {
@@ -490,7 +490,7 @@ message RecommendPointGroups {
   repeated Vector negative_vectors = 19; // Try to avoid vectors like this
   optional uint64 timeout = 20; // If set, overrides global timeout setting for this request. Unit is seconds.
   optional ShardKeySelector shard_key_selector = 21; // Specify in which shards to look for the points, if not specified - look in all shards
-  optional uint64 offset = 22; // Offset of the first group to return
+  optional uint32 offset = 22; // Offset of the first group to return
 }
 
 message TargetVector {
