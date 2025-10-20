@@ -773,10 +773,10 @@ impl NamedQuery<VectorInternal> {
     }
 }
 
-impl<TVector> NamedQuery<TVector> {
-    pub fn new_from_vector(vector: TVector, using: impl Into<String>) -> NamedQuery<TVector> {
+impl<TQuery> NamedQuery<TQuery> {
+    pub fn new(query: TQuery, using: impl Into<String>) -> NamedQuery<TQuery> {
         NamedQuery {
-            query: vector,
+            query,
             using: Some(using.into()),
         }
     }
@@ -814,12 +814,6 @@ impl<T> Named for NamedQuery<T> {
 impl<T: Validate> Validate for NamedQuery<T> {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         self.query.validate()
-    }
-}
-
-impl<TQuery> NamedQuery<TQuery> {
-    pub fn new(query: TQuery, using: Option<VectorNameBuf>) -> Self {
-        NamedQuery { query, using }
     }
 }
 

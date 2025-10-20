@@ -28,33 +28,30 @@ fn test_try_from_double_rescore() {
         prefetches: vec![ShardPrefetch {
             prefetches: vec![ShardPrefetch {
                 prefetches: Default::default(),
-                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-                    NamedQuery::new_from_vector(
-                        VectorInternal::Dense(dummy_vector.clone()),
-                        "byte",
-                    ),
-                ))),
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                    VectorInternal::Dense(dummy_vector.clone()),
+                    "byte",
+                )))),
                 limit: 1000,
                 params: None,
                 filter: Some(filter_inner_inner.clone()),
                 score_threshold: None,
             }],
-            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-                NamedQuery::new_from_vector(VectorInternal::Dense(dummy_vector.clone()), "full"),
-            ))),
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                VectorInternal::Dense(dummy_vector.clone()),
+                "full",
+            )))),
             limit: 100,
             params: None,
             filter: Some(filter_inner.clone()),
             score_threshold: None,
         }],
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-            NamedQuery::new_from_vector(
-                VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(vec![
-                    dummy_vector.clone(),
-                ])),
-                "multi",
-            ),
-        ))),
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(vec![
+                dummy_vector.clone(),
+            ])),
+            "multi",
+        )))),
         filter: Some(filter_outer.clone()),
         score_threshold: None,
         limit: 10,
@@ -72,7 +69,7 @@ fn test_try_from_double_rescore() {
     assert_eq!(
         planned_query.searches,
         vec![CoreSearchRequest {
-            query: QueryEnum::Nearest(NamedQuery::new_from_vector(
+            query: QueryEnum::Nearest(NamedQuery::new(
                 VectorInternal::Dense(dummy_vector.clone()),
                 "byte",
             )),
@@ -99,19 +96,17 @@ fn test_try_from_double_rescore() {
                 sources: vec![Source::Prefetch(Box::from(MergePlan {
                     sources: vec![Source::SearchesIdx(0)],
                     rescore_params: Some(RescoreParams {
-                        rescore: ScoringQuery::Vector(QueryEnum::Nearest(
-                            NamedQuery::new_from_vector(
-                                VectorInternal::Dense(dummy_vector.clone()),
-                                "full",
-                            )
-                        )),
+                        rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                            VectorInternal::Dense(dummy_vector.clone()),
+                            "full",
+                        ))),
                         limit: 100,
                         score_threshold: None,
                         params: None,
                     })
                 }))],
                 rescore_params: Some(RescoreParams {
-                    rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new_from_vector(
+                    rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
                         VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(vec![
                             dummy_vector
                         ])),
@@ -134,9 +129,10 @@ fn test_try_from_no_prefetch() {
     let dummy_vector = vec![1.0, 2.0, 3.0];
     let request = ShardQueryRequest {
         prefetches: vec![], // No prefetch
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-            NamedQuery::new_from_vector(VectorInternal::Dense(dummy_vector.clone()), "full"),
-        ))),
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::Dense(dummy_vector.clone()),
+            "full",
+        )))),
         filter: Some(Filter::default()),
         score_threshold: Some(OrderedFloat(0.5)),
         limit: 10,
@@ -151,10 +147,9 @@ fn test_try_from_no_prefetch() {
     assert_eq!(
         planned_query.searches,
         vec![CoreSearchRequest {
-            query: QueryEnum::Nearest(NamedQuery::new_from_vector(
-                VectorInternal::Dense(dummy_vector),
-                "full",
-            )),
+            query: QueryEnum::Nearest(
+                NamedQuery::new(VectorInternal::Dense(dummy_vector), "full",)
+            ),
             filter: Some(Filter::default()),
             params: Some(SearchParams::default()),
             limit: 22,
@@ -200,12 +195,10 @@ fn test_try_from_hybrid_query() {
         prefetches: vec![
             ShardPrefetch {
                 prefetches: Vec::new(),
-                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-                    NamedQuery::new_from_vector(
-                        VectorInternal::Dense(dummy_vector.clone()),
-                        "dense",
-                    ),
-                ))),
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                    VectorInternal::Dense(dummy_vector.clone()),
+                    "dense",
+                )))),
                 limit: 100,
                 params: None,
                 filter: Some(filter_inner1.clone()),
@@ -213,12 +206,10 @@ fn test_try_from_hybrid_query() {
             },
             ShardPrefetch {
                 prefetches: Vec::new(),
-                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-                    NamedQuery::new_from_vector(
-                        VectorInternal::Sparse(dummy_sparse.clone()),
-                        "sparse",
-                    ),
-                ))),
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                    VectorInternal::Sparse(dummy_sparse.clone()),
+                    "sparse",
+                )))),
                 limit: 100,
                 params: None,
                 filter: Some(filter_inner2.clone()),
@@ -241,7 +232,7 @@ fn test_try_from_hybrid_query() {
         planned_query.searches,
         vec![
             CoreSearchRequest {
-                query: QueryEnum::Nearest(NamedQuery::new_from_vector(
+                query: QueryEnum::Nearest(NamedQuery::new(
                     VectorInternal::Dense(dummy_vector),
                     "dense",
                 )),
@@ -254,7 +245,7 @@ fn test_try_from_hybrid_query() {
                 score_threshold: None,
             },
             CoreSearchRequest {
-                query: QueryEnum::Nearest(NamedQuery::new_from_vector(
+                query: QueryEnum::Nearest(NamedQuery::new(
                     VectorInternal::Sparse(dummy_sparse),
                     "sparse",
                 )),
@@ -318,9 +309,10 @@ fn test_base_params_mapping_in_try_from() {
     let request = ShardQueryRequest {
         prefetches: vec![ShardPrefetch {
             prefetches: Vec::new(),
-            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-                NamedQuery::new_from_vector(VectorInternal::Dense(dummy_vector.clone()), "dense"),
-            ))),
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                VectorInternal::Dense(dummy_vector.clone()),
+                "dense",
+            )))),
             limit: 37,
             params: dummy_params,
             filter: dummy_filter.clone(),
@@ -358,7 +350,7 @@ fn test_base_params_mapping_in_try_from() {
     assert_eq!(
         planned_query.searches,
         vec![CoreSearchRequest {
-            query: QueryEnum::Nearest(NamedQuery::new_from_vector(
+            query: QueryEnum::Nearest(NamedQuery::new(
                 VectorInternal::Dense(dummy_vector),
                 "dense",
             ),),
@@ -383,12 +375,10 @@ pub fn make_prefetches_at_depth(depth: usize) -> ShardPrefetch {
                 depth - 1,
                 ShardPrefetch {
                     prefetches: vec![acc],
-                    query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-                        NamedQuery::new_from_vector(
-                            VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
-                            "dense",
-                        ),
-                    ))),
+                    query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                        VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+                        "dense",
+                    )))),
                     limit: 10,
                     params: None,
                     filter: None,
@@ -400,9 +390,10 @@ pub fn make_prefetches_at_depth(depth: usize) -> ShardPrefetch {
     // lowest prefetch
     let prefetch = ShardPrefetch {
         prefetches: Vec::new(),
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-            NamedQuery::new_from_vector(VectorInternal::Dense(vec![1.0, 2.0, 3.0]), "dense"),
-        ))),
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+            "dense",
+        )))),
         limit: 100,
         params: None,
         filter: None,
@@ -416,9 +407,10 @@ fn test_detect_max_depth() {
     // depth 0
     let mut request = ShardQueryRequest {
         prefetches: vec![],
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-            NamedQuery::new_from_vector(VectorInternal::Dense(vec![1.0, 2.0, 3.0]), "dense"),
-        ))),
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+            "dense",
+        )))),
         filter: None,
         score_threshold: None,
         limit: 10,
@@ -434,28 +426,28 @@ fn test_detect_max_depth() {
         prefetches: vec![ShardPrefetch {
             prefetches: vec![ShardPrefetch {
                 prefetches: vec![],
-                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-                    NamedQuery::new_from_vector(
-                        VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
-                        "dense",
-                    ),
-                ))),
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                    VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+                    "dense",
+                )))),
                 limit: 10,
                 params: None,
                 filter: None,
                 score_threshold: None,
             }],
-            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-                NamedQuery::new_from_vector(VectorInternal::Dense(vec![1.0, 2.0, 3.0]), "dense"),
-            ))),
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+                "dense",
+            )))),
             limit: 10,
             params: None,
             filter: None,
             score_threshold: None,
         }],
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-            NamedQuery::new_from_vector(VectorInternal::Dense(vec![1.0, 2.0, 3.0]), "dense"),
-        ))),
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+            "dense",
+        )))),
         limit: 10,
         params: None,
         filter: None,

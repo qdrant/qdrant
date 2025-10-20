@@ -11,7 +11,9 @@ use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, SearchParams, VectorName,
     VectorNameBuf, WithPayloadInterface, WithVector,
 };
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use segment::vector_storage::query::{
+    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, RecoQuery, SimpleFeedbackStrategy,
+};
 use serde::Serialize;
 use shard::query::query_enum::QueryEnum;
 
@@ -165,6 +167,7 @@ pub enum VectorQuery<T> {
     RecommendSumScores(RecoQuery<T>),
     Discover(DiscoveryQuery<T>),
     Context(ContextQuery<T>),
+    Feedback(FeedbackQuery<T>),
 }
 
 impl<T> VectorQuery<T> {
@@ -178,6 +181,7 @@ impl<T> VectorQuery<T> {
             | VectorQuery::RecommendSumScores(query) => Box::new(query.flat_iter()),
             VectorQuery::Discover(query) => Box::new(query.flat_iter()),
             VectorQuery::Context(query) => Box::new(query.flat_iter()),
+            VectorQuery::Feedback(query) => Box::new(query.flat_iter()),
         }
     }
 }
@@ -192,6 +196,27 @@ pub struct NearestWithMmr<T> {
 pub struct Mmr {
     pub diversity: Option<f32>,
     pub candidates_limit: Option<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FeedbackQuery<T> {
+    pub target: T,
+    pub feedback: Vec<FeedbackItem<T>>,
+    pub strategy: FeedbackStrategy,
+}
+
+impl<T> FeedbackQuery<T> {
+    fn flat_iter(&self) -> impl Iterator<Item = &T> {
+        self.feedback
+            .iter()
+            .map(|item| &item.vector)
+            .chain(std::iter::once(&self.target))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FeedbackStrategy {
+    Simple { a: f32, b: f32, c: f32 },
 }
 
 impl VectorQuery<VectorInputInternal> {
@@ -307,6 +332,33 @@ impl VectorQuery<VectorInputInternal> {
 
                 Ok(VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }))
             }
+            VectorQuery::Feedback(FeedbackQuery {
+                target,
+                feedback,
+                strategy,
+            }) => {
+                let target = ids_to_vectors
+                    .resolve_reference(lookup_collection, lookup_vector_name, target)
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))?;
+
+                let feedback = feedback
+                    .into_iter()
+                    .map(|FeedbackItem { vector, score }| {
+                        Ok(FeedbackItem {
+                            vector: ids_to_vectors
+                                .resolve_reference(lookup_collection, lookup_vector_name, vector)
+                                .ok_or_else(|| vector_not_found_error(lookup_vector_name))?,
+                            score,
+                        })
+                    })
+                    .collect::<CollectionResult<_>>()?;
+
+                Ok(VectorQuery::Feedback(FeedbackQuery {
+                    target,
+                    feedback,
+                    strategy,
+                }))
+            }
         }
     }
 
@@ -381,6 +433,16 @@ impl VectorQuery<VectorInternal> {
             VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr: _ }) => {
                 nearest.preprocess();
             }
+            VectorQuery::Feedback(FeedbackQuery {
+                target,
+                feedback,
+                strategy: _,
+            }) => {
+                target.preprocess();
+                feedback
+                    .iter_mut()
+                    .for_each(|item| item.vector.preprocess());
+            }
         }
         self
     }
@@ -391,33 +453,25 @@ impl VectorQuery<VectorInternal> {
         request_limit: usize,
     ) -> CollectionResult<ScoringQuery> {
         let query_enum = match self {
-            VectorQuery::Nearest(vector) => {
-                QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using))
-            }
+            VectorQuery::Nearest(vector) => QueryEnum::Nearest(NamedQuery::new(vector, using)),
             VectorQuery::RecommendAverageVector(reco) => {
                 // Get average vector
                 let search_vector = avg_vector_for_recommendation(
                     reco.positives.iter().map(VectorRef::from),
                     reco.negatives.iter().map(VectorRef::from).peekable(),
                 )?;
-                QueryEnum::Nearest(NamedQuery::new_from_vector(search_vector, using))
+                QueryEnum::Nearest(NamedQuery::new(search_vector, using))
             }
-            VectorQuery::RecommendBestScore(reco) => QueryEnum::RecommendBestScore(NamedQuery {
-                query: reco,
-                using: Some(using),
-            }),
-            VectorQuery::RecommendSumScores(reco) => QueryEnum::RecommendSumScores(NamedQuery {
-                query: reco,
-                using: Some(using),
-            }),
-            VectorQuery::Discover(discover) => QueryEnum::Discover(NamedQuery {
-                query: discover,
-                using: Some(using),
-            }),
-            VectorQuery::Context(context) => QueryEnum::Context(NamedQuery {
-                query: context,
-                using: Some(using),
-            }),
+            VectorQuery::RecommendBestScore(reco) => {
+                QueryEnum::RecommendBestScore(NamedQuery::new(reco, using))
+            }
+            VectorQuery::RecommendSumScores(reco) => {
+                QueryEnum::RecommendSumScores(NamedQuery::new(reco, using))
+            }
+            VectorQuery::Discover(discover) => {
+                QueryEnum::Discover(NamedQuery::new(discover, using))
+            }
+            VectorQuery::Context(context) => QueryEnum::Context(NamedQuery::new(context, using)),
             VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }) => {
                 let Mmr {
                     diversity,
@@ -433,6 +487,24 @@ impl VectorQuery<VectorInternal> {
                     candidates_limit: candidates_limit.unwrap_or(request_limit),
                 }));
             }
+            VectorQuery::Feedback(FeedbackQuery {
+                target,
+                feedback,
+                strategy,
+            }) => match strategy {
+                FeedbackStrategy::Simple { a, b, c } => QueryEnum::FeedbackSimple(NamedQuery::new(
+                    segment::vector_storage::query::FeedbackQueryInternal {
+                        target,
+                        feedback,
+                        strategy: SimpleFeedbackStrategy {
+                            a: a.into(),
+                            b: b.into(),
+                            c: c.into(),
+                        },
+                    },
+                    using,
+                )),
+            },
         };
 
         Ok(ScoringQuery::Vector(query_enum))
