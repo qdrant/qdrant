@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use common::validation::validate_shard_different_peers;
 use schemars::JsonSchema;
-use segment::types::ShardKey;
+use segment::types::{Filter, ShardKey};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::{Validate, ValidationErrors};
@@ -45,6 +45,8 @@ pub enum ClusterOperations {
     FinishResharding(FinishReshardingOperation),
     /// Abort resharding
     AbortResharding(AbortReshardingOperation),
+    /// Trigger replication of points between two shards
+    ReplicatePoints(ReplicatePointsOperation),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -121,6 +123,7 @@ impl Validate for ClusterOperations {
             ClusterOperations::CommitWriteHashRing(op) => op.validate(),
             ClusterOperations::FinishResharding(op) => op.validate(),
             ClusterOperations::AbortResharding(op) => op.validate(),
+            ClusterOperations::ReplicatePoints(op) => op.validate(),
         }
     }
 }
@@ -189,6 +192,36 @@ pub struct CommitWriteHashRingOperation {
 pub struct FinishReshardingOperation {
     #[validate(nested)]
     pub finish_resharding: FinishResharding,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct ReplicatePointsOperation {
+    #[validate(nested)]
+    pub replicate_points: ReplicatePoints,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct ReplicatePoints {
+    pub filter: Option<Filter>,
+    pub from_shard_key: ShardKey,
+    pub to_shard_key: ShardKey,
+}
+
+impl Validate for ReplicatePoints {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        if self.from_shard_key != self.to_shard_key {
+            return Ok(());
+        }
+
+        let mut errors = ValidationErrors::new();
+        errors.add(
+            "to_shard_key",
+            validator::ValidationError::new("must be different from from_shard_key"),
+        );
+        Err(errors)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]

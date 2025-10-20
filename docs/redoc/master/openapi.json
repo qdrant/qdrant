@@ -13356,6 +13356,9 @@
           },
           {
             "$ref": "#/components/schemas/AbortReshardingOperation"
+          },
+          {
+            "$ref": "#/components/schemas/ReplicatePointsOperation"
           }
         ]
       },
@@ -13678,6 +13681,42 @@
       },
       "AbortResharding": {
         "type": "object"
+      },
+      "ReplicatePointsOperation": {
+        "type": "object",
+        "required": [
+          "replicate_points"
+        ],
+        "properties": {
+          "replicate_points": {
+            "$ref": "#/components/schemas/ReplicatePoints"
+          }
+        }
+      },
+      "ReplicatePoints": {
+        "type": "object",
+        "required": [
+          "from_shard_key",
+          "to_shard_key"
+        ],
+        "properties": {
+          "filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "from_shard_key": {
+            "$ref": "#/components/schemas/ShardKey"
+          },
+          "to_shard_key": {
+            "$ref": "#/components/schemas/ShardKey"
+          }
+        }
       },
       "SearchRequestBatch": {
         "type": "object",
