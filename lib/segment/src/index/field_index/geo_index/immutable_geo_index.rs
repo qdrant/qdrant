@@ -222,7 +222,7 @@ impl ImmutableGeoMapIndex {
 
             let removed_geo_hashes: Vec<_> = removed_geo_points
                 .into_iter()
-                .map(|geo_point| encode_max_precision(geo_point.lon, geo_point.lat).unwrap())
+                .map(|geo_point| encode_max_precision(geo_point.lon.0, geo_point.lat.0).unwrap())
                 .collect();
             for removed_geo_hash in &removed_geo_hashes {
                 index.decrement_hash_value_counts(removed_geo_hash);
@@ -359,7 +359,7 @@ impl ImmutableGeoMapIndex {
 
         for removed_geo_point in removed_geo_points {
             let removed_geo_hash: GeoHash =
-                encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).unwrap();
+                encode_max_precision(removed_geo_point.lon.0, removed_geo_point.lat.0).unwrap();
             removed_geo_hashes.push(removed_geo_hash);
 
             match self.storage {

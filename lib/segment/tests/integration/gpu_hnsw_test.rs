@@ -5,6 +5,7 @@ use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::types::TelemetryDetail;
+use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -165,8 +166,8 @@ fn test_gpu_filterable_hnsw() {
             Range {
                 lt: None,
                 gt: None,
-                gte: Some(f64::from(left_range)),
-                lte: Some(f64::from(right_range)),
+                gte: Some(OrderedFloat::from(f64::from(left_range))),
+                lte: Some(OrderedFloat::from(f64::from(right_range))),
             },
         )));
 

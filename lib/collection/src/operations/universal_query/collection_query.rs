@@ -481,9 +481,7 @@ impl VectorQuery<VectorInternal> {
                 return Ok(ScoringQuery::Mmr(MmrInternal {
                     vector: nearest,
                     using,
-                    lambda: OrderedFloat::from(
-                        diversity.map(|x| 1.0 - x).unwrap_or(DEFAULT_MMR_LAMBDA),
-                    ),
+                    lambda: OrderedFloat(diversity.map(|x| 1.0 - x).unwrap_or(DEFAULT_MMR_LAMBDA)),
                     candidates_limit: candidates_limit.unwrap_or(request_limit),
                 }));
             }

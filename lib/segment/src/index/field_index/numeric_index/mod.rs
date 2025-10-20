@@ -21,6 +21,7 @@ use delegate::delegate;
 use gridstore::Blob;
 use mmap_numeric_index::MmapNumericIndex;
 use mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
+use ordered_float::OrderedFloat;
 #[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
 #[cfg(feature = "rocksdb")]
@@ -325,7 +326,7 @@ where
         }
 
         let range = match range {
-            RangeInterface::Float(float_range) => float_range.map(T::from_f64),
+            RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
             RangeInterface::DateTime(datetime_range) => {
                 datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
@@ -922,7 +923,7 @@ where
         let range_cond = condition.range.as_ref()?;
 
         let (start_bound, end_bound) = match range_cond {
-            RangeInterface::Float(float_range) => float_range.map(T::from_f64),
+            RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
             RangeInterface::DateTime(datetime_range) => {
                 datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
@@ -1000,19 +1001,19 @@ where
             if let Some(pre_lower_bound) = pre_lower_bound {
                 let range = Range {
                     lt: match upper_bound {
-                        Excluded(val) => Some(val.to_f64()),
+                        Excluded(val) => Some(OrderedFloat(val.to_f64())),
                         _ => None,
                     },
                     gt: match pre_lower_bound {
-                        Excluded(val) => Some(val.to_f64()),
+                        Excluded(val) => Some(OrderedFloat(val.to_f64())),
                         _ => None,
                     },
                     gte: match pre_lower_bound {
-                        Included(val) => Some(val.to_f64()),
+                        Included(val) => Some(OrderedFloat(val.to_f64())),
                         _ => None,
                     },
                     lte: match upper_bound {
-                        Included(val) => Some(val.to_f64()),
+                        Included(val) => Some(OrderedFloat(val.to_f64())),
                         _ => None,
                     },
                 };
@@ -1216,7 +1217,7 @@ where
         range: &RangeInterface,
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
         let range = match range {
-            RangeInterface::Float(float_range) => float_range.map(T::from_f64),
+            RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
             RangeInterface::DateTime(datetime_range) => {
                 datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }

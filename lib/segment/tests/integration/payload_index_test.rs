@@ -12,6 +12,7 @@ use fnv::FnvBuildHasher;
 use fs_err as fs;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::facets::{FacetParams, FacetValue};
@@ -719,8 +720,8 @@ fn test_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
         Range {
             lt: None,
             gt: None,
-            gte: Some(50.),
-            lte: Some(100.),
+            gte: Some(OrderedFloat(50.)),
+            lte: Some(OrderedFloat(100.)),
         },
     )));
 
@@ -1007,14 +1008,11 @@ fn test_struct_payload_geo_boundingbox_index(test_segments: &TestSegments) -> Re
     let mut rng = rand::rng();
 
     let geo_bbox = GeoBoundingBox {
-        top_left: GeoPoint {
-            lon: rng.random_range(LON_RANGE),
-            lat: rng.random_range(LAT_RANGE),
-        },
-        bottom_right: GeoPoint {
-            lon: rng.random_range(LON_RANGE),
-            lat: rng.random_range(LAT_RANGE),
-        },
+        top_left: GeoPoint::new_unchecked(rng.random_range(LON_RANGE), rng.random_range(LAT_RANGE)),
+        bottom_right: GeoPoint::new_unchecked(
+            rng.random_range(LON_RANGE),
+            rng.random_range(LAT_RANGE),
+        ),
     };
 
     let condition = Condition::Field(FieldCondition::new_geo_bounding_box(
@@ -1032,11 +1030,8 @@ fn test_struct_payload_geo_radius_index(test_segments: &TestSegments) -> Result<
 
     let r_meters = rng.random_range(1.0..10000.0);
     let geo_radius = GeoRadius {
-        center: GeoPoint {
-            lon: rng.random_range(LON_RANGE),
-            lat: rng.random_range(LAT_RANGE),
-        },
-        radius: r_meters,
+        center: GeoPoint::new_unchecked(rng.random_range(LON_RANGE), rng.random_range(LAT_RANGE)),
+        radius: OrderedFloat(r_meters),
     };
 
     let condition = Condition::Field(FieldCondition::new_geo_radius(
@@ -1057,9 +1052,11 @@ fn test_struct_payload_geo_polygon_index(test_segments: &TestSegments) -> Result
         let mut rng = rand::rng();
         let mut line = GeoLineString {
             points: (0..polygon_edge)
-                .map(|_| GeoPoint {
-                    lon: rng.random_range(LON_RANGE),
-                    lat: rng.random_range(LAT_RANGE),
+                .map(|_| {
+                    GeoPoint::new_unchecked(
+                        rng.random_range(LON_RANGE),
+                        rng.random_range(LAT_RANGE),
+                    )
                 })
                 .collect(),
         };

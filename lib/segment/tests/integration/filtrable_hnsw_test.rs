@@ -7,6 +7,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::types::{PointOffsetType, TelemetryDetail};
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
@@ -185,8 +186,8 @@ fn _test_filterable_hnsw(
             Range {
                 lt: None,
                 gt: None,
-                gte: Some(f64::from(left_range)),
-                lte: Some(f64::from(right_range)),
+                gte: Some(OrderedFloat(f64::from(left_range))),
+                lte: Some(OrderedFloat(f64::from(right_range))),
             },
         )));
 

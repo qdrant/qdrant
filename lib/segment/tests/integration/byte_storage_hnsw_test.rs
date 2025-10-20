@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use common::types::{ScoredPointOffset, TelemetryDetail};
+use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
@@ -223,8 +224,8 @@ fn test_byte_storage_hnsw(
             Range {
                 lt: None,
                 gt: None,
-                gte: Some(f64::from(left_range)),
-                lte: Some(f64::from(right_range)),
+                gte: Some(OrderedFloat(f64::from(left_range))),
+                lte: Some(OrderedFloat(f64::from(right_range))),
             },
         )));
 

@@ -64,7 +64,7 @@ pub type VectorName = str;
 pub type VectorNameBuf = String;
 
 /// Wraps `DateTime<Utc>` to allow more flexible deserialization
-#[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, PartialOrd, Hash)]
+#[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, Eq, PartialOrd, Hash)]
 #[serde(transparent)]
 pub struct DateTimeWrapper(pub chrono::DateTime<chrono::Utc>);
 
@@ -1690,22 +1690,28 @@ pub struct SegmentState {
 pub type RawGeoPoint = (f64, f64);
 
 /// Geo point payload schema
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Default)]
+#[derive(
+    Debug,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Default,
+    PartialOrd,
+    Ord,
+)]
 #[serde(try_from = "GeoPointShadow")]
 pub struct GeoPoint {
-    pub lon: f64,
-    pub lat: f64,
-}
-
-impl Hash for GeoPoint {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        OrderedFloat(self.lon).hash(state);
-        OrderedFloat(self.lat).hash(state);
-    }
+    pub lon: OrderedFloat<f64>,
+    pub lat: OrderedFloat<f64>,
 }
 
 /// Ordered sequence of GeoPoints representing the line
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 pub struct GeoLineString {
     pub points: Vec<GeoPoint>,
 }
@@ -1748,7 +1754,14 @@ impl GeoPoint {
 
     pub fn new(lon: f64, lat: f64) -> Result<Self, GeoPointValidationError> {
         Self::validate(lon, lat)?;
-        Ok(GeoPoint { lon, lat })
+        Ok(Self::new_unchecked(lon, lat))
+    }
+
+    pub const fn new_unchecked(lon: f64, lat: f64) -> Self {
+        GeoPoint {
+            lon: OrderedFloat(lon),
+            lat: OrderedFloat(lat),
+        }
     }
 }
 
@@ -1759,12 +1772,17 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
         let GeoPointShadow { lon, lat } = value;
         GeoPoint::validate(lon, lat)?;
 
-        Ok(Self { lon, lat })
+        Ok(Self::new_unchecked(lon, lat))
     }
 }
 
 impl From<GeoPoint> for geo::Point {
-    fn from(GeoPoint { lon, lat }: GeoPoint) -> Self {
+    fn from(
+        GeoPoint {
+            lon: OrderedFloat(lon),
+            lat: OrderedFloat(lat),
+        }: GeoPoint,
+    ) -> Self {
         Self::new(lon, lat)
     }
 }
@@ -1777,25 +1795,7 @@ impl From<RawGeoPoint> for GeoPoint {
 
 impl From<GeoPoint> for RawGeoPoint {
     fn from(geo_point: GeoPoint) -> Self {
-        (geo_point.lon, geo_point.lat)
-    }
-}
-
-/// Geo point that implements `PartialOrd`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
-#[cfg(test)]
-pub struct OrderedGeoPoint {
-    pub lon: OrderedFloat<f64>,
-    pub lat: OrderedFloat<f64>,
-}
-
-#[cfg(test)]
-impl From<GeoPoint> for OrderedGeoPoint {
-    fn from(geo_point: GeoPoint) -> Self {
-        OrderedGeoPoint {
-            lon: OrderedFloat(geo_point.lon),
-            lat: OrderedFloat(geo_point.lat),
-        }
+        (geo_point.lon.0, geo_point.lat.0)
     }
 }
 
@@ -2536,10 +2536,10 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum RangeInterface {
-    Float(Range<FloatPayloadType>),
+    Float(Range<OrderedFloat<FloatPayloadType>>),
     DateTime(Range<DateTimePayloadType>),
 }
 
@@ -2548,10 +2548,10 @@ impl Hash for RangeInterface {
         match self {
             RangeInterface::Float(range) => {
                 let Range { lt, gt, gte, lte } = range;
-                lt.map(OrderedFloat).hash(state);
-                gt.map(OrderedFloat).hash(state);
-                gte.map(OrderedFloat).hash(state);
-                lte.map(OrderedFloat).hash(state);
+                lt.hash(state);
+                gt.hash(state);
+                gte.hash(state);
+                lte.hash(state);
             }
             RangeInterface::DateTime(range) => {
                 let Range { lt, gt, gte, lte } = range;
@@ -2564,10 +2564,12 @@ impl Hash for RangeInterface {
     }
 }
 
+type OrderedFloatPayloadType = OrderedFloat<FloatPayloadType>;
+
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
-#[derive_args(< FloatPayloadType > => "Range", < DateTimePayloadType > => "DatetimeRange")]
-#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq)]
+#[derive_args(< OrderedFloatPayloadType > => "Range", < DateTimePayloadType > => "DatetimeRange")]
+#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct Range<T> {
     /// point.key < range.lt
@@ -2652,7 +2654,7 @@ impl From<std::ops::Range<usize>> for ValuesCount {
 /// Geo filter request
 ///
 /// Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoBoundingBox {
     /// Coordinates of the top left point of the area rectangle
@@ -2679,13 +2681,13 @@ impl GeoBoundingBox {
 /// Geo filter request
 ///
 /// Matches coordinates inside the circle of `radius` and center with coordinates `center`
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoRadius {
     /// Coordinates of the top left point of the area rectangle
     pub center: GeoPoint,
     /// Radius of the area in meters
-    pub radius: f64,
+    pub radius: OrderedFloat<f64>,
 }
 
 impl Hash for GeoRadius {
@@ -2700,7 +2702,7 @@ impl Hash for GeoRadius {
 impl GeoRadius {
     pub fn check_point(&self, point: &GeoPoint) -> bool {
         let query_center = Point::from(self.center);
-        Haversine.distance(query_center, Point::from(*point)) < self.radius
+        Haversine.distance(query_center, Point::from(*point)) < self.radius.0
     }
 }
 
@@ -2716,7 +2718,7 @@ pub struct PolygonWrapper {
 
 impl PolygonWrapper {
     pub fn check_point(&self, point: &GeoPoint) -> bool {
-        let point_new = Point::new(point.lon, point.lat);
+        let point_new = Point::new(point.lon.0, point.lat.0);
         self.polygon.contains(&point_new)
     }
 }
@@ -2724,7 +2726,7 @@ impl PolygonWrapper {
 /// Geo filter request
 ///
 /// Matches coordinates inside the polygon, defined by `exterior` and `interiors`
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(try_from = "GeoPolygonShadow", rename_all = "snake_case")]
 pub struct GeoPolygon {
     /// The exterior line bounds the surface
@@ -2768,7 +2770,10 @@ impl GeoPolygon {
             self.exterior
                 .points
                 .iter()
-                .map(|p| Coord { x: p.lon, y: p.lat })
+                .map(|p| Coord {
+                    x: p.lon.0,
+                    y: p.lat.0,
+                })
                 .collect(),
         );
 
@@ -2781,7 +2786,10 @@ impl GeoPolygon {
                     interior_points
                         .points
                         .iter()
-                        .map(|p| Coord { x: p.lon, y: p.lat })
+                        .map(|p| Coord {
+                            x: p.lon.0,
+                            y: p.lat.0,
+                        })
                         .collect()
                 })
                 .map(LineString)
@@ -2817,7 +2825,7 @@ impl TryFrom<GeoPolygonShadow> for GeoPolygon {
 }
 
 /// All possible payload filtering conditions
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 #[validate(schema(function = "validate_field_condition"))]
 #[serde(rename_all = "snake_case")]
 pub struct FieldCondition {
@@ -2864,7 +2872,7 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_range(key: PayloadKeyType, range: Range<FloatPayloadType>) -> Self {
+    pub fn new_range(key: PayloadKeyType, range: Range<OrderedFloat<FloatPayloadType>>) -> Self {
         Self {
             key,
             r#match: None,
@@ -3110,14 +3118,14 @@ impl FromIterator<PointIdType> for HasIdCondition {
 }
 
 /// Select points with payload for a specified nested field
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Validate, Hash)]
 pub struct Nested {
     pub key: PayloadKeyType,
     #[validate(nested)]
     pub filter: Filter,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Validate, Hash)]
 pub struct NestedCondition {
     #[validate(nested)]
     pub nested: Nested,
@@ -3144,7 +3152,7 @@ impl NestedCondition {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 #[serde(
     expecting = "Expected some form of condition, which can be a field condition (like {\"key\": ..., \"match\": ... }), or some other mentioned in the documentation: https://qdrant.tech/documentation/concepts/filtering/#filtering-conditions"
@@ -3167,59 +3175,39 @@ pub enum Condition {
     Filter(Filter),
 
     #[serde(skip)]
-    CustomIdChecker(Arc<dyn CustomIdCheckerCondition + Send + Sync + 'static>),
+    CustomIdChecker(CustomIdChecker),
 }
 
-impl Hash for Condition {
+impl Condition {
+    pub fn new_custom(checker: Arc<dyn CustomIdCheckerCondition + Send + Sync + 'static>) -> Self {
+        Condition::CustomIdChecker(CustomIdChecker(checker))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CustomIdChecker(pub Arc<dyn CustomIdCheckerCondition + Send + Sync + 'static>);
+
+impl Hash for CustomIdChecker {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        mem::discriminant(self).hash(state);
-        match self {
-            Condition::Field(field_condition) => {
-                field_condition.hash(state);
-            }
-            Condition::IsEmpty(is_empty_condition) => {
-                is_empty_condition.hash(state);
-            }
-            Condition::IsNull(is_null_condition) => {
-                is_null_condition.hash(state);
-            }
-            Condition::HasId(has_id_condition) => {
-                has_id_condition.hash(state);
-            }
-            Condition::HasVector(has_vector_condition) => {
-                has_vector_condition.hash(state);
-            }
-            Condition::Nested(nested_condition) => {
-                nested_condition.hash(state);
-            }
-            Condition::Filter(filter) => {
-                filter.hash(state);
-            }
-            Condition::CustomIdChecker(_) => {
-                // We cannot hash the inner function
-                // This means that two different CustomIdChecker conditions will have the same hash,
-                // but that's acceptable since we cannot do better, and only expected to be used
-                // for logging and profiling purposes.
-            }
-        }
+        // We cannot hash the inner function
+        // This means that two different CustomIdChecker conditions will have the same hash,
+        // but that's acceptable since we cannot do better, and only expected to be used
+        // for logging and profiling purposes.
+        std::ptr::hash(Arc::as_ptr(&self.0), state);
     }
 }
 
-impl PartialEq for Condition {
+impl PartialEq for CustomIdChecker {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Field(this), Self::Field(other)) => this == other,
-            (Self::IsEmpty(this), Self::IsEmpty(other)) => this == other,
-            (Self::IsNull(this), Self::IsNull(other)) => this == other,
-            (Self::HasId(this), Self::HasId(other)) => this == other,
-            (Self::HasVector(this), Self::HasVector(other)) => this == other,
-            (Self::Nested(this), Self::Nested(other)) => this == other,
-            (Self::Filter(this), Self::Filter(other)) => this == other,
-            (Self::CustomIdChecker(_), Self::CustomIdChecker(_)) => false,
-            _ => false,
-        }
+        // We cannot compare the inner function
+        // This means that two different CustomIdChecker conditions will never be equal,
+        // but that's acceptable since we cannot do better, and only expected to be used
+        // for logging and profiling purposes.
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
+
+impl Eq for CustomIdChecker {}
 
 impl Condition {
     pub fn new_nested(key: JsonPath, filter: Filter) -> Self {
@@ -3511,7 +3499,9 @@ pub struct WithPayload {
     pub payload_selector: Option<PayloadSelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Default, Hash,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct MinShould {
     #[validate(nested)]
@@ -3519,7 +3509,9 @@ pub struct MinShould {
     pub min_count: usize,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Default, Hash,
+)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of those conditions should match
@@ -3773,7 +3765,7 @@ pub(crate) mod test_utils {
         let exterior_line = GeoLineString {
             points: exterior_points
                 .into_iter()
-                .map(|(lon, lat)| GeoPoint { lon, lat })
+                .map(|(lon, lat)| GeoPoint::new_unchecked(lon, lat))
                 .collect(),
         };
 
@@ -3790,7 +3782,7 @@ pub(crate) mod test_utils {
         let exterior_line = GeoLineString {
             points: exterior_points
                 .into_iter()
-                .map(|(lon, lat)| GeoPoint { lon, lat })
+                .map(|(lon, lat)| GeoPoint::new_unchecked(lon, lat))
                 .collect(),
         };
 
@@ -3800,7 +3792,7 @@ pub(crate) mod test_utils {
                 .map(|points| GeoLineString {
                     points: points
                         .into_iter()
-                        .map(|(lon, lat)| GeoPoint { lon, lat })
+                        .map(|(lon, lat)| GeoPoint::new_unchecked(lon, lat))
                         .collect(),
                 })
                 .collect(),
@@ -3915,39 +3907,30 @@ mod tests {
     #[test]
     fn test_geo_radius_check_point() {
         let radius = GeoRadius {
-            center: GeoPoint { lon: 0.0, lat: 0.0 },
-            radius: 80000.0,
+            center: GeoPoint::new_unchecked(0.0, 0.0),
+            radius: OrderedFloat(80000.0),
         };
 
-        let inside_result = radius.check_point(&GeoPoint { lon: 0.5, lat: 0.5 });
+        let inside_result = radius.check_point(&GeoPoint::new_unchecked(0.5, 0.5));
         assert!(inside_result);
 
-        let outside_result = radius.check_point(&GeoPoint { lon: 1.5, lat: 1.5 });
+        let outside_result = radius.check_point(&GeoPoint::new_unchecked(1.5, 1.5));
         assert!(!outside_result);
     }
 
     #[test]
     fn test_geo_boundingbox_check_point() {
         let bounding_box = GeoBoundingBox {
-            top_left: GeoPoint {
-                lon: -1.0,
-                lat: 1.0,
-            },
-            bottom_right: GeoPoint {
-                lon: 1.0,
-                lat: -1.0,
-            },
+            top_left: GeoPoint::new_unchecked(-1.0, 1.0),
+            bottom_right: GeoPoint::new_unchecked(1.0, -1.0),
         };
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 78626.29627999048
-        let inside_result = bounding_box.check_point(&GeoPoint {
-            lon: -0.5,
-            lat: 0.5,
-        });
+        let inside_result = bounding_box.check_point(&GeoPoint::new_unchecked(-0.5, 0.5));
         assert!(inside_result);
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 235866.91169814655
-        let outside_result = bounding_box.check_point(&GeoPoint { lon: 1.5, lat: 1.5 });
+        let outside_result = bounding_box.check_point(&GeoPoint::new_unchecked(1.5, 1.5));
         assert!(!outside_result);
     }
 
@@ -3955,28 +3938,17 @@ mod tests {
     fn test_geo_boundingbox_antimeridian_check_point() {
         // Use the bounding box for USA: (74.071028, 167), (18.7763, -66.885417)
         let bounding_box = GeoBoundingBox {
-            top_left: GeoPoint {
-                lat: 74.071028,
-                lon: 167.0,
-            },
-            bottom_right: GeoPoint {
-                lat: 18.7763,
-                lon: -66.885417,
-            },
+            top_left: GeoPoint::new_unchecked(167.0, 74.071028),
+            bottom_right: GeoPoint::new_unchecked(-66.885417, 18.7763),
         };
 
         // Test NYC, which is inside the bounding box
-        let inside_result = bounding_box.check_point(&GeoPoint {
-            lat: 40.75798,
-            lon: -73.991516,
-        });
+        let inside_result =
+            bounding_box.check_point(&GeoPoint::new_unchecked(-73.991516, 40.75798));
         assert!(inside_result);
 
         // Test Berlin, which is outside the bounding box
-        let outside_result = bounding_box.check_point(&GeoPoint {
-            lat: 52.52437,
-            lon: 13.41053,
-        });
+        let outside_result = bounding_box.check_point(&GeoPoint::new_unchecked(13.41053, 52.52437));
         assert!(!outside_result);
     }
 
@@ -4040,7 +4012,9 @@ mod tests {
             let polygon = build_polygon_with_interiors(exterior, interiors);
 
             for ((lon, lat), expected_result) in points {
-                let inside_result = polygon.convert().check_point(&GeoPoint { lon, lat });
+                let inside_result = polygon
+                    .convert()
+                    .check_point(&GeoPoint::new_unchecked(lon, lat));
                 assert_eq!(inside_result, expected_result);
             }
         }

@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use derive_more::Into;
+use ordered_float::OrderedFloat;
 use pyo3::exceptions::PyTypeError;
 use pyo3::{FromPyObject, IntoPyObject, PyErr, pyclass, pymethods};
 use segment::types::{DateTimePayloadType, FloatPayloadType, Range, RangeInterface};
@@ -31,7 +32,7 @@ impl From<RangeInterface> for PyRangeInterface {
 
 #[pyclass(name = "RangeFloat")]
 #[derive(Clone, Debug, Into)]
-pub struct PyRangeFloat(pub Range<FloatPayloadType>);
+pub struct PyRangeFloat(pub Range<OrderedFloat<FloatPayloadType>>);
 
 #[pymethods]
 impl PyRangeFloat {
@@ -43,7 +44,12 @@ impl PyRangeFloat {
         lte: Option<FloatPayloadType>,
         lt: Option<FloatPayloadType>,
     ) -> Self {
-        Self(Range { gte, gt, lte, lt })
+        Self(Range {
+            gte: gte.map(OrderedFloat),
+            gt: gt.map(OrderedFloat),
+            lte: lte.map(OrderedFloat),
+            lt: lt.map(OrderedFloat),
+        })
     }
 }
 

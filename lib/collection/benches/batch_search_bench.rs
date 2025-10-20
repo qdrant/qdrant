@@ -15,6 +15,7 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use criterion::{Criterion, criterion_group, criterion_main};
+use ordered_float::OrderedFloat;
 use rand::rng;
 use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
 use segment::fixtures::payload_fixtures::random_vector;
@@ -131,9 +132,9 @@ fn batch_search_bench(c: &mut Criterion) {
                 "a".parse().unwrap(),
                 Range {
                     lt: None,
-                    gt: Some(-1.),
+                    gt: Some(OrderedFloat(-1.)),
                     gte: None,
-                    lte: Some(100.0),
+                    lte: Some(OrderedFloat(100.0)),
                 },
             ),
         ))),

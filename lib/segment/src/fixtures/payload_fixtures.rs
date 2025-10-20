@@ -3,6 +3,7 @@ use std::ops::{Range, RangeInclusive};
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use rand::Rng;
 use rand::distr::{Alphanumeric, SampleString};
 use rand::seq::IndexedRandom;
@@ -219,8 +220,8 @@ pub fn random_simple_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
             RangeCondition {
                 lt: None,
                 gt: None,
-                gte: Some(rnd_gen.random_range(INT_RANGE) as f64),
-                lte: Some(rnd_gen.random_range(INT_RANGE) as f64),
+                gte: Some(OrderedFloat(rnd_gen.random_range(INT_RANGE) as f64)),
+                lte: Some(OrderedFloat(rnd_gen.random_range(INT_RANGE) as f64)),
             },
         ))
     }

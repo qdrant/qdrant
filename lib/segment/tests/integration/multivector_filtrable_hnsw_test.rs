@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use common::types::TelemetryDetail;
+use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
@@ -171,8 +172,8 @@ fn test_multi_filterable_hnsw(
             Range {
                 lt: None,
                 gt: None,
-                gte: Some(f64::from(left_range)),
-                lte: Some(f64::from(right_range)),
+                gte: Some(OrderedFloat(f64::from(left_range))),
+                lte: Some(OrderedFloat(f64::from(right_range))),
             },
         )));
 

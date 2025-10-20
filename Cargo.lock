@@ -1935,6 +1935,7 @@ version = "0.1.0"
 dependencies = [
  "derive_more 2.0.1",
  "edge",
+ "ordered-float 5.1.0",
  "pyo3",
  "segment",
  "serde_json",

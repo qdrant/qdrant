@@ -298,7 +298,7 @@ async fn get_hash_ring_filter(
             ))
         })?;
 
-    let condition = Condition::CustomIdChecker(Arc::new(hash_ring_filter));
+    let condition = Condition::new_custom(Arc::new(hash_ring_filter));
     let filter = Filter::new_must(condition);
 
     Ok(filter)
