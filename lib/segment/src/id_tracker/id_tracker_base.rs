@@ -74,6 +74,20 @@ pub trait IdTracker: fmt::Debug {
     /// Count should match `total_point_count`, excludes soft deleted points.
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
+    /// Iterate over internal IDs (offsets)
+    ///
+    /// - excludes soft deleted points
+    /// - excludes flagged items from `exclude_bitslice`
+    fn iter_internal_excluding<'a>(
+        &'a self,
+        exclude_bitslice: &'a BitSlice,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        Box::new(
+            self.iter_internal()
+                .filter(|point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
+        )
+    }
+
     /// Iterate starting from a given ID
     ///
     /// Excludes soft deleted points.
@@ -86,20 +100,6 @@ pub trait IdTracker: fmt::Debug {
     ///
     /// Excludes soft deleted points.
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
-
-    /// Iterate over internal IDs (offsets)
-    ///
-    /// - excludes soft deleted points
-    /// - excludes flagged items from `exclude_bitslice`
-    fn iter_ids_excluding<'a>(
-        &'a self,
-        exclude_bitslice: &'a BitSlice,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        Box::new(
-            self.iter_internal()
-                .filter(|point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
-        )
-    }
 
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> Flusher;
