@@ -11,6 +11,8 @@ pub mod test_binary;
 #[cfg(test)]
 pub mod test_binary_encodings;
 #[cfg(test)]
+pub mod test_flex;
+#[cfg(test)]
 pub mod test_neon;
 #[cfg(test)]
 pub mod test_pq;

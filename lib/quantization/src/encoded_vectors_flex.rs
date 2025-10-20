@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::panic;
 use common::typelevel::True;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -16,7 +17,10 @@ use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{EncodedVectors, VectorParameters};
 use crate::vector_stats::{VectorElementStats, VectorStats};
 
-pub const ALIGNMENT: usize = 8;
+pub const ALIGNMENT: usize = 16;
+pub const MAX_BITS_COUNT: usize = 10;
+pub const DO_SQRT: bool = false;
+pub const USE_FLOATS: bool = false;
 
 pub struct EncodedVectorsFlex<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
@@ -30,6 +34,7 @@ pub struct EncodedQueryFlex {
     offset: f32,
     original: Vec<f32>,
     transformed: Vec<f32>,
+    transformed_internal: Vec<f32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -51,7 +56,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
         count: usize,
-        quantile: Option<f32>,
+        _quantile: Option<f32>,
         rotations: Option<usize>,
         sigmas: Option<f32>,
         bits_count: usize,
@@ -91,7 +96,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
             let encoded_query = Self::encode_query(&metadata, vector.as_ref());
             queries.push(encoded_query);
 
-            let mut encoded_vector = Vec::with_capacity(actual_dim + std::mem::size_of::<f32>());
+            let mut encoded_vector =
+                vec![0; Self::get_quantized_vector_size(vector_parameters, bits_count)];
             Self::encode_vector(&metadata, vector.as_ref(), &mut encoded_vector);
 
             storage_builder
@@ -167,9 +173,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
         Layout::from_size_align(self.quantized_vector_size(), align_of::<u8>()).unwrap()
     }
 
-    pub fn get_quantized_vector_size(vector_parameters: &VectorParameters) -> usize {
+    pub fn get_quantized_vector_size(
+        vector_parameters: &VectorParameters,
+        bits_count: usize,
+    ) -> usize {
         let actual_dim = Self::get_actual_dim(vector_parameters);
-        actual_dim + std::mem::size_of::<f32>()
+        std::mem::size_of::<f32>() + (actual_dim * bits_count / u8::BITS as usize)
     }
 
     pub fn get_actual_dim(vector_parameters: &VectorParameters) -> usize {
@@ -177,34 +186,301 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
     }
 
     fn encode_query(metadata: &Metadata, query: &[f32]) -> EncodedQueryFlex {
-        let mut query = query.to_owned();
-        while query.len() % ALIGNMENT != 0 {
-            query.push(0.0);
+        let (mut transformed_query, offset) = metadata.transform.transform_query(&query);
+        while transformed_query.len() % ALIGNMENT != 0 {
+            transformed_query.push(0.0);
         }
-        let (transformed_query, offset) = metadata.transform.transform_query(&query);
+
+        let (mut transformed_internal, _offset) = metadata
+            .transform
+            .transform_vector(&query, metadata.bits_count);
+        while transformed_internal.len() % ALIGNMENT != 0 {
+            transformed_internal.push(0.0);
+        }
+
         EncodedQueryFlex {
             offset,
-            original: query,
+            original: query.to_vec(),
             transformed: transformed_query,
+            transformed_internal,
         }
     }
 
     fn encode_vector(metadata: &Metadata, vector: &[f32], result: &mut [u8]) {
         result.fill(0);
-        let (mut transformed_vector, vector_offset) = metadata.transform.transform_vector(vector);
-        result[0..std::mem::size_of::<f32>()].copy_from_slice(&vector_offset.to_ne_bytes());
+        let (mut transformed_vector, vector_offset) = metadata
+            .transform
+            .transform_vector(vector, metadata.bits_count);
         while transformed_vector.len() % ALIGNMENT != 0 {
             transformed_vector.push(0.0);
         }
+        result[0..std::mem::size_of::<f32>()].copy_from_slice(&vector_offset.to_ne_bytes());
+
         let result = &mut result[std::mem::size_of::<f32>()..];
-        let mut intbuf = [0i32; ALIGNMENT];
         for (chunk_index, chunk) in transformed_vector.chunks_exact(ALIGNMENT).enumerate() {
+            let mut intbuf = [0i32; ALIGNMENT];
             for (i, &value) in chunk.iter().enumerate() {
-                intbuf[i] = ((2 << 10) as f32 * value) as i32;
+                intbuf[i] = value as i32;
+            }
+            let bitpack_size_bytes = metadata.bits_count * ALIGNMENT / u8::BITS as usize;
+            //println!("Bitpack size bytes: {}, index: {}, chunk_index * bitpack_size_bytes: {}, next_chunk_index * bitpack_size_bytes: {}", bitpack_size_bytes, chunk_index, chunk_index * bitpack_size_bytes, (chunk_index + 1) * bitpack_size_bytes);
+            let bitpack = &mut result
+                [chunk_index * bitpack_size_bytes..(chunk_index + 1) * bitpack_size_bytes];
+
+            // store sign bit
+            for (i, v) in intbuf.iter().enumerate() {
+                if *v < 0 {
+                    bitpack[i / 8] |= 1 << (i % 8);
+                }
             }
 
-            todo!()
+            for bit_index in 0..metadata.bits_count - 1 {
+                let bitpack = &mut bitpack[(bit_index + 1) * ALIGNMENT / u8::BITS as usize
+                    ..(bit_index + 2) * ALIGNMENT / u8::BITS as usize];
+                for (i, v) in intbuf.iter().enumerate() {
+                    let bit = ((*v).abs() >> bit_index) & 1;
+                    if bit != 0 {
+                        bitpack[i / 8] |= 1 << (i % 8);
+                    }
+                }
+            }
         }
+    }
+
+    fn score_bytes_impl(
+        &self,
+        query: &EncodedQueryFlex,
+        bytes: &[u8],
+        _vector_index: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        hw_counter
+            .cpu_counter()
+            .incr_delta(self.metadata.vector_parameters.dim);
+
+        let offset = f32::from_ne_bytes(
+            bytes[0..std::mem::size_of::<f32>()]
+                .try_into()
+                .expect("Failed to read offset"),
+        );
+        let bytes = &bytes[std::mem::size_of::<f32>()..];
+
+        // let decoded_vector_check = self.queries[vector_index].transformed_internal.as_slice();
+
+        let mut score = 0.0f32;
+        for (chunk_index, chunk) in query.transformed.chunks_exact(ALIGNMENT).enumerate() {
+            let bitpack_size_bytes = self.metadata.bits_count * ALIGNMENT / u8::BITS as usize;
+            let bitpack =
+                &bytes[chunk_index * bitpack_size_bytes..(chunk_index + 1) * bitpack_size_bytes];
+
+            let mut intbuf = [0i32; ALIGNMENT];
+            if self.metadata.bits_count > 1 {
+                for bit_index in 0..self.metadata.bits_count - 1 {
+                    let bitpack = &bitpack[(bit_index + 1) * ALIGNMENT / u8::BITS as usize
+                        ..(bit_index + 2) * ALIGNMENT / u8::BITS as usize];
+                    for i in 0..ALIGNMENT {
+                        let bit = (bitpack[i / 8] >> (i % 8)) & 1;
+                        if bit != 0 {
+                            intbuf[i] |= 1 << bit_index;
+                        }
+                    }
+                }
+            } else {
+                for i in 0..ALIGNMENT {
+                    intbuf[i] = 1;
+                }
+            }
+
+            // read sign bit
+            for i in 0..ALIGNMENT {
+                let sign_bit = (bitpack[i / 8] >> (i % 8)) & 1;
+                if sign_bit != 0 {
+                    intbuf[i] = -intbuf[i];
+                }
+            }
+
+            let multiplier = get_multiplier(self.metadata.bits_count);
+            for (i, &q_value) in chunk.iter().enumerate() {
+                // assert_eq!(decoded_vector_check[chunk_index * ALIGNMENT + i], intbuf[i] as f32, "Decoded vector does not match stored vector at index {}, chunk_index {}, i {}", vector_index, chunk_index, i);
+                let v = intbuf[i] as f32 / multiplier;
+                let v = if DO_SQRT {
+                    if v < 0.0 { -v.abs().powi(2) } else { v.powi(2) }
+                } else {
+                    v
+                };
+                score += q_value * v;
+            }
+        }
+
+        let score = score + query.offset + offset + self.metadata.transform.mean_sqr_sum;
+        score
+    }
+
+    unsafe fn score_bytes_avx2(
+        &self,
+        query: &EncodedQueryFlex,
+        bytes: &[u8],
+        _vector_index: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        use std::arch::x86_64::*;
+
+        let score = self.score_bytes_impl(query, bytes, _vector_index, hw_counter);
+
+        hw_counter
+            .cpu_counter()
+            .incr_delta(self.metadata.vector_parameters.dim);
+
+        let offset = f32::from_ne_bytes(
+            bytes[0..std::mem::size_of::<f32>()]
+                .try_into()
+                .expect("Failed to read offset"),
+        );
+        let bytes = &bytes[std::mem::size_of::<f32>()..];
+        let mut bytes_ptr: *const u16 = bytes.as_ptr() as *const u16;
+
+        let multiplier = get_multiplier(self.metadata.bits_count);
+        let multiplier = unsafe { _mm256_set1_ps(1.0 / multiplier) };
+
+        let mask = unsafe { _mm256_set_epi32(1, 2, 4, 8, 16, 32, 64, 128) };
+        let mask_ones = unsafe { _mm256_set1_epi32(1) };
+        let mask_zeros = unsafe { _mm256_set1_epi32(0) };
+
+        let mut sum1 = unsafe { _mm256_setzero_ps() };
+        let mut sum2 = unsafe { _mm256_setzero_ps() };
+
+        let count = query.transformed.len() / ALIGNMENT;
+        let mut chunk_ptr = query.transformed.as_ptr();
+        for _chunk_index in 0..count {
+            let chunk1 = unsafe { _mm256_loadu_ps(chunk_ptr) };
+            let chunk2 = unsafe { _mm256_loadu_ps(chunk_ptr.add(8)) };
+            chunk_ptr = unsafe { chunk_ptr.add(16) };
+
+            let mut ints1: __m256i = unsafe { _mm256_setzero_si256() };
+            let mut ints2: __m256i = unsafe { _mm256_setzero_si256() };
+            for bit_index in 0..self.metadata.bits_count {
+                let bits: u16 = unsafe { *bytes_ptr };
+                bytes_ptr = unsafe { bytes_ptr.add(1) };
+
+                println!(
+                    "AVX2 bitpack bits for bit index {}: {:016b}",
+                    bit_index, bits
+                );
+
+                let bits1: __m256i =
+                    unsafe { _mm256_and_si256(_mm256_set1_epi32((bits & 0x00FFu16) as i32), mask) };
+                let bits2: __m256i =
+                    unsafe { _mm256_and_si256(_mm256_set1_epi32((bits >> 8) as i32), mask) };
+
+                let bits1 =
+                    unsafe { _mm256_and_si256(_mm256_cmpgt_epi32(bits1, mask_zeros), mask_ones) };
+                let bits2 =
+                    unsafe { _mm256_and_si256(_mm256_cmpgt_epi32(bits2, mask_zeros), mask_ones) };
+
+                if bit_index > 0 {
+                    ints1 = unsafe { _mm256_or_si256(_mm256_slli_epi32(ints1, 1), bits1) };
+                    ints2 = unsafe { _mm256_or_si256(_mm256_slli_epi32(ints2, 1), bits2) };
+                } else {
+                    // it's a first sign bit
+                    ints1 = unsafe { _mm256_slli_epi32(bits1, 31) };
+                    ints2 = unsafe { _mm256_slli_epi32(bits2, 31) };
+                }
+            }
+
+            let mut floats1 = unsafe { _mm256_mul_ps(_mm256_cvtepi32_ps(ints1), multiplier) };
+            let mut floats2 = unsafe { _mm256_mul_ps(_mm256_cvtepi32_ps(ints2), multiplier) };
+
+            let f1 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 0), 0) };
+            let f2 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 0), 1) };
+            let f3 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 0), 2) };
+            let f4 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 0), 3) };
+            let f5 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 1), 0) };
+            let f6 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 1), 1) };
+            let f7 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 1), 2) };
+            let f8 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 1), 3) };
+
+            println!("AVX2 chunk 1 values:");
+            println!("{} {} {} {}", f1, f2, f3, f4);
+            println!("{} {} {} {}", f5, f6, f7, f8);
+
+            let f9 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 0), 0) };
+            let f10 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 0), 1) };
+            let f11 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 0), 2) };
+            let f12 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 0), 3) };
+            let f13 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 1), 0) };
+            let f14 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 1), 1) };
+            let f15 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 1), 2) };
+            let f16 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 1), 3) };
+
+            println!("AVX2 chunk 2 values:");
+            println!("{} {} {} {}", f9, f10, f11, f12);
+            println!("{} {} {} {}", f13, f14, f15, f16);
+
+            let s = self.queries[_vector_index].transformed_internal.as_slice();
+            println!("AVX2 chunk scores:");
+            let chunk_index = 0;
+            println!(
+                "{} {} {} {}",
+                s[chunk_index * ALIGNMENT + 0],
+                s[chunk_index * ALIGNMENT + 1],
+                s[chunk_index * ALIGNMENT + 2],
+                s[chunk_index * ALIGNMENT + 3]
+            );
+            println!(
+                "{} {} {} {}",
+                s[chunk_index * ALIGNMENT + 4],
+                s[chunk_index * ALIGNMENT + 5],
+                s[chunk_index * ALIGNMENT + 6],
+                s[chunk_index * ALIGNMENT + 7]
+            );
+            println!(
+                "{} {} {} {}",
+                s[chunk_index * ALIGNMENT + 8],
+                s[chunk_index * ALIGNMENT + 9],
+                s[chunk_index * ALIGNMENT + 10],
+                s[chunk_index * ALIGNMENT + 11]
+            );
+            println!(
+                "{} {} {} {}",
+                s[chunk_index * ALIGNMENT + 12],
+                s[chunk_index * ALIGNMENT + 13],
+                s[chunk_index * ALIGNMENT + 14],
+                s[chunk_index * ALIGNMENT + 15]
+            );
+
+            panic!("AVX2 chunk scores:");
+
+            if DO_SQRT {
+                floats1 = unsafe { _mm256_mul_ps(floats1, floats1) };
+                floats2 = unsafe { _mm256_mul_ps(floats2, floats2) };
+            }
+
+            sum1 = unsafe { _mm256_fmadd_ps(chunk1, floats1, sum1) };
+            sum2 = unsafe { _mm256_fmadd_ps(chunk2, floats2, sum2) };
+
+            println!("AVX2 chunk score: {}", unsafe {
+                Self::hsum256_ps_avx(sum1) + Self::hsum256_ps_avx(sum2)
+            });
+        }
+        let sum = unsafe { Self::hsum256_ps_avx(sum1) + Self::hsum256_ps_avx(sum2) };
+        let score = sum + query.offset + offset + self.metadata.transform.mean_sqr_sum;
+
+        println!("AVX2 score: {}", score);
+        panic!("AVX2 score: {}", score);
+
+        score
+    }
+
+    #[target_feature(enable = "avx")]
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn hsum256_ps_avx(x: std::arch::x86_64::__m256) -> f32 {
+        use std::arch::x86_64::*;
+
+        let lr_sum: __m128 = _mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x));
+        let hsum = _mm_hadd_ps(lr_sum, lr_sum);
+        let p1 = _mm_extract_ps(hsum, 0);
+        let p2 = _mm_extract_ps(hsum, 1);
+        f32::from_bits(p1 as u32) + f32::from_bits(p2 as u32)
     }
 }
 
@@ -225,8 +501,34 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsFlex<TStorage> {
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let bytes = self.encoded_vectors.get_vector_data(i);
-        self.score_bytes(True, query, bytes, hw_counter)
+        if !USE_FLOATS {
+            let bytes = self.encoded_vectors.get_vector_data(i);
+            self.score_bytes(True, query, bytes, hw_counter)
+        } else {
+            let q = query.transformed.as_slice();
+            let v = self.queries[i as usize].transformed_internal.as_slice();
+            let multiplier = get_multiplier(self.metadata.bits_count);
+
+            q.iter()
+                .zip(v.iter())
+                .map(|(&a, &b)| {
+                    if DO_SQRT {
+                        let b_f32 = b / multiplier;
+                        let b_f32 = if b_f32 < 0.0 {
+                            -b_f32.abs().powi(2)
+                        } else {
+                            b_f32.powi(2)
+                        };
+                        a * b_f32
+                    } else {
+                        a * b / multiplier
+                    }
+                })
+                .sum::<f32>()
+                + query.offset
+                + self.queries[i as usize].offset
+                + self.metadata.transform.mean_sqr_sum
+        }
     }
 
     fn score_internal(
@@ -306,11 +608,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsFlex<TStorage> {
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        hw_counter
-            .cpu_counter()
-            .incr_delta(self.metadata.vector_parameters.dim);
-
-        todo!()
+        unsafe { Self::score_bytes_impl(self, query, bytes, 0, hw_counter) }
     }
 }
 
@@ -335,8 +633,8 @@ impl Transform {
         let mean_sqr_sum = vector_stats
             .elements_stats
             .iter()
-            .map(|m| (m.mean * m.mean) as f32)
-            .sum();
+            .map(|m| (m.mean * m.mean) as f64)
+            .sum::<f64>() as f32;
         let stddevs = vector_stats
             .elements_stats
             .iter()
@@ -397,13 +695,30 @@ impl Transform {
         (vector, sum)
     }
 
-    pub fn transform_vector(&self, vector: &[f32]) -> (Vec<f32>, f32) {
+    pub fn transform_vector(&self, vector: &[f32], bits_count: usize) -> (Vec<f32>, f32) {
+        let multiplier = get_multiplier(bits_count);
         let mut vector = vector.to_owned();
         let sum = self.shifter.shift(&mut vector);
         for (v, stddev) in vector.iter_mut().zip(self.stddevs.iter()) {
             if *stddev > f32::EPSILON {
-                *v /= self.sigmas * *stddev;
-                *v = v.clamp(-1.0, 1.0);
+                if bits_count > 1 {
+                    *v /= self.sigmas * *stddev;
+                    *v = v.clamp(-1.0, 1.0);
+                    if DO_SQRT {
+                        if *v < 0.0 {
+                            *v = -v.abs().sqrt();
+                        } else {
+                            *v = v.sqrt();
+                        }
+                    }
+                    *v = (*v * multiplier).round();
+                } else {
+                    if *v >= 0.0 {
+                        *v = multiplier;
+                    } else {
+                        *v = -multiplier;
+                    }
+                }
             } else {
                 *v = 0.0;
             }
@@ -718,4 +1033,12 @@ pub fn plot_histogram(
 
     root.present()?;
     Ok(())
+}
+
+fn get_multiplier(bits_count: usize) -> f32 {
+    if bits_count > 1 {
+        ((1 << (bits_count - 1)) - 1) as f32
+    } else {
+        1.0
+    }
 }

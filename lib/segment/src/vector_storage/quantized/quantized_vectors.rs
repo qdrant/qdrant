@@ -1077,6 +1077,7 @@ impl QuantizedVectors {
             let quantized_vector_size =
                 EncodedVectorsFlex::<QuantizedRamStorage>::get_quantized_vector_size(
                     &config.vector_parameters,
+                    scalar_config.r#type.bits_per_dimension().unwrap_or(8),
                 );
             let quantized_vectors_storage =
                 QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
@@ -1088,6 +1089,7 @@ impl QuantizedVectors {
             let quantized_vector_size =
                 EncodedVectorsFlex::<QuantizedMmapStorage>::get_quantized_vector_size(
                     &config.vector_parameters,
+                    scalar_config.r#type.bits_per_dimension().unwrap_or(8),
                 );
             let quantized_vectors_storage =
                 QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
@@ -1159,6 +1161,7 @@ impl QuantizedVectors {
             let quantized_vector_size =
                 EncodedVectorsFlex::<QuantizedRamStorage>::get_quantized_vector_size(
                     &config.vector_parameters,
+                    scalar_config.r#type.bits_per_dimension().unwrap_or(8),
                 );
             let inner_vectors_storage =
                 QuantizedRamStorage::from_file(data_path.as_path(), quantized_vector_size)?;
@@ -1177,6 +1180,7 @@ impl QuantizedVectors {
             let quantized_vector_size =
                 EncodedVectorsFlex::<QuantizedMmapStorage>::get_quantized_vector_size(
                     &config.vector_parameters,
+                    scalar_config.r#type.bits_per_dimension().unwrap_or(8),
                 );
             let inner_vectors_storage =
                 QuantizedMmapStorage::from_file(data_path.as_path(), quantized_vector_size)?;
@@ -1508,6 +1512,7 @@ impl QuantizedVectors {
         let quantized_vector_size =
             EncodedVectorsFlex::<QuantizedMmapStorage>::get_quantized_vector_size(
                 vector_parameters,
+                scalar_config.r#type.bits_per_dimension().unwrap_or(8),
             );
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
@@ -1525,6 +1530,7 @@ impl QuantizedVectors {
                 vectors_count,
                 scalar_config.quantile,
                 scalar_config.rotations,
+                scalar_config.sigmas,
                 scalar_config.r#type.bits_per_dimension().unwrap_or(8),
                 Some(meta_path.as_path()),
                 stopped,
@@ -1543,6 +1549,7 @@ impl QuantizedVectors {
                     vectors_count,
                     scalar_config.quantile,
                     scalar_config.rotations,
+                    scalar_config.sigmas,
                     scalar_config.r#type.bits_per_dimension().unwrap_or(8),
                     Some(meta_path.as_path()),
                     stopped,
@@ -1631,6 +1638,7 @@ impl QuantizedVectors {
         let quantized_vector_size =
             EncodedVectorsFlex::<QuantizedMmapStorage>::get_quantized_vector_size(
                 vector_parameters,
+                scalar_config.r#type.bits_per_dimension().unwrap_or(8),
             );
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
@@ -1649,6 +1657,7 @@ impl QuantizedVectors {
                 inner_vectors_count,
                 scalar_config.quantile,
                 scalar_config.rotations,
+                scalar_config.sigmas,
                 scalar_config.r#type.bits_per_dimension().unwrap_or(8),
                 Some(meta_path.as_path()),
                 stopped,
@@ -1675,6 +1684,7 @@ impl QuantizedVectors {
                 inner_vectors_count,
                 scalar_config.quantile,
                 scalar_config.rotations,
+                scalar_config.sigmas,
                 scalar_config.r#type.bits_per_dimension().unwrap_or(8),
                 Some(meta_path.as_path()),
                 stopped,

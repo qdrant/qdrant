@@ -738,6 +738,9 @@ pub struct ScalarQuantizationConfig {
     /// Number of rotations to apply before quantization. If not set - no rotations will be applied
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rotations: Option<usize>,
+    /// Standard deviation multiplier for quantization. If not set - use 3.0 as default
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sigmas: Option<f32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,
