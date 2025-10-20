@@ -204,7 +204,7 @@ impl PlannedQuery {
                 candidates_limit,
             }) => {
                 let rescore_params = RescoreParams {
-                    rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new_from_vector(
+                    rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
                         vector, using,
                     ))),
                     limit: candidates_limit,
@@ -381,7 +381,7 @@ fn leaf_source_from_scoring_query(
             lambda: _,
             candidates_limit,
         })) => {
-            let query = QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using));
+            let query = QueryEnum::Nearest(NamedQuery::new(vector, using));
 
             let core_search = CoreSearchRequest {
                 query,
