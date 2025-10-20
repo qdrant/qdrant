@@ -156,7 +156,8 @@ impl LocalShard {
                         QueryEnum::RecommendBestScore(_)
                         | QueryEnum::RecommendSumScores(_)
                         | QueryEnum::Discover(_)
-                        | QueryEnum::Context(_) => {}
+                        | QueryEnum::Context(_)
+                        | QueryEnum::FeedbackSimple(_) => {}
                     };
                     scored_point
                 });

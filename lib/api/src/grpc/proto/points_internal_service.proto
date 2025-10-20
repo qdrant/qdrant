@@ -173,6 +173,18 @@ message ContextQuery {
   repeated ContextPair context = 1;
 }
 
+message FeedbackStrategy {
+    oneof variant {
+        SimpleFeedbackStrategy simple = 1;
+    }
+}
+
+message SimpleFeedbackStrategy {
+    float a = 1;
+    float b = 2;
+    float c = 3;
+}
+
 message QueryEnum {
   oneof query {
     Vector nearest_neighbors = 1; // ANN
@@ -255,12 +267,24 @@ message RawQuery {
     repeated RawContextPair context = 1;
   }
 
+  message Feedback {
+      RawVector target = 1;
+      repeated FeedbackItem feedback = 2;
+      FeedbackStrategy strategy = 3;
+  }
+
+  message FeedbackItem {
+      RawVector vector = 1;
+      float score = 2;
+  }
+
   oneof variant {
     RawVector nearest = 1; // ANN
     Recommend recommend_best_score = 2; // Recommend points with highest similarity to positive examples, or lowest to negative examples
     Discovery discover = 3; // Search for points that get closer to a target, constrained by a context of positive and negative pairs
     Context context = 4; // Use only the context to find points that minimize loss against negative examples
     Recommend recommend_sum_scores = 5; // Recommend points which have the greatest sum of scores against all vectors. Positive vectors are added, negatives are subtracted.
+    Feedback feedback = 6;
   }
 }
 

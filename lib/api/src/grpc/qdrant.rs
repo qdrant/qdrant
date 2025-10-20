@@ -4265,7 +4265,6 @@ pub struct InferenceObject {
     #[prost(map = "string, message", tag = "3")]
     pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
-/// Legacy vector format, which determines the vector type by the configuration of its fields.
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -9990,6 +9989,34 @@ pub struct ContextQuery {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FeedbackStrategy {
+    #[prost(oneof = "feedback_strategy::Variant", tags = "1")]
+    pub variant: ::core::option::Option<feedback_strategy::Variant>,
+}
+/// Nested message and enum types in `FeedbackStrategy`.
+pub mod feedback_strategy {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(message, tag = "1")]
+        Simple(super::SimpleFeedbackStrategy),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SimpleFeedbackStrategy {
+    #[prost(float, tag = "1")]
+    pub a: f32,
+    #[prost(float, tag = "2")]
+    pub b: f32,
+    #[prost(float, tag = "3")]
+    pub c: f32,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryEnum {
     #[prost(oneof = "query_enum::Query", tags = "1, 2, 3, 4, 5")]
     pub query: ::core::option::Option<query_enum::Query>,
@@ -10143,7 +10170,7 @@ pub mod raw_vector {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RawQuery {
-    #[prost(oneof = "raw_query::Variant", tags = "1, 2, 3, 4, 5")]
+    #[prost(oneof = "raw_query::Variant", tags = "1, 2, 3, 4, 5, 6")]
     pub variant: ::core::option::Option<raw_query::Variant>,
 }
 /// Nested message and enum types in `RawQuery`.
@@ -10184,6 +10211,26 @@ pub mod raw_query {
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Feedback {
+        #[prost(message, optional, tag = "1")]
+        pub target: ::core::option::Option<super::RawVector>,
+        #[prost(message, repeated, tag = "2")]
+        pub feedback: ::prost::alloc::vec::Vec<FeedbackItem>,
+        #[prost(message, optional, tag = "3")]
+        pub strategy: ::core::option::Option<super::FeedbackStrategy>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct FeedbackItem {
+        #[prost(message, optional, tag = "1")]
+        pub vector: ::core::option::Option<super::RawVector>,
+        #[prost(float, tag = "2")]
+        pub score: f32,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
         /// ANN
@@ -10201,6 +10248,8 @@ pub mod raw_query {
         /// Recommend points which have the greatest sum of scores against all vectors. Positive vectors are added, negatives are subtracted.
         #[prost(message, tag = "5")]
         RecommendSumScores(Recommend),
+        #[prost(message, tag = "6")]
+        Feedback(Feedback),
     }
 }
 #[derive(serde::Serialize)]
