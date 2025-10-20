@@ -755,15 +755,15 @@ impl Rotation {
                 std::fs::create_dir_all(&debug_path).ok();
                 let debug_path = debug_path.join(format!("orig_histograms"));
                 std::fs::create_dir_all(&debug_path).ok();
-                for dim in 0..vector_params.dim {
-                    let numbers = data.clone().map(|v| v.as_ref()[dim]).collect::<Vec<f32>>();
-                    plot_histogram(
-                        &numbers,
-                        &debug_path.join(format!("orig_histogram_{dim}.png")),
-                        None,
-                    )
-                    .unwrap();
-                }
+                //                for dim in 0..vector_params.dim {
+                //                    let numbers = data.clone().map(|v| v.as_ref()[dim]).collect::<Vec<f32>>();
+                //                    plot_histogram(
+                //                        &numbers,
+                //                        &debug_path.join(format!("orig_histogram_{dim}.png")),
+                //                        None,
+                //                    )
+                //                    .unwrap();
+                //                }
             }
         }
 
@@ -811,15 +811,15 @@ impl SimpleRotation {
                 let debug_path = debug_path.parent().unwrap();
                 let debug_path = debug_path.join(format!("before_rotation_{index}"));
                 std::fs::create_dir_all(&debug_path).ok();
-                for dim in 0..vector_params.dim {
-                    let numbers = data.clone().map(|v| v.as_ref()[dim]).collect::<Vec<f32>>();
-                    plot_histogram(
-                        &numbers,
-                        &debug_path.join(format!("histogram_{dim}.png")),
-                        None,
-                    )
-                    .unwrap();
-                }
+                //                for dim in 0..vector_params.dim {
+                //                    let numbers = data.clone().map(|v| v.as_ref()[dim]).collect::<Vec<f32>>();
+                //                    plot_histogram(
+                //                        &numbers,
+                //                        &debug_path.join(format!("histogram_{dim}.png")),
+                //                        None,
+                //                    )
+                //                    .unwrap();
+                //                }
             }
         }
 
@@ -889,6 +889,7 @@ fn param(s: &VectorElementStats) -> f32 {
     s.stddev
 }
 
+/*
 pub fn plot_histogram(
     data: &[f32],
     path: &Path,
@@ -995,6 +996,7 @@ pub fn plot_histogram(
     root.present()?;
     Ok(())
 }
+ */
 
 fn get_multiplier(bits_count: usize) -> f32 {
     if bits_count > 1 {

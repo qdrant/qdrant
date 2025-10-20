@@ -33,7 +33,7 @@ bytemuck = { workspace = true }
 parking_lot = { workspace = true }
 ordered-float = { workspace = true }
 log = { workspace = true }
-plotters = "0.3.7"
+# plotters = "0.3.7"
 bincode = { workspace = true }
 
 [dev-dependencies]
