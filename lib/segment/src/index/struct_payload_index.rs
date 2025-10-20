@@ -619,7 +619,7 @@ impl StructPayloadIndex {
         hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = id_tracker.iter_ids();
+            let full_scan_iterator = id_tracker.iter_internal();
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
@@ -667,7 +667,7 @@ impl StructPayloadIndex {
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
 
             let iter = id_tracker
-                .iter_ids()
+                .iter_internal()
                 .measure_hw_with_cell(hw_counter, size_of::<PointOffsetType>(), |i| {
                     i.cpu_counter()
                 })

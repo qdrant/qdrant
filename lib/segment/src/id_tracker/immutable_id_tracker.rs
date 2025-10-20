@@ -697,7 +697,7 @@ pub(super) mod test {
     fn test_all_points_have_version() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let id_tracker = make_immutable_tracker(dir.path());
-        for i in id_tracker.iter_ids() {
+        for i in id_tracker.iter_internal() {
             assert!(id_tracker.internal_version(i).is_some());
         }
     }

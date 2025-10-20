@@ -101,7 +101,7 @@ pub trait IdTracker: fmt::Debug {
         exclude_bitslice: &'a BitSlice,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         Box::new(
-            self.iter_ids()
+            self.iter_internal()
                 .filter(|point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
         )
     }
