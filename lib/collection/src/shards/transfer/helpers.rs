@@ -174,9 +174,13 @@ pub fn validate_transfer(
                 "Source and target shard must have the same shard key, but they have {source_shard_key:?} and {target_shard_key:?}",
             )));
         }
+    } else if transfer.filter.is_some() {
+        return Err(CollectionError::bad_request(
+            "Filtered transfers are not supported yet",
+        ));
     } else if let Some(to_shard_id) = transfer.to_shard_id {
         return Err(CollectionError::bad_request(format!(
-            "Target shard {to_shard_id} can only be set for {:?} transfers",
+            "Target shard {to_shard_id} can only be set for {:?} or filtered streaming records transfers",
             ShardTransferMethod::ReshardingStreamRecords,
         )));
     }

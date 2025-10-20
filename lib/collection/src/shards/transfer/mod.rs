@@ -3,6 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use common::defaults::{self, CONSENSUS_CONFIRM_RETRIES};
 use schemars::JsonSchema;
+use segment::types::Filter;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
@@ -45,6 +46,10 @@ pub struct ShardTransfer {
     /// Method to transfer shard with. `None` to choose automatically.
     #[serde(default)]
     pub method: Option<ShardTransferMethod>,
+
+    // Optional filter to apply when transferring points
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Filter>,
 }
 
 impl ShardTransfer {

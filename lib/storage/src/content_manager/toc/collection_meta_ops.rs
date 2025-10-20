@@ -520,6 +520,7 @@ impl TableOfContent {
                     to: transfer_restart.to,
                     sync: old_transfer.sync, // Preserve sync flag from the old transfer
                     method: Some(transfer_restart.method),
+                    filter: None,
                 };
 
                 Box::pin(

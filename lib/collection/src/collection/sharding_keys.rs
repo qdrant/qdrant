@@ -188,4 +188,36 @@ impl Collection {
             .remove_shard_key(&shard_key)
             .await
     }
+
+    pub async fn get_shard_ids(&self, shard_key: &ShardKey) -> CollectionResult<Vec<ShardId>> {
+        self.shards_holder
+            .read()
+            .await
+            .get_shard_key_to_ids_mapping()
+            .get(shard_key)
+            .map(|ids| ids.iter().cloned().collect())
+            .ok_or_else(|| {
+                CollectionError::bad_input(format!(
+                    "Shard key {shard_key} does not exist for collection {}",
+                    self.name()
+                ))
+            })
+    }
+
+    pub async fn get_replicas(
+        &self,
+        shard_key: &ShardKey,
+    ) -> CollectionResult<Vec<(ShardId, PeerId)>> {
+        let shard_ids = self.get_shard_ids(shard_key).await?;
+        let shard_holder = self.shards_holder.read().await;
+        let mut replicas = Vec::new();
+        for shard_id in shard_ids {
+            if let Some(replica_set) = shard_holder.get_shard(shard_id) {
+                for (peer_id, _) in replica_set.peers() {
+                    replicas.push((shard_id, peer_id));
+                }
+            }
+        }
+        Ok(replicas)
+    }
 }
