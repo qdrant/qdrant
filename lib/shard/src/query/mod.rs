@@ -1,5 +1,10 @@
 pub mod formula;
+pub mod planned_query;
 pub mod query_enum;
+pub mod scroll;
+
+#[cfg(test)]
+mod tests;
 
 use api::grpc::qdrant as grpc;
 use api::rest::{self, SearchRequestInternal};

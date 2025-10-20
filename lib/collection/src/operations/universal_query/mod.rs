@@ -21,8 +21,11 @@
 //! [`QueryShardPoints`]: api::grpc::qdrant::QueryShardPoints
 
 pub mod collection_query;
-pub mod planned_query;
 pub mod shard_query;
+
+pub mod planned_query {
+    pub use shard::query::planned_query::*;
+}
 
 pub mod formula {
     pub use shard::query::formula::*;

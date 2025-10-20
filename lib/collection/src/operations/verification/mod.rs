@@ -3,7 +3,6 @@ mod discovery;
 mod facet;
 mod local_shard;
 mod matrix;
-pub mod operation_rate_cost;
 mod query;
 mod recommend;
 mod search;
@@ -14,6 +13,7 @@ use std::fmt::Display;
 use itertools::Itertools;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, SearchParams, StrictModeConfig};
+pub use shard::operation_rate_cost;
 
 use super::types::{CollectionError, CollectionResult};
 use crate::collection::Collection;
