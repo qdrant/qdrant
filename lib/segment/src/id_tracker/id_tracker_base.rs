@@ -69,7 +69,7 @@ pub trait IdTracker: fmt::Debug {
     /// Count should match `available_point_count`, excludes soft deleted points.
     fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 
-    /// Iterate over all internal IDs
+    /// Iterate over internal IDs (offsets)
     ///
     /// Count should match `total_point_count`, excludes soft deleted points.
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
@@ -81,11 +81,6 @@ pub trait IdTracker: fmt::Debug {
         &self,
         external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
-
-    /// Iterate over internal IDs (offsets)
-    ///
-    /// Excludes soft deleted points.
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
     /// Iterate over internal IDs in a random order
     ///
@@ -363,16 +358,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_from(external_id),
             #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_from(external_id),
-        }
-    }
-
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_ids(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_ids(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_ids(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_ids(),
         }
     }
 
