@@ -241,13 +241,13 @@ impl Bitmask {
         let regions_end_offset = region_id_range.end as usize * self.config.region_size_blocks;
 
         let translate_to_answer = |local_index: u32| {
-            let page_size_in_blocks = self.config.page_size_bytes / self.config.block_size_bytes;
+            let blocks_per_page = self.config.page_size_bytes / self.config.block_size_bytes;
 
             let global_cursor_offset = local_index as usize + regions_start_offset;
 
             // Calculate the page id and the block offset within the page
-            let page_id = global_cursor_offset.div_euclid(page_size_in_blocks);
-            let page_block_offset = global_cursor_offset.rem_euclid(page_size_in_blocks);
+            let page_id = global_cursor_offset / blocks_per_page;
+            let page_block_offset = global_cursor_offset % blocks_per_page;
 
             (page_id as PageId, page_block_offset as BlockOffset)
         };
@@ -289,8 +289,9 @@ impl Bitmask {
                 continue;
             }
 
+            // case of all ones
             if chunk == !0 {
-                // case of all ones
+                // TODO: we can return earlier, can't we?
                 if current_size >= num_blocks {
                     // bingo - we found a free cell of num_blocks
                     return Some(translate_local_index(current_start));
@@ -314,7 +315,7 @@ impl Bitmask {
                     return Some(translate_local_index(current_start));
                 }
                 current_size = trailing;
-                current_start = (chunk_idx as u32) * BITS_IN_CHUNK + BITS_IN_CHUNK - trailing;
+                current_start = (chunk_idx as u32 + 1) * BITS_IN_CHUNK - trailing;
                 continue;
             }
 
@@ -339,10 +340,13 @@ impl Bitmask {
                     debug_assert!(chunk == !0);
                     chunk = 0;
                 }
+                // TODO: move this into the first if branch?
                 num_shifts += num_ones;
 
                 current_size = 0;
                 current_start = chunk_idx as u32 * BITS_IN_CHUNK + num_shifts;
+
+                // TODO: what happens with this counter on second loop?
             }
             // no more ones in the chunk
             current_size += BITS_IN_CHUNK - num_shifts;
@@ -363,6 +367,14 @@ impl Bitmask {
         num_blocks: u32,
         used: bool,
     ) {
+        // 1 block
+        // 0..1
+        //
+        // offset 5
+        // 3 blocks
+        //
+        // 5..8 (5+3)
+
         let relative_range = block_offset as usize..(block_offset as usize + num_blocks as usize);
         self.mark_blocks_batch(page_id, std::iter::once(relative_range), used);
     }
@@ -387,6 +399,26 @@ impl Bitmask {
         for range in local_block_ranges {
             let bitmask_range = (range.start + page_start)..(range.end + page_start);
             self.bitslice[bitmask_range.clone()].fill(used);
+
+            // assume 4 blocks per region
+            //
+            // 1..3
+            // - 2 blocks
+            // - start region: 0
+            // - end region: 1
+            // - range: 0..1
+            //
+            // 1..4
+            // - 3 blocks
+            // - start region: 0
+            // - end region: 1
+            // - range: 0..1
+            //
+            // 1..5
+            // - 4 blocks
+            // - start region: 0
+            // - end region: 2
+            // - range: 0..2
 
             let start_region_id =
                 (bitmask_range.start / self.config.region_size_blocks) as RegionId;

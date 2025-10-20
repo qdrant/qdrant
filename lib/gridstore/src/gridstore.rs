@@ -342,6 +342,7 @@ impl<V: Blob> Gridstore<V> {
 
         let num_pages =
             (missing_blocks * self.config.block_size_bytes).div_ceil(self.config.page_size_bytes);
+        assert!(num_pages > 0, "need at least one new page");
         for _ in 0..num_pages {
             self.create_new_page()?;
         }
