@@ -331,19 +331,23 @@ pub async fn do_update_collection_cluster(
                 to_shard_key,
             } = replicate_points;
 
+            let from_shard_ids = collection.get_shard_ids(&from_shard_key).await?;
+
+            // Temporary, before we support multi-source transfers
+            if from_shard_ids.len() != 1 {
+                return Err(StorageError::BadRequest {
+                    description: format!(
+                        "Only replicating from shard keys with exactly one shard is supported. Shard key {from_shard_key} has {} shards",
+                        from_shard_ids.len()
+                    ),
+                });
+            }
+
             // validate shard key exists
             let from_replicas = collection.get_replicas(&from_shard_key).await?;
             let to_replicas = collection.get_replicas(&to_shard_key).await?;
 
-            // Allow replication only shard keys with exactly one source (for now) and destination replica
-            if from_replicas.len() != 1 {
-                return Err(StorageError::BadRequest {
-                    description: format!(
-                        "Only replicating from shard keys with exactly one replica is supported. Shard key {from_shard_key} has {} replicas",
-                        from_replicas.len()
-                    ),
-                });
-            }
+            debug_assert!(!from_replicas.is_empty());
 
             if to_replicas.len() != 1 {
                 return Err(StorageError::BadRequest {

@@ -3547,8 +3547,6 @@ pub struct Filter {
     pub must_not: Option<Vec<Condition>>,
 }
 
-impl Eq for Filter {}
-
 impl Filter {
     pub fn new() -> Self {
         Filter {
