@@ -19,7 +19,7 @@ jobs:
     - uses: actions/checkout@v5
     - uses: Swatinem/rust-cache@v2
     - name: Install cosign
-      uses: sigstore/cosign-installer@v3.10.0
+      uses: sigstore/cosign-installer@v4.0.0
     - name: Get current tag
       id: vars
       run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
@@ -88,7 +88,7 @@ jobs:
     - uses: actions/checkout@v5
     - uses: Swatinem/rust-cache@v2
     - name: Install cosign
-      uses: sigstore/cosign-installer@v3.10.0
+      uses: sigstore/cosign-installer@v4.0.0
     - name: Get current tag
       id: vars
       run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
