@@ -272,8 +272,6 @@ where
 {
     let segments_lock = segments.upgradable_read();
 
-    segments_lock.flush_all(true, true)?;
-
     // Proxy all segments
     log::trace!("Proxying all shard segments to apply function");
     let (mut proxies, tmp_segment_id, mut segments_lock) = SegmentHolder::proxy_all_segments(
@@ -282,6 +280,9 @@ where
         segment_config,
         payload_index_schema,
     )?;
+
+    // Flush all pending changes of each segment, now wrapped segments won't change anymore
+    segments_lock.flush_all(true, true)?;
 
     // Apply provided function
     log::trace!("Applying function on all proxied shard segments");
