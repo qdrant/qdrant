@@ -13,33 +13,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
-use crate::encoded_vectors::{
-    DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
-};
-use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
+use crate::encoded_vectors::{EncodedVectors, VectorParameters};
 use crate::vector_stats::{VectorElementStats, VectorStats};
 
-pub const ALIGNMENT: usize = 16;
+pub const ALIGNMENT: usize = 8;
 
 pub struct EncodedVectorsFlex<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
     metadata_path: Option<PathBuf>,
-    orig_data: Vec<Vec<f32>>,
     queries: Vec<EncodedQueryFlex>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EncodedQueryFlex {
     offset: f32,
-    encoded_query: Vec<u8>,
+    original: Vec<f32>,
+    transformed: Vec<f32>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct Metadata {
     actual_dim: usize,
-    alpha: f32,
-    offset: f32,
-    multiplier: f32,
+    bits_count: usize,
     vector_parameters: VectorParameters,
     vector_stats: VectorStats,
     transform: Transform,
@@ -56,6 +52,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
         vector_parameters: &VectorParameters,
         count: usize,
         quantile: Option<f32>,
+        rotations: Option<usize>,
+        sigmas: Option<f32>,
         bits_count: usize,
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
@@ -63,128 +61,59 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
         let actual_dim = Self::get_actual_dim(vector_parameters);
 
         if count == 0 {
-            let metadata = Metadata {
-                actual_dim,
-                alpha: 0.0,
-                offset: 0.0,
-                multiplier: 0.0,
-                vector_parameters: vector_parameters.clone(),
-            };
-            if let Some(meta_path) = meta_path {
-                meta_path
-                    .parent()
-                    .ok_or_else(|| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            "Path must have a parent directory",
-                        )
-                    })
-                    .and_then(fs::create_dir_all)
-                    .map_err(|e| {
-                        EncodingError::EncodingError(format!(
-                            "Failed to create metadata directory: {e}",
-                        ))
-                    })?;
-                atomic_save_json(meta_path, &metadata).map_err(|e| {
-                    EncodingError::EncodingError(format!("Failed to save metadata: {e}",))
-                })?;
-            }
-            return Ok(EncodedVectorsFlex {
-                encoded_vectors: storage_builder.build().map_err(|e| {
-                    EncodingError::EncodingError(format!("Failed to build storage: {e}",))
-                })?,
-                metadata,
-                metadata_path: meta_path.map(PathBuf::from),
-            });
+            unimplemented!("Encoding zero vectors is not supported yet");
         }
 
-        debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
-        let (alpha, offset) = Self::find_alpha_offset_size_dim(orig_data.clone());
-        let (alpha, offset) = if let Some(quantile) = quantile {
-            if let Some((min, max)) =
-                find_quantile_interval(orig_data.clone(), vector_parameters.dim, count, quantile)
-            {
-                Self::alpha_offset_from_min_max(min, max)
-            } else {
-                (alpha, offset)
-            }
-        } else {
-            (alpha, offset)
+        let vector_stats = VectorStats::build(orig_data.clone(), vector_parameters);
+        let transform = Transform::new(
+            orig_data.clone(),
+            &vector_stats,
+            vector_parameters,
+            sigmas.unwrap_or(3.0),
+            rotations.unwrap_or(0),
+            meta_path,
+        );
+
+        let metadata = Metadata {
+            actual_dim,
+            vector_parameters: vector_parameters.clone(),
+            vector_stats,
+            transform,
+            bits_count,
         };
 
+        let mut queries = Vec::with_capacity(count);
         for vector in orig_data {
             if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
             }
 
+            let encoded_query = Self::encode_query(&metadata, vector.as_ref());
+            queries.push(encoded_query);
+
             let mut encoded_vector = Vec::with_capacity(actual_dim + std::mem::size_of::<f32>());
-            encoded_vector.extend_from_slice(&f32::default().to_ne_bytes());
-            for &value in vector.as_ref() {
-                let encoded = Self::f32_to_u8(value, alpha, offset);
-                encoded_vector.push(encoded);
-            }
-            if !vector_parameters.dim.is_multiple_of(ALIGNMENT) {
-                for _ in 0..(ALIGNMENT - vector_parameters.dim % ALIGNMENT) {
-                    let placeholder = match vector_parameters.distance_type {
-                        DistanceType::Dot => 0.0,
-                        DistanceType::L1 | DistanceType::L2 => offset,
-                    };
-                    let encoded = Self::f32_to_u8(placeholder, alpha, offset);
-                    encoded_vector.push(encoded);
-                }
-            }
-            let vector_offset = match vector_parameters.distance_type {
-                DistanceType::Dot => {
-                    actual_dim as f32 * offset * offset
-                        + encoded_vector.iter().map(|&x| f32::from(x)).sum::<f32>() * alpha * offset
-                }
-                DistanceType::L1 => 0.0,
-                DistanceType::L2 => {
-                    actual_dim as f32 * offset * offset
-                        + encoded_vector
-                            .iter()
-                            .map(|&x| f32::from(x) * f32::from(x))
-                            .sum::<f32>()
-                            * alpha
-                            * alpha
-                }
-            };
-            let vector_offset = if vector_parameters.invert {
-                -vector_offset
-            } else {
-                vector_offset
-            };
-            encoded_vector[0..std::mem::size_of::<f32>()]
-                .copy_from_slice(&vector_offset.to_ne_bytes());
+            Self::encode_vector(&metadata, vector.as_ref(), &mut encoded_vector);
+
             storage_builder
                 .push_vector_data(&encoded_vector)
                 .map_err(|e| {
                     EncodingError::EncodingError(format!("Failed to push encoded vector: {e}",))
                 })?;
         }
-        let multiplier = match vector_parameters.distance_type {
-            DistanceType::Dot => alpha * alpha,
-            DistanceType::L1 => alpha,
-            DistanceType::L2 => -2.0 * alpha * alpha,
-        };
-        let multiplier = if vector_parameters.invert {
-            -multiplier
-        } else {
-            multiplier
-        };
 
         let encoded_vectors = storage_builder
             .build()
             .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
 
-        let metadata = Metadata {
-            actual_dim,
-            alpha,
-            offset,
-            multiplier,
-            vector_parameters: vector_parameters.clone(),
-        };
         if let Some(meta_path) = meta_path {
+            let bin_path = meta_path.with_extension("orig");
+            let file = std::fs::File::create(bin_path).map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to create original data file: {e}",))
+            })?;
+            bincode::serialize_into(std::io::BufWriter::new(file), &queries).map_err(|e| {
+                EncodingError::EncodingError(format!("Failed to save original data: {e}",))
+            })?;
+
             meta_path
                 .parent()
                 .ok_or_else(|| {
@@ -208,111 +137,26 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
             encoded_vectors,
             metadata,
             metadata_path: meta_path.map(PathBuf::from),
+            queries,
         })
     }
 
     pub fn load(encoded_vectors: TStorage, meta_path: &Path) -> std::io::Result<Self> {
         let contents = fs::read_to_string(meta_path)?;
         let metadata: Metadata = serde_json::from_str(&contents)?;
+
+        let queries_data_path = meta_path.with_extension("qbin");
+        let file = std::fs::File::open(queries_data_path)?;
+        let queries: Vec<EncodedQueryFlex> =
+            bincode::deserialize_from(std::io::BufReader::new(file)).unwrap();
+
         let result = Self {
             encoded_vectors,
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
+            queries,
         };
         Ok(result)
-    }
-
-    pub fn score_point_simple(&self, query: &EncodedQueryFlex, i: u32) -> f32 {
-        let (vector_offset, v_ptr) = self.get_vec_ptr(i);
-
-        let score = match self.metadata.vector_parameters.distance_type {
-            DistanceType::Dot | DistanceType::L2 => impl_score_dot(
-                query.encoded_query.as_ptr(),
-                v_ptr,
-                self.metadata.actual_dim,
-            ),
-            DistanceType::L1 => impl_score_l1(
-                query.encoded_query.as_ptr(),
-                v_ptr,
-                self.metadata.actual_dim,
-            ),
-        };
-
-        self.metadata.multiplier * score as f32 + query.offset + vector_offset
-    }
-
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    pub fn score_point_sse(&self, query: &EncodedQueryFlex, i: u32) -> f32 {
-        unsafe {
-            let (vector_offset, v_ptr) = self.get_vec_ptr(i);
-            let score = match self.metadata.vector_parameters.distance_type {
-                DistanceType::Dot | DistanceType::L2 => impl_score_dot_sse(
-                    query.encoded_query.as_ptr(),
-                    v_ptr,
-                    self.metadata.actual_dim as u32,
-                ),
-                DistanceType::L1 => impl_score_l1_sse(
-                    query.encoded_query.as_ptr(),
-                    v_ptr,
-                    self.metadata.actual_dim as u32,
-                ),
-            };
-            self.metadata.multiplier * score + query.offset + vector_offset
-        }
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    pub fn score_point_avx(&self, query: &EncodedQueryFlex, i: u32) -> f32 {
-        unsafe {
-            let (vector_offset, v_ptr) = self.get_vec_ptr(i);
-            let score = match self.metadata.vector_parameters.distance_type {
-                DistanceType::Dot | DistanceType::L2 => impl_score_dot_avx(
-                    query.encoded_query.as_ptr(),
-                    v_ptr,
-                    self.metadata.actual_dim as u32,
-                ),
-                DistanceType::L1 => impl_score_l1_avx(
-                    query.encoded_query.as_ptr(),
-                    v_ptr,
-                    self.metadata.actual_dim as u32,
-                ),
-            };
-            self.metadata.multiplier * score + query.offset + vector_offset
-        }
-    }
-
-    fn find_alpha_offset_size_dim<'a>(
-        orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-    ) -> (f32, f32) {
-        let (min, max) = find_min_max_from_iter(orig_data);
-        Self::alpha_offset_from_min_max(min, max)
-    }
-
-    fn alpha_offset_from_min_max(min: f32, max: f32) -> (f32, f32) {
-        let alpha = (max - min) / 127.0;
-        let offset = min;
-        (alpha, offset)
-    }
-
-    fn f32_to_u8(i: f32, alpha: f32, offset: f32) -> u8 {
-        let i = (i - offset) / alpha;
-        i.clamp(0.0, 127.0) as u8
-    }
-
-    #[inline]
-    fn parse_vec_data(data: &[u8]) -> (f32, *const u8) {
-        debug_assert!(data.len() >= std::mem::size_of::<f32>());
-        unsafe {
-            let offset = data.as_ptr().cast::<f32>().read_unaligned();
-            let v_ptr = data.as_ptr().add(std::mem::size_of::<f32>());
-            (offset, v_ptr)
-        }
-    }
-
-    #[inline]
-    fn get_vec_ptr(&self, i: PointOffsetType) -> (f32, *const u8) {
-        let data = self.encoded_vectors.get_vector_data(i);
-        Self::parse_vec_data(data)
     }
 
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
@@ -323,33 +167,44 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
         Layout::from_size_align(self.quantized_vector_size(), align_of::<u8>()).unwrap()
     }
 
-    pub fn get_quantized_vector_offset_and_code(&self, i: PointOffsetType) -> (f32, &[u8]) {
-        let (offset, v_ptr) = self.get_vec_ptr(i);
-        let vector_data_size = self.metadata.actual_dim;
-        let code = unsafe { std::slice::from_raw_parts(v_ptr, vector_data_size) };
-        (offset, code)
-    }
-
     pub fn get_quantized_vector_size(vector_parameters: &VectorParameters) -> usize {
         let actual_dim = Self::get_actual_dim(vector_parameters);
         actual_dim + std::mem::size_of::<f32>()
     }
 
-    pub fn get_multiplier(&self) -> f32 {
-        self.metadata.multiplier
+    pub fn get_actual_dim(vector_parameters: &VectorParameters) -> usize {
+        vector_parameters.dim + (ALIGNMENT - vector_parameters.dim % ALIGNMENT) % ALIGNMENT
     }
 
-    pub fn get_diff(&self) -> f32 {
-        let diff = self.metadata.actual_dim as f32 * self.metadata.offset * self.metadata.offset;
-        if self.metadata.vector_parameters.invert {
-            -diff
-        } else {
-            diff
+    fn encode_query(metadata: &Metadata, query: &[f32]) -> EncodedQueryFlex {
+        let mut query = query.to_owned();
+        while query.len() % ALIGNMENT != 0 {
+            query.push(0.0);
+        }
+        let (transformed_query, offset) = metadata.transform.transform_query(&query);
+        EncodedQueryFlex {
+            offset,
+            original: query,
+            transformed: transformed_query,
         }
     }
 
-    pub fn get_actual_dim(vector_parameters: &VectorParameters) -> usize {
-        vector_parameters.dim + (ALIGNMENT - vector_parameters.dim % ALIGNMENT) % ALIGNMENT
+    fn encode_vector(metadata: &Metadata, vector: &[f32], result: &mut [u8]) {
+        result.fill(0);
+        let (mut transformed_vector, vector_offset) = metadata.transform.transform_vector(vector);
+        result[0..std::mem::size_of::<f32>()].copy_from_slice(&vector_offset.to_ne_bytes());
+        while transformed_vector.len() % ALIGNMENT != 0 {
+            transformed_vector.push(0.0);
+        }
+        let result = &mut result[std::mem::size_of::<f32>()..];
+        let mut intbuf = [0i32; ALIGNMENT];
+        for (chunk_index, chunk) in transformed_vector.chunks_exact(ALIGNMENT).enumerate() {
+            for (i, &value) in chunk.iter().enumerate() {
+                intbuf[i] = ((2 << 10) as f32 * value) as i32;
+            }
+
+            todo!()
+        }
     }
 }
 
@@ -361,47 +216,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsFlex<TStorage> {
     }
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryFlex {
-        let dim = query.len();
-        let mut query: Vec<_> = query
-            .iter()
-            .map(|&v| Self::f32_to_u8(v, self.metadata.alpha, self.metadata.offset))
-            .collect();
-        if !dim.is_multiple_of(ALIGNMENT) {
-            for _ in 0..(ALIGNMENT - dim % ALIGNMENT) {
-                let placeholder = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot => 0.0,
-                    DistanceType::L1 | DistanceType::L2 => self.metadata.offset,
-                };
-                let encoded =
-                    Self::f32_to_u8(placeholder, self.metadata.alpha, self.metadata.offset);
-                query.push(encoded);
-            }
-        }
-        let offset = match self.metadata.vector_parameters.distance_type {
-            DistanceType::Dot => {
-                query.iter().map(|&x| f32::from(x)).sum::<f32>()
-                    * self.metadata.alpha
-                    * self.metadata.offset
-            }
-            DistanceType::L1 => 0.0,
-            DistanceType::L2 => {
-                query
-                    .iter()
-                    .map(|&x| f32::from(x) * f32::from(x))
-                    .sum::<f32>()
-                    * self.metadata.alpha
-                    * self.metadata.alpha
-            }
-        };
-        let offset = if self.metadata.vector_parameters.invert {
-            -offset
-        } else {
-            offset
-        };
-        EncodedQueryFlex {
-            offset,
-            encoded_query: query,
-        }
+        Self::encode_query(&self.metadata, query)
     }
 
     fn score_point(
@@ -428,72 +243,12 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsFlex<TStorage> {
             .vector_io_read()
             .incr_delta(self.metadata.vector_parameters.dim * 2);
 
-        let (query_offset, q_ptr) = self.get_vec_ptr(i);
-        let (vector_offset, v_ptr) = self.get_vec_ptr(j);
-        let diff = self.metadata.actual_dim as f32 * self.metadata.offset * self.metadata.offset;
-        let diff = if self.metadata.vector_parameters.invert {
-            -diff
-        } else {
-            diff
-        };
-        let offset = query_offset + vector_offset - diff;
-
-        #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + offset;
-            }
-        }
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("sse4.1") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + offset;
-            }
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        if std::arch::is_aarch64_feature_detected!("neon") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + offset;
-            }
-        }
-
-        let score = match self.metadata.vector_parameters.distance_type {
-            DistanceType::Dot | DistanceType::L2 => {
-                impl_score_dot(q_ptr, v_ptr, self.metadata.actual_dim)
-            }
-            DistanceType::L1 => impl_score_l1(q_ptr, v_ptr, self.metadata.actual_dim),
-        };
-
-        self.metadata.multiplier * score as f32 + offset
+        self.score_bytes(
+            True,
+            &self.queries[i as usize],
+            self.encoded_vectors.get_vector_data(j),
+            hw_counter,
+        )
     }
 
     fn quantized_vector_size(&self) -> usize {
@@ -503,28 +258,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsFlex<TStorage> {
     }
 
     fn encode_internal_vector(&self, id: PointOffsetType) -> Option<EncodedQueryFlex> {
-        let offset_difference = match self.metadata.vector_parameters.distance_type {
-            DistanceType::Dot => {
-                self.metadata.actual_dim as f32 * self.metadata.offset * self.metadata.offset
-            }
-            DistanceType::L1 => 0.0,
-            DistanceType::L2 => {
-                self.metadata.actual_dim as f32 * self.metadata.offset * self.metadata.offset
-            }
-        };
-
-        let (query_offset, q_ptr) = self.get_vec_ptr(id);
-        let query_offset = if self.metadata.vector_parameters.invert {
-            query_offset + offset_difference
-        } else {
-            query_offset - offset_difference
-        };
-        Some(EncodedQueryFlex {
-            offset: query_offset,
-            encoded_query: unsafe {
-                std::slice::from_raw_parts(q_ptr, self.metadata.actual_dim).to_vec()
-            },
-        })
+        Some(self.queries[id as usize].clone())
     }
 
     fn upsert_vector(
@@ -541,7 +275,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsFlex<TStorage> {
     }
 
     fn vectors_count(&self) -> usize {
-        self.encoded_vectors.vectors_count()
+        self.queries.len()
     }
 
     fn flusher(&self) -> MmapFlusher {
@@ -576,100 +310,9 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsFlex<TStorage> {
             .cpu_counter()
             .incr_delta(self.metadata.vector_parameters.dim);
 
-        debug_assert!(bytes.len() >= std::mem::size_of::<f32>() + self.metadata.actual_dim);
-
-        let (vector_offset, v_ptr) = Self::parse_vec_data(bytes);
-        let q_ptr = query.encoded_query.as_ptr();
-
-        #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_avx(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + query.offset + vector_offset;
-            }
-        }
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("sse4.1") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_sse(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + query.offset + vector_offset;
-            }
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        if std::arch::is_aarch64_feature_detected!("neon") {
-            unsafe {
-                let score = match self.metadata.vector_parameters.distance_type {
-                    DistanceType::Dot | DistanceType::L2 => {
-                        impl_score_dot_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                    DistanceType::L1 => {
-                        impl_score_l1_neon(q_ptr, v_ptr, self.metadata.actual_dim as u32)
-                    }
-                };
-
-                return self.metadata.multiplier * score + query.offset + vector_offset;
-            }
-        }
-
-        let score = match self.metadata.vector_parameters.distance_type {
-            DistanceType::Dot | DistanceType::L2 => {
-                impl_score_dot(q_ptr, v_ptr, self.metadata.actual_dim)
-            }
-            DistanceType::L1 => impl_score_l1(q_ptr, v_ptr, self.metadata.actual_dim),
-        };
-
-        self.metadata.multiplier * score as f32 + query.offset + vector_offset
+        todo!()
     }
 }
-
-fn impl_score_dot(q_ptr: *const u8, v_ptr: *const u8, actual_dim: usize) -> i32 {
-    unsafe {
-        let mut score = 0i32;
-        for i in 0..actual_dim {
-            score += i32::from(*q_ptr.add(i)) * i32::from(*v_ptr.add(i));
-        }
-        score
-    }
-}
-
-fn impl_score_l1(q_ptr: *const u8, v_ptr: *const u8, actual_dim: usize) -> i32 {
-    unsafe {
-        let mut score = 0i32;
-        for i in 0..actual_dim {
-            score += i32::from(*q_ptr.add(i)).abs_diff(i32::from(*v_ptr.add(i))) as i32;
-        }
-        score
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-unsafe extern "C" {
-    fn impl_score_dot_avx(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
-    fn impl_score_l1_avx(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
-
-    fn impl_score_dot_sse(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
-    fn impl_score_l1_sse(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
-}
-
-pub const ROTATION_STEPS: usize = 1;
 
 #[derive(Serialize, Deserialize)]
 pub struct Transform {
@@ -677,6 +320,7 @@ pub struct Transform {
     shifter: Shifter,
     stddevs: Vec<f32>,
     mean_sqr_sum: f32,
+    sigmas: f32,
 }
 
 impl Transform {
@@ -684,6 +328,8 @@ impl Transform {
         data: impl Iterator<Item = impl AsRef<[f32]>> + Clone,
         vector_stats: &VectorStats,
         vector_params: &VectorParameters,
+        sigmas: f32,
+        rotation_steps: usize,
         debug_path: Option<&Path>,
     ) -> Self {
         let mean_sqr_sum = vector_stats
@@ -701,15 +347,12 @@ impl Transform {
                     mean: _,
                     stddev,
                 } = element_stats;
-
-                let sd = *stddev;
-
-                if sd > f32::EPSILON { sd } else { 1.0 }
+                *stddev
             })
             .collect::<Vec<f32>>();
 
         let shifter = Shifter::new(vector_stats);
-        if ROTATION_STEPS > 0 {
+        if rotation_steps > 0 {
             let rotation = Rotation::new(
                 data.map(|v| {
                     let mut vector = v.as_ref().to_vec();
@@ -717,6 +360,7 @@ impl Transform {
                     vector
                 }),
                 vector_params,
+                rotation_steps,
                 debug_path,
             );
             Self {
@@ -724,6 +368,7 @@ impl Transform {
                 shifter,
                 stddevs,
                 mean_sqr_sum,
+                sigmas,
             }
         } else {
             Self {
@@ -731,8 +376,42 @@ impl Transform {
                 shifter,
                 stddevs,
                 mean_sqr_sum,
+                sigmas,
             }
         }
+    }
+
+    pub fn transform_query(&self, query: &[f32]) -> (Vec<f32>, f32) {
+        let mut vector = query.to_owned();
+        let sum = self.shifter.shift(&mut vector);
+        for (v, stddev) in vector.iter_mut().zip(self.stddevs.iter()) {
+            if *stddev > f32::EPSILON {
+                *v *= self.sigmas * *stddev;
+            } else {
+                *v = 0.0;
+            }
+        }
+        if let Some(rotation) = &self.rotation {
+            rotation.rotate(&mut vector);
+        }
+        (vector, sum)
+    }
+
+    pub fn transform_vector(&self, vector: &[f32]) -> (Vec<f32>, f32) {
+        let mut vector = vector.to_owned();
+        let sum = self.shifter.shift(&mut vector);
+        for (v, stddev) in vector.iter_mut().zip(self.stddevs.iter()) {
+            if *stddev > f32::EPSILON {
+                *v /= self.sigmas * *stddev;
+                *v = v.clamp(-1.0, 1.0);
+            } else {
+                *v = 0.0;
+            }
+        }
+        if let Some(rotation) = &self.rotation {
+            rotation.rotate(&mut vector);
+        }
+        (vector, sum)
     }
 }
 
@@ -792,6 +471,7 @@ impl Rotation {
     pub fn new(
         data: impl Iterator<Item = impl AsRef<[f32]>> + Clone,
         vector_params: &VectorParameters,
+        steps: usize,
         debug_path: Option<&Path>,
     ) -> Self {
         if data.clone().next().is_none() {
@@ -818,11 +498,6 @@ impl Rotation {
             }
         }
 
-        let steps: usize = std::env::var("ROTATION_STEPS")
-            .unwrap_or_default()
-            .trim()
-            .parse()
-            .unwrap_or(ROTATION_STEPS);
         log::info!("Rotation steps: {steps}");
 
         let mut simple_rotations: Vec<SimpleRotation> = vec![];
