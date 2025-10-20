@@ -10,10 +10,10 @@ use crate::common::operation_error::OperationResult;
 
 const DEFAULT_MAX_PAIRS: usize = 3;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Hash, PartialEq)]
 pub struct FeedbackItem<T> {
-    vector: T,
-    score: ScoreType,
+    pub vector: T,
+    pub score: OrderedFloat<ScoreType>,
 }
 
 impl<T> FeedbackItem<T> {
@@ -31,7 +31,7 @@ impl<T> FeedbackItem<T> {
 /// Akin to external representation of the query. Unoptimized for scoring.
 ///
 /// Call `into_query` to get the type implementing `Query` trait.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Hash, PartialEq)]
 pub struct FeedbackQueryInternal<T, TStrategy> {
     /// The original query vector.
     pub target: T,

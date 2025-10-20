@@ -5080,7 +5080,7 @@ Parameterized reciprocal rank fusion
 <a name="qdrant-Vector"></a>
 
 ### Vector
-Legacy vector format, which determines the vector type by the configuration of its fields.
+
 
 
 | Field | Type | Label | Description |

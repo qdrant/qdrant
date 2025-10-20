@@ -1,5 +1,8 @@
 use segment::data_types::vectors::{MultiDenseVectorInternal, NamedQuery, VectorInternal};
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use segment::vector_storage::query::{
+    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, FeedbackQueryInternal, RecoQuery,
+    SimpleFeedbackStrategy,
+};
 use shard::query::query_enum::QueryEnum;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
@@ -109,6 +112,9 @@ impl Generalizer for QueryEnum {
             }
             QueryEnum::Discover(disocover) => QueryEnum::Discover(disocover.remove_details()),
             QueryEnum::Context(context) => QueryEnum::Context(context.remove_details()),
+            QueryEnum::FeedbackSimple(feedback) => {
+                QueryEnum::FeedbackSimple(feedback.remove_details())
+            }
         }
     }
 }
@@ -189,6 +195,42 @@ impl<T: Generalizer> Generalizer for RecoQuery<T> {
         Self {
             positives: positives.iter().map(|p| p.remove_details()).collect(),
             negatives: negatives.iter().map(|p| p.remove_details()).collect(),
+        }
+    }
+}
+
+impl<T: Generalizer, TStrategy: Generalizer> Generalizer for FeedbackQueryInternal<T, TStrategy> {
+    fn remove_details(&self) -> Self {
+        let Self {
+            target,
+            feedback,
+            strategy,
+        } = self;
+        Self {
+            target: target.remove_details(),
+            feedback: feedback.iter().map(|p| p.remove_details()).collect(),
+            strategy: strategy.remove_details(),
+        }
+    }
+}
+
+impl<T: Generalizer> Generalizer for FeedbackItem<T> {
+    fn remove_details(&self) -> Self {
+        let FeedbackItem { vector, score: _ } = self;
+        Self {
+            vector: vector.remove_details(),
+            score: 0.0.into(),
+        }
+    }
+}
+
+impl Generalizer for SimpleFeedbackStrategy {
+    fn remove_details(&self) -> Self {
+        let SimpleFeedbackStrategy { a: _, b: _, c: _ } = self;
+        Self {
+            a: 0.0.into(),
+            b: 0.0.into(),
+            c: 0.0.into(),
         }
     }
 }
