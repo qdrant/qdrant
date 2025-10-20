@@ -1,4 +1,5 @@
 pub mod retrieve;
+pub mod scroll;
 pub mod search;
 pub mod update;
 
