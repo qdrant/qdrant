@@ -6,7 +6,6 @@ use segment::types::{
     GeoBoundingBox, GeoLineString, GeoPoint, GeoPolygon, GeoPolygonShadow, GeoRadius,
 };
 
-
 #[pyclass(name = "GeoPoint")]
 #[derive(Clone, Debug, Into)]
 pub struct PyGeoPoint(pub GeoPoint);
@@ -46,7 +45,7 @@ impl PyGeoRadius {
     pub fn new(center: PyGeoPoint, radius: f64) -> Self {
         Self(GeoRadius {
             center: center.0,
-            radius: OrderedFloat(radius)
+            radius: OrderedFloat(radius),
         })
     }
 }
