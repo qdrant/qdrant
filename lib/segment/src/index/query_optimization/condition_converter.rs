@@ -5,6 +5,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use match_converter::get_match_checkers;
+use ordered_float::OrderedFloat;
 use serde_json::Value;
 
 use crate::index::field_index::FieldIndex;
@@ -185,7 +186,7 @@ impl StructPayloadIndex {
             Condition::CustomIdChecker(cond) => {
                 let segment_ids: AHashSet<_> = id_tracker
                     .iter_external()
-                    .filter(|&point_id| cond.check(point_id))
+                    .filter(|&point_id| cond.0.check(point_id))
                     .filter_map(|external_id| id_tracker.internal_id(external_id))
                     .collect();
 
@@ -341,19 +342,23 @@ pub fn get_range_checkers(
 
 pub fn get_float_range_checkers(
     index: &FieldIndex,
-    range: Range<FloatPayloadType>,
+    range: Range<OrderedFloat<FloatPayloadType>>,
     hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn<'_>> {
     let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::IntIndex(num_index) => {
-            let range = range.map(|f| f as IntPayloadType);
+            let range = range.map(|f| f.0 as IntPayloadType);
             Some(Box::new(move |point_id: PointOffsetType| {
                 num_index.check_values_any(point_id, |value| range.check_range(*value), &hw_counter)
             }))
         }
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            num_index.check_values_any(point_id, |value| range.check_range(*value), &hw_counter)
+            num_index.check_values_any(
+                point_id,
+                |value| range.check_range(OrderedFloat(*value)),
+                &hw_counter,
+            )
         })),
         FieldIndex::BoolIndex(_)
         | FieldIndex::DatetimeIndex(_)

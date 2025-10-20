@@ -220,7 +220,7 @@ impl GeoMapIndex {
         let lat = f64::from_be_bytes(lat_bytes);
         let lon = f64::from_be_bytes(lon_bytes);
 
-        Ok(GeoPoint { lon, lat })
+        Ok(GeoPoint::new_unchecked(lon, lat))
     }
 
     #[cfg(feature = "rocksdb")]
@@ -817,6 +817,7 @@ mod tests {
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use itertools::Itertools;
+    use ordered_float::OrderedFloat;
     use rand::SeedableRng;
     use rand::prelude::StdRng;
     use rstest::rstest;
@@ -829,7 +830,7 @@ mod tests {
     use crate::fixtures::payload_fixtures::random_geo_payload;
     use crate::json_path::JsonPath;
     use crate::types::test_utils::build_polygon;
-    use crate::types::{GeoBoundingBox, GeoLineString, GeoPolygon, GeoRadius, OrderedGeoPoint};
+    use crate::types::{GeoBoundingBox, GeoLineString, GeoPolygon, GeoRadius};
 
     #[cfg(feature = "rocksdb")]
     type Database = std::sync::Arc<parking_lot::RwLock<DB>>;
@@ -898,30 +899,15 @@ mod tests {
         }
     }
 
-    const NYC: GeoPoint = GeoPoint {
-        lat: 40.75798,
-        lon: -73.991516,
-    };
+    const NYC: GeoPoint = GeoPoint::new_unchecked(-73.991516, 40.75798);
 
-    const BERLIN: GeoPoint = GeoPoint {
-        lat: 52.52437,
-        lon: 13.41053,
-    };
+    const BERLIN: GeoPoint = GeoPoint::new_unchecked(13.41053, 52.52437);
 
-    const POTSDAM: GeoPoint = GeoPoint {
-        lat: 52.390569,
-        lon: 13.064473,
-    };
+    const POTSDAM: GeoPoint = GeoPoint::new_unchecked(13.064473, 52.390569);
 
-    const TOKYO: GeoPoint = GeoPoint {
-        lat: 35.689487,
-        lon: 139.691706,
-    };
+    const TOKYO: GeoPoint = GeoPoint::new_unchecked(139.691706, 35.689487);
 
-    const LOS_ANGELES: GeoPoint = GeoPoint {
-        lat: 34.052235,
-        lon: -118.243683,
-    };
+    const LOS_ANGELES: GeoPoint = GeoPoint::new_unchecked(-118.243683, 34.052235);
 
     #[cfg(feature = "rocksdb")]
     const FIELD_NAME: &str = "test";
@@ -1009,7 +995,7 @@ mod tests {
 
     // util function to generate a bounding polygon of a geo_radius
     fn radius_to_polygon(circle: &GeoRadius) -> GeoPolygon {
-        let angular_radius: f64 = circle.radius / EARTH_RADIUS_METERS;
+        let angular_radius: f64 = circle.radius.0 / EARTH_RADIUS_METERS;
 
         let angular_lat = circle.center.lat.to_radians();
         let mut min_lat = (angular_lat - angular_radius).to_degrees();
@@ -1075,103 +1061,34 @@ mod tests {
 
         let europe = GeoLineString {
             points: vec![
-                GeoPoint {
-                    lon: 19.415558242000287,
-                    lat: 69.18533258102943,
-                },
-                GeoPoint {
-                    lon: 2.4664944437317615,
-                    lat: 61.852748225727254,
-                },
-                GeoPoint {
-                    lon: 2.713789718828849,
-                    lat: 51.80793869181895,
-                },
-                GeoPoint {
-                    lon: -8.396395372995187,
-                    lat: 46.85848915174239,
-                },
-                GeoPoint {
-                    lon: -10.508661204875182,
-                    lat: 35.64130367692255,
-                },
-                GeoPoint {
-                    lon: 0.9590825812569506,
-                    lat: 36.55931431668104,
-                },
-                GeoPoint {
-                    lon: 17.925941188829,
-                    lat: 34.89268498908065,
-                },
-                GeoPoint {
-                    lon: 26.378822944221042,
-                    lat: 38.87157101630817,
-                },
-                GeoPoint {
-                    lon: 41.568021588510476,
-                    lat: 47.7100126473878,
-                },
-                GeoPoint {
-                    lon: 29.149194109528253,
-                    lat: 70.96161947624168,
-                },
-                GeoPoint {
-                    lon: 19.415558242000287,
-                    lat: 69.18533258102943,
-                },
+                GeoPoint::new_unchecked(19.415558242000287, 69.18533258102943),
+                GeoPoint::new_unchecked(2.4664944437317615, 61.852748225727254),
+                GeoPoint::new_unchecked(2.713789718828849, 51.80793869181895),
+                GeoPoint::new_unchecked(-8.396395372995187, 46.85848915174239),
+                GeoPoint::new_unchecked(-10.508661204875182, 35.64130367692255),
+                GeoPoint::new_unchecked(0.9590825812569506, 36.55931431668104),
+                GeoPoint::new_unchecked(17.925941188829, 34.89268498908065),
+                GeoPoint::new_unchecked(26.378822944221042, 38.87157101630817),
+                GeoPoint::new_unchecked(41.568021588510476, 47.7100126473878),
+                GeoPoint::new_unchecked(29.149194109528253, 70.96161947624168),
+                GeoPoint::new_unchecked(19.415558242000287, 69.18533258102943),
             ],
         };
 
         let berlin = GeoLineString {
             points: vec![
-                GeoPoint {
-                    lon: 13.2257943327987,
-                    lat: 52.62328249733332,
-                },
-                GeoPoint {
-                    lon: 13.11841750240768,
-                    lat: 52.550216162683455,
-                },
-                GeoPoint {
-                    lon: 13.11841750240768,
-                    lat: 52.40371784468752,
-                },
-                GeoPoint {
-                    lon: 13.391870497137859,
-                    lat: 52.40546474165669,
-                },
-                GeoPoint {
-                    lon: 13.653869963292806,
-                    lat: 52.35739986654923,
-                },
-                GeoPoint {
-                    lon: 13.754088338324664,
-                    lat: 52.44213360096185,
-                },
-                GeoPoint {
-                    lon: 13.60805584899208,
-                    lat: 52.47702797300224,
-                },
-                GeoPoint {
-                    lon: 13.63382628828623,
-                    lat: 52.53367235825061,
-                },
-                GeoPoint {
-                    lon: 13.48493041681067,
-                    lat: 52.60241883100514,
-                },
-                GeoPoint {
-                    lon: 13.52788114896677,
-                    lat: 52.6571647548233,
-                },
-                GeoPoint {
-                    lon: 13.257291536380365,
-                    lat: 52.667584785254064,
-                },
-                GeoPoint {
-                    lon: 13.2257943327987,
-                    lat: 52.62328249733332,
-                },
+                GeoPoint::new_unchecked(13.2257943327987, 52.62328249733332),
+                GeoPoint::new_unchecked(13.11841750240768, 52.550216162683455),
+                GeoPoint::new_unchecked(13.11841750240768, 52.40371784468752),
+                GeoPoint::new_unchecked(13.391870497137859, 52.40546474165669),
+                GeoPoint::new_unchecked(13.653869963292806, 52.35739986654923),
+                GeoPoint::new_unchecked(13.754088338324664, 52.44213360096185),
+                GeoPoint::new_unchecked(13.60805584899208, 52.47702797300224),
+                GeoPoint::new_unchecked(13.63382628828623, 52.53367235825061),
+                GeoPoint::new_unchecked(13.48493041681067, 52.60241883100514),
+                GeoPoint::new_unchecked(13.52788114896677, 52.6571647548233),
+                GeoPoint::new_unchecked(13.257291536380365, 52.667584785254064),
+                GeoPoint::new_unchecked(13.2257943327987, 52.62328249733332),
             ],
         };
 
@@ -1221,7 +1138,7 @@ mod tests {
         let r_meters = 500_000.0;
         let geo_radius = GeoRadius {
             center: NYC,
-            radius: r_meters,
+            radius: OrderedFloat(r_meters),
         };
         let nyc_hashes = circle_hashes(&geo_radius, GEO_QUERY_MAX_REGION).unwrap();
         check_cardinality_match(
@@ -1285,7 +1202,7 @@ mod tests {
         let r_meters = 500_000.0;
         let geo_radius = GeoRadius {
             center: NYC,
-            radius: r_meters,
+            radius: OrderedFloat(r_meters),
         };
         check_geo_indexed_filtering(
             condition_for_geo_radius("test", geo_radius.clone()),
@@ -1369,7 +1286,7 @@ mod tests {
         // around NYC
         let nyc_geo_radius = GeoRadius {
             center: NYC,
-            radius: r_meters,
+            radius: OrderedFloat(r_meters),
         };
         let field_condition = condition_for_geo_radius("test", nyc_geo_radius.clone());
         let card = index.estimate_cardinality(&field_condition, &hw_counter);
@@ -1388,7 +1305,7 @@ mod tests {
         // around BERLIN
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
-            radius: r_meters,
+            radius: OrderedFloat(r_meters),
         };
         let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
         let card = index.estimate_cardinality(&field_condition, &hw_counter);
@@ -1408,7 +1325,7 @@ mod tests {
         // around TOKYO
         let tokyo_geo_radius = GeoRadius {
             center: TOKYO,
-            radius: r_meters,
+            radius: OrderedFloat(r_meters),
         };
         let field_condition = condition_for_geo_radius("test", tokyo_geo_radius.clone());
         let card = index.estimate_cardinality(&field_condition, &hw_counter);
@@ -1454,7 +1371,7 @@ mod tests {
 
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
-            radius: 50_000.0, // Berlin <-> Potsdam is 27 km
+            radius: OrderedFloat(50_000.0), // Berlin <-> Potsdam is 27 km
         };
         // check with geo_radius
         let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
@@ -1529,7 +1446,7 @@ mod tests {
 
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
-            radius: 50_000.0, // Berlin <-> Potsdam is 27 km
+            radius: OrderedFloat(50_000.0), // Berlin <-> Potsdam is 27 km
         };
 
         // check with geo_radius
@@ -1632,22 +1549,10 @@ mod tests {
         let polygon = GeoPolygon {
             exterior: GeoLineString {
                 points: vec![
-                    GeoPoint {
-                        lon: 19.415558242000287,
-                        lat: 69.18533258102943,
-                    },
-                    GeoPoint {
-                        lon: 2.4664944437317615,
-                        lat: 61.852748225727254,
-                    },
-                    GeoPoint {
-                        lon: 2.713789718828849,
-                        lat: 51.80793869181895,
-                    },
-                    GeoPoint {
-                        lon: 19.415558242000287,
-                        lat: 69.18533258102943,
-                    },
+                    GeoPoint::new_unchecked(19.415558242000287, 69.18533258102943),
+                    GeoPoint::new_unchecked(2.4664944437317615, 61.852748225727254),
+                    GeoPoint::new_unchecked(2.713789718828849, 51.80793869181895),
+                    GeoPoint::new_unchecked(19.415558242000287, 69.18533258102943),
                 ],
             },
             interiors: None,
@@ -1656,22 +1561,10 @@ mod tests {
             exterior: polygon.exterior.clone(),
             interiors: Some(vec![GeoLineString {
                 points: vec![
-                    GeoPoint {
-                        lon: 13.2257943327987,
-                        lat: 52.62328249733332,
-                    },
-                    GeoPoint {
-                        lon: 13.11841750240768,
-                        lat: 52.550216162683455,
-                    },
-                    GeoPoint {
-                        lon: 13.11841750240768,
-                        lat: 52.40371784468752,
-                    },
-                    GeoPoint {
-                        lon: 13.2257943327987,
-                        lat: 52.62328249733332,
-                    },
+                    GeoPoint::new_unchecked(13.2257943327987, 52.62328249733332),
+                    GeoPoint::new_unchecked(13.11841750240768, 52.550216162683455),
+                    GeoPoint::new_unchecked(13.11841750240768, 52.40371784468752),
+                    GeoPoint::new_unchecked(13.2257943327987, 52.62328249733332),
                 ],
             }]),
         };
@@ -1761,14 +1654,8 @@ mod tests {
 
         // Large bounding box around the USA: (74.071028, 167), (18.7763, -66.885417)
         let bounding_box = GeoBoundingBox {
-            top_left: GeoPoint {
-                lat: 74.071028,
-                lon: 167.0,
-            },
-            bottom_right: GeoPoint {
-                lat: 18.7763,
-                lon: -66.885417,
-            },
+            top_left: GeoPoint::new_unchecked(167.0, 74.071028),
+            bottom_right: GeoPoint::new_unchecked(-66.885417, 18.7763),
         };
 
         // check with geo_radius
@@ -1803,22 +1690,10 @@ mod tests {
         let polygon = GeoPolygon {
             exterior: GeoLineString {
                 points: vec![
-                    GeoPoint {
-                        lon: 19.415558242000287,
-                        lat: 69.18533258102943,
-                    },
-                    GeoPoint {
-                        lon: 2.4664944437317615,
-                        lat: 61.852748225727254,
-                    },
-                    GeoPoint {
-                        lon: 2.713789718828849,
-                        lat: 51.80793869181895,
-                    },
-                    GeoPoint {
-                        lon: 19.415558242000287,
-                        lat: 69.18533258102943,
-                    },
+                    GeoPoint::new_unchecked(19.415558242000287, 69.18533258102943),
+                    GeoPoint::new_unchecked(2.4664944437317615, 61.852748225727254),
+                    GeoPoint::new_unchecked(2.713789718828849, 51.80793869181895),
+                    GeoPoint::new_unchecked(19.415558242000287, 69.18533258102943),
                 ],
             },
             interiors: None,
@@ -1882,12 +1757,10 @@ mod tests {
                         indices[0]
                             .get_values(point_id as PointOffsetType)
                             .unwrap()
-                            .map(OrderedGeoPoint::from)
                             .collect::<BTreeSet<_>>(),
                         index
                             .get_values(point_id as PointOffsetType)
                             .unwrap()
-                            .map(OrderedGeoPoint::from)
                             .collect::<BTreeSet<_>>(),
                     );
                 }

@@ -176,7 +176,7 @@ impl MutableGeoMapIndex {
                     let geo_hashes = geo_points
                         .iter()
                         .map(|geo_point| {
-                            encode_max_precision(geo_point.lon, geo_point.lat).map_err(|e| {
+                            encode_max_precision(geo_point.lon.0, geo_point.lat.0).map_err(|e| {
                                 OperationError::service_error(format!("Malformed geo points: {e}"))
                             })
                         })
@@ -319,9 +319,9 @@ impl MutableGeoMapIndex {
             Storage::RocksDb(db_wrapper) => {
                 for added_point in values {
                     let added_geo_hash: GeoHash =
-                        encode_max_precision(added_point.lon, added_point.lat).map_err(|e| {
-                            OperationError::service_error(format!("Malformed geo points: {e}"))
-                        })?;
+                        encode_max_precision(added_point.lon.0, added_point.lat.0).map_err(
+                            |e| OperationError::service_error(format!("Malformed geo points: {e}")),
+                        )?;
 
                     let key = GeoMapIndex::encode_db_key(added_geo_hash, idx);
                     let value = GeoMapIndex::encode_db_value(added_point);
@@ -368,7 +368,7 @@ impl MutableGeoMapIndex {
 
                 for removed_geo_point in geo_points_to_remove {
                     let geo_hash_to_remove: GeoHash =
-                        encode_max_precision(removed_geo_point.lon, removed_geo_point.lat)
+                        encode_max_precision(removed_geo_point.lon.0, removed_geo_point.lat.0)
                             .map_err(|e| {
                                 OperationError::service_error(format!("Malformed geo points: {e}"))
                             })?;
@@ -506,7 +506,7 @@ impl InMemoryGeoMapIndex {
 
         for removed_geo_point in removed_geo_points {
             let removed_geo_hash: GeoHash =
-                encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).map_err(
+                encode_max_precision(removed_geo_point.lon.0, removed_geo_point.lat.0).map_err(
                     |e| OperationError::service_error(format!("Malformed geo points: {e}")),
                 )?;
             removed_geo_hashes.push(removed_geo_hash);
@@ -554,8 +554,10 @@ impl InMemoryGeoMapIndex {
             .write_back_counter();
 
         for added_point in values {
-            let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
-                .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
+            let added_geo_hash: GeoHash =
+                encode_max_precision(added_point.lon.0, added_point.lat.0).map_err(|e| {
+                    OperationError::service_error(format!("Malformed geo points: {e}"))
+                })?;
 
             hw_cell_wb.incr_delta(size_of_val(&added_geo_hash));
 

@@ -495,7 +495,7 @@ impl ScoringQuery {
                 ScoringQuery::Mmr(MmrInternal {
                     vector,
                     using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
-                    lambda: OrderedFloat::from(lambda),
+                    lambda: OrderedFloat(lambda),
                     candidates_limit: candidates_limit as usize,
                 })
             }

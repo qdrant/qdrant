@@ -6,6 +6,7 @@ use memmap2::Mmap;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{AdviceSetting, Madviseable};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use ordered_float::OrderedFloat;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -113,7 +114,11 @@ impl MmapValue for GeoPoint {
     fn read_from_mmap(bytes: &[u8]) -> Option<Self> {
         let (lon, bytes) = f64::read_from_prefix(bytes).ok()?;
         let (lat, _) = f64::read_from_prefix(bytes).ok()?;
-        Some(Self { lon, lat })
+
+        Some(Self {
+            lon: OrderedFloat(lon),
+            lat: OrderedFloat(lat),
+        })
     }
 
     fn write_to_mmap(value: Self, bytes: &mut [u8]) -> Option<()> {
@@ -471,34 +476,34 @@ mod tests {
     fn test_mmap_point_to_values_geo() {
         let values: Vec<Vec<GeoPoint>> = vec![
             vec![
-                GeoPoint { lon: 6.0, lat: 2.0 },
-                GeoPoint { lon: 4.0, lat: 3.0 },
-                GeoPoint { lon: 2.0, lat: 5.0 },
-                GeoPoint { lon: 8.0, lat: 7.0 },
-                GeoPoint { lon: 1.0, lat: 9.0 },
+                GeoPoint::new_unchecked(6.0, 2.0),
+                GeoPoint::new_unchecked(4.0, 3.0),
+                GeoPoint::new_unchecked(2.0, 5.0),
+                GeoPoint::new_unchecked(8.0, 7.0),
+                GeoPoint::new_unchecked(1.0, 9.0),
             ],
             vec![
-                GeoPoint { lon: 8.0, lat: 1.0 },
-                GeoPoint { lon: 3.0, lat: 3.0 },
-                GeoPoint { lon: 5.0, lat: 9.0 },
-                GeoPoint { lon: 1.0, lat: 8.0 },
-                GeoPoint { lon: 7.0, lat: 2.0 },
+                GeoPoint::new_unchecked(8.0, 1.0),
+                GeoPoint::new_unchecked(3.0, 3.0),
+                GeoPoint::new_unchecked(5.0, 9.0),
+                GeoPoint::new_unchecked(1.0, 8.0),
+                GeoPoint::new_unchecked(7.0, 2.0),
             ],
             vec![
-                GeoPoint { lon: 6.0, lat: 3.0 },
-                GeoPoint { lon: 4.0, lat: 4.0 },
-                GeoPoint { lon: 3.0, lat: 7.0 },
-                GeoPoint { lon: 1.0, lat: 2.0 },
-                GeoPoint { lon: 4.0, lat: 8.0 },
+                GeoPoint::new_unchecked(6.0, 3.0),
+                GeoPoint::new_unchecked(4.0, 4.0),
+                GeoPoint::new_unchecked(3.0, 7.0),
+                GeoPoint::new_unchecked(1.0, 2.0),
+                GeoPoint::new_unchecked(4.0, 8.0),
             ],
             vec![
-                GeoPoint { lon: 1.0, lat: 3.0 },
-                GeoPoint { lon: 3.0, lat: 9.0 },
-                GeoPoint { lon: 7.0, lat: 0.0 },
+                GeoPoint::new_unchecked(1.0, 3.0),
+                GeoPoint::new_unchecked(3.0, 9.0),
+                GeoPoint::new_unchecked(7.0, 0.0),
             ],
             vec![],
-            vec![GeoPoint { lon: 8.0, lat: 5.0 }],
-            vec![GeoPoint { lon: 9.0, lat: 4.0 }],
+            vec![GeoPoint::new_unchecked(8.0, 5.0)],
+            vec![GeoPoint::new_unchecked(9.0, 4.0)],
         ];
 
         let dir = Builder::new()

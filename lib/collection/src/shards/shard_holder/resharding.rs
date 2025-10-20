@@ -298,7 +298,7 @@ impl ShardHolder {
                 // Remove any points that might have been transferred from target shard
                 // Replica may be dead, so we force the delete operation
                 let filter = self.hash_ring_filter(id).expect("hash ring filter");
-                let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
+                let filter = Filter::new_must_not(Condition::new_custom(Arc::new(filter)));
                 shard
                     .delete_local_points(filter, HwMeasurementAcc::disposable(), true) // Internal operation, no performance tracking needed
                     .await?;

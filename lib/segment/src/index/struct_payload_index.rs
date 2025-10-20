@@ -564,9 +564,9 @@ impl StructPayloadIndex {
                 .estimate_field_condition(field_condition, nested_path, hw_counter)
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
 
-            Condition::CustomIdChecker(cond) => {
-                cond.estimate_cardinality(self.id_tracker.borrow().available_point_count())
-            }
+            Condition::CustomIdChecker(cond) => cond
+                .0
+                .estimate_cardinality(self.id_tracker.borrow().available_point_count()),
         }
     }
 

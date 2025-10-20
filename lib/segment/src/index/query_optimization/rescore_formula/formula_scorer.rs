@@ -462,12 +462,12 @@ mod tests {
     #[case(ParsedExpression::new_neg(ParsedExpression::Constant(PreciseScoreOrdered::from(10.0))), -10.0)]
     // Error cases
     #[case(ParsedExpression::new_geo_distance(
-        GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(GEO_FIELD_NAME)
+        GeoPoint::new_unchecked(-100.43383200156751, 25.717877679163667), JsonPath::new(GEO_FIELD_NAME)
     ), 21926.494151786308)]
     #[should_panic(
         expected = r#"VariableTypeError { field_name: JsonPath { first_key: "number", rest: [] }, expected_type: "geo point", "#
     )]
-    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(FIELD_NAME)), 0.0)]
+    #[case(ParsedExpression::new_geo_distance(GeoPoint::new_unchecked(-100.43383200156751, 25.717877679163667), JsonPath::new(FIELD_NAME)), 0.0)]
     #[should_panic(expected = r#"NonFiniteNumber { expression: "-1^0.4 = NaN" }"#)]
     #[case(ParsedExpression::new_pow(ParsedExpression::Constant(PreciseScoreOrdered::from(-1.0)), ParsedExpression::Constant(PreciseScoreOrdered::from(0.4))), 0.0)]
     #[should_panic(expected = r#"NonFiniteNumber { expression: "√-3 = NaN" }"#)]
@@ -530,7 +530,7 @@ mod tests {
         })
     )]
     // geo distance with default value
-    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), Ok(90951.29600298218))]
+    #[case(ParsedExpression::new_geo_distance(GeoPoint::new_unchecked(-100.43383200156751, 25.717877679163667), JsonPath::new(NO_VALUE_GEO_POINT)), Ok(90951.29600298218))]
     // datetime expression constant
     #[case(
         ParsedExpression::Datetime(DatetimeExpression::Constant("2025-03-18".parse().unwrap())),

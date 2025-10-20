@@ -4,6 +4,7 @@ use std::sync::Arc;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
+use ordered_float::OrderedFloat;
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, FieldCondition, Filter, GeoPoint, GeoRadius, PayloadFieldSchema, PayloadSchemaType,
@@ -60,7 +61,7 @@ async fn test_payload_missing_index_check() {
         JsonPath::from_str("location").unwrap(),
         GeoRadius {
             center: GeoPoint::new(12.0, 34.0).ok().unwrap(),
-            radius: 50.0,
+            radius: OrderedFloat(50.0),
         },
     )));
 

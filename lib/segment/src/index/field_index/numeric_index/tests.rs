@@ -148,14 +148,21 @@ fn cardinality_request(
 ) -> CardinalityEstimation {
     let hw_counter = hw_acc.get_counter_cell();
 
+    let ordered_range = Range {
+        lt: query.lt.map(OrderedFloat::from),
+        gt: query.gt.map(OrderedFloat::from),
+        gte: query.gte.map(OrderedFloat::from),
+        lte: query.lte.map(OrderedFloat::from),
+    };
+
     let estimation = index
         .inner()
-        .range_cardinality(&RangeInterface::Float(query.clone()));
+        .range_cardinality(&RangeInterface::Float(ordered_range.clone()));
 
     let result = index
         .inner()
         .filter(
-            &FieldCondition::new_range(JsonPath::new("unused"), query),
+            &FieldCondition::new_range(JsonPath::new("unused"), ordered_range),
             &hw_counter,
         )
         .unwrap()
@@ -585,7 +592,14 @@ fn test_cond<
 ) where
     Vec<T>: Blob,
 {
-    let condition = FieldCondition::new_range(JsonPath::new("unused"), rng);
+    let ordered_range = Range {
+        lt: rng.lt.map(OrderedFloat::from),
+        gt: rng.gt.map(OrderedFloat::from),
+        gte: rng.gte.map(OrderedFloat::from),
+        lte: rng.lte.map(OrderedFloat::from),
+    };
+
+    let condition = FieldCondition::new_range(JsonPath::new("unused"), ordered_range);
     let hw_acc = HwMeasurementAcc::new();
     let hw_counter = hw_acc.get_counter_cell();
     let offsets = index.filter(&condition, &hw_counter).unwrap().collect_vec();

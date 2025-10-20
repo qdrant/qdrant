@@ -2,6 +2,7 @@
 
 use std::str::FromStr;
 
+use ordered_float::OrderedFloat;
 use serde_json::Value;
 
 use crate::types::{
@@ -220,12 +221,12 @@ impl ValueChecker for Match {
     }
 }
 
-impl ValueChecker for Range<FloatPayloadType> {
+impl ValueChecker for Range<OrderedFloat<FloatPayloadType>> {
     fn check_match(&self, payload: &Value) -> bool {
         match payload {
             Value::Number(num) => num
                 .as_f64()
-                .map(|number| self.check_range(number))
+                .map(|number| self.check_range(OrderedFloat(number)))
                 .unwrap_or(false),
             _ => false,
         }
@@ -249,7 +250,7 @@ impl ValueChecker for GeoBoundingBox {
                 let lat_op = obj.get("lat").and_then(|x| x.as_f64());
 
                 if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    return self.check_point(&GeoPoint { lon, lat });
+                    return self.check_point(&GeoPoint::new_unchecked(lon, lat));
                 }
                 false
             }
@@ -266,7 +267,7 @@ impl ValueChecker for GeoRadius {
                 let lat_op = obj.get("lat").and_then(|x| x.as_f64());
 
                 if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    return self.check_point(&GeoPoint { lon, lat });
+                    return self.check_point(&GeoPoint::new_unchecked(lon, lat));
                 }
                 false
             }
@@ -283,7 +284,9 @@ impl ValueChecker for GeoPolygon {
                 let lat_op = obj.get("lat").and_then(|x| x.as_f64());
 
                 if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    return self.convert().check_point(&GeoPoint { lon, lat });
+                    return self
+                        .convert()
+                        .check_point(&GeoPoint::new_unchecked(lon, lat));
                 }
                 false
             }
@@ -328,18 +331,12 @@ mod tests {
         ]);
 
         let near_berlin_query = GeoRadius {
-            center: GeoPoint {
-                lat: 52.511,
-                lon: 13.423637,
-            },
-            radius: 2000.0,
+            center: GeoPoint::new_unchecked(13.413637, 52.521976),
+            radius: OrderedFloat(2000.0),
         };
         let miss_geo_query = GeoRadius {
-            center: GeoPoint {
-                lat: 52.511,
-                lon: 20.423637,
-            },
-            radius: 2000.0,
+            center: GeoPoint::new_unchecked(20.423637, 52.511),
+            radius: OrderedFloat(2000.0),
         };
 
         assert!(near_berlin_query.check(&berlin_and_moscow));
