@@ -890,11 +890,11 @@ pub struct FeedbackItem {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FeedbackStrategy {
-    Simple(SimpleFeedbackStrategy),
+    Naive(NaiveFeedbackStrategy),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
-pub struct SimpleFeedbackStrategy {
+pub struct NaiveFeedbackStrategy {
     pub a: f32,
     #[validate(range(min = 0.0))]
     pub b: f32,

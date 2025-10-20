@@ -824,11 +824,12 @@ message FeedbackItem {
 
 message FeedbackStrategy {
   oneof variant {
-    SimpleFeedbackStrategy naive = 1;
+    // a * score + sim(confidence^b * c * delta)
+    NaiveFeedbackStrategy naive = 1;
   }
 }
 
-message SimpleFeedbackStrategy {
+message NaiveFeedbackStrategy {
   float a = 1;
   float b = 2;
   float c = 3;

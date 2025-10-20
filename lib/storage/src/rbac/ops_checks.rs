@@ -10,8 +10,7 @@ use collection::operations::types::{
     RecommendRequestInternal,
 };
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryRequest, FeedbackInternal, NearestWithMmr, Query,
-    VectorInputInternal, VectorQuery,
+    CollectionPrefetch, CollectionQueryRequest,
 };
 use segment::data_types::facets::FacetParams;
 use shard::scroll::ScrollRequestInternal;

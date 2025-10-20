@@ -191,18 +191,6 @@ message ContextQuery {
   repeated ContextPair context = 1;
 }
 
-message FeedbackStrategy {
-  oneof variant {
-    NaiveFeedbackStrategy naive = 1;
-  }
-}
-
-message NaiveFeedbackStrategy {
-  float a = 1;
-  float b = 2;
-  float c = 3;
-}
-
 message QueryEnum {
   oneof query {
     // ANN

@@ -426,8 +426,8 @@ impl Validate for super::qdrant::expression::Variant {
 impl Validate for grpc::feedback_strategy::Variant {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
-            grpc::feedback_strategy::Variant::Simple(simple_feedback_strategy) => {
-                simple_feedback_strategy.validate()
+            grpc::feedback_strategy::Variant::Naive(naive_feedback_strategy) => {
+                naive_feedback_strategy.validate()
             }
         }
     }

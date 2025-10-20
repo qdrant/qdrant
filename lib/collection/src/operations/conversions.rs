@@ -1904,8 +1904,8 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
 impl From<rest::FeedbackStrategy> for FeedbackStrategy {
     fn from(strategy: rest::FeedbackStrategy) -> Self {
         match strategy {
-            rest::FeedbackStrategy::Simple(rest::SimpleFeedbackStrategy { a, b, c }) => {
-                FeedbackStrategy::Simple { a, b, c }
+            rest::FeedbackStrategy::Naive(rest::NaiveFeedbackStrategy { a, b, c }) => {
+                FeedbackStrategy::Naive { a, b, c }
             }
         }
     }
@@ -1922,8 +1922,8 @@ impl TryFrom<grpc::FeedbackStrategy> for FeedbackStrategy {
             .ok_or_else(|| Status::invalid_argument("Missing variant"))?;
 
         let strategy = match variant {
-            Variant::Simple(grpc::SimpleFeedbackStrategy { a, b, c }) => {
-                FeedbackStrategy::Simple { a, b, c }
+            Variant::Naive(grpc::NaiveFeedbackStrategy { a, b, c }) => {
+                FeedbackStrategy::Naive { a, b, c }
             }
         };
 

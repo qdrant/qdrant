@@ -97,7 +97,7 @@ impl Validate for ContextInput {
 impl Validate for FeedbackStrategy {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
-            FeedbackStrategy::Simple(simple_feedback_strategy) => {
+            FeedbackStrategy::Naive(simple_feedback_strategy) => {
                 simple_feedback_strategy.validate()
             }
         }
