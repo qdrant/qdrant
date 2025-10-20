@@ -136,6 +136,16 @@ enum PayloadSchemaType {
 enum QuantizationType {
   UnknownQuantization = 0;
   Int8 = 1;
+  N1 = 2;
+  N2 = 3;
+  N3 = 4;
+  N4 = 5;
+  N5 = 6;
+  N6 = 7;
+  N7 = 8;
+  N8 = 9;
+  N9 = 10;
+  N10 = 11;
 }
 
 enum CompressionRatio {
@@ -305,6 +315,9 @@ message ScalarQuantization {
   QuantizationType type = 1; // Type of quantization
   optional float quantile = 2; // Number of bits to use for quantization
   optional bool always_ram = 3; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+  optional uint32 rotations = 4;
+  optional float sigmas = 5;
+  optional float pow = 6;
 }
 
 message ProductQuantization {

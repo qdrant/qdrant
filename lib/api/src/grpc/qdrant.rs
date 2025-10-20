@@ -536,6 +536,12 @@ pub struct ScalarQuantization {
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[prost(bool, optional, tag = "3")]
     pub always_ram: ::core::option::Option<bool>,
+    #[prost(uint32, optional, tag = "4")]
+    pub rotations: ::core::option::Option<u32>,
+    #[prost(float, optional, tag = "5")]
+    pub sigmas: ::core::option::Option<f32>,
+    #[prost(float, optional, tag = "6")]
+    pub pow: ::core::option::Option<f32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1871,6 +1877,16 @@ impl PayloadSchemaType {
 pub enum QuantizationType {
     UnknownQuantization = 0,
     Int8 = 1,
+    N1 = 2,
+    N2 = 3,
+    N3 = 4,
+    N4 = 5,
+    N5 = 6,
+    N6 = 7,
+    N7 = 8,
+    N8 = 9,
+    N9 = 10,
+    N10 = 11,
 }
 impl QuantizationType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1881,6 +1897,16 @@ impl QuantizationType {
         match self {
             QuantizationType::UnknownQuantization => "UnknownQuantization",
             QuantizationType::Int8 => "Int8",
+            QuantizationType::N1 => "N1",
+            QuantizationType::N2 => "N2",
+            QuantizationType::N3 => "N3",
+            QuantizationType::N4 => "N4",
+            QuantizationType::N5 => "N5",
+            QuantizationType::N6 => "N6",
+            QuantizationType::N7 => "N7",
+            QuantizationType::N8 => "N8",
+            QuantizationType::N9 => "N9",
+            QuantizationType::N10 => "N10",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1888,6 +1914,16 @@ impl QuantizationType {
         match value {
             "UnknownQuantization" => Some(Self::UnknownQuantization),
             "Int8" => Some(Self::Int8),
+            "N1" => Some(Self::N1),
+            "N2" => Some(Self::N2),
+            "N3" => Some(Self::N3),
+            "N4" => Some(Self::N4),
+            "N5" => Some(Self::N5),
+            "N6" => Some(Self::N6),
+            "N7" => Some(Self::N7),
+            "N8" => Some(Self::N8),
+            "N9" => Some(Self::N9),
+            "N10" => Some(Self::N10),
             _ => None,
         }
     }

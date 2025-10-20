@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::panic;
 use common::typelevel::True;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -112,7 +111,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
             .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
 
         if let Some(meta_path) = meta_path {
-            let bin_path = meta_path.with_extension("orig");
+            let bin_path = meta_path.with_extension("qbin");
             let file = std::fs::File::create(bin_path).map_err(|e| {
                 EncodingError::EncodingError(format!("Failed to create original data file: {e}",))
             })?;
@@ -223,30 +222,31 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
                 intbuf[i] = value as i32;
             }
             let bitpack_size_bytes = metadata.bits_count * ALIGNMENT / u8::BITS as usize;
-            //println!("Bitpack size bytes: {}, index: {}, chunk_index * bitpack_size_bytes: {}, next_chunk_index * bitpack_size_bytes: {}", bitpack_size_bytes, chunk_index, chunk_index * bitpack_size_bytes, (chunk_index + 1) * bitpack_size_bytes);
             let bitpack = &mut result
                 [chunk_index * bitpack_size_bytes..(chunk_index + 1) * bitpack_size_bytes];
 
-            // store sign bit
-            for (i, v) in intbuf.iter().enumerate() {
-                if *v < 0 {
-                    bitpack[i / 8] |= 1 << (i % 8);
-                }
-            }
-
             for bit_index in 0..metadata.bits_count - 1 {
-                let bitpack = &mut bitpack[(bit_index + 1) * ALIGNMENT / u8::BITS as usize
-                    ..(bit_index + 2) * ALIGNMENT / u8::BITS as usize];
+                let bitpack = &mut bitpack[bit_index * ALIGNMENT / u8::BITS as usize
+                    ..(bit_index + 1) * ALIGNMENT / u8::BITS as usize];
                 for (i, v) in intbuf.iter().enumerate() {
-                    let bit = ((*v).abs() >> bit_index) & 1;
+                    let bit = ((*v).abs() >> (metadata.bits_count - 2 - bit_index)) & 1;
                     if bit != 0 {
                         bitpack[i / 8] |= 1 << (i % 8);
                     }
                 }
             }
+
+            // store sign bit
+            let bitpack = &mut bitpack[(metadata.bits_count - 1) * ALIGNMENT / u8::BITS as usize..];
+            for (i, v) in intbuf.iter().enumerate() {
+                if *v >= 0 {
+                    bitpack[i / 8] |= 1 << (i % 8);
+                }
+            }
         }
     }
 
+    #[allow(dead_code)]
     fn score_bytes_impl(
         &self,
         query: &EncodedQueryFlex,
@@ -265,8 +265,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
         );
         let bytes = &bytes[std::mem::size_of::<f32>()..];
 
-        // let decoded_vector_check = self.queries[vector_index].transformed_internal.as_slice();
-
         let mut score = 0.0f32;
         for (chunk_index, chunk) in query.transformed.chunks_exact(ALIGNMENT).enumerate() {
             let bitpack_size_bytes = self.metadata.bits_count * ALIGNMENT / u8::BITS as usize;
@@ -276,12 +274,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
             let mut intbuf = [0i32; ALIGNMENT];
             if self.metadata.bits_count > 1 {
                 for bit_index in 0..self.metadata.bits_count - 1 {
-                    let bitpack = &bitpack[(bit_index + 1) * ALIGNMENT / u8::BITS as usize
-                        ..(bit_index + 2) * ALIGNMENT / u8::BITS as usize];
+                    let bitpack = &bitpack[bit_index * ALIGNMENT / u8::BITS as usize
+                        ..(bit_index + 1) * ALIGNMENT / u8::BITS as usize];
                     for i in 0..ALIGNMENT {
                         let bit = (bitpack[i / 8] >> (i % 8)) & 1;
                         if bit != 0 {
-                            intbuf[i] |= 1 << bit_index;
+                            intbuf[i] |= 1 << (self.metadata.bits_count - 2 - bit_index);
                         }
                     }
                 }
@@ -292,9 +290,11 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
             }
 
             // read sign bit
+            let bitpack =
+                &bitpack[(self.metadata.bits_count - 1) * ALIGNMENT / u8::BITS as usize..];
             for i in 0..ALIGNMENT {
                 let sign_bit = (bitpack[i / 8] >> (i % 8)) & 1;
-                if sign_bit != 0 {
+                if sign_bit == 0 {
                     intbuf[i] = -intbuf[i];
                 }
             }
@@ -316,7 +316,14 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
         score
     }
 
-    unsafe fn score_bytes_avx2(
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
+    #[target_feature(enable = "avx")]
+    #[target_feature(enable = "sse4.1")]
+    #[target_feature(enable = "sse3")]
+    #[target_feature(enable = "sse2")]
+    #[target_feature(enable = "sse")]
+    fn score_bytes_avx2_16(
         &self,
         query: &EncodedQueryFlex,
         bytes: &[u8],
@@ -324,8 +331,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
         use std::arch::x86_64::*;
-
-        let score = self.score_bytes_impl(query, bytes, _vector_index, hw_counter);
 
         hw_counter
             .cpu_counter()
@@ -340,14 +345,23 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
         let mut bytes_ptr: *const u16 = bytes.as_ptr() as *const u16;
 
         let multiplier = get_multiplier(self.metadata.bits_count);
-        let multiplier = unsafe { _mm256_set1_ps(1.0 / multiplier) };
+        let multiplier = _mm256_set1_ps(1.0 / multiplier);
 
-        let mask = unsafe { _mm256_set_epi32(1, 2, 4, 8, 16, 32, 64, 128) };
-        let mask_ones = unsafe { _mm256_set1_epi32(1) };
-        let mask_zeros = unsafe { _mm256_set1_epi32(0) };
+        let mask = _mm256_set_epi32(
+            1 << 7,
+            1 << 6,
+            1 << 5,
+            1 << 4,
+            1 << 3,
+            1 << 2,
+            1 << 1,
+            1 << 0,
+        );
+        let mask_ones = _mm256_set1_epi32(1);
+        let mask_zeros = _mm256_set1_epi32(0);
 
-        let mut sum1 = unsafe { _mm256_setzero_ps() };
-        let mut sum2 = unsafe { _mm256_setzero_ps() };
+        let mut sum1 = _mm256_setzero_ps();
+        let mut sum2 = _mm256_setzero_ps();
 
         let count = query.transformed.len() / ALIGNMENT;
         let mut chunk_ptr = query.transformed.as_ptr();
@@ -356,124 +370,55 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
             let chunk2 = unsafe { _mm256_loadu_ps(chunk_ptr.add(8)) };
             chunk_ptr = unsafe { chunk_ptr.add(16) };
 
-            let mut ints1: __m256i = unsafe { _mm256_setzero_si256() };
-            let mut ints2: __m256i = unsafe { _mm256_setzero_si256() };
-            for bit_index in 0..self.metadata.bits_count {
+            let mut ints1: __m256i = _mm256_setzero_si256();
+            let mut ints2: __m256i = _mm256_setzero_si256();
+            let mut bits1: __m256i = _mm256_setzero_si256();
+            let mut bits2: __m256i = _mm256_setzero_si256();
+            for _bit_index in 0..self.metadata.bits_count {
                 let bits: u16 = unsafe { *bytes_ptr };
                 bytes_ptr = unsafe { bytes_ptr.add(1) };
 
-                println!(
-                    "AVX2 bitpack bits for bit index {}: {:016b}",
-                    bit_index, bits
-                );
+                bits1 = _mm256_and_si256(_mm256_set1_epi32((bits & 0x00FF) as i32), mask);
+                bits2 = _mm256_and_si256(_mm256_set1_epi32((bits >> 8) as i32), mask);
 
-                let bits1: __m256i =
-                    unsafe { _mm256_and_si256(_mm256_set1_epi32((bits & 0x00FFu16) as i32), mask) };
-                let bits2: __m256i =
-                    unsafe { _mm256_and_si256(_mm256_set1_epi32((bits >> 8) as i32), mask) };
+                bits1 = _mm256_and_si256(_mm256_cmpgt_epi32(bits1, mask_zeros), mask_ones);
+                bits2 = _mm256_and_si256(_mm256_cmpgt_epi32(bits2, mask_zeros), mask_ones);
 
-                let bits1 =
-                    unsafe { _mm256_and_si256(_mm256_cmpgt_epi32(bits1, mask_zeros), mask_ones) };
-                let bits2 =
-                    unsafe { _mm256_and_si256(_mm256_cmpgt_epi32(bits2, mask_zeros), mask_ones) };
-
-                if bit_index > 0 {
-                    ints1 = unsafe { _mm256_or_si256(_mm256_slli_epi32(ints1, 1), bits1) };
-                    ints2 = unsafe { _mm256_or_si256(_mm256_slli_epi32(ints2, 1), bits2) };
-                } else {
-                    // it's a first sign bit
-                    ints1 = unsafe { _mm256_slli_epi32(bits1, 31) };
-                    ints2 = unsafe { _mm256_slli_epi32(bits2, 31) };
-                }
+                ints1 = _mm256_or_si256(_mm256_slli_epi32(ints1, 1), bits1);
+                ints2 = _mm256_or_si256(_mm256_slli_epi32(ints2, 1), bits2);
             }
+            ints1 = _mm256_srli_epi32(ints1, 1);
+            ints2 = _mm256_srli_epi32(ints2, 1);
 
-            let mut floats1 = unsafe { _mm256_mul_ps(_mm256_cvtepi32_ps(ints1), multiplier) };
-            let mut floats2 = unsafe { _mm256_mul_ps(_mm256_cvtepi32_ps(ints2), multiplier) };
+            let signs1 =
+                _mm256_cvtepi32_ps(_mm256_sub_epi32(_mm256_slli_epi32(bits1, 1), mask_ones));
+            let signs2 =
+                _mm256_cvtepi32_ps(_mm256_sub_epi32(_mm256_slli_epi32(bits2, 1), mask_ones));
 
-            let f1 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 0), 0) };
-            let f2 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 0), 1) };
-            let f3 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 0), 2) };
-            let f4 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 0), 3) };
-            let f5 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 1), 0) };
-            let f6 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 1), 1) };
-            let f7 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 1), 2) };
-            let f8 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints1, 1), 3) };
-
-            println!("AVX2 chunk 1 values:");
-            println!("{} {} {} {}", f1, f2, f3, f4);
-            println!("{} {} {} {}", f5, f6, f7, f8);
-
-            let f9 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 0), 0) };
-            let f10 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 0), 1) };
-            let f11 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 0), 2) };
-            let f12 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 0), 3) };
-            let f13 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 1), 0) };
-            let f14 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 1), 1) };
-            let f15 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 1), 2) };
-            let f16 = unsafe { _mm_extract_epi32(_mm256_extractf128_si256(ints2, 1), 3) };
-
-            println!("AVX2 chunk 2 values:");
-            println!("{} {} {} {}", f9, f10, f11, f12);
-            println!("{} {} {} {}", f13, f14, f15, f16);
-
-            let s = self.queries[_vector_index].transformed_internal.as_slice();
-            println!("AVX2 chunk scores:");
-            let chunk_index = 0;
-            println!(
-                "{} {} {} {}",
-                s[chunk_index * ALIGNMENT + 0],
-                s[chunk_index * ALIGNMENT + 1],
-                s[chunk_index * ALIGNMENT + 2],
-                s[chunk_index * ALIGNMENT + 3]
-            );
-            println!(
-                "{} {} {} {}",
-                s[chunk_index * ALIGNMENT + 4],
-                s[chunk_index * ALIGNMENT + 5],
-                s[chunk_index * ALIGNMENT + 6],
-                s[chunk_index * ALIGNMENT + 7]
-            );
-            println!(
-                "{} {} {} {}",
-                s[chunk_index * ALIGNMENT + 8],
-                s[chunk_index * ALIGNMENT + 9],
-                s[chunk_index * ALIGNMENT + 10],
-                s[chunk_index * ALIGNMENT + 11]
-            );
-            println!(
-                "{} {} {} {}",
-                s[chunk_index * ALIGNMENT + 12],
-                s[chunk_index * ALIGNMENT + 13],
-                s[chunk_index * ALIGNMENT + 14],
-                s[chunk_index * ALIGNMENT + 15]
-            );
-
-            panic!("AVX2 chunk scores:");
+            let mut floats1 = _mm256_mul_ps(_mm256_cvtepi32_ps(ints1), multiplier);
+            let mut floats2 = _mm256_mul_ps(_mm256_cvtepi32_ps(ints2), multiplier);
 
             if DO_SQRT {
-                floats1 = unsafe { _mm256_mul_ps(floats1, floats1) };
-                floats2 = unsafe { _mm256_mul_ps(floats2, floats2) };
+                floats1 = _mm256_mul_ps(floats1, floats1);
+                floats2 = _mm256_mul_ps(floats2, floats2);
             }
 
-            sum1 = unsafe { _mm256_fmadd_ps(chunk1, floats1, sum1) };
-            sum2 = unsafe { _mm256_fmadd_ps(chunk2, floats2, sum2) };
-
-            println!("AVX2 chunk score: {}", unsafe {
-                Self::hsum256_ps_avx(sum1) + Self::hsum256_ps_avx(sum2)
-            });
+            sum1 = unsafe { _mm256_fmadd_ps(chunk1, _mm256_mul_ps(floats1, signs1), sum1) };
+            sum2 = unsafe { _mm256_fmadd_ps(chunk2, _mm256_mul_ps(floats2, signs2), sum2) };
         }
-        let sum = unsafe { Self::hsum256_ps_avx(sum1) + Self::hsum256_ps_avx(sum2) };
-        let score = sum + query.offset + offset + self.metadata.transform.mean_sqr_sum;
-
-        println!("AVX2 score: {}", score);
-        panic!("AVX2 score: {}", score);
-
-        score
+        let sum = Self::hsum256_ps_avx(sum1) + Self::hsum256_ps_avx(sum2);
+        sum + query.offset + offset + self.metadata.transform.mean_sqr_sum
     }
 
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
     #[target_feature(enable = "avx")]
+    #[target_feature(enable = "sse4.1")]
+    #[target_feature(enable = "sse3")]
+    #[target_feature(enable = "sse2")]
+    #[target_feature(enable = "sse")]
     #[allow(clippy::missing_safety_doc)]
-    pub unsafe fn hsum256_ps_avx(x: std::arch::x86_64::__m256) -> f32 {
+    pub fn hsum256_ps_avx(x: std::arch::x86_64::__m256) -> f32 {
         use std::arch::x86_64::*;
 
         let lr_sum: __m128 = _mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x));
@@ -588,6 +533,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsFlex<TStorage> {
         let mut files = self.encoded_vectors.files();
         if let Some(meta_path) = &self.metadata_path {
             files.push(meta_path.clone());
+            files.push(meta_path.with_extension("qbin"));
         }
         files
     }
@@ -608,7 +554,14 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsFlex<TStorage> {
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        unsafe { Self::score_bytes_impl(self, query, bytes, 0, hw_counter) }
+        #[cfg(target_arch = "x86_64")]
+        {
+            unsafe { self.score_bytes_avx2_16(query, bytes, 0, hw_counter) }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            self.score_bytes_impl(query, bytes, 0, hw_counter)
+        }
     }
 }
 
@@ -798,7 +751,8 @@ impl Rotation {
         let dump = std::env::var("DUMP_IMAGES").unwrap_or_default();
         if dump == "1" {
             if let Some(debug_path) = debug_path {
-                std::fs::create_dir_all(debug_path).ok();
+                let debug_path = debug_path.parent().unwrap();
+                std::fs::create_dir_all(&debug_path).ok();
                 let debug_path = debug_path.join(format!("orig_histograms"));
                 std::fs::create_dir_all(&debug_path).ok();
                 for dim in 0..vector_params.dim {
@@ -829,6 +783,7 @@ impl Rotation {
                 data.clone(),
                 vector_params,
                 debug_path.as_ref().map(|p| p.as_ref()),
+                step,
             );
             simple_rotations.push(rotation);
         }
@@ -848,17 +803,23 @@ impl SimpleRotation {
         data: impl Iterator<Item = impl AsRef<[f32]>> + Clone,
         vector_params: &VectorParameters,
         debug_path: Option<&Path>,
+        index: usize,
     ) -> Self {
-        if let Some(debug_path) = debug_path {
-            std::fs::create_dir_all(debug_path).ok();
-            for dim in 0..vector_params.dim {
-                let numbers = data.clone().map(|v| v.as_ref()[dim]).collect::<Vec<f32>>();
-                plot_histogram(
-                    &numbers,
-                    &debug_path.join(format!("histogram_{dim}.png")),
-                    None,
-                )
-                .unwrap();
+        let dump = std::env::var("DUMP_IMAGES").unwrap_or_default();
+        if dump == "1" {
+            if let Some(debug_path) = debug_path {
+                let debug_path = debug_path.parent().unwrap();
+                let debug_path = debug_path.join(format!("before_rotation_{index}"));
+                std::fs::create_dir_all(&debug_path).ok();
+                for dim in 0..vector_params.dim {
+                    let numbers = data.clone().map(|v| v.as_ref()[dim]).collect::<Vec<f32>>();
+                    plot_histogram(
+                        &numbers,
+                        &debug_path.join(format!("histogram_{dim}.png")),
+                        None,
+                    )
+                    .unwrap();
+                }
             }
         }
 

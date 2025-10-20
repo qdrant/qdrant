@@ -695,32 +695,32 @@ pub enum ScalarType {
     #[default]
     Int8,
 
-    U1,
-    U2,
-    U3,
-    U4,
-    U5,
-    U6,
-    U7,
-    U8,
-    U9,
-    U10,
+    N1,
+    N2,
+    N3,
+    N4,
+    N5,
+    N6,
+    N7,
+    N8,
+    N9,
+    N10,
 }
 
 impl ScalarType {
     pub fn bits_per_dimension(&self) -> Option<usize> {
         match self {
             ScalarType::Int8 => None,
-            ScalarType::U1 => Some(1),
-            ScalarType::U2 => Some(2),
-            ScalarType::U3 => Some(3),
-            ScalarType::U4 => Some(4),
-            ScalarType::U5 => Some(5),
-            ScalarType::U6 => Some(6),
-            ScalarType::U7 => Some(7),
-            ScalarType::U8 => Some(8),
-            ScalarType::U9 => Some(9),
-            ScalarType::U10 => Some(10),
+            ScalarType::N1 => Some(1),
+            ScalarType::N2 => Some(2),
+            ScalarType::N3 => Some(3),
+            ScalarType::N4 => Some(4),
+            ScalarType::N5 => Some(5),
+            ScalarType::N6 => Some(6),
+            ScalarType::N7 => Some(7),
+            ScalarType::N8 => Some(8),
+            ScalarType::N9 => Some(9),
+            ScalarType::N10 => Some(10),
         }
     }
 }
@@ -741,6 +741,8 @@ pub struct ScalarQuantizationConfig {
     /// Standard deviation multiplier for quantization. If not set - use 3.0 as default
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sigmas: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pow: Option<f32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_ram: Option<bool>,

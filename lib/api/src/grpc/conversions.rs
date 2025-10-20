@@ -1059,9 +1059,22 @@ impl From<segment::types::ScalarQuantization> for ScalarQuantization {
         ScalarQuantization {
             r#type: match config.r#type {
                 segment::types::ScalarType::Int8 => QuantizationType::Int8 as i32,
+                segment::types::ScalarType::N1 => QuantizationType::N1 as i32,
+                segment::types::ScalarType::N2 => QuantizationType::N2 as i32,
+                segment::types::ScalarType::N3 => QuantizationType::N3 as i32,
+                segment::types::ScalarType::N4 => QuantizationType::N4 as i32,
+                segment::types::ScalarType::N5 => QuantizationType::N5 as i32,
+                segment::types::ScalarType::N6 => QuantizationType::N6 as i32,
+                segment::types::ScalarType::N7 => QuantizationType::N7 as i32,
+                segment::types::ScalarType::N8 => QuantizationType::N8 as i32,
+                segment::types::ScalarType::N9 => QuantizationType::N9 as i32,
+                segment::types::ScalarType::N10 => QuantizationType::N10 as i32,
             },
             quantile: config.quantile,
             always_ram: config.always_ram,
+            rotations: config.rotations.map(|x| x as u32),
+            sigmas: config.sigmas,
+            pow: config.pow,
         }
     }
 }
@@ -1074,17 +1087,33 @@ impl TryFrom<ScalarQuantization> for segment::types::ScalarQuantization {
             r#type,
             quantile,
             always_ram,
+            rotations,
+            sigmas,
+            pow,
         } = value;
         Ok(segment::types::ScalarQuantization {
             scalar: segment::types::ScalarQuantizationConfig {
                 r#type: match QuantizationType::try_from(r#type).ok() {
                     Some(QuantizationType::Int8) => segment::types::ScalarType::Int8,
+                    Some(QuantizationType::N1) => segment::types::ScalarType::N1,
+                    Some(QuantizationType::N2) => segment::types::ScalarType::N2,
+                    Some(QuantizationType::N3) => segment::types::ScalarType::N3,
+                    Some(QuantizationType::N4) => segment::types::ScalarType::N4,
+                    Some(QuantizationType::N5) => segment::types::ScalarType::N5,
+                    Some(QuantizationType::N6) => segment::types::ScalarType::N6,
+                    Some(QuantizationType::N7) => segment::types::ScalarType::N7,
+                    Some(QuantizationType::N8) => segment::types::ScalarType::N8,
+                    Some(QuantizationType::N9) => segment::types::ScalarType::N9,
+                    Some(QuantizationType::N10) => segment::types::ScalarType::N10,
                     Some(QuantizationType::UnknownQuantization) | None => {
                         return Err(Status::invalid_argument("Unknown quantization type"));
                     }
                 },
                 quantile,
                 always_ram,
+                rotations: rotations.map(|x| x as usize),
+                sigmas,
+                pow,
             },
         })
     }
