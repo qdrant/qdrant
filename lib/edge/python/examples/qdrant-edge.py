@@ -63,14 +63,16 @@ shard.update(UpdateOperation.upsert_points([
         "e9408f2b-b917-4af1-ab75-d97ac6b2c047",
         [6.0, 9.0, 3.0, -2.0],
         {
-            "hello": "world"
+            "hello": "world",
+            "price": 199.99,
         },
     ),
     Point(
         uuid.uuid4(),
         [1.0, 6.0, 4.0, 2.0],
         {
-            "hello": "world"
+            "hello": "world",
+            "price": 999.99,
         },
     ),
 ]))
@@ -95,6 +97,36 @@ print("---- Search ----")
 points = shard.search(SearchRequest(
     query=[1.0, 1.0, 1.0, 1.0],
     filter=None,
+    params=None,
+    limit=10,
+    offset=0,
+    with_vector=True,
+    with_payload=True,
+    score_threshold=None,
+))
+
+for point in points:
+    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
+
+
+print("---- Search Filter ----")
+
+search_filter = Filter(
+    must=[
+        FieldCondition(
+            key="hello",
+            match=MatchTextAny(text_any="world"),
+        ),
+        FieldCondition(
+            key="price",
+            range=RangeFloat(gte=500.0),
+        )
+    ]
+)
+
+points = shard.search(SearchRequest(
+    query=[1.0, 1.0, 1.0, 1.0],
+    filter=search_filter,
     params=None,
     limit=10,
     offset=0,
