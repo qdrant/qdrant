@@ -6472,6 +6472,7 @@ dependencies = [
  "bitvec",
  "common",
  "fs-err",
+ "indexmap 2.11.4",
  "io",
  "itertools 0.14.0",
  "log",
