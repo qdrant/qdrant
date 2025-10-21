@@ -78,14 +78,22 @@ impl RequestsCollector {
                 .map(|d| d.as_secs())
                 .unwrap_or_else(|_| 0);
 
-            let prev = LAST_SEND_WARN.load(Ordering::Relaxed);
+            // Atomically update if enough time has passed
+            let updated = LAST_SEND_WARN.fetch_update(
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+                |prev| {
+                    if now.saturating_sub(prev) >= WARN_INTERVAL_SECS {
+                        Some(now)
+                    } else {
+                        None
+                    }
+                }
+            );
 
-            if now.saturating_sub(prev) < WARN_INTERVAL_SECS {
+            if updated.is_err() {
                 return;
             }
-
-            LAST_SEND_WARN.store(now, Ordering::Relaxed);
-
             log::warn!("Failed to send message: {err}");
         })
     }
