@@ -273,6 +273,7 @@ where
     let segments_lock = segments.upgradable_read();
 
     // Proxy all segments
+    // Proxied segments are sorted by flush ordering
     log::trace!("Proxying all shard segments to apply function");
     let (mut proxies, tmp_segment_id, mut segments_lock) = SegmentHolder::proxy_all_segments(
         segments_lock,
@@ -289,6 +290,8 @@ where
     let mut result = Ok(());
     let mut unproxied_segment_ids = Vec::with_capacity(proxies.len());
 
+    // Proxied segments are sorted by flush ordering, important because the operation we apply
+    // might explicitly flush segments
     for (segment_id, proxy_segment) in &proxies {
         // Get segment to snapshot
         let op_result = match proxy_segment {

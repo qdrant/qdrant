@@ -20,7 +20,7 @@ use crate::data_types::query_context::{
     FormulaContext, QueryContext, QueryIdfStats, SegmentQueryContext,
 };
 use crate::data_types::vectors::{QueryVector, VectorInternal};
-use crate::entry::entry_point::SegmentEntry;
+use crate::entry::entry_point::{SegmentEntry, SegmentFlushOrdering};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{BuildIndexResult, PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
@@ -605,6 +605,14 @@ impl SegmentEntry for Segment {
 
     fn is_appendable(&self) -> bool {
         self.appendable_flag
+    }
+
+    fn flush_ordering(&self) -> SegmentFlushOrdering {
+        if self.is_appendable() {
+            SegmentFlushOrdering::Appendable
+        } else {
+            SegmentFlushOrdering::NonAppendable
+        }
     }
 
     fn flusher(&self, force: bool) -> Option<Flusher> {
