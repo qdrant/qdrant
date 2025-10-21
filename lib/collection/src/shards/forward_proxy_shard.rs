@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ahash::HashSet;
+use ahash::{HashSet, HashSetExt};
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
@@ -400,6 +400,35 @@ impl ShardOperation for ForwardProxyShard {
 
         let _update_lock = self.update_lock.lock().await;
 
+        let points_matching_filter_before = {
+            if let Some(filter) = &self.filter {
+                if let Some(point_ids) = operation.operation.point_ids() {
+                    let filter = filter.clone();
+
+                    self.wrapped_shard
+                        .scroll_by(
+                            None,
+                            usize::MAX, // Todo: read in batches?
+                            &WithPayloadInterface::Bool(false),
+                            &WithVector::Bool(false),
+                            Some(&filter.with_point_ids(point_ids)),
+                            &Handle::current(),
+                            None,
+                            None,                           // No timeout
+                            HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
+                        )
+                        .await?
+                        .into_iter()
+                        .map(|record| record.id)
+                        .collect::<HashSet<_>>()
+                } else {
+                    HashSet::new()
+                }
+            } else {
+                HashSet::new()
+            }
+        };
+
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
 
@@ -452,9 +481,10 @@ impl ShardOperation for ForwardProxyShard {
             // We have already written to local shard, so we can read points from there.
             // Let's read local points with id filter to see which of them satisfy it
             if let Some(point_ids) = operation.operation.point_ids() {
+                // Modify original operation to only contain operations for matching points or global operations
                 let filter = filter.clone();
 
-                let matching_point_ids = self
+                let points_matching_filter_after = self
                     .wrapped_shard
                     .scroll_by(
                         None,
@@ -472,11 +502,11 @@ impl ShardOperation for ForwardProxyShard {
                     .map(|record| record.id)
                     .collect::<HashSet<_>>();
 
-                // Modify original operation to only contain operations for matching points or global operations
                 let mut modified_operation = operation.clone();
-                modified_operation
-                    .operation
-                    .retain_point_ids(|point_id| matching_point_ids.contains(point_id));
+                modified_operation.operation.retain_point_ids(|point_id| {
+                    points_matching_filter_before.contains(point_id)
+                        || points_matching_filter_after.contains(point_id)
+                });
 
                 Some(modified_operation)
             } else {

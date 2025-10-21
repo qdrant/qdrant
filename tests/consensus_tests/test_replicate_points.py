@@ -117,6 +117,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     # Transfer shard from one node to another
     filter = {"must": {"key": "city", "match": {"value": "London"}}}
     # filter = {}
+    # filter = {"must": {"has_vector": ""}}
 
     original_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
     initial_dest_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
@@ -154,7 +155,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
 
     # Point counts must be consistent across shard keys for given filter
     src_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
-    dest_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
+    dest_all_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
 
-    assert dest_count == src_filtered_count # new shard should also have the same points
-    assert dest_count > original_filtered_count # more points than before due to upserts during transfer
+    assert dest_all_count == src_filtered_count # new shard should also have the same points
+    assert dest_all_count > original_filtered_count # more points than before due to upserts during transfer
