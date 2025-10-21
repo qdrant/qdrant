@@ -65,13 +65,13 @@ class TestLowDisk:
         client.wait_for_status(collection_name, "yellow")
         client.wait_for_status(collection_name, "green")
         client.search_points(collection_name)
-    
+
     @pytest.mark.parametrize("test_mode", ["search", "indexing"])
     def test_low_disk_handling(self, qdrant_container_factory, test_mode: Literal["search", "indexing"]):
         """
         Test that Qdrant handles low disk conditions gracefully. Start a container with limited tmpfs mount (10MB),
         perform operations, ensure container doesn't crash.
-        
+
         Args:
             test_mode: Either "search" (test during points insertion) or "indexing" (test during index building)
         """
@@ -89,12 +89,12 @@ class TestLowDisk:
             remove=False  # Keep for logs
         )
         container_info = qdrant_container_factory(config)
-        
+
         # Create ClientUtils instance for this container
         client = ClientUtils(host=container_info.host, port=container_info.http_port)
         collection_name = "low-disk"
         points_amount = 2000
-        
+
         if test_mode == "search":
             self.insert_points_and_search(client, collection_name, points_amount)
         elif test_mode == "indexing":

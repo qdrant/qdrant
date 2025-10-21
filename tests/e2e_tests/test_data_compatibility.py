@@ -11,17 +11,17 @@ from e2e_tests.utils import extract_archive
 
 class TestStorageCompatibility:
     """Test storage and snapshot compatibility with defined previous Qdrant versions."""
-    
+
     PREV_PATCH_VERSION = "v1.15.4"
     PREV_MINOR_VERSION = "v1.14.0"  # skipping v1.14.1 as it contains a known data corruption (https://github.com/qdrant/qdrant/pull/6916)
-    
+
     EXPECTED_COLLECTIONS = [
         "test_collection_vector_memory",
-        "test_collection_vector_on_disk", 
+        "test_collection_vector_on_disk",
         "test_collection_vector_on_disk_threshold",
         "test_collection_scalar_int8",
         "test_collection_product_x64",
-        "test_collection_product_x32", 
+        "test_collection_product_x32",
         "test_collection_product_x16",
         "test_collection_product_x8",
         "test_collection_binary",
@@ -29,16 +29,16 @@ class TestStorageCompatibility:
         "test_collection_vector_datatype_u8",
         "test_collection_vector_datatype_f16"
     ]
-    
+
     @staticmethod
     def _download_compatibility_data(version: str, storage_test_dir: Path):
         """Download compatibility data for a specific version."""
         # Use test-specific filename to avoid conflicts in parallel execution
         test_id = str(uuid.uuid4())[:8]
         compatibility_file = storage_test_dir / f"compatibility_{version}_{test_id}.tar"
-        
+
         url = f"https://storage.googleapis.com/qdrant-backward-compatibility/compatibility-{version}.tar"
-        
+
         print(f"Downloading compatibility data for {version}...")
 
         try:
@@ -50,30 +50,30 @@ class TestStorageCompatibility:
                             f.write(chunk)
         except requests.exceptions.RequestException as e:
             pytest.skip(f"Could not download compatibility data for {version}: {e}")
-        
+
         return compatibility_file
 
     @staticmethod
     def _extract_storage_data(compatibility_file: Path, storage_test_dir: Path):
         """Extract storage data from compatibility archive."""
         extract_archive(compatibility_file, storage_test_dir, cleanup_archive=True)
-        
+
         # Extract nested storage archive
         storage_archive = storage_test_dir / "storage.tar.bz2"
         if storage_archive.exists():
             extract_archive(storage_archive, storage_test_dir, cleanup_archive=True)
-        
+
         return storage_test_dir / "storage"
 
     @staticmethod
     def _extract_snapshot_data(storage_test_dir: Path):
         """Extract snapshot data."""
         snapshot_gz = storage_test_dir / "full-snapshot.snapshot.gz"
-        
+
         if snapshot_gz.exists():
             extract_archive(snapshot_gz, storage_test_dir, cleanup_archive=True)
             return storage_test_dir / "full-snapshot.snapshot"
-        
+
         return None
 
     @staticmethod
@@ -124,7 +124,7 @@ class TestStorageCompatibility:
 
         if not self._check_collections(container_info.host, container_info.http_port):
             pytest.fail(f"Storage compatibility failed for {version}")
-    
+
     @pytest.mark.parametrize("version", [PREV_PATCH_VERSION, PREV_MINOR_VERSION])
     def test_snapshot_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version, qdrant_container_factory):
         """Test snapshot recovery compatibility with previous versions."""
