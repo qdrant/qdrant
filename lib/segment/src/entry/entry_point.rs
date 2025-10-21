@@ -381,7 +381,7 @@ pub trait SegmentEntry: SnapshotEntry {
 /// Defines in what order multiple segments must be flushed.
 ///
 /// To achieve data consistency with our point copy on write mechanism, we must flush segments in a
-/// strict order. Appendalbe segments muts be flushed first, non-appendable segments last. Proxy
+/// strict order. Appendable segments must be flushed first, non-appendable segments last. Proxy
 /// segments fall in between.
 ///
 /// When flush the segment holder, we effectively flush in four stages defined by the enum variants
