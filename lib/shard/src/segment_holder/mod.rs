@@ -90,11 +90,18 @@ pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 impl SegmentHolder {
     /// Iterate over all segments with their IDs
     ///
-    /// Appendable first, then non-appendable.
+    /// Ordered by flush ordering, then by segment ID.
     pub fn iter(&self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> {
         self.segments
             .iter()
             .map(|(_, segment_id, segment)| (segment_id, segment))
+    }
+
+    /// Iterate over all segment IDs
+    ///
+    /// Ordered by flush ordering, then by segment ID.
+    pub fn iter_ids(&self) -> impl Iterator<Item = SegmentId> {
+        self.segments.iter().map(|(_, segment_id, _)| *segment_id)
     }
 
     pub fn len(&self) -> usize {
@@ -353,11 +360,11 @@ impl SegmentHolder {
             .fetch_max(op_num, Ordering::Relaxed);
     }
 
+    /// All segment IDs
+    ///
+    /// Ordered by flush ordering, then by segment ID.
     pub fn segment_ids(&self) -> Vec<SegmentId> {
-        self.segments
-            .iter()
-            .map(|(_, segment_id, _)| *segment_id)
-            .collect()
+        self.iter_ids().collect()
     }
 
     /// Get a random appendable segment
