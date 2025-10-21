@@ -179,6 +179,17 @@ impl SegmentHolder {
     }
 
     pub fn remove(&mut self, remove_ids: &[SegmentId]) -> Vec<LockedSegment> {
+        // Removing a single ID is common enough to have a special optimized case for it
+        if remove_ids.len() == 1 {
+            return self
+                .segments
+                .iter()
+                .position(|(_, segment_id, _)| *segment_id == remove_ids[0])
+                .map(|index| self.segments.remove(index).2)
+                .into_iter()
+                .collect();
+        }
+
         self.segments
             .extract_if(.., |(_, segment_id, _)| remove_ids.contains(segment_id))
             .map(|(_, _, segment)| segment)
