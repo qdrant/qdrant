@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 mod actix;
 mod common;
 mod consensus;

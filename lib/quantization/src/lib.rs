@@ -1,3 +1,6 @@
+#![feature(let_chains)]
+#![feature(unsigned_is_multiple_of)]
+#![feature(hash_extract_if)]
 pub mod encoded_storage;
 pub mod encoded_vectors;
 pub mod encoded_vectors_binary;

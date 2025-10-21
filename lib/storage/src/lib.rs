@@ -1,3 +1,6 @@
+#![feature(let_chains)]
+#![feature(unsigned_is_multiple_of)]
+#![feature(hash_extract_if)]
 //! Storage - is a crate which contains all service functions, abstracted from the external interface
 //!
 //! It provides all functions, which could be used from REST (or any other interface), but do not

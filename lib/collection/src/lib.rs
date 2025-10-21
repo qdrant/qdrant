@@ -1,3 +1,6 @@
+#![feature(let_chains)]
+#![feature(unsigned_is_multiple_of)]
+#![feature(hash_extract_if)]
 pub mod collection;
 pub mod collection_manager;
 pub mod collection_state;

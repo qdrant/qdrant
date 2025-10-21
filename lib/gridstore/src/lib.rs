@@ -1,3 +1,4 @@
+#![feature(unsigned_is_multiple_of)]
 pub mod bitmask;
 pub mod blob;
 pub mod config;
