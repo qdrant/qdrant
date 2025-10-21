@@ -17,7 +17,7 @@ pub struct FeatureFlags {
     /// Skip usage of RocksDB in new immutable payload indices.
     ///
     /// First implemented in Qdrant 1.13.5.
-    /// Enabled by default in Qdrant 1.14.1
+    /// Enabled by default in Qdrant 1.14.1.
     pub payload_index_skip_rocksdb: bool,
 
     /// Skip usage of RocksDB in new mutable payload indices.
