@@ -55,7 +55,18 @@ impl SegmentHolder {
         )?;
 
         // List all segments we want to snapshot
-        let segment_ids = segments_lock.segment_ids();
+        let mut segment_ids = segments_lock.segment_ids();
+
+        // Re-sort segments for flush ordering, required to guarantee data consistency
+        // TODO: sort in a better place to not lock each segment
+        segment_ids.sort_by_cached_key(|segment_id| {
+            segments_lock
+                .get(*segment_id)
+                .unwrap()
+                .get()
+                .read()
+                .flush_ordering()
+        });
 
         // Create proxy for all segments
         let mut new_proxies = Vec::with_capacity(segment_ids.len());

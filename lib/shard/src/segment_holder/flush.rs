@@ -62,13 +62,8 @@ impl SegmentHolder {
             .collect();
         segment_reads.reverse();
 
-        // Assert we flush appendable segments first
-        debug_assert!(
-            segment_reads
-                .windows(2)
-                .all(|s| s[0].is_appendable() || !s[1].is_appendable()),
-            "Must flush appendable segments first",
-        );
+        // Re-sort segments for flush ordering also considering proxies, required to guarantee data consistency
+        segment_reads.sort_by_cached_key(|segment| segment.flush_ordering());
 
         if !sync && self.is_background_flushing() {
             // There is already a background flush ongoing, return current max persisted version
@@ -105,7 +100,7 @@ impl SegmentHolder {
         self.get_max_persisted_version(segment_reads, lock_order)
     }
 
-    /// Defines flush ordering for segments.
+    /// Defines naive flush ordering for segments.
     ///
     /// Flush appendable segments first, then non-appendable.
     /// This is done to ensure that all data, transferred from non-appendable segments to appendable segments

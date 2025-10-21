@@ -263,8 +263,16 @@ pub trait SegmentEntry: SnapshotEntry {
     /// Get segment configuration
     fn config(&self) -> &SegmentConfig;
 
-    /// Get current stats of the segment
+    /// Whether this segment is appendable
+    ///
+    /// Returns appendable state of outer most segment. If this is a proxy segment, this shadows
+    /// the appendable state of the wrapped segment.
     fn is_appendable(&self) -> bool;
+
+    /// Get flush ordering affinity
+    /// When multiple segments are flushed together, it must follow this ordering to guarantee data
+    /// consistency.
+    fn flush_ordering(&self) -> SegmentFlushOrdering;
 
     /// Returns a function, which when called, will flush all pending changes to disk.
     /// If there are currently no changes to flush, returns None.
@@ -368,4 +376,38 @@ pub trait SegmentEntry: SnapshotEntry {
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
 
     fn fill_query_context(&self, query_context: &mut QueryContext);
+}
+
+/// Defines in what order multiple segments must be flushed.
+///
+/// To achieve data consistency with our point copy on write mechanism, we must flush segments in a
+/// strict order. Appendable segments must be flushed first, non-appendable segments last. Proxy
+/// segments fall in between.
+///
+/// When flush the segment holder, we effectively flush in four stages defined by the enum variants
+/// below.
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Ord, PartialOrd)]
+pub enum SegmentFlushOrdering {
+    // Must always be flushed first
+    // - Point-CoW moves points into this segment
+    Appendable,
+    // - Point-CoW may have moved points into this segment before proxying, might be pending flush
+    // - Point-CoW may have moved out and deleted points from this segment, these are not persisted
+    ProxyWithAppendable,
+    // - Point-CoW may have moved out and deleted points from here, these are not persisted
+    ProxyWithNonAppendable,
+    // Must always be flushed last
+    // - Point-CoW moves out and deletes points from this segment
+    NonAppendable,
+}
+
+impl SegmentFlushOrdering {
+    pub fn proxy(self) -> Self {
+        match self {
+            SegmentFlushOrdering::Appendable => SegmentFlushOrdering::ProxyWithAppendable,
+            SegmentFlushOrdering::NonAppendable => SegmentFlushOrdering::ProxyWithNonAppendable,
+            proxy @ SegmentFlushOrdering::ProxyWithAppendable => proxy,
+            proxy @ SegmentFlushOrdering::ProxyWithNonAppendable => proxy,
+        }
+    }
 }
