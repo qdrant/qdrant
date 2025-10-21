@@ -20,7 +20,7 @@ class TestContinuousSnapshots:
             if stop_event.is_set():
                 print(f"Snapshot creation stopping early at iteration {i+1} (data modification completed)")
                 break
-                
+
             try:
                 snapshot_name = client.create_snapshot(collection_name)
                 snapshots_created.append(snapshot_name)
@@ -40,7 +40,7 @@ class TestContinuousSnapshots:
         """Continuously delete all points and insert new points for the specified number of iterations."""
         modification_count = 0
         errors = []
-        
+
         for i in range(iterations):
             try:
                 # Delete all existing points by their IDs
@@ -64,7 +64,7 @@ class TestContinuousSnapshots:
                             )
                         )
                         base_id += 1
-                    
+
                     client.client.upsert(
                         collection_name=collection_name,
                         points=points,
@@ -98,7 +98,7 @@ class TestContinuousSnapshots:
         container_info = qdrant_container_factory()
         client = ClientUtils(host=container_info.host, port=container_info.http_port)
         assert client.wait_for_server(), "Server failed to start"
-        
+
         collection_name = "continuous_snapshots_test"
         collection_config = {
             "vectors": {
@@ -113,34 +113,34 @@ class TestContinuousSnapshots:
         }
         client.create_collection(collection_name, collection_config)
         print(f"Created collection: {collection_name}")
-        
+
         iterations = 100
-        
+
         snapshot_results = {}
         modification_results = {}
-        
+
         # Create event to signal when to stop
         stop_event = threading.Event()
-        
+
         snapshot_thread = threading.Thread(
             target=self._snapshot_creation_loop,
             args=(client, collection_name, iterations, snapshot_results, stop_event)
         )
-        
+
         modification_thread = threading.Thread(
             target=self._data_modification_loop,
             args=(client, collection_name, iterations, modification_results, stop_event)
         )
-        
+
         print(f"Starting concurrent operations with {iterations} iterations each...")
         start_time = time.time()
-        
+
         snapshot_thread.start()
         modification_thread.start()
         # Wait for both threads to complete
         snapshot_thread.join()
         modification_thread.join()
-        
+
         duration = time.time() - start_time
         print(f"Concurrent operations completed in {duration:.2f} seconds")
 
