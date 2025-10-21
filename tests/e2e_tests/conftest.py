@@ -25,7 +25,7 @@ def pytest_runtest_makereport(item, call):
 @pytest.fixture(scope="session")
 def docker_client() -> docker.DockerClient:
     """Create a Docker client instance.
-    
+
     Returns:
         docker.DockerClient: Docker client connected to local Docker daemon
     """
@@ -35,7 +35,7 @@ def docker_client() -> docker.DockerClient:
 @pytest.fixture(scope="session")
 def test_data_dir() -> Path:
     """Path to the test data directory.
-    
+
     Returns:
         Path: Absolute path to tests/e2e_tests/test_data directory
     """
@@ -59,11 +59,11 @@ def qdrant_image(docker_client: docker.DockerClient, request) -> str:
         ], indirect=True)
         def test_something(qdrant_image):
             # Uses custom tag and forces rebuild
-            
+
     Parameters (via indirect parametrization):
         - tag (str): Custom image tag (default: "qdrant/qdrant:e2e-tests")
         - rebuild_image (bool): Force rebuild even if image exists (default: False)
-        
+
     Returns:
         str: The Docker image tag that was built or already exists
     """
@@ -121,11 +121,11 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
     For a simple use case with default configuration, use qdrant fixture instead.
 
     Can be used as a factory or with indirect parametrization:
-    
+
     Factory usage (returns a callable):
         def test_something(qdrant_container_factory):
             container_info = qdrant_container_factory(mem_limit="128m", environment={...})
-            
+
     Indirect parametrization (returns container info directly):
         @pytest.mark.parametrize("qdrant_container_factory", [
             {"mem_limit": "256m", "environment": {"KEY": "value"}}
@@ -134,14 +134,14 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
             # qdrant_container_factory is already the container info object
             host = qdrant_container_factory.host
             port = qdrant_container_factory.http_port
-    
+
     Returns a QdrantContainer object with:
         - container: The Docker container object
         - host: The host address ("127.0.0.1" or "localhost" for host network)
         - name: The container name
         - http_port: The HTTP API port (6333)
         - grpc_port: The gRPC API port (6334)
-        
+
     Parameters (all passed to docker_client.containers.run, common ones include):
         - name (str): Container name
         - mem_limit (str): Memory limit (e.g., "128m", "256m")
@@ -156,7 +156,7 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
                                If False, returns container info even if Qdrant doesn't start successfully.
     """
     containers = []
-    
+
     def _create_container(*args, **kwargs):
         # Handle both QdrantContainerConfig objects and keyword arguments
         if len(args) == 1 and isinstance(args[0], QdrantContainerConfig):
@@ -167,7 +167,7 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
         container_info = create_qdrant_container(docker_client, qdrant_image, config)
         containers.append(container_info.container)
         return container_info
-    
+
     def _log_containers_on_failure():
         """Output container logs if the test failed"""
         if request.node.rep_call.failed if hasattr(request.node, 'rep_call') else False:
@@ -185,19 +185,19 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
                 except Exception as e:
                     print(f"Failed to get logs for container {docker_container.name}: {e}")
             print("="*50)
-    
+
     def _cleanup_containers():
         """Clean up containers after potentially logging them"""
         # First log containers if test failed (before cleanup)
         _log_containers_on_failure()
-        
+
         # Then cleanup all containers
         for container in containers:
             cleanup_container(container)
-    
+
     # Register the finalizer to handle logging and cleanup
     request.addfinalizer(_cleanup_containers)
-    
+
     # Check if this is being used with indirect parametrization
     if hasattr(request, "param"):
         if isinstance(request.param, dict):
@@ -208,7 +208,7 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
             config = request.param
         else:
             raise ValueError(f"Unsupported parameter type for qdrant_container_factory: {type(request.param)}")
-        
+
         container_info = create_qdrant_container(docker_client, qdrant_image, config)
         containers.append(container_info.container)
         yield container_info
