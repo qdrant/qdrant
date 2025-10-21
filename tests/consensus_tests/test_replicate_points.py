@@ -115,15 +115,16 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     upsert_random_points(peer_api_uris[0], 10000, shard_key="default")
 
     # Transfer shard from one node to another
-    filter = {"should": {"key": "city", "match": {"value": "London"}}}
+    filter = {"must": {"key": "city", "match": {"value": "London"}}}
+    # filter = {}
 
     original_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
-    initial_tenant_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
+    initial_dest_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
     assert original_filtered_count > 0
-    assert initial_tenant_count == 0 # no points in tenant shard key before transfer
+    assert initial_dest_count == 0 # no points in tenant shard key before transfer
 
-    # Start pushing new points to the cluster in parallel
-    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10000, throttle=throttle_updates)
+    # Start pushing new points to the cluster in parallel (update some old ones + insert new ones)
+    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10001, throttle=throttle_updates)
 
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
@@ -138,6 +139,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     assert_http_ok(r)
 
     # Stop upserts before transfer finishes so we don't push extra points to "default"
+    # TODO: Use "fallback" once PR is merged and kill after transfer is done
     sleep(1)
     upload_process_1.kill()
 
