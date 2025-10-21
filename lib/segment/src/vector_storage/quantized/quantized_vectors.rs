@@ -1532,6 +1532,7 @@ impl QuantizedVectors {
                 scalar_config.rotations,
                 scalar_config.sigmas,
                 scalar_config.r#type.bits_per_dimension().unwrap_or(8),
+                scalar_config.pow,
                 Some(meta_path.as_path()),
                 stopped,
             )?))
@@ -1551,6 +1552,7 @@ impl QuantizedVectors {
                     scalar_config.rotations,
                     scalar_config.sigmas,
                     scalar_config.r#type.bits_per_dimension().unwrap_or(8),
+                    scalar_config.pow,
                     Some(meta_path.as_path()),
                     stopped,
                 )?,
@@ -1659,6 +1661,7 @@ impl QuantizedVectors {
                 scalar_config.rotations,
                 scalar_config.sigmas,
                 scalar_config.r#type.bits_per_dimension().unwrap_or(8),
+                scalar_config.pow,
                 Some(meta_path.as_path()),
                 stopped,
             )?;
@@ -1686,6 +1689,7 @@ impl QuantizedVectors {
                 scalar_config.rotations,
                 scalar_config.sigmas,
                 scalar_config.r#type.bits_per_dimension().unwrap_or(8),
+                scalar_config.pow,
                 Some(meta_path.as_path()),
                 stopped,
             )?;

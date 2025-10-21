@@ -18,7 +18,6 @@ use crate::vector_stats::{VectorElementStats, VectorStats};
 
 pub const ALIGNMENT: usize = 16;
 pub const MAX_BITS_COUNT: usize = 10;
-pub const DO_SQRT: bool = false;
 pub const USE_FLOATS: bool = false;
 
 pub struct EncodedVectorsFlex<TStorage: EncodedStorage> {
@@ -40,6 +39,7 @@ pub struct EncodedQueryFlex {
 struct Metadata {
     actual_dim: usize,
     bits_count: usize,
+    pow: f32,
     vector_parameters: VectorParameters,
     vector_stats: VectorStats,
     transform: Transform,
@@ -59,6 +59,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
         rotations: Option<usize>,
         sigmas: Option<f32>,
         bits_count: usize,
+        pow: Option<f32>,
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
@@ -84,6 +85,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
             vector_stats,
             transform,
             bits_count,
+            pow: pow.unwrap_or(1.0),
         };
 
         let mut queries = Vec::with_capacity(count);
@@ -192,7 +194,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
 
         let (mut transformed_internal, _offset) = metadata
             .transform
-            .transform_vector(&query, metadata.bits_count);
+            .transform_vector(&query, metadata.bits_count, metadata.pow);
         while transformed_internal.len() % ALIGNMENT != 0 {
             transformed_internal.push(0.0);
         }
@@ -209,7 +211,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
         result.fill(0);
         let (mut transformed_vector, vector_offset) = metadata
             .transform
-            .transform_vector(vector, metadata.bits_count);
+            .transform_vector(vector, metadata.bits_count, metadata.pow);
         while transformed_vector.len() % ALIGNMENT != 0 {
             transformed_vector.push(0.0);
         }
@@ -303,7 +305,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
             for (i, &q_value) in chunk.iter().enumerate() {
                 // assert_eq!(decoded_vector_check[chunk_index * ALIGNMENT + i], intbuf[i] as f32, "Decoded vector does not match stored vector at index {}, chunk_index {}, i {}", vector_index, chunk_index, i);
                 let v = intbuf[i] as f32 / multiplier;
-                let v = if DO_SQRT {
+                let v = if self.metadata.pow == 2.0 {
                     if v < 0.0 { -v.abs().powi(2) } else { v.powi(2) }
                 } else {
                     v
@@ -398,7 +400,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
             let mut floats1 = _mm256_mul_ps(_mm256_cvtepi32_ps(ints1), multiplier);
             let mut floats2 = _mm256_mul_ps(_mm256_cvtepi32_ps(ints2), multiplier);
 
-            if DO_SQRT {
+            if self.metadata.pow == 2.0 {
                 floats1 = _mm256_mul_ps(floats1, floats1);
                 floats2 = _mm256_mul_ps(floats2, floats2);
             }
@@ -457,7 +459,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsFlex<TStorage> {
             q.iter()
                 .zip(v.iter())
                 .map(|(&a, &b)| {
-                    if DO_SQRT {
+                    if self.metadata.pow == 2.0 {
                         let b_f32 = b / multiplier;
                         let b_f32 = if b_f32 < 0.0 {
                             -b_f32.abs().powi(2)
@@ -648,36 +650,38 @@ impl Transform {
         (vector, sum)
     }
 
-    pub fn transform_vector(&self, vector: &[f32], bits_count: usize) -> (Vec<f32>, f32) {
+    pub fn transform_vector(&self, vector: &[f32], bits_count: usize, pow: f32) -> (Vec<f32>, f32) {
         let multiplier = get_multiplier(bits_count);
         let mut vector = vector.to_owned();
         let sum = self.shifter.shift(&mut vector);
         for (v, stddev) in vector.iter_mut().zip(self.stddevs.iter()) {
             if *stddev > f32::EPSILON {
-                if bits_count > 1 {
-                    *v /= self.sigmas * *stddev;
-                    *v = v.clamp(-1.0, 1.0);
-                    if DO_SQRT {
-                        if *v < 0.0 {
-                            *v = -v.abs().sqrt();
-                        } else {
-                            *v = v.sqrt();
-                        }
-                    }
-                    *v = (*v * multiplier).round();
-                } else {
-                    if *v >= 0.0 {
-                        *v = multiplier;
-                    } else {
-                        *v = -multiplier;
-                    }
-                }
+                *v /= self.sigmas * *stddev;
             } else {
                 *v = 0.0;
             }
         }
         if let Some(rotation) = &self.rotation {
             rotation.rotate(&mut vector);
+        }
+        for v in vector.iter_mut() {
+            if bits_count > 1 {
+                *v = v.clamp(-1.0, 1.0);
+                if pow == 2.0 {
+                    if *v < 0.0 {
+                        *v = -v.abs().sqrt();
+                    } else {
+                        *v = v.sqrt();
+                    }
+                }
+                *v = (*v * multiplier).round();
+            } else {
+                if *v >= 0.0 {
+                    *v = multiplier;
+                } else {
+                    *v = -multiplier;
+                }
+            }
         }
         (vector, sum)
     }

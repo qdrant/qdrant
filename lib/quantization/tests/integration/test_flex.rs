@@ -36,7 +36,7 @@ mod tests {
 
     #[test]
     fn test_binary_dot() {
-        test_binary_dot_impl(1024, 3);
+        test_binary_dot_impl(1024, 4);
     }
 
     fn test_binary_dot_impl(vector_dim: usize, bits_count: usize) {
@@ -72,9 +72,10 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
-            None,
-            None,
+            Some(1),
+            Some(2.0),
             bits_count,
+            None,
             None, //Some(&Path::new("/root/qdrant/target/test_data/")),
             &AtomicBool::new(false),
         )
@@ -177,6 +178,7 @@ mod tests {
             None,
             None,
             bits_count,
+            None,
             None, //Some(&Path::new("/root/qdrant/target/test_data/")),
             &AtomicBool::new(false),
         )
