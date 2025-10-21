@@ -31,7 +31,7 @@ pub struct FeatureFlags {
     /// On-disk payload storages never use Gridstore.
     ///
     /// First implemented in Qdrant 1.15.0.
-    // TODO(1.16.0): enable by default
+    /// Enabled by default in Qdrant 1.16.0.
     pub payload_storage_skip_rocksdb: bool,
 
     /// Use incremental HNSW building.
@@ -69,7 +69,7 @@ impl Default for FeatureFlags {
             all: false,
             payload_index_skip_rocksdb: true,
             payload_index_skip_mutable_rocksdb: true,
-            payload_storage_skip_rocksdb: false,
+            payload_storage_skip_rocksdb: true,
             incremental_hnsw_building: true,
             migrate_rocksdb_id_tracker: true,
             migrate_rocksdb_vector_storage: false,
