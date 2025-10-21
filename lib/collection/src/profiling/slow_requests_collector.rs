@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
@@ -45,6 +47,12 @@ pub struct RequestsCollector {
 const MAX_REQUESTS_LOGGED: usize = 32;
 const QUEUE_CAPACITY: usize = 64;
 
+/// Rate-limit interval for warning logs (seconds)
+const WARN_INTERVAL_SECS: u64 = 10;
+
+/// Last time a send warning was emitted (unix seconds)
+static LAST_SEND_WARN: AtomicU64 = AtomicU64::new(0);
+
 impl RequestsCollector {
     pub fn new() -> (Self, tokio::sync::mpsc::Receiver<RequestProfileMessage>) {
         let log = SlowRequestsLog::new(MAX_REQUESTS_LOGGED);
@@ -65,6 +73,24 @@ impl RequestsCollector {
 
     pub fn send_if_available(&self, message: RequestProfileMessage) {
         self.sender.try_send(message).unwrap_or_else(|err| {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or_else(|_| 0);
+
+            // Atomically update if enough time has passed
+            let updated =
+                LAST_SEND_WARN.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |prev| {
+                    if now.saturating_sub(prev) >= WARN_INTERVAL_SECS {
+                        Some(now)
+                    } else {
+                        None
+                    }
+                });
+
+            if updated.is_err() {
+                return;
+            }
             log::warn!("Failed to send message: {err}");
         })
     }
