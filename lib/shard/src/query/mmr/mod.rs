@@ -9,8 +9,9 @@ use common::types::ScoreType;
 use indexmap::IndexSet;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
-use segment::types::{ScoredPoint, VectorNameBuf};
+use segment::types::{Distance, MultiVectorConfig, ScoredPoint};
 use segment::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use segment::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
 use segment::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
@@ -36,15 +37,14 @@ use super::MmrInternal;
 /// # Returns
 ///
 /// A vector of scored points.
-pub async fn mmr_from_points_with_vector(
-    collection_params: &CollectionParams,
+pub fn mmr_from_points_with_vector(
     points_with_vector: impl IntoIterator<Item = ScoredPoint>,
     mmr: MmrInternal,
+    distance: Distance,
+    multivector_config: Option<MultiVectorConfig>,
     limit: usize,
-    search_runtime_handle: &Handle,
-    timeout: Duration,
     hw_measurement_acc: HwMeasurementAcc,
-) -> CollectionResult<Vec<ScoredPoint>> {
+) -> OperationResult<Vec<ScoredPoint>> {
     let (vectors, candidates): (Vec<_>, Vec<_>) = points_with_vector
         .into_iter()
         .unique_by(|p| p.id)
@@ -66,9 +66,9 @@ pub async fn mmr_from_points_with_vector(
     }
 
     let volatile_storage = create_volatile_storage(
-        collection_params,
         &vectors,
-        mmr.using,
+        distance,
+        multivector_config,
         hw_measurement_acc.get_counter_cell(),
     )?;
 
@@ -77,59 +77,55 @@ pub async fn mmr_from_points_with_vector(
         return Ok(candidates);
     }
 
-    let compute_mmr = move || {
-        // get similarities against query
-        let query_similarities = relevance_similarities(
-            &volatile_storage,
-            mmr.vector,
-            hw_measurement_acc.get_counter_cell(),
-        )?;
+    // get similarities against query
+    let query_similarities = relevance_similarities(
+        &volatile_storage,
+        mmr.vector,
+        hw_measurement_acc.get_counter_cell(),
+    )?;
 
-        // get similarity matrix between candidates
-        let similarity_matrix = similarity_matrix(&volatile_storage, vectors, hw_measurement_acc)?;
+    // get similarity matrix between candidates
+    let similarity_matrix = similarity_matrix(&volatile_storage, vectors, hw_measurement_acc)?;
 
-        // compute MMR
-        CollectionResult::Ok(maximal_marginal_relevance(
-            candidates,
-            query_similarities,
-            similarity_matrix,
-            mmr.lambda.0,
-            limit,
-        ))
-    };
-
-    tokio::time::timeout(timeout, search_runtime_handle.spawn_blocking(compute_mmr))
-        .await
-        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "mmr"))??
+    // compute MMR
+    Ok(maximal_marginal_relevance(
+        candidates,
+        query_similarities,
+        similarity_matrix,
+        mmr.lambda.0,
+        limit,
+    ))
 }
 
 /// Creates a volatile (in-memory and not persistent) vector storage and inserts the vectors in the provided order.
 fn create_volatile_storage(
-    collection_params: &CollectionParams,
     vectors: &[VectorInternal],
-    using: VectorNameBuf,
+    distance: Distance,
+    multivector_config: Option<MultiVectorConfig>,
     hw_counter: HardwareCounterCell,
-) -> CollectionResult<VectorStorageEnum> {
+) -> OperationResult<VectorStorageEnum> {
     // Create temporary vector storage
     let mut volatile_storage = {
-        let distance = collection_params.get_distance(&using)?;
         match &vectors[0] {
             VectorInternal::Dense(vector) => {
                 new_volatile_dense_vector_storage(vector.len(), distance)
             }
-            VectorInternal::Sparse(_sparse_vector) => new_volatile_sparse_vector_storage(),
+
             VectorInternal::MultiDense(typed_multi_dense_vector) => {
-                let multivec_config = collection_params
-                        .vectors
-                        .get_params(&using)
-                        .and_then(|vector_params| vector_params.multivector_config)
-                        .ok_or_else(|| CollectionError::service_error(format!("multivectors are present for {using}, but no multivector config is defined")))?;
+                let multivector_config = multivector_config.ok_or_else(|| {
+                    OperationError::service_error(
+                        "multivectors are present, but no multivector config provided",
+                    )
+                })?;
+
                 new_volatile_multi_dense_vector_storage(
                     typed_multi_dense_vector.dim,
                     distance,
-                    multivec_config,
+                    multivector_config,
                 )
             }
+
+            VectorInternal::Sparse(_) => new_volatile_sparse_vector_storage(),
         }
     };
 
@@ -146,7 +142,7 @@ fn relevance_similarities(
     volatile_storage: &VectorStorageEnum,
     query_vector: VectorInternal,
     hw_counter: HardwareCounterCell,
-) -> CollectionResult<Vec<ScoreType>> {
+) -> OperationResult<Vec<ScoreType>> {
     let query = QueryVector::Nearest(query_vector);
     let query_scorer = new_raw_scorer(query, volatile_storage, hw_counter)?;
 
@@ -167,7 +163,7 @@ fn similarity_matrix(
     volatile_storage: &VectorStorageEnum,
     vectors: Vec<VectorInternal>,
     hw_measurement_acc: HwMeasurementAcc,
-) -> CollectionResult<LazyMatrix<'_>> {
+) -> OperationResult<LazyMatrix<'_>> {
     let num_vectors = vectors.len();
 
     // if we have less than 2 points, we can't build a matrix
@@ -175,8 +171,9 @@ fn similarity_matrix(
         num_vectors >= 2,
         "There should be at least two vectors to calculate similarity matrix"
     );
+
     if num_vectors < 2 {
-        return Err(CollectionError::service_error(
+        return Err(OperationError::service_error(
             "There should be at least two vectors to calculate similarity matrix",
         ));
     }

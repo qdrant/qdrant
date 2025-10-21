@@ -1,5 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
-use std::time::Duration;
+use std::collections::HashMap;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use ordered_float::OrderedFloat;
@@ -12,39 +11,9 @@ use segment::types::{
 };
 use sparse::common::sparse_vector::SparseVector;
 use strum::IntoEnumIterator;
-use tokio::runtime::Handle;
 
-use crate::collection::mmr::mmr_from_points_with_vector;
-use crate::config::CollectionParams;
-use crate::operations::types::VectorsConfig;
-use crate::operations::universal_query::shard_query::MmrInternal;
-use crate::operations::vector_params_builder::VectorParamsBuilder;
-
-/// Create a simple collection configuration with a single default vector.
-fn create_test_collection_params(distance: Distance, dim: usize) -> CollectionParams {
-    CollectionParams {
-        vectors: VectorsConfig::Single(VectorParamsBuilder::new(dim as u64, distance).build()),
-        ..CollectionParams::empty()
-    }
-}
-
-/// Create a collection configuration with a named vector.
-fn create_test_collection_params_named(
-    distance: Distance,
-    dim: usize,
-    name: &str,
-) -> CollectionParams {
-    let mut vectors_map = BTreeMap::new();
-    vectors_map.insert(
-        name.to_string(),
-        VectorParamsBuilder::new(dim as u64, distance).build(),
-    );
-
-    CollectionParams {
-        vectors: VectorsConfig::Multi(vectors_map),
-        ..CollectionParams::empty()
-    }
-}
+use super::mmr_from_points_with_vector;
+use crate::query::MmrInternal;
 
 /// Create a ScoredPoint with a dense vector attached.
 fn create_scored_point_with_vector(
@@ -131,39 +100,13 @@ fn create_scored_point_with_multi_vector(
     }
 }
 
-/// Create a collection configuration with multi-vectors.
-fn create_test_collection_params_multi(
-    distance: Distance,
-    dim: usize,
-    name: &str,
-) -> CollectionParams {
-    let mut vectors_map = BTreeMap::new();
-    let multi_config = MultiVectorConfig {
-        comparator: MultiVectorComparator::MaxSim,
-    };
-    vectors_map.insert(
-        name.to_string(),
-        VectorParamsBuilder::new(dim as u64, distance)
-            .with_multivector_config(multi_config)
-            .build(),
-    );
-
-    CollectionParams {
-        vectors: VectorsConfig::Multi(vectors_map),
-        ..CollectionParams::empty()
-    }
-}
-
 /// Test the basic MMR functionality with multiple lambda values
-#[tokio::test]
 #[rstest]
 #[case::full_relevance(1.0, &[1, 2, 3])]
 #[case::balanced(0.5, &[1, 3, 2])]
 #[case::more_diversity(0.01, &[1, 5, 4])]
-async fn test_mmr_lambda(#[case] lambda: f32, #[case] expected_order: &[u64]) {
-    let collection_params = create_test_collection_params(Distance::Euclid, 2);
-    let handle = Handle::current();
-    let hw_acc = HwMeasurementAcc::new();
+fn test_mmr_lambda(#[case] lambda: f32, #[case] expected_order: &[u64]) {
+    let distance = Distance::Euclid;
 
     let points = vec![
         create_scored_point_with_vector(1.into(), vec![1.0, 0.05], None),
@@ -181,15 +124,13 @@ async fn test_mmr_lambda(#[case] lambda: f32, #[case] expected_order: &[u64]) {
     };
 
     let result = mmr_from_points_with_vector(
-        &collection_params,
         points.clone(),
         mmr,
+        distance,
+        None,
         3,
-        &handle,
-        Duration::from_secs(10),
-        hw_acc,
-    )
-    .await;
+        HwMeasurementAcc::disposable(),
+    );
 
     let scored_points = result.unwrap();
     assert_eq!(scored_points.len(), 3);
@@ -209,31 +150,28 @@ async fn test_mmr_lambda(#[case] lambda: f32, #[case] expected_order: &[u64]) {
 }
 
 /// Test MMR behavior with insufficient points (< 2) for similarity computation.
-#[tokio::test]
-async fn test_mmr_less_than_two_points() {
-    let collection_params = create_test_collection_params(Distance::Cosine, 3);
-    let handle = Handle::current();
-    let hw_acc = HwMeasurementAcc::new();
+#[test]
+fn test_mmr_less_than_two_points() {
+    let distance = Distance::Cosine;
 
-    // Test with empty points
-    let empty_points = vec![];
     let mmr = MmrInternal {
-        vector: vec![1.0, 0.0].into(),
+        vector: vec![1.0, 0.0].into(), // TODO: MMR vector dimension does not match point vector dimension!?
         using: VectorNameBuf::from(""),
         lambda: OrderedFloat(0.5),
         candidates_limit: 100,
     };
 
+    // Test with empty points
+    let empty_points = vec![];
+
     let result = mmr_from_points_with_vector(
-        &collection_params,
         empty_points,
         mmr.clone(),
+        distance,
+        None,
         5,
-        &handle,
-        Duration::from_secs(10),
-        hw_acc.clone(),
-    )
-    .await;
+        HwMeasurementAcc::disposable(),
+    );
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap().len(), 0);
@@ -246,15 +184,13 @@ async fn test_mmr_less_than_two_points() {
     )];
 
     let result = mmr_from_points_with_vector(
-        &collection_params,
         single_point,
         mmr,
+        distance,
+        None,
         5,
-        &handle,
-        Duration::from_secs(10),
-        hw_acc,
-    )
-    .await;
+        HwMeasurementAcc::disposable(),
+    );
 
     assert!(result.is_ok());
     let scored_points = result.unwrap();
@@ -262,11 +198,9 @@ async fn test_mmr_less_than_two_points() {
     assert_eq!(scored_points[0].id, 1.into());
 }
 
-#[tokio::test]
-async fn test_mmr_points_without_required_vector() {
-    let collection_params = create_test_collection_params_named(Distance::Cosine, 3, "custom");
-    let handle = Handle::current();
-    let hw_acc = HwMeasurementAcc::new();
+#[test]
+fn test_mmr_points_without_required_vector() {
+    let distance = Distance::Cosine;
 
     let points = vec![
         create_scored_point_with_vector(1.into(), vec![1.0, 0.0, 0.0], Some("custom")),
@@ -283,15 +217,13 @@ async fn test_mmr_points_without_required_vector() {
     };
 
     let result = mmr_from_points_with_vector(
-        &collection_params,
         points,
         mmr,
+        distance,
+        None,
         5,
-        &handle,
-        Duration::from_secs(10),
-        hw_acc,
-    )
-    .await;
+        HwMeasurementAcc::disposable(),
+    );
 
     assert!(result.is_ok());
     let scored_points = result.unwrap();
@@ -303,11 +235,9 @@ async fn test_mmr_points_without_required_vector() {
     assert!(selected_ids.contains(&(4.into())));
 }
 
-#[tokio::test]
-async fn test_mmr_duplicate_points() {
-    let collection_params = create_test_collection_params(Distance::Cosine, 3);
-    let handle = Handle::current();
-    let hw_acc = HwMeasurementAcc::new();
+#[test]
+fn test_mmr_duplicate_points() {
+    let distance = Distance::Cosine;
 
     // Include duplicate point IDs
     let points = vec![
@@ -324,15 +254,13 @@ async fn test_mmr_duplicate_points() {
     };
 
     let result = mmr_from_points_with_vector(
-        &collection_params,
         points,
         mmr,
+        distance,
+        None,
         5,
-        &handle,
-        Duration::from_secs(10),
-        hw_acc,
-    )
-    .await;
+        HwMeasurementAcc::disposable(),
+    );
 
     assert!(result.is_ok());
     let scored_points = result.unwrap();
@@ -343,11 +271,8 @@ async fn test_mmr_duplicate_points() {
     assert_eq!(unique_ids.len(), 2);
 }
 
-#[tokio::test]
-async fn test_mmr_dense_vectors() {
-    let handle = Handle::current();
-    let hw_acc = HwMeasurementAcc::new();
-
+#[test]
+fn test_mmr_dense_vectors() {
     // Test dense vectors with all distance metrics
     let dense_points = vec![
         create_scored_point_with_vector(1.into(), vec![1.0, 0.0, 0.0], None),
@@ -364,18 +289,14 @@ async fn test_mmr_dense_vectors() {
 
     // Test with all distance metrics for dense vectors
     for distance in Distance::iter() {
-        let collection_params = create_test_collection_params(distance, 3);
-
         let result = mmr_from_points_with_vector(
-            &collection_params,
             dense_points.clone(),
             mmr.clone(),
+            distance,
+            None,
             3,
-            &handle,
-            Duration::from_secs(10),
-            hw_acc.clone(),
-        )
-        .await;
+            HwMeasurementAcc::disposable(),
+        );
 
         assert!(
             result.is_ok(),
@@ -386,12 +307,10 @@ async fn test_mmr_dense_vectors() {
     }
 }
 
-#[tokio::test]
-async fn test_mmr_sparse_vectors() {
-    let handle = Handle::current();
-    let hw_acc = HwMeasurementAcc::new();
-
+#[test]
+fn test_mmr_sparse_vectors() {
     // Test sparse vectors with dot product (only supported distance for sparse)
+    let distance = Distance::Dot;
     let sparse_vector_name = "sparse";
     let sparse_points = vec![
         create_scored_point_with_sparse_vector(
@@ -414,8 +333,6 @@ async fn test_mmr_sparse_vectors() {
         ),
     ];
 
-    let sparse_collection_params =
-        create_test_collection_params_named(Distance::Dot, 10, sparse_vector_name);
     let sparse_mmr = MmrInternal {
         vector: SparseVector::new(vec![0, 2, 5], vec![1.0, 0.5, 0.3])
             .unwrap()
@@ -426,26 +343,25 @@ async fn test_mmr_sparse_vectors() {
     };
 
     let sparse_result = mmr_from_points_with_vector(
-        &sparse_collection_params,
         sparse_points,
         sparse_mmr,
+        distance,
+        None,
         3,
-        &handle,
-        Duration::from_secs(10),
-        hw_acc.clone(),
+        HwMeasurementAcc::disposable(),
     )
-    .await
     .unwrap();
 
     assert_eq!(sparse_result.len(), 3);
 }
 
-#[tokio::test]
-async fn test_mmr_multi_vector() {
-    let handle = Handle::current();
-    let hw_acc = HwMeasurementAcc::new();
-
+#[test]
+fn test_mmr_multi_vector() {
     // Test multi-vectors with all supported distance metrics
+    let multi_vector_config = MultiVectorConfig {
+        comparator: MultiVectorComparator::MaxSim,
+    };
+
     let multi_vector_name = "multi";
     let multi_points = vec![
         create_scored_point_with_multi_vector(
@@ -473,19 +389,14 @@ async fn test_mmr_multi_vector() {
     };
 
     for distance in Distance::iter() {
-        let multi_collection_params =
-            create_test_collection_params_multi(distance, 2, multi_vector_name);
-
         let multi_result = mmr_from_points_with_vector(
-            &multi_collection_params,
             multi_points.clone(),
             multi_mmr.clone(),
+            distance,
+            Some(multi_vector_config),
             3,
-            &handle,
-            Duration::from_secs(10),
-            hw_acc.clone(),
-        )
-        .await;
+            HwMeasurementAcc::disposable(),
+        );
 
         assert!(
             multi_result.is_ok(),
