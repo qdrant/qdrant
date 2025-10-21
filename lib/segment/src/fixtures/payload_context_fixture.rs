@@ -149,15 +149,6 @@ impl IdTracker for FixtureIdTracker {
         self.deleted_count
     }
 
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(
-            self.ids
-                .iter()
-                .copied()
-                .filter(|id| !self.is_deleted_point(*id)),
-        )
-    }
-
     fn mapping_flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
     }

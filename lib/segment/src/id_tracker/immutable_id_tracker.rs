@@ -457,10 +457,6 @@ impl IdTracker for ImmutableIdTracker {
         self.mappings.iter_from(external_id)
     }
 
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        self.iter_internal()
-    }
-
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
         self.mappings.iter_random()
     }
@@ -697,7 +693,7 @@ pub(super) mod test {
     fn test_all_points_have_version() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let id_tracker = make_immutable_tracker(dir.path());
-        for i in id_tracker.iter_ids() {
+        for i in id_tracker.iter_internal() {
             assert!(id_tracker.internal_version(i).is_some());
         }
     }

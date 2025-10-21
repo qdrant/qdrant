@@ -553,7 +553,7 @@ impl Segment {
 
         // dangling internal ids
         let mut has_dangling_internal_ids = false;
-        for internal_id in id_tracker.iter_ids() {
+        for internal_id in id_tracker.iter_internal() {
             if id_tracker.external_id(internal_id).is_none() {
                 log::error!("Internal id {internal_id} without external id");
                 has_dangling_internal_ids = true
@@ -571,7 +571,7 @@ impl Segment {
 
         // checking internal id without version
         let mut has_internal_ids_without_version = false;
-        for internal_id in id_tracker.iter_ids() {
+        for internal_id in id_tracker.iter_internal() {
             if id_tracker.internal_version(internal_id).is_none() {
                 log::error!("Internal id {internal_id} without version");
                 has_internal_ids_without_version = true;
@@ -580,7 +580,7 @@ impl Segment {
 
         // check that non deleted points exist in vector storage
         let mut has_internal_ids_without_vector = false;
-        for internal_id in id_tracker.iter_ids() {
+        for internal_id in id_tracker.iter_internal() {
             for (vector_name, vector_data) in &self.vector_data {
                 let vector_storage = vector_data.vector_storage.borrow();
                 let is_vector_deleted_storage = vector_storage.is_deleted_vector(internal_id);

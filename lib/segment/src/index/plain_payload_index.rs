@@ -167,7 +167,7 @@ impl PayloadIndex for PlainPayloadIndex {
         let filter_context = self.filter_context(query, hw_counter);
         self.id_tracker
             .borrow()
-            .iter_ids()
+            .iter_internal()
             .filter(|id| filter_context.check(*id))
             .collect()
     }
