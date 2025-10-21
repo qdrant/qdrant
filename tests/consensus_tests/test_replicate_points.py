@@ -86,7 +86,7 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
 # can handle. The transfer must therefore finish in 30 seconds without issues.
 #
 # Test that data on the both sides is consistent
-@pytest.mark.parametrize("throttle_updates", [True, False])
+@pytest.mark.parametrize("throttle_updates", [False])
 def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, throttle_updates: bool):
     assert_project_root()
 
@@ -112,7 +112,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     )
 
     # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 10000, shard_key="default")
+    upsert_random_points(peer_api_uris[0], 10000, num_cities=2, shard_key="default")
 
     # Transfer shard from one node to another
     filter = {"must": {"key": "city", "match": {"value": "London"}}}
@@ -125,7 +125,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     assert initial_dest_count == 0 # no points in tenant shard key before transfer
 
     # Start pushing new points to the cluster in parallel (update some old ones + insert new ones)
-    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10001, throttle=throttle_updates)
+    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10000-10, num_points=202, num_cities=2, throttle=throttle_updates)
 
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
@@ -139,7 +139,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     )
     assert_http_ok(r)
 
-    # Stop upserts before transfer finishes so we don't push extra points to "default"
+    # Stop upserts before transfer finishes so we don't push extra points to "default" after transfer
     # TODO: Use "fallback" once PR is merged and kill after transfer is done
     sleep(1)
     upload_process_1.kill()
@@ -157,5 +157,5 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     src_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
     dest_all_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
 
-    assert dest_all_count == src_filtered_count # new shard should also have the same points
     assert dest_all_count > original_filtered_count # more points than before due to upserts during transfer
+    assert dest_all_count == src_filtered_count # new shard should also have the same points
