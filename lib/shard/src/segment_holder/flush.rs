@@ -62,8 +62,10 @@ impl SegmentHolder {
             .collect();
         segment_reads.reverse();
 
-        // Re-sort segments for flush ordering also considering proxies, required to guarantee data consistency
-        segment_reads.sort_by_cached_key(|segment| segment.flush_ordering());
+        debug_assert!(
+            segment_reads.is_sorted_by_key(|segment| segment.flush_ordering()),
+            "segments must be ordered by flush ordering",
+        );
 
         if !sync && self.is_background_flushing() {
             // There is already a background flush ongoing, return current max persisted version
@@ -100,18 +102,14 @@ impl SegmentHolder {
         self.get_max_persisted_version(segment_reads, lock_order)
     }
 
-    /// Defines naive flush ordering for segments.
+    /// Defines flush ordering for segments
     ///
-    /// Flush appendable segments first, then non-appendable.
-    /// This is done to ensure that all data, transferred from non-appendable segments to appendable segments
-    /// is persisted, before marking records in non-appendable segments as removed.
+    /// Order is defined by flush ordering. Flush appendable segments first, non-appendable
+    /// segments last. This is done to ensure that all data, transferred from non-appendable
+    /// segments to appendable segments is persisted, before marking records in non-appendable
+    /// segments as removed.
     fn segment_flush_ordering(&self) -> impl Iterator<Item = SegmentId> {
-        let appendable_segments = self.appendable_segments_ids();
-        let non_appendable_segments = self.non_appendable_segments_ids();
-
-        appendable_segments
-            .into_iter()
-            .chain(non_appendable_segments)
+        self.iter_ids()
     }
 
     // Joins flush thread if exists
