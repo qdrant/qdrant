@@ -192,9 +192,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
             transformed_query.push(0.0);
         }
 
-        let (mut transformed_internal, _offset) = metadata
-            .transform
-            .transform_vector(&query, metadata.bits_count, metadata.pow);
+        let (mut transformed_internal, _offset) =
+            metadata
+                .transform
+                .transform_vector(&query, metadata.bits_count, metadata.pow);
         while transformed_internal.len() % ALIGNMENT != 0 {
             transformed_internal.push(0.0);
         }
@@ -209,9 +210,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsFlex<TStorage> {
 
     fn encode_vector(metadata: &Metadata, vector: &[f32], result: &mut [u8]) {
         result.fill(0);
-        let (mut transformed_vector, vector_offset) = metadata
-            .transform
-            .transform_vector(vector, metadata.bits_count, metadata.pow);
+        let (mut transformed_vector, vector_offset) =
+            metadata
+                .transform
+                .transform_vector(vector, metadata.bits_count, metadata.pow);
         while transformed_vector.len() % ALIGNMENT != 0 {
             transformed_vector.push(0.0);
         }
