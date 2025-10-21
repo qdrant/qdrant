@@ -167,22 +167,24 @@ impl SegmentHolder {
         self.segments
             .push((flush_ordering, segment_id, segment.clone()));
 
-        // Naive way to enforce segment sorting
-        self.segments.sort_by(|a, b| {
-            // Sort by flush ordering first
-            a.0.cmp(&b.0)
-                // Then sort by segment ID
-                .then_with(|| a.1.cmp(&b.1))
-        });
+        // Insert segment at right position to maintain sorting
+        let position = self
+            .segments
+            .binary_search_by_key(
+                &(flush_ordering, segment_id),
+                |(flush_ordering, segment_id, _)| (*flush_ordering, *segment_id),
+            )
+            .expect_err("can only insert each segment ID once");
+        self.segments
+            .insert(position, (flush_ordering, segment_id, segment));
 
-        // TODO: find correct insert position to prevent sorting
-        // TODO: also consider second level of sorting by segment ID
-        // let index = self.segments.iter().position(|(other_ordering, _, _)| other_ordering > flush_ordering);
-        // if let Some(index) = index {
-        //     self.segments.insert(index, (flush_ordering, segment_id, segment.clone()));
-        // } else {
-        //     self.segments.push((flush_ordering, segment_id, segment.clone()));
-        // }
+        // TODO: remove this after testing
+        debug_assert!(
+            self.segments
+                .iter()
+                .is_sorted_by_key(|(flush_ordering, segment_id, _)| (*flush_ordering, *segment_id)),
+            "segments must be ordered by flush ordering and segment ID"
+        );
     }
 
     pub fn remove(&mut self, remove_ids: &[SegmentId]) -> Vec<LockedSegment> {
