@@ -21,7 +21,7 @@ use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwL
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{SegmentEntry, SegmentFlushOrdering};
 use segment::segment_constructor::build_segment;
 use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
 use smallvec::{SmallVec, smallvec};
@@ -52,9 +52,10 @@ impl PartialOrd for DedupPoint {
 
 #[derive(Debug, Default)]
 pub struct SegmentHolder {
-    /// Keep segments sorted by their ID for deterministic iteration order
-    appendable_segments: BTreeMap<SegmentId, LockedSegment>,
-    non_appendable_segments: BTreeMap<SegmentId, LockedSegment>,
+    /// All segments
+    ///
+    /// Sorted by flush ordering, then by segment ID.
+    segments: Vec<(SegmentFlushOrdering, SegmentId, LockedSegment)>,
 
     /// Source for unique (virtual) IDs for newly added segments
     id_source: AtomicUsize,
@@ -91,17 +92,17 @@ impl SegmentHolder {
     ///
     /// Appendable first, then non-appendable.
     pub fn iter(&self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> {
-        self.appendable_segments
+        self.segments
             .iter()
-            .chain(self.non_appendable_segments.iter())
+            .map(|(_, segment_id, segment)| (segment_id, segment))
     }
 
     pub fn len(&self) -> usize {
-        self.appendable_segments.len() + self.non_appendable_segments.len()
+        self.segments.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.appendable_segments.is_empty() && self.non_appendable_segments.is_empty()
+        self.segments.is_empty()
     }
 
     fn generate_new_key(&self) -> SegmentId {
@@ -154,26 +155,34 @@ impl SegmentHolder {
             self.get(segment_id).is_none(),
             "cannot add segment with ID {segment_id}, it already exists",
         );
-        if segment.get().read().is_appendable() {
-            self.appendable_segments.insert(segment_id, segment);
-        } else {
-            self.non_appendable_segments.insert(segment_id, segment);
-        }
+
+        let flush_ordering = segment.get().read().flush_ordering();
+        self.segments
+            .push((flush_ordering, segment_id, segment.clone()));
+
+        // Naive way to enforce segment sorting
+        self.segments.sort_by(|a, b| {
+            // Sort by flush ordering first
+            a.0.cmp(&b.0)
+                // Then sort by segment ID
+                .then_with(|| a.1.cmp(&b.1))
+        });
+
+        // TODO: find correct insert position to prevent sorting
+        // TODO: also consider second level of sorting by segment ID
+        // let index = self.segments.iter().position(|(other_ordering, _, _)| other_ordering > flush_ordering);
+        // if let Some(index) = index {
+        //     self.segments.insert(index, (flush_ordering, segment_id, segment.clone()));
+        // } else {
+        //     self.segments.push((flush_ordering, segment_id, segment.clone()));
+        // }
     }
 
     pub fn remove(&mut self, remove_ids: &[SegmentId]) -> Vec<LockedSegment> {
-        let mut removed_segments = vec![];
-        for remove_id in remove_ids {
-            let removed_segment = self.appendable_segments.remove(remove_id);
-            if let Some(segment) = removed_segment {
-                removed_segments.push(segment);
-            }
-            let removed_segment = self.non_appendable_segments.remove(remove_id);
-            if let Some(segment) = removed_segment {
-                removed_segments.push(segment);
-            }
-        }
-        removed_segments
+        self.segments
+            .extract_if(.., |(_, segment_id, _)| remove_ids.contains(segment_id))
+            .map(|(_, _, segment)| segment)
+            .collect()
     }
 
     /// Replace old segments with a new one
@@ -268,39 +277,61 @@ impl SegmentHolder {
     }
 
     pub fn get(&self, id: SegmentId) -> Option<&LockedSegment> {
-        self.appendable_segments
-            .get(&id)
-            .or_else(|| self.non_appendable_segments.get(&id))
+        self.segments
+            .iter()
+            .find(|(_, segment_id, _)| *segment_id == id)
+            .map(|(_, _, segment)| segment)
     }
 
     pub fn has_appendable_segment(&self) -> bool {
-        !self.appendable_segments.is_empty()
+        // TODO: optimize, appendable should always be the first?
+        self.segments
+            .iter()
+            .any(|(flush_ordering, _, _)| flush_ordering.is_appendable())
     }
 
     /// Get all locked segments, non-appendable first, then appendable.
     pub fn non_appendable_then_appendable_segments(&self) -> impl Iterator<Item = LockedSegment> {
-        self.non_appendable_segments
-            .values()
-            .chain(self.appendable_segments.values())
-            .cloned()
+        self.segments
+            .iter()
+            .rev()
+            .map(|(_, _, segment)| segment.clone())
     }
 
     /// Get two separate lists for non-appendable and appendable locked segments
     pub fn split_segments(&self) -> (Vec<LockedSegment>, Vec<LockedSegment>) {
-        (
-            self.non_appendable_segments.values().cloned().collect(),
-            self.appendable_segments.values().cloned().collect(),
-        )
+        // Create a list of appendable and non-appendable segments
+        // Naively preallocate, assume we have one appendable segment most of the time
+        let mut appendable = Vec::with_capacity(1);
+        let mut non_appendable = Vec::with_capacity(self.segments.len() - 1);
+
+        for (flush_ordering, _, segment) in &self.segments {
+            if flush_ordering.is_appendable() {
+                appendable.push(segment.clone());
+            } else {
+                non_appendable.push(segment.clone());
+            }
+        }
+
+        (non_appendable, appendable)
     }
 
     /// Return appendable segment IDs sorted by IDs
     pub fn appendable_segments_ids(&self) -> Vec<SegmentId> {
-        self.appendable_segments.keys().copied().collect()
+        self.segments
+            .iter()
+            .filter(|(flush_ordering, _, _)| flush_ordering.is_appendable())
+            .map(|(_, segment_id, _)| *segment_id)
+            .collect()
     }
 
     /// Return non-appendable segment IDs sorted by IDs
     pub fn non_appendable_segments_ids(&self) -> Vec<SegmentId> {
-        self.non_appendable_segments.keys().copied().collect()
+        self.segments
+            .iter()
+            .filter(|(flush_ordering, _, _)| !flush_ordering.is_appendable())
+            .map(|(_, segment_id, _)| *segment_id)
+            .collect()
     }
 
     /// Suggests a new maximum persisted segment version when calling `flush_all`. This can be used to make WAL acknowledge no-op operations,
@@ -312,9 +343,9 @@ impl SegmentHolder {
     }
 
     pub fn segment_ids(&self) -> Vec<SegmentId> {
-        self.appendable_segments_ids()
-            .into_iter()
-            .chain(self.non_appendable_segments_ids())
+        self.segments
+            .iter()
+            .map(|(_, segment_id, _)| *segment_id)
             .collect()
     }
 
@@ -325,7 +356,7 @@ impl SegmentHolder {
         let segment_ids: Vec<_> = self.appendable_segments_ids();
         segment_ids
             .choose(&mut rand::rng())
-            .and_then(|idx| self.appendable_segments.get(idx).cloned())
+            .and_then(|idx| self.get(*idx).cloned())
     }
 
     /// Get the smallest appendable segment
@@ -366,7 +397,7 @@ impl SegmentHolder {
         // Fall back to picking a random segment
         segment_ids
             .choose(&mut rand::rng())
-            .and_then(|idx| self.appendable_segments.get(idx).cloned())
+            .and_then(|idx| self.get(*idx).cloned())
     }
 
     /// Selects point ids, which is stored in this segment

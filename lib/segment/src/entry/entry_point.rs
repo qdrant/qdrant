@@ -402,6 +402,10 @@ pub enum SegmentFlushOrdering {
 }
 
 impl SegmentFlushOrdering {
+    pub fn is_appendable(self) -> bool {
+        matches!(self, SegmentFlushOrdering::Appendable)
+    }
+
     pub fn proxy(self) -> Self {
         match self {
             SegmentFlushOrdering::Appendable => SegmentFlushOrdering::ProxyWithAppendable,
