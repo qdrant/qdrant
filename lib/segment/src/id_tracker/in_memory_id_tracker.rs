@@ -111,10 +111,6 @@ impl IdTracker for InMemoryIdTracker {
         self.mappings.iter_from(external_id)
     }
 
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        self.iter_internal()
-    }
-
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
         self.mappings.iter_random()
     }

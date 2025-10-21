@@ -335,7 +335,7 @@ impl HNSWIndex {
         let old_index = old_index.map(|old_index| old_index.reuse(total_vector_count));
 
         let mut indexed_vectors = 0;
-        for vector_id in id_tracker_ref.iter_ids_excluding(deleted_bitslice) {
+        for vector_id in id_tracker_ref.iter_internal_excluding(deleted_bitslice) {
             check_process_stopped(stopped)?;
             indexed_vectors += 1;
 
@@ -386,7 +386,7 @@ impl HNSWIndex {
             let mut ids = Vec::with_capacity(total_vector_count);
             let mut first_few_ids = Vec::with_capacity(SINGLE_THREADED_HNSW_BUILD_THRESHOLD);
 
-            let mut ids_iter = id_tracker_ref.iter_ids_excluding(deleted_bitslice);
+            let mut ids_iter = id_tracker_ref.iter_internal_excluding(deleted_bitslice);
             if let Some(old_index) = old_index {
                 let timer = std::time::Instant::now();
 
@@ -466,7 +466,7 @@ impl HNSWIndex {
 
             // Estimate connectivity of the main graph
             let all_points = id_tracker_ref
-                .iter_ids_excluding(deleted_bitslice)
+                .iter_internal_excluding(deleted_bitslice)
                 .collect::<Vec<_>>();
 
             // According to percolation theory, random graph becomes disconnected
@@ -817,7 +817,7 @@ impl HNSWIndex {
         Self::build_graph_on_gpu(
             gpu_insert_context.as_mut(),
             graph_layers_builder,
-            id_tracker.iter_ids_excluding(deleted_bitslice),
+            id_tracker.iter_internal_excluding(deleted_bitslice),
             entry_points_num,
             points_scorer_builder,
             stopped,

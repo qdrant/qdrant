@@ -283,10 +283,6 @@ impl IdTracker for MutableIdTracker {
         self.total_point_count() - self.available_point_count()
     }
 
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        self.iter_internal()
-    }
-
     /// Creates a flusher function, that persists the removed points in the mapping database
     /// and flushes the mapping to disk.
     /// This function should be called _before_ flushing the version database.
@@ -964,7 +960,7 @@ pub(super) mod tests {
     fn test_all_points_have_version() {
         let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let id_tracker = make_mutable_tracker(segment_dir.path());
-        for i in id_tracker.iter_ids() {
+        for i in id_tracker.iter_internal() {
             assert!(id_tracker.internal_version(i).is_some());
         }
     }

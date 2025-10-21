@@ -271,10 +271,6 @@ impl IdTracker for SimpleIdTracker {
         self.total_point_count() - self.available_point_count()
     }
 
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        self.iter_internal()
-    }
-
     /// Creates a flusher function, that persists the removed points in the mapping database
     /// and flushes the mapping to disk.
     /// This function should be called _before_ flushing the version database.

@@ -69,10 +69,24 @@ pub trait IdTracker: fmt::Debug {
     /// Count should match `available_point_count`, excludes soft deleted points.
     fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 
-    /// Iterate over all internal IDs
+    /// Iterate over internal IDs (offsets)
     ///
     /// Count should match `total_point_count`, excludes soft deleted points.
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
+
+    /// Iterate over internal IDs (offsets)
+    ///
+    /// - excludes soft deleted points
+    /// - excludes flagged items from `exclude_bitslice`
+    fn iter_internal_excluding<'a>(
+        &'a self,
+        exclude_bitslice: &'a BitSlice,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        Box::new(
+            self.iter_internal()
+                .filter(|point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
+        )
+    }
 
     /// Iterate starting from a given ID
     ///
@@ -82,29 +96,10 @@ pub trait IdTracker: fmt::Debug {
         external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
 
-    /// Iterate over internal IDs (offsets)
-    ///
-    /// Excludes soft deleted points.
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
-
     /// Iterate over internal IDs in a random order
     ///
     /// Excludes soft deleted points.
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
-
-    /// Iterate over internal IDs (offsets)
-    ///
-    /// - excludes soft deleted points
-    /// - excludes flagged items from `exclude_bitslice`
-    fn iter_ids_excluding<'a>(
-        &'a self,
-        exclude_bitslice: &'a BitSlice,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        Box::new(
-            self.iter_ids()
-                .filter(|point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
-        )
-    }
 
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> Flusher;
@@ -363,16 +358,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_from(external_id),
             #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_from(external_id),
-        }
-    }
-
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_ids(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_ids(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_ids(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_ids(),
         }
     }
 
