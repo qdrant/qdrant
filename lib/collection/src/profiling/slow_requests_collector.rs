@@ -79,17 +79,14 @@ impl RequestsCollector {
                 .unwrap_or_else(|_| 0);
 
             // Atomically update if enough time has passed
-            let updated = LAST_SEND_WARN.fetch_update(
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-                |prev| {
+            let updated =
+                LAST_SEND_WARN.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |prev| {
                     if now.saturating_sub(prev) >= WARN_INTERVAL_SECS {
                         Some(now)
                     } else {
                         None
                     }
-                }
-            );
+                });
 
             if updated.is_err() {
                 return;
