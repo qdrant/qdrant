@@ -12,8 +12,10 @@ segment = { path = "../segment", default-features = false }
 shard = { path = "../shard" }
 
 fs-err = { workspace = true }
+itertools = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
+rand = { workspace = true }
 thiserror = { workspace = true }
 wal = { workspace = true }
 
