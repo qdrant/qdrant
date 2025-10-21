@@ -21,7 +21,9 @@ pub struct FeatureFlags {
     pub payload_index_skip_rocksdb: bool,
 
     /// Skip usage of RocksDB in new mutable payload indices.
-    // TODO(1.16.0): enable by default
+    ///
+    /// First implemented in Qdrant 1.15.0.
+    /// Enabled by default in Qdrant 1.16.0.
     pub payload_index_skip_mutable_rocksdb: bool,
 
     /// Skip usage of RocksDB in new payload storages.
@@ -66,7 +68,7 @@ impl Default for FeatureFlags {
         FeatureFlags {
             all: false,
             payload_index_skip_rocksdb: true,
-            payload_index_skip_mutable_rocksdb: false,
+            payload_index_skip_mutable_rocksdb: true,
             payload_storage_skip_rocksdb: false,
             incremental_hnsw_building: true,
             migrate_rocksdb_id_tracker: true,
