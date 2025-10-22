@@ -232,7 +232,7 @@ impl MetricsProvider for CollectionsTelemetry {
 
         if !indexed_only_excluded.is_empty() {
             metrics.push(metric_family(
-                "collection_index_only_excluded",
+                "collection_index_only_excluded_points",
                 "amount of points excluded in indexed_only requests",
                 MetricType::GAUGE,
                 indexed_only_excluded,
