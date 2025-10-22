@@ -20,10 +20,10 @@ def test_metrics():
     assert response.ok
 
     # Probe some strings that must exist in the metrics output
-    assert '# HELP app_info information about qdrant server' in response.text
-    assert '# TYPE app_info gauge' in response.text
-    assert 'app_info{name="qdrant",version="' in response.text
-    assert 'collections_total ' in response.text
+    assert '# HELP qdrant_app_info information about qdrant server' in response.text
+    assert '# TYPE qdrant_app_info gauge' in response.text
+    assert 'qdrant_app_info{name="qdrant",version="' in response.text
+    assert 'qdrant_collections_total ' in response.text
 
 
 def test_telemetry():
