@@ -125,7 +125,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     assert initial_dest_count == 0 # no points in tenant shard key before transfer
 
     # Start pushing new points to the cluster in parallel (update some old ones + insert new ones)
-    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10000, num_points=202, num_cities=2, throttle=throttle_updates)
+    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10000-10, num_points=202, num_cities=2, throttle=throttle_updates)
 
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",

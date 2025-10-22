@@ -34,7 +34,6 @@ pub(super) async fn transfer_stream_records(
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     let cutoff;
-    let merge_points = filter.is_some(); // if there are filters, transfers will be partial and hence need merging (instead of overriding)
 
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
 
@@ -94,7 +93,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         let (new_offset, count) = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, merge_points)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, false)
             .await?;
 
         offset = new_offset;
