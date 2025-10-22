@@ -75,6 +75,15 @@ impl CollectionTelemetry {
             .map(|local_shard| local_shard.num_points.unwrap_or(0))
             .sum()
     }
+
+    pub fn count_points_per_vector(&self) -> usize {
+        self.shards
+            .iter()
+            .flatten()
+            .filter_map(|shard| shard.local.as_ref())
+            .map(|local_shard| local_shard.num_points.unwrap_or(0))
+            .sum()
+    }
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::{borrow, iter, mem, slice};
 
 use tinyvec::TinyVec;
@@ -91,7 +92,7 @@ where
             .map(|(_, v)| v)
     }
 
-    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
+    pub fn get_mut<'a, Q>(&'a mut self, key: &Q) -> Option<&'a mut V>
     where
         K: borrow::Borrow<Q>,
         Q: Eq + ?Sized,
@@ -100,6 +101,26 @@ where
             .iter_mut()
             .find(|(k, _)| k.borrow() == key)
             .map(|(_, v)| v)
+    }
+
+    pub fn get_or_insert_default(&mut self, key: K) -> &mut V
+    where
+        V: Sized,
+    {
+        // Try to get the index of the current item.
+        let existing_position = self.list.iter().position(|(k, _)| k == &key);
+
+        // Insert default if not existing and get the new index.
+        let index = match existing_position {
+            Some(existing_pos) => existing_pos,
+            None => {
+                let new_index = self.list.len();
+                self.list.push((key, V::default()));
+                new_index
+            }
+        };
+
+        &mut self.list[index].1
     }
 
     pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
@@ -157,6 +178,17 @@ where
 
     fn into_iter(self) -> Self::IntoIter {
         self.list.into_iter()
+    }
+}
+
+impl<K, V> Into<HashMap<K, V>> for TinyMap<K, V>
+where
+    K: Default + std::hash::Hash + Eq,
+    V: Default,
+{
+    #[inline]
+    fn into(self) -> HashMap<K, V> {
+        HashMap::from_iter(self.into_iter())
     }
 }
 
