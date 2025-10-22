@@ -178,7 +178,7 @@ fn get_index_only_excluded_vectors(
                 .vector_names()
                 .into_iter()
                 .filter_map(move |vector_name| {
-                    let segment_config = &segment_guard.config().vector_data[&vector_name];
+                    let segment_config = segment_guard.config().vector_data.get(&vector_name)?;
 
                     // Skip segments that have an index.
                     if segment_config.index.is_indexed() {
