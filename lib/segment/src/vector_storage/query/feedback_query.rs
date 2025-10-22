@@ -124,11 +124,11 @@ impl NaiveFeedbackCoefficients {
         mut feedback: Vec<FeedbackItem<TVector>>,
         num_pairs: usize,
     ) -> Vec<ContextPair<TVector>> {
-        feedback.sort_by_key(|item| OrderedFloat(-item.score));
-
         if feedback.len() < 2 {
+            // return early as pairs cannot be formed
             return Vec::new();
         }
+        feedback.sort_by_key(|item| OrderedFloat(-item.score));
 
         // Pair front and back items until we run out of them
         let mut front_idx = 0;
