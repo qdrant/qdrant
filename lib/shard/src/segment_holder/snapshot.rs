@@ -238,6 +238,7 @@ impl SegmentHolder {
         // the problem we're seeing.
         // You know what I'm taking about we were in a call together
         if let Some(tmp_segment) = write_segments.get(tmp_segment_id) {
+            log::trace!("Proxy all segments: explicitly flushing temp segment");
             if let Err(err) = tmp_segment.get().read().flush(true) {
                 log::error!("Flushing temp segment failed during unproxying, ignoring: {err}");
             }

@@ -281,9 +281,12 @@ where
         segment_config,
         payload_index_schema,
     )?;
+    log::trace!("Proxy all segments: all segments are now proxied");
 
     // Flush all pending changes of each segment, now wrapped segments won't change anymore
+    log::trace!("Proxy all segments: flush_all started");
     segments_lock.flush_all(true, true)?;
+    log::trace!("Proxy all segments: flush_all finished");
 
     // Apply provided function
     log::trace!("Applying function on all proxied shard segments");
