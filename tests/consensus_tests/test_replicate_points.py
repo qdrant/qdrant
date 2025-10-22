@@ -80,14 +80,14 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
     assert default_filtered_count == expected_count # original shard should remain unchanged
     assert tenant_count == expected_count # new shard should also have the points
 
-# Replicate points from one node to another while applying throttled updates in parallel
+# Replicate points from one shard to another while applying throttled updates in parallel
 #
 # Updates are throttled to prevent sending updates faster than the queue proxy
 # can handle. The transfer must therefore finish in 30 seconds without issues.
 #
 # Test that data on the both sides is consistent
-@pytest.mark.parametrize("throttle_updates", [False])
-def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, throttle_updates: bool):
+@pytest.mark.parametrize("override_points", [True, False])
+def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, override_points: bool):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
@@ -125,7 +125,8 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
     assert initial_dest_count == 0 # no points in tenant shard key before transfer
 
     # Start pushing new points to the cluster in parallel (update some old ones + insert new ones)
-    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10000-10, num_points=202, num_cities=2, throttle=throttle_updates)
+    num_points_to_override = 10 if override_points else 0
+    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, shard_key="default", init_offset=10000-num_points_to_override, num_points=250, num_cities=2, throttle=False)
 
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
@@ -155,7 +156,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, thrott
 
     # Point counts must be consistent across shard keys for given filter
     src_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
-    dest_all_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
+    dest_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True, filter=filter)
 
-    assert dest_all_count > original_filtered_count # more points than before due to upserts during transfer
-    assert dest_all_count == src_filtered_count # new shard should also have the same points
+    assert dest_filtered_count > original_filtered_count # more points than before due to upserts during transfer
+    assert dest_filtered_count == src_filtered_count # new shard should also have the same points
