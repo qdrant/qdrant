@@ -231,10 +231,19 @@ impl SegmentHolder {
             }
         }
 
-        debug_assert!(
-            write_segments.get(tmp_segment_id).is_some(),
-            "temp segment must exist",
-        );
+        // We assume segment flush ordering is broken after we unproxy everything
+        // Segments that were proxied, and segments that were never proxied still have a relation
+        // between them, which we now don't consider anymore.
+        // As a mitigation we believe that explicitly flushing the temporary segment here solves
+        // the problem we're seeing.
+        // You know what I'm taking about we were in a call together
+        if let Some(tmp_segment) = write_segments.get(tmp_segment_id) {
+            if let Err(err) = tmp_segment.get().read().flush(true) {
+                log::error!("Flushing temp segment failed during unproxying, ignoring: {err}");
+            }
+        } else {
+            debug_assert!(false, "temp segment must exist",);
+        }
 
         // Remove temporary appendable segment, if we don't need it anymore
         write_segments.remove_segment_if_not_needed(tmp_segment_id)?;
