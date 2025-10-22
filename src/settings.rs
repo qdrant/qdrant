@@ -57,6 +57,10 @@ pub struct ServiceConfig {
     /// Whether to enable reporting of measured hardware utilization in API responses.
     #[serde(default)]
     pub hardware_reporting: Option<bool>,
+
+    /// Global prefix for metrics.
+    #[serde(default)]
+    pub metrics_prefix: Option<String>,
 }
 
 impl ServiceConfig {
