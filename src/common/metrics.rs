@@ -19,6 +19,9 @@ use crate::common::telemetry_ops::requests_telemetry::{
     GrpcTelemetry, RequestsTelemetry, WebApiTelemetry,
 };
 
+/// A prefix prepended to each metrics name.
+const METRIC_PREFIX: &str = "qdrant_";
+
 /// Whitelist for REST endpoints in metrics output.
 ///
 /// Contains selection of search, recommend, scroll and upsert endpoints.
@@ -690,9 +693,13 @@ impl OperationDurationMetricsBuilder {
     }
 }
 
+/// Creates a Prometheus metrics family for a set of metrics.
+///
+/// Note: Adds the prefix `qdrant_` to the metrics families name.
 fn metric_family(name: &str, help: &str, r#type: MetricType, metrics: Vec<Metric>) -> MetricFamily {
     let mut metric_family = MetricFamily::default();
-    metric_family.set_name(name.into());
+    let name_with_prefix = format!("{METRIC_PREFIX}{name}");
+    metric_family.set_name(name_with_prefix);
     metric_family.set_help(help.into());
     metric_family.set_field_type(r#type);
     metric_family.set_metric(metrics);
