@@ -151,7 +151,9 @@ impl LocalShard {
     }
 }
 
-/// Returns vectors which will be excluded from requests with `index-only` enabled.
+/// Returns the number of vectors which will be excluded from requests with `indexed_only` enabled.
+///
+/// This effectively counts vectors in large unindexed segments.
 fn get_index_only_excluded_vectors(
     segment_holder: &SegmentHolder,
     collection_config: &CollectionConfigInternal,
