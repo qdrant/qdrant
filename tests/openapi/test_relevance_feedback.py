@@ -34,3 +34,49 @@ def test_validations(collection_name):
     )
     assert not response.ok, response.text
     assert response.json()["status"]["error"] == "Not found: No point with id 10000 found"
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "feedback": {
+                    "target": [0.1, 0.2, 0.3, 0.4],
+                    "feedback": [  ],
+                    "strategy": {
+                        "naive": {
+                            "a": 0.12,
+                            "b": 1.25,
+                            "c": 0.99
+                        }
+                    }
+                }
+            }
+        },
+    )
+    assert not response.ok, response.text
+    assert "feedback elements must be non-empty" in response.json()["status"]["error"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "feedback": {
+                    "target": [0.1, 0.2, 0.3, 0.4],
+                    "feedback": [ {"vector": 1, "score": 0.85} ],
+                    "strategy": {
+                        "naive": {
+                            "a": 0.12,
+                            "b": -1.0,
+                            "c": 0.99
+                        }
+                    }
+                }
+            }
+        },
+    )
+    assert not response.ok, response.text
+    assert response.json()["status"]["error"] == "Validation error in JSON body: [internal.query.feedback.strategy.b: value -1.0 invalid, must be 0.0 or larger]"

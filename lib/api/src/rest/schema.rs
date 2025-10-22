@@ -19,6 +19,8 @@ use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
 use validator::{Validate, ValidationErrors};
 
+use crate::rest::validate::validate_feedback_input;
+
 /// Type for dense vector
 pub type DenseVector = Vec<segment::data_types::vectors::VectorElementType>;
 
@@ -874,6 +876,7 @@ impl ContextPair {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[validate(schema(function = "validate_feedback_input"))]
 pub struct FeedbackInput {
     #[validate(nested)]
     pub target: VectorInput,

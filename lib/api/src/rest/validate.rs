@@ -5,8 +5,9 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::Variabl
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::{
-    Batch, BatchVectorStruct, ContextInput, Expression, FormulaQuery, Fusion, NamedVectorStruct,
-    OrderByInterface, PointVectors, Query, QueryInterface, RecommendInput, Sample, VectorInput,
+    Batch, BatchVectorStruct, ContextInput, Expression, FeedbackInput, FormulaQuery, Fusion,
+    NamedVectorStruct, OrderByInterface, PointVectors, Query, QueryInterface, RecommendInput,
+    Sample, VectorInput,
 };
 use crate::rest::FeedbackStrategy;
 
@@ -281,4 +282,15 @@ impl Validate for Expression {
             Expression::GaussDecay(gauss_decay_expression) => gauss_decay_expression.validate(),
         }
     }
+}
+
+/// Struct level validation for `FeedbackInput`
+pub fn validate_feedback_input(feedback_input: &FeedbackInput) -> Result<(), ValidationError> {
+    if feedback_input.feedback.is_empty() {
+        let mut err = ValidationError::new("feedback");
+        err.message = Some(Cow::from("feedback elements must be non-empty"));
+        return Err(err);
+    }
+
+    Ok(())
 }
