@@ -332,7 +332,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "example": "# HELP app_info information about qdrant server\n# TYPE app_info gauge\napp_info{name=\"qdrant\",version=\"0.11.1\"} 1\n# HELP cluster_enabled is cluster support enabled\n# TYPE cluster_enabled gauge\ncluster_enabled 0\n# HELP collections_total number of collections\n# TYPE collections_total gauge\ncollections_total 1\n"
+                  "example": "# HELP qdrant_app_info information about qdrant server\n# TYPE qdrant_app_info gauge\nqdrant_app_info{name=\"qdrant\",version=\"0.11.1\"} 1\n# HELP qdrant_cluster_enabled is cluster support enabled\n# TYPE qdrant_cluster_enabled gauge\nqdrant_cluster_enabled 0\n# HELP qdrant_collections_total number of collections\n# TYPE qdrant_collections_total gauge\nqdrant_collections_total 1\n"
                 }
               }
             }
