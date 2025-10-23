@@ -21,6 +21,7 @@ sparse = { path = "../sparse" }
 
 ahash = { workspace = true }
 bitvec = { workspace = true }
+indexmap = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 ordered-float = { workspace = true }
