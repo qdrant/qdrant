@@ -174,6 +174,26 @@ impl MetricsProvider for CollectionsTelemetry {
             MetricType::GAUGE,
             vec![gauge(vector_count as f64, &[])],
         ));
+
+        let mut total_optimizations_running = 0;
+
+        for collection in self.collections.iter().flatten() {
+            let collection = match collection {
+                CollectionTelemetryEnum::Full(collection_telemetry) => collection_telemetry,
+                CollectionTelemetryEnum::Aggregated(_) => {
+                    continue;
+                }
+            };
+
+            total_optimizations_running += collection.count_optimizers_running();
+        }
+
+        metrics.push(metric_family(
+            "optimizer_running_processes",
+            "number of currently running optimization processes",
+            MetricType::GAUGE,
+            vec![gauge(total_optimizations_running as f64, &[])],
+        ));
     }
 }
 
