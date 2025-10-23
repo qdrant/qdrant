@@ -38,9 +38,24 @@ pub struct CollectionAccess {
 
     /// Payload constraints.
     /// An object where each key is a JSON path, and each value is JSON value.
+    ///
+    /// Deprecation: this parameter is kept for preventing old keys to become valid after parameter removal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[deprecated(since = "1.15.0")]
+    #[validate(custom(function = "validate_payload_empty"))]
     pub payload: Option<PayloadConstraint>,
+}
+
+// PayloadConstraint should never be constructed
+
+fn validate_payload_empty(_payload: &PayloadConstraint) -> Result<(), ValidationError> {
+    Err(ValidationError {
+        code: Cow::from("deprecated"),
+        message: Some(Cow::from(
+            "The 'payload' constraint is deprecated and should not be used",
+        )),
+        params: HashMap::new(),
+    })
 }
 
 impl CollectionAccess {
