@@ -43,6 +43,10 @@ impl MappingChange {
     fn is_insert(&self) -> bool {
         matches!(self, Self::Insert(_, _))
     }
+
+    fn is_delete_with(self, external_id: PointIdType) -> bool {
+        matches!(self, Self::Delete(id) if id == external_id)
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -226,9 +230,14 @@ impl IdTracker for MutableIdTracker {
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
         self.mappings.set_link(external_id, internal_id);
-        self.pending_mappings
-            .lock()
-            .push(MappingChange::Insert(external_id, internal_id));
+
+        // Queue new mapping for flush
+        // Flush reorders all changes and puts deletes last, because they are flushed in a separate
+        // stage. We must therefore also remove deletes for this external ID.
+        let mut pending_mappings = self.pending_mappings.lock();
+        pending_mappings.retain(|&change| !change.is_delete_with(external_id));
+        pending_mappings.push(MappingChange::Insert(external_id, internal_id));
+
         Ok(())
     }
 
