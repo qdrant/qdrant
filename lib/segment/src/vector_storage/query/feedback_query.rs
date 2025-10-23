@@ -36,15 +36,15 @@ pub struct FeedbackQueryInternal<T, TStrategy> {
     /// The original query vector.
     pub target: T,
 
-    /// Pairs of results with higher difference in their feedback score.
+    /// Vectors scored by the feedback model.
     pub feedback: Vec<FeedbackItem<T>>,
 
     /// How to handle the feedback
     pub strategy: TStrategy,
 }
 
-impl<T: Clone> FeedbackQueryInternal<T, SimpleFeedbackStrategy> {
-    pub fn into_query(self) -> FeedbackQuery<T, SimpleFeedbackStrategy> {
+impl<T: Clone> FeedbackQueryInternal<T, NaiveFeedbackStrategy> {
+    pub fn into_query(self) -> FeedbackQuery<T, NaiveFeedbackStrategy> {
         FeedbackQuery::new(self.target, self.feedback, self.strategy)
     }
 }
@@ -82,7 +82,7 @@ impl<T, U, TStrategy> TransformInto<FeedbackQueryInternal<U, TStrategy>, T, U>
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Hash)]
-pub struct PrecomputedFeedbackPair<T> {
+pub struct ContextPair<T> {
     /// A vector with higher feedback score.
     pub positive: T,
     /// A vector with lower feedback score.
@@ -91,12 +91,12 @@ pub struct PrecomputedFeedbackPair<T> {
     pub partial_computation: OrderedFloat<f32>,
 }
 
-impl<T> PrecomputedFeedbackPair<T> {
-    pub fn transform<F, U>(self, mut f: F) -> OperationResult<PrecomputedFeedbackPair<U>>
+impl<T> ContextPair<T> {
+    pub fn transform<F, U>(self, mut f: F) -> OperationResult<ContextPair<U>>
     where
         F: FnMut(T) -> OperationResult<U>,
     {
-        Ok(PrecomputedFeedbackPair {
+        Ok(ContextPair {
             positive: f(self.positive)?,
             negative: f(self.negative)?,
             partial_computation: self.partial_computation,
@@ -104,9 +104,9 @@ impl<T> PrecomputedFeedbackPair<T> {
     }
 }
 
-/// Trained coefficients for the formula. Specific to a triplet of dataset-smallmodel-bigmodel.
+/// Trained coefficients for the formula. Specific to a triplet of dataset-retriever_model-feedback_model.
 #[derive(Debug, Clone, PartialEq, Serialize, Hash)]
-pub struct SimpleFeedbackStrategy {
+pub struct NaiveFeedbackStrategy {
     /// Trained coefficient `a`
     pub a: OrderedFloat<f32>,
     /// Trained coefficient `b`
@@ -115,20 +115,22 @@ pub struct SimpleFeedbackStrategy {
     pub c: OrderedFloat<f32>,
 }
 
-impl SimpleFeedbackStrategy {
+impl NaiveFeedbackStrategy {
     /// Extracts pairs of points, ranked by score difference in descending order.
+    ///
+    /// Sorts the list by score, then pairs up top and bottom items iteratively.
     ///
     /// Assumes scoring order is BiggerIsBetter
     fn extract_feedback_pairs<TVector: Clone>(
         &self,
         mut feedback: Vec<FeedbackItem<TVector>>,
         num_pairs: usize,
-    ) -> Vec<PrecomputedFeedbackPair<TVector>> {
-        feedback.sort_by_key(|item| OrderedFloat(-item.score));
-
+    ) -> Vec<ContextPair<TVector>> {
         if feedback.len() < 2 {
+            // return early as pairs cannot be formed
             return Vec::new();
         }
+        feedback.sort_by_key(|item| OrderedFloat(-item.score));
 
         // Pair front and back items until we run out of them
         let mut front_idx = 0;
@@ -144,7 +146,7 @@ impl SimpleFeedbackStrategy {
             let confidence = front.score - back.score;
 
             let partial_computation = confidence.powf(self.b.0) * self.c.0;
-            feedback_pairs.push(PrecomputedFeedbackPair {
+            feedback_pairs.push(ContextPair {
                 positive: front.vector.clone(),
                 negative: back.vector.clone(),
                 partial_computation: partial_computation.into(),
@@ -165,23 +167,23 @@ pub struct FeedbackQuery<TVector, TStrategy> {
     target: TVector,
 
     /// Pairs of results with higher difference in their feedback score.
-    feedback_pairs: Vec<PrecomputedFeedbackPair<TVector>>,
+    context_pairs: Vec<ContextPair<TVector>>,
 
     /// How to handle the feedback
     strategy: TStrategy,
 }
 
-impl<TVector: Clone> FeedbackQuery<TVector, SimpleFeedbackStrategy> {
+impl<TVector: Clone> FeedbackQuery<TVector, NaiveFeedbackStrategy> {
     pub fn new(
         target: TVector,
         feedback: Vec<FeedbackItem<TVector>>,
-        strategy: SimpleFeedbackStrategy,
+        strategy: NaiveFeedbackStrategy,
     ) -> Self {
-        let feedback_pairs = strategy.extract_feedback_pairs(feedback, DEFAULT_MAX_PAIRS);
+        let context_pairs = strategy.extract_feedback_pairs(feedback, DEFAULT_MAX_PAIRS);
 
         Self {
             target,
-            feedback_pairs,
+            context_pairs,
             strategy,
         }
     }
@@ -196,12 +198,12 @@ impl<T, U, TStrategy> TransformInto<FeedbackQuery<U, TStrategy>, T, U>
     {
         let Self {
             target,
-            feedback_pairs,
+            context_pairs,
             strategy,
         } = self;
         Ok(FeedbackQuery {
             target: f(target)?,
-            feedback_pairs: feedback_pairs
+            context_pairs: context_pairs
                 .into_iter()
                 .map(|pair| pair.transform(&mut f))
                 .try_collect()?,
@@ -210,7 +212,7 @@ impl<T, U, TStrategy> TransformInto<FeedbackQuery<U, TStrategy>, T, U>
     }
 }
 
-impl<T> Query<T> for FeedbackQuery<T, SimpleFeedbackStrategy> {
+impl<T> Query<T> for FeedbackQuery<T, NaiveFeedbackStrategy> {
     /// This follows the following formula:
     ///
     /// $ a * score + \sum{confidence_pair ^b * c * delta_pair} $
@@ -222,14 +224,14 @@ impl<T> Query<T> for FeedbackQuery<T, SimpleFeedbackStrategy> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         let Self {
             target,
-            feedback_pairs,
+            context_pairs,
             strategy,
         } = self;
 
         let mut score = strategy.a.0 * similarity(target);
 
-        for pair in feedback_pairs {
-            let PrecomputedFeedbackPair {
+        for pair in context_pairs {
+            let ContextPair {
                 positive,
                 negative,
                 partial_computation,

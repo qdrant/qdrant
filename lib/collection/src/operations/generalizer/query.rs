@@ -1,7 +1,7 @@
 use segment::data_types::vectors::{MultiDenseVectorInternal, NamedQuery, VectorInternal};
 use segment::vector_storage::query::{
-    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, FeedbackQueryInternal, RecoQuery,
-    SimpleFeedbackStrategy,
+    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, FeedbackQueryInternal,
+    NaiveFeedbackStrategy, RecoQuery,
 };
 use shard::query::query_enum::QueryEnum;
 use sparse::common::sparse_vector::SparseVector;
@@ -112,8 +112,8 @@ impl Generalizer for QueryEnum {
             }
             QueryEnum::Discover(disocover) => QueryEnum::Discover(disocover.remove_details()),
             QueryEnum::Context(context) => QueryEnum::Context(context.remove_details()),
-            QueryEnum::FeedbackSimple(feedback) => {
-                QueryEnum::FeedbackSimple(feedback.remove_details())
+            QueryEnum::FeedbackNaive(feedback) => {
+                QueryEnum::FeedbackNaive(feedback.remove_details())
             }
         }
     }
@@ -224,9 +224,9 @@ impl<T: Generalizer> Generalizer for FeedbackItem<T> {
     }
 }
 
-impl Generalizer for SimpleFeedbackStrategy {
+impl Generalizer for NaiveFeedbackStrategy {
     fn remove_details(&self) -> Self {
-        let SimpleFeedbackStrategy { a: _, b: _, c: _ } = self;
+        let NaiveFeedbackStrategy { a: _, b: _, c: _ } = self;
         Self {
             a: 0.0.into(),
             b: 0.0.into(),

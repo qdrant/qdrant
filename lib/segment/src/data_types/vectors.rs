@@ -18,7 +18,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::transpose_map_into_named_vector;
 use crate::types::{VectorName, VectorNameBuf};
 use crate::vector_storage::query::{
-    ContextQuery, DiscoveryQuery, FeedbackQueryInternal, RecoQuery, SimpleFeedbackStrategy,
+    ContextQuery, DiscoveryQuery, FeedbackQueryInternal, NaiveFeedbackStrategy, RecoQuery,
     TransformInto,
 };
 
@@ -824,7 +824,7 @@ pub enum QueryVector {
     RecommendSumScores(RecoQuery<VectorInternal>),
     Discovery(DiscoveryQuery<VectorInternal>),
     Context(ContextQuery<VectorInternal>),
-    FeedbackSimple(FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>),
+    FeedbackSimple(FeedbackQueryInternal<VectorInternal, NaiveFeedbackStrategy>),
 }
 
 impl TransformInto<QueryVector, VectorInternal, VectorInternal> for QueryVector {

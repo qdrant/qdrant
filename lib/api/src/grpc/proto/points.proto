@@ -563,6 +563,29 @@ message ContextInput {
     repeated ContextInputPair pairs = 1; // Search space will be constrained by these pairs of vectors
 }
 
+message FeedbackInput {
+    VectorInput target = 1; // The original query vector
+    repeated FeedbackItem feedback = 2; // Previous results scored by the feedback provider.
+    FeedbackStrategy strategy = 3; // Formula and trained coefficients to use.
+}
+
+message FeedbackItem {
+    VectorInput vector = 1; // The id or vector from the original model
+    float score = 2; // Score for this vector as determined by the feedback provider
+}
+
+message FeedbackStrategy {
+    oneof variant {
+        NaiveFeedbackStrategy naive = 1; // a * score + sim(confidence^b * c * delta)
+    }
+}
+
+message NaiveFeedbackStrategy {
+    float a = 1;
+    float b = 2;
+    float c = 3;
+}
+
 enum Fusion {
     RRF = 0; // Reciprocal Rank Fusion (with default parameters)
     DBSF = 1; // Distribution-Based Score Fusion
@@ -685,6 +708,7 @@ message Query {
     Formula formula = 8; // Score boosting via an arbitrary formula
     NearestInputWithMmr nearest_with_mmr = 9; // Search nearest neighbors, but re-rank based on the Maximal Marginal Relevance algorithm.
     Rrf rrf = 10; // Parameterized reciprocal rank fusion
+    FeedbackInput feedback = 11; // Search with feedback from some oracle.
   }
 }
 

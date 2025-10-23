@@ -12,7 +12,7 @@ use segment::types::{
     VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{
-    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, RecoQuery, SimpleFeedbackStrategy,
+    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, NaiveFeedbackStrategy, RecoQuery,
 };
 use serde::Serialize;
 use shard::query::query_enum::QueryEnum;
@@ -167,7 +167,7 @@ pub enum VectorQuery<T> {
     RecommendSumScores(RecoQuery<T>),
     Discover(DiscoveryQuery<T>),
     Context(ContextQuery<T>),
-    Feedback(FeedbackQuery<T>),
+    Feedback(FeedbackInternal<T>),
 }
 
 impl<T> VectorQuery<T> {
@@ -199,13 +199,13 @@ pub struct Mmr {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FeedbackQuery<T> {
+pub struct FeedbackInternal<T> {
     pub target: T,
     pub feedback: Vec<FeedbackItem<T>>,
     pub strategy: FeedbackStrategy,
 }
 
-impl<T> FeedbackQuery<T> {
+impl<T> FeedbackInternal<T> {
     fn flat_iter(&self) -> impl Iterator<Item = &T> {
         self.feedback
             .iter()
@@ -216,7 +216,7 @@ impl<T> FeedbackQuery<T> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FeedbackStrategy {
-    Simple { a: f32, b: f32, c: f32 },
+    Naive { a: f32, b: f32, c: f32 },
 }
 
 impl VectorQuery<VectorInputInternal> {
@@ -332,7 +332,7 @@ impl VectorQuery<VectorInputInternal> {
 
                 Ok(VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }))
             }
-            VectorQuery::Feedback(FeedbackQuery {
+            VectorQuery::Feedback(FeedbackInternal {
                 target,
                 feedback,
                 strategy,
@@ -353,7 +353,7 @@ impl VectorQuery<VectorInputInternal> {
                     })
                     .collect::<CollectionResult<_>>()?;
 
-                Ok(VectorQuery::Feedback(FeedbackQuery {
+                Ok(VectorQuery::Feedback(FeedbackInternal {
                     target,
                     feedback,
                     strategy,
@@ -433,7 +433,7 @@ impl VectorQuery<VectorInternal> {
             VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr: _ }) => {
                 nearest.preprocess();
             }
-            VectorQuery::Feedback(FeedbackQuery {
+            VectorQuery::Feedback(FeedbackInternal {
                 target,
                 feedback,
                 strategy: _,
@@ -485,16 +485,16 @@ impl VectorQuery<VectorInternal> {
                     candidates_limit: candidates_limit.unwrap_or(request_limit),
                 }));
             }
-            VectorQuery::Feedback(FeedbackQuery {
+            VectorQuery::Feedback(FeedbackInternal {
                 target,
                 feedback,
                 strategy,
             }) => match strategy {
-                FeedbackStrategy::Simple { a, b, c } => QueryEnum::FeedbackSimple(NamedQuery::new(
+                FeedbackStrategy::Naive { a, b, c } => QueryEnum::FeedbackNaive(NamedQuery::new(
                     segment::vector_storage::query::FeedbackQueryInternal {
                         target,
                         feedback,
-                        strategy: SimpleFeedbackStrategy {
+                        strategy: NaiveFeedbackStrategy {
                             a: a.into(),
                             b: b.into(),
                             c: c.into(),

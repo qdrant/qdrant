@@ -14,7 +14,7 @@ use collection::operations::types::{
     PointRequestInternal, RecommendExample, RecommendRequestInternal, ScrollRequestInternal,
 };
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryRequest, FeedbackQuery, NearestWithMmr, Query,
+    CollectionPrefetch, CollectionQueryRequest, FeedbackInternal, NearestWithMmr, Query,
     VectorInputInternal, VectorQuery,
 };
 use collection::operations::vector_ops::VectorOperations;
@@ -154,7 +154,7 @@ impl CollectionAccessView<'_> {
             VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr: _ }) => {
                 self.check_vector_input(nearest)?
             }
-            VectorQuery::Feedback(FeedbackQuery {
+            VectorQuery::Feedback(FeedbackInternal {
                 target,
                 feedback,
                 strategy: _,

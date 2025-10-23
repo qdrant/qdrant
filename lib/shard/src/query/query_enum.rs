@@ -2,7 +2,7 @@ use api::grpc::qdrant as grpc;
 use segment::data_types::vectors::{DenseVector, Named, NamedQuery, QueryVector, VectorInternal};
 use segment::types::VectorName;
 use segment::vector_storage::query::{
-    ContextQuery, DiscoveryQuery, FeedbackQueryInternal, RecoQuery, SimpleFeedbackStrategy,
+    ContextQuery, DiscoveryQuery, FeedbackQueryInternal, NaiveFeedbackStrategy, RecoQuery,
 };
 use serde::Serialize;
 use sparse::common::sparse_vector::SparseVector;
@@ -15,7 +15,7 @@ pub enum QueryEnum {
     RecommendSumScores(NamedQuery<RecoQuery<VectorInternal>>),
     Discover(NamedQuery<DiscoveryQuery<VectorInternal>>),
     Context(NamedQuery<ContextQuery<VectorInternal>>),
-    FeedbackSimple(NamedQuery<FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>>),
+    FeedbackNaive(NamedQuery<FeedbackQueryInternal<VectorInternal, NaiveFeedbackStrategy>>),
 }
 
 impl QueryEnum {
@@ -26,7 +26,7 @@ impl QueryEnum {
             QueryEnum::RecommendSumScores(reco_query) => reco_query.get_name(),
             QueryEnum::Discover(discovery_query) => discovery_query.get_name(),
             QueryEnum::Context(context_query) => context_query.get_name(),
-            QueryEnum::FeedbackSimple(feedback_query) => feedback_query.get_name(),
+            QueryEnum::FeedbackNaive(feedback_query) => feedback_query.get_name(),
         }
     }
 
@@ -38,7 +38,7 @@ impl QueryEnum {
             | QueryEnum::RecommendSumScores(_)
             | QueryEnum::Discover(_)
             | QueryEnum::Context(_)
-            | QueryEnum::FeedbackSimple(_) => false,
+            | QueryEnum::FeedbackNaive(_) => false,
         }
     }
 
@@ -76,7 +76,7 @@ impl QueryEnum {
                     }
                 }
             }
-            QueryEnum::FeedbackSimple(feedback_query) => {
+            QueryEnum::FeedbackNaive(feedback_query) => {
                 let name = feedback_query.get_name();
                 for vector in feedback_query.query.flat_iter() {
                     match vector {
@@ -101,7 +101,7 @@ impl QueryEnum {
             }
             QueryEnum::Discover(named_query) => search_cost(named_query.query.flat_iter()),
             QueryEnum::Context(named_query) => search_cost(named_query.query.flat_iter()),
-            QueryEnum::FeedbackSimple(named_query) => search_cost(named_query.query.flat_iter()),
+            QueryEnum::FeedbackNaive(named_query) => search_cost(named_query.query.flat_iter()),
         }
     }
 }
@@ -135,7 +135,7 @@ impl From<QueryEnum> for QueryVector {
             QueryEnum::RecommendSumScores(named) => QueryVector::RecommendSumScores(named.query),
             QueryEnum::Discover(named) => QueryVector::Discovery(named.query),
             QueryEnum::Context(named) => QueryVector::Context(named.query),
-            QueryEnum::FeedbackSimple(named) => QueryVector::FeedbackSimple(named.query),
+            QueryEnum::FeedbackNaive(named) => QueryVector::FeedbackSimple(named.query),
         }
     }
 }
@@ -185,7 +185,7 @@ impl From<QueryEnum> for grpc::QueryEnum {
                         .collect(),
                 })),
             },
-            QueryEnum::FeedbackSimple(_named) => {
+            QueryEnum::FeedbackNaive(_named) => {
                 // This conversion only happens for search/recommend/discover dedicated endpoints. Feedback does not have one.
                 unimplemented!("there is no specialized feedback endpoint")
             }

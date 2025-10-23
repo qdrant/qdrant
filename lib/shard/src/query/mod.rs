@@ -20,8 +20,8 @@ use segment::data_types::vectors::{
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::types::*;
 use segment::vector_storage::query::{
-    ContextQuery, DiscoveryQuery, FeedbackItem, FeedbackQueryInternal, RecoQuery,
-    SimpleFeedbackStrategy,
+    ContextQuery, DiscoveryQuery, FeedbackItem, FeedbackQueryInternal, NaiveFeedbackStrategy,
+    RecoQuery,
 };
 use serde::Serialize;
 use tonic::Status;
@@ -336,17 +336,17 @@ fn query_enum_from_grpc_raw_query(
                 .collect::<Result<Vec<_>, _>>()?;
 
             match strategy {
-                grpc::feedback_strategy::Variant::Simple(strategy) => {
+                grpc::feedback_strategy::Variant::Naive(strategy) => {
                     let feedback_query = FeedbackQueryInternal {
                         target,
                         feedback,
-                        strategy: SimpleFeedbackStrategy::from(strategy),
+                        strategy: NaiveFeedbackStrategy::from(strategy),
                     };
                     let named = NamedQuery {
                         query: feedback_query,
                         using,
                     };
-                    QueryEnum::FeedbackSimple(named)
+                    QueryEnum::FeedbackNaive(named)
                 }
             }
         }
@@ -521,7 +521,7 @@ fn query_enum_into_grpc_raw_query(query: QueryEnum) -> grpc::RawQuery {
             Variant::Discover(grpc::raw_query::Discovery::from(named.query))
         }
         QueryEnum::Context(named) => Variant::Context(grpc::raw_query::Context::from(named.query)),
-        QueryEnum::FeedbackSimple(named) => {
+        QueryEnum::FeedbackNaive(named) => {
             Variant::Feedback(grpc::raw_query::Feedback::from(named.query))
         }
     };
