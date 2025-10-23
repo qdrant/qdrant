@@ -107,7 +107,7 @@ where
     where
         V: Sized,
     {
-        // Try to get the index of the current item.
+        // Try to locate the key.
         let existing_position = self.list.iter().position(|(k, _)| k == &key);
 
         // Insert default if not existing and get the new index.
@@ -181,14 +181,14 @@ where
     }
 }
 
-impl<K, V> Into<HashMap<K, V>> for TinyMap<K, V>
+impl<K, V> From<TinyMap<K, V>> for HashMap<K, V>
 where
     K: Default + std::hash::Hash + Eq,
     V: Default,
 {
     #[inline]
-    fn into(self) -> HashMap<K, V> {
-        HashMap::from_iter(self.into_iter())
+    fn from(value: TinyMap<K, V>) -> Self {
+        value.into_iter().collect()
     }
 }
 
