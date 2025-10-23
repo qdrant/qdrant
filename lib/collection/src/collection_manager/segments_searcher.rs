@@ -245,11 +245,13 @@ impl SegmentsSearcher {
         let query_context_arc = Arc::new(query_context);
 
         // Using block to ensure `segments` variable is dropped in the end of it
-        let (locked_segments, searches): (Vec<_>, Vec<_>) = {
+        let (locked_segments, search): (Vec<_>, _) = {
             // Unfortunately, we have to do `segments.read()` twice, once in blocking task
             // and once here, due to `Send` bounds :/
             let segments_lock = segments.read();
-            let segments = segments_lock.non_appendable_then_appendable_segments();
+            let segments: Vec<_> = segments_lock
+                .non_appendable_then_appendable_segments()
+                .collect();
 
             // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
             // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
@@ -262,33 +264,34 @@ impl SegmentsSearcher {
                 && segments_lock.len() > 1
                 && query_context_arc.available_point_count() > 0;
 
-            segments
-                .map(|segment| {
-                    let query_context_arc_segment = query_context_arc.clone();
+            let query_context_arc_segment = query_context_arc.clone();
+            let search = runtime_handle.spawn_blocking({
+                let batch_request = batch_request.clone();
+                let segments = segments.clone();
+                move || {
+                    let mut results = Vec::with_capacity(segments.len());
+                    for segment in segments {
+                        let segment_query_context =
+                            query_context_arc_segment.get_segment_query_context();
 
-                    let search = runtime_handle.spawn_blocking({
-                        let (segment, batch_request) = (segment.clone(), batch_request.clone());
-                        move || {
-                            let segment_query_context =
-                                query_context_arc_segment.get_segment_query_context();
+                        let res = search_in_segment(
+                            segment,
+                            batch_request.clone(),
+                            use_sampling,
+                            &segment_query_context,
+                        )?;
+                        results.push(res);
+                    }
+                    let result: CollectionResult<_> = Ok(results);
+                    result
+                }
+            });
 
-                            search_in_segment(
-                                segment,
-                                batch_request,
-                                use_sampling,
-                                &segment_query_context,
-                            )
-                        }
-                    });
-                    (segment, search)
-                })
-                .unzip()
+            (segments, search)
         };
 
-        // perform search on all segments concurrently
-        // the resulting Vec is in the same order as the segment searches were provided.
-        let (all_search_results_per_segment, further_results) =
-            Self::execute_searches(searches).await?;
+        let (all_search_results_per_segment, further_results): (Vec<_>, Vec<_>) = search.await??.into_iter().unzip();
+
         debug_assert!(all_search_results_per_segment.len() == locked_segments.len());
 
         let (mut result_aggregator, searches_to_rerun) = Self::process_search_result_step1(

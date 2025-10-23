@@ -21,9 +21,9 @@ cluster:
   resharding_enabled: true
 
 storage:
-  performance:
-    # Number of parallel threads used for search operations. If 0 - auto selection.
-    max_search_threads: 4
+#  performance:
+#    # Number of parallel threads used for search operations. If 0 - auto selection.
+#    max_search_threads: 4
 
   optimizers:
     # Minimum interval between forced flushes.
