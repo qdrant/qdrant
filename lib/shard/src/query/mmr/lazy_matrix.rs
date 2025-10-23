@@ -1,11 +1,10 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{PointOffsetType, ScoreType};
+use segment::common::operation_error::OperationResult;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 #[cfg(debug_assertions)]
 use segment::vector_storage::{Random, VectorStorage};
 use segment::vector_storage::{RawScorer, VectorStorageEnum, new_raw_scorer};
-
-use crate::operations::types::CollectionResult;
 
 /// Compute the similarity matrix lazily.
 ///
@@ -29,7 +28,7 @@ impl<'storage> LazyMatrix<'storage> {
         vectors: Vec<VectorInternal>,
         storage: &'storage VectorStorageEnum,
         hw_measurement_acc: HwMeasurementAcc,
-    ) -> CollectionResult<Self> {
+    ) -> OperationResult<Self> {
         #[cfg(debug_assertions)]
         {
             for (i, vector) in vectors.iter().enumerate() {
@@ -45,13 +44,9 @@ impl<'storage> LazyMatrix<'storage> {
             .into_iter()
             .map(|vector| {
                 let query = QueryVector::Nearest(vector);
-                Ok(new_raw_scorer(
-                    query,
-                    storage,
-                    hw_measurement_acc.get_counter_cell(),
-                )?)
+                new_raw_scorer(query, storage, hw_measurement_acc.get_counter_cell())
             })
-            .collect::<CollectionResult<Vec<_>>>()?;
+            .collect::<OperationResult<Vec<_>>>()?;
 
         Ok(Self { scorers, matrix })
     }
