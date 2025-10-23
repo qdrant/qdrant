@@ -951,8 +951,8 @@ pub(super) mod tests {
                 }
             }
 
-            id_tracker.mapping_flusher()().unwrap();
-            id_tracker.versions_flusher()().unwrap();
+            id_tracker.flush_mappings().unwrap();
+            id_tracker.flush_versions().unwrap();
 
             (dropped_points, custom_version)
         };
@@ -1037,8 +1037,8 @@ pub(super) mod tests {
                 .expect("Point to delete exists.");
             assert!(!id_tracker.is_deleted_point(intetrnal_id));
             id_tracker.drop(point_to_delete).unwrap();
-            id_tracker.mapping_flusher()().unwrap();
-            id_tracker.versions_flusher()().unwrap();
+            id_tracker.flush_mappings().unwrap();
+            id_tracker.flush_versions().unwrap();
             id_tracker.mappings
         };
 
@@ -1266,8 +1266,12 @@ pub(super) mod tests {
                 .unwrap()
         }
 
-        id_tracker.mapping_flusher()().expect("failed to flush ID tracker mappings");
-        id_tracker.versions_flusher()().expect("failed to flush ID tracker versions");
+        id_tracker
+            .flush_mappings()
+            .expect("failed to flush ID tracker mappings");
+        id_tracker
+            .flush_versions()
+            .expect("failed to flush ID tracker versions");
 
         id_tracker
     }
@@ -1395,8 +1399,8 @@ pub(super) mod tests {
         check_trackers(&simple_id_tracker, &mutable_id_tracker);
 
         // Persist and reload mutable tracker and test again
-        mutable_id_tracker.mapping_flusher()().unwrap();
-        mutable_id_tracker.versions_flusher()().unwrap();
+        mutable_id_tracker.flush_mappings().unwrap();
+        mutable_id_tracker.flush_versions().unwrap();
         drop(mutable_id_tracker);
         let mutable_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
 

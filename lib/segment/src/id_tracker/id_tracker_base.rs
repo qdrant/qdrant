@@ -104,8 +104,24 @@ pub trait IdTracker: fmt::Debug {
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> (Flusher, Flusher);
 
+    /// Flush id mapping to disk
+    fn flush_mappings(&self) -> OperationResult<()> {
+        let (stage_1_flush, stage_2_flush) = self.mapping_flusher();
+        stage_1_flush()?;
+        stage_2_flush()?;
+        Ok(())
+    }
+
     /// Flush points versions to disk
     fn versions_flusher(&self) -> (Flusher, Flusher);
+
+    /// Flush points versions to disk
+    fn flush_versions(&self) -> OperationResult<()> {
+        let (stage_1_flush, stage_2_flush) = self.versions_flusher();
+        stage_1_flush()?;
+        stage_2_flush()?;
+        Ok(())
+    }
 
     /// Number of total points
     ///
