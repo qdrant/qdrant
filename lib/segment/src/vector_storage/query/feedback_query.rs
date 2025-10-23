@@ -8,8 +8,6 @@ use serde::Serialize;
 use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
 
-const DEFAULT_MAX_PAIRS: usize = 3;
-
 #[derive(Clone, Debug, Serialize, Hash, PartialEq)]
 pub struct FeedbackItem<T> {
     pub vector: T,
@@ -114,46 +112,35 @@ pub struct NaiveFeedbackCoefficients {
 }
 
 impl NaiveFeedbackCoefficients {
-    /// Extracts pairs of points, ranked by score difference in descending order.
-    ///
-    /// Sorts the list by score, then pairs up top and bottom items iteratively.
+    /// Extracts pairs of points which have more than `margin` in their difference of scores
     ///
     /// Assumes scoring order is BiggerIsBetter
-    fn extract_feedback_pairs<TVector: Clone>(
+    fn extract_context_pairs<TVector: Clone>(
         &self,
-        mut feedback: Vec<FeedbackItem<TVector>>,
-        num_pairs: usize,
+        feedback: Vec<FeedbackItem<TVector>>,
+        margin: f32,
     ) -> Vec<ContextPair<TVector>> {
         if feedback.len() < 2 {
             // return early as pairs cannot be formed
             return Vec::new();
         }
-        feedback.sort_by_key(|item| OrderedFloat(-item.score));
 
-        // Pair front and back items until we run out of them
-        let mut front_idx = 0;
-        let mut back_idx = feedback.len() - 1;
+        let mut feedback_pairs = Vec::new();
+        for permutation in feedback.iter().permutations(2) {
+            let (positive, negative) = (permutation[0], permutation[1]);
+            let confidence = positive.score - negative.score;
 
-        let max_num_pairs = num_pairs.min(feedback.len() / 2);
-        let mut feedback_pairs = Vec::with_capacity(max_num_pairs);
-
-        while front_idx < back_idx && feedback_pairs.len() < max_num_pairs {
-            let front = &feedback[front_idx];
-            let back = &feedback[back_idx];
-
-            let confidence = front.score - back.score;
+            if confidence.0 <= margin {
+                continue;
+            }
 
             let partial_computation = confidence.powf(self.b.0) * self.c.0;
             feedback_pairs.push(ContextPair {
-                positive: front.vector.clone(),
-                negative: back.vector.clone(),
+                positive: positive.vector.clone(),
+                negative: negative.vector.clone(),
                 partial_computation: partial_computation.into(),
             });
-
-            front_idx += 1;
-            back_idx -= 1;
         }
-
         feedback_pairs
     }
 }
@@ -177,7 +164,7 @@ impl<TVector: Clone> FeedbackQuery<TVector> {
         feedback: Vec<FeedbackItem<TVector>>,
         coefficients: NaiveFeedbackCoefficients,
     ) -> Self {
-        let context_pairs = coefficients.extract_feedback_pairs(feedback, DEFAULT_MAX_PAIRS);
+        let context_pairs = coefficients.extract_context_pairs(feedback, 0.0);
 
         Self {
             target,
