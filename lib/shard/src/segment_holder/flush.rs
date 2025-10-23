@@ -74,37 +74,29 @@ impl SegmentHolder {
         // as it is exclusive
         let mut background_flush_lock = self.lock_flushing()?;
 
-        if sync {
-            let mut stage_2_flushers = Vec::with_capacity(segment_reads.len());
-
-            for read_segment in segment_reads.iter() {
-                if let Some((stage_1_flusher, stage_2_flusher)) = read_segment.flusher(force) {
-                    stage_2_flushers.push(stage_2_flusher);
-                    stage_1_flusher()?;
-                }
+        // Collect flusher closures for all segments
+        // TODO: try to release segment read locks early here!
+        let (stage_1_flushers, stage_2_flushers): (Vec<_>, Vec<_>) = segment_reads
+            .iter()
+            .filter_map(|read_segment| read_segment.flusher(force))
+            .unzip();
+        let flush_all = move || -> OperationResult<_> {
+            for stage_1_flusher in stage_1_flushers {
+                stage_1_flusher()?;
             }
-
             for stage_2_flusher in stage_2_flushers {
                 stage_2_flusher()?;
             }
-        } else {
-            let (stage_1_flushers, stage_2_flushers): (Vec<_>, Vec<_>) = segment_reads
-                .iter()
-                .filter_map(|read_segment| read_segment.flusher(force))
-                .collect();
+            Ok(())
+        };
 
+        if sync {
+            flush_all()?;
+        } else {
             *background_flush_lock = Some(
                 std::thread::Builder::new()
                     .name("background_flush".to_string())
-                    .spawn(move || {
-                        for stage_1_flusher in stage_1_flushers {
-                            stage_1_flusher()?;
-                        }
-                        for stage_2_flusher in stage_2_flushers {
-                            stage_2_flusher()?;
-                        }
-                        Ok(())
-                    })
+                    .spawn(flush_all)
                     .unwrap(),
             );
         }
