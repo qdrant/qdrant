@@ -468,6 +468,16 @@ impl ShardReplicaSet {
             .collect()
     }
 
+    /// List the peer IDs on which this shard is active, includes the local peer ID.
+    pub fn active_shards(&self) -> Vec<PeerId> {
+        let replica_state = self.replica_state.read();
+        replica_state
+            .active_peers() // This includes `Active` and `ReshardingScaleDown` replicas!
+            .into_iter()
+            .filter(|&peer_id| !self.is_locally_disabled(peer_id))
+            .collect()
+    }
+
     /// Wait for a local shard to be initialized.
     ///
     /// Uses a blocking thread internally.

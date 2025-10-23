@@ -602,23 +602,14 @@ impl TableOfContent {
             }
 
             ShardSelectorInternal::ShardKeyWithFallback(key) => {
-                let shard_keys = if collection.get_shard_keys().await.contains(&key.target) {
-                    // ToDo: Only send to target shard key shard IDs if they are active?
-                    vec![key.target]
-                } else if collection.get_shard_keys().await.contains(&key.fallback) {
-                    vec![key.fallback]
-                } else {
-                    return Err(StorageError::bad_input(format!(
-                        "Neither target shard key '{}' nor fallback shard key '{}' are present in the collection",
-                        key.target, key.fallback
-                    )));
-                };
+                let shard_holder_arc = collection.shards_holder();
+                let shard_holder = shard_holder_arc.read().await;
 
-                // ToDo: If there's an ongoing transfer from fallback to target, we should push updates to both
+                let (_, shard_key) = shard_holder.route_with_fallback(&key)?;
 
                 Self::_update_shard_keys(
                     &collection,
-                    shard_keys,
+                    vec![shard_key.clone()],
                     operation.operation,
                     wait,
                     ordering,

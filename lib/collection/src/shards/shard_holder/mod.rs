@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ahash::AHashMap;
+use api::rest::ShardKeyWithFallback;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
@@ -571,24 +572,9 @@ impl ShardHolder {
                 }
             }
             ShardSelectorInternal::ShardKeyWithFallback(key) => {
-                let shard_key_to_ids_mapping = self.get_shard_key_to_ids_mapping();
+                let (shard_ids_to_query, used_shard_key) = self.route_with_fallback(key)?;
 
-                let (shard_ids, used_shard_key) = shard_key_to_ids_mapping
-                    .get(&key.target)
-                    .map(|shard_ids| (shard_ids.clone(), &key.target))
-                    .or_else(|| {
-                        shard_key_to_ids_mapping
-                            .get(&key.fallback)
-                            .map(|shard_ids| (shard_ids.clone(), &key.fallback))
-                    })
-                    .ok_or_else(|| {
-                        CollectionError::bad_request(format!(
-                            "Neither target shard key {} nor fallback shard key {} exist",
-                            key.target, key.fallback
-                        ))
-                    })?;
-
-                for shard_id in shard_ids {
+                for shard_id in shard_ids_to_query {
                     if let Some(replica_set) = self.shards.get(&shard_id) {
                         res.push((replica_set, Some(used_shard_key)));
                     } else {
@@ -605,6 +591,50 @@ impl ShardHolder {
             }
         }
         Ok(res)
+    }
+
+
+    /// Common routing logic for reads and writes when using ShardKeyWithFallback
+    ///
+    /// If at least one of target shards is Active, use target shard. If not, redirect to fallback shard
+    pub fn route_with_fallback<'a>(
+        &self,
+        key: &'a ShardKeyWithFallback,
+    ) -> CollectionResult<(HashSet<ShardId>, &'a ShardKey)> {
+
+        let shard_key_to_ids_mapping = self.get_shard_key_to_ids_mapping();
+
+        let target_shard_ids = shard_key_to_ids_mapping.get(&key.target);
+        let fallback_shard_ids = shard_key_to_ids_mapping.get(&key.fallback);
+
+        if let Some(target_shard_ids) = target_shard_ids {
+            let replicas = target_shard_ids
+                .iter()
+                .filter_map(|shard_id| self.shards.get(shard_id))
+                .collect::<Vec<_>>();
+
+            let target_any_active = replicas
+                .iter()
+                .any(|replica_set| !replica_set.active_shards().is_empty());
+
+            if target_any_active {
+                Ok((target_shard_ids.clone(), &key.target))
+            } else if let Some(fallback_shard_ids) = fallback_shard_ids {
+                Ok((fallback_shard_ids.clone(), &key.fallback))
+            } else {
+                return Err(CollectionError::bad_request(format!(
+                    "Neither target shard key {} nor fallback shard key {} have active replicas",
+                    key.target, key.fallback
+                )));
+            }
+        } else if let Some(fallback_shard_ids) = fallback_shard_ids {
+            Ok((fallback_shard_ids.clone(), &key.fallback))
+        } else {
+            return Err(CollectionError::bad_request(format!(
+                "Neither target shard key {} nor fallback shard key {} exist",
+                key.target, key.fallback
+            )));
+        }
     }
 
     pub fn len(&self) -> usize {
