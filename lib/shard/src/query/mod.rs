@@ -24,6 +24,11 @@ use self::formula::*;
 use self::query_enum::*;
 use crate::search::CoreSearchRequest;
 
+/// Internal response type for a universal query request.
+///
+/// Capable of returning multiple intermediate results if needed, like the case of RRF (Reciprocal Rank Fusion)
+pub type ShardQueryResponse = Vec<Vec<ScoredPoint>>;
+
 /// Internal representation of a universal query request.
 ///
 /// Direct translation of the user-facing request, but with all point ids substituted with their corresponding vectors.

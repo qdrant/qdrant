@@ -11,9 +11,11 @@ common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard" }
 
+ahash = { workspace = true }
 fs-err = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
+ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }

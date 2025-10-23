@@ -1,13 +1,8 @@
-use segment::types::{Order, ScoredPoint};
+use segment::types::Order;
 pub use shard::query::*;
 
 use crate::config::CollectionParams;
 use crate::operations::types::CollectionResult;
-
-/// Internal response type for a universal query request.
-///
-/// Capable of returning multiple intermediate results if needed, like the case of RRF (Reciprocal Rank Fusion)
-pub type ShardQueryResponse = Vec<Vec<ScoredPoint>>;
 
 /// Returns the expected order of results, depending on the type of query
 pub fn query_result_order(

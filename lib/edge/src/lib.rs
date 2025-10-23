@@ -1,3 +1,4 @@
+pub mod query;
 pub mod retrieve;
 pub mod scroll;
 pub mod search;
