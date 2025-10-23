@@ -88,8 +88,9 @@ impl SegmentHolder {
                 std::thread::Builder::new()
                     .name("background_flush".to_string())
                     .spawn(move || {
-                        for flusher in flushers {
-                            flusher()?;
+                        for (stage_1_updates, stage_2_deletes) in flushers {
+                            stage_1_updates()?;
+                            stage_2_deletes()?;
                         }
                         Ok(())
                     })
