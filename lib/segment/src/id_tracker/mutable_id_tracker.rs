@@ -286,7 +286,7 @@ impl IdTracker for MutableIdTracker {
     /// Creates a flusher function, that persists the removed points in the mapping database
     /// and flushes the mapping to disk.
     /// This function should be called _before_ flushing the version database.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self) -> (Flusher, Flusher) {
         let mappings_path = mappings_path(&self.segment_path);
 
         // Take out pending mappings to flush and replace it with a preallocated vector to avoid
@@ -297,13 +297,16 @@ impl IdTracker for MutableIdTracker {
             mem::replace(&mut *pending_mappings, Vec::with_capacity(count))
         };
 
-        Box::new(move || {
+        let stage_1_flusher = Box::new(move || {
             if pending_mappings.is_empty() {
                 return Ok(());
             }
 
             store_mapping_changes(&mappings_path, pending_mappings)
-        })
+        });
+        let stage_2_flusher = Box::new(|| Ok(()));
+
+        (stage_1_flusher, stage_2_flusher)
     }
 
     /// Creates a flusher function, that persists the removed points in the version database

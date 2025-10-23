@@ -649,7 +649,8 @@ impl SegmentEntry for Segment {
             .collect();
         let state = self.get_state();
         let current_path = self.current_path.clone();
-        let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
+        let (stage_1_id_tracker_mapping_flusher, stage_2_id_tracker_mapping_flusher) =
+            self.id_tracker.borrow().mapping_flusher();
         let payload_index_flusher = self.payload_index.borrow().flusher();
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
@@ -712,8 +713,8 @@ impl SegmentEntry for Segment {
                 return Ok(());
             }
 
-            // Flush mapping first to prevent having orphan internal ids.
-            id_tracker_mapping_flusher().map_err(|err| {
+            // Flush mapping first to prevent having orphan internal ids
+            stage_1_id_tracker_mapping_flusher().map_err(|err| {
                 OperationError::service_error(format!("Failed to flush id_tracker mapping: {err}"))
             })?;
             for vector_storage_flusher in vector_storage_flushers {
@@ -744,7 +745,24 @@ impl SegmentEntry for Segment {
             Ok(())
         };
 
+        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+
         let stage_2_deletes = move || {
+            // Keep the guard till the end of the flush to prevent concurrent flushes
+            let is_alive_flush_guard = is_alive_flush_lock.lock();
+
+            if !*is_alive_flush_guard {
+                // Segment is removed, skip flush
+                return Ok(());
+            }
+
+            // Flush deletes
+            stage_2_id_tracker_mapping_flusher().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to flush id_tracker mapping deletes: {err}"
+                ))
+            })?;
+
             let mut current_persisted_version_guard = persisted_version.lock();
             let persisted_version_value_opt = *current_persisted_version_guard;
 
