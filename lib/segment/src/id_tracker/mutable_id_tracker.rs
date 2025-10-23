@@ -338,17 +338,20 @@ impl IdTracker for MutableIdTracker {
     /// Creates a flusher function, that persists the removed points in the version database
     /// and flushes the version database to disk.
     /// This function should be called _after_ flushing the mapping database.
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self) -> (Flusher, Flusher) {
         let versions_path = versions_path(&self.segment_path);
         let pending_versions = mem::take(&mut *self.pending_versions.lock());
 
-        Box::new(move || {
+        let stage_1_flusher = Box::new(move || {
             if pending_versions.is_empty() {
                 return Ok(());
             }
 
             store_version_changes(&versions_path, pending_versions)
-        })
+        });
+        let stage_2_flusher = Box::new(|| Ok(()));
+
+        (stage_1_flusher, stage_2_flusher)
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {

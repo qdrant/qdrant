@@ -105,7 +105,7 @@ pub trait IdTracker: fmt::Debug {
     fn mapping_flusher(&self) -> (Flusher, Flusher);
 
     /// Flush points versions to disk
-    fn versions_flusher(&self) -> Flusher;
+    fn versions_flusher(&self) -> (Flusher, Flusher);
 
     /// Number of total points
     ///
@@ -379,7 +379,7 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self) -> (Flusher, Flusher) {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
