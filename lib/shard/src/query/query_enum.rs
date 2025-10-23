@@ -1,9 +1,7 @@
-use api::grpc::qdrant as grpc;
-use segment::data_types::vectors::{DenseVector, Named, NamedQuery, QueryVector, VectorInternal};
-use segment::types::VectorName;
-use segment::vector_storage::query::{
-    ContextQuery, DiscoveryQuery, FeedbackQueryInternal, RecoQuery, SimpleFeedbackStrategy,
-};
+use api::grpc;
+use segment::data_types::vectors::*;
+use segment::types::{VectorName, VectorNameBuf};
+use segment::vector_storage::query::*;
 use serde::Serialize;
 use sparse::common::sparse_vector::SparseVector;
 
@@ -106,6 +104,13 @@ impl QueryEnum {
     }
 }
 
+fn search_cost<'a>(vectors: impl IntoIterator<Item = &'a VectorInternal>) -> usize {
+    vectors
+        .into_iter()
+        .map(VectorInternal::similarity_cost)
+        .sum()
+}
+
 impl AsRef<QueryEnum> for QueryEnum {
     fn as_ref(&self) -> &QueryEnum {
         self
@@ -193,9 +198,123 @@ impl From<QueryEnum> for grpc::QueryEnum {
     }
 }
 
-fn search_cost<'a>(vectors: impl IntoIterator<Item = &'a VectorInternal>) -> usize {
-    vectors
-        .into_iter()
-        .map(VectorInternal::similarity_cost)
-        .sum()
+impl QueryEnum {
+    pub fn from_grpc_raw_query(
+        raw_query: grpc::RawQuery,
+        using: Option<VectorNameBuf>,
+    ) -> Result<QueryEnum, tonic::Status> {
+        use grpc::raw_query::Variant;
+
+        let variant = raw_query
+            .variant
+            .ok_or_else(|| tonic::Status::invalid_argument("missing field: variant"))?;
+
+        let query_enum = match variant {
+            Variant::Nearest(nearest) => {
+                let vector = VectorInternal::try_from(nearest)?;
+                let name = match (using, &vector) {
+                    (None, VectorInternal::Sparse(_)) => {
+                        return Err(tonic::Status::invalid_argument(
+                            "Sparse vector must have a name",
+                        ));
+                    }
+
+                    (
+                        Some(name),
+                        VectorInternal::MultiDense(_)
+                        | VectorInternal::Sparse(_)
+                        | VectorInternal::Dense(_),
+                    ) => name,
+
+                    (None, VectorInternal::MultiDense(_) | VectorInternal::Dense(_)) => {
+                        DEFAULT_VECTOR_NAME.to_owned()
+                    }
+                };
+
+                let named_vector = NamedQuery::new(vector, name);
+                QueryEnum::Nearest(named_vector)
+            }
+            Variant::RecommendBestScore(recommend) => QueryEnum::RecommendBestScore(NamedQuery {
+                query: RecoQuery::try_from(recommend)?,
+                using,
+            }),
+            Variant::RecommendSumScores(recommend) => QueryEnum::RecommendSumScores(NamedQuery {
+                query: RecoQuery::try_from(recommend)?,
+                using,
+            }),
+            Variant::Discover(discovery) => QueryEnum::Discover(NamedQuery {
+                query: DiscoveryQuery::try_from(discovery)?,
+                using,
+            }),
+            Variant::Context(context) => QueryEnum::Context(NamedQuery {
+                query: ContextQuery::try_from(context)?,
+                using,
+            }),
+            Variant::Feedback(grpc::raw_query::Feedback {
+                target,
+                feedback,
+                strategy,
+            }) => {
+                let strategy = strategy
+                    .and_then(|strategy| strategy.variant)
+                    .ok_or_else(|| {
+                        tonic::Status::invalid_argument("feedback strategy is required")
+                    })?;
+
+                let target = VectorInternal::try_from(
+                    target.ok_or_else(|| tonic::Status::invalid_argument("No target provided"))?,
+                )?;
+                let feedback = feedback
+                    .into_iter()
+                    .map(<FeedbackItem<VectorInternal>>::try_from)
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                match strategy {
+                    grpc::feedback_strategy::Variant::Simple(strategy) => {
+                        let feedback_query = FeedbackQueryInternal {
+                            target,
+                            feedback,
+                            strategy: SimpleFeedbackStrategy::from(strategy),
+                        };
+                        let named = NamedQuery {
+                            query: feedback_query,
+                            using,
+                        };
+                        QueryEnum::FeedbackSimple(named)
+                    }
+                }
+            }
+        };
+
+        Ok(query_enum)
+    }
+}
+
+impl From<QueryEnum> for grpc::RawQuery {
+    fn from(query: QueryEnum) -> Self {
+        use grpc::raw_query::Variant;
+
+        let variant = match query {
+            QueryEnum::Nearest(named) => Variant::Nearest(grpc::RawVector::from(named.query)),
+            QueryEnum::RecommendBestScore(named) => {
+                Variant::RecommendBestScore(grpc::raw_query::Recommend::from(named.query))
+            }
+            QueryEnum::RecommendSumScores(named) => {
+                Variant::RecommendSumScores(grpc::raw_query::Recommend::from(named.query))
+            }
+            QueryEnum::Discover(named) => {
+                Variant::Discover(grpc::raw_query::Discovery::from(named.query))
+            }
+            QueryEnum::Context(named) => {
+                Variant::Context(grpc::raw_query::Context::from(named.query))
+            }
+            QueryEnum::FeedbackSimple(named) => {
+                Variant::Feedback(grpc::raw_query::Feedback::from(named.query))
+            }
+        };
+
+        grpc::RawQuery {
+            variant: Some(variant),
+        }
+    }
 }

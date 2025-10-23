@@ -13,13 +13,44 @@ use segment::types::{Condition, GeoPoint};
 use serde::Serialize;
 use serde_json::Value;
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct FormulaInternal {
     pub formula: ExpressionInternal,
     pub defaults: HashMap<String, Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+impl TryFrom<FormulaInternal> for ParsedFormula {
+    type Error = OperationError;
+
+    fn try_from(value: FormulaInternal) -> Result<Self, Self::Error> {
+        let FormulaInternal { formula, defaults } = value;
+
+        let mut payload_vars = HashSet::new();
+        let mut conditions = Vec::new();
+
+        let parsed_expression = formula.parse_and_convert(&mut payload_vars, &mut conditions)?;
+
+        let defaults = defaults
+            .into_iter()
+            .map(|(key, value)| {
+                let key = key
+                    .as_str()
+                    .parse()
+                    .map_err(|msg| failed_to_parse("variable ID", &key, &msg))?;
+                OperationResult::Ok((key, value))
+            })
+            .try_collect()?;
+
+        Ok(ParsedFormula {
+            formula: parsed_expression,
+            payload_vars,
+            conditions,
+            defaults,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum ExpressionInternal {
     Constant(f32),
     Variable(String),
@@ -167,37 +198,6 @@ impl ExpressionInternal {
     }
 }
 
-impl TryFrom<FormulaInternal> for ParsedFormula {
-    type Error = OperationError;
-
-    fn try_from(value: FormulaInternal) -> Result<Self, Self::Error> {
-        let FormulaInternal { formula, defaults } = value;
-
-        let mut payload_vars = HashSet::new();
-        let mut conditions = Vec::new();
-
-        let parsed_expression = formula.parse_and_convert(&mut payload_vars, &mut conditions)?;
-
-        let defaults = defaults
-            .into_iter()
-            .map(|(key, value)| {
-                let key = key
-                    .as_str()
-                    .parse()
-                    .map_err(|msg| failed_to_parse("variable ID", &key, &msg))?;
-                OperationResult::Ok((key, value))
-            })
-            .try_collect()?;
-
-        Ok(ParsedFormula {
-            formula: parsed_expression,
-            payload_vars,
-            conditions,
-            defaults,
-        })
-    }
-}
-
 fn failed_to_parse(what: &str, value: &str, message: impl fmt::Display) -> OperationError {
     OperationError::validation_error(format!("failed to parse {what} {value}: {message}"))
 }
@@ -210,6 +210,34 @@ impl From<rest::FormulaQuery> for FormulaInternal {
             formula: ExpressionInternal::from(formula),
             defaults,
         }
+    }
+}
+
+impl TryFrom<grpc::Formula> for FormulaInternal {
+    type Error = tonic::Status;
+
+    fn try_from(formula: grpc::Formula) -> Result<Self, Self::Error> {
+        let grpc::Formula {
+            expression,
+            defaults,
+        } = formula;
+
+        let expression = expression
+            .ok_or_else(|| tonic::Status::invalid_argument("missing field: expression"))?;
+
+        let expression = ExpressionInternal::try_from(expression)?;
+        let defaults = defaults
+            .into_iter()
+            .map(|(key, value)| {
+                let value = api::conversions::json::proto_to_json(value)?;
+                Result::<_, tonic::Status>::Ok((key, value))
+            })
+            .try_collect()?;
+
+        Ok(Self {
+            formula: expression,
+            defaults,
+        })
     }
 }
 
@@ -318,34 +346,6 @@ impl From<rest::Expression> for ExpressionInternal {
                 scale,
             },
         }
-    }
-}
-
-impl TryFrom<api::grpc::qdrant::Formula> for FormulaInternal {
-    type Error = tonic::Status;
-
-    fn try_from(formula: api::grpc::qdrant::Formula) -> Result<Self, Self::Error> {
-        let api::grpc::qdrant::Formula {
-            expression,
-            defaults,
-        } = formula;
-
-        let expression = expression
-            .ok_or_else(|| tonic::Status::invalid_argument("missing field: expression"))?;
-
-        let expression = ExpressionInternal::try_from(expression)?;
-        let defaults = defaults
-            .into_iter()
-            .map(|(key, value)| {
-                let value = api::conversions::json::proto_to_json(value)?;
-                Result::<_, tonic::Status>::Ok((key, value))
-            })
-            .try_collect()?;
-
-        Ok(Self {
-            formula: expression,
-            defaults,
-        })
     }
 }
 

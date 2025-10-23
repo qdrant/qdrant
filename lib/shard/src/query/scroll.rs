@@ -4,7 +4,7 @@ use segment::types::{Filter, WithPayloadInterface, WithVector};
 use crate::operation_rate_cost;
 
 /// Scroll request, used as a part of query request
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct QueryScrollRequestInternal {
     /// Page size. Default: 10
     pub limit: usize,
@@ -22,14 +22,6 @@ pub struct QueryScrollRequestInternal {
     pub scroll_order: ScrollOrder,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum ScrollOrder {
-    #[default]
-    ById,
-    ByField(OrderBy),
-    Random,
-}
-
 impl QueryScrollRequestInternal {
     pub fn scroll_rate_cost(&self) -> usize {
         let mut cost = operation_rate_cost::BASE_COST;
@@ -38,4 +30,12 @@ impl QueryScrollRequestInternal {
         }
         cost
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum ScrollOrder {
+    #[default]
+    ById,
+    ByField(OrderBy),
+    Random,
 }
