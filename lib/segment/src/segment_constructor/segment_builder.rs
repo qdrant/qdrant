@@ -501,7 +501,9 @@ impl SegmentBuilder {
                 IdTrackerEnum::RocksDbIdTracker(_) => id_tracker,
             };
 
-            id_tracker.mapping_flusher()()?;
+            let (mapping_stage_1, mapping_stage_2) = id_tracker.mapping_flusher();
+            mapping_stage_1()?;
+            mapping_stage_2()?;
             id_tracker.versions_flusher()()?;
             let id_tracker_arc = Arc::new(AtomicRefCell::new(id_tracker));
 

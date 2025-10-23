@@ -462,9 +462,9 @@ impl IdTracker for ImmutableIdTracker {
     }
 
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self) -> (Flusher, Flusher) {
         // Only flush deletions because mappings are immutable
-        self.deleted_wrapper.flusher()
+        (Box::new(|| Ok(())), self.deleted_wrapper.flusher())
     }
 
     /// Creates a flusher function, that writes the points versions to disk.

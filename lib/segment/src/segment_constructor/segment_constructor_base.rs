@@ -939,7 +939,9 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
         }
 
         // Flush mappings and versions
-        new_id_tracker.mapping_flusher()()?;
+        let (mapping_stage_1, mapping_stage_2) = new_id_tracker.mapping_flusher();
+        mapping_stage_1()?;
+        mapping_stage_2()?;
         new_id_tracker.versions_flusher()()?;
 
         Ok(new_id_tracker)
