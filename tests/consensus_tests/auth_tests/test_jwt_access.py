@@ -797,7 +797,7 @@ def check_access(
         method,
         path,
         rest_request,
-        allowed_for.coll_r_payload,
+        False,  # Payload constraints deprecated
         TOKEN_COLL_R_PAYLOAD,
         path_params,
         rest_req_kwargs,
@@ -806,7 +806,7 @@ def check_access(
         method,
         path,
         rest_request,
-        allowed_for.coll_rw_payload,
+        False,  # Payload constraints deprecated
         TOKEN_COLL_RW_PAYLOAD,
         path_params,
         rest_req_kwargs,
