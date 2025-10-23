@@ -75,11 +75,20 @@ impl SegmentHolder {
         let mut background_flush_lock = self.lock_flushing()?;
 
         if sync {
+            let mut stage_2_flushers = Vec::with_capacity(segment_reads.len());
+
             for read_segment in segment_reads.iter() {
-                read_segment.flush(force)?;
+                if let Some((stage_1_flusher, stage_2_flusher)) = read_segment.flusher(force) {
+                    stage_2_flushers.push(stage_2_flusher);
+                    stage_1_flusher()?;
+                }
+            }
+
+            for stage_2_flusher in stage_2_flushers {
+                stage_2_flusher()?;
             }
         } else {
-            let flushers: Vec<_> = segment_reads
+            let (stage_1_flushers, stage_2_flushers): (Vec<_>, Vec<_>) = segment_reads
                 .iter()
                 .filter_map(|read_segment| read_segment.flusher(force))
                 .collect();
@@ -88,9 +97,11 @@ impl SegmentHolder {
                 std::thread::Builder::new()
                     .name("background_flush".to_string())
                     .spawn(move || {
-                        for (stage_1_updates, stage_2_deletes) in flushers {
-                            stage_1_updates()?;
-                            stage_2_deletes()?;
+                        for stage_1_flusher in stage_1_flushers {
+                            stage_1_flusher()?;
+                        }
+                        for stage_2_flusher in stage_2_flushers {
+                            stage_2_flusher()?;
                         }
                         Ok(())
                     })
