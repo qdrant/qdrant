@@ -468,8 +468,11 @@ impl IdTracker for ImmutableIdTracker {
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
-    fn versions_flusher(&self) -> Flusher {
-        self.internal_to_version_wrapper.flusher()
+    fn versions_flusher(&self) -> (Flusher, Flusher) {
+        (
+            self.internal_to_version_wrapper.flusher(),
+            Box::new(|| Ok(())),
+        )
     }
 
     fn total_point_count(&self) -> usize {

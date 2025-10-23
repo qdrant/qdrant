@@ -281,13 +281,8 @@ impl IdTracker for SimpleIdTracker {
     /// Creates a flusher function, that persists the removed points in the version database
     /// and flushes the version database to disk.
     /// This function should be called _after_ flushing the mapping database.
-    fn versions_flusher(&self) -> Flusher {
-        let (stage_1, stage_2) = self.versions_db_wrapper.flusher();
-        Box::new(move || {
-            stage_1()?;
-            stage_2()?;
-            Ok(())
-        })
+    fn versions_flusher(&self) -> (Flusher, Flusher) {
+        self.versions_db_wrapper.flusher()
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {

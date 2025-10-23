@@ -652,7 +652,8 @@ impl SegmentEntry for Segment {
         let (stage_1_id_tracker_mapping_flusher, stage_2_id_tracker_mapping_flusher) =
             self.id_tracker.borrow().mapping_flusher();
         let payload_index_flusher = self.payload_index.borrow().flusher();
-        let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
+        let (stage_1_id_tracker_versions_flusher, stage_2_id_tracker_versions_flusher) =
+            self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
 
         // Flush order is important:
@@ -738,7 +739,7 @@ impl SegmentEntry for Segment {
             // If Id Tracker flush fails, we are also able to recover data from WAL
             //  by simply overriding data in vector and payload storages.
             // Once versions are saved - points are considered persisted.
-            id_tracker_versions_flusher().map_err(|err| {
+            stage_1_id_tracker_versions_flusher().map_err(|err| {
                 OperationError::service_error(format!("Failed to flush id_tracker versions: {err}"))
             })?;
 
@@ -760,6 +761,12 @@ impl SegmentEntry for Segment {
             stage_2_id_tracker_mapping_flusher().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to flush id_tracker mapping deletes: {err}"
+                ))
+            })?;
+
+            stage_2_id_tracker_versions_flusher().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to flush id_tracker version deletes: {err}"
                 ))
             })?;
 
