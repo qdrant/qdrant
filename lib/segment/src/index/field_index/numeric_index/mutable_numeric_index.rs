@@ -53,7 +53,7 @@ where
 {
     #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
-    Gridstore(Arc<RwLock<Gridstore<Vec<T>>>>),
+    Gridstore(Gridstore<Vec<T>>),
 }
 
 // Numeric Index with insertions and deletions without persistence
@@ -338,7 +338,7 @@ where
             .unwrap();
 
         Ok(Some(Self {
-            storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
+            storage: Storage::Gridstore(store),
             in_memory_index,
         }))
     }
@@ -357,11 +357,11 @@ where
     }
 
     #[inline]
-    pub(super) fn clear(&self) -> OperationResult<()> {
-        match &self.storage {
+    pub(super) fn clear(&mut self) -> OperationResult<()> {
+        match &mut self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Gridstore(store) => store.write().clear().map_err(|err| {
+            Storage::Gridstore(store) => store.clear().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable numeric index: {err}",
                 ))
@@ -374,16 +374,11 @@ where
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Gridstore(store) => {
-                let store =
-                    Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
-
-                store.into_inner().wipe().map_err(|err| {
-                    OperationError::service_error(format!(
-                        "Failed to wipe mutable numeric index: {err}",
-                    ))
-                })
-            }
+            Storage::Gridstore(store) => store.wipe().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to wipe mutable numeric index: {err}",
+                ))
+            }),
         }
     }
 
@@ -395,7 +390,7 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
-            Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
+            Storage::Gridstore(index) => index.clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable numeric index gridstore cache: {err}"
                 ))
@@ -408,7 +403,7 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
-            Storage::Gridstore(store) => store.read().files(),
+            Storage::Gridstore(store) => store.files(),
         }
     }
 
@@ -418,7 +413,7 @@ where
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(store) => {
-                let storage_flusher = store.read().flusher();
+                let storage_flusher = store.flusher();
                 Box::new(move || {
                     storage_flusher().map_err(|err| {
                         OperationError::service_error(format!(
@@ -437,7 +432,7 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Update persisted storage
-        match &self.storage {
+        match &mut self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
                 let mut hw_cell_wb = hw_counter
@@ -451,12 +446,11 @@ where
             }
             // We cannot store empty value, then delete instead
             Storage::Gridstore(store) if values.is_empty() => {
-                store.write().delete_value(idx);
+                store.delete_value(idx);
             }
             Storage::Gridstore(store) => {
                 let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
                 store
-                    .write()
                     .put_value(idx, &values, hw_counter_ref)
                     .map_err(|err| {
                         OperationError::service_error(format!(
@@ -472,7 +466,7 @@ where
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
-        match &self.storage {
+        match &mut self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
                 self.in_memory_index
@@ -486,7 +480,7 @@ where
                     .transpose()?;
             }
             Storage::Gridstore(store) => {
-                store.write().delete_value(idx);
+                store.delete_value(idx);
             }
         }
 
