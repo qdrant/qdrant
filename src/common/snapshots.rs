@@ -32,7 +32,7 @@ pub async fn create_shard_snapshot(
 ) -> Result<SnapshotDescription, StorageError> {
     let collection_pass = access.check_collection_access(
         &collection_name,
-        AccessRequirements::new().write().whole().extras(),
+        AccessRequirements::new().write().extras(),
     )?;
     let collection = toc.get_collection(&collection_pass).await?;
 
@@ -55,7 +55,7 @@ pub async fn stream_shard_snapshot(
 ) -> Result<SnapshotStream, StorageError> {
     let collection_pass = access.check_collection_access(
         &collection_name,
-        AccessRequirements::new().write().whole().extras(),
+        AccessRequirements::new().write().extras(),
     )?;
 
     let collection = toc.get_collection(&collection_pass).await?;
@@ -98,7 +98,7 @@ pub async fn list_shard_snapshots(
     shard_id: ShardId,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
     let collection_pass = access
-        .check_collection_access(&collection_name, AccessRequirements::new().whole().extras())?;
+        .check_collection_access(&collection_name, AccessRequirements::new().extras())?;
     let collection = toc.get_collection(&collection_pass).await?;
     let snapshots = collection.list_shard_snapshots(shard_id).await?;
     Ok(snapshots)
@@ -116,7 +116,7 @@ pub async fn delete_shard_snapshot(
 ) -> Result<(), StorageError> {
     let collection_pass = access.check_collection_access(
         &collection_name,
-        AccessRequirements::new().write().whole().extras(),
+        AccessRequirements::new().write().extras(),
     )?;
     let collection = toc.get_collection(&collection_pass).await?;
     let snapshot_manager = collection.get_snapshots_storage_manager()?;

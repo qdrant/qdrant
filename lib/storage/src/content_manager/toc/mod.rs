@@ -216,11 +216,11 @@ impl TableOfContent {
             .await
     }
 
-    pub async fn all_collections_whole_access(
+    pub async fn all_collections_access(
         &self,
         access: &Access,
     ) -> Vec<CollectionPass<'static>> {
-        self.all_collections_with_access_requirements(access, AccessRequirements::new().whole())
+        self.all_collections_with_access_requirements(access, AccessRequirements::new())
             .await
     }
 

@@ -63,8 +63,6 @@ impl CollectionAccess {
         CollectionAccessView {
             collection: &self.collection,
             access: self.access,
-            #[expect(deprecated)]
-            payload: &self.payload,
         }
     }
 }
@@ -173,22 +171,13 @@ impl CollectionAccessList {
 struct CollectionAccessView<'a> {
     pub collection: &'a str,
     pub access: CollectionAccessMode,
-    pub payload: &'a Option<PayloadConstraint>,
 }
 
 impl CollectionAccessView<'_> {
-    pub(self) fn check_whole_access(&self) -> Result<(), StorageError> {
-        if self.payload.is_some() {
-            return incompatible_with_payload_constraint(self.collection);
-        }
-        Ok(())
-    }
-
     fn meets_requirements(&self, requirements: AccessRequirements) -> Result<(), StorageError> {
         let AccessRequirements {
             write,
             manage,
-            whole,
             extras,
         } = requirements;
 
@@ -225,9 +214,6 @@ impl CollectionAccessView<'_> {
             return Err(StorageError::forbidden(
                 "Manage access for this operation is required",
             ));
-        }
-        if whole && self.payload.is_some() {
-            return incompatible_with_payload_constraint(self.collection);
         }
         Ok(())
     }
@@ -268,8 +254,6 @@ pub struct AccessRequirements {
     pub write: bool,
     /// Manage access is required, implies write access.
     pub manage: bool,
-    /// If true, the access should be not limited by a payload restrictions.
-    pub whole: bool,
     /// Require access to collection extras, like snapshots, payload indexes, cluster info.
     pub extras: bool,
 }
@@ -293,13 +277,6 @@ impl AccessRequirements {
         }
     }
 
-    pub fn whole(&self) -> Self {
-        Self {
-            whole: true,
-            ..*self
-        }
-    }
-
     pub fn extras(&self) -> Self {
         Self {
             extras: true,
@@ -313,7 +290,6 @@ impl GlobalAccessMode {
         let AccessRequirements {
             write,
             manage,
-            whole: _,
             extras: _,
         } = requirements;
         if write || manage {
@@ -326,15 +302,6 @@ impl GlobalAccessMode {
         }
         Ok(())
     }
-}
-
-/// Helper function to indicate that the operation is not allowed when `payload` constraint is
-/// present.
-fn incompatible_with_payload_constraint<T>(collection_name: &str) -> Result<T, StorageError> {
-    Err(StorageError::forbidden(format!(
-        "This operation is not allowed when \"payload\" restriction is present for collection \
-         {collection_name}"
-    )))
 }
 
 impl Access {
@@ -386,7 +353,7 @@ impl AccessCollectionBuilder {
         Self(Vec::new())
     }
 
-    pub(self) fn add(mut self, name: &str, write: bool, whole: bool) -> Self {
+    pub(self) fn add(mut self, name: &str, write: bool) -> Self {
         self.0.push(CollectionAccess {
             collection: name.to_string(),
             access: if write {
@@ -395,7 +362,7 @@ impl AccessCollectionBuilder {
                 CollectionAccessMode::Read
             },
             #[expect(deprecated)]
-            payload: (!whole).then(|| PayloadConstraint::new_test(name)),
+            payload: None,
         });
         self
     }
