@@ -1,6 +1,7 @@
 use std::io::BufReader;
 use std::ops::ControlFlow;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
@@ -32,13 +33,13 @@ pub struct Gridstore<V> {
     /// Holds mapping from `PointOffset` -> `ValuePointer`
     ///
     /// Stored in a separate file
-    tracker: RwLock<Tracker>,
+    tracker: Arc<RwLock<Tracker>>,
     /// Mapping from page_id -> mmap page
     pub(super) pages: Vec<Page>,
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
-    bitmask: RwLock<Bitmask>,
+    bitmask: Arc<RwLock<Bitmask>>,
     /// Path of the directory where the storage files are stored
     base_path: PathBuf,
     _value_type: std::marker::PhantomData<V>,
@@ -134,9 +135,9 @@ impl<V: Blob> Gridstore<V> {
         let config_path = base_path.join(CONFIG_FILENAME);
 
         let mut storage = Self {
-            tracker: RwLock::new(Tracker::new(&base_path, None)),
+            tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None))),
             pages: Default::default(),
-            bitmask: RwLock::new(Bitmask::create(&base_path, config)?),
+            bitmask: Arc::new(RwLock::new(Bitmask::create(&base_path, config)?)),
             base_path,
             config,
             _value_type: std::marker::PhantomData,
@@ -177,10 +178,10 @@ impl<V: Blob> Gridstore<V> {
         let num_pages = bitmask.infer_num_pages();
 
         let mut storage = Self {
-            tracker: RwLock::new(page_tracker),
+            tracker: Arc::new(RwLock::new(page_tracker)),
             config,
             pages: Vec::with_capacity(num_pages),
-            bitmask: RwLock::new(bitmask),
+            bitmask: Arc::new(RwLock::new(bitmask)),
             base_path,
             _value_type: std::marker::PhantomData,
         };
