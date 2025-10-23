@@ -12165,6 +12165,15 @@
           "async_scorer": {
             "type": "boolean",
             "nullable": true
+          },
+          "index_only_excluded_vectors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "nullable": true
           }
         }
       },
