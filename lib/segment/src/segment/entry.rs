@@ -619,7 +619,7 @@ impl SegmentEntry for Segment {
         }
     }
 
-    fn flusher(&self, force: bool) -> Option<Flusher> {
+    fn flusher(&self, force: bool) -> Option<(Flusher, Flusher)> {
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
 
         match (self.version, current_persisted_version) {
@@ -703,7 +703,7 @@ impl SegmentEntry for Segment {
 
         let is_alive_flush_lock = self.is_alive_flush_lock.clone();
 
-        let flush_op = move || {
+        let stage_1_updates = move || {
             // Keep the guard till the end of the flush to prevent concurrent flushes
             let is_alive_flush_guard = is_alive_flush_lock.lock();
 
@@ -741,6 +741,10 @@ impl SegmentEntry for Segment {
                 OperationError::service_error(format!("Failed to flush id_tracker versions: {err}"))
             })?;
 
+            Ok(())
+        };
+
+        let stage_2_deletes = move || {
             let mut current_persisted_version_guard = persisted_version.lock();
             let persisted_version_value_opt = *current_persisted_version_guard;
 
@@ -762,7 +766,7 @@ impl SegmentEntry for Segment {
             Ok(())
         };
 
-        Some(Box::new(flush_op))
+        Some((Box::new(stage_1_updates), Box::new(stage_2_deletes)))
     }
 
     fn drop_data(self) -> OperationResult<()> {
