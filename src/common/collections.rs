@@ -60,8 +60,7 @@ pub async fn do_get_collection(
     name: &str,
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
-    let collection_pass =
-        access.check_collection_access(name, AccessRequirements::new())?;
+    let collection_pass = access.check_collection_access(name, AccessRequirements::new())?;
 
     let collection = toc.get_collection(&collection_pass).await?;
 
@@ -160,8 +159,8 @@ pub async fn do_list_snapshots(
     access: Access,
     collection_name: &str,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    let collection_pass = access
-        .check_collection_access(collection_name, AccessRequirements::new().extras())?;
+    let collection_pass =
+        access.check_collection_access(collection_name, AccessRequirements::new().extras())?;
     Ok(toc
         .get_collection(&collection_pass)
         .await?
@@ -175,10 +174,7 @@ pub async fn do_create_snapshot(
     collection_name: &str,
 ) -> Result<SnapshotDescription, StorageError> {
     let collection_pass = access
-        .check_collection_access(
-            collection_name,
-            AccessRequirements::new().write().extras(),
-        )?
+        .check_collection_access(collection_name, AccessRequirements::new().write().extras())?
         .into_static();
 
     let result = tokio::spawn(async move { toc.create_snapshot(&collection_pass).await }).await??;

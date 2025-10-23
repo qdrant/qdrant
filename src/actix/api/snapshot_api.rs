@@ -125,8 +125,8 @@ pub async fn do_get_snapshot(
     collection_name: &str,
     snapshot_name: &str,
 ) -> Result<SnapshotStream, HttpError> {
-    let collection_pass = access
-        .check_collection_access(collection_name, AccessRequirements::new().extras())?;
+    let collection_pass =
+        access.check_collection_access(collection_name, AccessRequirements::new().extras())?;
     let collection: tokio::sync::RwLockReadGuard<collection::collection::Collection> =
         toc.get_collection(&collection_pass).await?;
     let snapshot_storage_manager = collection.get_snapshots_storage_manager()?;

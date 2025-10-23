@@ -306,8 +306,6 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
 mod tests_ops {
     use std::fmt::Debug;
 
-    use super::*;
-    use crate::rbac::{AccessCollectionBuilder, GlobalAccessMode};
     use api::rest::{
         self, LookupLocation, OrderByInterface, RecommendStrategy, SearchRequestInternal,
     };
@@ -337,6 +335,9 @@ mod tests_ops {
     use shard::operations::vector_ops::VectorOperations;
     use strum::IntoEnumIterator as _;
 
+    use super::*;
+    use crate::rbac::{AccessCollectionBuilder, GlobalAccessMode};
+
     /// Create a `must` filter from a list of point IDs.
     #[cfg(test)]
     fn make_filter_from_ids(ids: Vec<ExtendedPointId>) -> Filter {
@@ -352,9 +353,7 @@ mod tests_ops {
         op: &Op,
         access: &Access,
     ) {
-        access
-            .check_point_op("col", op)
-            .expect("Should be allowed");
+        access.check_point_op("col", op).expect("Should be allowed");
     }
 
     /// Operation is forbidden with the given access.
