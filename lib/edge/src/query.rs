@@ -106,11 +106,11 @@ impl Shard {
         for source in merge_plan_sources {
             match source {
                 Source::SearchesIdx(idx) => {
-                    sources.push(take_prefetched_source(search_results, idx))
+                    sources.push(take_prefetched_source(search_results, idx)?)
                 }
 
                 Source::ScrollsIdx(idx) => {
-                    sources.push(take_prefetched_source(scroll_results, idx))
+                    sources.push(take_prefetched_source(scroll_results, idx)?)
                 }
 
                 Source::Prefetch(merge_plan) => {
@@ -164,7 +164,7 @@ impl Shard {
 
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
-                let filter = filter_with_sources_ids(sources.into_iter());
+                let filter = filter_by_point_ids(&sources);
 
                 // Note: score_threshold is not used in this case, as all results will have same score,
                 // but different order_value
@@ -181,7 +181,7 @@ impl Shard {
 
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
-                let filter = filter_with_sources_ids(sources.into_iter());
+                let filter = filter_by_point_ids(&sources);
 
                 let search_request = CoreSearchRequest {
                     query: query_enum,
@@ -204,7 +204,7 @@ impl Shard {
             ScoringQuery::Sample(sample) => match sample {
                 SampleInternal::Random => {
                     // create single scroll request for rescoring query
-                    let filter = filter_with_sources_ids(sources.into_iter());
+                    let filter = filter_by_point_ids(&sources);
 
                     // Note: score_threshold is not used in this case, as all results will have same score and order_value
                     let scroll_request = QueryScrollRequestInternal {
@@ -384,20 +384,17 @@ impl Shard {
     }
 }
 
-fn take_prefetched_source<T: Default>(items: &mut [T], index: usize) -> T {
-    mem::take(items.get_mut(index).expect("prefetched source exists"))
+fn take_prefetched_source<T: Default>(items: &mut [T], index: usize) -> OperationResult<T> {
+    let source = items.get_mut(index).ok_or_else(|| {
+        OperationError::service_error(format!("prefetched source at index {index} does not exist"))
+    })?;
+
+    Ok(mem::take(source))
 }
 
-// TODO: MOVE FROM `local_shard::query` INTO `shard` CRATE!
 /// Extracts point ids from sources, and creates a filter to only include those ids.
-fn filter_with_sources_ids(sources: impl Iterator<Item = Vec<ScoredPoint>>) -> Filter {
-    let mut point_ids = AHashSet::new();
-
-    for source in sources {
-        for point in source.iter() {
-            point_ids.insert(point.id);
-        }
-    }
+fn filter_by_point_ids(points: &[Vec<ScoredPoint>]) -> Filter {
+    let point_ids: AHashSet<_> = points.iter().flatten().map(|point| point.id).collect();
 
     // create filter for target point ids
     Filter::new_must(segment::types::Condition::HasId(HasIdCondition::from(
