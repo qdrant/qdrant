@@ -82,6 +82,32 @@ mod tests {
                 collection: "collection".to_string(),
                 access: CollectionAccessMode::ReadWrite,
                 #[expect(deprecated)]
+                payload: None,
+            }])),
+            value_exists: None,
+        };
+        let token = create_token(&claims);
+
+        let secret = "secret";
+        let parser = JwtParser::new(secret);
+        let decoded_claims = parser.decode(&token).unwrap().unwrap();
+
+        assert_eq!(claims, decoded_claims);
+    }
+
+    #[test]
+    fn test_jwt_parser_with_deprecated_payloads() {
+        let exp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+        let claims = Claims {
+            sub: None,
+            exp: Some(exp),
+            access: Access::Collection(CollectionAccessList(vec![CollectionAccess {
+                collection: "collection".to_string(),
+                access: CollectionAccessMode::ReadWrite,
+                #[expect(deprecated)]
                 payload: Some(PayloadConstraint(
                     vec![
                         (
@@ -101,9 +127,7 @@ mod tests {
 
         let secret = "secret";
         let parser = JwtParser::new(secret);
-        let decoded_claims = parser.decode(&token).unwrap().unwrap();
-
-        assert_eq!(claims, decoded_claims);
+        assert!(parser.decode(&token).unwrap().is_err()); // Validation should fail due to PayloadConstraint
     }
 
     #[test]
