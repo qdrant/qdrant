@@ -9175,7 +9175,7 @@
             "type": "boolean"
           },
           "max_selectivity": {
-            "description": "Maximum selectivity of the filter to enable ACORN.\n\n0.0 for never, 1.0 for always. Default is 0.4.",
+            "description": "Maximum selectivity of the filter to enable ACORN. If filter selectivity estimated as higher than this value across all points, ACORN will not be used. Selectivity is estimated as: `estimated number of points satisfying the filter / total number of points`.\n\n0.0 for never, 1.0 for always. Default is 0.4.",
             "type": "number",
             "format": "double",
             "maximum": 1,
@@ -12594,13 +12594,6 @@
       "SparseVectorStorageType": {
         "oneOf": [
           {
-            "description": "Storage on disk (rocksdb storage)",
-            "type": "string",
-            "enum": [
-              "on_disk"
-            ]
-          },
-          {
             "description": "Storage in memory maps (gridstore storage)",
             "type": "string",
             "enum": [
@@ -12612,34 +12605,6 @@
       "PayloadStorageType": {
         "description": "Type of payload storage",
         "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "in_memory"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "on_disk"
-                ]
-              }
-            }
-          },
           {
             "type": "object",
             "required": [

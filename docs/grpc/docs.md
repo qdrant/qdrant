@@ -2449,7 +2449,7 @@ The JSON representation for `Value` is a JSON value.
 | enable | [bool](#bool) | optional | When enabled, the ACORN might be enabled for the HNSW search.
 
 Improves search recall for searches with multiple low-selectivity payload filters, at cost of performance. |
-| max_selectivity | [double](#double) | optional | Maximum selectivity of the filter to enable ACORN.
+| max_selectivity | [double](#double) | optional | Maximum selectivity of the filter to enable ACORN. If filter selectivity estimated as higher than this value across all points, ACORN will not be used. Selectivity is estimated as: `estimated number of points satisfying the filter / total number of points`.
 
 0.0 for never, 1.0 for always. Default is 0.4. |
 

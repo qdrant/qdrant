@@ -827,7 +827,7 @@ impl From<SearchParams> for segment::types::SearchParams {
             exact: exact.unwrap_or(false),
             quantization: quantization.map(|q| q.into()),
             indexed_only: indexed_only.unwrap_or(false),
-            acorn: acorn.map(|a| a.into()),
+            acorn: acorn.map(segment::types::AcornSearchParams::from),
         }
     }
 }
@@ -846,7 +846,7 @@ impl From<segment::types::SearchParams> for SearchParams {
             exact: Some(exact),
             quantization: quantization.map(|q| q.into()),
             indexed_only: Some(indexed_only),
-            acorn: acorn.map(|a| a.into()),
+            acorn: acorn.map(AcornSearchParams::from),
         }
     }
 }

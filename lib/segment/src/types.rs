@@ -542,6 +542,9 @@ pub struct AcornSearchParams {
     pub enable: bool,
 
     /// Maximum selectivity of the filter to enable ACORN.
+    /// If filter selectivity estimated as higher than this value across all points,
+    /// ACORN will not be used. Selectivity is estimated as:
+    /// `estimated number of points satisfying the filter / total number of points`.
     ///
     /// 0.0 for never, 1.0 for always. Default is 0.4.
     #[serde(default)]
