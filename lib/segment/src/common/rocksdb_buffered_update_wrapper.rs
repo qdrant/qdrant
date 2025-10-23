@@ -72,32 +72,59 @@ impl DatabaseColumnScheduledUpdateWrapper {
             .retain(|point_id, a| flushed.inserted.get(point_id).is_none_or(|b| a != b));
     }
 
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> (Flusher, Flusher) {
         let PendingOperations { deleted, inserted } = self.pending_operations.lock().clone();
 
         debug_assert!(
             inserted.keys().all(|key| !deleted.contains(key)),
-            "Key to marked for insertion is also marked for deletion!"
+            "key marked for insertion cannot also be marked for deletion",
         );
-        let wrapper = self.db.clone();
-        let pending_operations_arc = self.pending_operations.clone();
 
-        Box::new(move || {
-            for id in deleted.iter() {
-                wrapper.remove(id)?;
+        let stage_1_flusher = Box::new({
+            let wrapper = self.db.clone();
+            let pending_operations_arc = self.pending_operations.clone();
+
+            move || {
+                for (id, value) in inserted.iter() {
+                    wrapper.put(id, value)?;
+                }
+                wrapper.flusher()()?;
+
+                Self::clear_flushed_updates(
+                    PendingOperations {
+                        inserted,
+                        deleted: AHashSet::new(),
+                    },
+                    pending_operations_arc,
+                );
+
+                Ok(())
             }
-            for (id, value) in inserted.iter() {
-                wrapper.put(id, value)?;
+        });
+
+        let stage_2_flusher = Box::new({
+            let wrapper = self.db.clone();
+            let pending_operations_arc = self.pending_operations.clone();
+
+            move || {
+                for id in deleted.iter() {
+                    wrapper.remove(id)?;
+                }
+                wrapper.flusher()()?;
+
+                Self::clear_flushed_updates(
+                    PendingOperations {
+                        deleted,
+                        inserted: AHashMap::new(),
+                    },
+                    pending_operations_arc,
+                );
+
+                Ok(())
             }
-            wrapper.flusher()()?;
+        });
 
-            Self::clear_flushed_updates(
-                PendingOperations { deleted, inserted },
-                pending_operations_arc,
-            );
-
-            Ok(())
-        })
+        (stage_1_flusher, stage_2_flusher)
     }
 
     pub fn lock_db(&self) -> LockedDatabaseColumnWrapper<'_> {

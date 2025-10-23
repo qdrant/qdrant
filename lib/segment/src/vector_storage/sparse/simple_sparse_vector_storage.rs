@@ -247,7 +247,12 @@ impl VectorStorage for SimpleSparseVectorStorage {
     }
 
     fn flusher(&self) -> Flusher {
-        self.db_wrapper.flusher()
+        let (stage_1, stage_2) = self.db_wrapper.flusher();
+        Box::new(move || {
+            stage_1()?;
+            stage_2()?;
+            Ok(())
+        })
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
