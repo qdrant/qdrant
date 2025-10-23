@@ -1,13 +1,11 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
 use itertools::Itertools;
-use parking_lot::RwLock;
 
 use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::inverted_index::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
@@ -39,7 +37,7 @@ pub struct MutableFullTextIndex {
 pub(super) enum Storage {
     #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
-    Gridstore(Arc<RwLock<Gridstore<Vec<u8>>>>),
+    Gridstore(Gridstore<Vec<u8>>),
 }
 
 impl MutableFullTextIndex {
@@ -131,17 +129,17 @@ impl MutableFullTextIndex {
         Ok(Some(Self {
             inverted_index: builder.build(),
             config,
-            storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
+            storage: Storage::Gridstore(store),
             tokenizer,
         }))
     }
 
     #[inline]
-    pub(super) fn init(&self) -> OperationResult<()> {
-        match &self.storage {
+    pub(super) fn init(&mut self) -> OperationResult<()> {
+        match &mut self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Gridstore(store) => store.write().clear().map_err(|err| {
+            Storage::Gridstore(store) => store.clear().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable full text index: {err}",
                 ))
@@ -154,16 +152,11 @@ impl MutableFullTextIndex {
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Gridstore(store) => {
-                let store =
-                    Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
-
-                store.into_inner().wipe().map_err(|err| {
-                    OperationError::service_error(format!(
-                        "Failed to wipe mutable full text index: {err}",
-                    ))
-                })
-            }
+            Storage::Gridstore(store) => store.wipe().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to wipe mutable full text index: {err}",
+                ))
+            }),
         }
     }
 
@@ -175,7 +168,7 @@ impl MutableFullTextIndex {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
-            Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
+            Storage::Gridstore(index) => index.clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable full text index gridstore cache: {err}"
                 ))
@@ -188,7 +181,7 @@ impl MutableFullTextIndex {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
-            Storage::Gridstore(store) => store.read().files(),
+            Storage::Gridstore(store) => store.files(),
         }
     }
 
@@ -198,7 +191,7 @@ impl MutableFullTextIndex {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(store) => {
-                let storage_flusher = store.read().flusher();
+                let storage_flusher = store.flusher();
                 Box::new(move || {
                     storage_flusher().map_err(|err| {
                         OperationError::service_error(format!(
@@ -252,7 +245,7 @@ impl MutableFullTextIndex {
         let db_document = FullTextIndex::serialize_document(tokens_to_store)?;
 
         // Update persisted storage
-        match &self.storage {
+        match &mut self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
                 let db_idx = FullTextIndex::store_key(idx);
@@ -260,7 +253,6 @@ impl MutableFullTextIndex {
             }
             Storage::Gridstore(store) => {
                 store
-                    .write()
                     .put_value(
                         idx,
                         &db_document,
@@ -280,7 +272,7 @@ impl MutableFullTextIndex {
     #[allow(clippy::unnecessary_wraps)]
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         // Update persisted storage
-        match &self.storage {
+        match &mut self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
                 if self.inverted_index.remove(id) {
@@ -290,7 +282,7 @@ impl MutableFullTextIndex {
             }
             Storage::Gridstore(store) => {
                 if self.inverted_index.remove(id) {
-                    store.write().delete_value(id);
+                    store.delete_value(id);
                 }
             }
         }
@@ -311,7 +303,6 @@ impl MutableFullTextIndex {
                 .unwrap()
             }
             Storage::Gridstore(gridstore) => gridstore
-                .read()
                 .get_value::<false>(idx, &HardwareCounterCell::disposable())
                 .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap()),
         }
