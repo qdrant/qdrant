@@ -31,13 +31,17 @@ enum MappingChange {
 }
 
 impl MappingChange {
-    fn change_type(&self) -> MappingChangeType {
+    fn change_type(self) -> MappingChangeType {
         match self {
             Self::Insert(PointIdType::NumId(_), _) => MappingChangeType::InsertNum,
             Self::Insert(PointIdType::Uuid(_), _) => MappingChangeType::InsertUuid,
             Self::Delete(PointIdType::NumId(_)) => MappingChangeType::DeleteNum,
             Self::Delete(PointIdType::Uuid(_)) => MappingChangeType::DeleteUuid,
         }
+    }
+
+    fn is_insert(&self) -> bool {
+        matches!(self, Self::Insert(_, _))
     }
 }
 
@@ -291,20 +295,42 @@ impl IdTracker for MutableIdTracker {
 
         // Take out pending mappings to flush and replace it with a preallocated vector to avoid
         // frequent reallocation on a busy segment
-        let pending_mappings = {
+        let (pending_inserts, pending_deletes) = {
             let mut pending_mappings = self.pending_mappings.lock();
-            let count = pending_mappings.len();
-            mem::replace(&mut *pending_mappings, Vec::with_capacity(count))
+
+            // Partition inserts and deletes, we flush them in separate stages
+            let (pending_inserts, pending_deletes): (Vec<_>, Vec<_>) = pending_mappings
+                .iter()
+                .cloned()
+                .partition(MappingChange::is_insert);
+
+            // Shrink pending mappings capacity to prevent growing forever
+            // Not releasing all capacity prevents frequent reallocation on a busy segment
+            let new_capacity = pending_mappings.len().next_power_of_two();
+            pending_mappings.shrink_to(new_capacity);
+            pending_mappings.clear();
+
+            (pending_inserts, pending_deletes)
         };
 
-        let stage_1_flusher = Box::new(move || {
-            if pending_mappings.is_empty() {
+        let stage_1_flusher = Box::new({
+            let mappings_path = mappings_path.clone();
+            move || {
+                if pending_inserts.is_empty() {
+                    return Ok(());
+                }
+
+                store_mapping_changes(&mappings_path, pending_inserts)
+            }
+        });
+
+        let stage_2_flusher = Box::new(move || {
+            if pending_deletes.is_empty() {
                 return Ok(());
             }
 
-            store_mapping_changes(&mappings_path, pending_mappings)
+            store_mapping_changes(&mappings_path, pending_deletes)
         });
-        let stage_2_flusher = Box::new(|| Ok(()));
 
         (stage_1_flusher, stage_2_flusher)
     }
