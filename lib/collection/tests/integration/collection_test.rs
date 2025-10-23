@@ -906,3 +906,76 @@ async fn test_collection_local_load_initializing_not_stuck() {
         }
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_average_vector_computation() {
+    test_average_vector_computation_with_shards(1).await;
+    test_average_vector_computation_with_shards(N_SHARDS).await;
+}
+
+async fn test_average_vector_computation_with_shards(_shard_number: u32) {
+    use collection::recommendations::avg_vectors;
+    use segment::data_types::vectors::{VectorInternal, VectorRef};
+
+    // Test averaging dense vectors directly
+    let vec1 = vec![1.0, 0.0, 0.0, 0.0];
+    let vec2 = vec![0.0, 1.0, 0.0, 0.0];
+
+    let vectors = vec![VectorRef::Dense(&vec1), VectorRef::Dense(&vec2)];
+    let avg_vector = avg_vectors(vectors).unwrap();
+
+    // Average of [1,0,0,0] and [0,1,0,0] should be [0.5,0.5,0,0]
+    match avg_vector {
+        VectorInternal::Dense(vec) => {
+            assert_eq!(vec.len(), 4);
+            assert!((vec[0] - 0.5).abs() < 1e-6);
+            assert!((vec[1] - 0.5).abs() < 1e-6);
+            assert!((vec[2] - 0.0).abs() < 1e-6);
+            assert!((vec[3] - 0.0).abs() < 1e-6);
+        }
+        _ => panic!("Expected dense vector"),
+    }
+
+    // Test averaging more than two vectors
+    let vec3 = vec![0.0, 0.0, 1.0, 0.0];
+    let vec4 = vec![0.0, 0.0, 0.0, 1.0];
+
+    let vectors_multi = vec![
+        VectorRef::Dense(&vec1),
+        VectorRef::Dense(&vec2),
+        VectorRef::Dense(&vec3),
+        VectorRef::Dense(&vec4),
+    ];
+    let avg_vector_multi = avg_vectors(vectors_multi).unwrap();
+
+    // Average of [1,0,0,0], [0,1,0,0], [0,0,1,0], [0,0,0,1] should be [0.25,0.25,0.25,0.25]
+    match avg_vector_multi {
+        VectorInternal::Dense(vec) => {
+            assert_eq!(vec.len(), 4);
+            assert!((vec[0] - 0.25).abs() < 1e-6);
+            assert!((vec[1] - 0.25).abs() < 1e-6);
+            assert!((vec[2] - 0.25).abs() < 1e-6);
+            assert!((vec[3] - 0.25).abs() < 1e-6);
+        }
+        _ => panic!("Expected dense vector"),
+    }
+
+    // Test averaging with different magnitudes
+    let vec5 = vec![2.0, 0.0, 0.0, 0.0];
+    let vec6 = vec![0.0, 2.0, 0.0, 0.0];
+
+    let vectors_scaled = vec![VectorRef::Dense(&vec5), VectorRef::Dense(&vec6)];
+    let avg_vector_scaled = avg_vectors(vectors_scaled).unwrap();
+
+    // Average of [2,0,0,0] and [0,2,0,0] should be [1,1,0,0]
+    match avg_vector_scaled {
+        VectorInternal::Dense(vec) => {
+            assert_eq!(vec.len(), 4);
+            assert!((vec[0] - 1.0).abs() < 1e-6);
+            assert!((vec[1] - 1.0).abs() < 1e-6);
+            assert!((vec[2] - 0.0).abs() < 1e-6);
+            assert!((vec[3] - 0.0).abs() < 1e-6);
+        }
+        _ => panic!("Expected dense vector"),
+    }
+}

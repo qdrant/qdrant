@@ -5205,6 +5205,32 @@ pub struct RecommendBatchPoints {
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AverageVectorPoints {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// List of point IDs or vectors to average
+    #[prost(message, repeated, tag = "2")]
+    pub examples: ::prost::alloc::vec::Vec<VectorExample>,
+    /// Define which vector to use, if not specified - use default vector
+    #[prost(string, optional, tag = "3")]
+    pub using: ::core::option::Option<::prost::alloc::string::String>,
+    /// Name of the collection to use for points lookup, if not specified - use current collection
+    #[prost(message, optional, tag = "4")]
+    pub lookup_from: ::core::option::Option<LookupLocation>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "5")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "6")]
+    pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "7")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6530,6 +6556,19 @@ pub struct RecommendResponse {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AverageVectorResponse {
+    /// The computed average vector
+    #[prost(message, optional, tag = "1")]
+    pub vector: ::core::option::Option<Vector>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+    #[prost(message, optional, tag = "3")]
+    pub usage: ::core::option::Option<Usage>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendBatchResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<BatchResult>,
@@ -7804,6 +7843,32 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "RecommendGroups"));
             self.inner.unary(req, path, codec).await
         }
+        /// Compute the average vector from a list of point IDs or vectors
+        pub async fn average_vector(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AverageVectorPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::AverageVectorResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/AverageVector",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "AverageVector"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Use context and a target to find the most similar points to the target, constrained by the context.
         ///
         /// When using only the context (without a target), a special search - called context search - is performed where
@@ -8194,6 +8259,14 @@ pub mod points_server {
             request: tonic::Request<super::RecommendPointGroups>,
         ) -> std::result::Result<
             tonic::Response<super::RecommendGroupsResponse>,
+            tonic::Status,
+        >;
+        /// Compute the average vector from a list of point IDs or vectors
+        async fn average_vector(
+            &self,
+            request: tonic::Request<super::AverageVectorPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::AverageVectorResponse>,
             tonic::Status,
         >;
         /// Use context and a target to find the most similar points to the target, constrained by the context.
@@ -9169,6 +9242,52 @@ pub mod points_server {
                     };
                     Box::pin(fut)
                 }
+                "/qdrant.Points/AverageVector" => {
+                    #[allow(non_camel_case_types)]
+                    struct AverageVectorSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::AverageVectorPoints>
+                    for AverageVectorSvc<T> {
+                        type Response = super::AverageVectorResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AverageVectorPoints>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::average_vector(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = AverageVectorSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/qdrant.Points/Discover" => {
                     #[allow(non_camel_case_types)]
                     struct DiscoverSvc<T: Points>(pub Arc<T>);
@@ -10122,6 +10241,15 @@ pub struct RecommendPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AverageVectorPointsInternal {
+    #[prost(message, optional, tag = "1")]
+    pub average_vector_points: ::core::option::Option<AverageVectorPoints>,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
+}
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10944,6 +11072,31 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "Recommend"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn average_vector(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AverageVectorPointsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::AverageVectorResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/AverageVector",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "AverageVector"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn get(
             &mut self,
             request: impl tonic::IntoRequest<super::GetPointsInternal>,
@@ -11128,6 +11281,13 @@ pub mod points_internal_server {
             request: tonic::Request<super::RecommendPointsInternal>,
         ) -> std::result::Result<
             tonic::Response<super::RecommendResponse>,
+            tonic::Status,
+        >;
+        async fn average_vector(
+            &self,
+            request: tonic::Request<super::AverageVectorPointsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::AverageVectorResponse>,
             tonic::Status,
         >;
         async fn get(
@@ -11959,6 +12119,52 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = RecommendSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/AverageVector" => {
+                    #[allow(non_camel_case_types)]
+                    struct AverageVectorSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::AverageVectorPointsInternal>
+                    for AverageVectorSvc<T> {
+                        type Response = super::AverageVectorResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AverageVectorPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PointsInternal>::average_vector(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = AverageVectorSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
