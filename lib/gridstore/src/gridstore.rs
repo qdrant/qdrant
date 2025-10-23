@@ -23,6 +23,8 @@ const CONFIG_FILENAME: &str = "config.json";
 
 pub(crate) type Result<T> = std::result::Result<T, String>;
 
+pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), mmap_type::Error> + Send>;
+
 /// Storage for values of type `V`.
 ///
 /// Assumes sequential IDs to the values (0, 1, 2, 3, ...)
@@ -33,7 +35,7 @@ pub struct Gridstore<V> {
     /// Holds mapping from `PointOffset` -> `ValuePointer`
     ///
     /// Stored in a separate file
-    tracker: Arc<RwLock<Tracker>>,
+    pub(super) tracker: Arc<RwLock<Tracker>>,
     /// Mapping from page_id -> mmap page
     pub(super) pages: Vec<Page>,
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
@@ -557,33 +559,48 @@ impl<V> Gridstore<V> {
 
     /// Flush all mmaps and pending updates to disk
     pub fn flush(&self) -> std::result::Result<(), mmap_type::Error> {
-        let mut bitmask_guard = self.bitmask.upgradable_read();
-        bitmask_guard.flush()?;
+        self.flusher()?()
+    }
+
+    /// Create flusher that durably persists all pending changes when invoked
+    pub fn flusher(&self) -> std::result::Result<Flusher, mmap_type::Error> {
+        let pending_updates = self.tracker.read().pending_updates.clone();
+
+        let tracker = self.tracker.clone();
+        let bitmask = self.bitmask.clone();
+        let block_size_bytes = self.config.block_size_bytes;
+
+        // TODO: move page flushing into closure
         for page in &self.pages {
             page.flush()?;
         }
-        let old_pointers = self.tracker.write().write_pending_and_flush()?;
+        bitmask.read().flush()?;
 
-        // update all free blocks in the bitmask
-        bitmask_guard.with_upgraded(|guard| {
-            for (page_id, pointer_group) in
-                &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
-            {
-                let local_ranges = pointer_group.map(|pointer| {
-                    let start = pointer.block_offset;
-                    let end = pointer.block_offset
-                        + Self::blocks_for_value(
-                            pointer.length as usize,
-                            self.config.block_size_bytes,
-                        );
-                    start as usize..end as usize
-                });
-                guard.mark_blocks_batch(page_id, local_ranges, false);
-            }
+        let flusher = Box::new(move || {
+            let mut bitmask_guard = bitmask.upgradable_read();
+
+            let old_pointers = tracker.write().write_pending_and_flush(pending_updates)?;
+
+            // Update all free blocks in the bitmask
+            bitmask_guard.with_upgraded(|guard| {
+                for (page_id, pointer_group) in
+                    &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
+                {
+                    let local_ranges = pointer_group.map(|pointer| {
+                        let start = pointer.block_offset;
+                        let end = pointer.block_offset
+                            + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
+                        start as usize..end as usize
+                    });
+                    guard.mark_blocks_batch(page_id, local_ranges, false);
+                }
+            });
+            bitmask_guard.flush()?;
+
+            Ok(())
         });
-        bitmask_guard.flush()?;
 
-        Ok(())
+        Ok(flusher)
     }
 
     /// Populate all pages in the mmap.
