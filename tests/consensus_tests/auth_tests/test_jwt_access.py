@@ -591,7 +591,6 @@ ACTION_ACCESS = {
     "livez": EndpointAccess(True, True, True, "GET /livez", "grpc.health.v1.Health/Check"),
     "telemetry": EndpointAccess(True, True, True, "GET /telemetry"),
     "metrics": EndpointAccess(True, False, True, "GET /metrics", coll_r=False),
-    "post_locks": EndpointAccess(False, False, True, "POST /locks"),
     "get_locks": EndpointAccess(True, False, True, "GET /locks", coll_r=False),
     "get_issues": EndpointAccess(True, True, True, "GET /issues"),
     "clear_issues": EndpointAccess(False, False, True, "DELETE /issues"),
@@ -1898,11 +1897,6 @@ def test_telemetry():
 
 def test_metrics():
     check_access("metrics")
-
-
-def test_post_locks():
-    check_access("post_locks", rest_request={"write": False})
-
 
 def test_get_locks():
     check_access("get_locks")
