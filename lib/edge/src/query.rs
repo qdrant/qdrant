@@ -311,11 +311,12 @@ impl Shard {
             .into_iter()
             .flatten();
 
-        let vector_data_config = self
-            .config
-            .vector_data
-            .get(&mmr.using)
-            .expect("vector data config");
+        let vector_data_config = self.config.vector_data.get(&mmr.using).ok_or_else(|| {
+            OperationError::service_error(format!(
+                "vector data config for vector {} not found",
+                mmr.using,
+            ))
+        })?;
 
         // Even if we have fewer points than requested, still calculate MMR.
         let mut top_mmr = mmr_from_points_with_vector(
