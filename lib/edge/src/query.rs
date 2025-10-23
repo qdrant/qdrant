@@ -31,18 +31,24 @@ impl Shard {
     ) -> OperationResult<Vec<ShardQueryResponse>> {
         let planned_query = PlannedQuery::try_from(vec![request])?;
 
+        let PlannedQuery {
+            root_plans,
+            searches,
+            scrolls,
+        } = planned_query;
+
         let mut search_results = Vec::new();
-        for search in &planned_query.searches {
+        for search in &searches {
             search_results.push(self.search(search.clone())?);
         }
 
         let mut scroll_results = Vec::new();
-        for scroll in &planned_query.scrolls {
+        for scroll in &scrolls {
             scroll_results.push(self.query_scroll(scroll)?);
         }
 
         let mut scored_points_batch = Vec::new();
-        for root_plan in planned_query.root_plans {
+        for root_plan in root_plans {
             let scored_points = self.resolve_plan(
                 root_plan,
                 &mut search_results,
@@ -88,11 +94,16 @@ impl Shard {
         depth: usize,
         hw_counter_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        let max_len = merge_plan.sources.len();
+        let MergePlan {
+            sources: merge_plan_sources,
+            rescore_params,
+        } = merge_plan;
+
+        let max_len = merge_plan_sources.len();
         let mut sources = Vec::with_capacity(max_len);
 
         // We need to preserve the order of the sources for some fusion strategies
-        for source in merge_plan.sources {
+        for source in merge_plan_sources {
             match source {
                 Source::SearchesIdx(idx) => {
                     sources.push(take_prefetched_source(search_results, idx))
@@ -119,7 +130,7 @@ impl Shard {
         }
 
         // Rescore or return plain sources
-        if let Some(rescore_params) = merge_plan.rescore_params {
+        if let Some(rescore_params) = rescore_params {
             let rescored = self.rescore(sources, rescore_params, hw_counter_acc)?;
             Ok(vec![rescored])
         } else {
