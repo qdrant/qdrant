@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use memmap2::MmapMut;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops::{
@@ -14,7 +14,7 @@ pub type PageId = u32;
 
 const TRACKER_MEM_ADVICE: Advice = Advice::Random;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct ValuePointer {
     /// Which page the value is stored in
@@ -82,6 +82,62 @@ impl PointerUpdates {
         };
 
         self.history.iter().copied().take(take)
+    }
+
+    /// Bump this pointer updates structure to drain all details that have been persisted
+    ///
+    /// The pointer updates structure that we have persisted must be given. All persisted details
+    /// that are inside the current pointer updates structure are removed in-place. The pointer
+    /// updates structure we're left with only contains details that have not yet been persisted.
+    ///
+    /// Returns true if the structure is fully persisted. In that case, the caller must drop it
+    /// from the list of pending updates.
+    #[must_use = "if true is returned, entry must be dropped from pending changes"]
+    fn drain_persisted_and_drop(&mut self, persisted: &Self) -> bool {
+        // We don't expect duplicate pointers in history
+        debug_assert!(
+            !self.history.is_empty(),
+            "self must not have empty pointer history",
+        );
+        debug_assert!(
+            !persisted.history.is_empty(),
+            "persisted must not have empty pointer history",
+        );
+        debug_assert_eq!(
+            self.history.iter().copied().collect::<AHashSet<_>>().len(),
+            self.history.len(),
+            "self must not have duplicate pointers in history",
+        );
+        debug_assert_eq!(
+            persisted
+                .history
+                .iter()
+                .copied()
+                .collect::<AHashSet<_>>()
+                .len(),
+            persisted.history.len(),
+            "persisted must not have duplicate pointers in history",
+        );
+
+        // If both are the same, we have persisted the entry and can drop the pending change
+        if self == persisted {
+            return true;
+        }
+
+        // Pointers we consider persisted
+        // If latest_is_set is different, the last pointer has new changes so we cannot consider it
+        // persisted
+        let mut persisted_pointers = persisted.history.as_slice();
+        if self.latest_is_set != persisted.latest_is_set {
+            persisted_pointers = &persisted_pointers[..persisted_pointers.len().saturating_sub(1)];
+        }
+
+        // Remove all persisted pointers from history
+        self.history
+            .retain(|pointer| !persisted_pointers.contains(pointer));
+
+        // Drop entry if history is exhausted
+        self.history.is_empty()
     }
 }
 
@@ -196,8 +252,9 @@ impl Tracker {
             }
             old_pointers.extend(updates.to_outdated_pointers());
 
-            if let Some(pending_updates) = self.pending_updates.get(&point_offset)
-                && pending_updates == &updates
+            // Bump the pending updates for this point offset, drop entry if fully persisted
+            if let Some(pending_updates) = self.pending_updates.get_mut(&point_offset)
+                && pending_updates.drain_persisted_and_drop(&updates)
             {
                 self.pending_updates.remove(&point_offset);
             }
