@@ -559,24 +559,37 @@ impl<V> Gridstore<V> {
 
     /// Flush all mmaps and pending updates to disk
     pub fn flush(&self) -> std::result::Result<(), mmap_type::Error> {
-        self.flusher()?()
+        self.flusher()()
     }
 
     /// Create flusher that durably persists all pending changes when invoked
-    pub fn flusher(&self) -> std::result::Result<Flusher, mmap_type::Error> {
+    pub fn flusher(&self) -> Flusher {
         let pending_updates = self.tracker.read().pending_updates.clone();
 
         let tracker = self.tracker.clone();
         let bitmask = self.bitmask.clone();
         let block_size_bytes = self.config.block_size_bytes;
 
+        // Flush all pages now, defer any errors until the closure is invoked
         // TODO: move page flushing into closure
+        let mut deferred_err = None;
         for page in &self.pages {
-            page.flush()?;
+            if let Err(err) = page.flush() {
+                deferred_err.replace(err.into());
+                break;
+            }
         }
-        bitmask.read().flush()?;
+        if deferred_err.is_none()
+            && let Err(err) = bitmask.read().flush()
+        {
+            deferred_err.replace(err);
+        }
 
-        let flusher = Box::new(move || {
+        Box::new(move || {
+            if let Some(err) = deferred_err.take() {
+                return Err(err);
+            }
+
             let mut bitmask_guard = bitmask.upgradable_read();
 
             let old_pointers = tracker.write().write_pending_and_flush(pending_updates)?;
@@ -598,9 +611,7 @@ impl<V> Gridstore<V> {
             bitmask_guard.flush()?;
 
             Ok(())
-        });
-
-        Ok(flusher)
+        })
     }
 
     /// Populate all pages in the mmap.
