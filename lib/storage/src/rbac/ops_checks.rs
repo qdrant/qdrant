@@ -23,7 +23,7 @@ impl Access {
     pub(crate) fn check_point_op<'a>(
         &self,
         collection_name: &'a str,
-        op: &mut impl CheckableCollectionOperation,
+        op: &impl CheckableCollectionOperation,
     ) -> Result<CollectionPass<'a>, StorageError> {
         let requirements = op.access_requirements();
         match self {
@@ -75,7 +75,7 @@ trait CheckableCollectionOperation {
     /// Used to distinguish whether the operation is read-only or read-write.
     fn access_requirements(&self) -> AccessRequirements;
 
-    fn check_access(&mut self, access: &CollectionAccessList) -> Result<(), StorageError>;
+    fn check_access(&self, access: &CollectionAccessList) -> Result<(), StorageError>;
 }
 
 impl CollectionAccessList {
@@ -106,7 +106,7 @@ impl CheckableCollectionOperation for SearchRequestInternal {
         }
     }
 
-    fn check_access(&mut self, _access: &CollectionAccessList) -> Result<(), StorageError> {
+    fn check_access(&self, _access: &CollectionAccessList) -> Result<(), StorageError> {
         Ok(())
     }
 }
@@ -120,7 +120,7 @@ impl CheckableCollectionOperation for RecommendRequestInternal {
         }
     }
 
-    fn check_access(&mut self, access: &CollectionAccessList) -> Result<(), StorageError> {
+    fn check_access(&self, access: &CollectionAccessList) -> Result<(), StorageError> {
         access.check_lookup_from(&self.lookup_from)?;
         Ok(())
     }
@@ -135,7 +135,7 @@ impl CheckableCollectionOperation for PointRequestInternal {
         }
     }
 
-    fn check_access(&mut self, _access: &CollectionAccessList) -> Result<(), StorageError> {
+    fn check_access(&self, _access: &CollectionAccessList) -> Result<(), StorageError> {
         Ok(())
     }
 }
@@ -149,7 +149,7 @@ impl CheckableCollectionOperation for CoreSearchRequest {
         }
     }
 
-    fn check_access(&mut self, _access: &CollectionAccessList) -> Result<(), StorageError> {
+    fn check_access(&self, _access: &CollectionAccessList) -> Result<(), StorageError> {
         Ok(())
     }
 }
@@ -163,7 +163,7 @@ impl CheckableCollectionOperation for CountRequestInternal {
         }
     }
 
-    fn check_access(&mut self, _access: &CollectionAccessList) -> Result<(), StorageError> {
+    fn check_access(&self, _access: &CollectionAccessList) -> Result<(), StorageError> {
         Ok(())
     }
 }
@@ -177,8 +177,8 @@ impl CheckableCollectionOperation for GroupRequest {
         }
     }
 
-    fn check_access(&mut self, access: &CollectionAccessList) -> Result<(), StorageError> {
-        match &mut self.source {
+    fn check_access(&self, access: &CollectionAccessList) -> Result<(), StorageError> {
+        match &self.source {
             SourceRequest::Search(s) => s.check_access(access)?,
             SourceRequest::Recommend(r) => r.check_access(access)?,
             SourceRequest::Query(q) => q.check_access(access)?,
@@ -197,7 +197,7 @@ impl CheckableCollectionOperation for DiscoverRequestInternal {
         }
     }
 
-    fn check_access(&mut self, access: &CollectionAccessList) -> Result<(), StorageError> {
+    fn check_access(&self, access: &CollectionAccessList) -> Result<(), StorageError> {
         access.check_lookup_from(&self.lookup_from)?;
         Ok(())
     }
@@ -212,7 +212,7 @@ impl CheckableCollectionOperation for ScrollRequestInternal {
         }
     }
 
-    fn check_access(&mut self, _access: &CollectionAccessList) -> Result<(), StorageError> {
+    fn check_access(&self, _access: &CollectionAccessList) -> Result<(), StorageError> {
         Ok(())
     }
 }
@@ -226,10 +226,10 @@ impl CheckableCollectionOperation for CollectionQueryRequest {
         }
     }
 
-    fn check_access(&mut self, access: &CollectionAccessList) -> Result<(), StorageError> {
+    fn check_access(&self, access: &CollectionAccessList) -> Result<(), StorageError> {
         access.check_lookup_from(&self.lookup_from)?;
 
-        for prefetch_query in self.prefetch.iter_mut() {
+        for prefetch_query in self.prefetch.iter() {
             check_access_for_prefetch(prefetch_query, access)?;
         }
 
@@ -238,13 +238,13 @@ impl CheckableCollectionOperation for CollectionQueryRequest {
 }
 
 fn check_access_for_prefetch(
-    prefetch: &mut CollectionPrefetch,
+    prefetch: &CollectionPrefetch,
     access: &CollectionAccessList,
 ) -> Result<(), StorageError> {
     access.check_lookup_from(&prefetch.lookup_from)?;
 
     // Recurse inner prefetches
-    for prefetch_query in prefetch.prefetch.iter_mut() {
+    for prefetch_query in prefetch.prefetch.iter() {
         check_access_for_prefetch(prefetch_query, access)?;
     }
 
@@ -260,7 +260,7 @@ impl CheckableCollectionOperation for FacetParams {
         }
     }
 
-    fn check_access(&mut self, _access: &CollectionAccessList) -> StorageResult<()> {
+    fn check_access(&self, _access: &CollectionAccessList) -> StorageResult<()> {
         Ok(())
     }
 }
@@ -274,7 +274,7 @@ impl CheckableCollectionOperation for CollectionSearchMatrixRequest {
         }
     }
 
-    fn check_access(&mut self, _access: &CollectionAccessList) -> StorageResult<()> {
+    fn check_access(&self, _access: &CollectionAccessList) -> StorageResult<()> {
         Ok(())
     }
 }
@@ -297,7 +297,7 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
         }
     }
 
-    fn check_access(&mut self, _access: &CollectionAccessList) -> Result<(), StorageError> {
+    fn check_access(&self, _access: &CollectionAccessList) -> Result<(), StorageError> {
         Ok(())
     }
 }
@@ -352,11 +352,9 @@ mod tests_ops {
         op: &Op,
         access: &Access,
     ) {
-        let mut op_actual = op.clone();
         access
-            .check_point_op("col", &mut op_actual)
+            .check_point_op("col", op)
             .expect("Should be allowed");
-        assert_eq!(op, &op_actual, "Expected not to change");
     }
 
     /// Operation is forbidden with the given access.
@@ -365,7 +363,7 @@ mod tests_ops {
         access: &Access,
     ) {
         access
-            .check_point_op("col", &mut op.clone())
+            .check_point_op("col", op)
             .expect_err("Should be allowed");
     }
 
