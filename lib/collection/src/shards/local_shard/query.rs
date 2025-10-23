@@ -12,7 +12,6 @@ use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
 use tokio::runtime::Handle;
-use tokio::time::error::Elapsed;
 
 use super::LocalShard;
 use crate::collection::mmr::mmr_from_points_with_vector;
@@ -137,7 +136,7 @@ impl LocalShard {
             ),
         )
         .await
-        .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
+        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
 
         // It might be possible, that we won't find all records,
         // so we need to re-collect the results
@@ -160,17 +159,14 @@ impl LocalShard {
         Ok(query_response)
     }
 
-    async fn resolve_plan<'shard, 'query>(
-        &'shard self,
+    async fn resolve_plan(
+        &self,
         root_plan: RootPlan,
-        prefetch_holder: &'query PrefetchResults,
-        search_runtime_handle: &'shard Handle,
+        prefetch_holder: &PrefetchResults,
+        search_runtime_handle: &Handle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
-    where
-        'shard: 'query,
-    {
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let RootPlan {
             merge_plan,
             with_payload,
@@ -200,18 +196,15 @@ impl LocalShard {
         .await
     }
 
-    fn recurse_prefetch<'shard, 'query>(
-        &'shard self,
+    fn recurse_prefetch<'a>(
+        &'a self,
         merge_plan: MergePlan,
-        prefetch_holder: &'query PrefetchResults,
-        search_runtime_handle: &'shard Handle,
+        prefetch_holder: &'a PrefetchResults,
+        search_runtime_handle: &'a Handle,
         timeout: Duration,
         depth: usize,
         hw_counter_acc: HwMeasurementAcc,
-    ) -> BoxFuture<'query, CollectionResult<Vec<Vec<ScoredPoint>>>>
-    where
-        'shard: 'query,
-    {
+    ) -> BoxFuture<'a, CollectionResult<Vec<Vec<ScoredPoint>>>> {
         async move {
             let start_time = std::time::Instant::now();
             let max_len = merge_plan.sources.len();
