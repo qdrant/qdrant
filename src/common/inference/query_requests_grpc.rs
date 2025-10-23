@@ -313,8 +313,8 @@ fn convert_query_with_inferred(
 
             Query::Vector(VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }))
         }
-        Variant::Feedback(feedback) => {
-            let grpc::FeedbackInput {
+        Variant::RelevanceFeedback(feedback) => {
+            let grpc::RelevanceFeedbackInput {
                 target,
                 feedback,
                 strategy,

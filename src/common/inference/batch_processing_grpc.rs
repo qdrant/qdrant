@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use api::grpc::FeedbackInput;
+use api::grpc::RelevanceFeedbackInput;
 use api::grpc::qdrant::vector_input::Variant;
 use api::grpc::qdrant::{
     ContextInput, ContextInputPair, DiscoverInput, PrefetchQuery, Query, RecommendInput,
@@ -93,10 +93,10 @@ pub(crate) fn collect_context_input(
 }
 
 fn collect_feedback_input(
-    feedback: &FeedbackInput,
+    feedback: &RelevanceFeedbackInput,
     batch: &mut BatchAccumGrpc,
 ) -> Result<(), Status> {
-    let FeedbackInput {
+    let RelevanceFeedbackInput {
         target,
         feedback,
         strategy: _,
@@ -194,7 +194,7 @@ pub(crate) fn collect_query(query: &Query, batch: &mut BatchAccumGrpc) -> Result
                 .map(|vector| collect_vector_input(vector, batch))
                 .transpose()?;
         }
-        query::Variant::Feedback(feedback) => collect_feedback_input(feedback, batch)?,
+        query::Variant::RelevanceFeedback(feedback) => collect_feedback_input(feedback, batch)?,
     }
 
     Ok(())

@@ -6071,7 +6071,7 @@ pub struct ContextInput {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FeedbackInput {
+pub struct RelevanceFeedbackInput {
     /// The original query vector
     #[prost(message, optional, tag = "1")]
     #[validate(nested)]
@@ -6391,7 +6391,7 @@ pub mod query {
         Rrf(super::Rrf),
         /// Search with feedback from some oracle.
         #[prost(message, tag = "11")]
-        Feedback(super::FeedbackInput),
+        RelevanceFeedback(super::RelevanceFeedbackInput),
     }
 }
 #[derive(validator::Validate)]

@@ -5,8 +5,8 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::Variabl
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::{
-    Batch, BatchVectorStruct, ContextInput, Expression, FeedbackInput, FormulaQuery, Fusion,
-    NamedVectorStruct, OrderByInterface, PointVectors, Query, QueryInterface, RecommendInput,
+    Batch, BatchVectorStruct, ContextInput, Expression, FormulaQuery, Fusion, NamedVectorStruct,
+    OrderByInterface, PointVectors, Query, QueryInterface, RecommendInput, RelevanceFeedbackInput,
     Sample, VectorInput,
 };
 use crate::rest::FeedbackStrategy;
@@ -42,7 +42,7 @@ impl Validate for Query {
             Query::Formula(formula) => formula.validate(),
             Query::OrderBy(order_by) => order_by.validate(),
             Query::Sample(sample) => sample.validate(),
-            Query::Feedback(feedback) => feedback.validate(),
+            Query::RelevanceFeedback(feedback) => feedback.validate(),
         }
     }
 }
@@ -285,7 +285,9 @@ impl Validate for Expression {
 }
 
 /// Struct level validation for `FeedbackInput`
-pub fn validate_feedback_input(feedback_input: &FeedbackInput) -> Result<(), ValidationError> {
+pub fn validate_relevance_feedback_input(
+    feedback_input: &RelevanceFeedbackInput,
+) -> Result<(), ValidationError> {
     if feedback_input.feedback.is_empty() {
         let mut err = ValidationError::new("feedback");
         err.message = Some(Cow::from("feedback elements must be non-empty"));

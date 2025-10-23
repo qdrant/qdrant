@@ -18,7 +18,7 @@ def test_validations(collection_name):
         path_params={"collection_name": collection_name},
         body={
             "query": {
-                "feedback": {
+                "relevance_feedback": {
                     "target": [0.1, 0.2, 0.3, 0.4],
                     "feedback": [ {"vector": 10000, "score": 0.85} ],
                     "strategy": {
@@ -41,7 +41,7 @@ def test_validations(collection_name):
         path_params={"collection_name": collection_name},
         body={
             "query": {
-                "feedback": {
+                "relevance_feedback": {
                     "target": [0.1, 0.2, 0.3, 0.4],
                     "feedback": [  ],
                     "strategy": {
@@ -64,7 +64,7 @@ def test_validations(collection_name):
         path_params={"collection_name": collection_name},
         body={
             "query": {
-                "feedback": {
+                "relevance_feedback": {
                     "target": [0.1, 0.2, 0.3, 0.4],
                     "feedback": [ {"vector": 1, "score": 0.85} ],
                     "strategy": {
@@ -89,7 +89,7 @@ def test_feedback_pair_requirement(collection_name):
         path_params={"collection_name": collection_name},
         body={
             "query": {
-                "feedback": {
+                "relevance_feedback": {
                     "target": [0.1, 0.2, 0.3, 0.4],
                     "feedback": [ {"vector": [0.42, 0.42, 0.42, 0.42], "score": 0.85} ],
                     "strategy": {

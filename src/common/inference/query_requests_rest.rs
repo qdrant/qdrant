@@ -273,12 +273,12 @@ fn convert_query_with_inferred(
         rest::Query::Rrf(rrf) => Ok(Query::Fusion(FusionInternal::from(rrf.rrf))),
         rest::Query::Formula(formula) => Ok(Query::Formula(FormulaInternal::from(formula))),
         rest::Query::Sample(sample) => Ok(Query::Sample(SampleInternal::from(sample.sample))),
-        rest::Query::Feedback(feedback) => {
-            let rest::FeedbackInput {
+        rest::Query::RelevanceFeedback(relevance_feedback) => {
+            let rest::RelevanceFeedbackInput {
                 target,
                 feedback,
                 strategy,
-            } = feedback.feedback;
+            } = relevance_feedback.relevance_feedback;
 
             let target = convert_vector_input_with_inferred(target, inferred)?;
             let feedback = feedback

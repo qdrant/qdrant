@@ -15348,7 +15348,7 @@
             "$ref": "#/components/schemas/SampleQuery"
           },
           {
-            "$ref": "#/components/schemas/FeedbackQuery"
+            "$ref": "#/components/schemas/RelevanceFeedbackQuery"
           }
         ]
       },
@@ -15938,18 +15938,18 @@
           "random"
         ]
       },
-      "FeedbackQuery": {
+      "RelevanceFeedbackQuery": {
         "type": "object",
         "required": [
-          "feedback"
+          "relevance_feedback"
         ],
         "properties": {
-          "feedback": {
-            "$ref": "#/components/schemas/FeedbackInput"
+          "relevance_feedback": {
+            "$ref": "#/components/schemas/RelevanceFeedbackInput"
           }
         }
       },
-      "FeedbackInput": {
+      "RelevanceFeedbackInput": {
         "type": "object",
         "required": [
           "feedback",

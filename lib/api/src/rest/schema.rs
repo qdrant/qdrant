@@ -19,7 +19,7 @@ use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
 use validator::{Validate, ValidationErrors};
 
-use crate::rest::validate::validate_feedback_input;
+use crate::rest::validate::validate_relevance_feedback_input;
 
 /// Type for dense vector
 pub type DenseVector = Vec<segment::data_types::vectors::VectorElementType>;
@@ -657,7 +657,7 @@ pub enum Query {
     Sample(SampleQuery),
 
     /// Use feedback from an oracle to improve the results
-    Feedback(FeedbackQuery),
+    RelevanceFeedback(RelevanceFeedbackQuery),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -732,9 +732,9 @@ pub struct SampleQuery {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
-pub struct FeedbackQuery {
+pub struct RelevanceFeedbackQuery {
     #[validate(nested)]
-    pub feedback: FeedbackInput,
+    pub relevance_feedback: RelevanceFeedbackInput,
 }
 
 /// Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
@@ -876,8 +876,8 @@ impl ContextPair {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
-#[validate(schema(function = "validate_feedback_input"))]
-pub struct FeedbackInput {
+#[validate(schema(function = "validate_relevance_feedback_input"))]
+pub struct RelevanceFeedbackInput {
     #[validate(nested)]
     pub target: VectorInput,
     #[validate(nested)]

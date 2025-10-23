@@ -808,7 +808,7 @@ message ContextInput {
   repeated ContextInputPair pairs = 1;
 }
 
-message FeedbackInput {
+message RelevanceFeedbackInput {
   // The original query vector
   VectorInput target = 1;
   // Previous results scored by the feedback provider.
@@ -993,6 +993,8 @@ message Query {
     Rrf rrf = 10;
     // Search with feedback from some oracle.
     FeedbackInput feedback = 11;
+    // Search with feedback from some oracle.
+    RelevanceFeedbackInput relevance_feedback = 11;
   }
 }
 
