@@ -593,7 +593,6 @@ impl ShardHolder {
         Ok(res)
     }
 
-
     /// Common routing logic for reads and writes when using ShardKeyWithFallback
     ///
     /// If at least one of target shards is Active, use target shard. If not, redirect to fallback shard
@@ -601,7 +600,6 @@ impl ShardHolder {
         &self,
         key: &'a ShardKeyWithFallback,
     ) -> CollectionResult<(HashSet<ShardId>, &'a ShardKey)> {
-
         let shard_key_to_ids_mapping = self.get_shard_key_to_ids_mapping();
 
         let target_shard_ids = shard_key_to_ids_mapping.get(&key.target);
