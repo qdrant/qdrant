@@ -72,7 +72,7 @@ impl PointerUpdates {
     }
 
     /// Returns pointers that need to be freed, i.e. They have been written, and are no longer needed
-    fn into_outdated_pointers(self) -> impl Iterator<Item = ValuePointer> {
+    fn to_outdated_pointers(&self) -> impl Iterator<Item = ValuePointer> {
         let take = if self.latest_is_set {
             // all but the latest one
             self.history.len().saturating_sub(1)
@@ -81,7 +81,7 @@ impl PointerUpdates {
             self.history.len()
         };
 
-        self.history.into_iter().take(take)
+        self.history.iter().copied().take(take)
     }
 }
 
@@ -194,7 +194,7 @@ impl Tracker {
                     self.persist_pointer(point_offset, None);
                 }
             }
-            old_pointers.extend(updates.clone().into_outdated_pointers());
+            old_pointers.extend(updates.to_outdated_pointers());
 
             if let Some(pending_updates) = self.pending_updates.get(&point_offset)
                 && pending_updates == &updates
