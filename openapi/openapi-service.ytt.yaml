@@ -75,31 +75,6 @@ paths:
         "4XX":
           description: error
 
-  /locks:
-    post:
-      summary: Set lock options
-      description: Set lock options. If write is locked, all write operations and collection creation are forbidden. Returns previous lock options
-      operationId: post_locks
-      tags:
-        - Service
-      deprecated: true #! Deprecated since Qdrant 1.15.0
-      requestBody:
-        description: Lock options and optional error message
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LocksOption"
-      responses: #@ response(reference("LocksOption"))
-
-    get:
-      summary: Get lock options
-      description: Get lock options. If write is locked, all write operations and collection creation are forbidden
-      operationId: get_locks
-      tags:
-        - Service
-      deprecated: true #! Deprecated since Qdrant 1.15.0
-      responses: #@ response(reference("LocksOption"))
-
   /healthz:
     get:
       summary: Kubernetes healthz endpoint

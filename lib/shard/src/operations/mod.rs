@@ -34,21 +34,6 @@ impl CollectionUpdateOperations {
         )
     }
 
-    pub fn is_write_operation(&self) -> bool {
-        match self {
-            CollectionUpdateOperations::PointOperation(operation) => operation.is_write_operation(),
-            CollectionUpdateOperations::VectorOperation(operation) => {
-                operation.is_write_operation()
-            }
-            CollectionUpdateOperations::PayloadOperation(operation) => {
-                operation.is_write_operation()
-            }
-            CollectionUpdateOperations::FieldIndexOperation(operation) => {
-                operation.is_write_operation()
-            }
-        }
-    }
-
     pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
         match self {
             Self::PointOperation(op) => op.point_ids(),
@@ -79,15 +64,6 @@ pub enum FieldIndexOperations {
     CreateIndex(CreateIndex),
     /// Delete index for the field
     DeleteIndex(JsonPath),
-}
-
-impl FieldIndexOperations {
-    pub fn is_write_operation(&self) -> bool {
-        match self {
-            FieldIndexOperations::CreateIndex(_) => true,
-            FieldIndexOperations::DeleteIndex(_) => false,
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]

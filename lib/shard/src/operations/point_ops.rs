@@ -108,16 +108,6 @@ pub enum PointOperations {
 }
 
 impl PointOperations {
-    pub fn is_write_operation(&self) -> bool {
-        match self {
-            PointOperations::UpsertPoints(_) => true,
-            PointOperations::UpsertPointsConditional(_) => true,
-            PointOperations::DeletePoints { .. } => false,
-            PointOperations::DeletePointsByFilter(_) => false,
-            PointOperations::SyncPoints(_) => true,
-        }
-    }
-
     pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
         match self {
             Self::UpsertPoints(op) => Some(op.point_ids()),

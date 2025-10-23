@@ -83,7 +83,6 @@ impl Dispatcher {
 
             let op = match operation {
                 CollectionMetaOperations::CreateCollection(mut op) => {
-                    self.toc.check_write_lock()?;
                     if !op.is_distribution_set() {
                         match op.create_collection.sharding_method.unwrap_or_default() {
                             ShardingMethod::Auto => {
@@ -136,7 +135,6 @@ impl Dispatcher {
                     CollectionMetaOperations::CreateCollection(op)
                 }
                 CollectionMetaOperations::CreateShardKey(op) => {
-                    self.toc.check_write_lock()?;
                     CollectionMetaOperations::CreateShardKey(op)
                 }
 
@@ -246,9 +244,6 @@ impl Dispatcher {
 
             Ok(res)
         } else {
-            if let CollectionMetaOperations::CreateCollection(_) = &operation {
-                self.toc.check_write_lock()?;
-            }
             self.toc.perform_collection_meta_op(operation).await
         }
     }
