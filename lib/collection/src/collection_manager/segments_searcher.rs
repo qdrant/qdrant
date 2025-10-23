@@ -290,7 +290,8 @@ impl SegmentsSearcher {
             (segments, search)
         };
 
-        let (all_search_results_per_segment, further_results): (Vec<_>, Vec<_>) = search.await??.into_iter().unzip();
+        let (all_search_results_per_segment, further_results): (Vec<_>, Vec<_>) =
+            search.await??.into_iter().unzip();
 
         debug_assert!(all_search_results_per_segment.len() == locked_segments.len());
 
