@@ -70,7 +70,7 @@ impl LocalShard {
             optimizations: OptimizerTelemetry {
                 status,
                 optimizations,
-                log: (detail.level >= DetailsLevel::Level4)
+                log: (detail.level >= DetailsLevel::Level4 || detail.optimizer_logs)
                     .then(|| self.optimizers_log.lock().to_telemetry()),
             },
             async_scorer: Some(get_async_scorer()),
