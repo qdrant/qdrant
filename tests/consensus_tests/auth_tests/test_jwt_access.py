@@ -711,18 +711,6 @@ class GrpcClients:
             GRPC_URI,
             interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_RW}")])],
         )
-        self.coll_rw_payload = grpc_requests.Client(
-            GRPC_URI,
-            interceptors=[
-                MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_RW_PAYLOAD}")])
-            ],
-        )
-        self.coll_r_payload = grpc_requests.Client(
-            GRPC_URI,
-            interceptors=[
-                MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_R_PAYLOAD}")])
-            ],
-        )
         self.m = grpc_requests.Client(
             GRPC_URI, interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_M}")])]
         )
@@ -839,12 +827,6 @@ def check_access(
         check_grpc_access(grpc.r, service, method, grpc_request, allowed_for.read)
         check_grpc_access(grpc.coll_r, service, method, grpc_request, allowed_for.coll_r)
         check_grpc_access(grpc.coll_rw, service, method, grpc_request, allowed_for.coll_rw)
-        check_grpc_access(
-            grpc.coll_r_payload, service, method, grpc_request, allowed_for.everything or False,
-        )
-        check_grpc_access(
-            grpc.coll_rw_payload, service, method, grpc_request, allowed_for.everything or False,
-        )
         check_grpc_access(grpc.m, service, method, grpc_request, allowed_for.manage)
 
         # Check that API key is the same as manage token
