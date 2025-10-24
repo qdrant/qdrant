@@ -60,8 +60,8 @@ pub struct LocalShardTelemetry {
     /// Do NOT rely on this number unless you know what you are doing
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_vectors: Option<usize>,
-    /// Sum of number of vectors in all segments, grouped by their name.
-    /// This is an approximate number
+    /// Sum of number of vectors across all segments, grouped by their name.
+    /// This is an approximate number.
     /// Do NOT rely on this number unless you know what you are doing
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_vectors_by_name: Option<HashMap<String, usize>>,

@@ -78,7 +78,7 @@ impl LocalShard {
             payloads_size_bytes: Some(payloads_size_bytes),
             num_points: Some(num_points),
             num_vectors: Some(num_vectors),
-            num_vectors_by_name: Some(num_vectors_by_name.into()),
+            num_vectors_by_name: Some(HashMap::from(num_vectors_by_name)),
             segments: if segments.is_empty() {
                 None
             } else {

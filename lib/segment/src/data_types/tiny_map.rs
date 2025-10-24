@@ -294,5 +294,7 @@ mod tests {
 
         *map.get_or_insert_default(&3) = 6;
         assert_eq!(map.len(), 3); // This call should not add an additional item.
+
+        assert_eq!(map.get(&3), Some(&6));
     }
 }
