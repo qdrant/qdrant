@@ -838,9 +838,6 @@ pub struct CreateCollection {
     #[prost(uint32, optional, tag = "12")]
     #[validate(range(min = 1))]
     pub write_consistency_factor: ::core::option::Option<u32>,
-    /// Deprecated: specify name of the other collection to copy data from
-    #[prost(string, optional, tag = "13")]
-    pub init_from_collection: ::core::option::Option<::prost::alloc::string::String>,
     /// Quantization configuration of vector
     #[prost(message, optional, tag = "14")]
     #[validate(nested)]

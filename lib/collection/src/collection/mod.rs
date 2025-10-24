@@ -856,10 +856,6 @@ impl Collection {
         self.updates_lock.write().await
     }
 
-    pub fn wait_collection_initiated(&self, timeout: Duration) -> bool {
-        self.is_initialized.await_ready_for_timeout(timeout)
-    }
-
     pub fn request_shard_transfer(&self, shard_transfer: ShardTransfer) {
         self.request_shard_transfer_cb.deref()(shard_transfer)
     }

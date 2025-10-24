@@ -100,13 +100,6 @@ impl From<RenameAlias> for AliasOperations {
 }
 
 /// Operation for creating new collection and (optionally) specify index params
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct InitFrom {
-    pub collection: CollectionId,
-}
-
-/// Operation for creating new collection and (optionally) specify index params
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollection {
@@ -163,12 +156,6 @@ pub struct CreateCollection {
     #[serde(alias = "optimizer_config")]
     #[validate(nested)]
     pub optimizers_config: Option<OptimizersConfigDiff>,
-    /// Specify other collection to copy data from.
-    ///
-    /// Deprecated since Qdrant 1.15.0.
-    #[serde(default)]
-    #[deprecated(since = "1.15.0")]
-    pub init_from: Option<InitFrom>,
     /// Quantization parameters. If none - quantization is disabled.
     #[serde(default, alias = "quantization")]
     #[validate(nested)]
@@ -466,8 +453,6 @@ impl From<CollectionConfigInternal> for CreateCollection {
             sparse_vectors,
             strict_mode_config,
             uuid,
-            #[expect(deprecated)]
-            init_from: None,
             metadata,
         }
     }
