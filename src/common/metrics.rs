@@ -3,8 +3,6 @@ use std::collections::HashMap;
 use api::rest::models::HardwareUsage;
 use collection::shards::replica_set::ReplicaState;
 use itertools::Itertools;
-use procfs::ProcError;
-use procfs::process::{LimitValue, Process};
 use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
@@ -131,12 +129,8 @@ impl MetricsProvider for TelemetryData {
 
         #[cfg(target_os = "linux")]
         match ProcFsMetrics::collect() {
-            Ok(procfs_provider) => {
-                procfs_provider.add_metrics(metrics);
-            }
-            Err(err) => {
-                log::warn!("Error reading procfs infos: {err:?}")
-            }
+            Ok(procfs_provider) => procfs_provider.add_metrics(metrics),
+            Err(err) => log::warn!("Error reading procfs infos: {err:?}"),
         };
     }
 }
@@ -776,7 +770,10 @@ struct ProcFsMetrics {
 
 impl ProcFsMetrics {
     /// Collect metrics from /procfs.
-    fn collect() -> Result<Self, ProcError> {
+    #[cfg(target_os = "linux")]
+    fn collect() -> Result<Self, procfs::ProcError> {
+        use procfs::process::{LimitValue, Process};
+
         let current_process = Process::myself()?;
 
         let stat = current_process.stat()?;
