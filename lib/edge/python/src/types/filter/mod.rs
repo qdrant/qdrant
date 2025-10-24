@@ -7,12 +7,18 @@ pub mod nested;
 pub mod range;
 pub mod value_count;
 
-use condition::PyCondition;
 use derive_more::Into;
-use pyo3::{PyErr, pyclass, pymethods};
+use pyo3::prelude::*;
 use segment::types::{Condition, Filter, MinShould};
 
-use crate::types::filter::min_should::PyMinShould;
+pub use self::condition::*;
+pub use self::field_condition::*;
+pub use self::geo::*;
+pub use self::r#match::*;
+pub use self::min_should::*;
+pub use self::nested::*;
+pub use self::range::*;
+pub use self::value_count::*;
 
 #[pyclass(name = "Filter")]
 #[derive(Clone, Debug, Into)]

@@ -31,25 +31,12 @@ mod qdrant_edge {
         PySearchRequest,
     };
     #[pymodule_export]
-    use super::types::filter::condition::{
-        PyHasIdCondition, PyHasVectorCondition, PyIsEmptyCondition, PyIsNullCondition,
+    use super::types::filter::{
+        PyFieldCondition, PyFilter, PyGeoBoundingBox, PyGeoPoint, PyGeoPolygon, PyGeoRadius,
+        PyHasIdCondition, PyHasVectorCondition, PyIsEmptyCondition, PyIsNullCondition, PyMatchAny,
+        PyMatchExcept, PyMatchPhrase, PyMatchText, PyMatchTextAny, PyMatchValue, PyMinShould,
+        PyNestedCondition, PyRangeDateTime, PyRangeFloat, PyValuesCount,
     };
-    #[pymodule_export]
-    use super::types::filter::geo::{PyGeoBoundingBox, PyGeoPoint, PyGeoPolygon, PyGeoRadius};
-    #[pymodule_export]
-    use super::types::filter::r#match::{
-        PyMatchAny, PyMatchExcept, PyMatchPhrase, PyMatchText, PyMatchTextAny, PyMatchValue,
-    };
-    #[pymodule_export]
-    use super::types::filter::min_should::PyMinShould;
-    #[pymodule_export]
-    use super::types::filter::nested::PyNestedCondition;
-    #[pymodule_export]
-    use super::types::filter::range::{PyRangeDateTime, PyRangeFloat};
-    #[pymodule_export]
-    use super::types::filter::value_count::PyValuesCount;
-    #[pymodule_export]
-    use super::types::filter::{PyFilter, field_condition::PyFieldCondition};
     #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PySparseVector};
     #[pymodule_export]

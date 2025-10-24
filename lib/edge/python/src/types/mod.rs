@@ -6,10 +6,10 @@ pub mod point_vectors;
 pub mod record;
 pub mod vector;
 
-pub use filter::*;
-pub use payload::*;
-pub use point::*;
-pub use point_id::*;
-pub use point_vectors::*;
-pub use record::*;
-pub use vector::*;
+pub use self::filter::*;
+pub use self::payload::*;
+pub use self::point::*;
+pub use self::point_id::*;
+pub use self::point_vectors::*;
+pub use self::record::*;
+pub use self::vector::*;
