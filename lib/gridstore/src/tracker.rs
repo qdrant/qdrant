@@ -398,7 +398,7 @@ mod tests {
     use rstest::rstest;
     use tempfile::Builder;
 
-    use crate::tracker::{Tracker, ValuePointer};
+    use super::{PointerUpdates, Tracker, ValuePointer};
 
     #[test]
     fn test_file_name() {
@@ -583,5 +583,70 @@ mod tests {
 
         tracker.set(key, page_pointer);
         assert_eq!(tracker.get(key), Some(page_pointer));
+    }
+
+    #[test]
+    fn test_value_pointer_drain() {
+        let mut updates = PointerUpdates::default();
+        updates.set(ValuePointer::new(1, 1, 1));
+
+        // When all updates are persisted, drop the entry
+        assert!(
+            updates.clone().drain_persisted_and_drop(&updates),
+            "must drop entry"
+        );
+
+        updates.set(ValuePointer::new(1, 2, 1));
+
+        // When all updates are persisted, drop the entry
+        assert!(
+            updates.clone().drain_persisted_and_drop(&updates),
+            "must drop entry"
+        );
+
+        let persisted = updates.clone();
+        updates.set(ValuePointer::new(1, 3, 1));
+
+        // Last pointer was not persisted, only keep it for the next flush
+        {
+            let mut updates = updates.clone();
+            assert!(!updates.drain_persisted_and_drop(&persisted));
+            assert!(updates.latest_is_set);
+            assert_eq!(updates.history.as_slice(), &[ValuePointer::new(1, 3, 1)]);
+        }
+
+        updates.set(ValuePointer::new(1, 4, 1));
+
+        // Last two pointers were not persisted, only keep them for the next flush
+        {
+            let mut updates = updates.clone();
+            assert!(!updates.drain_persisted_and_drop(&persisted));
+            assert!(updates.latest_is_set);
+            assert_eq!(
+                updates.history.as_slice(),
+                &[ValuePointer::new(1, 3, 1), ValuePointer::new(1, 4, 1)]
+            );
+        }
+
+        let persisted = updates.clone();
+        updates.unset(ValuePointer::new(1, 4, 1));
+
+        // Last pointer write is persisted, but the delete of the last pointer is not
+        // Then we keep the last pointer with set=false to flush the delete next time
+        {
+            let mut updates = updates.clone();
+            assert!(!updates.drain_persisted_and_drop(&persisted));
+            assert!(!updates.latest_is_set);
+            assert_eq!(updates.history.as_slice(), &[ValuePointer::new(1, 4, 1)]);
+        }
+
+        // Even if the history would somehow be shuffled we'd still properly
+        {
+            let mut updates = updates.clone();
+            let mut persisted = updates.clone();
+            persisted.history.swap(0, 1);
+            persisted.history.swap(1, 3);
+            assert!(updates.drain_persisted_and_drop(&persisted));
+        }
     }
 }
