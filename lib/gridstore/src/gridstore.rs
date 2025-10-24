@@ -37,7 +37,7 @@ pub struct Gridstore<V> {
     /// Stored in a separate file
     pub(super) tracker: Arc<RwLock<Tracker>>,
     /// Mapping from page_id -> mmap page
-    pub(super) pages: Vec<Page>,
+    pub(super) pages: Arc<RwLock<Vec<Page>>>,
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
@@ -75,7 +75,7 @@ impl<V: Blob> Gridstore<V> {
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        let mut paths = Vec::with_capacity(self.pages.len() + 1);
+        let mut paths = Vec::with_capacity(self.pages.read().len() + 1);
         // page tracker file
         for tracker_file in self.tracker.read().files() {
             paths.push(tracker_file);
@@ -98,7 +98,7 @@ impl<V: Blob> Gridstore<V> {
     }
 
     fn next_page_id(&self) -> PageId {
-        self.pages.len() as PageId
+        self.pages.read().len() as PageId
     }
 
     pub fn max_point_id(&self) -> PointOffset {
@@ -136,7 +136,7 @@ impl<V: Blob> Gridstore<V> {
         let config = StorageConfig::try_from(options)?;
         let config_path = base_path.join(CONFIG_FILENAME);
 
-        let mut storage = Self {
+        let storage = Self {
             tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None))),
             pages: Default::default(),
             bitmask: Arc::new(RwLock::new(Bitmask::create(&base_path, config)?)),
@@ -149,7 +149,7 @@ impl<V: Blob> Gridstore<V> {
         let new_page_id = storage.next_page_id();
         let path = storage.page_path(new_page_id);
         let page = Page::new(&path, storage.config.page_size_bytes)?;
-        storage.pages.push(page);
+        storage.pages.write().push(page);
 
         // lastly, write config to disk to use as a signal that the storage has been created correctly
         atomic_save_json(&config_path, &config).map_err(|err| err.to_string())?;
@@ -179,21 +179,22 @@ impl<V: Blob> Gridstore<V> {
 
         let num_pages = bitmask.infer_num_pages();
 
-        let mut storage = Self {
+        let storage = Self {
             tracker: Arc::new(RwLock::new(page_tracker)),
             config,
-            pages: Vec::with_capacity(num_pages),
+            pages: Arc::new(RwLock::new(Vec::with_capacity(num_pages))),
             bitmask: Arc::new(RwLock::new(bitmask)),
             base_path,
             _value_type: std::marker::PhantomData,
         };
         // load pages
+        let mut pages = storage.pages.write();
         for page_id in 0..num_pages as PageId {
             let page_path = storage.page_path(page_id);
             let page = Page::open(&page_path)?;
-
-            storage.pages.push(page);
+            pages.push(page);
         }
+        drop(pages);
         Ok(storage)
     }
 
@@ -218,8 +219,9 @@ impl<V: Blob> Gridstore<V> {
     ) -> Vec<u8> {
         let mut raw_sections = Vec::with_capacity(length as usize);
 
+        let pages = self.pages.read();
         for page_id in start_page_id.. {
-            let page = &self.pages[page_id as usize];
+            let page = &pages[page_id as usize];
             let (raw, unread_bytes) = page.read_value::<READ_SEQUENTIAL>(
                 block_offset,
                 length,
@@ -270,11 +272,12 @@ impl<V: Blob> Gridstore<V> {
     /// If size is None, the page will have the default size
     ///
     /// Returns the new page id
+    #[allow(clippy::needless_pass_by_ref_mut)]
     fn create_new_page(&mut self) -> Result<u32> {
         let new_page_id = self.next_page_id();
         let path = self.page_path(new_page_id);
         let page = Page::new(&path, self.config.page_size_bytes)?;
-        self.pages.push(page);
+        self.pages.write().push(page);
 
         self.bitmask.write().cover_new_page()?;
 
@@ -321,6 +324,7 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Write value into a new cell, considering that it can span more than one page
+    #[allow(clippy::needless_pass_by_ref_mut)]
     fn write_into_pages(
         &mut self,
         value: &[u8],
@@ -332,8 +336,9 @@ impl<V: Blob> Gridstore<V> {
         // Track the number of bytes that still need to be written
         let mut unwritten_tail = value_size;
 
+        let mut pages = self.pages.write();
         for page_id in start_page_id.. {
-            let page = &mut self.pages[page_id as usize];
+            let page = &mut pages[page_id as usize];
 
             let range = (value_size - unwritten_tail)..;
             unwritten_tail =
@@ -460,7 +465,7 @@ impl<V: Blob> Gridstore<V> {
         let base_path = self.base_path.clone();
 
         // Wipe
-        self.pages.clear();
+        self.pages.write().clear();
         fs::remove_dir_all(&base_path)
             .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))?;
 
@@ -475,9 +480,9 @@ impl<V: Blob> Gridstore<V> {
     ///
     /// Takes ownership because this function leaves Gridstore in an inconsistent state which does
     /// not allow further usage. Use [`clear`] instead to clear and reuse the storage.
-    pub fn wipe(mut self) -> Result<()> {
+    pub fn wipe(self) -> Result<()> {
         // clear pages
-        self.pages.clear();
+        self.pages.write().clear();
         // deleted base directory
         fs::remove_dir_all(&self.base_path)
             .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))
@@ -566,31 +571,17 @@ impl<V> Gridstore<V> {
     pub fn flusher(&self) -> Flusher {
         let pending_updates = self.tracker.read().pending_updates.clone();
 
+        let pages = self.pages.clone();
         let tracker = self.tracker.clone();
         let bitmask = self.bitmask.clone();
         let block_size_bytes = self.config.block_size_bytes;
 
-        // Flush all pages now, defer any errors until the closure is invoked
-        // TODO: move page flushing into closure
-        let mut deferred_err = None;
-        for page in &self.pages {
-            if let Err(err) = page.flush() {
-                deferred_err.replace(err.into());
-                break;
-            }
-        }
-        if deferred_err.is_none()
-            && let Err(err) = bitmask.read().flush()
-        {
-            deferred_err.replace(err);
-        }
-
         Box::new(move || {
-            if let Some(err) = deferred_err.take() {
-                return Err(err);
-            }
-
             let mut bitmask_guard = bitmask.upgradable_read();
+            bitmask_guard.flush()?;
+            for page in pages.read().iter() {
+                page.flush()?;
+            }
 
             let old_pointers = tracker.write().write_pending_and_flush(pending_updates)?;
 
@@ -617,7 +608,7 @@ impl<V> Gridstore<V> {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> std::io::Result<()> {
-        for page in &self.pages {
+        for page in self.pages.read().iter() {
             page.populate();
         }
         self.tracker.read().populate();
@@ -627,7 +618,7 @@ impl<V> Gridstore<V> {
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> std::io::Result<()> {
-        for page in &self.pages {
+        for page in self.pages.read().iter() {
             page.clear_cache()?;
         }
         self.bitmask.read().clear_cache()?;
@@ -672,7 +663,7 @@ mod tests {
         // TODO: should we actually use the pages for empty values?
         let payload = Payload::default();
         storage.put_value(0, &payload, hw_counter).unwrap();
-        assert_eq!(storage.pages.len(), 1);
+        assert_eq!(storage.pages.read().len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
         let hw_counter = HardwareCounterCell::new();
@@ -696,7 +687,7 @@ mod tests {
         let hw_counter = hw_counter.ref_payload_io_write_counter();
 
         storage.put_value(0, &payload, hw_counter).unwrap();
-        assert_eq!(storage.pages.len(), 1);
+        assert_eq!(storage.pages.read().len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
         let page_mapping = storage.get_pointer(0).unwrap();
@@ -723,7 +714,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
         storage.put_value(0, &payload, hw_counter_ref).unwrap();
-        assert_eq!(storage.pages.len(), 1);
+        assert_eq!(storage.pages.read().len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
         let files = storage.files();
         let actual_files: Vec<_> = fs::read_dir(dir.path()).unwrap().try_collect().unwrap();
@@ -788,7 +779,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
         storage.put_value(0, &payload, hw_counter_ref).unwrap();
-        assert_eq!(storage.pages.len(), 1);
+        assert_eq!(storage.pages.read().len(), 1);
 
         let page_mapping = storage.get_pointer(0).unwrap();
         assert_eq!(page_mapping.page_id, 0); // first page
@@ -801,7 +792,7 @@ mod tests {
         // delete payload
         let deleted = storage.delete_value(0);
         assert_eq!(deleted, stored_payload);
-        assert_eq!(storage.pages.len(), 1);
+        assert_eq!(storage.pages.read().len(), 1);
 
         // get payload again
         let stored_payload = storage.get_value::<false>(0, &hw_counter);
@@ -825,7 +816,7 @@ mod tests {
                 );
 
                 storage.put_value(0, &payload, hw_counter_ref).unwrap();
-                assert_eq!(storage.pages.len(), 1);
+                assert_eq!(storage.pages.read().len(), 1);
                 assert_eq!(storage.tracker.read().mapping_len(), 1);
 
                 let page_mapping = storage.get_pointer(0).unwrap();
@@ -985,7 +976,7 @@ mod tests {
     #[test]
     fn test_handle_huge_payload() {
         let (_dir, mut storage) = empty_storage();
-        assert_eq!(storage.pages.len(), 1);
+        assert_eq!(storage.pages.read().len(), 1);
 
         let mut payload = Payload::default();
 
@@ -1001,7 +992,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
         storage.put_value(0, &payload, hw_counter_ref).unwrap();
-        assert_eq!(storage.pages.len(), 2);
+        assert_eq!(storage.pages.read().len(), 2);
 
         let page_mapping = storage.get_pointer(0).unwrap();
         assert_eq!(page_mapping.page_id, 0); // first page
@@ -1023,7 +1014,7 @@ mod tests {
             // delete payload
             let deleted = storage.delete_value(0);
             assert!(deleted.is_some());
-            assert_eq!(storage.pages.len(), 2);
+            assert_eq!(storage.pages.read().len(), 2);
 
             assert!(storage.get_value::<false>(0, &hw_counter).is_none());
         }
@@ -1045,7 +1036,7 @@ mod tests {
         {
             let mut storage = Gridstore::new(path.clone(), Default::default()).unwrap();
             storage.put_value(0, &payload, hw_counter_ref).unwrap();
-            assert_eq!(storage.pages.len(), 1);
+            assert_eq!(storage.pages.read().len(), 1);
 
             let page_mapping = storage.get_pointer(0).unwrap();
             assert_eq!(page_mapping.page_id, 0); // first page
@@ -1061,7 +1052,7 @@ mod tests {
 
         // reopen storage
         let storage = Gridstore::<Payload>::open(path).unwrap();
-        assert_eq!(storage.pages.len(), 1);
+        assert_eq!(storage.pages.read().len(), 1);
 
         let stored_payload = storage.get_value::<false>(0, &hw_counter);
         assert!(stored_payload.is_some());
@@ -1144,13 +1135,13 @@ mod tests {
         let point_offset = write_data(&mut storage, 0);
         assert_eq!(point_offset, EXPECTED_LEN as u32);
         assert_eq!(storage.tracker.read().mapping_len(), EXPECTED_LEN);
-        assert_eq!(storage.pages.len(), 2);
+        assert_eq!(storage.pages.read().len(), 2);
 
         // write the same payload a second time
         let point_offset = write_data(&mut storage, point_offset);
         assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
         assert_eq!(storage.tracker.read().mapping_len(), EXPECTED_LEN * 2);
-        assert_eq!(storage.pages.len(), 4);
+        assert_eq!(storage.pages.read().len(), 4);
 
         // assert storage is consistent
         storage_double_pass_is_consistent(&storage, 0);
@@ -1162,7 +1153,7 @@ mod tests {
         // reopen storage
         let mut storage = Gridstore::open(dir.path().to_path_buf()).unwrap();
         assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
-        assert_eq!(storage.pages.len(), 4);
+        assert_eq!(storage.pages.read().len(), 4);
         assert_eq!(storage.tracker.read().mapping_len(), EXPECTED_LEN * 2);
 
         // assert storage is consistent after reopening
@@ -1237,7 +1228,7 @@ mod tests {
         storage.flush().unwrap();
         println!("{last_point_id}");
 
-        assert_eq!(storage.pages.len(), 4);
+        assert_eq!(storage.pages.read().len(), 4);
         let last_pointer = storage.get_pointer(last_point_id).unwrap();
         assert_eq!(last_pointer.block_offset, 0);
         assert_eq!(last_pointer.page_id, 3);
