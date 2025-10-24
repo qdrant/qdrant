@@ -523,6 +523,38 @@ pub const fn default_quantization_oversampling_value() -> Option<f64> {
     None
 }
 
+/// Default value for [`AcornSearchParams::max_selectivity`].
+///
+/// After change, update docs for GRPC and REST API.
+pub const ACORN_MAX_SELECTIVITY_DEFAULT: f64 = 0.4;
+
+/// ACORN-related search parameters
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Copy, PartialEq, Default, Hash,
+)]
+#[serde(rename_all = "snake_case")]
+pub struct AcornSearchParams {
+    /// If true, then ACORN may be used for the HNSW search based on filters
+    /// selectivity.
+
+    /// Improves search recall for searches with multiple low-selectivity
+    /// payload filters, at cost of performance.
+    #[serde(default)]
+    pub enable: bool,
+
+    /// Maximum selectivity of filters to enable ACORN.
+    ///
+    /// If estimated filters selectivity is higher than this value,
+    /// ACORN will not be used. Selectivity is estimated as:
+    /// `estimated number of points satisfying the filters / total number of points`.
+    ///   
+    /// 0.0 for never, 1.0 for always. Default is 0.4.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub max_selectivity: Option<OrderedFloat<f64>>,
+}
+
 /// Additional parameters of the search
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Default, Hash,
@@ -549,6 +581,12 @@ pub struct SearchParams {
     /// guarantee that all uploaded vectors will be included in search results
     #[serde(default)]
     pub indexed_only: bool,
+
+    /// ACORN search params
+    #[serde(default)]
+    #[validate(nested)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acorn: Option<AcornSearchParams>,
 }
 
 /// Configuration for vectors.

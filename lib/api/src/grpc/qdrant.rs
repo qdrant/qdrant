@@ -4849,6 +4849,29 @@ pub struct QuantizationSearchParams {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AcornSearchParams {
+    /// If true, then ACORN may be used for the HNSW search based on filters
+    /// selectivity.
+    ///
+    /// Improves search recall for searches with multiple low-selectivity
+    /// payload filters, at cost of performance.
+    #[prost(bool, optional, tag = "1")]
+    pub enable: ::core::option::Option<bool>,
+    /// Maximum selectivity of filters to enable ACORN.
+    ///
+    /// If estimated filters selectivity is higher than this value,
+    /// ACORN will not be used. Selectivity is estimated as:
+    /// `estimated number of points satisfying the filters / total number of points`.
+    ///
+    /// 0.0 for never, 1.0 for always. Default is 0.4.
+    #[prost(double, optional, tag = "2")]
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub max_selectivity: ::core::option::Option<f64>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
     /// Params relevant to HNSW index. Size of the beam in a beam-search.
     /// Larger the value - more accurate the result, more time required for search.
@@ -4866,6 +4889,10 @@ pub struct SearchParams {
     /// guarantee that all uploaded vectors will be included in search results
     #[prost(bool, optional, tag = "4")]
     pub indexed_only: ::core::option::Option<bool>,
+    /// ACORN search params
+    #[prost(message, optional, tag = "5")]
+    #[validate(nested)]
+    pub acorn: ::core::option::Option<AcornSearchParams>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

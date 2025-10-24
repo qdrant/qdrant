@@ -272,10 +272,8 @@ fn test_update_named_vector() {
 
     // do exact search
     let search_params = SearchParams {
-        hnsw_ef: None,
         exact: true,
-        quantization: None,
-        indexed_only: false,
+        ..Default::default()
     };
     let nearest_upsert = segment
         .search(

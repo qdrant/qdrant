@@ -220,6 +220,13 @@ impl<'a> FilteredScorer<'a> {
             point_ids.truncate(limit);
         }
 
+        self.score_points_unfiltered(point_ids)
+    }
+
+    pub fn score_points_unfiltered(
+        &mut self,
+        point_ids: &[PointOffsetType],
+    ) -> impl Iterator<Item = ScoredPointOffset> {
         if self.scores_buffer.len() < point_ids.len() {
             self.scores_buffer.resize(point_ids.len(), 0.0);
         }
@@ -227,7 +234,7 @@ impl<'a> FilteredScorer<'a> {
         self.raw_scorer
             .score_points(point_ids, &mut self.scores_buffer[..point_ids.len()]);
 
-        std::iter::zip(&*point_ids, &self.scores_buffer)
+        std::iter::zip(point_ids, &self.scores_buffer)
             .map(|(&idx, &score)| ScoredPointOffset { idx, score })
     }
 

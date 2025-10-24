@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::io::Write;
+use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
@@ -19,6 +20,8 @@ use super::graph_links::{GraphLinks, GraphLinksFormatParam};
 use super::links_container::{ItemsBuffer, LinksContainer};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
+#[cfg(test)]
+use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase};
 use crate::index::hnsw_index::graph_links::serialize_graph_links;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -63,6 +66,25 @@ impl GraphLayersBase for GraphLayersBuilder {
                 f(link);
             }
         }
+    }
+
+    fn try_for_each_link<F>(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+        mut f: F,
+    ) -> ControlFlow<(), ()>
+    where
+        F: FnMut(PointOffsetType) -> ControlFlow<(), ()>,
+    {
+        let links = self.links_layers[point_id as usize][level].read();
+        let ready_list = self.ready_list.read();
+        for link in links.iter() {
+            if ready_list[link as usize] {
+                f(link)?;
+            }
+        }
+        ControlFlow::Continue(())
     }
 
     fn get_m(&self, level: usize) -> usize {
@@ -739,7 +761,14 @@ mod tests {
         let scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
-            .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+            .search(
+                top,
+                ef,
+                SearchAlgorithm::Hnsw,
+                scorer,
+                None,
+                &DEFAULT_STOPPED,
+            )
             .unwrap();
 
         assert_eq!(reference_top.into_sorted_vec(), graph_search);
@@ -845,7 +874,14 @@ mod tests {
         let scorer = vector_holder.scorer(query);
         let ef = 16;
         let graph_search = graph
-            .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+            .search(
+                top,
+                ef,
+                SearchAlgorithm::Hnsw,
+                scorer,
+                None,
+                &DEFAULT_STOPPED,
+            )
             .unwrap();
         assert_eq!(reference_top.into_sorted_vec(), graph_search);
     }

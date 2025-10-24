@@ -8,6 +8,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use segment::fixtures::index_fixtures::random_vector;
+use segment::index::hnsw_index::graph_layers::SearchAlgorithm;
 use segment::spaces::simple::CosineMetric;
 use segment::vector_storage::DEFAULT_STOPPED;
 
@@ -38,7 +39,14 @@ fn hnsw_benchmark(c: &mut Criterion) {
 
             black_box(
                 graph_layers
-                    .search(TOP, EF, scorer, None, &DEFAULT_STOPPED)
+                    .search(
+                        TOP,
+                        EF,
+                        SearchAlgorithm::Hnsw,
+                        scorer,
+                        None,
+                        &DEFAULT_STOPPED,
+                    )
                     .unwrap(),
             );
         })
@@ -54,7 +62,14 @@ fn hnsw_benchmark(c: &mut Criterion) {
 
             black_box(
                 graph_layers
-                    .search(TOP, EF, scorer, None, &DEFAULT_STOPPED)
+                    .search(
+                        TOP,
+                        EF,
+                        SearchAlgorithm::Hnsw,
+                        scorer,
+                        None,
+                        &DEFAULT_STOPPED,
+                    )
                     .unwrap(),
             );
         })

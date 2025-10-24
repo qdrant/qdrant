@@ -307,6 +307,28 @@ message QuantizationSearchParams {
   optional double oversampling = 3;
 }
 
+message AcornSearchParams {
+  /*
+  If true, then ACORN may be used for the HNSW search based on filters
+  selectivity.
+
+  Improves search recall for searches with multiple low-selectivity
+  payload filters, at cost of performance.
+  */
+  optional bool enable = 1;
+
+  /*
+  Maximum selectivity of filters to enable ACORN.
+
+  If estimated filters selectivity is higher than this value,
+  ACORN will not be used. Selectivity is estimated as:
+  `estimated number of points satisfying the filters / total number of points`.
+    
+  0.0 for never, 1.0 for always. Default is 0.4.
+  */
+  optional double max_selectivity = 2;
+}
+
 message SearchParams {
   /*
   Params relevant to HNSW index. Size of the beam in a beam-search.
@@ -329,6 +351,11 @@ message SearchParams {
   guarantee that all uploaded vectors will be included in search results
   */
   optional bool indexed_only = 4;
+
+  /*
+  ACORN search params
+  */
+  optional AcornSearchParams acorn = 5;
 }
 
 message SearchPoints {
