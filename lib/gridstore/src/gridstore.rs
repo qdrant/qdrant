@@ -1228,4 +1228,98 @@ mod tests {
         assert_eq!(last_pointer.block_offset, 0);
         assert_eq!(last_pointer.page_id, 3);
     }
+
+    /// Test that data is only actually flushed when we invoke the flush closure
+    ///
+    /// Specifically:
+    /// - version of data we write to disk is that of when the flusher was created
+    /// - data is only written to disk when closure is invoked
+    #[test]
+    fn test_deferred_flush() {
+        let (dir, mut storage) = empty_storage();
+        let path = dir.path().to_path_buf();
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let get_payload = |storage: &Gridstore<Payload>| {
+            storage
+                .get_value::<false>(0, &hw_counter)
+                .expect("offset exists")
+                .0
+                .get("key")
+                .expect("key exists")
+                .as_str()
+                .expect("value is a string")
+                .to_owned()
+        };
+        let put_payload =
+            |storage: &mut Gridstore<Payload>, payload_value: &str, expected_block_offset: u32| {
+                let mut payload = Payload::default();
+                payload.0.insert(
+                    "key".to_string(),
+                    serde_json::Value::String(payload_value.to_string()),
+                );
+
+                storage.put_value(0, &payload, hw_counter_ref).unwrap();
+                assert_eq!(storage.pages.read().len(), 1);
+                assert_eq!(storage.tracker.read().mapping_len(), 1);
+
+                let page_mapping = storage.get_pointer(0).unwrap();
+                assert_eq!(page_mapping.page_id, 0); // first page
+                assert_eq!(page_mapping.block_offset, expected_block_offset);
+
+                let hw_counter = HardwareCounterCell::new();
+                let stored_payload = storage.get_value::<false>(0, &hw_counter);
+                assert!(stored_payload.is_some());
+                assert_eq!(stored_payload.unwrap(), payload);
+            };
+
+        put_payload(&mut storage, "value 1", 0);
+        assert_eq!(get_payload(&storage), "value 1");
+
+        put_payload(&mut storage, "value 2", 1);
+        assert_eq!(get_payload(&storage), "value 2");
+
+        let flusher = storage.flusher();
+
+        put_payload(&mut storage, "value 3", 2);
+        assert_eq!(get_payload(&storage), "value 3");
+
+        // We drop the flusher so nothing happens
+        drop(flusher);
+        assert_eq!(get_payload(&storage), "value 3");
+
+        let flusher = storage.flusher();
+
+        put_payload(&mut storage, "value 4", 3);
+        assert_eq!(get_payload(&storage), "value 4");
+
+        // We flush and still expect to read latest data
+        flusher().unwrap();
+        assert_eq!(get_payload(&storage), "value 4");
+
+        // We flushed and freed blocks 0 and 1, we expect to reuse block 0
+        put_payload(&mut storage, "value 5", 0);
+        assert_eq!(get_payload(&mut storage), "value 5");
+
+        // Reopen gridstore
+        drop(storage);
+        let mut storage = Gridstore::<Payload>::open(path).unwrap();
+        assert_eq!(storage.pages.read().len(), 1);
+
+        // On reopen, we expect to read the data at the time the flusher was created
+        assert_eq!(get_payload(&storage), "value 3");
+
+        // Bitslice is not buffered and can be flushed by the kernel, expect to reuse block 1
+        // It means that we might lose unoccupied storage, but it can only happen on crash and the
+        // optimizer will eventually take care of this when building a fresh segment
+        put_payload(&mut storage, "value 6", 1);
+        assert_eq!(get_payload(&storage), "value 6");
+
+        put_payload(&mut storage, "value 7", 4);
+        assert_eq!(get_payload(&storage), "value 7");
+
+        put_payload(&mut storage, "value 8", 5);
+        assert_eq!(get_payload(&storage), "value 8");
+    }
 }
