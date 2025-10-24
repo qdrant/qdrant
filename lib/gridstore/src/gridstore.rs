@@ -562,11 +562,6 @@ impl<V> Gridstore<V> {
         value_size.div_ceil(block_size).try_into().unwrap()
     }
 
-    /// Flush all mmaps and pending updates to disk
-    pub fn flush(&self) -> std::result::Result<(), mmap_type::Error> {
-        self.flusher()()
-    }
-
     /// Create flusher that durably persists all pending changes when invoked
     pub fn flusher(&self) -> Flusher {
         let pending_updates = self.tracker.read().pending_updates.clone();
@@ -797,7 +792,7 @@ mod tests {
         // get payload again
         let stored_payload = storage.get_value::<false>(0, &hw_counter);
         assert!(stored_payload.is_none());
-        storage.flush().unwrap();
+        storage.flusher()().unwrap();
         assert_eq!(storage.get_storage_size_bytes(), 0);
     }
 
@@ -835,7 +830,7 @@ mod tests {
 
         put_payload(&mut storage, "updated again", 2);
 
-        storage.flush().unwrap();
+        storage.flusher()().unwrap();
 
         // First block offset should be available again, so we can reuse it
         put_payload(&mut storage, "updated after flush", 0);
@@ -948,7 +943,7 @@ mod tests {
         }
 
         // flush data
-        storage.flush().unwrap();
+        storage.flusher()().unwrap();
 
         let before_size = storage.get_storage_size_bytes();
         // drop storage
@@ -1047,7 +1042,7 @@ mod tests {
             assert_eq!(stored_payload.unwrap(), payload);
 
             // flush storage before dropping
-            storage.flush().unwrap();
+            storage.flusher()().unwrap();
         }
 
         // reopen storage
@@ -1090,7 +1085,7 @@ mod tests {
                     .unwrap();
                 point_offset += 1;
             }
-            storage.flush().unwrap();
+            storage.flusher()().unwrap();
             point_offset
         }
 
@@ -1147,7 +1142,7 @@ mod tests {
         storage_double_pass_is_consistent(&storage, 0);
 
         // drop storage
-        storage.flush().unwrap();
+        storage.flusher()().unwrap();
         drop(storage);
 
         // reopen storage
@@ -1225,7 +1220,7 @@ mod tests {
                 .unwrap();
         }
 
-        storage.flush().unwrap();
+        storage.flusher()().unwrap();
         println!("{last_point_id}");
 
         assert_eq!(storage.pages.read().len(), 4);
