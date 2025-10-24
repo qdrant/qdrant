@@ -43,7 +43,9 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::{get_gpu_groups_count, gpu_graph_builder::build_hnsw_on_gpu};
-use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersWithVectors};
+use crate::index::hnsw_index::graph_layers::{
+    GraphLayers, GraphLayersWithVectors, SearchAlgorithm,
+};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, StorageGraphLinksVectors};
@@ -61,7 +63,8 @@ use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{
-    FieldCondition, Filter, HnswConfig, HnswGlobalConfig, QuantizationSearchParams, SearchParams,
+    ACORN_MAX_SELECTIVITY_DEFAULT, FieldCondition, Filter, HnswConfig, HnswGlobalConfig,
+    QuantizationSearchParams, SearchParams,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::DiscoveryQuery;
@@ -951,6 +954,13 @@ impl HNSWIndex {
         let ef = params
             .and_then(|params| params.hnsw_ef)
             .unwrap_or(self.config.ef);
+        let acorn_enabled = params
+            .and_then(|params| params.acorn)
+            .is_some_and(|acorn| acorn.enable);
+        let acorn_max_selectivity = params
+            .and_then(|params| params.acorn)
+            .and_then(|acorn| acorn.max_selectivity)
+            .map_or(ACORN_MAX_SELECTIVITY_DEFAULT, |v| *v);
 
         let is_stopped = vector_query_context.is_stopped();
 
@@ -966,7 +976,40 @@ impl HNSWIndex {
         let hw_counter = vector_query_context.hardware_counter();
         let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
+        let mut algorithm = SearchAlgorithm::Hnsw;
+        if acorn_enabled
+            && self.config.m0 != 0
+            && let Some(filter) = filter
+        {
+            // NOTE: technically we also might want to use ACORN for unfiltered
+            // searches for segments with a lot of deleted points. But in
+            // practice, such segments most likely to be picked by an optimizer
+            // soon.
+
+            let available_vector_count = vector_storage.available_vector_count();
+            let selectivity = if available_vector_count == 0 {
+                1.0
+            } else {
+                let query_point_cardinality =
+                    payload_index.estimate_cardinality(filter, &hw_counter);
+                let query_cardinality = adjust_to_available_vectors(
+                    query_point_cardinality,
+                    available_vector_count,
+                    id_tracker.available_point_count(),
+                );
+                query_cardinality.exp as f64 / available_vector_count as f64
+            };
+            if selectivity <= acorn_max_selectivity {
+                algorithm = SearchAlgorithm::Acorn;
+            }
+        }
+
         let search_with_vectors = || -> OperationResult<Option<Vec<ScoredPointOffset>>> {
+            match algorithm {
+                SearchAlgorithm::Hnsw => (),
+                // ACORN is not implemented for graph with vectors yet (but possible)
+                SearchAlgorithm::Acorn => return Ok(None),
+            }
             if !self.graph.has_vectors() || !is_quantized_search(quantized_vectors.as_ref(), params)
             {
                 return Ok(None);
@@ -1024,6 +1067,7 @@ impl HNSWIndex {
             let search_result = self.graph.search(
                 oversampled_top,
                 ef,
+                algorithm,
                 points_scorer,
                 custom_entry_points,
                 &is_stopped,

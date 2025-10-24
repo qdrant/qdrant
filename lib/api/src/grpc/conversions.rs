@@ -44,17 +44,17 @@ use crate::grpc::qdrant::payload_index_params::IndexParams;
 use crate::grpc::qdrant::point_id::PointIdOptions;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
-    CollectionDescription, CollectionOperationResponse, Condition, Distance, FieldCondition,
-    Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition, HealthCheckReply,
-    HnswConfigDiff, IntegerIndexParams, IsEmptyCondition, IsNullCondition, ListCollectionsResponse,
-    Match, MinShould, NamedVectors, NestedCondition, PayloadExcludeSelector,
-    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
-    PointStruct, PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
-    QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
-    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StopwordsSet,
-    StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
-    ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key,
-    with_vectors_selector,
+    AcornSearchParams, CollectionDescription, CollectionOperationResponse, Condition, Distance,
+    FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition,
+    HealthCheckReply, HnswConfigDiff, IntegerIndexParams, IsEmptyCondition, IsNullCondition,
+    ListCollectionsResponse, Match, MinShould, NamedVectors, NestedCondition,
+    PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
+    PayloadSchemaType, PointId, PointStruct, PointsOperationResponse,
+    PointsOperationResponseInternal, ProductQuantization, QuantizationConfig,
+    QuantizationSearchParams, QuantizationType, RepeatedIntegers, RepeatedStrings,
+    ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StopwordsSet, StrictModeConfig,
+    TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount,
+    VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key, with_vectors_selector,
 };
 use crate::grpc::{
     self, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, DecayParamsExpression,
@@ -790,6 +790,32 @@ impl From<segment::types::QuantizationSearchParams> for QuantizationSearchParams
     }
 }
 
+impl From<AcornSearchParams> for segment::types::AcornSearchParams {
+    fn from(params: AcornSearchParams) -> Self {
+        let AcornSearchParams {
+            enable,
+            max_selectivity,
+        } = params;
+        Self {
+            enable: enable.unwrap_or(false),
+            max_selectivity: max_selectivity.map(OrderedFloat),
+        }
+    }
+}
+
+impl From<segment::types::AcornSearchParams> for AcornSearchParams {
+    fn from(params: segment::types::AcornSearchParams) -> Self {
+        let segment::types::AcornSearchParams {
+            enable,
+            max_selectivity,
+        } = params;
+        Self {
+            enable: Some(enable),
+            max_selectivity: max_selectivity.map(|OrderedFloat(x)| x),
+        }
+    }
+}
+
 impl From<SearchParams> for segment::types::SearchParams {
     fn from(params: SearchParams) -> Self {
         let SearchParams {
@@ -797,12 +823,14 @@ impl From<SearchParams> for segment::types::SearchParams {
             exact,
             quantization,
             indexed_only,
+            acorn,
         } = params;
         Self {
             hnsw_ef: hnsw_ef.map(|x| x as usize),
             exact: exact.unwrap_or(false),
             quantization: quantization.map(|q| q.into()),
             indexed_only: indexed_only.unwrap_or(false),
+            acorn: acorn.map(segment::types::AcornSearchParams::from),
         }
     }
 }
@@ -814,12 +842,14 @@ impl From<segment::types::SearchParams> for SearchParams {
             exact,
             quantization,
             indexed_only,
+            acorn,
         } = params;
         Self {
             hnsw_ef: hnsw_ef.map(|x| x as u64),
             exact: Some(exact),
             quantization: quantization.map(|q| q.into()),
             indexed_only: Some(indexed_only),
+            acorn: acorn.map(AcornSearchParams::from),
         }
     }
 }

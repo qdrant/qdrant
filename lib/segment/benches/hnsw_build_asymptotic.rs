@@ -8,6 +8,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use itertools::Itertools;
 use rand::{Rng, rng};
 use segment::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
+use segment::index::hnsw_index::graph_layers::SearchAlgorithm;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric};
 use segment::types::Distance;
@@ -38,7 +39,14 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
             let query = random_vector(&mut rng, DIM);
             let scorer = vector_holder.scorer(query);
             graph_layers
-                .search(TOP, EF, scorer, None, &DEFAULT_STOPPED)
+                .search(
+                    TOP,
+                    EF,
+                    SearchAlgorithm::Hnsw,
+                    scorer,
+                    None,
+                    &DEFAULT_STOPPED,
+                )
                 .unwrap();
         })
     });
@@ -57,7 +65,14 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
             let query = random_vector(&mut rng, DIM);
             let scorer = vector_holder.scorer(query);
             graph_layers
-                .search(TOP, EF, scorer, None, &DEFAULT_STOPPED)
+                .search(
+                    TOP,
+                    EF,
+                    SearchAlgorithm::Hnsw,
+                    scorer,
+                    None,
+                    &DEFAULT_STOPPED,
+                )
                 .unwrap();
         })
     });

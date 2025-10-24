@@ -1,5 +1,32 @@
+//! # Search on level functions
+//!
+//! This module contains multiple variations of the SEARCH-LAYER function.
+//! All of them implement a beam (greedy) search for closest points within a
+//! single graph layer.
+//!
+//! - [`GraphLayersBase::search_on_level`]
+//!   Regular search, as described in the original HNSW paper.
+//!   Usually used on layer 0.
+//!
+//! - [`GraphLayersBase::search_on_level_acorn`]
+//!   Variation of `search_on_level` that implements the ACORN-1 algorithm.
+//!   Usually used on layer 0.
+//!
+//! - [`GraphLayersBase::search_entry_on_level`]
+//!   Simplified version of `search_on_level` that uses beam size of 1.
+//!   Usually used on all levels above level 0.
+//!
+//! - [`GraphLayersWithVectors::search_on_level_with_vectors`]
+//!   Like `search_on_level`, but for graphs with [inline storage].
+//!
+//! - [`GraphLayersWithVectors::search_entry_on_level_with_vectors`]
+//!   Like `search_entry_on_level`, but for graphs with [inline storage].
+//!
+//! [inline storage]: crate::types::HnswConfig::inline_storage
+
 use std::borrow::Cow;
 use std::cmp::max;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -50,6 +77,12 @@ pub struct GraphLayers {
     pub(super) visited_pool: VisitedPool,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum SearchAlgorithm {
+    Hnsw,
+    Acorn,
+}
+
 pub trait GraphLayersBase {
     fn get_visited_list_from_pool(&self) -> VisitedListHandle<'_>;
 
@@ -57,10 +90,21 @@ pub trait GraphLayersBase {
     where
         F: FnMut(PointOffsetType);
 
+    fn try_for_each_link<F>(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+        f: F,
+    ) -> ControlFlow<(), ()>
+    where
+        F: FnMut(PointOffsetType) -> ControlFlow<(), ()>;
+
     /// Get M based on current level
     fn get_m(&self, level: usize) -> usize;
 
-    /// Greedy search for closest points within a single graph layer
+    /// Beam search for closest points within a single graph layer.
+    ///
+    /// See [module docs](self) for comparison with other search functions.
     fn search_on_level(
         &self,
         level_entry: ScoredPointOffset,
@@ -103,6 +147,101 @@ pub trait GraphLayersBase {
         Ok(search_context.nearest)
     }
 
+    /// Variation of [`GraphLayersBase::search_on_level`] that implements the
+    /// ACORN-1 algorithm.
+    ///
+    /// See [module docs](self) for comparison with other search functions.
+    fn search_on_level_acorn(
+        &self,
+        level_entry: ScoredPointOffset,
+        level: usize,
+        ef: usize,
+        points_scorer: &mut FilteredScorer,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+        // Each node in `hop1_visited_list` either:
+        // a) Non-deleted node that going to be scored and added to
+        //    `search_context` for further expansion. (or already added)
+        // b) Deleted node that scheduled for exploration for 2-hop neighbors.
+        let mut hop1_visited_list = self.get_visited_list_from_pool();
+        hop1_visited_list.check_and_update_visited(level_entry.idx);
+
+        // Nodes in `hop2_visited_list` are already explored as 2-hop neighbors.
+        // Being in this list doesn't prevent the node to be handled again as
+        // 1-hop neighbor.
+        let mut hop2_visited_list = self.get_visited_list_from_pool();
+
+        let mut search_context = SearchContext::new(ef);
+        search_context.process_candidate(level_entry);
+
+        // Limits are per every explored 1-hop or 2-hop neighbors, not total.
+        // This is necessary to avoid over-scoring when there are many
+        // additional graph links.
+        let hop1_limit = self.get_m(level);
+        let hop2_limit = self.get_m(level);
+        debug_assert_ne!(self.get_m(level), 0); // See `FilteredBytesScorer::score_points`
+
+        let mut to_score = Vec::with_capacity(hop1_limit * hop2_limit.min(16));
+        let mut to_explore = Vec::with_capacity(hop1_limit * hop2_limit.min(16));
+
+        while let Some(candidate) = search_context.candidates.pop() {
+            check_process_stopped(is_stopped)?;
+
+            if candidate.score < search_context.lower_bound() {
+                break;
+            }
+
+            to_explore.clear();
+            to_score.clear();
+
+            // Collect 1-hop neighbors (direct neighbors)
+            _ = self.try_for_each_link(candidate.idx, level, |hop1| {
+                if hop1_visited_list.check_and_update_visited(hop1) {
+                    return ControlFlow::Continue(());
+                }
+
+                if points_scorer.filters().check_vector(hop1) {
+                    to_score.push(hop1);
+                    if to_score.len() >= hop1_limit {
+                        return ControlFlow::Break(());
+                    }
+                } else {
+                    to_explore.push(hop1);
+                }
+                ControlFlow::Continue(())
+            });
+
+            // Collect 2-hop neighbors (neighbors of neighbors)
+            for &hop1 in to_explore.iter() {
+                check_process_stopped(is_stopped)?;
+
+                let total_limit = to_score.len() + hop2_limit;
+                _ = self.try_for_each_link(hop1, level, |hop2| {
+                    if hop1_visited_list.check(hop2)
+                        || hop2_visited_list.check_and_update_visited(hop2)
+                    {
+                        return ControlFlow::Continue(());
+                    }
+
+                    if points_scorer.filters().check_vector(hop2) {
+                        hop1_visited_list.check_and_update_visited(hop2);
+                        to_score.push(hop2);
+                        if to_score.len() >= total_limit {
+                            return ControlFlow::Break(());
+                        }
+                    }
+                    ControlFlow::Continue(())
+                });
+            }
+
+            points_scorer
+                .score_points_unfiltered(&to_score)
+                .for_each(|score_point| search_context.process_candidate(score_point));
+        }
+
+        Ok(search_context.nearest)
+    }
+
     /// Greedy searches for entry point of level `target_level`.
     /// Beam size is 1.
     fn search_entry(
@@ -134,6 +273,9 @@ pub trait GraphLayersBase {
         }
     }
 
+    /// Simplified version of `search_on_level` that uses beam size of 1.
+    ///
+    /// See [module docs](self) for comparison with other search functions.
     fn search_entry_on_level(
         &self,
         entry_point: PointOffsetType,
@@ -189,6 +331,8 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
     ) -> (&[u8], impl Iterator<Item = (PointOffsetType, &[u8])> + '_);
 
     /// Similar to [`GraphLayersBase::search_on_level`].
+    ///
+    /// See [module docs](self) for comparison with other search functions.
     fn search_on_level_with_vectors(
         &self,
         level_entry: ScoredPointOffset,
@@ -271,6 +415,8 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
     }
 
     /// Similar to [`GraphLayersBase::search_entry_on_level`].
+    ///
+    /// See [module docs](self) for comparison with other search functions.
     fn search_entry_on_level_with_vectors<'a>(
         &'a self,
         entry_point: ScoredPointOffset,
@@ -315,6 +461,18 @@ impl GraphLayersBase for GraphLayers {
         F: FnMut(PointOffsetType),
     {
         self.links.links(point_id, level).for_each(f);
+    }
+
+    fn try_for_each_link<F>(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+        f: F,
+    ) -> ControlFlow<(), ()>
+    where
+        F: FnMut(PointOffsetType) -> ControlFlow<(), ()>,
+    {
+        self.links.links(point_id, level).try_for_each(f)
     }
 
     fn get_m(&self, level: usize) -> usize {
@@ -373,6 +531,7 @@ impl GraphLayers {
         &self,
         top: usize,
         ef: usize,
+        algorithm: SearchAlgorithm,
         mut points_scorer: FilteredScorer,
         custom_entry_points: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
@@ -389,13 +548,15 @@ impl GraphLayers {
             &mut points_scorer,
             is_stopped,
         )?;
-        let nearest = self.search_on_level(
-            zero_level_entry,
-            0,
-            max(top, ef),
-            &mut points_scorer,
-            is_stopped,
-        )?;
+        let ef = max(ef, top);
+        let nearest = match algorithm {
+            SearchAlgorithm::Hnsw => {
+                self.search_on_level(zero_level_entry, 0, ef, &mut points_scorer, is_stopped)
+            }
+            SearchAlgorithm::Acorn => {
+                self.search_on_level_acorn(zero_level_entry, 0, ef, &mut points_scorer, is_stopped)
+            }
+        }?;
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
     }
 
@@ -578,7 +739,14 @@ mod tests {
 
         let ef = 16;
         graph
-            .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+            .search(
+                top,
+                ef,
+                SearchAlgorithm::Hnsw,
+                scorer,
+                None,
+                &DEFAULT_STOPPED,
+            )
             .unwrap()
     }
 
