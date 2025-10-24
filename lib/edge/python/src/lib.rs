@@ -26,7 +26,10 @@ mod qdrant_edge {
         PyVectorStorageDatatype, PyVectorStorageType,
     };
     #[pymodule_export]
-    use super::search::{PyScoredPoint, PySearchParams, PySearchRequest};
+    use super::search::{
+        PyAcornSearchParams, PyQuantizationSearchParams, PyScoredPoint, PySearchParams,
+        PySearchRequest,
+    };
     #[pymodule_export]
     use super::types::filter::condition::{
         PyHasIdCondition, PyHasVectorCondition, PyIsEmptyCondition, PyIsNullCondition,
