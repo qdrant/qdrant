@@ -71,8 +71,8 @@ impl PointerUpdates {
         }
     }
 
-    /// Returns pointers that need to be freed, i.e. They have been written, and are no longer needed
-    fn to_outdated_pointers(&self) -> impl Iterator<Item = ValuePointer> {
+    /// Returns pointers that need to be freed, i.e. The locations they are pointing to are no longer needed.
+    fn outdated_pointers(&self) -> impl Iterator<Item = ValuePointer> {
         let take = if self.latest_is_set {
             // all but the latest one
             self.history.len().saturating_sub(1)
@@ -84,17 +84,15 @@ impl PointerUpdates {
         self.history.iter().copied().take(take)
     }
 
-    /// Bump this pointer updates structure to drain all details that have been persisted
+    /// Determine whether we can drop this structure, given a persisted one.
     ///
-    /// The pointer updates structure that we have persisted must be given. All persisted details
-    /// that are inside the current pointer updates structure are removed in-place. The pointer
-    /// updates structure we're left with only contains details that have not yet been persisted.
+    /// The persisted history will be removed, so it won't repeat in next flush.
     ///
-    /// Returns true if the structure is fully persisted. In that case, the caller must drop it
-    /// from the list of pending updates.
+    /// If the remaining structure still has some history returns `false`.
+    /// If it returns `true`, the structure must be dropped after, since no history is an invalid state.
     #[must_use = "if true is returned, entry must be dropped from pending changes"]
-    fn drain_persisted_and_drop(&mut self, persisted: &Self) -> bool {
-        // We don't expect duplicate pointers in history
+    fn drain_persisted(&mut self, persisted: &Self) -> bool {
+        // We expect both histories to be non-empty
         debug_assert!(
             !self.history.is_empty(),
             "self must not have empty pointer history",
@@ -103,6 +101,7 @@ impl PointerUpdates {
             !persisted.history.is_empty(),
             "persisted must not have empty pointer history",
         );
+        // We don't expect duplicate pointers in history
         debug_assert_eq!(
             self.history.iter().copied().collect::<AHashSet<_>>().len(),
             self.history.len(),
@@ -119,22 +118,19 @@ impl PointerUpdates {
             "persisted must not have duplicate pointers in history",
         );
 
-        // If both are the same, we have persisted the entry and can drop the pending change
-        if self == persisted {
-            return true;
-        }
-
-        // Pointers we consider persisted
-        // If latest_is_set is different, the last pointer has new changes so we cannot consider it
-        // persisted
-        let mut persisted_pointers = persisted.history.as_slice();
-        if self.latest_is_set != persisted.latest_is_set {
-            persisted_pointers = &persisted_pointers[..persisted_pointers.len().saturating_sub(1)];
-        }
-
         // Remove all persisted pointers from history
-        self.history
-            .retain(|pointer| !persisted_pointers.contains(pointer));
+        match (persisted.latest_is_set, self.latest_is_set) {
+            (true, false) => {
+                // Latest was set before, but now it is not.
+                // We need to process this last pointer on the next flush
+                let start = persisted.history.len().saturating_sub(1);
+                self.history = self.history[start..].into()
+            }
+            _ => {
+                // in all other cases, we can get rid of persisted history
+                self.history = self.history[persisted.history.len()..].into()
+            }
+        };
 
         // Drop entry if history is exhausted
         self.history.is_empty()
@@ -233,32 +229,29 @@ impl Tracker {
     ) -> std::io::Result<Vec<ValuePointer>> {
         // Write pending updates from memory
         let mut old_pointers = Vec::new();
-        for (point_offset, updates) in pending_updates {
+        for (point_offset, updates) in &pending_updates {
             match updates.latest() {
                 Some(new_pointer) => {
                     if let Some(old_pointer) =
-                        self.get_raw(point_offset).and_then(|pointer| *pointer)
+                        self.get_raw(*point_offset).and_then(|pointer| *pointer)
                     {
                         old_pointers.push(old_pointer);
                     }
 
                     // write the new pointer
-                    self.persist_pointer(point_offset, Some(new_pointer));
+                    self.persist_pointer(*point_offset, Some(new_pointer));
                 }
                 None => {
                     // write the new None pointer
-                    self.persist_pointer(point_offset, None);
+                    self.persist_pointer(*point_offset, None);
                 }
             }
-            old_pointers.extend(updates.to_outdated_pointers());
-
-            // Bump the pending updates for this point offset, drop entry if fully persisted
-            if let Some(pending_updates) = self.pending_updates.get_mut(&point_offset)
-                && pending_updates.drain_persisted_and_drop(&updates)
-            {
-                self.pending_updates.remove(&point_offset);
-            }
+            old_pointers.extend(updates.outdated_pointers());
         }
+
+        // pending updates have now been persisted,
+        self.drain_persisted_updates(pending_updates);
+
         // increment header count if necessary
         self.persist_pointer_count();
 
@@ -272,6 +265,24 @@ impl Tracker {
     pub fn write_pending_and_flush_internal(&mut self) -> std::io::Result<Vec<ValuePointer>> {
         let pending_updates = std::mem::take(&mut self.pending_updates);
         self.write_pending_and_flush(pending_updates)
+    }
+
+    fn drain_persisted_updates(
+        &mut self,
+        persisted_updates: AHashMap<PointOffset, PointerUpdates>,
+    ) {
+        self.pending_updates.retain(|point_offset, pending| {
+            let Some(persisted) = persisted_updates.get(point_offset) else {
+                return true;
+            };
+
+            // If both are the same, we have persisted the exact entry and can drop the pending change
+            if pending == persisted {
+                return false;
+            }
+
+            !pending.drain_persisted(persisted)
+        })
     }
 
     /// Return the size of the underlying mmapped file
@@ -332,7 +343,10 @@ impl Tracker {
         (0..self.next_pointer_offset).map(move |i| (i, self.get(i as PointOffset)))
     }
 
-    /// Get the raw value at the given point offset
+    /// Get the raw value at the given point offset.
+    ///
+    /// First option tells whether the pointer exists.
+    /// Second option tells whether the pointer is set to some value
     fn get_raw(&self, point_offset: PointOffset) -> Option<&Option<ValuePointer>> {
         let start_offset =
             size_of::<TrackerHeader>() + point_offset as usize * size_of::<Option<ValuePointer>>();
@@ -591,18 +605,12 @@ mod tests {
         updates.set(ValuePointer::new(1, 1, 1));
 
         // When all updates are persisted, drop the entry
-        assert!(
-            updates.clone().drain_persisted_and_drop(&updates),
-            "must drop entry"
-        );
+        assert!(updates.clone().drain_persisted(&updates), "must drop entry");
 
         updates.set(ValuePointer::new(1, 2, 1));
 
         // When all updates are persisted, drop the entry
-        assert!(
-            updates.clone().drain_persisted_and_drop(&updates),
-            "must drop entry"
-        );
+        assert!(updates.clone().drain_persisted(&updates), "must drop entry");
 
         let persisted = updates.clone();
         updates.set(ValuePointer::new(1, 3, 1));
@@ -610,7 +618,7 @@ mod tests {
         // Last pointer was not persisted, only keep it for the next flush
         {
             let mut updates = updates.clone();
-            assert!(!updates.drain_persisted_and_drop(&persisted));
+            assert!(!updates.drain_persisted(&persisted));
             assert!(updates.latest_is_set);
             assert_eq!(updates.history.as_slice(), &[ValuePointer::new(1, 3, 1)]);
         }
@@ -620,7 +628,7 @@ mod tests {
         // Last two pointers were not persisted, only keep them for the next flush
         {
             let mut updates = updates.clone();
-            assert!(!updates.drain_persisted_and_drop(&persisted));
+            assert!(!updates.drain_persisted(&persisted));
             assert!(updates.latest_is_set);
             assert_eq!(
                 updates.history.as_slice(),
@@ -635,7 +643,7 @@ mod tests {
         // Then we keep the last pointer with set=false to flush the delete next time
         {
             let mut updates = updates.clone();
-            assert!(!updates.drain_persisted_and_drop(&persisted));
+            assert!(!updates.drain_persisted(&persisted));
             assert!(!updates.latest_is_set);
             assert_eq!(updates.history.as_slice(), &[ValuePointer::new(1, 4, 1)]);
         }
@@ -646,7 +654,7 @@ mod tests {
             let mut persisted = updates.clone();
             persisted.history.swap(0, 1);
             persisted.history.swap(1, 3);
-            assert!(updates.drain_persisted_and_drop(&persisted));
+            assert!(updates.drain_persisted(&persisted));
         }
     }
 }
