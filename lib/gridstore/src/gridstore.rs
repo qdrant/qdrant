@@ -586,10 +586,11 @@ impl<V> Gridstore<V> {
                     &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
                 {
                     let local_ranges = pointer_group.map(|pointer| {
-                        let start = pointer.block_offset;
-                        let end = pointer.block_offset
-                            + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
-                        start as usize..end as usize
+                        let start = pointer.block_offset as usize;
+                        let end = start
+                            + Self::blocks_for_value(pointer.length as usize, block_size_bytes)
+                                as usize;
+                        start..end
                     });
                     guard.mark_blocks_batch(page_id, local_ranges, false);
                 }
