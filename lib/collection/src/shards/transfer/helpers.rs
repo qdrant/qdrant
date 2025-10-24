@@ -175,9 +175,32 @@ pub fn validate_transfer(
             )));
         }
     } else if transfer.filter.is_some() {
-        return Err(CollectionError::bad_request(
-            "Filtered transfers are not supported yet",
-        ));
+        let Some(destination_replicas) = destination_replicas else {
+            return Err(CollectionError::service_error(format!(
+                "Destination shard {} does not exist",
+                transfer.shard_id,
+            )));
+        };
+
+        let Some(to_shard_id) = transfer.to_shard_id else {
+            return Err(CollectionError::bad_request(
+                "Target shard is not set for filtered points transfer",
+            ));
+        };
+
+        if transfer.shard_id == to_shard_id {
+            return Err(CollectionError::bad_request(format!(
+                "Source and target shard must be different for filtered points transfer, both are {to_shard_id}",
+            )));
+        }
+
+        if let Some(ReplicaState::Dead) = destination_replicas.get(&transfer.to) {
+            return Err(CollectionError::bad_request(format!(
+                "Filtered shard transfer can't be started, \
+                     because destination shard {}/{to_shard_id} is dead",
+                transfer.to,
+            )));
+        }
     } else if let Some(to_shard_id) = transfer.to_shard_id {
         return Err(CollectionError::bad_request(format!(
             "Target shard {to_shard_id} can only be set for {:?} or filtered streaming records transfers",
