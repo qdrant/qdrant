@@ -101,6 +101,8 @@ murmur3 = { git = "https://github.com/stusmall/murmur3", rev = "2c39087" }
 
 tempfile = { workspace = true }
 
+procfs = { workspace = true }
+
 # Consensus related crates
 raft = { workspace = true }
 slog = { version = "2.7.0", features = [
@@ -233,6 +235,7 @@ rayon = "1.11.0"
 parking_lot = { version = "0.12.5", features = ["deadlock_detection", "serde"] }
 ph = "0.8.5"
 pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
+procfs = { version = "0.18.0", default-features = false }
 proptest = { version = "1.8.0", default-features = false, features = ["std"] }
 prost = "0.12.6"
 prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
