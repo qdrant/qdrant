@@ -664,7 +664,10 @@ def check_rest_access(
         token: str,
         path_params: dict = {},
         request_kwargs: dict = {},
+        expected_status_code: Optional[int] = None,
 ):
+    expected_status_code = 403 if expected_status_code is None else expected_status_code
+
     if isfunction(body):
         body = body()
 
@@ -685,12 +688,12 @@ def check_rest_access(
 
         if should_succeed:
             assert (
-                    res.status_code < 500 and res.status_code != 403
+                    res.status_code < 500 and res.status_code != expected_status_code
             ), f"{method} {path} failed with {res.status_code}: {res.text}"
         else:
             assert (
-                    res.status_code == 403
-            ), f"{method} {path} should've gotten `403` status code, but got `{res.status_code}: {res.text}`"
+                    res.status_code == expected_status_code
+            ), f"{method} {path} should've gotten `{expected_status_code}` status code, but got `{res.status_code}: {res.text}`"
 
     except requests.exceptions.ConnectionError as e:
         # File upload requests might hang if we get an early response (like 401 or 403),
@@ -801,6 +804,7 @@ def check_access(
         TOKEN_COLL_R_PAYLOAD,
         path_params,
         rest_req_kwargs,
+        expected_status_code=401,
     )
     check_rest_access(
         method,
@@ -810,6 +814,7 @@ def check_access(
         TOKEN_COLL_RW_PAYLOAD,
         path_params,
         rest_req_kwargs,
+        expected_status_code=401,
     )
 
     if allowed_for.coll_prw is not None:
