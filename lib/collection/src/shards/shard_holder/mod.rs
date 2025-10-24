@@ -620,18 +620,18 @@ impl ShardHolder {
             } else if let Some(fallback_shard_ids) = fallback_shard_ids {
                 Ok((fallback_shard_ids.clone(), &key.fallback))
             } else {
-                return Err(CollectionError::bad_request(format!(
+                Err(CollectionError::bad_request(format!(
                     "Neither target shard key {} nor fallback shard key {} have active replicas",
                     key.target, key.fallback
-                )));
+                )))
             }
         } else if let Some(fallback_shard_ids) = fallback_shard_ids {
             Ok((fallback_shard_ids.clone(), &key.fallback))
         } else {
-            return Err(CollectionError::bad_request(format!(
+            Err(CollectionError::bad_request(format!(
                 "Neither target shard key {} nor fallback shard key {} exist",
                 key.target, key.fallback
-            )));
+            )))
         }
     }
 
