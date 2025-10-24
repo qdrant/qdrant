@@ -95,7 +95,7 @@ impl CollectionTelemetry {
                 TinyMap::<VectorNameBuf, usize>::new(),
                 |mut acc, shard_vectors| {
                     for (name, count) in shard_vectors {
-                        *acc.get_or_insert_default(name.clone()) += count;
+                        *acc.get_or_insert_default(name) += count;
                     }
                     acc
                 },

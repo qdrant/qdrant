@@ -137,7 +137,7 @@ impl LocalShard {
                 payloads_size_bytes += info.payloads_size_bytes;
 
                 for (vector_name, vector_data) in info.vector_data.iter() {
-                    *num_vectors_by_name.get_or_insert_default(vector_name.clone()) +=
+                    *num_vectors_by_name.get_or_insert_default(vector_name) +=
                         vector_data.num_vectors;
                 }
             }

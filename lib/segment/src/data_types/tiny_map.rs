@@ -92,7 +92,7 @@ where
             .map(|(_, v)| v)
     }
 
-    pub fn get_mut<'a, Q>(&'a mut self, key: &Q) -> Option<&'a mut V>
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
     where
         K: borrow::Borrow<Q>,
         Q: Eq + ?Sized,
@@ -103,19 +103,25 @@ where
             .map(|(_, v)| v)
     }
 
-    pub fn get_or_insert_default(&mut self, key: K) -> &mut V
+    /// Returns the (mutable) value assigned to `key`, if such an entry exists.
+    /// Otherwise the default value for `V` is inserted and returned as mutable reference.
+    ///
+    /// This method automatically clones `key` if required. Therefore Q must implement `ToOwned<Owned = K>`.
+    pub fn get_or_insert_default<Q>(&mut self, key: &Q) -> &mut V
     where
         V: Sized,
+        K: borrow::Borrow<Q>,
+        Q: Eq + ToOwned<Owned = K> + ?Sized,
     {
-        // Try to locate the key.
-        let existing_position = self.list.iter().position(|(k, _)| k == &key);
+        // Try to locate an existing entry for the key.
+        let existing_position = self.list.iter().position(|(k, _)| k.borrow() == key);
 
-        // Insert default if not existing and get the new index.
+        // Insert default value if not existing and get the new index.
         let index = match existing_position {
             Some(existing_pos) => existing_pos,
             None => {
                 let new_index = self.list.len();
-                self.list.push((key, V::default()));
+                self.list.push((key.to_owned(), V::default()));
                 new_index
             }
         };
@@ -253,5 +259,40 @@ mod tests {
         let mut iter = map.iter();
         assert_eq!(iter.next(), Some(&(key2, value2)));
         assert_eq!(iter.next(), Some(&(key3, value3)));
+    }
+
+    #[test]
+    fn test_tiny_map_get_or_insert() {
+        let mut map: TinyMap<String, usize> = TinyMap::new();
+
+        map.insert("a".to_string(), 1);
+        map.insert("b".to_string(), 2);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default("a"), 1);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default("b"), 2);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default("c"), 0);
+        assert_eq!(map.len(), 3);
+
+        let mut map: TinyMap<usize, usize> = TinyMap::new();
+        map.insert(1, 1);
+        map.insert(2, 4);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default(&1), 1);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default(&2), 4);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default(&3), 0);
+        assert_eq!(map.len(), 3);
+
+        *map.get_or_insert_default(&3) = 6;
+        assert_eq!(map.len(), 3); // This call should not add an additional item.
     }
 }
