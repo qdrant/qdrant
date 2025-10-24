@@ -128,7 +128,7 @@ impl MetricsProvider for TelemetryData {
 
         #[cfg(target_os = "linux")]
         match ProcFsMetrics::collect() {
-            Ok(procfs_provider) => procfs_provider.add_metrics(metrics),
+            Ok(procfs_provider) => procfs_provider.add_metrics(metrics, prefix),
             Err(err) => log::warn!("Error reading procfs infos: {err:?}"),
         };
     }
@@ -305,8 +305,8 @@ impl MetricsProvider for CollectionsTelemetry {
                 "amount of vectors grouped by vector name",
                 MetricType::GAUGE,
                 vector_count_by_name,
+                prefix,
             ));
-            prefix,
         }
 
         if !indexed_only_excluded.is_empty() {
