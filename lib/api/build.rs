@@ -197,6 +197,7 @@ fn configure_validation(builder: Builder) -> Builder {
         ], &[])
         // Service: points.proto
         .validates(&[
+            ("AcornSearchParams.max_selectivity", "range(min = 0.0, max = 1.0)"),
             ("PointsSelector.points_selector_one_of", ""),
             ("UpsertPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("UpsertPoints.points", ""),
@@ -240,6 +241,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchPointGroups.limit", "range(min = 1)"),
             ("SearchPointGroups.timeout", "range(min = 1)"),
             ("SearchParams.quantization", ""),
+            ("SearchParams.acorn", ""),
             ("QuantizationSearchParams.oversampling", "range(min = 1.0)"),
             ("ScrollPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("ScrollPoints.filter", ""),

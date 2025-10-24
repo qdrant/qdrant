@@ -534,18 +534,20 @@ pub const ACORN_MAX_SELECTIVITY_DEFAULT: f64 = 0.4;
 )]
 #[serde(rename_all = "snake_case")]
 pub struct AcornSearchParams {
-    /// When enabled, the ACORN might be enabled for the HNSW search.
-    ///
+    /// If true, then ACORN may be used for the HNSW search based on filters
+    /// selectivity.
+
     /// Improves search recall for searches with multiple low-selectivity
     /// payload filters, at cost of performance.
     #[serde(default)]
     pub enable: bool,
 
-    /// Maximum selectivity of the filter to enable ACORN.
-    /// If filter selectivity estimated as higher than this value across all points,
-    /// ACORN will not be used. Selectivity is estimated as:
-    /// `estimated number of points satisfying the filter / total number of points`.
+    /// Maximum selectivity of filters to enable ACORN.
     ///
+    /// If estimated filters selectivity is higher than this value,
+    /// ACORN will not be used. Selectivity is estimated as:
+    /// `estimated number of points satisfying the filters / total number of points`.
+    ///   
     /// 0.0 for never, 1.0 for always. Default is 0.4.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]

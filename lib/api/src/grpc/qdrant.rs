@@ -4846,23 +4846,27 @@ pub struct QuantizationSearchParams {
     #[validate(range(min = 1.0))]
     pub oversampling: ::core::option::Option<f64>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcornSearchParams {
-    /// When enabled, the ACORN might be enabled for the HNSW search.
+    /// If true, then ACORN may be used for the HNSW search based on filters
+    /// selectivity.
     ///
     /// Improves search recall for searches with multiple low-selectivity
     /// payload filters, at cost of performance.
     #[prost(bool, optional, tag = "1")]
     pub enable: ::core::option::Option<bool>,
-    /// Maximum selectivity of the filter to enable ACORN.
-    /// If filter selectivity estimated as higher than this value across all points,
+    /// Maximum selectivity of filters to enable ACORN.
+    ///
+    /// If estimated filters selectivity is higher than this value,
     /// ACORN will not be used. Selectivity is estimated as:
-    /// `estimated number of points satisfying the filter / total number of points`.
+    /// `estimated number of points satisfying the filters / total number of points`.
     ///
     /// 0.0 for never, 1.0 for always. Default is 0.4.
     #[prost(double, optional, tag = "2")]
+    #[validate(range(min = 0.0, max = 1.0))]
     pub max_selectivity: ::core::option::Option<f64>,
 }
 #[derive(validator::Validate)]
@@ -4888,6 +4892,7 @@ pub struct SearchParams {
     pub indexed_only: ::core::option::Option<bool>,
     /// ACORN search params
     #[prost(message, optional, tag = "5")]
+    #[validate(nested)]
     pub acorn: ::core::option::Option<AcornSearchParams>,
 }
 #[derive(validator::Validate)]

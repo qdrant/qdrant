@@ -977,7 +977,15 @@ impl HNSWIndex {
         let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
         let mut algorithm = SearchAlgorithm::Hnsw;
-        if acorn_enabled && let Some(filter) = filter {
+        if acorn_enabled
+            && self.config.m0 != 0
+            && let Some(filter) = filter
+        {
+            // NOTE: technically we also might want to use ACORN for unfiltered
+            // searches for segments with a lot of deleted points. But in
+            // practice, such segments most likely to be picked by an optimizer
+            // soon.
+
             let available_vector_count = vector_storage.available_vector_count();
             let selectivity = if available_vector_count == 0 {
                 1.0

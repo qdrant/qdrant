@@ -174,15 +174,15 @@ pub trait GraphLayersBase {
         let mut search_context = SearchContext::new(ef);
         search_context.process_candidate(level_entry);
 
-        // Limit is per neighbor.
-        let limit_hop1 = self.get_m(level);
+        // Limits are per every explored 1-hop or 2-hop neighbors, not total.
+        // This is necessary to avoid over-scoring when there are many
+        // additional graph links.
+        let hop1_limit = self.get_m(level);
+        let hop2_limit = self.get_m(level);
+        debug_assert_ne!(self.get_m(level), 0); // See `FilteredBytesScorer::score_points`
 
-        // How many 2-hop neighbors to collect per neighbor.
-        // This is necessary to avoid over-scoring in case of extra links per neighbor.
-        let limit_hop2 = self.get_m(level);
-
-        let mut to_score = Vec::with_capacity(limit_hop1 * limit_hop1.min(16));
-        let mut to_explore = Vec::with_capacity(limit_hop1 * limit_hop1.min(16));
+        let mut to_score = Vec::with_capacity(hop1_limit * hop2_limit.min(16));
+        let mut to_explore = Vec::with_capacity(hop1_limit * hop2_limit.min(16));
 
         while let Some(candidate) = search_context.candidates.pop() {
             check_process_stopped(is_stopped)?;
@@ -202,7 +202,7 @@ pub trait GraphLayersBase {
 
                 if points_scorer.filters().check_vector(hop1) {
                     to_score.push(hop1);
-                    if to_score.len() >= limit_hop1 {
+                    if to_score.len() >= hop1_limit {
                         return ControlFlow::Break(());
                     }
                 } else {
@@ -215,7 +215,7 @@ pub trait GraphLayersBase {
             for &hop1 in to_explore.iter() {
                 check_process_stopped(is_stopped)?;
 
-                let total_limit = to_score.len() + limit_hop2;
+                let total_limit = to_score.len() + hop2_limit;
                 _ = self.try_for_each_link(hop1, level, |hop2| {
                     if hop1_visited_list.check(hop2)
                         || hop2_visited_list.check_and_update_visited(hop2)
