@@ -62,7 +62,7 @@ pub(crate) async fn transfer_resharding_stream_records(
         })?;
 
         replica_set
-            .proxify_local(remote_shard.clone(), Some(hashring.clone()))
+            .proxify_local(remote_shard.clone(), Some(hashring.clone()), None)
             .await?;
 
         let hw_acc = HwMeasurementAcc::disposable();
