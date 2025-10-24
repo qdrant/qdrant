@@ -135,7 +135,7 @@ impl MetricsProvider for TelemetryData {
                 procfs_provider.add_metrics(metrics);
             }
             Err(err) => {
-                log::warn!("Error reading procfs infos: {:?}", err)
+                log::warn!("Error reading procfs infos: {err:?}")
             }
         };
     }
