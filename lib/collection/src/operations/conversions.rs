@@ -12,7 +12,7 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
     Operation as ClusterOperationsPb, Operation,
 };
 use api::rest::schema::ShardKeySelector;
-use api::rest::{BaseGroupRequest, MaxOptimizationThreads};
+use api::rest::{BaseGroupRequest, MaxOptimizationThreads, ShardKeyWithFallback};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
@@ -1695,14 +1695,27 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
 
 impl From<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
     fn from(value: api::grpc::qdrant::ShardKeySelector) -> Self {
-        let api::grpc::qdrant::ShardKeySelector { shard_keys } = value;
+        let api::grpc::qdrant::ShardKeySelector {
+            shard_keys,
+            fallback,
+        } = value;
         let shard_keys: Vec<_> = shard_keys
             .into_iter()
             .filter_map(convert_shard_key_from_grpc)
             .collect();
 
         if shard_keys.len() == 1 {
-            ShardSelectorInternal::ShardKey(shard_keys.into_iter().next().unwrap())
+            let key = shard_keys.into_iter().next().unwrap();
+
+            match fallback.and_then(convert_shard_key_from_grpc) {
+                Some(fallback) => {
+                    ShardSelectorInternal::ShardKeyWithFallback(ShardKeyWithFallback {
+                        target: key,
+                        fallback,
+                    })
+                }
+                None => ShardSelectorInternal::ShardKey(key),
+            }
         } else {
             ShardSelectorInternal::ShardKeys(shard_keys)
         }

@@ -61,7 +61,7 @@ use crate::grpc::{
     DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
 };
 use crate::rest::models::{CollectionsResponse, VersionInfo};
-use crate::rest::schema as rest;
+use crate::rest::{ShardKeyWithFallback, schema as rest};
 
 pub fn convert_shard_key_to_grpc(value: segment::types::ShardKey) -> ShardKey {
     match value {
@@ -92,14 +92,27 @@ pub fn convert_shard_key_from_grpc_opt(
 }
 impl From<ShardKeySelector> for rest::ShardKeySelector {
     fn from(value: ShardKeySelector) -> Self {
-        let ShardKeySelector { shard_keys } = value;
+        let ShardKeySelector {
+            shard_keys,
+            fallback,
+        } = value;
         let shard_keys: Vec<_> = shard_keys
             .into_iter()
             .filter_map(convert_shard_key_from_grpc)
             .collect();
 
         if shard_keys.len() == 1 {
-            rest::ShardKeySelector::ShardKey(shard_keys.into_iter().next().unwrap())
+            let key = shard_keys.into_iter().next().unwrap();
+
+            match fallback.and_then(convert_shard_key_from_grpc) {
+                Some(fallback) => {
+                    rest::ShardKeySelector::ShardKeyWithFallback(ShardKeyWithFallback {
+                        target: key,
+                        fallback,
+                    })
+                }
+                None => rest::ShardKeySelector::ShardKey(key),
+            }
         } else {
             rest::ShardKeySelector::ShardKeys(shard_keys)
         }
