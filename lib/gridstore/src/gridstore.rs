@@ -1322,4 +1322,170 @@ mod tests {
         put_payload(&mut storage, "value 8", 5);
         assert_eq!(get_payload(&storage), "value 8");
     }
+
+    /// Similar to [`test_deferred_flush`] but more complex, including multiple flushers and deletes
+    #[test]
+    fn test_deferred_flush_with_delete() {
+        let (dir, mut storage) = empty_storage();
+        let path = dir.path().to_path_buf();
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let get_payload = |storage: &Gridstore<Payload>| {
+            Some(
+                storage
+                    .get_value::<false>(0, &hw_counter)?
+                    .0
+                    .get("key")
+                    .expect("key exists")
+                    .as_str()
+                    .expect("value is a string")
+                    .to_owned(),
+            )
+        };
+        let put_payload =
+            |storage: &mut Gridstore<Payload>, payload_value: &str, expected_block_offset: u32| {
+                let mut payload = Payload::default();
+                payload.0.insert(
+                    "key".to_string(),
+                    serde_json::Value::String(payload_value.to_string()),
+                );
+
+                storage.put_value(0, &payload, hw_counter_ref).unwrap();
+                assert_eq!(storage.pages.read().len(), 1);
+                assert_eq!(storage.tracker.read().mapping_len(), 1);
+
+                let page_mapping = storage.get_pointer(0).unwrap();
+                assert_eq!(page_mapping.page_id, 0); // first page
+                assert_eq!(page_mapping.block_offset, expected_block_offset);
+
+                let hw_counter = HardwareCounterCell::new();
+                let stored_payload = storage.get_value::<false>(0, &hw_counter);
+                assert!(stored_payload.is_some());
+                assert_eq!(stored_payload.unwrap(), payload);
+            };
+
+        put_payload(&mut storage, "value 1", 0);
+        assert_eq!(get_payload(&storage).unwrap(), "value 1");
+
+        put_payload(&mut storage, "value 2", 1);
+        assert_eq!(get_payload(&storage).unwrap(), "value 2");
+
+        let flusher = storage.flusher();
+
+        put_payload(&mut storage, "value 3", 2);
+        assert_eq!(get_payload(&storage).unwrap(), "value 3");
+
+        storage.delete_value(0);
+        assert!(get_payload(&storage).is_none());
+
+        // Flush, storage is still open so we expect the point not to exist
+        flusher().unwrap();
+        assert!(get_payload(&storage).is_none());
+
+        // Reopen gridstore
+        drop(storage);
+        let mut storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+        assert_eq!(storage.pages.read().len(), 1);
+
+        let flusher = storage.flusher();
+
+        // On reopen, later updates and the delete were not flushed, expect to read value 2
+        assert_eq!(get_payload(&storage).unwrap(), "value 2");
+
+        flusher().unwrap();
+
+        storage.delete_value(0);
+        assert!(get_payload(&storage).is_none());
+
+        storage.flusher()().unwrap();
+        storage.flusher()().unwrap();
+        assert!(get_payload(&storage).is_none());
+
+        // Reopen gridstore
+        drop(storage);
+        let mut storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+        assert_eq!(storage.pages.read().len(), 1);
+
+        // On reopen, delete was flushed this time, expect point to be missing
+        assert!(get_payload(&storage).is_none());
+
+        put_payload(&mut storage, "value 4", 0);
+        assert_eq!(get_payload(&storage).unwrap(), "value 4");
+
+        assert_eq!(
+            storage.tracker.read().pending_updates.len(),
+            1,
+            "expect 1 pending update",
+        );
+
+        storage.flusher()().unwrap();
+
+        assert_eq!(
+            storage.tracker.read().pending_updates.len(),
+            0,
+            "expect 0 pending updates",
+        );
+
+        // Reopen gridstore
+        drop(storage);
+        let mut storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+        assert_eq!(storage.pages.read().len(), 1);
+
+        // On reopen, value 4 was flushed, expect to read it
+        assert_eq!(get_payload(&storage).unwrap(), "value 4");
+
+        put_payload(&mut storage, "value 5", 1);
+        assert_eq!(get_payload(&storage).unwrap(), "value 5");
+
+        let flusher_1_value_5 = storage.flusher();
+
+        storage.delete_value(0);
+        assert!(get_payload(&storage).is_none());
+
+        let flusher_2_delete = storage.flusher();
+
+        put_payload(&mut storage, "value 6", 3);
+        assert_eq!(get_payload(&storage).unwrap(), "value 6");
+
+        let flusher_3_value_6 = storage.flusher();
+
+        put_payload(&mut storage, "value 7", 4);
+        assert_eq!(get_payload(&storage).unwrap(), "value 7");
+
+        // Not flushed, still expect to read value 4
+        {
+            let tmp_storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+            assert_eq!(get_payload(&tmp_storage).unwrap(), "value 4");
+        }
+
+        // First flusher flushed, expect to read value 5 if we load from disk
+        flusher_1_value_5().unwrap();
+        {
+            let tmp_storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+            assert_eq!(get_payload(&tmp_storage).unwrap(), "value 5");
+        }
+
+        // Second flusher flushed, expect point to be missing if we load from disk
+        flusher_2_delete().unwrap();
+        {
+            let tmp_storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+            assert!(get_payload(&tmp_storage).is_none());
+        }
+
+        // Third flusher flushed, expect to read value 6 if we load from disk
+        flusher_3_value_6().unwrap();
+        {
+            let tmp_storage = Gridstore::<Payload>::open(path).unwrap();
+            assert_eq!(get_payload(&tmp_storage).unwrap(), "value 6");
+        }
+
+        // Main storage still isn't flushed, but has value 7
+        assert_eq!(get_payload(&storage).unwrap(), "value 7");
+        assert_eq!(
+            storage.tracker.read().pending_updates.len(),
+            1,
+            "expect 1 pending update",
+        );
+    }
 }
