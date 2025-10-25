@@ -19,8 +19,5 @@ maturin develop --no-default-features
 Run example
 
 ```bash
-cd examples
-mkdir shard
-
-python qdrant-edge.py
+python examples/qdrant-edge.py
 ```
