@@ -9754,19 +9754,6 @@
               }
             ]
           },
-          "init_from": {
-            "description": "Specify other collection to copy data from.\n\nDeprecated since Qdrant 1.15.0.",
-            "default": null,
-            "deprecated": true,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/InitFrom"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
           "quantization_config": {
             "description": "Quantization parameters. If none - quantization is disabled.",
             "default": null,
@@ -9921,18 +9908,6 @@
         "enum": [
           "auto"
         ]
-      },
-      "InitFrom": {
-        "description": "Operation for creating new collection and (optionally) specify index params",
-        "type": "object",
-        "required": [
-          "collection"
-        ],
-        "properties": {
-          "collection": {
-            "type": "string"
-          }
-        }
       },
       "StrictModeConfig": {
         "type": "object",
