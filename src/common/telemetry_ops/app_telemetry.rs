@@ -6,7 +6,8 @@ use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::types::HnswGlobalConfig;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 use crate::settings::Settings;
 
@@ -50,6 +51,33 @@ pub struct RunningEnvironmentTelemetry {
     gpu_devices: Option<Vec<GpuDeviceTelemetry>>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate, Anonymize)]
+pub struct CloudParams {
+    /// Indicates if current qdrant instance is running in cloud
+    #[serde(default)]
+    pub is_cloud: Option<bool>,
+    #[serde(default)]
+    pub is_free: Option<bool>,
+    /// Cluster name to display
+    #[serde(default)]
+    pub cluster_name: Option<String>,
+    /// Link to cluster page
+    #[serde(default)]
+    pub backlink: Option<String>,
+}
+
+impl CloudParams {
+    fn is_empty(&self) -> bool {
+        let Self {
+            is_cloud,
+            is_free,
+            cluster_name,
+            backlink,
+        } = self;
+        is_cloud.is_none() && is_free.is_none() && cluster_name.is_none() && backlink.is_none()
+    }
+}
+
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct AppBuildTelemetry {
     #[anonymize(false)]
@@ -70,6 +98,8 @@ pub struct AppBuildTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hide_jwt_dashboard: Option<bool>,
     pub startup: DateTime<Utc>,
+    #[serde(skip_serializing_if = "CloudParams::is_empty")]
+    pub cloud_params: CloudParams,
 }
 
 impl AppBuildTelemetry {
@@ -96,6 +126,7 @@ impl AppBuildTelemetry {
             jwt_rbac: settings.service.jwt_rbac,
             hide_jwt_dashboard: settings.service.hide_jwt_dashboard,
             startup: collector.startup,
+            cloud_params: settings.cloud_params.clone(),
         }
     }
 }
