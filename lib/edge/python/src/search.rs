@@ -70,13 +70,14 @@ impl PySearchParams {
         exact: bool,
         quantization: Option<PyQuantizationSearchParams>,
         indexed_only: bool,
+        acorn: Option<PyAcornSearchParams>,
     ) -> Self {
         Self(SearchParams {
             hnsw_ef,
             exact,
             quantization: quantization.map(Into::into),
             indexed_only,
-            acorn: None, // TODO: expose to Python
+            acorn: acorn.map(Into::into),
         })
     }
 }
@@ -93,6 +94,21 @@ impl PyQuantizationSearchParams {
             ignore,
             rescore,
             oversampling,
+        })
+    }
+}
+
+#[pyclass(name = "AcornSearchParams")]
+#[derive(Copy, Clone, Debug, Into)]
+pub struct PyAcornSearchParams(AcornSearchParams);
+
+#[pymethods]
+impl PyAcornSearchParams {
+    #[new]
+    pub fn new(enable: bool, max_selectivity: Option<f64>) -> Self {
+        Self(AcornSearchParams {
+            enable,
+            max_selectivity: max_selectivity.map(Into::into),
         })
     }
 }
