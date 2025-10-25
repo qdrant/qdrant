@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import shutil
 import uuid
@@ -6,7 +8,7 @@ from qdrant_edge import *
 
 print("---- Load shard ----")
 
-DATA_DIRECTORY = "./data"
+DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), "data")
 
 # Clear and recreate data directory
 if os.path.exists(DATA_DIRECTORY):

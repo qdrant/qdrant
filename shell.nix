@@ -48,6 +48,7 @@ mkShell {
     pkgs.glsl_analyzer # language server for editing *.comp files
     pkgs.gnuplot # optional runtime dep for criterion
     pkgs.jq # used in ./tests and ./tools
+    pkgs.maturin # mentioned in lib/edge/python/README.md
     pkgs.nixfmt-rfc-style # to format this file
     pkgs.npins # used in tools/nix/update.py
     pkgs.poetry # used to update poetry.lock
