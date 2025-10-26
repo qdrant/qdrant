@@ -11687,7 +11687,6 @@
       "AppBuildTelemetry": {
         "type": "object",
         "required": [
-          "cloud_params",
           "name",
           "startup",
           "version"
@@ -11752,7 +11751,14 @@
             "format": "date-time"
           },
           "cloud_params": {
-            "$ref": "#/components/schemas/CloudParams"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
