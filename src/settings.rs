@@ -226,7 +226,8 @@ pub struct Settings {
     #[serde(default)]
     pub feature_flags: FeatureFlags,
     /// Extra parameters configured in cloud, propagated to telemetry
-    pub cloud_params: CloudParams,
+    #[serde(default)]
+    pub cloud_params: Option<CloudParams>,
 }
 
 impl Settings {

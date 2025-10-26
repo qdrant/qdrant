@@ -66,18 +66,6 @@ pub struct CloudParams {
     pub backlink: Option<String>,
 }
 
-impl CloudParams {
-    fn is_empty(&self) -> bool {
-        let Self {
-            is_cloud,
-            is_free,
-            cluster_name,
-            backlink,
-        } = self;
-        is_cloud.is_none() && is_free.is_none() && cluster_name.is_none() && backlink.is_none()
-    }
-}
-
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct AppBuildTelemetry {
     #[anonymize(false)]
@@ -98,8 +86,8 @@ pub struct AppBuildTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hide_jwt_dashboard: Option<bool>,
     pub startup: DateTime<Utc>,
-    #[serde(skip_serializing_if = "CloudParams::is_empty")]
-    pub cloud_params: CloudParams,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cloud_params: Option<CloudParams>,
 }
 
 impl AppBuildTelemetry {
