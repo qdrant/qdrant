@@ -590,6 +590,7 @@ fn sparse_vector_index_persistence_test() {
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
+                    modifier: None,
                 },
                 storage_type: SparseVectorStorageType::default(),
             },
@@ -676,6 +677,7 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
                 full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                 index_type: SparseIndexType::Mmap,
                 datatype: Some(VectorStorageDatatype::Float32),
+                modifier: None,
             },
             id_tracker: segment.id_tracker.clone(),
             vector_storage: segment.vector_data[SPARSE_VECTOR_NAME]
@@ -761,6 +763,7 @@ fn sparse_vector_test_large_index() {
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
+                    modifier: None,
                 },
                 storage_type: SparseVectorStorageType::Mmap,
             },

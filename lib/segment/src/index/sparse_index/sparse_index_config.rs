@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_error::OperationResult;
+use crate::data_types::modifier::Modifier;
 use crate::types::VectorStorageDatatype;
 
 pub const SPARSE_INDEX_CONFIG_FILE: &str = "sparse_index_config.json";
@@ -59,6 +60,10 @@ pub struct SparseIndexConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
+    /// Configures addition value modifications for sparse vectors.
+    /// Default: none
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifier: Option<Modifier>,
 }
 
 impl SparseIndexConfig {
@@ -66,11 +71,13 @@ impl SparseIndexConfig {
         full_scan_threshold: Option<usize>,
         index_type: SparseIndexType,
         datatype: Option<VectorStorageDatatype>,
+        modifier: Option<Modifier>,
     ) -> Self {
         SparseIndexConfig {
             full_scan_threshold,
             index_type,
             datatype,
+            modifier,
         }
     }
 

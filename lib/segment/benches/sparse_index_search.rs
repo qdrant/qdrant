@@ -102,7 +102,7 @@ fn sparse_vector_index_search_benchmark_impl(
     // mmap inverted index
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
     let sparse_index_config =
-        SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap, None);
+        SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap, None, None);
     let pb = progress("Indexing (2/2)", vectors_len);
     let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexCompressedMmap<f32>> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {

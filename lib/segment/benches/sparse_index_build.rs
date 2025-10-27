@@ -77,6 +77,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
         Some(10_000),
         SparseIndexType::MutableRam,
         Some(VectorStorageDatatype::Float32),
+        None,
     );
 
     let vector_storage = Arc::new(AtomicRefCell::new(vector_storage));

@@ -572,6 +572,7 @@ impl CollectionParams {
                                     .index
                                     .and_then(|index| index.datatype)
                                     .map(VectorStorageDatatype::from),
+                                modifier: params.modifier,
                             },
                             storage_type: params.storage_type(),
                         },

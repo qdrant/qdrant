@@ -261,7 +261,7 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
             sparse_vector_data: HashMap::from([(
                 SPARSE_VECTOR_NAME.to_owned(),
                 SparseVectorDataConfig {
-                    index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
+                    index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None, None),
                     storage_type: SparseVectorStorageType::default(),
                 },
             )]),
@@ -353,7 +353,7 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
             sparse_vector_data: HashMap::from([(
                 SPARSE_VECTOR_NAME.to_owned(),
                 SparseVectorDataConfig {
-                    index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
+                    index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None, None),
                     storage_type: SparseVectorStorageType::default(),
                 },
             )]),
