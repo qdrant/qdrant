@@ -170,7 +170,10 @@ impl PointerUpdates {
     ///
     /// Returns if the structure is empty after this operation
     fn drain_persisted(&mut self, persisted: &Self) -> bool {
-        debug_assert!(self.has_last_change, "should drain from updates that have last change");
+        debug_assert!(
+            self.has_last_change,
+            "should drain from updates that have last change"
+        );
         debug_assert!(!self.is_empty(), "must have at least one pointer");
         debug_assert!(
             !persisted.is_empty(),

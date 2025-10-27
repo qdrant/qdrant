@@ -592,7 +592,7 @@ impl<V> Gridstore<V> {
 
     /// Immediately persist all pending changes
     #[allow(dead_code)]
-    pub fn flush(&self) -> std::result::Result<(), mmap_type::Error> {
+    pub fn flush_all(&self) -> std::result::Result<(), mmap_type::Error> {
         let (stage_1_flusher, stage_2_flusher) = self.flusher();
         stage_1_flusher()?;
         stage_2_flusher()
@@ -772,7 +772,7 @@ mod tests {
     use crate::config::{
         DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
     };
-    use crate::fixtures::{empty_storage, empty_storage_sized, random_payload, Payload, HM_FIELDS};
+    use crate::fixtures::{HM_FIELDS, Payload, empty_storage, empty_storage_sized, random_payload};
 
     #[test]
     fn test_empty_payload_storage() {
@@ -927,7 +927,7 @@ mod tests {
         // get payload again
         let stored_payload = storage.get_value::<false>(0, &hw_counter);
         assert!(stored_payload.is_none());
-        storage.flush().unwrap();
+        storage.flush_all().unwrap();
         assert_eq!(storage.get_storage_size_bytes(), 0);
     }
 
@@ -965,7 +965,7 @@ mod tests {
 
         put_payload(&mut storage, "updated again", 2);
 
-        storage.flush().unwrap();
+        storage.flush_all().unwrap();
 
         // First block offset should be available again, so we can reuse it
         put_payload(&mut storage, "updated after flush", 0);
@@ -1112,7 +1112,7 @@ mod tests {
                                 let mut flush_lock_guard = flush_lock.lock();
                                 assert!(
                                     *flush_lock_guard,
-                                    "there must be a flusher marked as alive"
+                                    "there must be a flusher marked as alive",
                                 );
                                 log::debug!("op:{i} STARTING FLUSH after waiting {delay:?}");
                                 match flusher() {
@@ -1147,7 +1147,7 @@ mod tests {
         }
 
         // flush data
-        storage.flush().unwrap();
+        storage.flush_all().unwrap();
 
         let before_size = storage.get_storage_size_bytes();
         // drop storage
@@ -1246,7 +1246,7 @@ mod tests {
             assert_eq!(stored_payload.unwrap(), payload);
 
             // flush storage before dropping
-            storage.flush().unwrap();
+            storage.flush_all().unwrap();
         }
 
         // reopen storage
@@ -1289,7 +1289,7 @@ mod tests {
                     .unwrap();
                 point_offset += 1;
             }
-            storage.flush().unwrap();
+            storage.flush_all().unwrap();
             point_offset
         }
 
@@ -1346,7 +1346,7 @@ mod tests {
         storage_double_pass_is_consistent(&storage, 0);
 
         // drop storage
-        storage.flush().unwrap();
+        storage.flush_all().unwrap();
         drop(storage);
 
         // reopen storage
@@ -1424,7 +1424,7 @@ mod tests {
                 .unwrap();
         }
 
-        storage.flush().unwrap();
+        storage.flush_all().unwrap();
         println!("{last_point_id}");
 
         assert_eq!(storage.pages.read().len(), 4);
@@ -1602,8 +1602,8 @@ mod tests {
         storage.delete_value(0);
         assert!(get_payload(&storage).is_none());
 
-        storage.flush().unwrap();
-        storage.flush().unwrap();
+        storage.flush_all().unwrap();
+        storage.flush_all().unwrap();
         assert!(get_payload(&storage).is_none());
 
         // Reopen gridstore
@@ -1623,7 +1623,7 @@ mod tests {
             "expect 1 pending update",
         );
 
-        storage.flush().unwrap();
+        storage.flush_all().unwrap();
 
         assert_eq!(
             storage.tracker.read().pending_updates.len(),
