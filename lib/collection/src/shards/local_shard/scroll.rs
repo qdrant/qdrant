@@ -81,7 +81,7 @@ impl LocalShard {
 
         let record_results = match scroll_order {
             ScrollOrder::ById => {
-                self.scroll_by_id(
+                self.internal_scroll_by_id(
                     offset_id,
                     limit,
                     with_payload,
@@ -94,7 +94,7 @@ impl LocalShard {
                 .await?
             }
             ScrollOrder::ByField(order_by) => {
-                self.scroll_by_field(
+                self.internal_scroll_by_field(
                     limit,
                     with_payload,
                     with_vector,
@@ -137,7 +137,7 @@ impl LocalShard {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn scroll_by_id(
+    pub async fn internal_scroll_by_id(
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
@@ -220,7 +220,7 @@ impl LocalShard {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn scroll_by_field(
+    pub async fn internal_scroll_by_field(
         &self,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,

@@ -258,7 +258,7 @@ impl Collection {
 
     pub async fn scroll_by(
         &self,
-        request: ScrollRequestInternal,
+        mut request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
@@ -266,22 +266,9 @@ impl Collection {
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequestInternal::default();
 
-        let id_offset = request.offset;
         let mut limit = request
             .limit
             .unwrap_or_else(|| default_request.limit.unwrap());
-        let with_payload_interface = request
-            .with_payload
-            .clone()
-            .unwrap_or_else(|| default_request.with_payload.clone().unwrap());
-        let with_vector = request.with_vector;
-
-        let order_by = request.order_by.map(OrderBy::from);
-
-        // Validate user did not try to use an id offset with order_by
-        if order_by.is_some() && id_offset.is_some() {
-            return Err(CollectionError::bad_input("Cannot use an `offset` when using `order_by`. The alternative for paging is to use `order_by.start_from` and a filter to exclude the IDs that you've already seen for the `order_by.start_from` value".to_string()));
-        };
 
         if limit == 0 {
             return Err(CollectionError::BadRequest {
@@ -289,13 +276,18 @@ impl Collection {
             });
         }
 
+        let local_only = shard_selection.is_shard_id();
+
+        let order_by = request.order_by.clone().map(OrderBy::from);
+
         // `order_by` does not support offset
         if order_by.is_none() {
             // Needed to return next page offset.
             limit = limit.saturating_add(1);
-        };
+            request.limit = Some(limit);
+        }
 
-        let local_only = shard_selection.is_shard_id();
+        let request = Arc::new(request);
 
         let retrieved_points: Vec<_> = {
             let shards_holder = self.shards_holder.read().await;
@@ -305,14 +297,9 @@ impl Collection {
                 let shard_key = shard_key.cloned();
                 shard
                     .scroll_by(
-                        id_offset,
-                        limit,
-                        &with_payload_interface,
-                        &with_vector,
-                        request.filter.as_ref(),
+                        request.clone(),
                         read_consistency,
                         local_only,
-                        order_by.as_ref(),
                         timeout,
                         hw_measurement_acc.clone(),
                     )
