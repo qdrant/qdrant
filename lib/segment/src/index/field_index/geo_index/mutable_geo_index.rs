@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
 use ahash::AHashSet;
@@ -9,6 +10,7 @@ use common::types::PointOffsetType;
 use delegate::delegate;
 use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
+#[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;

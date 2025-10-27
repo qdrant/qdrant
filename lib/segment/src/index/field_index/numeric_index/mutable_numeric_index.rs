@@ -2,12 +2,14 @@ use std::collections::BTreeSet;
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::path::PathBuf;
+#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::config::StorageOptions;
 use gridstore::{Blob, Gridstore};
+#[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;
