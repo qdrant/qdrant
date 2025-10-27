@@ -68,7 +68,7 @@ impl MmapFullTextIndex {
         self.inverted_index.remove(id);
     }
 
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> (Flusher, Flusher) {
         self.inverted_index.flusher()
     }
 

@@ -7,6 +7,7 @@ use simple_bool_index::SimpleBoolIndex;
 use super::facet_index::FacetIndex;
 use super::map_index::IdIter;
 use super::{PayloadFieldIndex, ValueIndexer};
+use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::payload_config::{IndexMutability, StorageType};
@@ -169,7 +170,7 @@ impl PayloadFieldIndex for BoolIndex {
         }
     }
 
-    fn flusher(&self) -> crate::common::Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         match self {
             #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(index) => index.flusher(),
@@ -436,7 +437,7 @@ mod tests {
                 index.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
 
-        index.flusher()().unwrap();
+        index.flush_all().unwrap();
 
         drop(index);
 

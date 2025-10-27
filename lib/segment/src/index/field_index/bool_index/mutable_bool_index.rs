@@ -7,6 +7,7 @@ use fs_err as fs;
 use roaring::RoaringBitmap;
 
 use super::BoolIndex;
+use crate::common::Flusher;
 use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -315,7 +316,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
         Ok(())
     }
 
-    fn flusher(&self) -> crate::common::Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         let Self {
             base_dir: _,
             indexed_count: _,
@@ -331,11 +332,13 @@ impl PayloadFieldIndex for MutableBoolIndex {
         let trues_flusher = trues_flags.flusher();
         let falses_flusher = falses_flags.flusher();
 
-        Box::new(move || {
+        let stage_2_flusher = Box::new(move || {
             trues_flusher()?;
             falses_flusher()?;
             Ok(())
-        })
+        });
+
+        (Box::new(|| Ok(())), stage_2_flusher)
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {

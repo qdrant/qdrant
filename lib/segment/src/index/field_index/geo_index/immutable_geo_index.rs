@@ -282,7 +282,7 @@ impl ImmutableGeoMapIndex {
         }
     }
 
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> (Flusher, Flusher) {
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(ref db_wrapper) => db_wrapper.flusher(),

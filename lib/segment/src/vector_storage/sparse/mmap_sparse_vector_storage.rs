@@ -267,16 +267,20 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 
     fn flusher(&self) -> crate::common::Flusher {
-        let storage_flusher = self.storage.flusher();
+        let (storage_stage_1_flusher, storage_stage_2_flusher) = self.storage.flusher();
         let deleted_flags_flusher = self.deleted.flusher();
         Box::new(move || {
             deleted_flags_flusher()?;
-            storage_flusher().map_err(|err| {
+            storage_stage_1_flusher().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to flush mmap sparse vector gridstore: {err}"
                 ))
             })?;
-            Ok(())
+            storage_stage_2_flusher().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to flush mmap sparse vector gridstore: {err}"
+                ))
+            })
         })
     }
 

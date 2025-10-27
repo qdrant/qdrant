@@ -151,7 +151,15 @@ pub trait PayloadIndex {
     ) -> OperationResult<Option<Payload>>;
 
     /// Return function that forces persistence of current storage state.
-    fn flusher(&self) -> Flusher;
+    fn flusher(&self) -> (Flusher, Flusher);
+
+    /// Immediately flush all pending changes and deletes to the disk.
+    fn flush_all(&self) -> OperationResult<()> {
+        let (stage_1_flusher, stage_2_flusher) = self.flusher();
+        stage_1_flusher()?;
+        stage_2_flusher()?;
+        Ok(())
+    }
 
     #[cfg(feature = "rocksdb")]
     fn take_database_snapshot(&self, path: &std::path::Path) -> OperationResult<()>;

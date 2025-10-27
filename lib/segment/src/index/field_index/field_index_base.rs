@@ -44,7 +44,15 @@ pub trait PayloadFieldIndex {
     fn cleanup(self) -> OperationResult<()>;
 
     /// Return function that flushes all pending updates to disk.
-    fn flusher(&self) -> Flusher;
+    fn flusher(&self) -> (Flusher, Flusher);
+
+    /// Immediately flush all pending updates and deletes to disk.
+    fn flush_all(&self) -> OperationResult<()> {
+        let (stage_1_flusher, stage_2_flusher) = self.flusher();
+        stage_1_flusher()?;
+        stage_2_flusher()?;
+        Ok(())
+    }
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -233,7 +241,7 @@ impl FieldIndex {
         self.get_payload_field_index().count_indexed_points()
     }
 
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> (Flusher, Flusher) {
         self.get_payload_field_index().flusher()
     }
 

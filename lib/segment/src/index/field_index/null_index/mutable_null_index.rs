@@ -226,15 +226,17 @@ impl PayloadFieldIndex for MutableNullIndex {
         Ok(())
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         let flush_has_values = self.storage.has_values_flags.flusher();
         let flush_is_null = self.storage.is_null_flags.flusher();
 
-        Box::new(move || {
+        let stage_2_flusher = Box::new(move || {
             flush_has_values()?;
             flush_is_null()?;
             Ok(())
-        })
+        });
+
+        (Box::new(|| Ok(())), stage_2_flusher)
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -382,7 +384,7 @@ impl FieldIndexBuilderTrait for MutableNullIndexBuilder {
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         // Flush any remaining buffered updates
-        self.0.flusher()()?;
+        self.0.flush_all()?;
         Ok(self.0)
     }
 }
@@ -524,7 +526,7 @@ mod tests {
         }
 
         // Manually flush via flusher
-        index.flusher()().unwrap();
+        index.flush_all().unwrap();
 
         // Verify data is in bitmaps
         for i in 0..10 {

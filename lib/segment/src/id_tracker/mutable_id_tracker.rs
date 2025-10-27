@@ -31,13 +31,21 @@ enum MappingChange {
 }
 
 impl MappingChange {
-    fn change_type(&self) -> MappingChangeType {
+    fn change_type(self) -> MappingChangeType {
         match self {
             Self::Insert(PointIdType::NumId(_), _) => MappingChangeType::InsertNum,
             Self::Insert(PointIdType::Uuid(_), _) => MappingChangeType::InsertUuid,
             Self::Delete(PointIdType::NumId(_)) => MappingChangeType::DeleteNum,
             Self::Delete(PointIdType::Uuid(_)) => MappingChangeType::DeleteUuid,
         }
+    }
+
+    fn is_insert(&self) -> bool {
+        matches!(self, Self::Insert(_, _))
+    }
+
+    fn is_delete_with(self, external_id: PointIdType) -> bool {
+        matches!(self, Self::Delete(id) if id == external_id)
     }
 }
 
@@ -222,9 +230,14 @@ impl IdTracker for MutableIdTracker {
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
         self.mappings.set_link(external_id, internal_id);
-        self.pending_mappings
-            .lock()
-            .push(MappingChange::Insert(external_id, internal_id));
+
+        // Queue new mapping for flush
+        // Flush reorders all changes and puts deletes last, because they are flushed in a separate
+        // stage. We must therefore also remove deletes for this external ID.
+        let mut pending_mappings = self.pending_mappings.lock();
+        pending_mappings.retain(|&change| !change.is_delete_with(external_id));
+        pending_mappings.push(MappingChange::Insert(external_id, internal_id));
+
         Ok(())
     }
 
@@ -286,40 +299,68 @@ impl IdTracker for MutableIdTracker {
     /// Creates a flusher function, that persists the removed points in the mapping database
     /// and flushes the mapping to disk.
     /// This function should be called _before_ flushing the version database.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self) -> (Flusher, Flusher) {
         let mappings_path = mappings_path(&self.segment_path);
 
         // Take out pending mappings to flush and replace it with a preallocated vector to avoid
         // frequent reallocation on a busy segment
-        let pending_mappings = {
+        let (pending_inserts, pending_deletes) = {
             let mut pending_mappings = self.pending_mappings.lock();
-            let count = pending_mappings.len();
-            mem::replace(&mut *pending_mappings, Vec::with_capacity(count))
+
+            // Partition inserts and deletes, we flush them in separate stages
+            let (pending_inserts, pending_deletes): (Vec<_>, Vec<_>) = pending_mappings
+                .iter()
+                .cloned()
+                .partition(MappingChange::is_insert);
+
+            // Shrink pending mappings capacity to prevent growing forever
+            // Not releasing all capacity prevents frequent reallocation on a busy segment
+            let new_capacity = pending_mappings.len().next_power_of_two();
+            pending_mappings.shrink_to(new_capacity);
+            pending_mappings.clear();
+
+            (pending_inserts, pending_deletes)
         };
 
-        Box::new(move || {
-            if pending_mappings.is_empty() {
+        let stage_1_flusher = Box::new({
+            let mappings_path = mappings_path.clone();
+            move || {
+                if pending_inserts.is_empty() {
+                    return Ok(());
+                }
+
+                store_mapping_changes(&mappings_path, pending_inserts)
+            }
+        });
+
+        let stage_2_flusher = Box::new(move || {
+            if pending_deletes.is_empty() {
                 return Ok(());
             }
 
-            store_mapping_changes(&mappings_path, pending_mappings)
-        })
+            store_mapping_changes(&mappings_path, pending_deletes)
+        });
+
+        (stage_1_flusher, stage_2_flusher)
     }
 
     /// Creates a flusher function, that persists the removed points in the version database
     /// and flushes the version database to disk.
     /// This function should be called _after_ flushing the mapping database.
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self) -> (Flusher, Flusher) {
         let versions_path = versions_path(&self.segment_path);
         let pending_versions = mem::take(&mut *self.pending_versions.lock());
 
-        Box::new(move || {
+        let stage_1_flusher = Box::new(move || {
             if pending_versions.is_empty() {
                 return Ok(());
             }
 
             store_version_changes(&versions_path, pending_versions)
-        })
+        });
+        let stage_2_flusher = Box::new(|| Ok(()));
+
+        (stage_1_flusher, stage_2_flusher)
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {
@@ -919,8 +960,8 @@ pub(super) mod tests {
                 }
             }
 
-            id_tracker.mapping_flusher()().unwrap();
-            id_tracker.versions_flusher()().unwrap();
+            id_tracker.flush_mappings().unwrap();
+            id_tracker.flush_versions().unwrap();
 
             (dropped_points, custom_version)
         };
@@ -1005,8 +1046,8 @@ pub(super) mod tests {
                 .expect("Point to delete exists.");
             assert!(!id_tracker.is_deleted_point(intetrnal_id));
             id_tracker.drop(point_to_delete).unwrap();
-            id_tracker.mapping_flusher()().unwrap();
-            id_tracker.versions_flusher()().unwrap();
+            id_tracker.flush_mappings().unwrap();
+            id_tracker.flush_versions().unwrap();
             id_tracker.mappings
         };
 
@@ -1234,8 +1275,12 @@ pub(super) mod tests {
                 .unwrap()
         }
 
-        id_tracker.mapping_flusher()().expect("failed to flush ID tracker mappings");
-        id_tracker.versions_flusher()().expect("failed to flush ID tracker versions");
+        id_tracker
+            .flush_mappings()
+            .expect("failed to flush ID tracker mappings");
+        id_tracker
+            .flush_versions()
+            .expect("failed to flush ID tracker versions");
 
         id_tracker
     }
@@ -1363,8 +1408,8 @@ pub(super) mod tests {
         check_trackers(&simple_id_tracker, &mutable_id_tracker);
 
         // Persist and reload mutable tracker and test again
-        mutable_id_tracker.mapping_flusher()().unwrap();
-        mutable_id_tracker.versions_flusher()().unwrap();
+        mutable_id_tracker.flush_mappings().unwrap();
+        mutable_id_tracker.flush_versions().unwrap();
         drop(mutable_id_tracker);
         let mutable_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
 

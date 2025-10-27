@@ -225,8 +225,8 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         files
     }
 
-    pub fn flusher(&self) -> Flusher {
-        self.storage.deleted.flusher()
+    pub fn flusher(&self) -> (Flusher, Flusher) {
+        (Box::new(|| Ok(())), self.storage.deleted.flusher())
     }
 
     pub fn check_values_any(
