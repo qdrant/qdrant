@@ -37,7 +37,7 @@ pub fn flush_bench(c: &mut Criterion) {
                     // Benchmark the flush operation after accumulating updates
                     let instant = Instant::now();
 
-                    storage.flush().unwrap();
+                    storage.flush_all().unwrap();
 
                     total_elapsed += instant.elapsed();
                 }
@@ -76,7 +76,7 @@ pub fn flush_bench(c: &mut Criterion) {
                     // Benchmark the flush operation after accumulating updates
                     let instant = Instant::now();
 
-                    storage.flush().unwrap();
+                    storage.flush_all().unwrap();
 
                     total_elapsed += instant.elapsed();
                 }

@@ -66,12 +66,12 @@ pub fn real_data_data_bench(c: &mut Criterion) {
 
     // insert data once & flush
     append_csv_data(&mut storage, &csv_path);
-    storage.flush().unwrap();
+    storage.flush_all().unwrap();
 
     assert_eq!(storage.max_point_id(), expected_point_count);
 
     // flush to get a consistent bitmask
-    storage.flush().unwrap();
+    storage.flush_all().unwrap();
 
     // sanity check of storage size
     let storage_size = storage.get_storage_size_bytes();
@@ -98,7 +98,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     // append the same data again to increase storage size
     for _ in 0..10 {
         append_csv_data(&mut storage, &csv_path);
-        storage.flush().unwrap();
+        storage.flush_all().unwrap();
     }
 
     let inflated_storage_size = storage.get_storage_size_bytes();
@@ -117,7 +117,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     }
 
     // flush to get a consistent bitmask
-    storage.flush().unwrap();
+    storage.flush_all().unwrap();
 
     c.bench_function("compute storage size (large sparse)", |b| {
         b.iter(|| black_box(storage.get_storage_size_bytes()));
@@ -128,7 +128,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
             append_csv_data(&mut storage, &csv_path);
             // do not always flush to build up pending updates
             if rng.random_bool(0.3) {
-                storage.flush().unwrap();
+                storage.flush_all().unwrap();
             }
         });
     });
