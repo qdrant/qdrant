@@ -216,20 +216,25 @@ impl PayloadStorage for MmapPayloadStorage {
         })
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         let (stage_1_flusher, stage_2_flusher) = self.storage.flusher();
-        Box::new(move || {
+
+        let stage_1_flusher = Box::new(move || {
             stage_1_flusher().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to flush mmap payload gridstore: {err}"
                 ))
-            })?;
+            })
+        });
+        let stage_2_flusher = Box::new(move || {
             stage_2_flusher().map_err(|err| {
                 OperationError::service_error(format!(
-                    "Failed to flush mmap payload gridstore: {err}"
+                    "Failed to flush mmap payload gridstore deletes: {err}"
                 ))
             })
-        })
+        });
+
+        (stage_1_flusher, stage_2_flusher)
     }
 
     fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>

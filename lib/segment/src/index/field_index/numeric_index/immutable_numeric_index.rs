@@ -273,7 +273,7 @@ where
     }
 
     #[inline]
-    pub(super) fn flusher(&self) -> Flusher {
+    pub(super) fn flusher(&self) -> (Flusher, Flusher) {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),

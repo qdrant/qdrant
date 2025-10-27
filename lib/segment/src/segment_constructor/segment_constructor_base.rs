@@ -1440,7 +1440,7 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
         )?;
 
         // Flush new storage
-        new_storage.flusher()()?;
+        new_storage.flush_all()?;
 
         Ok(new_storage)
     }

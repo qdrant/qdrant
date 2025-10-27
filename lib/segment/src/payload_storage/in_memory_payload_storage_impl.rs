@@ -105,8 +105,8 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
+    fn flusher(&self) -> (Flusher, Flusher) {
+        (Box::new(|| Ok(())), Box::new(|| Ok(())))
     }
 
     fn iter<F>(&self, mut callback: F, _hw_counter: &HardwareCounterCell) -> OperationResult<()>

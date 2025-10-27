@@ -146,8 +146,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         })
     }
 
-    pub fn flusher(&self) -> Flusher {
-        self.storage.deleted.flusher()
+    pub fn flusher(&self) -> (Flusher, Flusher) {
+        (Box::new(|| Ok(())), self.storage.deleted.flusher())
     }
 
     pub fn wipe(self) -> OperationResult<()> {

@@ -69,15 +69,20 @@ impl DatabaseColumnScheduledDeleteWrapper {
             .contains(key.as_ref())
     }
 
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> (Flusher, Flusher) {
         let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
         let wrapper = self.db.clone();
-        Box::new(move || {
+
+        let stage_1_flusher = wrapper.flusher();
+
+        let stage_2_flusher = Box::new(move || {
             for id in ids_to_delete {
                 wrapper.remove(id)?;
             }
             wrapper.flusher()()
-        })
+        });
+
+        (stage_1_flusher, stage_2_flusher)
     }
 
     pub fn lock_db(&self) -> LockedDatabaseColumnScheduledDeleteWrapper<'_> {
