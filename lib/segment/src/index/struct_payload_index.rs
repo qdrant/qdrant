@@ -1105,22 +1105,14 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn flusher(&self) -> (Flusher, Flusher) {
-        // Most field indices have either 2 or 3 indices (including null), we also have an extra
-        // payload storage flusher. Overallocate to save potential reallocations.
-        let mut flushers = (
-            Vec::with_capacity(self.field_indexes.len() * 3 + 1),
-            Vec::with_capacity(self.field_indexes.len() * 3 + 1),
-        );
-
-        for field_indexes in self.field_indexes.values() {
-            for index in field_indexes {
-                flushers.extend([index.flusher()]);
-            }
-        }
-
-        flushers.extend([self.payload.borrow().flusher()]);
-
-        let (stage_1_flushers, stage_2_flushers) = flushers;
+        // Collect payload index and storage flushers
+        let (stage_1_flushers, stage_2_flushers): (Vec<_>, Vec<_>) = self
+            .field_indexes
+            .values()
+            .flatten()
+            .map(|index| index.flusher()) // Payload index flushers
+            .chain([self.payload.borrow().flusher()]) // Payload storage flusher
+            .unzip();
 
         let stage_1_flusher = Box::new(move || {
             for flusher in stage_1_flushers {
