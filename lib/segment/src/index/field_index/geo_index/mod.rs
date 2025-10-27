@@ -660,7 +660,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexGridstoreBuilder {
                 "GeoMapIndexGridstoreBuilder: index must be initialized to finalize",
             ));
         };
-        index.flusher()()?;
+        index.flush_all()?;
         Ok(index)
     }
 }
@@ -678,7 +678,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         }
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         match self {
             GeoMapIndex::Mutable(index) => index.flusher(),
             GeoMapIndex::Immutable(index) => index.flusher(),
@@ -1498,7 +1498,7 @@ mod tests {
             let mut index = builder.finalize().unwrap();
 
             index.remove_point(1).unwrap();
-            index.flusher()().unwrap();
+            index.flush_all().unwrap();
 
             assert_eq!(index.points_count(), 1);
             if index_type != IndexType::Mmap {

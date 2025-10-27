@@ -651,7 +651,8 @@ impl SegmentEntry for Segment {
         let current_path = self.current_path.clone();
         let (stage_1_id_tracker_mapping_flusher, stage_2_id_tracker_mapping_flusher) =
             self.id_tracker.borrow().mapping_flusher();
-        let payload_index_flusher = self.payload_index.borrow().flusher();
+        let (stage_1_payload_index_flusher, stage_2_payload_index_flusher) =
+            self.payload_index.borrow().flusher();
         let (stage_1_id_tracker_versions_flusher, stage_2_id_tracker_versions_flusher) =
             self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
@@ -730,7 +731,7 @@ impl SegmentEntry for Segment {
                     ))
                 })?;
             }
-            payload_index_flusher().map_err(|err| {
+            stage_1_payload_index_flusher().map_err(|err| {
                 OperationError::service_error(format!("Failed to flush payload_index: {err}"))
             })?;
             // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
@@ -762,6 +763,10 @@ impl SegmentEntry for Segment {
                 OperationError::service_error(format!(
                     "Failed to flush id_tracker mapping deletes: {err}"
                 ))
+            })?;
+
+            stage_2_payload_index_flusher().map_err(|err| {
+                OperationError::service_error(format!("Failed to flush payload_index: {err}"))
             })?;
 
             stage_2_id_tracker_versions_flusher().map_err(|err| {

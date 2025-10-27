@@ -241,7 +241,7 @@ fn build_random_index(
         index.remove_point(200).unwrap();
         index.remove_point(250).unwrap();
 
-        index.flusher()().expect("failed to flush deletions");
+        index.flush_all().expect("failed to flush deletions");
     }
 
     // Reopen the index if requested

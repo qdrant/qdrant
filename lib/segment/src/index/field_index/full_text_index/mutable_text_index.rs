@@ -186,24 +186,29 @@ impl MutableFullTextIndex {
     }
 
     #[inline]
-    pub(super) fn flusher(&self) -> Flusher {
+    pub(super) fn flusher(&self) -> (Flusher, Flusher) {
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(store) => {
                 let (stage_1_flusher, stage_2_flusher) = store.flusher();
-                Box::new(move || {
+
+                let stage_1_flusher = Box::new(move || {
                     stage_1_flusher().map_err(|err| {
                         OperationError::service_error(format!(
                             "Failed to flush mutable full text index gridstore: {err}"
                         ))
-                    })?;
+                    })
+                });
+                let stage_2_flusher = Box::new(move || {
                     stage_2_flusher().map_err(|err| {
                         OperationError::service_error(format!(
-                            "Failed to flush mutable full text index gridstore: {err}"
+                            "Failed to flush mutable full text index gridstore deletes: {err}"
                         ))
                     })
-                })
+                });
+
+                (stage_1_flusher, stage_2_flusher)
             }
         }
     }
@@ -470,7 +475,7 @@ mod tests {
 
             assert_eq!(index.count_indexed_points(), payloads.len() - 1);
 
-            index.flusher()().unwrap();
+            index.flush_all().unwrap();
         }
 
         {

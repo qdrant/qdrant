@@ -497,7 +497,7 @@ impl SegmentBuilder {
 
             let appendable_flag = segment_config.is_appendable();
 
-            payload_storage.flusher()()?;
+            payload_storage.flush_all()?;
             let payload_storage_arc = Arc::new(AtomicRefCell::new(payload_storage));
 
             let id_tracker = match id_tracker {
@@ -580,7 +580,7 @@ impl SegmentBuilder {
             }
             drop(progress_payload_index);
 
-            payload_index.flusher()()?;
+            payload_index.flush_all()?;
             let payload_index_arc = Arc::new(AtomicRefCell::new(payload_index));
 
             // Try to lock GPU device.

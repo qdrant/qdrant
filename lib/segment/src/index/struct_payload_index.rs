@@ -1104,20 +1104,26 @@ impl PayloadIndex for StructPayloadIndex {
         self.payload.borrow_mut().clear(point_id, hw_counter)
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         // Most field indices have either 2 or 3 indices (including null), we also have an extra
         // payload storage flusher. Overallocate to save potential reallocations.
-        let mut flushers = Vec::with_capacity(self.field_indexes.len() * 3 + 1);
+        let mut flushers = (
+            Vec::with_capacity(self.field_indexes.len() * 3 + 1),
+            Vec::with_capacity(self.field_indexes.len() * 3 + 1),
+        );
 
         for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
-                flushers.push(index.flusher());
+                flushers.extend([index.flusher()]);
             }
         }
-        flushers.push(self.payload.borrow().flusher());
 
-        Box::new(move || {
-            for flusher in flushers {
+        flushers.extend([self.payload.borrow().flusher()]);
+
+        let (stage_1_flushers, stage_2_flushers) = flushers;
+
+        let stage_1_flusher = Box::new(move || {
+            for flusher in stage_1_flushers {
                 match flusher() {
                     Ok(_) => {}
                     Err(OperationError::RocksDbColumnFamilyNotFound { name }) => {
@@ -1141,7 +1147,36 @@ impl PayloadIndex for StructPayloadIndex {
                 }
             }
             Ok(())
-        })
+        });
+
+        let stage_2_flusher = Box::new(move || {
+            for flusher in stage_2_flushers {
+                match flusher() {
+                    Ok(_) => {}
+                    Err(OperationError::RocksDbColumnFamilyNotFound { name }) => {
+                        // It is possible, that the index was removed during the flush by user or another thread.
+                        // In this case, non-existing column family is not an error, but an expected behavior.
+
+                        // Still we want to log this event, for potential debugging.
+                        log::warn!(
+                            "Flush: RocksDB cf_handle error: Cannot find column family {name}. Assume index is removed.",
+                        );
+                        debug_assert!(
+                            false,
+                            "Missing column family should not happen during testing",
+                        );
+                    }
+                    Err(err) => {
+                        return Err(OperationError::service_error(format!(
+                            "Failed to flush payload_index deletes: {err}",
+                        )));
+                    }
+                }
+            }
+            Ok(())
+        });
+
+        (stage_1_flusher, stage_2_flusher)
     }
 
     #[cfg(feature = "rocksdb")]

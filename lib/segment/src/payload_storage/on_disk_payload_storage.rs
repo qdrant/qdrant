@@ -183,7 +183,7 @@ impl PayloadStorage for OnDiskPayloadStorage {
         self.db_wrapper.recreate_column_family()
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         self.db_wrapper.flusher()
     }
 
