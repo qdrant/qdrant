@@ -6,7 +6,6 @@ use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
 };
-use collection::operations::types::CoreSearchRequestBatch;
 use collection::operations::universal_query::shard_query::{
     FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
@@ -27,6 +26,7 @@ use segment::types::{
     Condition, Distance, FieldCondition, Filter, Payload, Range, WithPayloadInterface, WithVector,
 };
 use serde_json::Map;
+use shard::search::CoreSearchRequestBatch;
 use tempfile::{Builder, TempDir};
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;

@@ -11,6 +11,7 @@ use collection::operations::universal_query::collection_query::*;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::ScoredPoint;
 use shard::retrieve::record_internal::RecordInternal;
+use shard::search::CoreSearchRequestBatch;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;

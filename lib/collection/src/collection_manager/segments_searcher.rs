@@ -9,15 +9,18 @@ use futures::{FutureExt, TryStreamExt};
 use itertools::Itertools;
 use ordered_float::Float;
 use segment::common::operation_error::OperationError;
+use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::QueryVector;
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, VectorName,
     WithPayload, WithPayloadInterface, WithVector,
 };
+use shard::common::stopping_guard::StoppingGuard;
 use shard::query::query_enum::QueryEnum;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_blocking;
+use shard::search::CoreSearchRequestBatch;
 use shard::search_result_aggregator::BatchResultAggregator;
 use tinyvec::TinyVec;
 use tokio::runtime::Handle;
@@ -26,9 +29,8 @@ use tokio::task::JoinHandle;
 use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
-use crate::common::stopping_guard::StoppingGuard;
 use crate::config::CollectionConfigInternal;
-use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, Modifier};
+use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
 type BatchOffset = usize;
