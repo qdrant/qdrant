@@ -722,8 +722,8 @@ impl Collection {
 
             // Try to find a replica to transfer from
             //
-            // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
-            for replica_id in replica_set.active_remote_shards() {
+            // `active_shards` includes `Active` and `ReshardingScaleDown` replicas!
+            for replica_id in replica_set.active_shards(true) {
                 let transfer = ShardTransfer {
                     from: replica_id,
                     to: this_peer_id,
