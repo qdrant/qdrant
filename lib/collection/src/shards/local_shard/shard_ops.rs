@@ -19,7 +19,8 @@ use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, UpdateResult, UpdateStatus,
+    CountRequestInternal, CountResult, PointRequestInternal, ScrollRequestInternal, UpdateResult,
+    UpdateStatus,
 };
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
@@ -117,16 +118,27 @@ impl ShardOperation for LocalShard {
     /// This call is rate limited by the read rate limiter.
     async fn scroll_by(
         &self,
-        offset: Option<ExtendedPointId>,
-        limit: usize,
-        with_payload_interface: &WithPayloadInterface,
-        with_vector: &WithVector,
-        filter: Option<&Filter>,
+        request: Arc<ScrollRequestInternal>,
         search_runtime_handle: &Handle,
-        order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        let ScrollRequestInternal {
+            offset,
+            limit,
+            filter,
+            with_payload,
+            with_vector,
+            order_by,
+        } = request.as_ref();
+
+        let default_with_payload = ScrollRequestInternal::default_with_payload();
+
+        // Validate user did not try to use an id offset with order_by
+        if order_by.is_some() && offset.is_some() {
+            return Err(CollectionError::bad_input("Cannot use an `offset` when using `order_by`. The alternative for paging is to use `order_by.start_from` and a filter to exclude the IDs that you've already seen for the `order_by.start_from` value".to_string()));
+        };
+
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "scroll_by", || {
             let mut cost = BASE_COST;
@@ -135,34 +147,67 @@ impl ShardOperation for LocalShard {
             }
             cost
         })?;
-        match order_by {
+        let start_time = Instant::now();
+
+        let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
+        let order_by = order_by.clone().map(OrderBy::from);
+
+        let result = match order_by {
             None => {
-                self.scroll_by_id(
-                    offset,
+                self.internal_scroll_by_id(
+                    *offset,
                     limit,
-                    with_payload_interface,
+                    with_payload.as_ref().unwrap_or(&default_with_payload),
                     with_vector,
-                    filter,
+                    filter.as_ref(),
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
                 )
-                .await
+                .await?
             }
             Some(order_by) => {
-                self.scroll_by_field(
+                self.internal_scroll_by_field(
                     limit,
-                    with_payload_interface,
+                    with_payload.as_ref().unwrap_or(&default_with_payload),
                     with_vector,
-                    filter,
+                    filter.as_ref(),
                     search_runtime_handle,
-                    order_by,
+                    &order_by,
                     timeout,
                     hw_measurement_acc,
                 )
-                .await
+                .await?
             }
-        }
+        };
+
+        let elapsed = start_time.elapsed();
+        log_request_to_collector(&self.collection_name, elapsed, || request);
+        Ok(result)
+    }
+
+    async fn local_scroll_by_id(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        self.internal_scroll_by_id(
+            offset,
+            limit,
+            with_payload_interface,
+            with_vector,
+            filter,
+            search_runtime_handle,
+            timeout,
+            hw_measurement_acc,
+        )
+        .await
     }
 
     /// Collect overview information about the shard
@@ -202,6 +247,7 @@ impl ShardOperation for LocalShard {
             }
             cost
         })?;
+        let start_time = Instant::now();
         let total_count = if request.exact {
             let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
             let all_points = tokio::time::timeout(
@@ -222,6 +268,8 @@ impl ShardOperation for LocalShard {
                 .await?
                 .exp
         };
+        let elapsed = start_time.elapsed();
+        log_request_to_collector(&self.collection_name, elapsed, || request);
         Ok(CountResult { count: total_count })
     }
 
@@ -238,6 +286,8 @@ impl ShardOperation for LocalShard {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || request.ids.len())?;
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+
+        let start_time = Instant::now();
         let records_map = tokio::time::timeout(
             timeout,
             SegmentsSearcher::retrieve(
@@ -257,6 +307,9 @@ impl ShardOperation for LocalShard {
             .iter()
             .filter_map(|point| records_map.get(point).cloned())
             .collect();
+
+        let elapsed = start_time.elapsed();
+        log_request_to_collector(&self.collection_name, elapsed, || request);
 
         Ok(ordered_records)
     }
@@ -313,13 +366,27 @@ impl ShardOperation for LocalShard {
             }
             cost
         })?;
+
+        let start_time = Instant::now();
         let hits = if request.exact {
-            self.exact_facet(request, search_runtime_handle, timeout, hw_measurement_acc)
-                .await?
+            self.exact_facet(
+                request.clone(),
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+            )
+            .await?
         } else {
-            self.approx_facet(request, search_runtime_handle, timeout, hw_measurement_acc)
-                .await?
+            self.approx_facet(
+                request.clone(),
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+            )
+            .await?
         };
+        let elapsed = start_time.elapsed();
+        log_request_to_collector(&self.collection_name, elapsed, || request);
         Ok(FacetResponse { hits })
     }
 }

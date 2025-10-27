@@ -500,7 +500,7 @@ pub enum NamedVectorStruct {
     // No support for multi-dense vectors in search
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Hash)]
 #[serde(untagged)]
 #[serde(expecting = "Expected a string, or an object with a key, direction and/or start_from")]
 pub enum OrderByInterface {

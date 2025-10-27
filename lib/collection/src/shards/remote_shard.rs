@@ -19,7 +19,7 @@ use api::grpc::qdrant::{
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use api::grpc::update_operation::Update;
-use api::grpc::{UpdateBatchInternal, UpdateOperation};
+use api::grpc::{UpdateBatchInternal, UpdateOperation, WithPayloadSelector};
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::TelemetryDetail;
@@ -53,7 +53,7 @@ use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, UpdateResult,
+    CountRequestInternal, CountResult, PointRequestInternal, ScrollRequestInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::vector_ops::VectorOperations;
@@ -944,27 +944,40 @@ impl ShardOperation for RemoteShard {
 
     async fn scroll_by(
         &self,
-        offset: Option<ExtendedPointId>,
-        limit: usize,
-        with_payload_interface: &WithPayloadInterface,
-        with_vector: &WithVector,
-        filter: Option<&Filter>,
+        request: Arc<ScrollRequestInternal>,
         _search_runtime_handle: &Handle,
-        order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let processed_timeout = Self::process_read_timeout(timeout, "scroll")?;
+        let ScrollRequestInternal {
+            filter,
+            offset,
+            limit,
+            with_payload,
+            with_vector,
+            order_by,
+        } = request.as_ref();
+
+        let with_payload = with_payload
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(ScrollRequestInternal::default_with_payload);
+
+        let is_payload_required = with_payload.is_required();
+        let order_by = order_by.clone().map(OrderBy::from);
+        let filter = filter.clone();
+
         let scroll_points = ScrollPoints {
             collection_name: self.collection_id.clone(),
-            filter: filter.map(|f| f.clone().into()),
+            filter: filter.map(api::grpc::qdrant::Filter::from),
             offset: offset.map(|o| o.into()),
-            limit: Some(limit as u32),
-            with_payload: Some(with_payload_interface.clone().into()),
+            limit: limit.map(|x| x as u32),
+            with_payload: Some(WithPayloadSelector::from(with_payload)),
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,
             shard_key_selector: None,
-            order_by: order_by.map(|o| o.clone().into()),
+            order_by: order_by.map(api::grpc::qdrant::OrderBy::from),
             timeout: processed_timeout.map(|t| t.as_secs()),
         };
         let scroll_request = &ScrollPointsInternal {
@@ -990,10 +1003,27 @@ impl ShardOperation for RemoteShard {
         let result: Result<Vec<RecordInternal>, Status> = scroll_response
             .result
             .into_iter()
-            .map(|point| try_record_from_grpc(point, with_payload_interface.is_required()))
+            .map(|point| try_record_from_grpc(point, is_payload_required))
             .collect();
 
         result.map_err(|e| e.into())
+    }
+
+    async fn local_scroll_by_id(
+        &self,
+        _offset: Option<ExtendedPointId>,
+        _limit: usize,
+        _with_payload_interface: &WithPayloadInterface,
+        _with_vector: &WithVector,
+        _filter: Option<&Filter>,
+        _search_runtime_handle: &Handle,
+        _timeout: Option<Duration>,
+        _hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        debug_assert!(false, "RemoteShard does not support local_scroll_by_id");
+        Err(CollectionError::service_error(
+            "RemoteShard does not support local_scroll_by_id".to_string(),
+        ))
     }
 
     async fn info(&self) -> CollectionResult<CollectionInfo> {

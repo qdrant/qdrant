@@ -9,7 +9,7 @@ use validator::Validate;
 use crate::json_path::JsonPath;
 use crate::types::{Filter, IntPayloadType, UuidIntType, ValueVariants};
 
-#[derive(Clone, Debug, JsonSchema, Serialize, Deserialize, Validate)]
+#[derive(Clone, Debug, JsonSchema, Serialize, Deserialize, Validate, Hash)]
 pub struct FacetParams {
     pub key: JsonPath,
 

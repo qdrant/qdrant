@@ -7,7 +7,6 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::manifest::SnapshotManifest;
-use segment::data_types::order_by::OrderBy;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
@@ -19,8 +18,8 @@ use tokio::runtime::Handle;
 use crate::operations::OperationWithClockTag;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal, ShardStatus,
-    UpdateResult,
+    CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal,
+    ScrollRequestInternal, ShardStatus, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::shard_trait::ShardOperation;
@@ -108,13 +107,22 @@ impl ShardOperation for DummyShard {
     /// Forward read-only `scroll_by` to `wrapped_shard`
     async fn scroll_by(
         &self,
+        _: Arc<ScrollRequestInternal>,
+        _: &Handle,
+        _: Option<Duration>,
+        _: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<RecordInternal>> {
+        self.dummy()
+    }
+
+    async fn local_scroll_by_id(
+        &self,
         _: Option<ExtendedPointId>,
         _: usize,
         _: &WithPayloadInterface,
         _: &WithVector,
         _: Option<&Filter>,
         _: &Handle,
-        _: Option<&OrderBy>,
         _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
