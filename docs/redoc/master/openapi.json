@@ -12532,6 +12532,17 @@
           },
           "storage_type": {
             "$ref": "#/components/schemas/SparseVectorStorageType"
+          },
+          "modifier": {
+            "description": "Configures addition value modifications for sparse vectors. Default: none",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Modifier"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -12557,17 +12568,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/VectorStorageDatatype"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "modifier": {
-            "description": "Configures addition value modifications for sparse vectors. Default: none",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Modifier"
               },
               {
                 "nullable": true

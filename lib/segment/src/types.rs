@@ -33,6 +33,7 @@ use crate::data_types::index::{
     BoolIndexParams, DatetimeIndexParams, FloatIndexParams, GeoIndexParams, IntegerIndexParams,
     KeywordIndexParams, TextIndexParams, UuidIndexParams,
 };
+use crate::data_types::modifier::Modifier;
 use crate::data_types::order_by::OrderValue;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, VectorStructInternal};
@@ -1678,6 +1679,11 @@ pub struct SparseVectorDataConfig {
     /// Type of storage this sparse vector uses
     #[serde(default = "default_sparse_vector_storage_type_when_not_in_config")]
     pub storage_type: SparseVectorStorageType,
+
+    /// Configures addition value modifications for sparse vectors.
+    /// Default: none
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifier: Option<Modifier>,
 }
 
 /// If the storage type is not in config, it means it is the OnDisk variant
@@ -1697,16 +1703,17 @@ impl SparseVectorDataConfig {
         true
     }
 
-    pub fn is_compatible(&self, _other: &Self) -> bool {
+    pub fn is_compatible(&self, other: &Self) -> bool {
         // Both index and storage type can be different for two segments to be compatible
 
         // Assert sparse vector config fields
         let Self {
             index: _,
             storage_type: _,
+            modifier,
         } = self;
 
-        true
+        modifier == &other.modifier
     }
 }
 
