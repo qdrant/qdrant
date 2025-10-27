@@ -338,9 +338,14 @@ where
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(store) => {
-                let storage_flusher = store.flusher();
+                let (stage_1_flusher, stage_2_flusher) = store.flusher();
                 Box::new(move || {
-                    storage_flusher().map_err(|err| {
+                    stage_1_flusher().map_err(|err| {
+                        OperationError::service_error(format!(
+                            "Failed to flush mutable map index gridstore: {err}"
+                        ))
+                    })?;
+                    stage_2_flusher().map_err(|err| {
                         OperationError::service_error(format!(
                             "Failed to flush mutable map index gridstore: {err}"
                         ))

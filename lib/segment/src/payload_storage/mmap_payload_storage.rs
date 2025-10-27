@@ -217,9 +217,14 @@ impl PayloadStorage for MmapPayloadStorage {
     }
 
     fn flusher(&self) -> Flusher {
-        let storage_flusher = self.storage.flusher();
+        let (stage_1_flusher, stage_2_flusher) = self.storage.flusher();
         Box::new(move || {
-            storage_flusher().map_err(|err| {
+            stage_1_flusher().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to flush mmap payload gridstore: {err}"
+                ))
+            })?;
+            stage_2_flusher().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to flush mmap payload gridstore: {err}"
                 ))

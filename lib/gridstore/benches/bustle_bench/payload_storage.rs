@@ -59,6 +59,7 @@ impl SequentialCollectionHandle for PayloadStorage {
     }
 
     fn flush(&self) -> bool {
-        self.flusher()().is_ok()
+        let (stage_1_flusher, stage_2_flusher) = self.flusher();
+        stage_1_flusher().is_ok() && stage_2_flusher().is_ok()
     }
 }
