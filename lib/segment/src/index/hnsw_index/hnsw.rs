@@ -1543,7 +1543,10 @@ impl<'a> OldIndexCandidate<'a> {
             || config.m0 != old_index.config.m0
             || config.ef_construct != old_index.config.ef_construct
             || new_quantization_config != old_quantization_config;
-        if no_main_graph || configuration_mismatch {
+        // If old graph has vectors, reusing it will cause a lot of random reads,
+        // making it slower than building from scratch.
+        let old_graph_is_with_vectors = old_index.graph.has_vectors();
+        if no_main_graph || configuration_mismatch || old_graph_is_with_vectors {
             return None;
         }
         drop(old_quantized_vectors_ref);
