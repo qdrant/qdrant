@@ -540,10 +540,26 @@ impl SegmentEntry for ProxySegment {
         filter: Option<&Filter>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
+        // If the proxy segment has no deleted points, direct call to wrapped segment
+        if self.deleted_points.is_empty() {
+            return self.wrapped_segment.get().read().in_indexed_only_search(
+                vector_name,
+                search_optimized_threshold_kb,
+                filter,
+                hw_counter,
+            );
+        }
+
+        // Incorporate deleted point count in decision
+        let wrapped_filter = Self::add_deleted_points_condition_to_filter(
+            filter,
+            self.deleted_points.keys().copied(),
+        );
+
         self.wrapped_segment.get().read().in_indexed_only_search(
             vector_name,
             search_optimized_threshold_kb,
-            filter,
+            Some(&wrapped_filter),
             hw_counter,
         )
     }
