@@ -12214,7 +12214,7 @@
             "type": "boolean",
             "nullable": true
           },
-          "index_only_excluded_vectors": {
+          "indexed_only_excluded_vectors": {
             "type": "object",
             "additionalProperties": {
               "type": "integer",

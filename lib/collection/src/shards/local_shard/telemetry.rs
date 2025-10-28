@@ -33,10 +33,10 @@ impl LocalShard {
                     .collect();
 
                 let collection_config = locked_collection_config.blocking_read();
-                let index_only_excluded_vectors =
+                let indexed_only_excluded_vectors =
                     get_index_only_excluded_vectors(&segments_guard, &collection_config);
 
-                (segments_telemetry, index_only_excluded_vectors)
+                (segments_telemetry, indexed_only_excluded_vectors)
             })
             .await
         };
@@ -89,7 +89,7 @@ impl LocalShard {
                     .then(|| self.optimizers_log.lock().to_telemetry()),
             },
             async_scorer: Some(get_async_scorer()),
-            index_only_excluded_vectors: (!index_only_excluded_vectors.is_empty())
+            indexed_only_excluded_vectors: (!index_only_excluded_vectors.is_empty())
                 .then_some(index_only_excluded_vectors),
         }
     }
