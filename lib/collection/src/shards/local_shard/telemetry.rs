@@ -191,14 +191,16 @@ fn get_index_only_excluded_vectors(
 
                     let vector_storage_size =
                         segment_guard.available_vectors_size_in_bytes(&vector_name);
-
-                    if let Err(err) = vector_storage_size {
-                        log::error!("Failed to get vector size from segment: {err:?}");
-                        return None;
-                    }
+                    let vector_storage_size = match vector_storage_size {
+                        Ok(size) => size,
+                        Err(err) => {
+                            log::error!("Failed to get vector size from segment: {err:?}");
+                            return None;
+                        }
+                    };
 
                     let points = segment_guard.available_point_count();
-                    Some((vector_name, vector_storage_size.unwrap(), points))
+                    Some((vector_name, vector_storage_size, points))
                 })
         })
         .fold(
