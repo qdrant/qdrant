@@ -606,14 +606,17 @@ impl ShardHolder {
         let fallback_shard_ids = shard_key_to_ids_mapping.get(&key.fallback);
 
         if let Some(target_shard_ids) = target_shard_ids {
-            let mut replicas = target_shard_ids
+            let replicas = target_shard_ids
                 .iter()
-                .filter_map(|shard_id| self.shards.get(shard_id));
+                .filter_map(|shard_id| self.shards.get(shard_id))
+                .collect::<Vec<_>>();
 
-            let target_shards_active =
-                replicas.all(|replica_set| !replica_set.active_shards(false).is_empty());
+            let target_shards_active = replicas
+                .iter()
+                .all(|replica_set| !replica_set.active_shards(false).is_empty());
 
-            if target_shards_active {
+            if !replicas.is_empty() && target_shards_active {
+                // 1st condition is required to handle empty shard keys (2nd one returns true)
                 Ok((target_shard_ids.clone(), &key.target))
             } else if let Some(fallback_shard_ids) = fallback_shard_ids {
                 Ok((fallback_shard_ids.clone(), &key.fallback))
