@@ -63,7 +63,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest, macos-latest  ]
     steps:
       - name: Download test report
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: junit-${{ matrix.os }}.xml
       - name: Process test report
