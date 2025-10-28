@@ -121,6 +121,7 @@ message VectorInput {
 
 message ShardKeySelector {
   repeated ShardKey shard_keys = 1; // List of shard keys which should be used in the request
+  optional ShardKey fallback = 2;
 }
 
 

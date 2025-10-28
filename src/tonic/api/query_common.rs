@@ -43,10 +43,10 @@ use crate::common::strict_mode::*;
 pub(crate) fn convert_shard_selector_for_read(
     shard_id_selector: Option<ShardId>,
     shard_key_selector: Option<api::grpc::qdrant::ShardKeySelector>,
-) -> ShardSelectorInternal {
-    match (shard_id_selector, shard_key_selector) {
+) -> Result<ShardSelectorInternal, Status> {
+    let res = match (shard_id_selector, shard_key_selector) {
         (Some(shard_id), None) => ShardSelectorInternal::ShardId(shard_id),
-        (None, Some(shard_key_selector)) => ShardSelectorInternal::from(shard_key_selector),
+        (None, Some(shard_key_selector)) => ShardSelectorInternal::try_from(shard_key_selector)?,
         (None, None) => ShardSelectorInternal::All,
         (Some(shard_id), Some(_)) => {
             debug_assert!(
@@ -55,7 +55,8 @@ pub(crate) fn convert_shard_selector_for_read(
             );
             ShardSelectorInternal::ShardId(shard_id)
         }
-    }
+    };
+    Ok(res)
 }
 
 pub async fn search(
@@ -88,7 +89,7 @@ pub async fn search(
     let vector_struct =
         api::grpc::conversions::into_named_vector_struct(vector_name, vector_internal)?;
 
-    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
 
     let search_request = CoreSearchRequest {
         query: QueryEnum::Nearest(NamedQuery::from(vector_struct)),
@@ -277,7 +278,7 @@ pub async fn search_groups(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
 
     let timing = Instant::now();
     let groups_result = crate::common::query::do_search_point_groups(
@@ -329,7 +330,7 @@ pub async fn recommend(
         .await?;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
-    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
     let timeout = timeout.map(Duration::from_secs);
 
     let timing = Instant::now();
@@ -370,7 +371,7 @@ pub async fn recommend_batch(
 
     for mut request in recommend_points {
         let shard_selector =
-            convert_shard_selector_for_read(None, request.shard_key_selector.take());
+            convert_shard_selector_for_read(None, request.shard_key_selector.take())?;
         let internal_request: collection::operations::types::RecommendRequestInternal =
             request.try_into()?;
         requests.push((internal_request, shard_selector));
@@ -441,7 +442,7 @@ pub async fn recommend_groups(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
 
     let timing = Instant::now();
     let groups_result = crate::common::query::do_recommend_point_groups(
@@ -488,7 +489,7 @@ pub async fn discover(
 
     let timing = Instant::now();
 
-    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
 
     let discovered_points = toc
         .discover(
@@ -528,7 +529,7 @@ pub async fn discover_batch(
     for discovery_request in discover_points {
         let (internal_request, _collection_name, _consistency, _timeout, shard_key_selector) =
             try_discover_request_from_grpc(discovery_request)?;
-        let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+        let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
         requests.push((internal_request, shard_selector));
     }
 
@@ -616,7 +617,7 @@ pub async fn scroll(
     let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
 
     let timing = Instant::now();
     let scrolled_points = do_scroll_points(
@@ -682,7 +683,7 @@ pub async fn count(
     let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
 
     let timing = Instant::now();
 
@@ -736,7 +737,7 @@ pub async fn get(
     };
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
 
     let timing = Instant::now();
 
@@ -781,7 +782,7 @@ pub async fn query(
     inference_token: InferenceToken,
 ) -> Result<Response<QueryResponse>, Status> {
     let shard_key_selector = query_points.shard_key_selector.clone();
-    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
     let read_consistency = query_points
         .read_consistency
         .clone()
@@ -845,7 +846,7 @@ pub async fn query_batch(
 
     for query_points in points {
         let shard_key_selector = query_points.shard_key_selector.clone();
-        let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+        let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
         let (request, usage) =
             convert_query_points_from_grpc(query_points, inference_token.clone()).await?;
         total_inference_usage.merge(usage);
@@ -901,7 +902,7 @@ pub async fn query_groups(
     inference_token: InferenceToken,
 ) -> Result<Response<QueryGroupsResponse>, Status> {
     let shard_key_selector = query_points.shard_key_selector.clone();
-    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
     let read_consistency = query_points
         .read_consistency
         .clone()
@@ -988,7 +989,7 @@ pub async fn facet(
     let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
 
     let timing = Instant::now();
     let facet_response = toc
@@ -1058,7 +1059,7 @@ pub async fn search_points_matrix(
     let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
 
     let search_matrix_response = toc
         .search_points_matrix(

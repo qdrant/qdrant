@@ -89,7 +89,7 @@ pub async fn convert_query_point_groups_from_grpc(
             .map(TryFrom::try_from)
             .transpose()?
             .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
-        lookup_from: lookup_from.map(From::from),
+        lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
         group_by: json_path_from_proto(&group_by)?,
         group_size: group_size
             .map(|s| s as usize)
@@ -174,7 +174,7 @@ pub async fn convert_query_points_from_grpc(
                 .map(TryFrom::try_from)
                 .transpose()?
                 .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
-            lookup_from: lookup_from.map(From::from),
+            lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
         },
         usage.unwrap_or_default().into(),
     ))
@@ -214,7 +214,7 @@ fn convert_prefetch_with_inferred(
             .map(|l| l as usize)
             .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
         params: params.map(SearchParams::from),
-        lookup_from: lookup_from.map(LookupLocation::from),
+        lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
     })
 }
 

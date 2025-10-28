@@ -8050,6 +8050,9 @@
             "items": {
               "$ref": "#/components/schemas/ShardKey"
             }
+          },
+          {
+            "$ref": "#/components/schemas/ShardKeyWithFallback"
           }
         ]
       },
@@ -8066,6 +8069,21 @@
             "example": 12
           }
         ]
+      },
+      "ShardKeyWithFallback": {
+        "type": "object",
+        "required": [
+          "fallback",
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/ShardKey"
+          },
+          "fallback": {
+            "$ref": "#/components/schemas/ShardKey"
+          }
+        }
       },
       "ExtendedPointId": {
         "description": "Type, used for specifying point ID in user interface",

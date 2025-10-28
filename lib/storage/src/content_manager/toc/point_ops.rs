@@ -601,6 +601,26 @@ impl TableOfContent {
                 .await?
             }
 
+            ShardSelectorInternal::ShardKeyWithFallback(key) => {
+                let shard_keys: Vec<_> = collection
+                    .shards_holder()
+                    .read()
+                    .await
+                    .route_with_fallback_for_write(key)?
+                    .into_iter()
+                    .map(|(_shard_ids, shard_key)| shard_key)
+                    .collect();
+
+                Self::_update_shard_keys(
+                    &collection,
+                    shard_keys,
+                    operation.operation,
+                    wait,
+                    ordering,
+                    hw_measurement_acc.clone(),
+                )
+                .await?
+            }
             ShardSelectorInternal::ShardId(shard_selection) => {
                 collection
                     .update_from_peer(
