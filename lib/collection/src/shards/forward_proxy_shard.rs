@@ -138,7 +138,7 @@ impl ForwardProxyShard {
 
         let (points, next_page_offset) = match hashring_filter {
             Some(hashring_filter) => {
-                self.read_batch_with_hashring_filter(
+                self.read_batch_with_hashring(
                     offset,
                     batch_size,
                     hashring_filter,
@@ -229,7 +229,7 @@ impl ForwardProxyShard {
 
     /// Read a batch of points using a hash ring to transfer to the remote shard
     ///
-    /// Only the points that satisfy the hash ring filter and the provided payload_filter will be transferred.
+    /// Only the points that satisfy the hash ring filter will be transferred.
     ///
     /// This applies oversampling in case of resharding to account for points that will be filtered
     /// out by the hash ring. Each batch of points should therefore be roughly `batch_size`, but it
@@ -245,7 +245,7 @@ impl ForwardProxyShard {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    async fn read_batch_with_hashring_filter(
+    async fn read_batch_with_hashring(
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
