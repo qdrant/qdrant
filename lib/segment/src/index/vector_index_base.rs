@@ -190,6 +190,37 @@ impl VectorIndexEnum {
             Self::SparseCompressedMmapU8(index) => index.inverted_index().vector_count(),
         }
     }
+
+    /// Whether to include these vectors in `indexed_only` searches
+    pub fn in_indexed_only_search(
+        &self,
+        search_optimized_threshold_kb: usize,
+        filter: Option<&Filter>,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        match self {
+            // Only include plain segment if small enough
+            Self::Plain(plain) => plain.is_small_enough_for_unindexed_search(
+                search_optimized_threshold_kb,
+                filter,
+                hw_counter,
+            ),
+
+            // Always include HNSW indexed segment
+            Self::Hnsw(_index) => true,
+
+            // Always include sparse vectors
+            Self::SparseRam(_)
+            | Self::SparseImmutableRam(_)
+            | Self::SparseMmap(_)
+            | Self::SparseCompressedImmutableRamF32(_)
+            | Self::SparseCompressedImmutableRamF16(_)
+            | Self::SparseCompressedImmutableRamU8(_)
+            | Self::SparseCompressedMmapF32(_)
+            | Self::SparseCompressedMmapF16(_)
+            | Self::SparseCompressedMmapU8(_) => true,
+        }
+    }
 }
 
 impl VectorIndex for VectorIndexEnum {

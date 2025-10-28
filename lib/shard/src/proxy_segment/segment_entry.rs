@@ -533,6 +533,21 @@ impl SegmentEntry for ProxySegment {
         }
     }
 
+    fn in_indexed_only_search(
+        &self,
+        vector_name: &VectorName,
+        search_optimized_threshold_kb: usize,
+        filter: Option<&Filter>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        self.wrapped_segment.get().read().in_indexed_only_search(
+            vector_name,
+            search_optimized_threshold_kb,
+            filter,
+            hw_counter,
+        )
+    }
+
     fn estimate_point_count<'a>(
         &'a self,
         filter: Option<&'a Filter>,

@@ -462,6 +462,21 @@ impl SegmentEntry for Segment {
         Ok(size)
     }
 
+    fn in_indexed_only_search(
+        &self,
+        vector_name: &VectorName,
+        search_optimized_threshold_kb: usize,
+        filter: Option<&Filter>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        check_vector_name(vector_name, &self.segment_config)?;
+        let include = self.vector_data[vector_name]
+            .vector_index
+            .borrow()
+            .in_indexed_only_search(search_optimized_threshold_kb, filter, hw_counter);
+        Ok(include)
+    }
+
     fn estimate_point_count<'a>(
         &'a self,
         filter: Option<&'a Filter>,

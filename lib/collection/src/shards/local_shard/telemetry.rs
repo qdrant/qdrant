@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DetailsLevel, TelemetryDetail};
-use segment::common::BYTES_IN_KB;
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::types::{SizeStats, VectorNameBuf};
 use segment::vector_storage::common::get_async_scorer;
@@ -162,26 +162,30 @@ fn get_index_only_excluded_vectors(
         .optimizer_config
         .indexing_threshold
         .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB);
-
-    // Threshold in kilobytes below which we allow full-search.
-    let search_optimized_threshold_bytes = indexing_threshold.max(collection_config.hnsw_config.full_scan_threshold)
-        // convert KB to bytes
-        * BYTES_IN_KB;
+    let search_optimized_threshold_kb =
+        indexing_threshold.max(collection_config.hnsw_config.full_scan_threshold);
 
     segment_holder
         .iter()
         .flat_map(|(_, segment)| {
             let segment_guard = segment.get().read();
+            let hw_counter = HardwareCounterCell::disposable();
 
             // Get a map of vector-name=>vector-storage-size for unindexed vectors in this segment.
             segment_guard
                 .vector_names()
                 .into_iter()
                 .filter_map(move |vector_name| {
-                    let segment_config = segment_guard.config().vector_data.get(&vector_name)?;
-
-                    // Skip segments that have an index.
-                    if segment_config.index.is_indexed() {
+                    // Skip vectors that are included in search
+                    let include = segment_guard
+                        .in_indexed_only_search(
+                            &vector_name,
+                            search_optimized_threshold_kb,
+                            None,
+                            &hw_counter,
+                        )
+                        .unwrap_or_default();
+                    if include {
                         return None;
                     }
 
@@ -196,11 +200,6 @@ fn get_index_only_excluded_vectors(
                     let points = segment_guard.available_point_count();
                     Some((vector_name, vector_storage_size.unwrap(), points))
                 })
-        })
-        .filter(|(_, vector_size_bytes, _)| {
-            // Filter out only large segments that do not support full-scan, as smaller segments can
-            // be searched quickly without using an index and are included in index-only searches.
-            *vector_size_bytes > search_optimized_threshold_bytes
         })
         .fold(
             HashMap::<VectorNameBuf, usize>::default(),
