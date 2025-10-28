@@ -53,10 +53,9 @@ impl JwtParser {
 
 #[cfg(test)]
 mod tests {
-    use segment::types::ValueVariants;
+    use serde_json::json;
     use storage::rbac::{
         Access, CollectionAccess, CollectionAccessList, CollectionAccessMode, GlobalAccessMode,
-        PayloadConstraint,
     };
 
     use super::*;
@@ -108,18 +107,11 @@ mod tests {
                 collection: "collection".to_string(),
                 access: CollectionAccessMode::ReadWrite,
                 #[expect(deprecated)]
-                payload: Some(PayloadConstraint(
-                    vec![
-                        (
-                            "field1".parse().unwrap(),
-                            ValueVariants::String("value".to_string()),
-                        ),
-                        ("field2".parse().unwrap(), ValueVariants::Integer(42)),
-                        ("field3".parse().unwrap(), ValueVariants::Bool(true)),
-                    ]
-                    .into_iter()
-                    .collect(),
-                )),
+                payload: Some(json!({
+                    "field1": "value",
+                    "field2": 42,
+                    "field3": true,
+                })),
             }])),
             value_exists: None,
         };

@@ -1,9 +1,8 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-use segment::json_path::JsonPath;
-use segment::types::ValueVariants;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use validator::{Validate, ValidateArgs, ValidationError, ValidationErrors};
 
 use crate::content_manager::errors::StorageError;
@@ -43,12 +42,10 @@ pub struct CollectionAccess {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[deprecated(since = "1.15.0")]
     #[validate(custom(function = "validate_payload_empty"))]
-    pub payload: Option<PayloadConstraint>,
+    pub payload: Option<Value>, // Value is a placeholder for a now removed type
 }
 
-// PayloadConstraint should never be constructed
-
-fn validate_payload_empty(_payload: &PayloadConstraint) -> Result<(), ValidationError> {
+fn validate_payload_empty(_payload: &Value) -> Result<(), ValidationError> {
     Err(ValidationError {
         code: Cow::from("deprecated"),
         message: Some(Cow::from(
@@ -93,9 +90,6 @@ pub enum CollectionAccessMode {
     #[serde(rename = "prw")]
     PointsReadWrite,
 }
-
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct PayloadConstraint(pub HashMap<JsonPath, ValueVariants>);
 
 impl Access {
     /// Create an `Access` object with full access.
@@ -372,16 +366,5 @@ impl AccessCollectionBuilder {
 impl From<AccessCollectionBuilder> for Access {
     fn from(builder: AccessCollectionBuilder) -> Self {
         Access::Collection(CollectionAccessList(builder.0))
-    }
-}
-
-#[cfg(test)]
-impl PayloadConstraint {
-    /// Create a dummy value for testing.
-    pub fn new_test(name: &str) -> Self {
-        PayloadConstraint(HashMap::from([(
-            format!("f_{name}").parse().unwrap(),
-            ValueVariants::String(format!("v_{name}")),
-        )]))
     }
 }
