@@ -212,7 +212,7 @@ impl MetricsProvider for CollectionsTelemetry {
                 .iter()
                 .flatten()
                 .filter_map(|shard| shard.local.as_ref())
-                .filter_map(|local| local.index_only_excluded_vectors.as_ref())
+                .filter_map(|local| local.indexed_only_excluded_vectors.as_ref())
                 .flatten()
                 .fold(
                     HashMap::<&str, usize>::default(),
@@ -232,7 +232,7 @@ impl MetricsProvider for CollectionsTelemetry {
 
         if !indexed_only_excluded.is_empty() {
             metrics.push(metric_family(
-                "collection_index_only_excluded_points",
+                "collection_indexed_only_excluded_points",
                 "amount of points excluded in indexed_only requests",
                 MetricType::GAUGE,
                 indexed_only_excluded,
