@@ -602,10 +602,10 @@ impl TableOfContent {
             }
 
             ShardSelectorInternal::ShardKeyWithFallback(key) => {
-                let shard_holder_arc = collection.shards_holder();
-                let shard_holder = shard_holder_arc.read().await;
-
-                let shard_keys: Vec<_> = shard_holder
+                let shard_keys: Vec<_> = collection
+                    .shards_holder()
+                    .read()
+                    .await
                     .route_with_fallback_for_write(key)?
                     .into_iter()
                     .map(|(_shard_ids, shard_key)| shard_key)
