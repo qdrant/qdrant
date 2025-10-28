@@ -241,6 +241,15 @@ pub trait SegmentEntry: SnapshotEntry {
     /// Size of all available vectors in storage
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize>;
 
+    /// Whether to include the vectors with the given name vector in `indexed_only` searches
+    fn in_indexed_only_search(
+        &self,
+        vector_name: &VectorName,
+        search_optimized_threshold_kb: usize,
+        filter: Option<&Filter>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
     /// Max value from all `available_vectors_size_in_bytes`
     fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
         self.vector_names()
