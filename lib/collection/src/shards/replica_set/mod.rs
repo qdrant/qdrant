@@ -457,6 +457,10 @@ impl ShardReplicaSet {
         self.replica_state.read().get_peer_state(peer_id)
     }
 
+    pub fn check_peers_state_all(&self, check: impl Fn(ReplicaState) -> bool) -> bool {
+        self.replica_state.read().check_peers_state_all(check)
+    }
+
     /// List the peer IDs on which this shard is active
     /// - `remote_only`: if true, excludes the local peer ID from the result
     pub fn active_shards(&self, remote_only: bool) -> Vec<PeerId> {
@@ -1210,6 +1214,13 @@ impl ReplicaSetState {
 
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
         self.peers.clone()
+    }
+
+    pub fn check_peers_state_all<F>(&self, check: F) -> bool
+    where
+        F: Fn(ReplicaState) -> bool,
+    {
+        self.peers.values().all(|state| check(*state))
     }
 
     pub fn active_peers(&self) -> Vec<PeerId> {

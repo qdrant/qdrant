@@ -158,7 +158,9 @@ pub async fn update_vectors(
 
     let operation = UpdateVectors {
         points: op_points,
-        shard_key: shard_key_selector.map(ShardKeySelector::try_from).transpose()?,
+        shard_key: shard_key_selector
+            .map(ShardKeySelector::try_from)
+            .transpose()?,
         update_filter: update_filter
             .map(segment::types::Filter::try_from)
             .transpose()?,
@@ -212,7 +214,9 @@ pub async fn delete_vectors(
         points,
         filter,
         vector: vector_names.into_iter().collect(),
-        shard_key: shard_key_selector.map(ShardKeySelector::try_from).transpose()?,
+        shard_key: shard_key_selector
+            .map(ShardKeySelector::try_from)
+            .transpose()?,
     };
 
     let timing = Instant::now();
@@ -255,7 +259,9 @@ pub async fn set_payload(
         payload: proto_to_payloads(payload)?,
         points,
         filter,
-        shard_key: shard_key_selector.map(ShardKeySelector::try_from).transpose()?,
+        shard_key: shard_key_selector
+            .map(ShardKeySelector::try_from)
+            .transpose()?,
         key,
     };
 
@@ -298,7 +304,9 @@ pub async fn overwrite_payload(
         payload: proto_to_payloads(payload)?,
         points,
         filter,
-        shard_key: shard_key_selector.map(ShardKeySelector::try_from).transpose()?,
+        shard_key: shard_key_selector
+            .map(ShardKeySelector::try_from)
+            .transpose()?,
         // overwrite operation don't support indicate path of property
         key: None,
     };
@@ -342,7 +350,9 @@ pub async fn delete_payload(
         keys,
         points,
         filter,
-        shard_key: shard_key_selector.map(ShardKeySelector::try_from).transpose()?,
+        shard_key: shard_key_selector
+            .map(ShardKeySelector::try_from)
+            .transpose()?,
     };
 
     let timing = Instant::now();

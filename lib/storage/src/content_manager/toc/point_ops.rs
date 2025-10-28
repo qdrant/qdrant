@@ -605,11 +605,15 @@ impl TableOfContent {
                 let shard_holder_arc = collection.shards_holder();
                 let shard_holder = shard_holder_arc.read().await;
 
-                let (_, shard_key) = shard_holder.route_with_fallback(&key)?;
+                let shard_keys: Vec<_> = shard_holder
+                    .route_with_fallback_for_write(key)?
+                    .into_iter()
+                    .map(|(_shard_ids, shard_key)| shard_key)
+                    .collect();
 
                 Self::_update_shard_keys(
                     &collection,
-                    vec![shard_key.clone()],
+                    shard_keys,
                     operation.operation,
                     wait,
                     ordering,
