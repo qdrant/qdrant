@@ -285,6 +285,11 @@ impl GraphLinks {
     }
 
     #[inline]
+    pub fn links_empty(&self, point_id: PointOffsetType, level: usize) -> bool {
+        self.view().links_empty(point_id, level)
+    }
+
+    #[inline]
     pub fn links_with_vectors(
         &self,
         point_id: PointOffsetType,
@@ -418,7 +423,7 @@ mod tests {
         vectors: &Option<TestGraphLinksVectors>,
     ) {
         let mut right_links = right.to_edges_impl(|point_id, level| {
-            if let Some(vectors) = vectors {
+            let links: Vec<_> = if let Some(vectors) = vectors {
                 let (base_vector, iter) = right.links_with_vectors(point_id, level);
                 if level == 0 {
                     assert_eq!(base_vector, vectors.get_base_vector(point_id).unwrap());
@@ -432,7 +437,9 @@ mod tests {
                 .collect()
             } else {
                 right.links(point_id, level).collect()
-            }
+            };
+            assert_eq!(links.is_empty(), right.links_empty(point_id, level));
+            links
         });
         for links in [&mut left, &mut right_links].iter_mut() {
             links.iter_mut().for_each(|levels| {

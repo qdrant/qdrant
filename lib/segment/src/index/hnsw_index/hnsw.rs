@@ -1562,8 +1562,7 @@ impl<'a> OldIndexCandidate<'a> {
 
         // Rough check whether the point is included in the old graph.
         // If it's included, it almost certainly has at least one outgoing link at level 0.
-        let old_graph_has_point =
-            |id: PointOffsetType| old_index.graph.links.links(id, 0).next().is_some();
+        let old_graph_has_point = |id: PointOffsetType| !old_index.graph.links.links_empty(id, 0);
 
         // Build old_to_new mapping.
         let mut valid_points = 0;
