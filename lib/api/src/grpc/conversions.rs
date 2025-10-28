@@ -61,7 +61,7 @@ use crate::grpc::{
     DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
 };
 use crate::rest::models::{CollectionsResponse, VersionInfo};
-use crate::rest::{ShardKeyWithFallback, schema as rest};
+use crate::rest::schema as rest;
 
 pub fn convert_shard_key_to_grpc(value: segment::types::ShardKey) -> ShardKey {
     match value {
@@ -90,8 +90,9 @@ pub fn convert_shard_key_from_grpc_opt(
         shard_key::Key::Number(number) => segment::types::ShardKey::Number(number),
     })
 }
-impl From<ShardKeySelector> for rest::ShardKeySelector {
-    fn from(value: ShardKeySelector) -> Self {
+impl TryFrom<ShardKeySelector> for rest::ShardKeySelector {
+    type Error = Status;
+    fn try_from(value: ShardKeySelector) -> Result<Self, Self::Error> {
         let ShardKeySelector {
             shard_keys,
             fallback,
@@ -105,16 +106,22 @@ impl From<ShardKeySelector> for rest::ShardKeySelector {
             let key = shard_keys.into_iter().next().unwrap();
 
             match fallback.and_then(convert_shard_key_from_grpc) {
-                Some(fallback) => {
-                    rest::ShardKeySelector::ShardKeyWithFallback(ShardKeyWithFallback {
+                Some(fallback) => Ok(rest::ShardKeySelector::ShardKeyWithFallback(
+                    rest::ShardKeyWithFallback {
                         target: key,
                         fallback,
-                    })
-                }
-                None => rest::ShardKeySelector::ShardKey(key),
+                    },
+                )),
+                None => Ok(rest::ShardKeySelector::ShardKey(key)),
             }
         } else {
-            rest::ShardKeySelector::ShardKeys(shard_keys)
+            if fallback.is_some() {
+                return Err(Status::invalid_argument(format!(
+                    "Fallback shard key {fallback:?} can only be set when a single shard key is provided",
+                )));
+            }
+
+            Ok(rest::ShardKeySelector::ShardKeys(shard_keys))
         }
     }
 }
@@ -3035,18 +3042,21 @@ impl TryFrom<WithLookup> for rest::WithLookup {
     }
 }
 
-impl From<LookupLocation> for rest::LookupLocation {
-    fn from(value: LookupLocation) -> Self {
+impl TryFrom<LookupLocation> for rest::LookupLocation {
+    type Error = Status;
+    fn try_from(value: LookupLocation) -> Result<Self, Self::Error> {
         let LookupLocation {
             collection_name,
             vector_name,
             shard_key_selector,
         } = value;
-        Self {
+        Ok(Self {
             collection: collection_name,
             vector: vector_name,
-            shard_key: shard_key_selector.map(rest::ShardKeySelector::from),
-        }
+            shard_key: shard_key_selector
+                .map(rest::ShardKeySelector::try_from)
+                .transpose()?,
+        })
     }
 }
 

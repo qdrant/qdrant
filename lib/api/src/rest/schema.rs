@@ -401,6 +401,7 @@ pub struct Batch {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 pub struct ShardKeyWithFallback {
     pub target: ShardKey,
+    /// Fallback shard key will be used if target shard key is not created or active
     pub fallback: ShardKey,
 }
 
