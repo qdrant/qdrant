@@ -33,7 +33,7 @@ jobs:
       - name: Run unit tests with coverage
         run: RUN_PER_PACKAGE=true tools/unit-test-coverage.sh
       - name: Upload unit test coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: unit-test-coverage
           path: unit-test-coverage.lcov
@@ -75,7 +75,7 @@ jobs:
       - name: Run integration tests with coverage
         run: tools/integration-test-coverage.sh
       - name: Upload integration test coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: integration-test-coverage
           path: integration-test-coverage.lcov
