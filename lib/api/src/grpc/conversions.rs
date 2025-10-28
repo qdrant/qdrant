@@ -90,18 +90,38 @@ pub fn convert_shard_key_from_grpc_opt(
         shard_key::Key::Number(number) => segment::types::ShardKey::Number(number),
     })
 }
-impl From<ShardKeySelector> for rest::ShardKeySelector {
-    fn from(value: ShardKeySelector) -> Self {
-        let ShardKeySelector { shard_keys } = value;
+impl TryFrom<ShardKeySelector> for rest::ShardKeySelector {
+    type Error = Status;
+    fn try_from(value: ShardKeySelector) -> Result<Self, Self::Error> {
+        let ShardKeySelector {
+            shard_keys,
+            fallback,
+        } = value;
         let shard_keys: Vec<_> = shard_keys
             .into_iter()
             .filter_map(convert_shard_key_from_grpc)
             .collect();
 
         if shard_keys.len() == 1 {
-            rest::ShardKeySelector::ShardKey(shard_keys.into_iter().next().unwrap())
+            let key = shard_keys.into_iter().next().unwrap();
+
+            match fallback.and_then(convert_shard_key_from_grpc) {
+                Some(fallback) => Ok(rest::ShardKeySelector::ShardKeyWithFallback(
+                    rest::ShardKeyWithFallback {
+                        target: key,
+                        fallback,
+                    },
+                )),
+                None => Ok(rest::ShardKeySelector::ShardKey(key)),
+            }
         } else {
-            rest::ShardKeySelector::ShardKeys(shard_keys)
+            if fallback.is_some() {
+                return Err(Status::invalid_argument(format!(
+                    "Fallback shard key {fallback:?} can only be set when a single shard key is provided",
+                )));
+            }
+
+            Ok(rest::ShardKeySelector::ShardKeys(shard_keys))
         }
     }
 }
@@ -3022,18 +3042,21 @@ impl TryFrom<WithLookup> for rest::WithLookup {
     }
 }
 
-impl From<LookupLocation> for rest::LookupLocation {
-    fn from(value: LookupLocation) -> Self {
+impl TryFrom<LookupLocation> for rest::LookupLocation {
+    type Error = Status;
+    fn try_from(value: LookupLocation) -> Result<Self, Self::Error> {
         let LookupLocation {
             collection_name,
             vector_name,
             shard_key_selector,
         } = value;
-        Self {
+        Ok(Self {
             collection: collection_name,
             vector: vector_name,
-            shard_key: shard_key_selector.map(rest::ShardKeySelector::from),
-        }
+            shard_key: shard_key_selector
+                .map(rest::ShardKeySelector::try_from)
+                .transpose()?,
+        })
     }
 }
 

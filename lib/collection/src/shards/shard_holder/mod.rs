@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ahash::AHashMap;
+use api::rest::ShardKeyWithFallback;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
@@ -570,6 +571,18 @@ impl ShardHolder {
                     }
                 }
             }
+            ShardSelectorInternal::ShardKeyWithFallback(key) => {
+                let (shard_ids_to_query, used_shard_key) =
+                    self.route_with_fallback_for_read(key)?;
+
+                for shard_id in shard_ids_to_query {
+                    if let Some(replica_set) = self.shards.get(&shard_id) {
+                        res.push((replica_set, Some(used_shard_key)));
+                    } else {
+                        debug_assert!(false, "Shard id {shard_id} not found")
+                    }
+                }
+            }
             ShardSelectorInternal::ShardId(shard_id) => {
                 if let Some(replica_set) = self.shards.get(shard_id) {
                     res.push((replica_set, self.shard_id_to_key_mapping.get(shard_id)));
@@ -579,6 +592,150 @@ impl ShardHolder {
             }
         }
         Ok(res)
+    }
+
+    /// Common routing logic for reads when using ShardKeyWithFallback
+    ///
+    /// Example routing:
+    ///
+    /// request: {"target": "key1", "fallback": "default"}
+    ///
+    /// Situation 1:
+    /// /// - key1 -> shard_ids {1, 2} (both active)
+    /// Request is routed to shard_ids {1, 2} of target key1
+    ///
+    /// Situation 2:
+    /// /// - key1 -> no shards found
+    /// Request is routed to shard_ids of fallback key "default"
+    ///
+    /// Situation 3:
+    /// /// - key1 -> shard_ids {1} and it is in Partial state (no active replicas)
+    /// Request is routed to shard_ids of fallback key "default"
+    ///
+    /// Situation 4:
+    /// /// - key1 -> shard_ids {1, 2} (shard 1 active, shard 2 partial)
+    /// Request is routed to shard_ids of fallback key "default"
+    ///
+    ///
+    /// If at least one of target shards is Active, use target shard. If not, redirect to fallback shard
+    pub fn route_with_fallback_for_read<'a>(
+        &self,
+        key: &'a ShardKeyWithFallback,
+    ) -> CollectionResult<(HashSet<ShardId>, &'a ShardKey)> {
+        let mut shard_key_to_ids_mapping = self.get_shard_key_to_ids_mapping();
+
+        let target_shard_ids = shard_key_to_ids_mapping.remove(&key.target);
+        let fallback_shard_ids = shard_key_to_ids_mapping.remove(&key.fallback);
+
+        if let Some(target_shard_ids) = target_shard_ids {
+            let replicas = target_shard_ids
+                .iter()
+                .filter_map(|shard_id| self.shards.get(shard_id))
+                .collect::<Vec<_>>();
+
+            let target_shards_active = replicas
+                .iter()
+                .all(|replica_set| !replica_set.active_shards(false).is_empty());
+
+            if !replicas.is_empty() && target_shards_active {
+                // 1st condition is required to handle empty shard keys (2nd one returns true)
+                Ok((target_shard_ids, &key.target))
+            } else if let Some(fallback_shard_ids) = fallback_shard_ids {
+                Ok((fallback_shard_ids, &key.fallback))
+            } else {
+                Err(CollectionError::shard_unavailable(format!(
+                    "Neither target shard key {} nor fallback shard key {} have active replicas",
+                    key.target, key.fallback
+                )))
+            }
+        } else if let Some(fallback_shard_ids) = fallback_shard_ids {
+            Ok((fallback_shard_ids, &key.fallback))
+        } else {
+            Err(CollectionError::not_found(format!(
+                "Neither target shard key {} nor fallback shard key {} exist",
+                key.target, key.fallback
+            )))
+        }
+    }
+
+    /// Common routing logic for writes when using ShardKeyWithFallback
+    ///
+    /// Similar to read routing, but in case if target shard exists, but is in Partial state, we still want
+    /// to route to both target and fallback shards to ensure data consistency.
+    pub fn route_with_fallback_for_write(
+        &self,
+        key: ShardKeyWithFallback,
+    ) -> CollectionResult<Vec<(HashSet<ShardId>, ShardKey)>> {
+        let ShardKeyWithFallback { target, fallback } = key;
+
+        let mut shard_key_to_ids_mapping = self.get_shard_key_to_ids_mapping();
+
+        let target_shard_ids = shard_key_to_ids_mapping.remove(&target);
+        let fallback_shard_ids = shard_key_to_ids_mapping.remove(&fallback);
+
+        if let Some(target_shard_ids) = target_shard_ids {
+            let replicas = target_shard_ids
+                .iter()
+                .filter_map(|shard_id| self.shards.get(shard_id))
+                .collect::<Vec<_>>();
+
+            let target_shards_active = replicas
+                .iter()
+                .all(|replica_set| !replica_set.active_shards(false).is_empty());
+
+            if replicas.is_empty() {
+                return if let Some(fallback_shard_ids) = fallback_shard_ids {
+                    Ok(vec![(fallback_shard_ids, fallback)])
+                } else {
+                    Err(CollectionError::not_found(format!(
+                        "Neither target shard key {target} nor fallback shard key {fallback} exist",
+                    )))
+                };
+            }
+
+            if target_shards_active {
+                // 1st condition is required to handle empty shard keys (2nd one returns true)
+                Ok(vec![(target_shard_ids, target)])
+            } else if let Some(fallback_shard_ids) = fallback_shard_ids {
+                // target is not active, but it can be in Partial state, so we need extra check
+
+                // Target:
+                // Shard_id 1 -> replicas: A (Partial)
+                // Shard_id 2 -> replicas: B (Active)
+                // In this case we want to propagate update to all shards and replicas
+                // Means the process of initialization is still ongoing
+
+                // Target:
+                // Shard_id 1 -> replicas: A (Partial) B (Active)
+                // This is not possible, as we checked for active shards above
+
+                // Target:
+                // Shard_id 1 -> replicas: A (Partial) B (Dead)
+                // This is not possible, as we never deactivate last active replica
+
+                let is_all_replicas_in_partial = replicas.iter().any(|replica_set| {
+                    replica_set.check_peers_state_all(|state| state == ReplicaState::Partial)
+                });
+                if is_all_replicas_in_partial {
+                    Ok(vec![
+                        (target_shard_ids, target),
+                        (fallback_shard_ids, fallback),
+                    ])
+                } else {
+                    Ok(vec![(fallback_shard_ids, fallback)])
+                }
+            } else {
+                Err(CollectionError::shard_unavailable(format!(
+                    "Neither target shard key {target} nor fallback shard key {fallback} have active replicas",
+                )))
+            }
+        } else if let Some(fallback_shard_ids) = fallback_shard_ids {
+            Ok(vec![(fallback_shard_ids, fallback)])
+        } else {
+            Err(CollectionError::not_found(format!(
+                "Neither target shard key {target} nor fallback shard key {fallback} exist",
+            )))
+        }
     }
 
     pub fn len(&self) -> usize {

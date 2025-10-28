@@ -379,7 +379,7 @@ impl Points for PointsService {
         for mut search_point in search_points {
             let shard_key = search_point.shard_key_selector.take();
 
-            let shard_selector = convert_shard_selector_for_read(None, shard_key);
+            let shard_selector = convert_shard_selector_for_read(None, shard_key)?;
             let core_search_request = CoreSearchRequest::try_from(search_point)?;
 
             requests.push((core_search_request, shard_selector));

@@ -371,7 +371,7 @@ impl ShardReplicaSet {
         };
 
         // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
-        if local_load_failure && replica_set.active_remote_shards().is_empty() {
+        if local_load_failure && replica_set.active_shards(true).is_empty() {
             replica_set
                 .locally_disabled_peers
                 .write()
@@ -457,14 +457,21 @@ impl ShardReplicaSet {
         self.replica_state.read().get_peer_state(peer_id)
     }
 
-    /// List the remote peer IDs on which this shard is active, excludes the local peer ID.
-    pub fn active_remote_shards(&self) -> Vec<PeerId> {
+    pub fn check_peers_state_all(&self, check: impl Fn(ReplicaState) -> bool) -> bool {
+        self.replica_state.read().check_peers_state_all(check)
+    }
+
+    /// List the peer IDs on which this shard is active
+    /// - `remote_only`: if true, excludes the local peer ID from the result
+    pub fn active_shards(&self, remote_only: bool) -> Vec<PeerId> {
         let replica_state = self.replica_state.read();
-        let this_peer_id = replica_state.this_peer_id;
         replica_state
             .active_peers() // This includes `Active` and `ReshardingScaleDown` replicas!
             .into_iter()
-            .filter(|&peer_id| !self.is_locally_disabled(peer_id) && peer_id != this_peer_id)
+            .filter(|&peer_id| {
+                !self.is_locally_disabled(peer_id)
+                    && (!remote_only || peer_id != replica_state.this_peer_id)
+            })
             .collect()
     }
 
@@ -1207,6 +1214,13 @@ impl ReplicaSetState {
 
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
         self.peers.clone()
+    }
+
+    pub fn check_peers_state_all<F>(&self, check: F) -> bool
+    where
+        F: Fn(ReplicaState) -> bool,
+    {
+        self.peers.values().all(|state| check(*state))
     }
 
     pub fn active_peers(&self) -> Vec<PeerId> {

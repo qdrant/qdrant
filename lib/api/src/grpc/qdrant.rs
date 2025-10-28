@@ -4399,6 +4399,8 @@ pub struct ShardKeySelector {
     /// List of shard keys which should be used in the request
     #[prost(message, repeated, tag = "1")]
     pub shard_keys: ::prost::alloc::vec::Vec<ShardKey>,
+    #[prost(message, optional, tag = "2")]
+    pub fallback: ::core::option::Option<ShardKey>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

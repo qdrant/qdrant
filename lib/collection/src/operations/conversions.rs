@@ -12,7 +12,7 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
     Operation as ClusterOperationsPb, Operation,
 };
 use api::rest::schema::ShardKeySelector;
-use api::rest::{BaseGroupRequest, MaxOptimizationThreads};
+use api::rest::{BaseGroupRequest, LookupLocation, MaxOptimizationThreads, ShardKeyWithFallback};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
@@ -216,7 +216,7 @@ pub fn try_discover_request_from_grpc(
                 .unwrap_or_default(),
         ),
         using: using.map(|u| u.into()),
-        lookup_from: lookup_from.map(|l| l.into()),
+        lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
     };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
@@ -900,13 +900,17 @@ pub fn try_points_selector_from_grpc(
                     .into_iter()
                     .map(|p| p.try_into())
                     .collect::<Result<_, _>>()?,
-                shard_key: shard_key_selector.map(ShardKeySelector::from),
+                shard_key: shard_key_selector
+                    .map(ShardKeySelector::try_from)
+                    .transpose()?,
             }))
         }
         Some(api::grpc::qdrant::points_selector::PointsSelectorOneOf::Filter(f)) => {
             Ok(PointsSelector::FilterSelector(FilterSelector {
                 filter: f.try_into()?,
-                shard_key: shard_key_selector.map(ShardKeySelector::from),
+                shard_key: shard_key_selector
+                    .map(ShardKeySelector::try_from)
+                    .transpose()?,
             }))
         }
         _ => Err(Status::invalid_argument("Malformed PointsSelector type")),
@@ -1253,7 +1257,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
             ),
             score_threshold,
             using: using.map(|name| name.into()),
-            lookup_from: lookup_from.map(|x| x.into()),
+            lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
         })
     }
 }
@@ -1693,18 +1697,38 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
     }
 }
 
-impl From<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
-    fn from(value: api::grpc::qdrant::ShardKeySelector) -> Self {
-        let api::grpc::qdrant::ShardKeySelector { shard_keys } = value;
+impl TryFrom<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
+    type Error = Status;
+    fn try_from(value: api::grpc::qdrant::ShardKeySelector) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::ShardKeySelector {
+            shard_keys,
+            fallback,
+        } = value;
         let shard_keys: Vec<_> = shard_keys
             .into_iter()
             .filter_map(convert_shard_key_from_grpc)
             .collect();
 
         if shard_keys.len() == 1 {
-            ShardSelectorInternal::ShardKey(shard_keys.into_iter().next().unwrap())
+            let key = shard_keys.into_iter().next().unwrap();
+
+            match fallback.and_then(convert_shard_key_from_grpc) {
+                Some(fallback) => Ok(ShardSelectorInternal::ShardKeyWithFallback(
+                    ShardKeyWithFallback {
+                        target: key,
+                        fallback,
+                    },
+                )),
+                None => Ok(ShardSelectorInternal::ShardKey(key)),
+            }
         } else {
-            ShardSelectorInternal::ShardKeys(shard_keys)
+            if fallback.is_some() {
+                return Err(Status::invalid_argument(format!(
+                    "Fallback shard key {fallback:?} can be set only when a single shard key is provided"
+                )));
+            }
+
+            Ok(ShardSelectorInternal::ShardKeys(shard_keys))
         }
     }
 }
