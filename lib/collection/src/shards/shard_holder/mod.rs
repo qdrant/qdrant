@@ -607,7 +607,7 @@ impl ShardHolder {
 
         if let Some(target_shard_ids) = target_shard_ids {
             let mut replicas = target_shard_ids
-                .into_iter()
+                .iter()
                 .filter_map(|shard_id| self.shards.get(shard_id));
 
             let target_shards_active =
