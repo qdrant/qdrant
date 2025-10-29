@@ -50,10 +50,10 @@ pub struct ForwardProxyShard {
     pub(crate) wrapped_shard: LocalShard,
     pub(crate) remote_shard: RemoteShard,
     resharding_hash_ring: Option<HashRingRouter>,
+    filter: Option<Box<Filter>>,
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
-    filter: Option<Box<Filter>>,
 }
 
 impl ForwardProxyShard {
@@ -63,8 +63,15 @@ impl ForwardProxyShard {
         remote_shard: RemoteShard,
         resharding_hash_ring: Option<HashRingRouter>,
         filter: Option<Filter>,
-    ) -> Self {
+    ) -> CollectionResult<Self> {
         // Validate that `ForwardProxyShard` initialized correctly
+
+        if resharding_hash_ring.is_some() && filter.is_some() {
+            return Err(CollectionError::forward_proxy_error(
+                remote_shard.peer_id,
+                "ForwardProxyShard cannot have both resharding_hash_ring and filter set at the same time".to_string(),
+            ));
+        }
 
         debug_assert!({
             let is_regular = shard_id == remote_shard.id && resharding_hash_ring.is_none();
@@ -81,14 +88,14 @@ impl ForwardProxyShard {
             );
         }
 
-        Self {
+        Ok(Self {
             shard_id,
             wrapped_shard,
             remote_shard,
             resharding_hash_ring,
             filter: filter.map(Box::new),
             update_lock: Mutex::new(()),
-        }
+        })
     }
 
     /// Create payload indexes in the remote shard same as in the wrapped shard.
