@@ -385,11 +385,10 @@ impl Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
         check_vector_name(vector_name, &self.segment_config)?;
-        let vector_data = &self.vector_data.get(vector_name).ok_or_else(|| {
-            OperationError::VectorNameNotExists {
-                received_name: vector_name.to_owned(),
-            }
-        })?;
+        let vector_data = &self
+            .vector_data
+            .get(vector_name)
+            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
         let vector_storage = vector_data.vector_storage.borrow();
         let is_vector_deleted = vector_storage.is_deleted_vector(point_offset);
         if !is_vector_deleted && !self.id_tracker.borrow().is_deleted_point(point_offset) {
@@ -627,9 +626,7 @@ impl Segment {
         Ok(self
             .vector_data
             .get(vector_name)
-            .ok_or_else(|| OperationError::VectorNameNotExists {
-                received_name: vector_name.to_owned(),
-            })?
+            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?
             .vector_storage
             .borrow()
             .available_vector_count())
