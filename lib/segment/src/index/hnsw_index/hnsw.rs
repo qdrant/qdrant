@@ -1010,7 +1010,8 @@ impl HNSWIndex {
                 // ACORN is not implemented for graph with vectors yet (but possible)
                 SearchAlgorithm::Acorn => return Ok(None),
             }
-            if !self.graph.has_vectors() || !is_quantized_search(quantized_vectors.as_ref(), params)
+            if !self.graph.has_inline_vectors()
+                || !is_quantized_search(quantized_vectors.as_ref(), params)
             {
                 return Ok(None);
             }
@@ -1543,7 +1544,10 @@ impl<'a> OldIndexCandidate<'a> {
             || config.m0 != old_index.config.m0
             || config.ef_construct != old_index.config.ef_construct
             || new_quantization_config != old_quantization_config;
-        if no_main_graph || configuration_mismatch {
+        // If old graph has vectors, reusing it will cause a lot of random reads,
+        // making it slower than building from scratch.
+        let old_graph_is_with_vectors = old_index.graph.has_inline_vectors();
+        if no_main_graph || configuration_mismatch || old_graph_is_with_vectors {
             return None;
         }
         drop(old_quantized_vectors_ref);
@@ -1562,8 +1566,7 @@ impl<'a> OldIndexCandidate<'a> {
 
         // Rough check whether the point is included in the old graph.
         // If it's included, it almost certainly has at least one outgoing link at level 0.
-        let old_graph_has_point =
-            |id: PointOffsetType| old_index.graph.links.links(id, 0).next().is_some();
+        let old_graph_has_point = |id: PointOffsetType| !old_index.graph.links.links_empty(id, 0);
 
         // Build old_to_new mapping.
         let mut valid_points = 0;
