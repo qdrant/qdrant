@@ -354,7 +354,7 @@ impl MetricsProvider for CollectionsTelemetry {
 
         metrics.push(metric_family(
             "dead_shards_total",
-            "total amount of dead shards",
+            "total amount of shard replicas in non-active state",
             MetricType::GAUGE,
             vec![gauge(total_dead_shards as f64, &[])],
         ));
