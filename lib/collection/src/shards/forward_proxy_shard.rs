@@ -138,13 +138,8 @@ impl ForwardProxyShard {
 
         let (points, next_page_offset) = match hashring_filter {
             Some(hashring_filter) => {
-                self.read_batch_with_hashring(
-                    offset,
-                    batch_size,
-                    hashring_filter,
-                    runtime_handle,
-                )
-                .await?
+                self.read_batch_with_hashring(offset, batch_size, hashring_filter, runtime_handle)
+                    .await?
             }
             None => {
                 self.read_batch(offset, batch_size, self.filter.as_deref(), runtime_handle)
@@ -406,14 +401,13 @@ impl ShardOperation for ForwardProxyShard {
                     let filter = filter.clone();
 
                     self.wrapped_shard
-                        .scroll_by(
+                        .local_scroll_by_id(
                             None,
                             point_ids.len(),
                             &WithPayloadInterface::Bool(false),
                             &WithVector::Bool(false),
                             Some(&filter.with_point_ids(point_ids)),
                             &Handle::current(),
-                            None,
                             None,                           // No timeout
                             HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
                         )
@@ -486,14 +480,13 @@ impl ShardOperation for ForwardProxyShard {
 
                 let points_matching_filter_after = self
                     .wrapped_shard
-                    .scroll_by(
+                    .local_scroll_by_id(
                         None,
                         point_ids.len(),
                         &WithPayloadInterface::Bool(false),
                         &WithVector::Bool(false),
                         Some(&filter.with_point_ids(point_ids)),
                         &Handle::current(),
-                        None,
                         None,                           // No timeout
                         HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
                     )
