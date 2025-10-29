@@ -164,12 +164,18 @@ impl<'py> FromPyObject<'py> for PyWithPayload {
         #[derive(FromPyObject)]
         enum Helper {
             Bool(bool),
-            // TODO: `Fields(Vec<JsonPath>)`!
-            // TODO: `Selector(PayloadSelector)`!
+            Fields(Vec<PyJsonPath>),
+            Selector(PyPayloadSelector),
         }
 
         let with_payload = match with_payload.extract()? {
             Helper::Bool(bool) => WithPayloadInterface::Bool(bool),
+            Helper::Fields(fields) => {
+                WithPayloadInterface::Fields(PyJsonPath::into_rust_vec(fields))
+            }
+            Helper::Selector(selector) => {
+                WithPayloadInterface::Selector(PayloadSelector::from(selector))
+            }
         };
 
         Ok(Self(with_payload))
@@ -194,10 +200,70 @@ impl<'py> IntoPyObject<'py> for &PyWithPayload {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match &self.0 {
             WithPayloadInterface::Bool(bool) => bool.into_bound_py_any(py),
-            WithPayloadInterface::Fields(_fields) => todo!(),
-            WithPayloadInterface::Selector(_selector) => todo!(),
+            WithPayloadInterface::Fields(fields) => {
+                PyJsonPath::from_slice(fields).into_bound_py_any(py)
+            }
+            WithPayloadInterface::Selector(selector) => PyPayloadSelector::from_ref(selector)
+                .clone()
+                .into_bound_py_any(py),
         }
     }
+}
+
+#[derive(Clone, Debug, Into)]
+#[repr(transparent)]
+pub struct PyPayloadSelector(PayloadSelector);
+
+impl PyPayloadSelector {
+    pub fn from_ref(selector: &PayloadSelector) -> &Self {
+        // `PyPayloadSelector` has transparent representation, so transmuting references is safe
+        unsafe { mem::transmute(selector) }
+    }
+}
+
+impl FromPyObject<'_> for PyPayloadSelector {
+    fn extract_bound(selector: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let selector = match selector.extract()? {
+            PyPayloadSelectorInterface::Include(keys) => {
+                PayloadSelector::Include(PayloadSelectorInclude {
+                    include: PyJsonPath::into_rust_vec(keys),
+                })
+            }
+            PyPayloadSelectorInterface::Exclude(keys) => {
+                PayloadSelector::Exclude(PayloadSelectorExclude {
+                    exclude: PyJsonPath::into_rust_vec(keys),
+                })
+            }
+        };
+
+        Ok(Self(selector))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for PyPayloadSelector {
+    type Target = PyPayloadSelectorInterface;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible?
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let selector = match self.0 {
+            PayloadSelector::Include(PayloadSelectorInclude { include }) => {
+                PyPayloadSelectorInterface::Include(PyJsonPath::from_rust_vec(include))
+            }
+            PayloadSelector::Exclude(PayloadSelectorExclude { exclude }) => {
+                PyPayloadSelectorInterface::Exclude(PyJsonPath::from_rust_vec(exclude))
+            }
+        };
+
+        Bound::new(py, selector)
+    }
+}
+
+#[pyclass(name = "PayloadSelector")]
+#[derive(Clone, Debug)]
+pub enum PyPayloadSelectorInterface {
+    Include(Vec<PyJsonPath>),
+    Exclude(Vec<PyJsonPath>),
 }
 
 #[pyclass(name = "ScoredPoint")]
