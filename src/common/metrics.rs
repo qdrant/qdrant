@@ -258,14 +258,14 @@ impl MetricsProvider for CollectionsTelemetry {
 
         metrics.push(metric_family(
             "active_replicas_min",
-            "maximum number of active replicas across all shards",
+            "minimum number of active replicas across all shards",
             MetricType::GAUGE,
             vec![gauge(total_min_active_replicas as f64, &[])],
         ));
 
         metrics.push(metric_family(
             "active_replicas_max",
-            "minimum number of active replicas across all shards",
+            "maximum number of active replicas across all shards",
             MetricType::GAUGE,
             vec![gauge(total_max_active_replicas as f64, &[])],
         ));
