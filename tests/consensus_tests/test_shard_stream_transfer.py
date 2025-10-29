@@ -26,8 +26,8 @@ def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, d
             break
 
 
-def run_update_points_in_background(peer_url, collection_name, init_offset=0, throttle=False, duration=None):
-    p = multiprocessing.Process(target=update_points_in_loop, args=(peer_url, collection_name, init_offset, throttle, duration))
+def run_update_points_in_background(peer_url, collection_name, num_points=None, num_cities=None, shard_key=None, init_offset=0, throttle=False, duration=None):
+    p = multiprocessing.Process(target=update_points_in_loop, args=(peer_url, collection_name, num_points, num_cities, shard_key, init_offset, throttle, duration))
     p.start()
     return p
 

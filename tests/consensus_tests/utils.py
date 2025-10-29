@@ -5,7 +5,7 @@ import shutil
 import signal
 from subprocess import Popen
 import time
-from typing import Tuple, Callable, Dict, List
+from typing import Tuple, Callable, Dict, List, Optional
 import requests
 import socket
 from contextlib import closing
@@ -316,8 +316,9 @@ def get_collection_info(peer_api_uri: str, collection_name: str) -> dict:
     return res
 
 
-def get_collection_point_count(peer_api_uri: str, collection_name: str, exact: bool = False) -> int:
-    r = requests.post(f"{peer_api_uri}/collections/{collection_name}/points/count", json={"exact": exact})
+def get_collection_point_count(peer_api_uri: str, collection_name: str, exact: bool = False,
+                               shard_key: Optional[str] = None, filter: Optional[dict] = None) -> int:
+    r = requests.post(f"{peer_api_uri}/collections/{collection_name}/points/count", json={"exact": exact, "shard_key": shard_key, "filter": filter})
     assert_http_ok(r)
     res = r.json()["result"]["count"]
     return res

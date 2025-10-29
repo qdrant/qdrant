@@ -91,6 +91,7 @@ def upsert_random_points(
     ordering="weak",
     with_sparse_vector=True,
     shard_key=None,
+    num_cities=None,
     headers={},
 ):
 
@@ -114,7 +115,7 @@ def upsert_random_points(
                     {
                         "id": i + offset,
                         "vector": get_vector(),
-                        "payload": {"city": random.choice(CITIES)},
+                        "payload": {"city": random.choice(CITIES[:num_cities]) if num_cities is not None else random.choice(CITIES)},
                     }
                     for i in range(size)
                 ],
