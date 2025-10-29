@@ -1,16 +1,44 @@
 import pathlib
+import multiprocessing
 from time import sleep
 
 from .fixtures import upsert_random_points, create_collection
 from .utils import *
 
 from .test_custom_sharding import create_shard
-from .test_shard_stream_transfer import run_update_points_in_background
 
 N_PEERS = 1
 N_SHARDS = 1
 N_REPLICA = 1
 COLLECTION_NAME = "test_collection"
+
+
+def update_points_in_loop(peer_url, collection_name, num_points=None, num_cities=None, shard_key=None, offset=0, throttle=False, duration=None):
+    start = time.time()
+    limit = 3
+    counter = 0
+
+    while True:
+        if num_points is not None:
+            if counter >= num_points:
+                break
+            if (num_points - counter) < limit:
+                limit = num_points - counter
+
+        upsert_random_points(peer_url, limit, collection_name, num_cities=num_cities, shard_key=shard_key, offset=offset)
+        offset += limit
+        counter += limit
+
+        if throttle:
+            sleep(0.1)
+        if duration is not None and (time.time() - start) > duration:
+            break
+
+
+def run_update_points_in_background(peer_url, collection_name, num_points=None, num_cities=None, shard_key=None, init_offset=0, throttle=False, duration=None):
+    p = multiprocessing.Process(target=update_points_in_loop, args=(peer_url, collection_name, num_points, num_cities, shard_key, init_offset, throttle, duration))
+    p.start()
+    return p
 
 
 # Transfer points from one shard to another
@@ -45,8 +73,8 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
     # Insert some initial number of points
     upsert_random_points(peer_api_uris[0], 100, shard_key="default")
 
-    # Transfer shard from one node to another
-    filter = {"should": {"key": "city", "match": {"value": "London"}}}
+    filter = {"must": {"key": "city", "match": {"value": "London"}}}
+    inverse_filter = {"must_not": {"key": "city", "match": {"value": "London"}}}
 
     expected_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
     initial_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
@@ -77,8 +105,10 @@ def test_replicate_points_stream_transfer(tmp_path: pathlib.Path):
     # Point counts must be consistent across shard keys for given filter
     default_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
     tenant_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
+    tenant_inverse_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True, filter=inverse_filter)
     assert default_filtered_count == expected_count # original shard should remain unchanged
     assert tenant_count == expected_count # new shard should also have the points
+    assert tenant_inverse_count == 0 # new shard should have only the points matching the filter
 
 # Replicate points from one shard to another while applying throttled updates in parallel
 #
@@ -114,10 +144,8 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, overri
     # Insert some initial number of points
     upsert_random_points(peer_api_uris[0], 10000, num_cities=2, shard_key="default")
 
-    # Transfer shard from one node to another
     filter = {"must": {"key": "city", "match": {"value": "London"}}}
-    # filter = {}
-    # filter = {"must": {"has_vector": ""}}
+    inverse_filter = {"must_not": {"key": "city", "match": {"value": "London"}}}
 
     original_filtered_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="default", exact=True, filter=filter)
     initial_dest_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True)
@@ -160,3 +188,7 @@ def test_replicate_points_stream_transfer_updates(tmp_path: pathlib.Path, overri
 
     assert dest_filtered_count > original_filtered_count # more points than before due to upserts during transfer
     assert dest_filtered_count == src_filtered_count # new shard should also have the same points
+
+    if override_points is False:
+        dest_inverse_count = get_collection_point_count(peer_api_uris[0], COLLECTION_NAME, shard_key="tenant", exact=True, filter=inverse_filter)
+        assert dest_inverse_count == 0 # new shard should have only the points matching the filter

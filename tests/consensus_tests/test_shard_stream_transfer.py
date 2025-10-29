@@ -12,21 +12,13 @@ N_REPLICA = 1
 COLLECTION_NAME = "test_collection"
 
 
-def update_points_in_loop(peer_url, collection_name, num_points=None, num_cities=None, shard_key=None, offset=0, throttle=False, duration=None):
+def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, duration=None):
     start = time.time()
     limit = 3
-    counter = 0
 
     while True:
-        if num_points is not None:
-            if counter >= num_points:
-                break
-            if (num_points - counter) < limit:
-                limit = num_points - counter
-
-        upsert_random_points(peer_url, limit, collection_name, num_cities=num_cities, shard_key=shard_key, offset=offset)
+        upsert_random_points(peer_url, limit, collection_name, offset=offset)
         offset += limit
-        counter += limit
 
         if throttle:
             sleep(0.1)
