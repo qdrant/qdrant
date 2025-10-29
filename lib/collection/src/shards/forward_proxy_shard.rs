@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use ahash::HashSet;
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
@@ -49,6 +50,7 @@ pub struct ForwardProxyShard {
     pub(crate) wrapped_shard: LocalShard,
     pub(crate) remote_shard: RemoteShard,
     resharding_hash_ring: Option<HashRingRouter>,
+    filter: Option<Box<Filter>>,
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
@@ -61,8 +63,15 @@ impl ForwardProxyShard {
         remote_shard: RemoteShard,
         resharding_hash_ring: Option<HashRingRouter>,
         filter: Option<Filter>,
-    ) -> Self {
+    ) -> CollectionResult<Self> {
         // Validate that `ForwardProxyShard` initialized correctly
+
+        if resharding_hash_ring.is_some() && filter.is_some() {
+            return Err(CollectionError::forward_proxy_error(
+                remote_shard.peer_id,
+                "ForwardProxyShard cannot have both resharding_hash_ring and filter set at the same time".to_string(),
+            ));
+        }
 
         debug_assert!({
             let is_regular = shard_id == remote_shard.id && resharding_hash_ring.is_none();
@@ -79,14 +88,14 @@ impl ForwardProxyShard {
             );
         }
 
-        Self {
+        Ok(Self {
             shard_id,
             wrapped_shard,
             remote_shard,
             resharding_hash_ring,
+            filter: filter.map(Box::new),
             update_lock: Mutex::new(()),
-            // todo: attach filter field and use it to filter points in `update` method
-        }
+        })
     }
 
     /// Create payload indexes in the remote shard same as in the wrapped shard.
@@ -139,7 +148,10 @@ impl ForwardProxyShard {
                 self.read_batch_with_hashring(offset, batch_size, hashring_filter, runtime_handle)
                     .await?
             }
-            None => self.read_batch(offset, batch_size, runtime_handle).await?,
+            None => {
+                self.read_batch(offset, batch_size, self.filter.as_deref(), runtime_handle)
+                    .await?
+            }
         };
 
         // Only wait on last batch
@@ -149,6 +161,7 @@ impl ForwardProxyShard {
         // Use sync API to leverage potentially existing points
         // Normally use SyncPoints, to completely replace everything in the target shard
         // For resharding we need to merge points from multiple transfers, requiring a different operation
+        // Same when there is a filter, as we are only transferring a subset of points
         let point_operation = if !merge_points {
             PointOperations::SyncPoints(PointSyncOperation {
                 from_id: offset,
@@ -187,6 +200,7 @@ impl ForwardProxyShard {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
+        filter: Option<&Filter>,
         runtime_handle: &Handle,
     ) -> CollectionResult<(Vec<PointStructPersisted>, Option<PointIdType>)> {
         let limit = batch_size + 1;
@@ -198,7 +212,7 @@ impl ForwardProxyShard {
                 limit,
                 &WithPayloadInterface::Bool(true),
                 &WithVector::Bool(true),
-                None,
+                filter,
                 runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
@@ -388,6 +402,36 @@ impl ShardOperation for ForwardProxyShard {
 
         let _update_lock = self.update_lock.lock().await;
 
+        let points_matching_filter_before = {
+            if let Some(filter) = &self.filter
+                && let Some(point_ids) = operation.operation.point_ids()
+            {
+                let filter = filter.clone();
+
+                let affected_points: HashSet<_> = self
+                    .wrapped_shard
+                    .local_scroll_by_id(
+                        None,
+                        point_ids.len(),
+                        &WithPayloadInterface::Bool(false),
+                        &WithVector::Bool(false),
+                        Some(&filter.with_point_ids(point_ids)),
+                        &Handle::current(),
+                        None,                           // No timeout
+                        HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
+                    )
+                    .await?
+                    .into_iter()
+                    .map(|record| record.id)
+                    .collect();
+                // Operation is applicable to a subset of points, only forward those
+                Some(affected_points)
+            } else {
+                // Global operation, we need to forward it as-is
+                None
+            }
+        };
+
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
 
@@ -414,60 +458,54 @@ impl ShardOperation for ForwardProxyShard {
                     .map(|(_, op)| op),
             };
 
-            // Strip the clock tag from the operation, because clock tags are incompatible between
-            // different shards.
-            //
-            // Even though we expect (and assert) that this whole branch is only executed when
-            // forwarding to a *different* remote shard, we still handle the case when local and
-            // remote shards are the same, *just in case*.
-            //
-            // In such case `split_by_shard` call above would be a no-op, and we can preserve the
-            // clock tag.
-            let tag = if self.shard_id != self.remote_shard.id {
-                None
-            } else {
-                log::warn!(
-                    "ForwardProxyShard contains resharding hashring, \
-                     but wrapped shard id and remote shard id are the same",
-                );
+            op.map(|op| OperationWithClockTag::new(op, operation.clock_tag))
+        } else if let Some(point_ids) = points_matching_filter_before {
+            let mut modified_operation = operation.clone();
+            modified_operation
+                .operation
+                .retain_point_ids(|point_id| point_ids.contains(point_id));
 
-                operation.clock_tag
-            };
-
-            op.map(|op| OperationWithClockTag::new(op, tag))
+            Some(modified_operation)
         } else {
-            // If `ForwardProxyShard::resharding_hash_ring` is `None`, we assume that proxy is used
-            // during *regular* shard transfer, so operation can be forwarded as-is, without any
-            // additional handling.
-
-            debug_assert_eq!(self.shard_id, self.remote_shard.id);
+            #[cfg(debug_assertions)]
+            if self.filter.is_none() {
+                // If `ForwardProxyShard` `resharding_hash_ring` and `filter` are `None`, we assume that proxy is used
+                // during *regular* shard transfer, so operation can be forwarded as-is, without any
+                // additional handling.
+                debug_assert_eq!(self.shard_id, self.remote_shard.id);
+            }
 
             Some(operation)
         };
 
-        if let Some(operation) = forward_operation {
-            let remote_result = self
-                .remote_shard
-                .update(operation, false, hw_measurement_acc)
-                .await
-                .map_err(|err| {
-                    CollectionError::forward_proxy_error(self.remote_shard.peer_id, err)
-                })?;
+        let Some(mut operation) = forward_operation else {
+            return Ok(result);
+        };
 
-            // Merge `result` and `remote_result`:
-            //
-            // - Pick `clock_tag` with *newer* `clock_tick`
-            let tick = result.clock_tag.map(|tag| tag.clock_tick);
-            let remote_tick = remote_result.clock_tag.map(|tag| tag.clock_tick);
+        // Strip the clock tag from the operation, because clock tags are incompatible between different shards.
+        if self.shard_id != self.remote_shard.id {
+            operation.clock_tag = None;
+        };
 
-            if remote_tick > tick || tick.is_none() {
-                result.clock_tag = remote_result.clock_tag;
-            }
+        let remote_result = self
+            .remote_shard
+            .update(operation, false, hw_measurement_acc)
+            .await
+            .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))?;
 
-            // - If any node *rejected* the operation, propagate `UpdateStatus::ClockRejected`
-            if remote_result.status == UpdateStatus::ClockRejected {
-                result.status = UpdateStatus::ClockRejected;
-            }
+        // Merge `result` and `remote_result`:
+        //
+        // - Pick `clock_tag` with *newer* `clock_tick`
+        let tick = result.clock_tag.map(|tag| tag.clock_tick);
+        let remote_tick = remote_result.clock_tag.map(|tag| tag.clock_tick);
+
+        if remote_tick > tick || tick.is_none() {
+            result.clock_tag = remote_result.clock_tag;
+        }
+
+        // - If any node *rejected* the operation, propagate `UpdateStatus::ClockRejected`
+        if remote_result.status == UpdateStatus::ClockRejected {
+            result.status = UpdateStatus::ClockRejected;
         }
 
         Ok(result)

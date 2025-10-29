@@ -85,7 +85,7 @@ impl ShardReplicaSet {
             remote_shard,
             resharding_hash_ring,
             filter,
-        );
+        )?;
         let _ = local.insert(Shard::ForwardProxy(proxy_shard));
 
         Ok(())
@@ -472,7 +472,7 @@ impl ShardReplicaSet {
 
         let (local_shard, remote_shard) = queue_proxy.forget_updates_and_finalize();
         let forward_proxy =
-            ForwardProxyShard::new(self.shard_id, local_shard, remote_shard, None, None);
+            ForwardProxyShard::new(self.shard_id, local_shard, remote_shard, None, None)?;
         let _ = local.insert(Shard::ForwardProxy(forward_proxy));
 
         Ok(())

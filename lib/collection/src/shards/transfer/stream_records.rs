@@ -34,6 +34,7 @@ pub(super) async fn transfer_stream_records(
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     let cutoff;
+    let merge_points = filter.is_some();
 
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
 
@@ -93,7 +94,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         let (new_offset, count) = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, false)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, merge_points)
             .await?;
 
         offset = new_offset;
@@ -107,7 +108,7 @@ pub(super) async fn transfer_stream_records(
 
     // Update cutoff point on remote shard, disallow recovery before it
     //
-    // We provide it our last seen clocks from just before transferrinmg the content batches, and
+    // We provide it our last seen clocks from just before transferring the content batches, and
     // not our current last seen clocks. We're sure that after the transfer the remote must have
     // seen all point data for those clocks. While we cannot guarantee the remote has all point
     // data for our current last seen clocks because some operations may still be in flight.
