@@ -157,27 +157,11 @@ impl MetricsProvider for AppFeaturesTelemetry {
 
 impl MetricsProvider for CollectionsTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        let vector_count = self
-            .collections
-            .iter()
-            .flatten()
-            .map(|p| match p {
-                CollectionTelemetryEnum::Aggregated(a) => a.vectors,
-                CollectionTelemetryEnum::Full(c) => c.count_vectors(),
-            })
-            .sum::<usize>();
-
         metrics.push(metric_family(
             "collections_total",
             "number of collections",
             MetricType::GAUGE,
             vec![gauge(self.number_of_collections as f64, &[])],
-        ));
-        metrics.push(metric_family(
-            "collections_vector_total",
-            "total number of vectors in all collections",
-            MetricType::GAUGE,
-            vec![gauge(vector_count as f64, &[])],
         ));
 
         // Optimizers
@@ -313,7 +297,7 @@ impl MetricsProvider for CollectionsTelemetry {
 
         if !vector_count_by_name.is_empty() {
             metrics.push(metric_family(
-                "collection_name_vectors",
+                "collection_vectors_total",
                 "amount of vectors grouped by vector name",
                 MetricType::GAUGE,
                 vector_count_by_name,
