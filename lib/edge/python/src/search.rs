@@ -1,6 +1,7 @@
 use std::mem;
 
 use derive_more::Into;
+use ordered_float::OrderedFloat;
 use pyo3::IntoPyObjectExt as _;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -29,13 +30,13 @@ impl PySearchRequest {
         score_threshold: Option<f32>,
     ) -> Self {
         Self(CoreSearchRequest {
-            query: query.into(),
-            filter: filter.map(Into::into),
-            params: params.map(Into::into),
+            query: QueryEnum::from(query),
+            filter: filter.map(Filter::from),
+            params: params.map(SearchParams::from),
             limit,
             offset,
-            with_vector: with_vector.map(Into::into),
-            with_payload: with_payload.map(Into::into),
+            with_vector: with_vector.map(WithVector::from),
+            with_payload: with_payload.map(WithPayloadInterface::from),
             score_threshold,
         })
     }
@@ -75,9 +76,9 @@ impl PySearchParams {
         Self(SearchParams {
             hnsw_ef,
             exact,
-            quantization: quantization.map(Into::into),
+            quantization: quantization.map(QuantizationSearchParams::from),
             indexed_only,
-            acorn: acorn.map(Into::into),
+            acorn: acorn.map(AcornSearchParams::from),
         })
     }
 }
@@ -108,7 +109,7 @@ impl PyAcornSearchParams {
     pub fn new(enable: bool, max_selectivity: Option<f64>) -> Self {
         Self(AcornSearchParams {
             enable,
-            max_selectivity: max_selectivity.map(Into::into),
+            max_selectivity: max_selectivity.map(OrderedFloat),
         })
     }
 }

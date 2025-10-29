@@ -59,7 +59,7 @@ pub struct PyShard(edge::Shard);
 impl PyShard {
     #[new]
     pub fn load(path: PathBuf, config: Option<PySegmentConfig>) -> Result<Self> {
-        let shard = edge::Shard::load(&path, config.map(Into::into))?;
+        let shard = edge::Shard::load(&path, config.map(SegmentConfig::from))?;
         Ok(Self(shard))
     }
 
