@@ -27,16 +27,6 @@ pub enum PayloadOps {
 }
 
 impl PayloadOps {
-    pub fn is_write_operation(&self) -> bool {
-        match self {
-            PayloadOps::SetPayload(_) => true,
-            PayloadOps::DeletePayload(_) => false,
-            PayloadOps::ClearPayload { .. } => false,
-            PayloadOps::ClearPayloadByFilter(_) => false,
-            PayloadOps::OverwritePayload(_) => true,
-        }
-    }
-
     pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
         match self {
             Self::SetPayload(op) => op.points.clone(),

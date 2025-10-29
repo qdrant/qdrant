@@ -17,14 +17,6 @@ pub enum VectorOperations {
 }
 
 impl VectorOperations {
-    pub fn is_write_operation(&self) -> bool {
-        match self {
-            VectorOperations::UpdateVectors(_) => true,
-            VectorOperations::DeleteVectors(..) => false,
-            VectorOperations::DeleteVectorsByFilter(..) => false,
-        }
-    }
-
     pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
         match self {
             Self::UpdateVectors(op) => Some(op.points.iter().map(|point| point.id).collect()),

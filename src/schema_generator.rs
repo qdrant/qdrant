@@ -30,7 +30,6 @@ use storage::content_manager::collection_meta_ops::{
 };
 use storage::types::ClusterStatus;
 
-use crate::common::helpers::LocksOption;
 use crate::common::telemetry::TelemetryData;
 use crate::common::update::{CreateFieldIndex, UpdateOperations};
 
@@ -70,7 +69,6 @@ struct AllDefinitions {
     ar: ClusterOperations,
     at: SearchRequestBatch,
     au: RecommendRequestBatch,
-    av: LocksOption,
     aw: SnapshotRecover,
     ax: CollectionsAliasesResponse,
     ay: AliasDescription,

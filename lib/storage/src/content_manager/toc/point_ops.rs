@@ -534,10 +534,6 @@ impl TableOfContent {
             None => None,
         };
 
-        if operation.operation.is_write_operation() {
-            self.check_write_lock()?;
-        }
-
         // TODO: `debug_assert(operation.clock_tag.is_none())` for `_update_shard_keys`/`update_from_client`!?
 
         let res = match shard_selector {
