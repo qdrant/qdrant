@@ -249,6 +249,71 @@ pub trait ShardTransferConsensus: Send + Sync {
         })
     }
 
+    /// After a stream records transfer between different shard IDs, propose to switch shard to
+    /// `ReadActive` and confirm on remote shard
+    ///
+    /// This is called after shard stream records has been completed on the remote.
+    /// It submits a proposal to consensus to switch the shard state from `Partial` to `ReadActive`.
+    ///
+    /// This method also confirms consensus applied the operation on ALL peers before returning. If
+    /// it fails, it will be retried for up to `CONSENSUS_CONFIRM_RETRIES` times.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    async fn switch_partial_to_read_active_confirm_peers(
+        &self,
+        channel_service: &ChannelService,
+        collection_id: &CollectionId,
+        remote_shard: &RemoteShard,
+    ) -> CollectionResult<()> {
+        let mut result = Err(CollectionError::service_error(
+            "`switch_partial_to_readactive_confirm_remote` exit without attempting any work, \
+             this is a programming error",
+        ));
+
+        for attempt in 0..CONSENSUS_CONFIRM_RETRIES {
+            if attempt > 0 {
+                sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
+            }
+
+            log::trace!(
+                "Propose and confirm to switch peer from `Partial` into `ReadActive` state"
+            );
+
+            result = self
+                .set_shard_replica_set_state(
+                    collection_id.clone(),
+                    remote_shard.id,
+                    ReplicaState::ReadActive,
+                    Some(ReplicaState::Partial),
+                )
+                .await;
+
+            if let Err(err) = &result {
+                log::error!("Failed to propose state switch operation to consensus: {err}");
+                continue;
+            }
+
+            log::trace!("Wait for all peers to reach `ReadActive` state");
+
+            result = self.await_consensus_sync(channel_service).await;
+
+            match &result {
+                Ok(()) => break,
+                Err(err) => {
+                    log::error!("Failed to confirm state switch operation on consensus: {err}");
+                }
+            }
+        }
+
+        result.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to confirm state switch operation on consensus after {CONSENSUS_CONFIRM_RETRIES} retries: {err}",
+            ))
+        })
+    }
+
     /// Propose to start a shard transfer
     ///
     /// # Warning
