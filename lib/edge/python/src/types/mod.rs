@@ -1,4 +1,5 @@
 pub mod filter;
+pub mod formula;
 pub mod json_path;
 pub mod payload;
 pub mod point;
@@ -9,6 +10,7 @@ pub mod value;
 pub mod vector;
 
 pub use self::filter::*;
+pub use self::formula::*;
 pub use self::json_path::*;
 pub use self::payload::*;
 pub use self::point::*;

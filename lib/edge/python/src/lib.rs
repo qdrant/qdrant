@@ -38,6 +38,8 @@ mod qdrant_edge {
         PyNestedCondition, PyRangeDateTime, PyRangeFloat, PyValuesCount,
     };
     #[pymodule_export]
+    use super::types::formula::{PyDecayKind, PyExpressionInterface, PyFormula};
+    #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PySparseVector};
     #[pymodule_export]
     use super::update::PyUpdateOperation;
