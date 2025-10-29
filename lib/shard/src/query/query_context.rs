@@ -1,7 +1,6 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::query_context::QueryContext;
 use segment::types::VectorName;
-use smallvec::SmallVec;
 
 use crate::common::stopping_guard::StoppingGuard;
 use crate::search::CoreSearchRequest;
@@ -15,18 +14,6 @@ pub fn init_query_context(
     hw_measurement_acc: HwMeasurementAcc,
     check_idf_required: impl Fn(&VectorName) -> bool,
 ) -> QueryContext {
-    const DEFAULT_CAPACITY: usize = 3;
-    let mut idf_vectors: SmallVec<[&VectorName; DEFAULT_CAPACITY]> = Default::default();
-
-    // check vector names existing
-    for req in batch_request {
-        let vector_name = req.query.get_vector_name();
-        let is_idf_required = check_idf_required(vector_name);
-        if is_idf_required && !idf_vectors.contains(&vector_name) {
-            idf_vectors.push(vector_name);
-        }
-    }
-
     let mut query_context = QueryContext::new(search_optimized_threshold_kb, hw_measurement_acc)
         .with_is_stopped(is_stopped_guard.get_is_stopped());
 
@@ -34,7 +21,7 @@ pub fn init_query_context(
         search_request
             .query
             .iterate_sparse(|vector_name, sparse_vector| {
-                if idf_vectors.contains(&vector_name) {
+                if check_idf_required(vector_name) {
                     query_context.init_idf(vector_name, &sparse_vector.indices);
                 }
             })
