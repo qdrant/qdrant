@@ -135,6 +135,12 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
         if std::arch::is_x86_feature_detected!("avx512f") {
             cpu_flags.push("avx512f");
         }
+        if std::arch::is_x86_feature_detected!("avx512vl") {
+            cpu_flags.push("avx512vl");
+        }
+        if std::arch::is_x86_feature_detected!("avx512vpopcntdq") {
+            cpu_flags.push("avx512vpopcntdq");
+        }
     }
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
