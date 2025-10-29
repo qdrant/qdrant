@@ -1556,7 +1556,7 @@ pub struct PayloadSchemaInfo {
     /// Field index parameters
     #[prost(message, optional, tag = "2")]
     pub params: ::core::option::Option<PayloadIndexParams>,
-    /// Number of points indexed within this field indexed
+    /// Number of points indexed within this field
     #[prost(uint64, optional, tag = "3")]
     pub points: ::core::option::Option<u64>,
 }
@@ -2436,7 +2436,7 @@ pub enum ReplicaState {
     /// Deprecated: snapshot shard transfer is in progress.
     /// Updates should not be sent to (and are ignored by) the shard.
     PartialSnapshot = 5,
-    /// Shard is undergoing recovered by an external node.
+    /// Shard is undergoing recovery by an external node.
     /// Normally rejects updates, accepts updates if force is true.
     Recovery = 6,
     /// Points are being migrated to this shard as part of scale-up resharding
@@ -2657,7 +2657,7 @@ pub mod collections_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "Get"));
             self.inner.unary(req, path, codec).await
         }
-        /// Get list name of all existing collections
+        /// Get list of names of all existing collections
         pub async fn list(
             &mut self,
             request: impl tonic::IntoRequest<super::ListCollectionsRequest>,
@@ -3008,7 +3008,7 @@ pub mod collections_server {
             tonic::Response<super::GetCollectionInfoResponse>,
             tonic::Status,
         >;
-        /// Get list name of all existing collections
+        /// Get list of names of all existing collections
         async fn list(
             &self,
             request: tonic::Request<super::ListCollectionsRequest>,
@@ -5312,7 +5312,7 @@ pub mod with_vectors_selector {
         /// If `true` - return all vectors, if `false` - none
         #[prost(bool, tag = "1")]
         Enable(bool),
-        /// List of payload keys to include into result
+        /// List of vectors to include into result
         #[prost(message, tag = "2")]
         Include(super::VectorsSelector),
     }
@@ -6294,7 +6294,7 @@ pub struct PrefetchQuery {
     #[validate(nested)]
     pub query: ::core::option::Option<Query>,
     /// Define which vector to use for querying.
-    /// If missing, the default vector is is used.
+    /// If missing, the default vector is used.
     #[prost(string, optional, tag = "3")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -6454,7 +6454,7 @@ pub struct QueryPointGroups {
     #[prost(uint64, optional, tag = "11")]
     #[validate(range(min = 1))]
     pub limit: ::core::option::Option<u64>,
-    /// Maximum amount of points to return per group. Default to 10.
+    /// Maximum amount of points to return per group. Defaults to 10.
     #[prost(uint64, optional, tag = "12")]
     #[validate(range(min = 1))]
     pub group_size: ::core::option::Option<u64>,
@@ -6574,7 +6574,7 @@ pub struct SearchMatrixPoints {
     #[prost(uint64, optional, tag = "4")]
     #[validate(range(min = 1))]
     pub limit: ::core::option::Option<u64>,
-    /// Define which vector to use for querying. If missing, the default vector is is used.
+    /// Define which vector to use for querying. If missing, the default vector is used.
     #[prost(string, optional, tag = "5")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
@@ -6886,7 +6886,7 @@ pub mod group_id {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
-        /// Represents a double value.
+        /// Represents an unsigned integer value.
         #[prost(uint64, tag = "1")]
         UnsignedValue(u64),
         /// Represents an integer value

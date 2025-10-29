@@ -8,7 +8,7 @@ option csharp_namespace = "Qdrant.Client.Grpc";
 service Collections {
   // Get detailed information about specified existing collection
   rpc Get(GetCollectionInfoRequest) returns (GetCollectionInfoResponse) {}
-  // Get list name of all existing collections
+  // Get list of names of all existing collections
   rpc List(ListCollectionsRequest) returns (ListCollectionsResponse) {}
   // Create new collection with given parameters
   rpc Create(CreateCollection) returns (CollectionOperationResponse) {}

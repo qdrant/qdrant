@@ -389,7 +389,7 @@ message WithVectorsSelector {
   oneof selector_options {
     // If `true` - return all vectors, if `false` - none
     bool enable = 1;
-    // List of payload keys to include into result
+    // List of vectors to include into result
     VectorsSelector include = 2;
   }
 }
@@ -975,7 +975,7 @@ message PrefetchQuery {
   // If missing, returns points ordered by their IDs.
   optional Query query = 2;
   // Define which vector to use for querying.
-  // If missing, the default vector is is used.
+  // If missing, the default vector is used.
   optional string using = 3;
   // Filter conditions - return only those points that satisfy the specified conditions.
   optional Filter filter = 4;
@@ -1062,7 +1062,7 @@ message QueryPointGroups {
   optional LookupLocation lookup_from = 10;
   // Max number of points. Default is 3.
   optional uint64 limit = 11;
-  // Maximum amount of points to return per group. Default to 10.
+  // Maximum amount of points to return per group. Defaults to 10.
   optional uint64 group_size = 12;
   // Payload field to group by, must be a string or number field.
   // If there are multiple values for the field, all of them will be used.
@@ -1124,7 +1124,7 @@ message SearchMatrixPoints {
   optional uint64 sample = 3;
   // How many neighbours per sample to find. Default is 3.
   optional uint64 limit = 4;
-  // Define which vector to use for querying. If missing, the default vector is is used.
+  // Define which vector to use for querying. If missing, the default vector is used.
   optional string using = 5;
   // If set, overrides global timeout setting for this request. Unit is seconds.
   optional uint64 timeout = 6;
@@ -1303,7 +1303,7 @@ message ScoredPoint {
 
 message GroupId {
   oneof kind {
-    // Represents a double value.
+    // Represents an unsigned integer value.
     uint64 unsigned_value = 1;
     // Represents an integer value
     int64 integer_value = 2;
