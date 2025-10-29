@@ -64,6 +64,7 @@ impl LocalShard {
 
         let SizeStats {
             num_vectors,
+            num_vectors_by_name,
             vectors_size_bytes,
             payloads_size_bytes,
             num_points,
@@ -77,6 +78,7 @@ impl LocalShard {
             payloads_size_bytes: Some(payloads_size_bytes),
             num_points: Some(num_points),
             num_vectors: Some(num_vectors),
+            num_vectors_by_name: Some(HashMap::from(num_vectors_by_name)),
             segments: if segments.is_empty() {
                 None
             } else {
@@ -122,6 +124,7 @@ impl LocalShard {
             let SizeStats {
                 mut num_points,
                 mut num_vectors,
+                mut num_vectors_by_name,
                 mut vectors_size_bytes,
                 mut payloads_size_bytes,
             } = SizeStats::default();
@@ -132,10 +135,16 @@ impl LocalShard {
                 num_vectors += info.num_vectors;
                 vectors_size_bytes += info.vectors_size_bytes;
                 payloads_size_bytes += info.payloads_size_bytes;
+
+                for (vector_name, vector_data) in info.vector_data.iter() {
+                    *num_vectors_by_name.get_or_insert_default(vector_name) +=
+                        vector_data.num_vectors;
+                }
             }
 
             SizeStats {
                 num_vectors,
+                num_vectors_by_name,
                 vectors_size_bytes,
                 payloads_size_bytes,
                 num_points,

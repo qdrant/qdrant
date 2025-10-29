@@ -12200,6 +12200,16 @@
             "minimum": 0,
             "nullable": true
           },
+          "num_vectors_by_name": {
+            "description": "Sum of number of vectors across all segments, grouped by their name. This is an approximate number. Do NOT rely on this number unless you know what you are doing",
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "nullable": true
+          },
           "segments": {
             "type": "array",
             "items": {

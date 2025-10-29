@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::{borrow, iter, mem, slice};
 
 use tinyvec::TinyVec;
@@ -102,6 +103,32 @@ where
             .map(|(_, v)| v)
     }
 
+    /// Returns the (mutable) value assigned to `key`, if such an entry exists.
+    /// Otherwise the default value for `V` is inserted and returned as mutable reference.
+    ///
+    /// This method automatically clones `key` if required. Therefore Q must implement `ToOwned<Owned = K>`.
+    pub fn get_or_insert_default<Q>(&mut self, key: &Q) -> &mut V
+    where
+        V: Sized,
+        K: borrow::Borrow<Q>,
+        Q: Eq + ToOwned<Owned = K> + ?Sized,
+    {
+        // Try to locate an existing entry for the key.
+        let existing_position = self.list.iter().position(|(k, _)| k.borrow() == key);
+
+        // Insert default value if not existing and get the new index.
+        let index = match existing_position {
+            Some(existing_pos) => existing_pos,
+            None => {
+                let new_index = self.list.len();
+                self.list.push((key.to_owned(), V::default()));
+                new_index
+            }
+        };
+
+        &mut self.list[index].1
+    }
+
     pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
     where
         K: borrow::Borrow<Q>,
@@ -157,6 +184,17 @@ where
 
     fn into_iter(self) -> Self::IntoIter {
         self.list.into_iter()
+    }
+}
+
+impl<K, V> From<TinyMap<K, V>> for HashMap<K, V>
+where
+    K: Default + std::hash::Hash + Eq,
+    V: Default,
+{
+    #[inline]
+    fn from(value: TinyMap<K, V>) -> Self {
+        value.into_iter().collect()
     }
 }
 
@@ -221,5 +259,42 @@ mod tests {
         let mut iter = map.iter();
         assert_eq!(iter.next(), Some(&(key2, value2)));
         assert_eq!(iter.next(), Some(&(key3, value3)));
+    }
+
+    #[test]
+    fn test_tiny_map_get_or_insert() {
+        let mut map: TinyMap<String, usize> = TinyMap::new();
+
+        map.insert("a".to_string(), 1);
+        map.insert("b".to_string(), 2);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default("a"), 1);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default("b"), 2);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default("c"), 0);
+        assert_eq!(map.len(), 3);
+
+        let mut map: TinyMap<usize, usize> = TinyMap::new();
+        map.insert(1, 1);
+        map.insert(2, 4);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default(&1), 1);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default(&2), 4);
+        assert_eq!(map.len(), 2);
+
+        assert_eq!(*map.get_or_insert_default(&3), 0);
+        assert_eq!(map.len(), 3);
+
+        *map.get_or_insert_default(&3) = 6;
+        assert_eq!(map.len(), 3); // This call should not add an additional item.
+
+        assert_eq!(map.get(&3), Some(&6));
     }
 }
