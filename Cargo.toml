@@ -145,6 +145,7 @@ tracing-tracy = { version = "0.11.4", features = ["ondemand"], optional = true }
 actix-web-extras = "0.1.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+procfs = { version = "0.18.0", default-features = false }
 # Pyroscope integration
 pyroscope = "0.5.8"
 pyroscope_pprofrs = "0.2.10"

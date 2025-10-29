@@ -5159,6 +5159,7 @@ dependencies = [
  "murmur3",
  "ordered-float 5.1.0",
  "parking_lot",
+ "procfs",
  "prometheus",
  "prost 0.11.9",
  "pyroscope",
