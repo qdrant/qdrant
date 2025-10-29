@@ -11806,18 +11806,18 @@
             "type": "boolean"
           },
           "payload_index_skip_rocksdb": {
-            "description": "Skip usage of RocksDB in new immutable payload indices.\n\nFirst implemented in Qdrant 1.13.5. Enabled by default in Qdrant 1.14.1",
+            "description": "Skip usage of RocksDB in new immutable payload indices.\n\nFirst implemented in Qdrant 1.13.5. Enabled by default in Qdrant 1.14.1.",
             "default": true,
             "type": "boolean"
           },
           "payload_index_skip_mutable_rocksdb": {
-            "description": "Skip usage of RocksDB in new mutable payload indices.",
-            "default": false,
+            "description": "Skip usage of RocksDB in new mutable payload indices.\n\nFirst implemented in Qdrant 1.15.0. Enabled by default in Qdrant 1.16.0.",
+            "default": true,
             "type": "boolean"
           },
           "payload_storage_skip_rocksdb": {
-            "description": "Skip usage of RocksDB in new payload storages.\n\nOn-disk payload storages never use Gridstore.\n\nFirst implemented in Qdrant 1.15.0.",
-            "default": false,
+            "description": "Skip usage of RocksDB in new payload storages.\n\nOn-disk payload storages never use Gridstore.\n\nFirst implemented in Qdrant 1.15.0. Enabled by default in Qdrant 1.16.0.",
+            "default": true,
             "type": "boolean"
           },
           "incremental_hnsw_building": {
