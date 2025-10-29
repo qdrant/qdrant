@@ -1,4 +1,5 @@
 pub mod filter;
+pub mod json_path;
 pub mod payload;
 pub mod point;
 pub mod point_id;
@@ -7,6 +8,7 @@ pub mod record;
 pub mod vector;
 
 pub use self::filter::*;
+pub use self::json_path::*;
 pub use self::payload::*;
 pub use self::point::*;
 pub use self::point_id::*;
