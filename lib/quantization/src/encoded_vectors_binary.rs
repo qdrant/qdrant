@@ -284,6 +284,23 @@ impl BitsStoreType for u128 {
     fn xor_popcnt(v1: &[Self], v2: &[Self]) -> usize {
         debug_assert!(v1.len() == v2.len());
 
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avx512vl")
+            && is_x86_feature_detected!("avx512vpopcntdq")
+            && is_x86_feature_detected!("avx2")
+            && is_x86_feature_detected!("avx")
+            && is_x86_feature_detected!("sse4.1")
+            && is_x86_feature_detected!("sse2")
+        {
+            unsafe {
+                return impl_xor_popcnt_avx512_uint128(
+                    v1.as_ptr().cast::<u8>(),
+                    v2.as_ptr().cast::<u8>(),
+                    v1.len() as u32,
+                ) as usize;
+            }
+        }
+
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if is_x86_feature_detected!("sse4.2") {
             unsafe {
@@ -1021,4 +1038,56 @@ unsafe extern "C" {
         vector_ptr: *const u8,
         count: u32,
     ) -> u32;
+}
+
+#[allow(missing_docs)]
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512vl")]
+#[target_feature(enable = "avx512vpopcntdq")]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "avx")]
+#[target_feature(enable = "sse4.1")]
+#[target_feature(enable = "sse2")]
+unsafe fn impl_xor_popcnt_avx512_uint128(
+    query_ptr: *const u8,
+    vector_ptr: *const u8,
+    u128_count: u32,
+) -> u32 {
+    use std::arch::x86_64::*;
+
+    let mut query_ptr = query_ptr.cast::<__m256i>();
+    let mut vector_ptr = vector_ptr.cast::<__m256i>();
+    let m256_count = u128_count / 2;
+    let mut sum = _mm256_setzero_si256();
+    for _ in 0..m256_count {
+        let query_chunk = unsafe { _mm256_loadu_si256(query_ptr) };
+        let vector_chunk = unsafe { _mm256_loadu_si256(vector_ptr) };
+        sum = _mm256_add_epi64(
+            _mm256_popcnt_epi64(_mm256_xor_si256(query_chunk, vector_chunk)),
+            sum,
+        );
+
+        query_ptr = unsafe { query_ptr.add(1) };
+        vector_ptr = unsafe { vector_ptr.add(1) };
+    }
+
+    if m256_count * 2 != u128_count {
+        let vector_chunk = unsafe { _mm_loadu_si128(vector_ptr.cast::<__m128i>()) };
+        let query_chunk = unsafe { _mm_loadu_si128(query_ptr.cast::<__m128i>()) };
+
+        let popcnt = _mm_popcnt_epi64(_mm_xor_si128(query_chunk, vector_chunk));
+
+        sum = _mm256_add_epi64(_mm256_set_m128i(popcnt, _mm_setzero_si128()), sum);
+    }
+
+    // Extract high and low 128-bit lanes
+    let low = _mm256_castsi256_si128(sum); // Elements 0,1
+    let high = _mm256_extracti128_si256(sum, 1); // Elements 2,3
+    let sum128 = _mm_add_epi64(low, high);
+
+    // Extract and add the two 64-bit elements
+    let low64 = _mm_extract_epi64(sum128, 0);
+    let high64 = _mm_extract_epi64(sum128, 1);
+
+    (low64 + high64) as u32
 }
