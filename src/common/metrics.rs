@@ -182,8 +182,6 @@ impl MetricsProvider for CollectionsTelemetry {
         // Min/Max/Expected/Active replicas over all shards.
         let mut total_min_active_replicas = usize::MAX;
         let mut total_max_active_replicas = 0;
-        let mut total_expected_replicas = 0;
-        let mut total_active_replicas = 0;
 
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
@@ -208,7 +206,6 @@ impl MetricsProvider for CollectionsTelemetry {
                         .filter(|state| state.is_active())
                         .count()
                 })
-                .inspect(|active_replicas| total_active_replicas += active_replicas)
                 .minmax();
 
             let min_max_active_replicas = match min_max_active_replicas {
@@ -222,8 +219,6 @@ impl MetricsProvider for CollectionsTelemetry {
                 total_max_active_replicas = total_max_active_replicas.max(max);
             }
 
-            total_expected_replicas += collection.config.params.replication_factor.get() as usize;
-
             // Sum the optimization triggers over all shards of this collection.
             let optimizer_triggers = collection
                 .shards
@@ -235,20 +230,6 @@ impl MetricsProvider for CollectionsTelemetry {
                     total + state
                 });
         }
-
-        metrics.push(metric_family(
-            "active_total_replicas",
-            "total number of active replicas across all shards",
-            MetricType::GAUGE,
-            vec![gauge(total_active_replicas as f64, &[])],
-        ));
-
-        metrics.push(metric_family(
-            "active_expected_replicas",
-            "total number of expected replicas across all shards",
-            MetricType::GAUGE,
-            vec![gauge(total_expected_replicas as f64, &[])],
-        ));
 
         metrics.push(metric_family(
             "active_replicas_max",
