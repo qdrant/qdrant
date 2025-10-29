@@ -7,12 +7,17 @@ use pyo3::prelude::*;
 use segment::types::PointIdType;
 use uuid::Uuid;
 
-#[derive(Copy, Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Into)]
 #[repr(transparent)]
 pub struct PyPointId(pub PointIdType);
 
 impl PyPointId {
     pub fn into_rust_vec(point_ids: Vec<PyPointId>) -> Vec<PointIdType> {
+        // `PyPointId` has transparent representation, so transmuting is safe
+        unsafe { mem::transmute(point_ids) }
+    }
+
+    pub fn into_rust_set(point_ids: ahash::HashSet<PyPointId>) -> ahash::HashSet<PointIdType> {
         // `PyPointId` has transparent representation, so transmuting is safe
         unsafe { mem::transmute(point_ids) }
     }

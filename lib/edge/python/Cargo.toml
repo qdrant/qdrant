@@ -17,6 +17,7 @@ segment = { path = "../../segment", default-features = false }
 shard = { path = "../../shard" }
 sparse = { path = "../../sparse" }
 
+ahash = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 ordered-float = { workspace = true }
