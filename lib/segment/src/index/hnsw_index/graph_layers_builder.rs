@@ -47,7 +47,7 @@ pub struct GraphLayersBuilder {
     visited_pool: VisitedPool,
 
     // List of bool flags, which defines if the point is already indexed or not
-    ready_list: RwLock<BitVec>,
+    ready_list: BitVec<AtomicUsize>,
 }
 
 impl GraphLayersBase for GraphLayersBuilder {
@@ -60,9 +60,8 @@ impl GraphLayersBase for GraphLayersBuilder {
         F: FnMut(PointOffsetType),
     {
         let links = self.links_layers[point_id as usize][level].read();
-        let ready_list = self.ready_list.read();
         for link in links.iter() {
-            if ready_list[link as usize] {
+            if self.ready_list[link as usize] {
                 f(link);
             }
         }
@@ -78,9 +77,8 @@ impl GraphLayersBase for GraphLayersBuilder {
         F: FnMut(PointOffsetType) -> ControlFlow<(), ()>,
     {
         let links = self.links_layers[point_id as usize][level].read();
-        let ready_list = self.ready_list.read();
         for link in links.iter() {
-            if ready_list[link as usize] {
+            if self.ready_list[link as usize] {
                 f(link)?;
             }
         }
@@ -279,13 +277,12 @@ impl GraphLayersBuilder {
 
     #[cfg(feature = "gpu")]
     pub fn fill_ready_list(&mut self) {
-        let num_vectors = self.num_points();
-        self.ready_list = RwLock::new(BitVec::repeat(true, num_vectors));
+        self.ready_list.fill(true);
     }
 
     #[cfg(feature = "gpu")]
     pub fn set_ready(&mut self, point_id: PointOffsetType) -> bool {
-        self.ready_list.write().replace(point_id as usize, true)
+        self.ready_list.replace(point_id as usize, true)
     }
 
     pub fn new_with_params(
@@ -303,7 +300,7 @@ impl GraphLayersBuilder {
         .take(num_vectors)
         .collect();
 
-        let ready_list = RwLock::new(BitVec::repeat(false, num_vectors));
+        let ready_list = BitVec::repeat(false, num_vectors);
 
         Self {
             max_level: AtomicUsize::new(0),
@@ -452,8 +449,11 @@ impl GraphLayersBuilder {
             // New point is a new empty entry (for this filter, at least)
             // We can't do much here, so just quit
         }
-        let was_ready = self.ready_list.write().replace(point_id as usize, true);
-        debug_assert!(!was_ready, "Point {point_id} was already marked as ready");
+        debug_assert!(
+            !self.ready_list[point_id as usize],
+            "Point {point_id} was already marked as ready"
+        );
+        self.ready_list.set_aliased(point_id as usize, true);
         self.entry_points
             .lock()
             .new_point(point_id, level, |point_id| {
@@ -476,8 +476,11 @@ impl GraphLayersBuilder {
             links.fill_from(neighbours.iter().copied());
         }
 
-        let was_ready = self.ready_list.write().replace(point_id as usize, true);
-        debug_assert!(!was_ready);
+        debug_assert!(
+            !self.ready_list[point_id as usize],
+            "Point {point_id} was already marked as ready"
+        );
+        self.ready_list.set_aliased(point_id as usize, true);
         self.entry_points
             .lock()
             .new_point(point_id, level, |_| true);
