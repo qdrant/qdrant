@@ -212,13 +212,36 @@ impl GraphLinksView<'_> {
         })
     }
 
-    pub(super) fn links(&self, point_id: PointOffsetType, level: usize) -> LinksIterator<'_> {
-        let idx = if level == 0 {
+    /// Note: it is safe to use `idx + 1` on the result of this function,
+    /// because `level_offsets` always contains an additional element.
+    #[inline]
+    fn offset_idx(&self, point_id: PointOffsetType, level: usize) -> usize {
+        if level == 0 {
             point_id as usize
         } else {
             self.level_offsets[level] as usize + self.reindex[point_id as usize] as usize
-        };
+        }
+    }
 
+    /// Returns `true` if [`Self::links`] would return an empty iterator.
+    pub(super) fn links_empty(&self, point_id: PointOffsetType, level: usize) -> bool {
+        let idx = self.offset_idx(point_id, level);
+        match self.compression {
+            CompressionInfo::Uncompressed { offsets, .. } => {
+                offsets[idx].get() == offsets[idx + 1].get()
+            }
+            CompressionInfo::Compressed { ref offsets, .. } => {
+                offsets.get(idx + 1).unwrap() == offsets.get(idx).unwrap()
+            }
+            CompressionInfo::CompressedWithVectors { .. } => {
+                // Not intended to be used outside of tests.
+                self.links(point_id, level).next().is_none()
+            }
+        }
+    }
+
+    pub(super) fn links(&self, point_id: PointOffsetType, level: usize) -> LinksIterator<'_> {
+        let idx = self.offset_idx(point_id, level);
         match self.compression {
             CompressionInfo::Uncompressed { neighbors, offsets } => {
                 let neighbors_range = offsets[idx].get() as usize..offsets[idx + 1].get() as usize;
@@ -265,12 +288,7 @@ impl GraphLinksView<'_> {
         PackedLinksIterator<'_>,
         std::slice::ChunksExact<'_, u8>,
     ) {
-        let idx = if level == 0 {
-            point_id as usize
-        } else {
-            self.level_offsets[level] as usize + self.reindex[point_id as usize] as usize
-        };
-
+        let idx = self.offset_idx(point_id, level);
         match self.compression {
             CompressionInfo::Uncompressed { .. } => unimplemented!(),
             CompressionInfo::Compressed { .. } => unimplemented!(),
