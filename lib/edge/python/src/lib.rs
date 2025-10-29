@@ -68,6 +68,12 @@ impl PyShard {
         Ok(())
     }
 
+    pub fn query(&self, query: PyQueryRequest) -> Result<Vec<Vec<Vec<PyScoredPoint>>>> {
+        let points = self.0.query(query.into())?;
+        let points = PyScoredPoint::from_rust_vec3(points);
+        Ok(points)
+    }
+
     pub fn search(&self, search: PySearchRequest) -> Result<Vec<PyScoredPoint>> {
         let points = self.0.search(search.into())?;
         let points = PyScoredPoint::from_rust_vec(points);
