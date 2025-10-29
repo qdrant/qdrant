@@ -98,6 +98,17 @@ impl<'py> FromPyObject<'py> for PyScoringQuery {
             Mmr(PyMmr),
         }
 
+        fn _variants(query: ScoringQuery) {
+            match query {
+                ScoringQuery::Vector(_) => {}
+                ScoringQuery::Fusion(_) => {}
+                ScoringQuery::OrderBy(_) => {}
+                ScoringQuery::Formula(_) => {}
+                ScoringQuery::Sample(_) => {}
+                ScoringQuery::Mmr(_) => {}
+            }
+        }
+
         let query = match query.extract()? {
             Helper::Vector(query) => ScoringQuery::Vector(QueryEnum::from(query)),
             Helper::Fusion(fusion) => ScoringQuery::Fusion(FusionInternal::from(fusion)),
@@ -193,6 +204,14 @@ impl<'py> FromPyObject<'py> for PyStartFrom {
             Integer(IntPayloadType),
             Float(FloatPayloadType),
             DateTime(String),
+        }
+
+        fn _variants(start_from: StartFrom) {
+            match start_from {
+                StartFrom::Integer(_) => {}
+                StartFrom::Float(_) => {}
+                StartFrom::Datetime(_) => {}
+            }
         }
 
         let start_from = match start_from.extract()? {

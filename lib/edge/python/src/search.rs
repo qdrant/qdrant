@@ -125,6 +125,13 @@ impl<'py> FromPyObject<'py> for PyWithVector {
             Selector(Vec<String>),
         }
 
+        fn _variants(with_vector: WithVector) {
+            match with_vector {
+                WithVector::Bool(_) => {}
+                WithVector::Selector(_) => {}
+            }
+        }
+
         let with_vector = match with_vector.extract()? {
             Helper::Bool(bool) => WithVector::Bool(bool),
             Helper::Selector(vectors) => WithVector::Selector(vectors),
@@ -167,6 +174,14 @@ impl<'py> FromPyObject<'py> for PyWithPayload {
             Bool(bool),
             Fields(Vec<PyJsonPath>),
             Selector(PyPayloadSelector),
+        }
+
+        fn _variants(with_payload: WithPayloadInterface) {
+            match with_payload {
+                WithPayloadInterface::Bool(_) => {}
+                WithPayloadInterface::Fields(_) => {}
+                WithPayloadInterface::Selector(_) => {}
+            }
         }
 
         let with_payload = match with_payload.extract()? {

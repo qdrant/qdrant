@@ -32,6 +32,13 @@ impl<'py> FromPyObject<'py> for PyPointId {
             UuidStr(String),
         }
 
+        fn _variants(point_id: PointIdType) {
+            match point_id {
+                PointIdType::NumId(_) => {}
+                PointIdType::Uuid(_) => {}
+            }
+        }
+
         let point_id = match point_id.extract()? {
             Helper::NumId(id) => PointIdType::NumId(id),
             Helper::Uuid(uuid) => PointIdType::Uuid(uuid),
