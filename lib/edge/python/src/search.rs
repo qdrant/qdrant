@@ -5,7 +5,6 @@ use pyo3::IntoPyObjectExt as _;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::data_types::vectors::NamedQuery;
-use shard::query::ShardQueryResponse;
 use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequest;
 
@@ -212,7 +211,7 @@ impl PyScoredPoint {
         unsafe { mem::transmute(points) }
     }
 
-    pub fn from_rust_vec3(points: Vec<ShardQueryResponse>) -> Vec<Vec<Vec<Self>>> {
+    pub fn from_rust_vec3(points: Vec<Vec<Vec<ScoredPoint>>>) -> Vec<Vec<Vec<Self>>> {
         // `PyScoredPoint` has transparent representation, so transmuting is safe
         unsafe { mem::transmute(points) }
     }
