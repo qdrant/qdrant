@@ -1554,8 +1554,6 @@ mod tests {
                                 on_disk_payload: None,
                                 replication_factor: None,
                                 write_consistency_factor: None,
-                                #[expect(deprecated)]
-                                init_from: None,
                                 quantization_config: None,
                                 sharding_method: None,
                                 strict_mode_config: None,

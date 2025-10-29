@@ -1621,20 +1621,6 @@ impl VectorsConfig {
     }
 }
 
-// TODO(sparse): Further unify `check_compatible` and `check_compatible_with_segment_config`?
-pub fn check_sparse_compatible(
-    self_config: &BTreeMap<VectorNameBuf, SparseVectorParams>,
-    other_config: &BTreeMap<VectorNameBuf, SparseVectorParams>,
-) -> CollectionResult<()> {
-    for (vector_name, _this) in self_config.iter() {
-        let Some(_other) = other_config.get(vector_name) else {
-            return Err(missing_vector_error(vector_name));
-        };
-    }
-
-    Ok(())
-}
-
 pub fn check_sparse_compatible_with_segment_config(
     self_config: &BTreeMap<VectorNameBuf, SparseVectorParams>,
     other: &HashMap<VectorNameBuf, segment::types::SparseVectorDataConfig>,
