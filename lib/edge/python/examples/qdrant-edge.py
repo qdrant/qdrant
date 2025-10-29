@@ -6,6 +6,19 @@ import uuid
 
 from qdrant_edge import *
 
+
+print("---- Point conversions ----")
+
+points = [
+    Point(10, [[1,2,3], [3, 4, 5]], {}),
+    Point(11, { "sparse": SparseVector(indices=[0, 2], values=[1.0, 3.0]) }, {}),
+]
+
+# Test points conversion into internal representation and back
+for point in points:
+    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}")
+
+
 print("---- Load shard ----")
 
 DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), "data")
@@ -34,6 +47,7 @@ config = SegmentConfig(
 )
 
 shard = Shard(DATA_DIRECTORY, config)
+
 
 print("---- Upsert ----")
 
@@ -79,20 +93,6 @@ shard.update(UpdateOperation.upsert_points([
     ),
 ]))
 
-print("---- Some other points ----")
-
-some_other_points = [
-    Point(10, [[1,2,3], [3, 4, 5]], {}),
-    Point(11, {
-        "sparse": SparseVector(indices=[0, 2], values=[1.0, 3.0])
-    }, {}),
-]
-
-
-# Test points conversion into internal representation and back
-for point in some_other_points:
-    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}")
-
 
 print("---- Search ----")
 
@@ -111,7 +111,7 @@ for point in points:
     print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
 
 
-print("---- Search Filter ----")
+print("---- Search + Filter ----")
 
 search_filter = Filter(
     must=[
@@ -139,6 +139,7 @@ points = shard.search(SearchRequest(
 
 for point in points:
     print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
+
 
 print("---- Retrieve ----")
 
