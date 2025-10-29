@@ -788,7 +788,8 @@ impl ShardReplicaSet {
                     | ReplicaState::Initializing
                     | ReplicaState::PartialSnapshot
                     | ReplicaState::Recovery
-                    | ReplicaState::Resharding => {
+                    | ReplicaState::Resharding
+                    | ReplicaState::ReadActive => {
                         self.set_local(local_shard, Some(state)).await?;
                     }
                 }
@@ -1281,6 +1282,8 @@ pub enum ReplicaState {
     Resharding,
     // Points are being migrated to this shard as part of resharding down
     ReshardingScaleDown,
+    // Active for readers, Partial for writers
+    ReadActive,
 }
 
 impl ReplicaState {
@@ -1290,13 +1293,14 @@ impl ReplicaState {
             ReplicaState::Active => true,
             ReplicaState::ReshardingScaleDown => true,
 
-            ReplicaState::Dead => false,
-            ReplicaState::Partial => false,
-            ReplicaState::Initializing => false,
-            ReplicaState::Listener => false,
-            ReplicaState::PartialSnapshot => false,
-            ReplicaState::Recovery => false,
-            ReplicaState::Resharding => false,
+            ReplicaState::Dead
+            | ReplicaState::Partial
+            | ReplicaState::Initializing
+            | ReplicaState::Listener
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery
+            | ReplicaState::Resharding
+            | ReplicaState::ReadActive => false,
         }
     }
 
@@ -1312,7 +1316,8 @@ impl ReplicaState {
             | ReplicaState::Initializing
             | ReplicaState::Partial
             | ReplicaState::PartialSnapshot
-            | ReplicaState::Recovery => false,
+            | ReplicaState::Recovery
+            | ReplicaState::ReadActive => false,
         }
     }
 
@@ -1327,7 +1332,8 @@ impl ReplicaState {
             | ReplicaState::PartialSnapshot
             | ReplicaState::Recovery
             | ReplicaState::Resharding
-            | ReplicaState::ReshardingScaleDown => true,
+            | ReplicaState::ReshardingScaleDown
+            | ReplicaState::ReadActive => true,
 
             ReplicaState::Active
             | ReplicaState::Dead
@@ -1347,7 +1353,8 @@ impl ReplicaState {
             | ReplicaState::Active
             | ReplicaState::Dead
             | ReplicaState::Initializing
-            | ReplicaState::Listener => false,
+            | ReplicaState::Listener
+            | ReplicaState::ReadActive => false,
         }
     }
 }
