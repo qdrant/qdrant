@@ -24,11 +24,7 @@ use shard::search_result_aggregator::BatchResultAggregator;
 use super::Shard;
 
 impl Shard {
-    pub fn query(
-        &self,
-        request: ShardQueryRequest,
-        hw_measurement_acc: HwMeasurementAcc,
-    ) -> OperationResult<Vec<ShardQueryResponse>> {
+    pub fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ShardQueryResponse>> {
         let planned_query = PlannedQuery::try_from(vec![request])?;
 
         let PlannedQuery {
@@ -53,7 +49,7 @@ impl Shard {
                 root_plan,
                 &mut search_results,
                 &mut scroll_results,
-                hw_measurement_acc.clone(),
+                HwMeasurementAcc::disposable(),
             )?;
 
             scored_points_batch.push(scored_points)
