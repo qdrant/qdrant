@@ -171,8 +171,7 @@ impl MetricsProvider for CollectionsTelemetry {
         let mut total_min_active_replicas = usize::MAX;
         let mut total_max_active_replicas = 0;
 
-        // Points & Vectors per collection
-        let mut vectors_per_collection = vec![];
+        // Points per collection
         let mut points_per_collection = vec![];
 
         // Vectors excluded from index-only requests.
@@ -250,11 +249,6 @@ impl MetricsProvider for CollectionsTelemetry {
 
             points_per_collection.push(gauge(
                 collection.count_points() as f64,
-                &[("id", &collection.id)],
-            ));
-
-            vectors_per_collection.push(gauge(
-                collection.count_vectors() as f64,
                 &[("id", &collection.id)],
             ));
 
@@ -345,13 +339,6 @@ impl MetricsProvider for CollectionsTelemetry {
             "approximate amount of points per collection",
             MetricType::GAUGE,
             points_per_collection,
-        ));
-
-        metrics.push(metric_family(
-            "collection_vectors",
-            "approximate amount of vectors per collection",
-            MetricType::GAUGE,
-            vectors_per_collection,
         ));
 
         metrics.push(metric_family(
