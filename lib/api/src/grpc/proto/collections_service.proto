@@ -7,31 +7,35 @@ option csharp_namespace = "Qdrant.Client.Grpc";
 
 service Collections {
   // Get detailed information about specified existing collection
-  rpc Get (GetCollectionInfoRequest) returns (GetCollectionInfoResponse) {}
+  rpc Get(GetCollectionInfoRequest) returns (GetCollectionInfoResponse) {}
   // Get list name of all existing collections
-  rpc List (ListCollectionsRequest) returns (ListCollectionsResponse) {}
+  rpc List(ListCollectionsRequest) returns (ListCollectionsResponse) {}
   // Create new collection with given parameters
-  rpc Create (CreateCollection) returns (CollectionOperationResponse) {}
+  rpc Create(CreateCollection) returns (CollectionOperationResponse) {}
   // Update parameters of the existing collection
-  rpc Update (UpdateCollection) returns (CollectionOperationResponse) {}
+  rpc Update(UpdateCollection) returns (CollectionOperationResponse) {}
   // Drop collection and all associated data
-  rpc Delete (DeleteCollection) returns (CollectionOperationResponse) {}
+  rpc Delete(DeleteCollection) returns (CollectionOperationResponse) {}
   // Update Aliases of the existing collection
-  rpc UpdateAliases (ChangeAliases) returns (CollectionOperationResponse) {}
+  rpc UpdateAliases(ChangeAliases) returns (CollectionOperationResponse) {}
   // Get list of all aliases for a collection
-  rpc ListCollectionAliases (ListCollectionAliasesRequest) returns (ListAliasesResponse) {}
+  rpc ListCollectionAliases(ListCollectionAliasesRequest)
+      returns (ListAliasesResponse) {}
   // Get list of all aliases for all existing collections
-  rpc ListAliases (ListAliasesRequest) returns (ListAliasesResponse) {}
+  rpc ListAliases(ListAliasesRequest) returns (ListAliasesResponse) {}
   // Get cluster information for a collection
-  rpc CollectionClusterInfo (CollectionClusterInfoRequest) returns (CollectionClusterInfoResponse) {}
+  rpc CollectionClusterInfo(CollectionClusterInfoRequest)
+      returns (CollectionClusterInfoResponse) {}
   // Check the existence of a collection
-  rpc CollectionExists (CollectionExistsRequest) returns (CollectionExistsResponse) {}
+  rpc CollectionExists(CollectionExistsRequest)
+      returns (CollectionExistsResponse) {}
   // Update cluster setup for a collection
-  rpc UpdateCollectionClusterSetup (UpdateCollectionClusterSetupRequest) returns (UpdateCollectionClusterSetupResponse) {}
+  rpc UpdateCollectionClusterSetup(UpdateCollectionClusterSetupRequest)
+      returns (UpdateCollectionClusterSetupResponse) {}
   // Create shard key
-  rpc CreateShardKey (CreateShardKeyRequest) returns (CreateShardKeyResponse) {}
+  rpc CreateShardKey(CreateShardKeyRequest) returns (CreateShardKeyResponse) {}
   // Delete shard key
-  rpc DeleteShardKey (DeleteShardKeyRequest) returns (DeleteShardKeyResponse) {}
+  rpc DeleteShardKey(DeleteShardKeyRequest) returns (DeleteShardKeyResponse) {}
   // List shard keys
-  rpc ListShardKeys (ListShardKeysRequest) returns (ListShardKeysResponse) {}
+  rpc ListShardKeys(ListShardKeysRequest) returns (ListShardKeysResponse) {}
 }

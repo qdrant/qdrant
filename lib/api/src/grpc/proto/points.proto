@@ -8,7 +8,6 @@ import "qdrant_common.proto";
 import "google/protobuf/timestamp.proto";
 import "json_with_int.proto";
 
-
 enum WriteOrderingType {
   // Write operations may be reordered, works faster, default
   Weak = 0;
@@ -74,11 +73,11 @@ message InferenceObject {
 
 message Vector {
   // Vector data (flatten for multi vectors), deprecated
-  repeated float data = 1 [deprecated=true];
+  repeated float data = 1 [deprecated = true];
   // Sparse indices for sparse vectors, deprecated
-  optional SparseIndices indices = 2 [deprecated=true];
+  optional SparseIndices indices = 2 [deprecated = true];
   // Number of vectors per multi vector, deprecated
-  optional uint32 vectors_count = 3 [deprecated=true];
+  optional uint32 vectors_count = 3 [deprecated = true];
   oneof vector {
     // Dense vector
     DenseVector dense = 101;
@@ -94,11 +93,11 @@ message Vector {
 
 message VectorOutput {
   // Vector data (flatten for multi vectors), deprecated
-  repeated float data = 1 [deprecated=true];
+  repeated float data = 1 [deprecated = true];
   // Sparse indices for sparse vectors, deprecated
-  optional SparseIndices indices = 2 [deprecated=true];
+  optional SparseIndices indices = 2 [deprecated = true];
   // Number of vectors per multi vector, deprecated
-  optional uint32 vectors_count = 3 [deprecated=true];
+  optional uint32 vectors_count = 3 [deprecated = true];
   oneof vector {
     // Dense vector
     DenseVector dense = 101;
@@ -144,7 +143,6 @@ message ShardKeySelector {
   repeated ShardKey shard_keys = 1;
   optional ShardKey fallback = 2;
 }
-
 
 // ---------------------------------------------
 // ---------------- RPC Requests ---------------
@@ -497,7 +495,6 @@ message WithLookup {
   optional WithVectorsSelector with_vectors = 3;
 }
 
-
 message SearchPointGroups {
   // Name of the collection
   string collection_name = 1;
@@ -769,8 +766,8 @@ message CountPoints {
   optional ReadConsistency read_consistency = 4;
   // Specify in which shards to look for the points, if not specified - look in all shards
   optional ShardKeySelector shard_key_selector = 5;
-   // If set, overrides global timeout setting for this request. Unit is seconds.
-   optional uint64 timeout = 6;
+  // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional uint64 timeout = 6;
 }
 
 message RecommendInput {
@@ -797,15 +794,15 @@ message DiscoverInput {
 }
 
 message ContextInput {
-    // Search space will be constrained by these pairs of vectors
-    repeated ContextInputPair pairs = 1;
+  // Search space will be constrained by these pairs of vectors
+  repeated ContextInputPair pairs = 1;
 }
 
 enum Fusion {
-    // Reciprocal Rank Fusion (with default parameters)
-    RRF = 0;
-    // Distribution-Based Score Fusion
-    DBSF = 1;
+  // Reciprocal Rank Fusion (with default parameters)
+  RRF = 0;
+  // Distribution-Based Score Fusion
+  DBSF = 1;
 }
 
 // Sample points from the collection
@@ -814,122 +811,122 @@ enum Fusion {
 //
 // * `random` - Random sampling
 enum Sample {
-    Random = 0;
+  Random = 0;
 }
 
 message Formula {
-    Expression expression = 1;
-    map<string, Value> defaults = 2;
+  Expression expression = 1;
+  map<string, Value> defaults = 2;
 }
 
 message Expression {
-    oneof variant {
-        float constant = 1;
-        // Payload key or reference to score.
-        string variable = 2;
-        // Payload condition. If true, becomes 1.0; otherwise 0.0
-        Condition condition = 3;
-        // Geographic distance in meters
-        GeoDistance geo_distance = 4;
-        // Date-time constant
-        string datetime = 5;
-        // Payload key with date-time values
-        string datetime_key = 6;
-        // Multiply
-        MultExpression mult = 7;
-        // Sum
-        SumExpression sum = 8;
-        // Divide
-        DivExpression div = 9;
-        // Negate
-        Expression neg = 10;
-        // Absolute value
-        Expression abs = 11;
-        // Square root
-        Expression sqrt = 12;
-        // Power
-        PowExpression pow = 13;
-        // Exponential
-        Expression exp = 14;
-        // Logarithm
-        Expression log10 = 15;
-        // Natural logarithm
-        Expression ln = 16;
-        // Exponential decay
-        DecayParamsExpression exp_decay = 17;
-        // Gaussian decay
-        DecayParamsExpression gauss_decay = 18;
-        // Linear decay
-        DecayParamsExpression lin_decay = 19;
-    }
+  oneof variant {
+    float constant = 1;
+    // Payload key or reference to score.
+    string variable = 2;
+    // Payload condition. If true, becomes 1.0; otherwise 0.0
+    Condition condition = 3;
+    // Geographic distance in meters
+    GeoDistance geo_distance = 4;
+    // Date-time constant
+    string datetime = 5;
+    // Payload key with date-time values
+    string datetime_key = 6;
+    // Multiply
+    MultExpression mult = 7;
+    // Sum
+    SumExpression sum = 8;
+    // Divide
+    DivExpression div = 9;
+    // Negate
+    Expression neg = 10;
+    // Absolute value
+    Expression abs = 11;
+    // Square root
+    Expression sqrt = 12;
+    // Power
+    PowExpression pow = 13;
+    // Exponential
+    Expression exp = 14;
+    // Logarithm
+    Expression log10 = 15;
+    // Natural logarithm
+    Expression ln = 16;
+    // Exponential decay
+    DecayParamsExpression exp_decay = 17;
+    // Gaussian decay
+    DecayParamsExpression gauss_decay = 18;
+    // Linear decay
+    DecayParamsExpression lin_decay = 19;
+  }
 }
 
 message GeoDistance {
-    GeoPoint origin = 1;
-    string to = 2;
+  GeoPoint origin = 1;
+  string to = 2;
 }
 
 message MultExpression {
-    repeated Expression mult = 1;
+  repeated Expression mult = 1;
 }
 
 message SumExpression {
-    repeated Expression sum = 1;
+  repeated Expression sum = 1;
 }
 
 message DivExpression {
-    Expression left = 1;
-    Expression right = 2;
-    optional float by_zero_default = 3;
+  Expression left = 1;
+  Expression right = 2;
+  optional float by_zero_default = 3;
 }
 
 message PowExpression {
-    Expression base = 1;
-    Expression exponent = 2;
+  Expression base = 1;
+  Expression exponent = 2;
 }
 
 message DecayParamsExpression {
-    // The variable to decay
-    Expression x = 1;
-    // The target value to start decaying from. Defaults to 0.
-    optional Expression target = 2;
-    // The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
-    optional float scale = 3;
-    // The midpoint of the decay. Should be between 0 and 1. Defaults to 0.5. Output will be this value when `|x - target| == scale`.
-    optional float midpoint = 4;
+  // The variable to decay
+  Expression x = 1;
+  // The target value to start decaying from. Defaults to 0.
+  optional Expression target = 2;
+  // The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
+  optional float scale = 3;
+  // The midpoint of the decay. Should be between 0 and 1. Defaults to 0.5. Output will be this value when `|x - target| == scale`.
+  optional float midpoint = 4;
 }
 
 message NearestInputWithMmr {
-    // The vector to search for nearest neighbors.
-    VectorInput nearest = 1;
+  // The vector to search for nearest neighbors.
+  VectorInput nearest = 1;
 
-    // Perform MMR (Maximal Marginal Relevance) reranking after search,
-    // using the same vector in this query to calculate relevance.
-    Mmr mmr = 2;
+  // Perform MMR (Maximal Marginal Relevance) reranking after search,
+  // using the same vector in this query to calculate relevance.
+  Mmr mmr = 2;
 }
 
 // Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
 message Mmr {
-    // Tunable parameter for the MMR algorithm.
-    // Determines the balance between diversity and relevance.
-    //
-    // A higher value favors diversity (dissimilarity to selected results),
-    // while a lower value favors relevance (similarity to the query vector).
-    //
-    // Must be in the range [0, 1].
-    // Default value is 0.5.
-    optional float diversity = 2;
+  // Tunable parameter for the MMR algorithm.
+  // Determines the balance between diversity and relevance.
+  //
+  // A higher value favors diversity (dissimilarity to selected results),
+  // while a lower value favors relevance (similarity to the query vector).
+  //
+  // Must be in the range [0, 1].
+  // Default value is 0.5.
+  optional float diversity = 2;
 
-    // The maximum number of candidates to consider for re-ranking.
-    //
-    // If not specified, the `limit` value is used.
-    optional uint32 candidates_limit = 3;
+  // The maximum number of candidates to consider for re-ranking.
+  //
+  // If not specified, the `limit` value is used.
+  optional uint32 candidates_limit = 3;
 }
 
 // Parameterized reciprocal rank fusion
 message Rrf {
-    // K parameter for reciprocal rank fusion
-    optional uint32 k = 1;
+  // K parameter for reciprocal rank fusion
+  optional uint32 k = 1;
 }
 
 message Query {
@@ -1056,40 +1053,40 @@ message QueryPointGroups {
 }
 
 message FacetCounts {
-    // Name of the collection
-    string collection_name = 1;
-    // Payload key of the facet
-    string key = 2;
-    // Filter conditions - return only those points that satisfy the specified conditions.
-    optional Filter filter = 3;
-    // Max number of facets. Default is 10.
-    optional uint64 limit = 4;
-    // If true, return exact counts, slower but useful for debugging purposes. Default is false.
-    optional bool exact = 5;
-    // If set, overrides global timeout setting for this request. Unit is seconds.
-    optional uint64 timeout = 6;
-    // Options for specifying read consistency guarantees
-    optional ReadConsistency read_consistency = 7;
-    // Specify in which shards to look for the points, if not specified - look in all shards
-    optional ShardKeySelector shard_key_selector = 8;
+  // Name of the collection
+  string collection_name = 1;
+  // Payload key of the facet
+  string key = 2;
+  // Filter conditions - return only those points that satisfy the specified conditions.
+  optional Filter filter = 3;
+  // Max number of facets. Default is 10.
+  optional uint64 limit = 4;
+  // If true, return exact counts, slower but useful for debugging purposes. Default is false.
+  optional bool exact = 5;
+  // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional uint64 timeout = 6;
+  // Options for specifying read consistency guarantees
+  optional ReadConsistency read_consistency = 7;
+  // Specify in which shards to look for the points, if not specified - look in all shards
+  optional ShardKeySelector shard_key_selector = 8;
 }
 
 message FacetValue {
-    oneof variant {
-        // String value from the facet
-        string string_value = 1;
-        // Integer value from the facet
-        int64 integer_value = 2;
-        // Boolean value from the facet
-        bool bool_value = 3;
-    }
+  oneof variant {
+    // String value from the facet
+    string string_value = 1;
+    // Integer value from the facet
+    int64 integer_value = 2;
+    // Boolean value from the facet
+    bool bool_value = 3;
+  }
 }
 
 message FacetHit {
-    // Value from the facet
-    FacetValue value = 1;
-    // Number of points with this value
-    uint64 count = 2;
+  // Value from the facet
+  FacetValue value = 1;
+  // Number of points with this value
+  uint64 count = 2;
 }
 
 message SearchMatrixPoints {
@@ -1136,7 +1133,6 @@ message SearchMatrixOffsets {
   repeated PointId ids = 4;
 }
 
-
 message PointsUpdateOperation {
   message PointStructList {
     repeated PointStruct points = 1;
@@ -1146,29 +1142,29 @@ message PointsUpdateOperation {
     optional Filter update_filter = 3;
   }
   message SetPayload {
-      map<string, Value> payload = 1;
-      // Affected points
-      optional PointsSelector points_selector = 2;
-      // Option for custom sharding to specify used shard keys
-      optional ShardKeySelector shard_key_selector = 3;
-      // Option for indicate property of payload
-      optional string key = 4;
+    map<string, Value> payload = 1;
+    // Affected points
+    optional PointsSelector points_selector = 2;
+    // Option for custom sharding to specify used shard keys
+    optional ShardKeySelector shard_key_selector = 3;
+    // Option for indicate property of payload
+    optional string key = 4;
   }
   message OverwritePayload {
-      map<string, Value> payload = 1;
-      // Affected points
-      optional PointsSelector points_selector = 2;
-      // Option for custom sharding to specify used shard keys
-      optional ShardKeySelector shard_key_selector = 3;
-      // Option for indicate property of payload
-      optional string key = 4;
+    map<string, Value> payload = 1;
+    // Affected points
+    optional PointsSelector points_selector = 2;
+    // Option for custom sharding to specify used shard keys
+    optional ShardKeySelector shard_key_selector = 3;
+    // Option for indicate property of payload
+    optional string key = 4;
   }
   message DeletePayload {
-      repeated string keys = 1;
-      // Affected points
-      optional PointsSelector points_selector = 2;
-      // Option for custom sharding to specify used shard keys
-      optional ShardKeySelector shard_key_selector = 3;
+    repeated string keys = 1;
+    // Affected points
+    optional PointsSelector points_selector = 2;
+    // Option for custom sharding to specify used shard keys
+    optional ShardKeySelector shard_key_selector = 3;
   }
   message UpdateVectors {
     // List of points and vectors to update
@@ -1201,11 +1197,11 @@ message PointsUpdateOperation {
 
   oneof operation {
     PointStructList upsert = 1;
-    PointsSelector delete_deprecated = 2 [deprecated=true];
+    PointsSelector delete_deprecated = 2 [deprecated = true];
     SetPayload set_payload = 3;
     OverwritePayload overwrite_payload = 4;
     DeletePayload delete_payload = 5;
-    PointsSelector clear_payload_deprecated = 6 [deprecated=true];
+    PointsSelector clear_payload_deprecated = 6 [deprecated = true];
     UpdateVectors update_vectors = 7;
     DeleteVectors delete_vectors = 8;
     DeletePoints delete_points = 9;
@@ -1432,10 +1428,10 @@ message UpdateBatchResponse {
 }
 
 message FacetResponse {
-    repeated FacetHit hits = 1;
-    // Time spent to process
-    double time = 2;
-    optional Usage usage = 3;
+  repeated FacetHit hits = 1;
+  // Time spent to process
+  double time = 2;
+  optional Usage usage = 3;
 }
 
 message SearchMatrixPairsResponse {
@@ -1471,7 +1467,6 @@ message PointsIdsList {
 // ------------------- Point -------------------
 // ---------------------------------------------
 
-
 message PointStruct {
   PointId id = 1;
   // deprecated "vector" field
@@ -1487,7 +1482,6 @@ message Usage {
   optional HardwareUsage hardware = 1;
   optional InferenceUsage inference = 2;
 }
-
 
 // ---------------------------------------------
 // ------------ Inference measurements ----------

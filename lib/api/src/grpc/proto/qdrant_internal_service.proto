@@ -7,13 +7,16 @@ import "telemetry_internal.proto";
 
 service QdrantInternal {
   // Get current commit and term on the target peer.
-  rpc GetConsensusCommit (GetConsensusCommitRequest) returns (GetConsensusCommitResponse) {}
+  rpc GetConsensusCommit(GetConsensusCommitRequest)
+      returns (GetConsensusCommitResponse) {}
 
   // Wait until the target peer reached the given commit ID.
-  rpc WaitOnConsensusCommit (WaitOnConsensusCommitRequest) returns (WaitOnConsensusCommitResponse) {}
+  rpc WaitOnConsensusCommit(WaitOnConsensusCommitRequest)
+      returns (WaitOnConsensusCommitResponse) {}
 
   // Get telemetry from a peer
-  rpc GetPeerTelemetry (GetPeerTelemetryRequest) returns (GetPeerTelemetryResponse) {}
+  rpc GetPeerTelemetry(GetPeerTelemetryRequest)
+      returns (GetPeerTelemetryResponse) {}
 }
 
 message GetConsensusCommitRequest {}

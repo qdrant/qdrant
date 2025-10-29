@@ -7,13 +7,13 @@ import "snapshots_service.proto";
 
 service ShardSnapshots {
   // Create shard snapshot
-  rpc Create (CreateShardSnapshotRequest) returns (CreateSnapshotResponse) {}
+  rpc Create(CreateShardSnapshotRequest) returns (CreateSnapshotResponse) {}
   // List shard snapshots
-  rpc List (ListShardSnapshotsRequest) returns (ListSnapshotsResponse) {}
+  rpc List(ListShardSnapshotsRequest) returns (ListSnapshotsResponse) {}
   // Delete shard snapshot
-  rpc Delete (DeleteShardSnapshotRequest) returns (DeleteSnapshotResponse) {}
+  rpc Delete(DeleteShardSnapshotRequest) returns (DeleteSnapshotResponse) {}
   // Recover shard snapshot
-  rpc Recover (RecoverShardSnapshotRequest) returns (RecoverSnapshotResponse) {}
+  rpc Recover(RecoverShardSnapshotRequest) returns (RecoverSnapshotResponse) {}
 }
 
 message CreateShardSnapshotRequest {
@@ -64,14 +64,14 @@ message ShardSnapshotLocation {
 }
 
 enum ShardSnapshotPriority {
-    // Restore snapshot without *any* additional synchronization
-    ShardSnapshotPriorityNoSync = 0;
-    // Prefer snapshot data over the current state
-    ShardSnapshotPrioritySnapshot = 1;
-    // Prefer existing data over the snapshot
-    ShardSnapshotPriorityReplica = 2;
-    // Internal priority to use during snapshot shard transfer
-    ShardSnapshotPriorityShardTransfer = 3;
+  // Restore snapshot without *any* additional synchronization
+  ShardSnapshotPriorityNoSync = 0;
+  // Prefer snapshot data over the current state
+  ShardSnapshotPrioritySnapshot = 1;
+  // Prefer existing data over the snapshot
+  ShardSnapshotPriorityReplica = 2;
+  // Internal priority to use during snapshot shard transfer
+  ShardSnapshotPriorityShardTransfer = 3;
 }
 
 message RecoverSnapshotResponse {

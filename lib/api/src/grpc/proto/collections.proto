@@ -319,16 +319,16 @@ enum BinaryQuantizationEncoding {
 }
 
 message BinaryQuantizationQueryEncoding {
-    enum Setting {
-      Default = 0;
-      Binary = 1;
-      Scalar4Bits = 2;
-      Scalar8Bits = 3;
-    }
+  enum Setting {
+    Default = 0;
+    Binary = 1;
+    Scalar4Bits = 2;
+    Scalar8Bits = 3;
+  }
 
-    oneof variant {
-        Setting setting = 4;
-    }
+  oneof variant {
+    Setting setting = 4;
+  }
 }
 
 message BinaryQuantization {
@@ -894,12 +894,12 @@ message RestartTransfer {
 }
 
 message ReplicatePoints {
-    // Source shard key
-    ShardKey from_shard_key = 1;
-    // Target shard key
-    ShardKey to_shard_key = 2;
-    // If set - only points matching the filter will be replicated
-    optional Filter filter = 3;
+  // Source shard key
+  ShardKey from_shard_key = 1;
+  // Target shard key
+  ShardKey to_shard_key = 2;
+  // If set - only points matching the filter will be replicated
+  optional Filter filter = 3;
 }
 
 enum ShardTransferMethod {

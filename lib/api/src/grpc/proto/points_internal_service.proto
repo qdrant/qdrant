@@ -7,27 +7,37 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 service PointsInternal {
-  rpc Upsert (UpsertPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc Sync (SyncPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc Delete (DeletePointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc UpdateVectors (UpdateVectorsInternal) returns (PointsOperationResponseInternal) {}
-  rpc DeleteVectors (DeleteVectorsInternal) returns (PointsOperationResponseInternal) {}
-  rpc SetPayload (SetPayloadPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc OverwritePayload (SetPayloadPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc DeletePayload (DeletePayloadPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc ClearPayload (ClearPayloadPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc CreateFieldIndex (CreateFieldIndexCollectionInternal) returns (PointsOperationResponseInternal) {}
-  rpc DeleteFieldIndex (DeleteFieldIndexCollectionInternal) returns (PointsOperationResponseInternal) {}
-  rpc UpdateBatch (UpdateBatchInternal) returns (PointsOperationResponseInternal) {}
-  rpc CoreSearchBatch (CoreSearchBatchPointsInternal) returns (SearchBatchResponse) {}
-  rpc Scroll (ScrollPointsInternal) returns (ScrollResponse) {}
-  rpc Count (CountPointsInternal) returns (CountResponse) {}
-  rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
-  rpc Get (GetPointsInternal) returns (GetResponse) {}
-  rpc QueryBatch (QueryBatchPointsInternal) returns (QueryBatchResponseInternal) {}
+  rpc Upsert(UpsertPointsInternal) returns (PointsOperationResponseInternal) {}
+  rpc Sync(SyncPointsInternal) returns (PointsOperationResponseInternal) {}
+  rpc Delete(DeletePointsInternal) returns (PointsOperationResponseInternal) {}
+  rpc UpdateVectors(UpdateVectorsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc DeleteVectors(DeleteVectorsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc SetPayload(SetPayloadPointsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc OverwritePayload(SetPayloadPointsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc DeletePayload(DeletePayloadPointsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc ClearPayload(ClearPayloadPointsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc CreateFieldIndex(CreateFieldIndexCollectionInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc DeleteFieldIndex(DeleteFieldIndexCollectionInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc UpdateBatch(UpdateBatchInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc CoreSearchBatch(CoreSearchBatchPointsInternal)
+      returns (SearchBatchResponse) {}
+  rpc Scroll(ScrollPointsInternal) returns (ScrollResponse) {}
+  rpc Count(CountPointsInternal) returns (CountResponse) {}
+  rpc Recommend(RecommendPointsInternal) returns (RecommendResponse) {}
+  rpc Get(GetPointsInternal) returns (GetResponse) {}
+  rpc QueryBatch(QueryBatchPointsInternal)
+      returns (QueryBatchResponseInternal) {}
   rpc Facet(FacetCountsInternal) returns (FacetResponseInternal) {}
 }
-
 
 message SyncPoints {
   // name of the collection
@@ -105,26 +115,24 @@ message DeleteFieldIndexCollectionInternal {
 }
 
 message UpdateOperation {
-    oneof update {
-        SyncPointsInternal sync = 1;
-        UpsertPointsInternal upsert = 2;
-        DeletePointsInternal delete = 3;
-        UpdateVectorsInternal update_vectors = 4;
-        DeleteVectorsInternal delete_vectors = 5;
-        SetPayloadPointsInternal set_payload = 6;
-        SetPayloadPointsInternal overwrite_payload = 7;
-        DeletePayloadPointsInternal delete_payload = 8;
-        ClearPayloadPointsInternal clear_payload = 9;
-        CreateFieldIndexCollectionInternal create_field_index = 10;
-        DeleteFieldIndexCollectionInternal delete_field_index = 11;
-    }
+  oneof update {
+    SyncPointsInternal sync = 1;
+    UpsertPointsInternal upsert = 2;
+    DeletePointsInternal delete = 3;
+    UpdateVectorsInternal update_vectors = 4;
+    DeleteVectorsInternal delete_vectors = 5;
+    SetPayloadPointsInternal set_payload = 6;
+    SetPayloadPointsInternal overwrite_payload = 7;
+    DeletePayloadPointsInternal delete_payload = 8;
+    ClearPayloadPointsInternal clear_payload = 9;
+    CreateFieldIndexCollectionInternal create_field_index = 10;
+    DeleteFieldIndexCollectionInternal delete_field_index = 11;
+  }
 }
-
 
 message UpdateBatchInternal {
-    repeated UpdateOperation operations = 1;
+  repeated UpdateOperation operations = 1;
 }
-
 
 // Has to be backward compatible with `PointsOperationResponse`!
 message PointsOperationResponseInternal {
@@ -184,15 +192,15 @@ message ContextQuery {
 }
 
 message FeedbackStrategy {
-    oneof variant {
-        NaiveFeedbackStrategy naive = 1;
-    }
+  oneof variant {
+    NaiveFeedbackStrategy naive = 1;
+  }
 }
 
 message NaiveFeedbackStrategy {
-    float a = 1;
-    float b = 2;
-    float c = 3;
+  float a = 1;
+  float b = 2;
+  float c = 3;
 }
 
 message QueryEnum {
@@ -283,14 +291,14 @@ message RawQuery {
   }
 
   message Feedback {
-      RawVector target = 1;
-      repeated FeedbackItem feedback = 2;
-      FeedbackStrategy strategy = 3;
+    RawVector target = 1;
+    repeated FeedbackItem feedback = 2;
+    FeedbackStrategy strategy = 3;
   }
 
   message FeedbackItem {
-      RawVector vector = 1;
-      float score = 2;
+    RawVector vector = 1;
+    float score = 2;
   }
 
   oneof variant {
@@ -309,11 +317,11 @@ message RawQuery {
 }
 
 message MmrInternal {
-    // Query vector to use for relevance
-    RawVector vector = 1;
-    // Lambda parameter controlling diversity vs relevance trade-off
-    float lambda = 2;
-    uint32 candidates_limit = 3;
+  // Query vector to use for relevance
+  RawVector vector = 1;
+  // Lambda parameter controlling diversity vs relevance trade-off
+  float lambda = 2;
+  uint32 candidates_limit = 3;
 }
 
 message QueryShardPoints {
@@ -370,7 +378,7 @@ message IntermediateResult {
 }
 
 message QueryResultInternal {
-    repeated IntermediateResult intermediate_results = 1;
+  repeated IntermediateResult intermediate_results = 1;
 }
 
 message QueryBatchResponseInternal {
@@ -382,32 +390,32 @@ message QueryBatchResponseInternal {
 }
 
 message FacetCountsInternal {
-    string collection_name = 1;
-    string key = 2;
-    optional Filter filter = 3;
-    uint64 limit = 4;
-    bool exact = 5;
-    uint32 shard_id = 6;
-    optional uint64 timeout = 7;
+  string collection_name = 1;
+  string key = 2;
+  optional Filter filter = 3;
+  uint64 limit = 4;
+  bool exact = 5;
+  uint32 shard_id = 6;
+  optional uint64 timeout = 7;
 }
 
 message FacetValueInternal {
-    oneof variant {
-        string keyword_value = 1;
-        int64 integer_value = 2;
-        bytes uuid_value = 3;
-        bool bool_value = 4;
-    }
+  oneof variant {
+    string keyword_value = 1;
+    int64 integer_value = 2;
+    bytes uuid_value = 3;
+    bool bool_value = 4;
+  }
 }
 
 message FacetHitInternal {
-    FacetValueInternal value = 1;
-    uint64 count = 2;
+  FacetValueInternal value = 1;
+  uint64 count = 2;
 }
 
 message FacetResponseInternal {
-    repeated FacetHitInternal hits = 1;
-    // Time spent to process
-    double time = 2;
-    optional HardwareUsage usage = 3;
+  repeated FacetHitInternal hits = 1;
+  // Time spent to process
+  double time = 2;
+  optional HardwareUsage usage = 3;
 }

@@ -7,15 +7,20 @@ option csharp_namespace = "Qdrant.Client.Grpc";
 
 service CollectionsInternal {
   // Get collection info
-  rpc Get (GetCollectionInfoRequestInternal) returns (GetCollectionInfoResponse) {}
+  rpc Get(GetCollectionInfoRequestInternal)
+      returns (GetCollectionInfoResponse) {}
   // Initiate shard transfer
-  rpc Initiate (InitiateShardTransferRequest) returns (CollectionOperationResponse) {}
+  rpc Initiate(InitiateShardTransferRequest)
+      returns (CollectionOperationResponse) {}
   // Wait for a shard to get into the given state
-  rpc WaitForShardState (WaitForShardStateRequest) returns (CollectionOperationResponse) {}
+  rpc WaitForShardState(WaitForShardStateRequest)
+      returns (CollectionOperationResponse) {}
   // Get shard recovery point
-  rpc GetShardRecoveryPoint (GetShardRecoveryPointRequest) returns (GetShardRecoveryPointResponse) {}
+  rpc GetShardRecoveryPoint(GetShardRecoveryPointRequest)
+      returns (GetShardRecoveryPointResponse) {}
   // Update shard cutoff point
-  rpc UpdateShardCutoffPoint (UpdateShardCutoffPointRequest) returns (CollectionOperationResponse) {}
+  rpc UpdateShardCutoffPoint(UpdateShardCutoffPointRequest)
+      returns (CollectionOperationResponse) {}
 }
 
 message GetCollectionInfoRequestInternal {

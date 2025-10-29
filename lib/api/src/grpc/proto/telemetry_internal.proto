@@ -6,157 +6,156 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 message GetPeerTelemetryRequest {
-    // The peer id to ask for telemetry
-    uint64 peer_id = 1;
-    // The level of detail needed
-    uint32 details_level = 2;
+  // The peer id to ask for telemetry
+  uint64 peer_id = 1;
+  // The level of detail needed
+  uint32 details_level = 2;
 }
 
 message GetPeerTelemetryResponse {
-    // id
-    reserved 1;
-    // app
-    reserved 2;
-    // Mapping from collection name to its telemetry
-    map<string, CollectionTelemetry> collections = 3;
-    // Telemetry about the cluster and peers
-    ClusterTelemetry cluster = 4;
-    // requests
-    reserved 5;
-    // memory
-    reserved 6;
-    // hardware
-    reserved 7;
+  // id
+  reserved 1;
+  // app
+  reserved 2;
+  // Mapping from collection name to its telemetry
+  map<string, CollectionTelemetry> collections = 3;
+  // Telemetry about the cluster and peers
+  ClusterTelemetry cluster = 4;
+  // requests
+  reserved 5;
+  // memory
+  reserved 6;
+  // hardware
+  reserved 7;
 }
 
 message CollectionTelemetry {
-    // Name of the collection
-    string id = 1;
-    // init_time_ms
-    reserved 2;
-    // config
-    reserved 3;
-    // shards
-    reserved 4;
-    // Shard transfers in progress
-    repeated ShardTransferTelemetry transfers = 5;
-    // Resharding(s) in progress
-    repeated ReshardingTelemetry resharding = 6;
-    // Tasks that clean points after completing a resharding sequence
-    map<uint32, ShardCleanStatusTelemetry> shard_clean_tasks = 7;
+  // Name of the collection
+  string id = 1;
+  // init_time_ms
+  reserved 2;
+  // config
+  reserved 3;
+  // shards
+  reserved 4;
+  // Shard transfers in progress
+  repeated ShardTransferTelemetry transfers = 5;
+  // Resharding(s) in progress
+  repeated ReshardingTelemetry resharding = 6;
+  // Tasks that clean points after completing a resharding sequence
+  map<uint32, ShardCleanStatusTelemetry> shard_clean_tasks = 7;
 }
 
 message ShardTransferTelemetry {
-    // Local shard id
-    uint32 shard_id = 1;
-    // Target shard ID if different than source shard ID.
-    // Used exclusively with `ReshardStreamRecords` transfer method.
-    optional uint32 to_shard_id = 2;
-    // From peer id
-    uint64 from = 3;
-    // To peer id
-    uint64 to = 4;
-    // If `true` transfer is a synchronization of replicas;
-    // If `false` transfer is a moving of a shard from one peer to another.
-    bool sync = 5;
-    // Method of transferring points
-    ShardTransferMethod method = 6;
-    // Freeform string. Typically reports progress
-    string comment = 7;
+  // Local shard id
+  uint32 shard_id = 1;
+  // Target shard ID if different than source shard ID.
+  // Used exclusively with `ReshardStreamRecords` transfer method.
+  optional uint32 to_shard_id = 2;
+  // From peer id
+  uint64 from = 3;
+  // To peer id
+  uint64 to = 4;
+  // If `true` transfer is a synchronization of replicas;
+  // If `false` transfer is a moving of a shard from one peer to another.
+  bool sync = 5;
+  // Method of transferring points
+  ShardTransferMethod method = 6;
+  // Freeform string. Typically reports progress
+  string comment = 7;
 }
 
 message ReshardingTelemetry {
-    string uuid = 1;
-    uint32 shard_id = 2;
-    uint64 peer_id = 3;
-    optional ShardKey shard_key = 4;
-    ReshardingDirection direction = 5;
-    ReshardingStage stage = 6;
+  string uuid = 1;
+  uint32 shard_id = 2;
+  uint64 peer_id = 3;
+  optional ShardKey shard_key = 4;
+  ReshardingDirection direction = 5;
+  ReshardingStage stage = 6;
 }
 
 enum ReshardingStage {
-    MIGRATING_POINTS = 0;
-    READ_HASH_RING_COMMITTED = 1;
-    WRITE_HASH_RING_COMMITTED = 2;
+  MIGRATING_POINTS = 0;
+  READ_HASH_RING_COMMITTED = 1;
+  WRITE_HASH_RING_COMMITTED = 2;
 }
 
 message ShardCleanStatusTelemetry {
-    oneof variant {
-        Started started = 1;
-        Progress progress = 2;
-        Failed failed = 3;
-        Cancelled cancelled = 4;
-        Done done = 5;
-    }
+  oneof variant {
+    Started started = 1;
+    Progress progress = 2;
+    Failed failed = 3;
+    Cancelled cancelled = 4;
+    Done done = 5;
+  }
 
-    message Started {
-        // Marker message
-    }
+  message Started {
+    // Marker message
+  }
 
-    message Progress {
-        uint64 deleted_points = 1;
-    }
+  message Progress {
+    uint64 deleted_points = 1;
+  }
 
-    message Failed {
-        string reason = 1;
-    }
+  message Failed {
+    string reason = 1;
+  }
 
-    message Cancelled {
-        // Marker message
-    }
+  message Cancelled {
+    // Marker message
+  }
 
-    message Done {
-        // Marker message
-    }
+  message Done {
+    // Marker message
+  }
 }
 
 message ClusterTelemetry {
-    ClusterStatusTelemetry status = 1;
-    // config
-    reserved 2;
-    // peers
-    reserved 3;
-    // peer_metadata
-    reserved 4;
-    // metadata
-    reserved 5;
+  ClusterStatusTelemetry status = 1;
+  // config
+  reserved 2;
+  // peers
+  reserved 3;
+  // peer_metadata
+  reserved 4;
+  // metadata
+  reserved 5;
 }
 
 message ClusterStatusTelemetry {
-    uint32 num_peers = 1;
-    uint64 term = 2;
-    uint64 commit = 3;
-    uint64 pending_operations = 4;
-    StateRole role = 5;
-    bool is_voter = 6;
-    uint64 peer_id = 7;
-    ConsensusThreadStatus consensus_thread_status = 8;
+  uint32 num_peers = 1;
+  uint64 term = 2;
+  uint64 commit = 3;
+  uint64 pending_operations = 4;
+  StateRole role = 5;
+  bool is_voter = 6;
+  uint64 peer_id = 7;
+  ConsensusThreadStatus consensus_thread_status = 8;
 }
 
 message ConsensusThreadStatus {
-    oneof status {
-        Working working = 1;
-        Stopped stopped = 2;
-        StoppedWithErr stopped_with_err = 3;
-    }
-    message Working {
-        // Unix timestamp in milliseconds
-        int64 last_update_ms = 1;
-    }
+  oneof status {
+    Working working = 1;
+    Stopped stopped = 2;
+    StoppedWithErr stopped_with_err = 3;
+  }
+  message Working {
+    // Unix timestamp in milliseconds
+    int64 last_update_ms = 1;
+  }
 
-    message Stopped {
-        // Marker message for stopped state
-    }
+  message Stopped {
+    // Marker message for stopped state
+  }
 
-    message StoppedWithErr {
-        string err = 1;
-    }
+  message StoppedWithErr {
+    string err = 1;
+  }
 }
 
-
 enum StateRole {
-    FOLLOWER = 0;
-    CANDIDATE = 1;
-    LEADER = 2;
-    PRE_CANDIDATE = 3;
+  FOLLOWER = 0;
+  CANDIDATE = 1;
+  LEADER = 2;
+  PRE_CANDIDATE = 3;
 }

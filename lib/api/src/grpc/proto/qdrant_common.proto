@@ -53,7 +53,7 @@ message IsEmptyCondition {
 }
 
 message IsNullCondition {
-    string key = 1;
+  string key = 1;
 }
 
 message HasIdCondition {
