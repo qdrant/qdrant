@@ -5,6 +5,7 @@ pub mod point;
 pub mod point_id;
 pub mod point_vectors;
 pub mod record;
+pub mod value;
 pub mod vector;
 
 pub use self::filter::*;
@@ -14,4 +15,5 @@ pub use self::point::*;
 pub use self::point_id::*;
 pub use self::point_vectors::*;
 pub use self::record::*;
+pub use self::value::*;
 pub use self::vector::*;
