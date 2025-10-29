@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ahash::{HashSet, HashSetExt};
+use ahash::HashSet;
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
@@ -403,30 +403,32 @@ impl ShardOperation for ForwardProxyShard {
         let _update_lock = self.update_lock.lock().await;
 
         let points_matching_filter_before = {
-            if let Some(filter) = &self.filter {
-                if let Some(point_ids) = operation.operation.point_ids() {
-                    let filter = filter.clone();
+            if let Some(filter) = &self.filter
+                && let Some(point_ids) = operation.operation.point_ids()
+            {
+                let filter = filter.clone();
 
-                    self.wrapped_shard
-                        .local_scroll_by_id(
-                            None,
-                            point_ids.len(),
-                            &WithPayloadInterface::Bool(false),
-                            &WithVector::Bool(false),
-                            Some(&filter.with_point_ids(point_ids)),
-                            &Handle::current(),
-                            None,                           // No timeout
-                            HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
-                        )
-                        .await?
-                        .into_iter()
-                        .map(|record| record.id)
-                        .collect::<HashSet<_>>()
-                } else {
-                    HashSet::new()
-                }
+                let affected_points: HashSet<_> = self
+                    .wrapped_shard
+                    .local_scroll_by_id(
+                        None,
+                        point_ids.len(),
+                        &WithPayloadInterface::Bool(false),
+                        &WithVector::Bool(false),
+                        Some(&filter.with_point_ids(point_ids)),
+                        &Handle::current(),
+                        None,                           // No timeout
+                        HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
+                    )
+                    .await?
+                    .into_iter()
+                    .map(|record| record.id)
+                    .collect();
+                // Operation is applicable to a subset of points, only forward those
+                Some(affected_points)
             } else {
-                HashSet::new()
+                // Global operation, we need to forward it as-is
+                None
             }
         };
 
@@ -457,47 +459,21 @@ impl ShardOperation for ForwardProxyShard {
             };
 
             op.map(|op| OperationWithClockTag::new(op, operation.clock_tag))
-        } else if let Some(filter) = &self.filter {
-            // We need to modify the operation according to the filter before forwarding it.
-            // We have already written to local shard, so we can read points from there.
-            // Let's read local points with id filter to see which of them satisfy it
-            if let Some(point_ids) = operation.operation.point_ids() {
-                // Modify original operation to only contain operations for matching points or global operations
-                let filter = filter.clone();
+        } else if let Some(point_ids) = points_matching_filter_before {
+            let mut modified_operation = operation.clone();
+            modified_operation
+                .operation
+                .retain_point_ids(|point_id| point_ids.contains(point_id));
 
-                let points_matching_filter_after = self
-                    .wrapped_shard
-                    .local_scroll_by_id(
-                        None,
-                        point_ids.len(),
-                        &WithPayloadInterface::Bool(false),
-                        &WithVector::Bool(false),
-                        Some(&filter.with_point_ids(point_ids)),
-                        &Handle::current(),
-                        None,                           // No timeout
-                        HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
-                    )
-                    .await?
-                    .into_iter()
-                    .map(|record| record.id)
-                    .collect::<HashSet<_>>();
-
-                let mut modified_operation = operation.clone();
-                modified_operation.operation.retain_point_ids(|point_id| {
-                    points_matching_filter_before.contains(point_id)
-                        || points_matching_filter_after.contains(point_id)
-                });
-
-                Some(modified_operation)
-            } else {
-                Some(operation) // No point IDs to filter, forward as-is
-            }
+            Some(modified_operation)
         } else {
-            // If `ForwardProxyShard` `resharding_hash_ring` and `filter` are `None`, we assume that proxy is used
-            // during *regular* shard transfer, so operation can be forwarded as-is, without any
-            // additional handling.
-
-            debug_assert_eq!(self.shard_id, self.remote_shard.id);
+            #[cfg(debug_assertions)]
+            if self.filter.is_none() {
+                // If `ForwardProxyShard` `resharding_hash_ring` and `filter` are `None`, we assume that proxy is used
+                // during *regular* shard transfer, so operation can be forwarded as-is, without any
+                // additional handling.
+                debug_assert_eq!(self.shard_id, self.remote_shard.id);
+            }
 
             Some(operation)
         };
