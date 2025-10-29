@@ -11,9 +11,11 @@ import "json_with_int.proto";
 enum WriteOrderingType {
   // Write operations may be reordered, works faster, default
   Weak = 0;
-  // Write operations go through dynamically selected leader, may be inconsistent for a short period of time in case of leader change
+  // Write operations go through dynamically selected leader,
+  // may be inconsistent for a short period of time in case of leader change
   Medium = 1;
-  // Write operations go through the permanent leader, consistent, but may be unavailable if leader is down
+  // Write operations go through the permanent leader, consistent,
+  // but may be unavailable if leader is down
   Strong = 2;
 }
 
@@ -35,7 +37,8 @@ message ReadConsistency {
   oneof value {
     // Common read consistency configurations
     ReadConsistencyType type = 1;
-    // Send request to a specified number of nodes, and return points which are present on all of them
+    // Send request to a specified number of nodes,
+    // and return points which are present on all of them
     uint64 factor = 2;
   }
 }
@@ -121,7 +124,8 @@ message MultiDenseVector {
   repeated DenseVector vectors = 1;
 }
 
-// Vector type to be used in queries. Ids will be substituted with their corresponding vectors from the collection.
+// Vector type to be used in queries.
+// Ids will be substituted with their corresponding vectors from the collection.
 message VectorInput {
   oneof variant {
     PointId id = 1;
@@ -394,7 +398,8 @@ message QuantizationSearchParams {
   // If set to true, search will ignore quantized vector data
   optional bool ignore = 1;
 
-  // If true, use original vectors to re-score top-k results. If ignored, qdrant decides automatically does rescore enabled or not.
+  // If true, use original vectors to re-score top-k results.
+  // If ignored, qdrant decides automatically does rescore enabled or not.
   optional bool rescore = 2;
 
   // Oversampling factor for quantization.
@@ -402,7 +407,8 @@ message QuantizationSearchParams {
   // Defines how many extra vectors should be pre-selected using quantized index,
   // and then re-scored using original vectors.
   //
-  // For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
+  // For example, if `oversampling` is 2.4 and `limit` is 100,
+  // then 240 vectors will be pre-selected using quantized index,
   // and then top-100 will be returned after re-scoring.
   optional double oversampling = 3;
 }
@@ -514,7 +520,9 @@ message SearchPointGroups {
   optional string vector_name = 8;
   // Options for specifying which vectors to include into response
   optional WithVectorsSelector with_vectors = 9;
-  // Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+  // Payload field to group by, must be a string or number field.
+  // If there are multiple values for the field, all of them will be used.
+  // One point can be in multiple groups.
   string group_by = 10;
   // Maximum amount of points to return per group
   uint32 group_size = 11;
@@ -674,7 +682,9 @@ message RecommendPointGroups {
   optional WithVectorsSelector with_vectors = 10;
   // Name of the collection to use for points lookup, if not specified - use current collection
   optional LookupLocation lookup_from = 11;
-  // Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+  // Payload field to group by, must be a string or number field.
+  // If there are multiple values for the field, all of them will be used.
+  // One point can be in multiple groups.
   string group_by = 12;
   // Maximum amount of points to return per group
   uint32 group_size = 13;
@@ -890,9 +900,12 @@ message DecayParamsExpression {
   Expression x = 1;
   // The target value to start decaying from. Defaults to 0.
   optional Expression target = 2;
-  // The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
+  // The scale factor of the decay, in terms of `x`.
+  // Defaults to 1.0. Must be a non-zero positive number.
   optional float scale = 3;
-  // The midpoint of the decay. Should be between 0 and 1. Defaults to 0.5. Output will be this value when `|x - target| == scale`.
+  // The midpoint of the decay.
+  // Should be between 0 and 1. Defaults to 0.5.
+  // Output will be this value when `|x - target| == scale`.
   optional float midpoint = 4;
 }
 
@@ -955,11 +968,14 @@ message Query {
 }
 
 message PrefetchQuery {
-  // Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+  // Sub-requests to perform first.
+  // If present, the query will be performed on the results of the prefetches.
   repeated PrefetchQuery prefetch = 1;
-  // Query to perform. If missing, returns points ordered by their IDs.
+  // Query to perform.
+  // If missing, returns points ordered by their IDs.
   optional Query query = 2;
-  // Define which vector to use for querying. If missing, the default vector is is used.
+  // Define which vector to use for querying.
+  // If missing, the default vector is is used.
   optional string using = 3;
   // Filter conditions - return only those points that satisfy the specified conditions.
   optional Filter filter = 4;
@@ -969,18 +985,21 @@ message PrefetchQuery {
   optional float score_threshold = 6;
   // Max number of points. Default is 10
   optional uint64 limit = 7;
-  // The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+  // The location to use for IDs lookup.
+  // If not specified - use the current collection and the 'using' vector.
   optional LookupLocation lookup_from = 8;
 }
 
 message QueryPoints {
   // Name of the collection
   string collection_name = 1;
-  // Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+  // Sub-requests to perform first.
+  // If present, the query will be performed on the results of the prefetches.
   repeated PrefetchQuery prefetch = 2;
   // Query to perform. If missing, returns points ordered by their IDs.
   optional Query query = 3;
-  // Define which vector to use for querying. If missing, the default vector is used.
+  // Define which vector to use for querying.
+  // If missing, the default vector is used.
   optional string using = 4;
   // Filter conditions - return only those points that satisfy the specified conditions.
   optional Filter filter = 5;
@@ -998,9 +1017,11 @@ message QueryPoints {
   optional WithPayloadSelector with_payload = 11;
   // Options for specifying read consistency guarantees.
   optional ReadConsistency read_consistency = 12;
-  // Specify in which shards to look for the points, if not specified - look in all shards.
+  // Specify in which shards to look for the points.
+  // If not specified - look in all shards.
   optional ShardKeySelector shard_key_selector = 13;
-  // The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+  // The location to use for IDs lookup.
+  // If not specified - use the current collection and the 'using' vector.
   optional LookupLocation lookup_from = 14;
   // If set, overrides global timeout setting for this request. Unit is seconds.
   optional uint64 timeout = 15;
@@ -1018,11 +1039,13 @@ message QueryBatchPoints {
 message QueryPointGroups {
   // Name of the collection
   string collection_name = 1;
-  // Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+  // Sub-requests to perform first.
+  // If present, the query will be performed on the results of the prefetches.
   repeated PrefetchQuery prefetch = 2;
   // Query to perform. If missing, returns points ordered by their IDs.
   optional Query query = 3;
-  // Define which vector to use for querying. If missing, the default vector is used.
+  // Define which vector to use for querying.
+  // If missing, the default vector is used.
   optional string using = 4;
   // Filter conditions - return only those points that satisfy the specified conditions.
   optional Filter filter = 5;
@@ -1034,13 +1057,16 @@ message QueryPointGroups {
   WithPayloadSelector with_payload = 8;
   // Options for specifying which vectors to include into response
   optional WithVectorsSelector with_vectors = 9;
-  // The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+  // The location to use for IDs lookup.
+  // If not specified - use the current collection and the 'using' vector.
   optional LookupLocation lookup_from = 10;
   // Max number of points. Default is 3.
   optional uint64 limit = 11;
   // Maximum amount of points to return per group. Default to 10.
   optional uint64 group_size = 12;
-  // Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+  // Payload field to group by, must be a string or number field.
+  // If there are multiple values for the field, all of them will be used.
+  // One point can be in multiple groups.
   string group_by = 13;
   // Options for specifying read consistency guarantees
   optional ReadConsistency read_consistency = 14;

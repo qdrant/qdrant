@@ -159,7 +159,8 @@ message GeoLineString {
   repeated GeoPoint points = 1;
 }
 
-// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must consist of a minimum of 4 points.
+// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must
+// consist of a minimum of 4 points.
 // Additionally, the first and last points of each GeoLineString must be the same.
 message GeoPolygon {
   // The exterior line bounds the surface
