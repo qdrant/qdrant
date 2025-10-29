@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 
 #[derive(Clone, Debug, Into)]
+#[repr(transparent)]
 pub struct PyValue(serde_json::Value);
 
 impl PyValue {
