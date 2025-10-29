@@ -200,7 +200,7 @@ impl MetricsProvider for CollectionsTelemetry {
                 // While resharding up, some (shard) replica sets may still be incomplete during
                 // the resharding process. In that case we don't want to consider these replica
                 // sets at all in the active replica calculation. This is fine because searches nor
-                // searches don't depend on them being available yet.
+                // updates don't depend on them being available yet.
                 //
                 // More specifically:
                 // - in stage 2 (migrate points) of resharding up we don't rely on the replica
