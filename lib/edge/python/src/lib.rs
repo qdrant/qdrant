@@ -1,4 +1,5 @@
 pub mod config;
+pub mod query;
 pub mod search;
 pub mod types;
 pub mod update;
@@ -11,6 +12,7 @@ use segment::common::operation_error::OperationError;
 use segment::types::*;
 
 use self::config::*;
+use self::query::*;
 use self::search::*;
 use self::types::*;
 use self::update::*;
@@ -24,6 +26,10 @@ mod qdrant_edge {
         PyDistance, PyIndexes, PyMultiVectorComparator, PyMultiVectorConfig, PyPayloadStorageType,
         PyQuantizationConfig, PySegmentConfig, PySparseVectorDataConfig, PyVectorDataConfig,
         PyVectorStorageDatatype, PyVectorStorageType,
+    };
+    #[pymodule_export]
+    use super::query::{
+        PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryRequest, PySample,
     };
     #[pymodule_export]
     use super::search::{
