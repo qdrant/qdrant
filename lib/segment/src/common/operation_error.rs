@@ -107,6 +107,12 @@ impl OperationError {
             description: description.into(),
         }
     }
+
+    pub fn vector_name_not_exists(vector_name: impl Into<String>) -> OperationError {
+        OperationError::VectorNameNotExists {
+            received_name: vector_name.into(),
+        }
+    }
 }
 
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed

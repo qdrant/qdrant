@@ -172,9 +172,7 @@ fn get_vector_config_or_error<'a>(
     segment_config
         .vector_data
         .get(vector_name)
-        .ok_or_else(|| OperationError::VectorNameNotExists {
-            received_name: vector_name.to_owned(),
-        })
+        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))
 }
 
 /// Get the sparse vector config for the given name, or return a name error.
@@ -187,9 +185,7 @@ fn get_sparse_vector_config_or_error<'a>(
     segment_config
         .sparse_vector_data
         .get(vector_name)
-        .ok_or_else(|| OperationError::VectorNameNotExists {
-            received_name: vector_name.to_owned(),
-        })
+        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))
 }
 
 /// Check if the given dense vector data is compatible with the given configuration.

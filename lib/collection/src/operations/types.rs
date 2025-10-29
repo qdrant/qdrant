@@ -1853,9 +1853,7 @@ impl SparseVectorsConfig {
                 .sparse_vectors
                 .as_ref()
                 .and_then(|v| v.get(vector_name).map(|_| ()))
-                .ok_or_else(|| OperationError::VectorNameNotExists {
-                    received_name: vector_name.clone(),
-                })?;
+                .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
         }
         Ok(())
     }
