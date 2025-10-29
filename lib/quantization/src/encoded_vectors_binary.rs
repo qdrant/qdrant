@@ -285,12 +285,12 @@ impl BitsStoreType for u128 {
         debug_assert!(v1.len() == v2.len());
 
         #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2")
-            && is_x86_feature_detected!("avx")
-            && is_x86_feature_detected!("sse2")
-            && is_x86_feature_detected!("sse4.1")
-            && is_x86_feature_detected!("avx512vl")
+        if is_x86_feature_detected!("avx512vl")
             && is_x86_feature_detected!("avx512vpopcntdq")
+            && is_x86_feature_detected!("avx2")
+            && is_x86_feature_detected!("avx")
+            && is_x86_feature_detected!("sse4.1")
+            && is_x86_feature_detected!("sse2")
         {
             unsafe {
                 return impl_xor_popcnt_avx512_uint128(
@@ -1042,12 +1042,12 @@ unsafe extern "C" {
 
 #[allow(missing_docs)]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx")]
-#[target_feature(enable = "avx2")]
-#[target_feature(enable = "sse2")]
-#[target_feature(enable = "sse4.1")]
 #[target_feature(enable = "avx512vl")]
 #[target_feature(enable = "avx512vpopcntdq")]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "avx")]
+#[target_feature(enable = "sse4.1")]
+#[target_feature(enable = "sse2")]
 unsafe fn impl_xor_popcnt_avx512_uint128(
     query_ptr: *const u8,
     vector_ptr: *const u8,
