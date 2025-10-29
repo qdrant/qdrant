@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use api::rest::models::HardwareUsage;
 use collection::shards::replica_set::ReplicaState;
 use itertools::Itertools;
@@ -188,6 +190,9 @@ impl MetricsProvider for CollectionsTelemetry {
         let mut vectors_per_collection = vec![];
         let mut points_per_collection = vec![];
 
+        // Vectors excluded from index-only requests.
+        let mut indexed_only_excluded = vec![];
+
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
                 CollectionTelemetryEnum::Full(collection_telemetry) => collection_telemetry,
@@ -262,6 +267,37 @@ impl MetricsProvider for CollectionsTelemetry {
             vectors_per_collection.push(gauge(
                 collection.count_vectors() as f64,
                 &[("id", &collection.id)],
+            ));
+
+            let points_excluded_from_index_only = collection
+                .shards
+                .iter()
+                .flatten()
+                .filter_map(|shard| shard.local.as_ref())
+                .filter_map(|local| local.indexed_only_excluded_vectors.as_ref())
+                .flatten()
+                .fold(
+                    HashMap::<&str, usize>::default(),
+                    |mut acc, (name, vector_size)| {
+                        *acc.entry(name).or_insert(0) += vector_size;
+                        acc
+                    },
+                );
+
+            for (name, vector_size) in points_excluded_from_index_only {
+                indexed_only_excluded.push(gauge(
+                    vector_size as f64,
+                    &[("id", &collection.id), ("vector", name)],
+                ))
+            }
+        }
+
+        if !indexed_only_excluded.is_empty() {
+            metrics.push(metric_family(
+                "collection_indexed_only_excluded_points",
+                "amount of points excluded in indexed_only requests",
+                MetricType::GAUGE,
+                indexed_only_excluded,
             ));
         }
 
