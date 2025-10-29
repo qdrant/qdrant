@@ -210,6 +210,11 @@ impl PyScoredPoint {
         // `PyScoredPoint` has transparent representation, so transmuting is safe
         unsafe { mem::transmute(points) }
     }
+
+    pub fn from_rust_vec3(points: Vec<Vec<Vec<ScoredPoint>>>) -> Vec<Vec<Vec<Self>>> {
+        // `PyScoredPoint` has transparent representation, so transmuting is safe
+        unsafe { mem::transmute(points) }
+    }
 }
 
 #[pymethods]

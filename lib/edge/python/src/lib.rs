@@ -1,4 +1,5 @@
 pub mod config;
+pub mod query;
 pub mod search;
 pub mod types;
 pub mod update;
@@ -11,6 +12,7 @@ use segment::common::operation_error::OperationError;
 use segment::types::*;
 
 use self::config::*;
+use self::query::*;
 use self::search::*;
 use self::types::*;
 use self::update::*;
@@ -26,30 +28,23 @@ mod qdrant_edge {
         PyVectorStorageDatatype, PyVectorStorageType,
     };
     #[pymodule_export]
+    use super::query::{
+        PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryRequest, PySample,
+    };
+    #[pymodule_export]
     use super::search::{
         PyAcornSearchParams, PyQuantizationSearchParams, PyScoredPoint, PySearchParams,
         PySearchRequest,
     };
     #[pymodule_export]
-    use super::types::filter::condition::{
-        PyHasIdCondition, PyHasVectorCondition, PyIsEmptyCondition, PyIsNullCondition,
+    use super::types::filter::{
+        PyFieldCondition, PyFilter, PyGeoBoundingBox, PyGeoPoint, PyGeoPolygon, PyGeoRadius,
+        PyHasIdCondition, PyHasVectorCondition, PyIsEmptyCondition, PyIsNullCondition, PyMatchAny,
+        PyMatchExcept, PyMatchPhrase, PyMatchText, PyMatchTextAny, PyMatchValue, PyMinShould,
+        PyNestedCondition, PyRangeDateTime, PyRangeFloat, PyValuesCount,
     };
     #[pymodule_export]
-    use super::types::filter::geo::{PyGeoBoundingBox, PyGeoPoint, PyGeoPolygon, PyGeoRadius};
-    #[pymodule_export]
-    use super::types::filter::r#match::{
-        PyMatchAny, PyMatchExcept, PyMatchPhrase, PyMatchText, PyMatchTextAny, PyMatchValue,
-    };
-    #[pymodule_export]
-    use super::types::filter::min_should::PyMinShould;
-    #[pymodule_export]
-    use super::types::filter::nested::PyNestedCondition;
-    #[pymodule_export]
-    use super::types::filter::range::{PyRangeDateTime, PyRangeFloat};
-    #[pymodule_export]
-    use super::types::filter::value_count::PyValuesCount;
-    #[pymodule_export]
-    use super::types::filter::{PyFilter, field_condition::PyFieldCondition};
+    use super::types::formula::{PyDecayKind, PyExpressionInterface, PyFormula};
     #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PySparseVector};
     #[pymodule_export]
@@ -71,6 +66,12 @@ impl PyShard {
     pub fn update(&self, operation: PyUpdateOperation) -> Result<()> {
         self.0.update(operation.into())?;
         Ok(())
+    }
+
+    pub fn query(&self, query: PyQueryRequest) -> Result<Vec<Vec<Vec<PyScoredPoint>>>> {
+        let points = self.0.query(query.into())?;
+        let points = PyScoredPoint::from_rust_vec3(points);
+        Ok(points)
     }
 
     pub fn search(&self, search: PySearchRequest) -> Result<Vec<PyScoredPoint>> {
