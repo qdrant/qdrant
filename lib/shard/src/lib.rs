@@ -11,6 +11,7 @@ pub mod segment_holder;
 pub mod update;
 pub mod wal;
 
+pub mod common;
 #[cfg(feature = "testing")]
 pub mod fixtures;
 

@@ -15,6 +15,7 @@ use api::rest::schema::ShardKeySelector;
 use api::rest::{BaseGroupRequest, LookupLocation, MaxOptimizationThreads, ShardKeyWithFallback};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
+use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use segment::types::{
     Distance, HnswConfig, MultiVectorConfig, QuantizationConfig, StrictModeConfigOutput,
@@ -27,8 +28,8 @@ use super::cluster_ops::ReshardingDirection;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     CollectionConfig, ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal,
-    GroupsResult, Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal,
-    ReshardingInfo, SparseIndexParams, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff,
+    GroupsResult, PointGroup, RecommendExample, RecommendGroupsRequestInternal, ReshardingInfo,
+    SparseIndexParams, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff,
     VectorsConfigDiff,
 };
 use crate::config::{
@@ -744,15 +745,6 @@ impl TryFrom<api::grpc::qdrant::VectorParamsDiff> for VectorParamsDiff {
     }
 }
 
-impl From<api::grpc::qdrant::Modifier> for Modifier {
-    fn from(value: api::grpc::qdrant::Modifier) -> Self {
-        match value {
-            api::grpc::qdrant::Modifier::None => Modifier::None,
-            api::grpc::qdrant::Modifier::Idf => Modifier::Idf,
-        }
-    }
-}
-
 impl TryFrom<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
     type Error = Status;
 
@@ -776,15 +768,6 @@ impl TryFrom<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
                     api::grpc::qdrant::Modifier::try_from(x).ok())
                 .map(Modifier::from),
         })
-    }
-}
-
-impl From<Modifier> for api::grpc::qdrant::Modifier {
-    fn from(value: Modifier) -> Self {
-        match value {
-            Modifier::None => api::grpc::qdrant::Modifier::None,
-            Modifier::Idf => api::grpc::qdrant::Modifier::Idf,
-        }
     }
 }
 

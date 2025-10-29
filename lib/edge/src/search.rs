@@ -2,9 +2,11 @@ use std::cmp;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::common::operation_error::OperationResult;
-use segment::data_types::query_context::QueryContext;
+use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::QueryVector;
 use segment::types::{DEFAULT_FULL_SCAN_THRESHOLD, ScoredPoint, WithPayload};
+use shard::common::stopping_guard::StoppingGuard;
+use shard::query::query_context::{fill_query_context, init_query_context};
 use shard::search::CoreSearchRequest;
 use shard::search_result_aggregator::BatchResultAggregator;
 
@@ -13,6 +15,27 @@ use crate::Shard;
 impl Shard {
     /// This method is DEPRECATED and should be replaced with query.
     pub fn search(&self, search: CoreSearchRequest) -> OperationResult<Vec<ScoredPoint>> {
+        let is_stopped_guard = StoppingGuard::new();
+        let searches = [search];
+        let query_context = init_query_context(
+            &searches,
+            DEFAULT_FULL_SCAN_THRESHOLD,
+            &is_stopped_guard,
+            HwMeasurementAcc::disposable(),
+            |vector_name| {
+                self.config
+                    .sparse_vector_data
+                    .get(vector_name)
+                    .is_some_and(|v| v.modifier == Some(Modifier::Idf))
+            },
+        );
+        let [search] = searches;
+
+        let Some(context) = fill_query_context(query_context, self.segments.clone()) else {
+            // No segments to search
+            return Ok(vec![]);
+        };
+
         let segments: Vec<_> = self
             .segments
             .read()
@@ -34,9 +57,6 @@ impl Shard {
         let query_vector = QueryVector::from(query);
         let with_payload = WithPayload::from(with_payload.unwrap_or_default());
         let with_vector = with_vector.unwrap_or_default();
-
-        let context =
-            QueryContext::new(DEFAULT_FULL_SCAN_THRESHOLD, HwMeasurementAcc::disposable());
 
         let mut points_by_segment = Vec::with_capacity(segments.len());
 

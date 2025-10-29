@@ -213,3 +213,8 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
         })
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct CoreSearchRequestBatch {
+    pub searches: Vec<CoreSearchRequest>,
+}

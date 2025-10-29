@@ -17,6 +17,7 @@ use segment::types::{
 };
 use semver::Version;
 use shard::retrieve::record_internal::RecordInternal;
+use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
@@ -27,9 +28,8 @@ use super::update_tracker::UpdateTracker;
 use crate::operations::OperationWithClockTag;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal,
-    ScrollRequestInternal, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
+    OptimizersStatus, PointRequestInternal, ScrollRequestInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::local_shard::LocalShard;

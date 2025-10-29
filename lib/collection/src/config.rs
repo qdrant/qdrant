@@ -574,6 +574,7 @@ impl CollectionParams {
                                     .map(VectorStorageDatatype::from),
                             },
                             storage_type: params.storage_type(),
+                            modifier: params.modifier,
                         },
                     ))
                 })

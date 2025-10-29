@@ -9,26 +9,28 @@ use futures::{FutureExt, TryStreamExt};
 use itertools::Itertools;
 use ordered_float::Float;
 use segment::common::operation_error::OperationError;
+use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::QueryVector;
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, VectorName,
     WithPayload, WithPayloadInterface, WithVector,
 };
+use shard::common::stopping_guard::StoppingGuard;
+use shard::query::query_context::{fill_query_context, init_query_context};
 use shard::query::query_enum::QueryEnum;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_blocking;
+use shard::search::CoreSearchRequestBatch;
 use shard::search_result_aggregator::BatchResultAggregator;
-use tinyvec::TinyVec;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
 use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
-use crate::common::stopping_guard::StoppingGuard;
 use crate::config::CollectionConfigInternal;
-use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, Modifier};
+use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
 type BatchOffset = usize;
@@ -177,62 +179,26 @@ impl SegmentsSearcher {
             .indexing_threshold
             .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB);
         let full_scan_threshold_kb = collection_config.hnsw_config.full_scan_threshold;
+        let search_optimized_threshold_kb = indexing_threshold_kb.max(full_scan_threshold_kb);
 
-        const DEFAULT_CAPACITY: usize = 3;
-        let mut idf_vectors: TinyVec<[&VectorName; DEFAULT_CAPACITY]> = Default::default();
-
-        // check vector names existing
-        for req in &batch_request.searches {
-            let vector_name = req.query.get_vector_name();
-            collection_config.params.get_distance(vector_name)?;
-            if let Some(sparse_vector_params) = collection_config
-                .params
-                .get_sparse_vector_params_opt(vector_name)
-                && sparse_vector_params.modifier == Some(Modifier::Idf)
-                && !idf_vectors.contains(&vector_name)
-            {
-                idf_vectors.push(vector_name);
-            }
-        }
-
-        let mut query_context = QueryContext::new(
-            indexing_threshold_kb.max(full_scan_threshold_kb),
+        let query_context = init_query_context(
+            &batch_request.searches,
+            search_optimized_threshold_kb,
+            is_stopped_guard,
             hw_measurement_acc,
-        )
-        .with_is_stopped(is_stopped_guard.get_is_stopped());
-
-        for search_request in &batch_request.searches {
-            search_request
-                .query
-                .iterate_sparse(|vector_name, sparse_vector| {
-                    if idf_vectors.contains(&vector_name) {
-                        query_context.init_idf(vector_name, &sparse_vector.indices);
-                    }
-                })
-        }
+            |vector_name| {
+                collection_config
+                    .params
+                    .get_sparse_vector_params_opt(vector_name)
+                    .map(|params| params.modifier == Some(Modifier::Idf))
+                    .unwrap_or(false)
+            },
+        );
 
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
-        let task = {
-            let segments = segments.clone();
-
-            tokio::task::spawn_blocking(move || {
-                let segments = segments.read();
-
-                if segments.is_empty() {
-                    return None;
-                }
-
-                let segments = segments.non_appendable_then_appendable_segments();
-                for locked_segment in segments {
-                    let segment = locked_segment.get();
-                    let segment_guard = segment.read();
-                    segment_guard.fill_query_context(&mut query_context);
-                }
-                Some(query_context)
-            })
-        };
-
-        Ok(task.await?)
+        let task = tokio::task::spawn_blocking(move || fill_query_context(query_context, segments))
+            .await?;
+        Ok(task)
     }
 
     pub async fn search(

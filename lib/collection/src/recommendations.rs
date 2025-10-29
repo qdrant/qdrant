@@ -13,6 +13,7 @@ use segment::types::{
 };
 use segment::vector_storage::query::RecoQuery;
 use shard::query::query_enum::QueryEnum;
+use shard::search::CoreSearchRequestBatch;
 use sparse::common::sparse_vector::SparseVector;
 use tokio::sync::RwLockReadGuard;
 
@@ -26,8 +27,7 @@ use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    RecommendRequestInternal, UsingVector,
+    CollectionError, CollectionResult, CoreSearchRequest, RecommendRequestInternal, UsingVector,
 };
 
 fn avg_vectors<'a>(

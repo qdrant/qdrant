@@ -16,6 +16,7 @@ use segment::types::{
     WithPayloadInterface, WithVector,
 };
 use shard::retrieve::record_internal::RecordInternal;
+use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 use tokio::sync::{RwLock, oneshot};
 use tokio::time::timeout;
@@ -26,9 +27,8 @@ use crate::operations::operation_effect::{
     EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
 };
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal,
-    ScrollRequestInternal, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
+    OptimizersStatus, PointRequestInternal, ScrollRequestInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::local_shard::LocalShard;
