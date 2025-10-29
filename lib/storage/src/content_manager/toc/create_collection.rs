@@ -1,23 +1,17 @@
-use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use collection::collection::Collection;
 use collection::config::{self, CollectionConfigInternal, CollectionParams, ShardingMethod};
 use collection::operations::config_diff::DiffConfig as _;
-use collection::operations::types::{
-    CollectionResult, SparseVectorParams, VectorsConfig, check_sparse_compatible,
-};
-use collection::shards::CollectionId;
+use collection::operations::types::{CollectionResult, VectorsConfig};
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use segment::types::VectorNameBuf;
 
 use super::TableOfContent;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus_ops::ConsensusOperations;
-use crate::content_manager::data_transfer;
 use crate::content_manager::errors::StorageError;
 
 impl TableOfContent {
@@ -42,8 +36,6 @@ impl TableOfContent {
             optimizers_config: optimizers_config_diff,
             replication_factor,
             write_consistency_factor,
-            #[expect(deprecated)]
-            init_from,
             quantization_config,
             sparse_vectors,
             strict_mode_config,
@@ -75,11 +67,6 @@ impl TableOfContent {
             )));
         }
 
-        if let Some(init_from) = &init_from {
-            self.check_collections_compatibility(&vectors, &sparse_vectors, &init_from.collection)
-                .await?;
-        }
-
         let collection_path = self.create_collection_path(collection_name).await?;
         // derive the snapshots path for the collection to be used across collection operation, the directories for the snapshot
         // is created only when a create snapshot api is invoked.
@@ -105,11 +92,6 @@ impl TableOfContent {
                 }
             }
             ShardingMethod::Custom => {
-                if init_from.is_some() {
-                    return Err(StorageError::bad_input(
-                        "Can't initialize collection from another collection with custom sharding method",
-                    ));
-                }
                 if let Some(shard_number) = shard_number {
                     shard_number
                 } else {
@@ -270,31 +252,7 @@ impl TableOfContent {
                 .await?;
         }
 
-        if let Some(init_from) = init_from {
-            self.run_data_initialization(init_from.collection, collection_name.to_string())
-                .await;
-        }
-
         Ok(true)
-    }
-
-    async fn check_collections_compatibility(
-        &self,
-        vectors: &VectorsConfig,
-        sparse_vectors: &Option<BTreeMap<VectorNameBuf, SparseVectorParams>>,
-        source_collection: &CollectionId,
-    ) -> Result<(), StorageError> {
-        let collection = self.get_collection_unchecked(source_collection).await?;
-        let collection_vectors_schema = collection.state().await.config.params.vectors;
-        collection_vectors_schema.check_compatible(vectors)?;
-        let collection_sparse_vectors_schema =
-            collection.state().await.config.params.sparse_vectors;
-        if let (Some(collection_sparse_vectors_schema), Some(sparse_vectors)) =
-            (&collection_sparse_vectors_schema, sparse_vectors)
-        {
-            check_sparse_compatible(collection_sparse_vectors_schema, sparse_vectors)?;
-        }
-        Ok(())
     }
 
     async fn on_peer_created(
@@ -326,45 +284,5 @@ impl TableOfContent {
             }
         }
         Ok(())
-    }
-
-    async fn run_data_initialization(
-        &self,
-        from_collection: CollectionId,
-        to_collection: CollectionId,
-    ) {
-        let collections = self.collections.clone();
-        let this_peer_id = self.this_peer_id;
-        self.general_runtime.spawn(async move {
-            // Create indexes
-            match data_transfer::transfer_indexes(
-                collections.clone(),
-                &from_collection,
-                &to_collection,
-                this_peer_id,
-            )
-            .await
-            {
-                Ok(_) => {}
-                Err(err) => {
-                    log::error!("Initialization failed: {err}")
-                }
-            }
-
-            // Transfer data
-            match data_transfer::populate_collection(
-                collections,
-                &from_collection,
-                &to_collection,
-                this_peer_id,
-            )
-            .await
-            {
-                Ok(_) => log::info!(
-                    "Collection {to_collection} initialized with data from {from_collection}"
-                ),
-                Err(err) => log::error!("Initialization failed: {err}"),
-            }
-        });
     }
 }

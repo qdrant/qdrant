@@ -14,7 +14,7 @@ use tonic::metadata::MetadataValue;
 use crate::content_manager::collection_meta_ops::{
     AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
     CreateAliasOperation, CreateCollection, CreateCollectionOperation, DeleteAlias,
-    DeleteAliasOperation, DeleteCollectionOperation, InitFrom, RenameAlias, RenameAliasOperation,
+    DeleteAliasOperation, DeleteCollectionOperation, RenameAlias, RenameAliasOperation,
     UpdateCollection, UpdateCollectionOperation,
 };
 use crate::content_manager::errors::StorageError;
@@ -77,7 +77,6 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
             vectors_config,
             replication_factor,
             write_consistency_factor,
-            init_from_collection,
             quantization_config,
             sharding_method,
             sparse_vectors_config,
@@ -108,8 +107,6 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                     .transpose()?,
                 strict_mode_config: strict_mode_config.map(strict_mode_from_api),
                 uuid: None,
-                #[expect(deprecated)]
-                init_from: init_from_collection.map(|v| InitFrom { collection: v }),
                 metadata: if metadata.is_empty() {
                     None
                 } else {

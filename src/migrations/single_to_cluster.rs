@@ -77,8 +77,6 @@ pub async fn handle_existing_collections(
                 quantization_config,
                 strict_mode_config,
                 uuid,
-                #[expect(deprecated)]
-                init_from: None,
                 metadata,
             },
         )
