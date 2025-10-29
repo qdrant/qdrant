@@ -36,6 +36,7 @@ use crate::data_types::index::{
 use crate::data_types::modifier::Modifier;
 use crate::data_types::order_by::OrderValue;
 use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::tiny_map::TinyMap;
 use crate::data_types::vectors::{DenseVector, VectorStructInternal};
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
@@ -470,6 +471,7 @@ pub struct SegmentInfo {
 #[derive(Debug, Default)]
 pub struct SizeStats {
     pub num_vectors: usize,
+    pub num_vectors_by_name: TinyMap<VectorNameBuf, usize>,
     pub vectors_size_bytes: usize,
     pub payloads_size_bytes: usize,
     pub num_points: usize,

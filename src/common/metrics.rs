@@ -157,27 +157,11 @@ impl MetricsProvider for AppFeaturesTelemetry {
 
 impl MetricsProvider for CollectionsTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        let vector_count = self
-            .collections
-            .iter()
-            .flatten()
-            .map(|p| match p {
-                CollectionTelemetryEnum::Aggregated(a) => a.vectors,
-                CollectionTelemetryEnum::Full(c) => c.count_vectors(),
-            })
-            .sum::<usize>();
-
         metrics.push(metric_family(
             "collections_total",
             "number of collections",
             MetricType::GAUGE,
             vec![gauge(self.number_of_collections as f64, &[])],
-        ));
-        metrics.push(metric_family(
-            "collections_vector_total",
-            "total number of vectors in all collections",
-            MetricType::GAUGE,
-            vec![gauge(vector_count as f64, &[])],
         ));
 
         // Optimizers
@@ -187,14 +171,15 @@ impl MetricsProvider for CollectionsTelemetry {
         let mut total_min_active_replicas = usize::MAX;
         let mut total_max_active_replicas = 0;
 
-        // Points & Vectors per collection
-        let mut vectors_per_collection = vec![];
+        // Points per collection
         let mut points_per_collection = vec![];
 
         // Vectors excluded from index-only requests.
         let mut indexed_only_excluded = vec![];
 
         let mut total_dead_shards = 0;
+
+        let mut vector_count_by_name = vec![];
 
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
@@ -267,10 +252,12 @@ impl MetricsProvider for CollectionsTelemetry {
                 &[("id", &collection.id)],
             ));
 
-            vectors_per_collection.push(gauge(
-                collection.count_vectors() as f64,
-                &[("id", &collection.id)],
-            ));
+            for (vec_name, count) in collection.count_points_per_vector() {
+                vector_count_by_name.push(gauge(
+                    count as f64,
+                    &[("collection", &collection.id), ("vector", &vec_name)],
+                ))
+            }
 
             let points_excluded_from_index_only = collection
                 .shards
@@ -300,6 +287,15 @@ impl MetricsProvider for CollectionsTelemetry {
                 .flatten()
                 .filter(|i| i.replicate_states.values().any(|state| !state.is_active()))
                 .count();
+        }
+
+        if !vector_count_by_name.is_empty() {
+            metrics.push(metric_family(
+                "collection_vectors_total",
+                "amount of vectors grouped by vector name",
+                MetricType::GAUGE,
+                vector_count_by_name,
+            ));
         }
 
         if !indexed_only_excluded.is_empty() {
@@ -343,13 +339,6 @@ impl MetricsProvider for CollectionsTelemetry {
             "approximate amount of points per collection",
             MetricType::GAUGE,
             points_per_collection,
-        ));
-
-        metrics.push(metric_family(
-            "collection_vectors",
-            "approximate amount of vectors per collection",
-            MetricType::GAUGE,
-            vectors_per_collection,
         ));
 
         metrics.push(metric_family(

@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::types::{HnswConfig, Payload, QuantizationConfig, StrictModeConfigOutput};
+use segment::data_types::tiny_map::TinyMap;
+use segment::types::{
+    HnswConfig, Payload, QuantizationConfig, StrictModeConfigOutput, VectorNameBuf,
+};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -74,6 +77,29 @@ impl CollectionTelemetry {
             .filter_map(|shard| shard.local.as_ref())
             .map(|local_shard| local_shard.num_points.unwrap_or(0))
             .sum()
+    }
+
+    pub fn count_points_per_vector(&self) -> TinyMap<VectorNameBuf, usize> {
+        self.shards
+            .iter()
+            .flatten()
+            .filter_map(|shard| shard.local.as_ref())
+            .map(|local_shard| {
+                local_shard
+                    .num_vectors_by_name
+                    .as_ref()
+                    .into_iter()
+                    .flatten()
+            })
+            .fold(
+                TinyMap::<VectorNameBuf, usize>::new(),
+                |mut acc, shard_vectors| {
+                    for (name, count) in shard_vectors {
+                        *acc.get_or_insert_default(name) += count;
+                    }
+                    acc
+                },
+            )
     }
 }
 
