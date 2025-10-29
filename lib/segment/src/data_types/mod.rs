@@ -4,6 +4,7 @@ pub mod facets;
 pub mod groups;
 pub mod index;
 pub mod manifest;
+pub mod modifier;
 pub mod named_vectors;
 pub mod order_by;
 pub mod primitive;

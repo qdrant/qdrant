@@ -14,6 +14,7 @@ use segment::data_types::index::{
     BoolIndexType, DatetimeIndexType, FloatIndexType, GeoIndexType, IntegerIndexType,
     KeywordIndexType, SnowballLanguage, TextIndexType, UuidIndexType,
 };
+use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedMultiDenseVector, VectorInternal};
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
@@ -3346,5 +3347,23 @@ fn unparse_expression(
 
     Expression {
         variant: Some(variant),
+    }
+}
+
+impl From<grpc::Modifier> for Modifier {
+    fn from(value: grpc::Modifier) -> Self {
+        match value {
+            grpc::Modifier::None => Modifier::None,
+            grpc::Modifier::Idf => Modifier::Idf,
+        }
+    }
+}
+
+impl From<Modifier> for grpc::Modifier {
+    fn from(value: Modifier) -> Self {
+        match value {
+            Modifier::None => grpc::Modifier::None,
+            Modifier::Idf => grpc::Modifier::Idf,
+        }
     }
 }

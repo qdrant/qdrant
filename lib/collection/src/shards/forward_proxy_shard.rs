@@ -14,6 +14,7 @@ use segment::types::{
     WithPayloadInterface, WithVector,
 };
 use shard::retrieve::record_internal::RecordInternal;
+use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
@@ -24,9 +25,8 @@ use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, PointSyncOperation,
 };
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal,
-    ScrollRequestInternal, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
+    OptimizersStatus, PointRequestInternal, ScrollRequestInternal, UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::{

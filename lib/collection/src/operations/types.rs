@@ -22,6 +22,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::{CancelledError, OperationError};
 use segment::data_types::groups::GroupId;
+use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, DenseVector};
 use segment::types::{
     Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
@@ -507,11 +508,6 @@ pub struct SearchRequest {
 pub struct SearchRequestBatch {
     #[validate(nested)]
     pub searches: Vec<SearchRequest>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CoreSearchRequestBatch {
-    pub searches: Vec<CoreSearchRequest>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -1445,19 +1441,6 @@ pub fn validate_nonzerou64_range_min_1_max_65536(
 /// Is considered empty if `None` or if diff has no field specified
 fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
     hnsw_config.is_none() || *hnsw_config == Some(HnswConfigDiff::default())
-}
-
-/// If used, include weight modification, which will be applied to sparse vectors at query time:
-/// None - no modification (default)
-/// Idf - inverse document frequency, based on statistics of the collection
-#[derive(
-    Debug, Hash, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq, Default,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum Modifier {
-    #[default]
-    None,
-    Idf,
 }
 
 /// Params of single sparse vector data storage

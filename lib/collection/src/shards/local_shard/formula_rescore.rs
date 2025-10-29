@@ -5,10 +5,10 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::query_context::FormulaContext;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::types::ScoredPoint;
+use shard::common::stopping_guard::StoppingGuard;
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
-use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 impl LocalShard {

@@ -7,6 +7,7 @@ use segment::data_types::vectors::NamedQuery;
 use segment::types::{Condition, Filter, HasIdCondition, ScoredPoint};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery};
 use shard::query::query_enum::QueryEnum;
+use shard::search::CoreSearchRequestBatch;
 use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
@@ -18,8 +19,7 @@ use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    DiscoverRequestInternal,
+    CollectionError, CollectionResult, CoreSearchRequest, DiscoverRequestInternal,
 };
 
 fn discovery_into_core_search(

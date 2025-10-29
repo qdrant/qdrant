@@ -263,6 +263,7 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
                 SparseVectorDataConfig {
                     index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
                     storage_type: SparseVectorStorageType::default(),
+                    modifier: None,
                 },
             )]),
             payload_storage_type: Default::default(),
@@ -355,6 +356,7 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
                 SparseVectorDataConfig {
                     index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
                     storage_type: SparseVectorStorageType::default(),
+                    modifier: None,
                 },
             )]),
             payload_storage_type: Default::default(),

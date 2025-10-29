@@ -9,6 +9,7 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::retrieve::record_internal::RecordInternal;
+use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
@@ -18,9 +19,8 @@ use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, ScrollRequestInternal, UpdateResult,
-    UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
+    PointRequestInternal, ScrollRequestInternal, UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};

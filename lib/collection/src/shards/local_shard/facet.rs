@@ -9,12 +9,12 @@ use futures::future::try_join_all;
 use itertools::{Itertools, process_results};
 use segment::data_types::facets::{FacetParams, FacetValue, FacetValueHit};
 use segment::types::{Condition, FieldCondition, Filter, Match};
+use shard::common::stopping_guard::StoppingGuard;
 use tokio::runtime::Handle;
 use tokio::time::error::Elapsed;
 
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
-use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 impl LocalShard {

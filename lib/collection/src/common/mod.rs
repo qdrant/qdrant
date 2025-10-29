@@ -10,5 +10,4 @@ pub mod snapshot_stream;
 pub mod snapshots_manager;
 pub mod stoppable_task;
 pub mod stoppable_task_async;
-pub mod stopping_guard;
 pub mod transpose_iterator;

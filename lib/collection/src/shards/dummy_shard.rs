@@ -13,13 +13,13 @@ use segment::types::{
     WithPayloadInterface, WithVector,
 };
 use shard::retrieve::record_internal::RecordInternal;
+use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 
 use crate::operations::OperationWithClockTag;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal,
-    ScrollRequestInternal, ShardStatus, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
+    OptimizersStatus, PointRequestInternal, ScrollRequestInternal, ShardStatus, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::shard_trait::ShardOperation;

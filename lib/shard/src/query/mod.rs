@@ -4,6 +4,7 @@ pub mod planned_query;
 pub mod query_enum;
 pub mod scroll;
 
+pub mod query_context;
 #[cfg(test)]
 mod tests;
 
