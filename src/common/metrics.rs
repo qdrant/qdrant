@@ -1,4 +1,6 @@
 use api::rest::models::HardwareUsage;
+use collection::shards::replica_set::ReplicaState;
+use itertools::Itertools;
 use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
@@ -177,6 +179,10 @@ impl MetricsProvider for CollectionsTelemetry {
 
         let mut total_optimizations_running = 0;
 
+        // Min/Max/Expected/Active replicas over all shards.
+        let mut total_min_active_replicas = usize::MAX;
+        let mut total_max_active_replicas = 0;
+
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
                 CollectionTelemetryEnum::Full(collection_telemetry) => collection_telemetry,
@@ -186,7 +192,83 @@ impl MetricsProvider for CollectionsTelemetry {
             };
 
             total_optimizations_running += collection.count_optimizers_running();
+
+            let min_max_active_replicas = collection
+                .shards
+                .iter()
+                .flatten()
+                // While resharding up, some (shard) replica sets may still be incomplete during
+                // the resharding process. In that case we don't want to consider these replica
+                // sets at all in the active replica calculation. This is fine because searches nor
+                // updates don't depend on them being available yet.
+                //
+                // More specifically:
+                // - in stage 2 (migrate points) of resharding up we don't rely on the replica
+                //   to be available yet. In this stage, these replicas will have the `Resharding`
+                //   state.
+                // - in stage 3 (replicate) of resharding up we activate the the replica and
+                //   replicate to match the configuration replication factor. From this point on we
+                //   do rely on the replica to be available. Now one replica will be `Active`, and
+                //   the other replicas will be in a transfer state. No replica will have `Resharding`
+                //   state.
+                //
+                // So, during stage 2 of resharding up we don't want to adjust the minimum number
+                // of active replicas downwards. During stage 3 we do want it to affect the minimum
+                // available replica number. It will be 1 for some time until replication transfers
+                // complete.
+                //
+                // To ignore a (shard) replica set that is in stage 2 of resharding up, we simply
+                // check if any of it's replicas is in `Resharding` state.
+                .filter(|shard| {
+                    !shard
+                        .replicate_states
+                        .values()
+                        .any(|i| matches!(i, ReplicaState::Resharding))
+                })
+                .map(|shard| {
+                    shard
+                        .replicate_states
+                        .values()
+                        // While resharding down, all the replicas that we keep will get the
+                        // `ReshardingScaleDown` state for a period of time. We simply consider
+                        // these replicas to be active. The `is_active` function already accounts
+                        // this.
+                        .filter(|state| state.is_active())
+                        .count()
+                })
+                .minmax();
+
+            let min_max_active_replicas = match min_max_active_replicas {
+                itertools::MinMaxResult::NoElements => None,
+                itertools::MinMaxResult::OneElement(one) => Some((one, one)),
+                itertools::MinMaxResult::MinMax(min, max) => Some((min, max)),
+            };
+
+            if let Some((min, max)) = min_max_active_replicas {
+                total_min_active_replicas = total_min_active_replicas.min(min);
+                total_max_active_replicas = total_max_active_replicas.max(max);
+            }
         }
+
+        let total_min_active_replicas = if total_min_active_replicas == usize::MAX {
+            0
+        } else {
+            total_min_active_replicas
+        };
+
+        metrics.push(metric_family(
+            "active_replicas_min",
+            "minimum number of active replicas across all shards",
+            MetricType::GAUGE,
+            vec![gauge(total_min_active_replicas as f64, &[])],
+        ));
+
+        metrics.push(metric_family(
+            "active_replicas_max",
+            "maximum number of active replicas across all shards",
+            MetricType::GAUGE,
+            vec![gauge(total_max_active_replicas as f64, &[])],
+        ));
 
         metrics.push(metric_family(
             "optimizer_running_processes",
