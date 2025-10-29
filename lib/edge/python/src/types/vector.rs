@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use derive_more::Into;
-use pyo3::{FromPyObject, IntoPyObject, PyResult, pyclass, pymethods};
-use segment::data_types::vectors::{DenseVector, VectorInternal, VectorStructInternal};
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use segment::data_types::vectors::*;
 use segment::types::VectorNameBuf;
 use shard::operations::point_ops::{VectorPersisted, VectorStructPersisted};
 use sparse::common::sparse_vector::SparseVector;
@@ -130,4 +131,46 @@ impl From<VectorInternal> for PyVectorType {
             VectorInternal::Sparse(sparse) => PyVectorType::Sparse(PySparseVector(sparse)),
         }
     }
+}
+
+impl TryFrom<PyVector> for VectorStructInternal {
+    type Error = PyErr;
+
+    fn try_from(vector: PyVector) -> PyResult<Self> {
+        let vector = match vector {
+            PyVector::Single(dense) => VectorStructInternal::Single(dense),
+            PyVector::MultiDense(multi) => {
+                VectorStructInternal::MultiDense(flat_multi_dense_from_nested(multi)?)
+            }
+            PyVector::Named(named) => VectorStructInternal::Named(
+                named
+                    .into_iter()
+                    .map(|(key, val)| VectorInternal::try_from(val).map(move |val| (key, val)))
+                    .collect::<Result<_, _>>()?,
+            ),
+        };
+
+        Ok(vector)
+    }
+}
+
+impl TryFrom<PyVectorType> for VectorInternal {
+    type Error = PyErr;
+
+    fn try_from(value: PyVectorType) -> PyResult<Self> {
+        let vector = match value {
+            PyVectorType::Dense(dense) => VectorInternal::Dense(dense),
+            PyVectorType::MultiDense(multi) => {
+                VectorInternal::MultiDense(flat_multi_dense_from_nested(multi)?)
+            }
+            PyVectorType::Sparse(sparse) => VectorInternal::Sparse(sparse.0),
+        };
+
+        Ok(vector)
+    }
+}
+
+fn flat_multi_dense_from_nested(multi: Vec<Vec<f32>>) -> PyResult<TypedMultiDenseVector<f32>> {
+    TypedMultiDenseVector::try_from_matrix(multi)
+        .map_err(|err| PyValueError::new_err(format!("invalid multi-dense vector: {err}")))
 }
