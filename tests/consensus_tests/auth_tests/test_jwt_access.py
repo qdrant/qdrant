@@ -591,8 +591,6 @@ ACTION_ACCESS = {
     "livez": EndpointAccess(True, True, True, "GET /livez", "grpc.health.v1.Health/Check"),
     "telemetry": EndpointAccess(True, True, True, "GET /telemetry"),
     "metrics": EndpointAccess(True, False, True, "GET /metrics", coll_r=False),
-    "post_locks": EndpointAccess(False, False, True, "POST /locks"),
-    "get_locks": EndpointAccess(True, False, True, "GET /locks", coll_r=False),
     "get_issues": EndpointAccess(True, True, True, "GET /issues"),
     "clear_issues": EndpointAccess(False, False, True, "DELETE /issues"),
 }
@@ -604,7 +602,7 @@ def test_all_actions_have_tests():
         # a test_{action_name} exists in this file
         test_name = f"test_{action_name}"
         assert (
-            test_name in globals()
+                test_name in globals()
         ), f"An action is not tested: `{test_name}` was not found in this file"
 
 
@@ -624,7 +622,7 @@ def test_all_rest_endpoints_are_covered():
     covered_endpoints = set(v.rest_endpoint for v in ACTION_ACCESS.values())
     for endpoint in endpoint_paths:
         assert (
-            endpoint in covered_endpoints
+                endpoint in covered_endpoints
         ), f"REST endpoint `{endpoint}` not found in any of the `ACTION_ACCESS` REST endpoints"
 
 
@@ -654,18 +652,18 @@ def test_all_grpc_endpoints_are_covered():
         for method in service.method_names:
             grpc_endpoint = f"{service_name}/{method}"
             assert (
-                grpc_endpoint in covered_endpoints
+                    grpc_endpoint in covered_endpoints
             ), f"gRPC endpoint `{grpc_endpoint}` not found in ACTION_ACCESS gRPC endpoints"
 
 
 def check_rest_access(
-    method: str,
-    path: str,
-    body: Optional[Union[dict, Callable[[], dict]]],
-    should_succeed: bool,
-    token: str,
-    path_params: dict = {},
-    request_kwargs: dict = {},
+        method: str,
+        path: str,
+        body: Optional[Union[dict, Callable[[], dict]]],
+        should_succeed: bool,
+        token: str,
+        path_params: dict = {},
+        request_kwargs: dict = {},
 ):
     if isfunction(body):
         body = body()
@@ -687,11 +685,11 @@ def check_rest_access(
 
         if should_succeed:
             assert (
-                res.status_code < 500 and res.status_code != 403
+                    res.status_code < 500 and res.status_code != 403
             ), f"{method} {path} failed with {res.status_code}: {res.text}"
         else:
             assert (
-                res.status_code == 403
+                    res.status_code == 403
             ), f"{method} {path} should've gotten `403` status code, but got `{res.status_code}: {res.text}`"
 
     except requests.exceptions.ConnectionError as e:
@@ -703,11 +701,11 @@ def check_rest_access(
 
 
 def check_grpc_access(
-    client: grpc_requests.Client,
-    service: str,
-    method: str,
-    request: Optional[dict],
-    should_succeed: bool,
+        client: grpc_requests.Client,
+        service: str,
+        method: str,
+        request: Optional[dict],
+        should_succeed: bool,
 ):
     if isfunction(request):
         request = request()
@@ -720,7 +718,7 @@ def check_grpc_access(
                 pytest.fail(f"{service}/{method} failed with {e.code()}: {e.details()}")
         else:
             assert (
-                e.code() == grpc.StatusCode.PERMISSION_DENIED
+                    e.code() == grpc.StatusCode.PERMISSION_DENIED
             ), f"{service}/{method} should've gotten `PERMISSION_DENIED` status code, but got `{e.code()}: {e.details()}`"
 
 
@@ -769,7 +767,7 @@ def get_auth_grpc_clients() -> GrpcClients:
 
 
 def check_access(
-    action_name: str, rest_request=None, grpc_request=None, path_params={}, rest_req_kwargs={}
+        action_name: str, rest_request=None, grpc_request=None, path_params={}, rest_req_kwargs={}
 ):
     action_access: EndpointAccess = ACTION_ACCESS[action_name]
 
@@ -1788,7 +1786,7 @@ def test_query_points():
             "query": {
                 "nearest": {
                     "dense": {
-                        "data": [0.1,0.2,0.3,0.4]
+                        "data": [0.1, 0.2, 0.3, 0.4]
                     }
                 }
             },
@@ -1802,9 +1800,9 @@ def test_query_batch_points():
         rest_request={"searches": [{"query": [0.1, 0.2, 0.3, 0.4]}]},
         path_params={"collection_name": COLL_NAME},
         grpc_request={
-            "collection_name": COLL_NAME, 
+            "collection_name": COLL_NAME,
             "query_points": [
-                { 
+                {
                     "query": {
                         "nearest": {
                             "dense": {
@@ -1898,14 +1896,6 @@ def test_telemetry():
 
 def test_metrics():
     check_access("metrics")
-
-
-def test_post_locks():
-    check_access("post_locks", rest_request={"write": False})
-
-
-def test_get_locks():
-    check_access("get_locks")
 
 
 def test_get_issues():

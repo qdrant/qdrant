@@ -2,7 +2,6 @@ mod collection_container;
 mod collection_meta_ops;
 mod create_collection;
 pub mod dispatcher;
-mod locks;
 mod point_ops;
 mod point_ops_internal;
 pub mod request_hw_counter;
@@ -16,7 +15,6 @@ use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use api::rest::models::HardwareUsage;
 use collection::collection::{Collection, RequestShardTransfer};
@@ -73,8 +71,6 @@ pub struct TableOfContent {
     consensus_proposal_sender: Option<OperationSender>,
     /// Dispatcher for access to table of contents and consensus, if none - single node mode
     toc_dispatcher: parking_lot::Mutex<Option<TocDispatcher>>,
-    is_write_locked: AtomicBool,
-    lock_error_message: parking_lot::Mutex<Option<String>>,
     /// Prevent DDoS of too many concurrent updates in distributed mode.
     /// One external update usually triggers multiple internal updates, which breaks internal
     /// timings. For example, the health check timing and consensus timing.
@@ -199,8 +195,6 @@ impl TableOfContent {
             channel_service,
             consensus_proposal_sender,
             toc_dispatcher: Default::default(),
-            is_write_locked: AtomicBool::new(false),
-            lock_error_message: parking_lot::Mutex::new(None),
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
             collection_hw_metrics: DashMap::new(),

@@ -3,20 +3,11 @@ use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use fs_err as fs;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use tokio::runtime;
 use tokio::runtime::Runtime;
 use tonic::transport::{Certificate, ClientTlsConfig, Identity, ServerTlsConfig};
-use validator::Validate;
 
 use crate::settings::{Settings, TlsConfig};
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
-pub struct LocksOption {
-    pub error_message: Option<String>,
-    pub write: bool,
-}
 
 pub fn create_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
     let num_threads = common::defaults::search_thread_count(max_search_threads);
