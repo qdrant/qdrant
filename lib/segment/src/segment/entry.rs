@@ -67,7 +67,10 @@ impl SegmentEntry for Segment {
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
-        let vector_data = &self.vector_data[vector_name];
+        let vector_data = &self
+            .vector_data
+            .get(vector_name)
+            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
         let vector_query_context = query_context.get_vector_context(vector_name);
         let internal_results = vector_data.vector_index.borrow().search(
             query_vectors,
@@ -194,11 +197,10 @@ impl SegmentEntry for Segment {
             }),
             Some(internal_id) => {
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
-                    let vector_data = segment.vector_data.get(vector_name).ok_or_else(|| {
-                        OperationError::VectorNameNotExists {
-                            received_name: vector_name.to_owned(),
-                        }
-                    })?;
+                    let vector_data = segment
+                        .vector_data
+                        .get(vector_name)
+                        .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
                     let is_deleted = vector_storage.delete_vector(internal_id)?;
 
@@ -319,7 +321,6 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
-        check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.lookup_internal_id(point_id)?;
         let vector_opt = self.vector_by_offset(vector_name, internal_id, hw_counter)?;
         Ok(vector_opt)
@@ -454,7 +455,10 @@ impl SegmentEntry for Segment {
 
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
         check_vector_name(vector_name, &self.segment_config)?;
-        let vector_data = &self.vector_data[vector_name];
+        let vector_data = self
+            .vector_data
+            .get(vector_name)
+            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
         let size = vector_data
             .vector_index
             .borrow()
