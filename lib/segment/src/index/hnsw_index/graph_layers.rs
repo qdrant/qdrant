@@ -318,12 +318,12 @@ pub trait GraphLayersBase {
 
 pub trait GraphLayersWithVectors: GraphLayersBase {
     /// Returns `true` if the current graph format contains vectors.
-    fn has_vectors(&self) -> bool;
+    fn has_inline_vectors(&self) -> bool;
 
     /// # Panics
     ///
     /// Panics when using a format that does not support vectors.
-    /// Check with [`Self::has_vectors()`] before calling this method.
+    /// Check with [`Self::has_inline_vectors()`] before calling this method.
     fn links_with_vectors(
         &self,
         point_id: PointOffsetType,
@@ -481,7 +481,7 @@ impl GraphLayersBase for GraphLayers {
 }
 
 impl GraphLayersWithVectors for GraphLayers {
-    fn has_vectors(&self) -> bool {
+    fn has_inline_vectors(&self) -> bool {
         self.links.format().is_with_vectors()
     }
 

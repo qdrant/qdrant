@@ -212,6 +212,8 @@ impl GraphLinksView<'_> {
         })
     }
 
+    /// Note: it is safe to use `idx + 1` on the result of this function,
+    /// because `level_offsets` always contains an additional element.
     #[inline]
     fn offset_idx(&self, point_id: PointOffsetType, level: usize) -> usize {
         if level == 0 {

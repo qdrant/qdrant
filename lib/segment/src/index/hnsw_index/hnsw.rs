@@ -1010,7 +1010,8 @@ impl HNSWIndex {
                 // ACORN is not implemented for graph with vectors yet (but possible)
                 SearchAlgorithm::Acorn => return Ok(None),
             }
-            if !self.graph.has_vectors() || !is_quantized_search(quantized_vectors.as_ref(), params)
+            if !self.graph.has_inline_vectors()
+                || !is_quantized_search(quantized_vectors.as_ref(), params)
             {
                 return Ok(None);
             }
@@ -1545,7 +1546,7 @@ impl<'a> OldIndexCandidate<'a> {
             || new_quantization_config != old_quantization_config;
         // If old graph has vectors, reusing it will cause a lot of random reads,
         // making it slower than building from scratch.
-        let old_graph_is_with_vectors = old_index.graph.has_vectors();
+        let old_graph_is_with_vectors = old_index.graph.has_inline_vectors();
         if no_main_graph || configuration_mismatch || old_graph_is_with_vectors {
             return None;
         }
