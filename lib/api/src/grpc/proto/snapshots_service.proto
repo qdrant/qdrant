@@ -6,29 +6,17 @@ option csharp_namespace = "Qdrant.Client.Grpc";
 import "google/protobuf/timestamp.proto";
 
 service Snapshots {
-  /*
-  Create collection snapshot
-  */
+  // Create collection snapshot
   rpc Create (CreateSnapshotRequest) returns (CreateSnapshotResponse) {}
-  /*
-  List collection snapshots
-  */
+  // List collection snapshots
   rpc List (ListSnapshotsRequest) returns (ListSnapshotsResponse) {}
-  /*
-  Delete collection snapshot
-  */
+  // Delete collection snapshot
   rpc Delete (DeleteSnapshotRequest) returns (DeleteSnapshotResponse) {}
-  /*
-  Create full storage snapshot
-  */
+  // Create full storage snapshot
   rpc CreateFull (CreateFullSnapshotRequest) returns (CreateSnapshotResponse) {}
-  /*
-  List full storage snapshots
-  */
+  // List full storage snapshots
   rpc ListFull (ListFullSnapshotsRequest) returns (ListSnapshotsResponse) {}
-  /*
-  Delete full storage snapshot
-  */
+  // Delete full storage snapshot
   rpc DeleteFull (DeleteFullSnapshotRequest) returns (DeleteSnapshotResponse) {}
 }
 
@@ -37,39 +25,51 @@ message CreateFullSnapshotRequest {}
 message ListFullSnapshotsRequest {}
 
 message DeleteFullSnapshotRequest {
-  string snapshot_name = 1; // Name of the full snapshot
+  // Name of the full snapshot
+  string snapshot_name = 1;
 }
 
 message CreateSnapshotRequest {
-  string collection_name = 1; // Name of the collection
+  // Name of the collection
+  string collection_name = 1;
 }
 
 message ListSnapshotsRequest {
-  string collection_name = 1; // Name of the collection
+  // Name of the collection
+  string collection_name = 1;
 }
 
 message DeleteSnapshotRequest {
-  string collection_name = 1; // Name of the collection
-  string snapshot_name = 2; // Name of the collection snapshot
+  // Name of the collection
+  string collection_name = 1;
+  // Name of the collection snapshot
+  string snapshot_name = 2;
 }
 
 message SnapshotDescription {
-  string name = 1; // Name of the snapshot
-  google.protobuf.Timestamp creation_time = 2; // Creation time of the snapshot
-  int64 size = 3; // Size of the snapshot in bytes
-  optional string checksum = 4; // SHA256 digest of the snapshot file
+  // Name of the snapshot
+  string name = 1;
+  // Creation time of the snapshot
+  google.protobuf.Timestamp creation_time = 2;
+  // Size of the snapshot in bytes
+  int64 size = 3;
+  // SHA256 digest of the snapshot file
+  optional string checksum = 4;
 }
 
 message CreateSnapshotResponse {
   SnapshotDescription snapshot_description = 1;
-  double time = 2; // Time spent to process
+  // Time spent to process
+  double time = 2;
 }
 
 message ListSnapshotsResponse {
   repeated SnapshotDescription snapshot_descriptions = 1;
-  double time = 2; // Time spent to process
+  // Time spent to process
+  double time = 2;
 }
 
 message DeleteSnapshotResponse {
-  double time = 1; // Time spent to process
+  // Time spent to process
+  double time = 1;
 }

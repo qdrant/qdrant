@@ -6,46 +6,63 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 message GetPeerTelemetryRequest {
-    uint64 peer_id = 1; // The peer id to ask for telemetry
-    uint32 details_level = 2; // The level of detail needed
+    // The peer id to ask for telemetry
+    uint64 peer_id = 1;
+    // The level of detail needed
+    uint32 details_level = 2;
 }
 
 message GetPeerTelemetryResponse {
-    reserved 1; // id
-    reserved 2; // app
-    map<string, CollectionTelemetry> collections = 3; // Mapping from collection name to its telemetry
-    ClusterTelemetry cluster = 4; // Telemetry about the cluster and peers
-    reserved 5; // requests
-    reserved 6; // memory
-    reserved 7; // hardware
+    // id
+    reserved 1;
+    // app
+    reserved 2;
+    // Mapping from collection name to its telemetry
+    map<string, CollectionTelemetry> collections = 3;
+    // Telemetry about the cluster and peers
+    ClusterTelemetry cluster = 4;
+    // requests
+    reserved 5;
+    // memory
+    reserved 6;
+    // hardware
+    reserved 7;
 }
 
 message CollectionTelemetry {
-    string id = 1; // Name of the collection
-    reserved 2; // init_time_ms
-    reserved 3; // config
-    reserved 4; // shards
-    repeated ShardTransferTelemetry transfers = 5; // Shard transfers in progress
-    repeated ReshardingTelemetry resharding = 6; // Resharding(s) in progress
-    map<uint32, ShardCleanStatusTelemetry> shard_clean_tasks = 7; // Tasks that clean points after completing a resharding sequence
+    // Name of the collection
+    string id = 1;
+    // init_time_ms
+    reserved 2;
+    // config
+    reserved 3;
+    // shards
+    reserved 4;
+    // Shard transfers in progress
+    repeated ShardTransferTelemetry transfers = 5;
+    // Resharding(s) in progress
+    repeated ReshardingTelemetry resharding = 6;
+    // Tasks that clean points after completing a resharding sequence
+    map<uint32, ShardCleanStatusTelemetry> shard_clean_tasks = 7;
 }
 
 message ShardTransferTelemetry {
-    uint32 shard_id = 1; // Local shard id
-    /*
-    Target shard ID if different than source shard ID.
-    Used exclusively with `ReshardStreamRecords` transfer method.
-    */
+    // Local shard id
+    uint32 shard_id = 1;
+    // Target shard ID if different than source shard ID.
+    // Used exclusively with `ReshardStreamRecords` transfer method.
     optional uint32 to_shard_id = 2;
-    uint64 from = 3; // From peer id
-    uint64 to = 4; // To peer id
-    /*
-    If `true` transfer is a synchronization of replicas;
-    If `false` transfer is a moving of a shard from one peer to another.
-    */
+    // From peer id
+    uint64 from = 3;
+    // To peer id
+    uint64 to = 4;
+    // If `true` transfer is a synchronization of replicas;
+    // If `false` transfer is a moving of a shard from one peer to another.
     bool sync = 5;
-    ShardTransferMethod method = 6; // Method of transferring points
-    string comment = 7; // Freeform string. Typically reports progress
+    // Method of transferring points
+    ShardTransferMethod method = 6;
+    // Freeform string. Typically reports progress
+    string comment = 7;
 }
 
 message ReshardingTelemetry {
@@ -95,10 +112,14 @@ message ShardCleanStatusTelemetry {
 
 message ClusterTelemetry {
     ClusterStatusTelemetry status = 1;
-    reserved 2; // config
-    reserved 3; // peers
-    reserved 4; // peer_metadata
-    reserved 5; // metadata
+    // config
+    reserved 2;
+    // peers
+    reserved 3;
+    // peer_metadata
+    reserved 4;
+    // metadata
+    reserved 5;
 }
 
 message ClusterStatusTelemetry {
@@ -119,7 +140,8 @@ message ConsensusThreadStatus {
         StoppedWithErr stopped_with_err = 3;
     }
     message Working {
-        int64 last_update_ms = 1; // Unix timestamp in milliseconds
+        // Unix timestamp in milliseconds
+        int64 last_update_ms = 1;
     }
 
     message Stopped {
