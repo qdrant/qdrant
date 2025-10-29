@@ -70,6 +70,7 @@ impl DummyShard {
             segments: None,
             optimizations: Default::default(),
             async_scorer: None,
+            indexed_only_excluded_vectors: None,
         }
     }
 
