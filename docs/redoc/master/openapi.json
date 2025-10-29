@@ -11294,7 +11294,8 @@
           "PartialSnapshot",
           "Recovery",
           "Resharding",
-          "ReshardingScaleDown"
+          "ReshardingScaleDown",
+          "ReadActive"
         ]
       },
       "RemoteShardInfo": {
