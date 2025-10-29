@@ -126,6 +126,12 @@ impl MetricsProvider for TelemetryData {
         if let Some(mem) = &self.memory {
             mem.add_metrics(metrics);
         }
+
+        #[cfg(target_os = "linux")]
+        match ProcFsMetrics::collect() {
+            Ok(procfs_provider) => procfs_provider.add_metrics(metrics),
+            Err(err) => log::warn!("Error reading procfs infos: {err:?}"),
+        };
     }
 }
 
@@ -748,6 +754,112 @@ fn label_pair(name: &str, value: &str) -> LabelPair {
     label.set_name(name.into());
     label.set_value(value.into());
     label
+}
+
+/// Structure for holding /procfs metrics, that can be easily populated in metrics API.
+struct ProcFsMetrics {
+    mmap_count: usize,
+    open_fds: usize,
+    max_fds_soft: u64,
+    max_fds_hard: u64,
+    minor_page_faults: u64,
+    major_page_faults: u64,
+    minor_children_page_faults: u64,
+    major_children_page_faults: u64,
+}
+
+impl ProcFsMetrics {
+    /// Collect metrics from /procfs.
+    #[cfg(target_os = "linux")]
+    fn collect() -> Result<Self, procfs::ProcError> {
+        use procfs::process::{LimitValue, Process};
+
+        let current_process = Process::myself()?;
+
+        let stat = current_process.stat()?;
+        let limits = current_process.limits()?;
+
+        fn format_limit(limit: LimitValue) -> u64 {
+            match limit {
+                LimitValue::Unlimited => 0,
+                LimitValue::Value(v) => v,
+            }
+        }
+
+        let max_fds_soft = format_limit(limits.max_open_files.soft_limit);
+        let max_fds_hard = format_limit(limits.max_open_files.hard_limit);
+
+        Ok(Self {
+            mmap_count: current_process.maps()?.len(),
+            open_fds: current_process.fd_count()?,
+            max_fds_soft,
+            max_fds_hard,
+            minor_page_faults: stat.minflt,
+            major_page_faults: stat.majflt,
+            minor_children_page_faults: stat.cminflt,
+            major_children_page_faults: stat.cmajflt,
+        })
+    }
+}
+
+impl MetricsProvider for ProcFsMetrics {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+        metrics.push(metric_family(
+            "procfs_mmap_count",
+            "count of open mmaps",
+            MetricType::GAUGE,
+            vec![gauge(self.mmap_count as f64, &[])],
+        ));
+
+        metrics.push(metric_family(
+            "procfs_current_fds",
+            "count of currently open file descriptors",
+            MetricType::GAUGE,
+            vec![gauge(self.open_fds as f64, &[])],
+        ));
+
+        metrics.push(metric_family(
+            "procfs_soft_limit_fds",
+            "soft limit for open file descriptors",
+            MetricType::GAUGE,
+            vec![gauge(self.max_fds_soft as f64, &[])],
+        ));
+
+        metrics.push(metric_family(
+            "procfs_hard_limit_fds",
+            "hard limit for open file descriptors",
+            MetricType::GAUGE,
+            vec![gauge(self.max_fds_hard as f64, &[])],
+        ));
+
+        metrics.push(metric_family(
+            "procfs_minor_page_faults",
+            "count of minor page faults which didn't cause a disk access",
+            MetricType::GAUGE,
+            vec![gauge(self.minor_page_faults as f64, &[])],
+        ));
+
+        metrics.push(metric_family(
+            "procfs_major_page_faults",
+            "count of disk accesses caused by a mmap page fault",
+            MetricType::GAUGE,
+            vec![gauge(self.major_page_faults as f64, &[])],
+        ));
+
+        metrics.push(metric_family(
+            "procfs_children_minor_page_faults",
+            "count of minor page faults caused by waited-for children",
+            MetricType::GAUGE,
+            vec![gauge(self.minor_children_page_faults as f64, &[])],
+        ));
+
+        metrics.push(metric_family(
+            "procfs_children_major_page_faults",
+            "count of major page faults caused by waited-for children",
+            MetricType::GAUGE,
+            vec![gauge(self.major_children_page_faults as f64, &[])],
+        ));
+    }
 }
 
 #[cfg(test)]
