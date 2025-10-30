@@ -188,7 +188,7 @@ impl MetricsProvider for CollectionsTelemetry {
         // Vectors excluded from index-only requests.
         let mut indexed_only_excluded = vec![];
 
-        let mut total_dead_shards = 0;
+        let mut total_dead_replicas = 0;
 
         let mut vector_count_by_name = vec![];
 
@@ -292,7 +292,7 @@ impl MetricsProvider for CollectionsTelemetry {
                 ))
             }
 
-            total_dead_shards += collection
+            total_dead_replicas += collection
                 .shards
                 .iter()
                 .flatten()
@@ -361,10 +361,10 @@ impl MetricsProvider for CollectionsTelemetry {
         }
 
         metrics.push(metric_family(
-            "dead_shards_total",
+            "dead_replicas",
             "total amount of shard replicas in non-active state",
             MetricType::GAUGE,
-            vec![gauge(total_dead_shards as f64, &[])],
+            vec![gauge(total_dead_replicas as f64, &[])],
             prefix,
         ));
     }
