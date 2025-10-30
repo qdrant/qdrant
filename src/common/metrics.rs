@@ -905,16 +905,16 @@ impl MetricsProvider for ProcFsMetrics {
         ));
 
         metrics.push(metric_family(
-            "procfs_children_minor_page_faults",
-            "count of minor page faults caused by waited-for children",
+            "procfs_minor_page_faults_children",
+            "count of minor page faults caused by waited-for child processes",
             MetricType::COUNTER,
             vec![counter(self.minor_children_page_faults as f64, &[])],
             prefix,
         ));
 
         metrics.push(metric_family(
-            "procfs_children_major_page_faults",
-            "count of major page faults caused by waited-for children",
+            "procfs_major_page_faults_children",
+            "count of major page faults caused by waited-for child processes",
             MetricType::COUNTER,
             vec![counter(self.major_children_page_faults as f64, &[])],
             prefix,
