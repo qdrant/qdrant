@@ -671,9 +671,7 @@ impl OperationDurationMetricsBuilder {
 
     /// Build metrics and add them to the provided vector.
     pub fn build(self, global_prefix: Option<&str>, prefix: &str, metrics: &mut Vec<MetricFamily>) {
-        let prefix = global_prefix
-            .map(|global_prefix| format!("{global_prefix}{prefix}_"))
-            .unwrap_or_else(|| prefix.to_string());
+        let prefix = format!("{}{prefix}_", global_prefix.unwrap_or(""));
 
         if !self.total.is_empty() {
             metrics.push(metric_family(
