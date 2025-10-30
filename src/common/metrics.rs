@@ -907,11 +907,15 @@ impl MetricsProvider for ProcFsMetrics {
             prefix,
         ));
 
+        // TODO: include counts for alive child processes
+        let minor_page_faults = self.minor_page_faults + self.minor_children_page_faults;
+        let major_page_faults = self.major_page_faults + self.major_children_page_faults;
+
         metrics.push(metric_family(
             "process_minor_page_faults_total",
             "count of minor page faults which didn't cause a disk access",
             MetricType::COUNTER,
-            vec![counter(self.minor_page_faults as f64, &[])],
+            vec![counter(minor_page_faults as f64, &[])],
             prefix,
         ));
 
@@ -919,23 +923,7 @@ impl MetricsProvider for ProcFsMetrics {
             "process_major_page_faults_total",
             "count of disk accesses caused by a mmap page fault",
             MetricType::COUNTER,
-            vec![counter(self.major_page_faults as f64, &[])],
-            prefix,
-        ));
-
-        metrics.push(metric_family(
-            "process_minor_page_faults_children_total",
-            "count of minor page faults caused by waited-for child processes",
-            MetricType::COUNTER,
-            vec![counter(self.minor_children_page_faults as f64, &[])],
-            prefix,
-        ));
-
-        metrics.push(metric_family(
-            "process_major_page_faults_children_total",
-            "count of major page faults caused by waited-for child processes",
-            MetricType::COUNTER,
-            vec![counter(self.major_children_page_faults as f64, &[])],
+            vec![counter(major_page_faults as f64, &[])],
             prefix,
         ));
     }
