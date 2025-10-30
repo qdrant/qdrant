@@ -46,6 +46,11 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::types::formula::{PyDecayKind, PyExpressionInterface, PyFormula};
     #[pymodule_export]
+    use super::types::query::{
+        PyContextPair, PyContextQuery, PyDiscoverQuery, PyFeedbackItem, PyFeedbackSimpleQuery,
+        PyQueryInterface, PyRecommendQuery, PySimpleFeedbackStrategy,
+    };
+    #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PySparseVector};
     #[pymodule_export]
     use super::update::PyUpdateOperation;
