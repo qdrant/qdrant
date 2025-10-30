@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::{env, io};
 
 use api::grpc::transport_channel_pool::{
@@ -9,7 +10,7 @@ use common::flags::FeatureFlags;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
 use serde::Deserialize;
 use storage::types::StorageConfig;
-use validator::Validate;
+use validator::{Validate, ValidationError};
 
 use crate::common::debugger::DebuggerConfig;
 use crate::common::inference::config::InferenceConfig;
@@ -60,6 +61,7 @@ pub struct ServiceConfig {
 
     /// Global prefix for metrics.
     #[serde(default)]
+    #[validate(custom(function = validate_metrics_prefix))]
     pub metrics_prefix: Option<String>,
 }
 
@@ -401,6 +403,28 @@ const fn default_compact_wal_entries() -> u64 {
 const fn default_tls_cert_ttl() -> Option<u64> {
     // Default one hour
     Some(3600)
+}
+
+/// Custom validation function for metrics prefixes.
+fn validate_metrics_prefix(prefix: &str) -> Result<(), ValidationError> {
+    // Prefix is not required
+    if prefix.is_empty() {
+        return Ok(());
+    }
+
+    // Only allow alphanumeric characters or '_'
+    if !prefix
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(
+            ValidationError::new("invalid_metrics_prefix").with_message(Cow::Borrowed(
+                "Metrics prefix must be of all alphanumeric characters, with an exception for '_'",
+            )),
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
