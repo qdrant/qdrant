@@ -857,7 +857,7 @@ impl ProcFsMetrics {
 impl MetricsProvider for ProcFsMetrics {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
         metrics.push(metric_family(
-            "procfs_mmap_count",
+            "process_mmap_count",
             "count of open mmaps",
             MetricType::GAUGE,
             vec![gauge(self.mmap_count as f64, &[])],
@@ -865,7 +865,7 @@ impl MetricsProvider for ProcFsMetrics {
         ));
 
         metrics.push(metric_family(
-            "procfs_current_fds",
+            "process_fds_count",
             "count of currently open file descriptors",
             MetricType::GAUGE,
             vec![gauge(self.open_fds as f64, &[])],
@@ -873,7 +873,7 @@ impl MetricsProvider for ProcFsMetrics {
         ));
 
         metrics.push(metric_family(
-            "procfs_soft_limit_fds",
+            "process_fds_soft_limit",
             "soft limit for open file descriptors",
             MetricType::GAUGE,
             vec![gauge(self.max_fds_soft as f64, &[])],
@@ -881,7 +881,7 @@ impl MetricsProvider for ProcFsMetrics {
         ));
 
         metrics.push(metric_family(
-            "procfs_hard_limit_fds",
+            "process_fds_hard_limit",
             "hard limit for open file descriptors",
             MetricType::GAUGE,
             vec![gauge(self.max_fds_hard as f64, &[])],
@@ -889,7 +889,7 @@ impl MetricsProvider for ProcFsMetrics {
         ));
 
         metrics.push(metric_family(
-            "procfs_minor_page_faults",
+            "process_minor_page_faults_total",
             "count of minor page faults which didn't cause a disk access",
             MetricType::COUNTER,
             vec![counter(self.minor_page_faults as f64, &[])],
@@ -897,7 +897,7 @@ impl MetricsProvider for ProcFsMetrics {
         ));
 
         metrics.push(metric_family(
-            "procfs_major_page_faults",
+            "process_major_page_faults_total",
             "count of disk accesses caused by a mmap page fault",
             MetricType::COUNTER,
             vec![counter(self.major_page_faults as f64, &[])],
@@ -905,7 +905,7 @@ impl MetricsProvider for ProcFsMetrics {
         ));
 
         metrics.push(metric_family(
-            "procfs_minor_page_faults_children",
+            "process_minor_page_faults_children_total",
             "count of minor page faults caused by waited-for child processes",
             MetricType::COUNTER,
             vec![counter(self.minor_children_page_faults as f64, &[])],
@@ -913,7 +913,7 @@ impl MetricsProvider for ProcFsMetrics {
         ));
 
         metrics.push(metric_family(
-            "procfs_major_page_faults_children",
+            "process_major_page_faults_children_total",
             "count of major page faults caused by waited-for child processes",
             MetricType::COUNTER,
             vec![counter(self.major_children_page_faults as f64, &[])],
