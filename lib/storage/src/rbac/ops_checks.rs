@@ -363,7 +363,7 @@ mod tests_ops {
     ) {
         access
             .check_point_op("col", op)
-            .expect_err("Should be allowed");
+            .expect_err("should be forbidden");
     }
 
     /// Operation requires write + whole collection access.
