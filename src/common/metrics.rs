@@ -301,7 +301,7 @@ impl MetricsProvider for CollectionsTelemetry {
 
         if !vector_count_by_name.is_empty() {
             metrics.push(metric_family(
-                "collection_vectors_total",
+                "collection_vectors",
                 "amount of vectors grouped by vector name",
                 MetricType::GAUGE,
                 vector_count_by_name,
