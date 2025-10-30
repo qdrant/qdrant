@@ -189,6 +189,10 @@ impl MetricsProvider for CollectionsTelemetry {
 
         let mut total_dead_replicas = 0;
 
+        // Snapshot metrics
+        let mut snapshots_currently_running = vec![];
+        let mut snapshots_total = vec![];
+
         let mut vector_count_by_name = vec![];
 
         for collection in self.collections.iter().flatten() {
@@ -297,6 +301,16 @@ impl MetricsProvider for CollectionsTelemetry {
                 .flatten()
                 .filter(|i| i.replicate_states.values().any(|state| !state.is_active()))
                 .count();
+
+            snapshots_currently_running.push(gauge(
+                collection.running_snapshots.unwrap_or_default() as f64,
+                &[("id", &collection.id)],
+            ));
+
+            snapshots_total.push(counter(
+                collection.total_snapshot_creations.unwrap_or_default() as f64,
+                &[("id", &collection.id)],
+            ));
         }
 
         if !vector_count_by_name.is_empty() {
@@ -364,6 +378,22 @@ impl MetricsProvider for CollectionsTelemetry {
             "total amount of shard replicas in non-active state",
             MetricType::GAUGE,
             vec![gauge(total_dead_replicas as f64, &[])],
+            prefix,
+        ));
+
+        metrics.push(metric_family(
+            "snapshot_currently_runnning",
+            "amount of snapshot creations that are currently running",
+            MetricType::GAUGE,
+            snapshots_currently_running,
+            prefix,
+        ));
+
+        metrics.push(metric_family(
+            "snapshot_creations_total",
+            "total amount of snapshots created",
+            MetricType::COUNTER,
+            snapshots_total,
             prefix,
         ));
     }

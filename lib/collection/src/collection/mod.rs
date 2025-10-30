@@ -12,18 +12,17 @@ mod shard_transfer;
 mod sharding_keys;
 mod snapshots;
 mod state_management;
+mod telemetry;
 
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
-use common::types::{DetailsLevel, TelemetryDetail};
 use io::storage_version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
@@ -31,6 +30,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::collection::telemetry::CollectionTelemetryCollector;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::collection_size_stats::{
     CollectionSizeAtomicStats, CollectionSizeStats, CollectionSizeStatsCache,
@@ -55,9 +55,7 @@ use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{CollectionId, replica_set};
-use crate::telemetry::{
-    CollectionConfigTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
-};
+use crate::telemetry::CollectionsAggregatedTelemetry;
 
 /// Collection's data is split into several shards.
 pub struct Collection {
@@ -93,7 +91,7 @@ pub struct Collection {
     // Background tasks to clean shards
     shard_clean_tasks: ShardCleanTasks,
     // Counter for currently running snapshot tasks.
-    running_snapshots: Arc<AtomicUsize>,
+    telemetry_stats: CollectionTelemetryCollector,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -199,7 +197,7 @@ impl Collection {
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
-            running_snapshots: Arc::new(AtomicUsize::new(0)),
+            telemetry_stats: CollectionTelemetryCollector::default(),
         })
     }
 
@@ -314,7 +312,7 @@ impl Collection {
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
-            running_snapshots: Arc::new(AtomicUsize::new(0)),
+            telemetry_stats: CollectionTelemetryCollector::default(),
         }
     }
 
@@ -781,42 +779,6 @@ impl Collection {
         }
 
         Ok(())
-    }
-
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> CollectionTelemetry {
-        let (shards_telemetry, transfers, resharding) = {
-            if detail.level >= DetailsLevel::Level3 {
-                let shards_holder = self.shards_holder.read().await;
-                let mut shards_telemetry = Vec::new();
-                for shard in shards_holder.all_shards() {
-                    shards_telemetry.push(shard.get_telemetry_data(detail).await)
-                }
-                (
-                    Some(shards_telemetry),
-                    Some(shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await)),
-                    Some(
-                        shards_holder
-                            .get_resharding_operations_info()
-                            .unwrap_or_default(),
-                    ),
-                )
-            } else {
-                (None, None, None)
-            }
-        };
-
-        let shard_clean_tasks = self.clean_local_shards_statuses();
-
-        CollectionTelemetry {
-            id: self.name(),
-            init_time_ms: self.init_time.as_millis() as u64,
-            config: CollectionConfigTelemetry::from(self.collection_config.read().await.clone()),
-            shards: shards_telemetry,
-            transfers,
-            resharding,
-            shard_clean_tasks: (!shard_clean_tasks.is_empty()).then_some(shard_clean_tasks),
-            running_snapshots: Some(self.running_snapshots.load(Ordering::Relaxed)),
-        }
     }
 
     pub async fn get_aggregated_telemetry_data(&self) -> CollectionsAggregatedTelemetry {

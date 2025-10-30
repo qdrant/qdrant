@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::thread;
+use std::thread::sleep;
 use std::time::Duration;
 
 use common::defer::DeferCallback;
@@ -62,12 +62,20 @@ impl Collection {
         global_temp_dir: &Path,
         this_peer_id: PeerId,
     ) -> CollectionResult<SnapshotDescription> {
-        self.running_snapshots.fetch_add(1, Ordering::Release);
+        // Increment total counter
+        self.telemetry_stats
+            .snapshots_total
+            .fetch_add(1, Ordering::Relaxed);
+
+        // Increment current running counter.
+        self.telemetry_stats
+            .running_snapshots
+            .fetch_add(1, Ordering::SeqCst);
 
         // Decrement the counter if this functionn finishes.
-        let running_snapshots_clone = self.running_snapshots.clone();
+        let running_snapshots_clone = self.telemetry_stats.running_snapshots.clone();
         let _defer = DeferCallback::new(move || {
-            running_snapshots_clone.fetch_sub(1, Ordering::Acquire);
+            running_snapshots_clone.fetch_sub(1, Ordering::SeqCst);
         });
 
         let snapshot_name = format!(

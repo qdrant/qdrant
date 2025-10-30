@@ -40,6 +40,9 @@ pub struct CollectionTelemetry {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub running_snapshots: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_snapshot_creations: Option<usize>,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
