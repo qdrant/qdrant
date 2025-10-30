@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::collections::HashMap;
 
 use api::rest::models::HardwareUsage;
@@ -872,19 +873,16 @@ impl MetricsProvider for ProcFsMetrics {
             prefix,
         ));
 
+        let fds_limit = match (self.max_fds_soft, self.max_fds_hard) {
+            (0, hard) => hard,               // soft unlimited, use hard
+            (soft, 0) => soft,               // hard unlimited, use soft
+            (soft, hard) => min(soft, hard), // both limited, use minimum
+        };
         metrics.push(metric_family(
-            "process_fds_soft_limit",
-            "soft limit for open file descriptors",
+            "process_fds_limit",
+            "limit for open file descriptors",
             MetricType::GAUGE,
-            vec![gauge(self.max_fds_soft as f64, &[])],
-            prefix,
-        ));
-
-        metrics.push(metric_family(
-            "process_fds_hard_limit",
-            "hard limit for open file descriptors",
-            MetricType::GAUGE,
-            vec![gauge(self.max_fds_hard as f64, &[])],
+            vec![gauge(fds_limit as f64, &[])],
             prefix,
         ));
 
