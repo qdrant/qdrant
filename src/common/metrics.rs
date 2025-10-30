@@ -349,13 +349,15 @@ impl MetricsProvider for CollectionsTelemetry {
             prefix,
         ));
 
-        metrics.push(metric_family(
-            "collection_points",
-            "approximate amount of points per collection",
-            MetricType::GAUGE,
-            points_per_collection,
-            prefix,
-        ));
+        if !points_per_collection.is_empty() {
+            metrics.push(metric_family(
+                "collection_points",
+                "approximate amount of points per collection",
+                MetricType::GAUGE,
+                points_per_collection,
+                prefix,
+            ));
+        }
 
         metrics.push(metric_family(
             "dead_shards_total",
