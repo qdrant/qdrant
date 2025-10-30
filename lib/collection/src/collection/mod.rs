@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use clean::ShardCleanTasks;
@@ -91,6 +92,8 @@ pub struct Collection {
     collection_stats_cache: CollectionSizeStatsCache,
     // Background tasks to clean shards
     shard_clean_tasks: ShardCleanTasks,
+    // Counter for currently running snapshot tasks.
+    running_snapshots: Arc<AtomicUsize>,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -196,6 +199,7 @@ impl Collection {
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
+            running_snapshots: Arc::new(AtomicUsize::new(0)),
         })
     }
 
@@ -310,6 +314,7 @@ impl Collection {
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
+            running_snapshots: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -810,6 +815,7 @@ impl Collection {
             transfers,
             resharding,
             shard_clean_tasks: (!shard_clean_tasks.is_empty()).then_some(shard_clean_tasks),
+            running_snapshots: Some(self.running_snapshots.load(Ordering::Relaxed)),
         }
     }
 

@@ -7,6 +7,7 @@ pub mod counter;
 pub mod cow;
 pub mod cpu;
 pub mod defaults;
+pub mod defer;
 pub mod delta_pack;
 pub mod disk;
 pub mod either_variant;

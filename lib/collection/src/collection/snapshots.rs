@@ -1,7 +1,11 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::thread;
+use std::time::Duration;
 
+use common::defer::DeferCallback;
 use common::tar_ext::BuilderExt;
 use common::tempfile_ext::MaybeTempPath;
 use fs_err::File;
@@ -58,6 +62,14 @@ impl Collection {
         global_temp_dir: &Path,
         this_peer_id: PeerId,
     ) -> CollectionResult<SnapshotDescription> {
+        self.running_snapshots.fetch_add(1, Ordering::Release);
+
+        // Decrement the counter if this functionn finishes.
+        let running_snapshots_clone = self.running_snapshots.clone();
+        let _defer = DeferCallback::new(move || {
+            running_snapshots_clone.fetch_sub(1, Ordering::Acquire);
+        });
+
         let snapshot_name = format!(
             "{}-{this_peer_id}-{}.snapshot",
             self.name(),

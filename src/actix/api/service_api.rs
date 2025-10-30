@@ -40,6 +40,7 @@ fn telemetry(
         let details_level = params
             .details_level
             .map_or(DetailsLevel::Level0, Into::into);
+
         let detail = TelemetryDetail {
             level: details_level,
             histograms: false,
