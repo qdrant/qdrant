@@ -891,32 +891,32 @@ impl MetricsProvider for ProcFsMetrics {
         metrics.push(metric_family(
             "procfs_minor_page_faults",
             "count of minor page faults which didn't cause a disk access",
-            MetricType::GAUGE,
-            vec![gauge(self.minor_page_faults as f64, &[])],
+            MetricType::COUNTER,
+            vec![counter(self.minor_page_faults as f64, &[])],
             prefix,
         ));
 
         metrics.push(metric_family(
             "procfs_major_page_faults",
             "count of disk accesses caused by a mmap page fault",
-            MetricType::GAUGE,
-            vec![gauge(self.major_page_faults as f64, &[])],
+            MetricType::COUNTER,
+            vec![counter(self.major_page_faults as f64, &[])],
             prefix,
         ));
 
         metrics.push(metric_family(
             "procfs_children_minor_page_faults",
             "count of minor page faults caused by waited-for children",
-            MetricType::GAUGE,
-            vec![gauge(self.minor_children_page_faults as f64, &[])],
+            MetricType::COUNTER,
+            vec![counter(self.minor_children_page_faults as f64, &[])],
             prefix,
         ));
 
         metrics.push(metric_family(
             "procfs_children_major_page_faults",
             "count of major page faults caused by waited-for children",
-            MetricType::GAUGE,
-            vec![gauge(self.major_children_page_faults as f64, &[])],
+            MetricType::COUNTER,
+            vec![counter(self.major_children_page_faults as f64, &[])],
             prefix,
         ));
     }
