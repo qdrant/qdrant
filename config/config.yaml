@@ -297,6 +297,10 @@ service:
   #
   # Uncomment to enable.
   # hardware_reporting: true
+  #
+  # Uncomment to enable.
+  # Prefix for the names of metrics in the /metrics API.
+  # metrics_prefix: qdrant_
 
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
