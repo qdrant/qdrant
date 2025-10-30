@@ -4,7 +4,7 @@ use std::sync::Arc;
 use actix_web::http::StatusCode;
 use actix_web::http::header::ContentType;
 use actix_web::rt::time::Instant;
-use actix_web::web::Query;
+use actix_web::web::{Data, Query};
 use actix_web::{HttpResponse, Responder, get, post, web};
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
@@ -20,6 +20,7 @@ use crate::common::health;
 use crate::common::metrics::MetricsData;
 use crate::common::stacktrace::get_stack_trace;
 use crate::common::telemetry::TelemetryCollector;
+use crate::settings::ServiceConfig;
 use crate::tracing;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
@@ -63,6 +64,7 @@ pub struct MetricsParam {
 async fn metrics(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<MetricsParam>,
+    config: Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
     if let Err(err) = access.check_global_access(AccessRequirements::new()) {
@@ -86,9 +88,11 @@ async fn metrics(
         telemetry_data
     };
 
+    let metrics_prefix = config.metrics_prefix.as_deref();
+
     HttpResponse::Ok()
         .content_type(ContentType::plaintext())
-        .body(MetricsData::from(telemetry_data).format_metrics())
+        .body(MetricsData::new_from_telemetry(telemetry_data, metrics_prefix).format_metrics())
 }
 
 #[get("/stacktrace")]
