@@ -14,7 +14,7 @@ pub enum PyVector {
     // Put Int first so ints don't get parsed as floats (since f64 can extract from ints).
     Single(DenseVector),
     MultiDense(Vec<DenseVector>),
-    Named(HashMap<VectorNameBuf, PyVectorType>),
+    Named(HashMap<VectorNameBuf, PyNamedVector>),
 }
 
 impl From<VectorStructPersisted> for PyVector {
@@ -25,7 +25,7 @@ impl From<VectorStructPersisted> for PyVector {
             VectorStructPersisted::Named(named) => PyVector::Named(
                 named
                     .into_iter()
-                    .map(|(k, v)| (k, PyVectorType::from(v)))
+                    .map(|(k, v)| (k, PyNamedVector::from(v)))
                     .collect::<HashMap<_, _>>(),
             ),
         }
@@ -42,7 +42,7 @@ impl From<VectorStructInternal> for PyVector {
             VectorStructInternal::Named(named) => PyVector::Named(
                 named
                     .into_iter()
-                    .map(|(k, v)| (k, PyVectorType::from(v)))
+                    .map(|(k, v)| (k, PyNamedVector::from(v)))
                     .collect::<HashMap<_, _>>(),
             ),
         }
@@ -86,55 +86,55 @@ impl TryFrom<PyVector> for VectorStructInternal {
 }
 
 #[derive(Clone, Debug, IntoPyObject, FromPyObject)]
-pub enum PyVectorType {
+pub enum PyNamedVector {
     // Put Int first so ints don't get parsed as floats (since f64 can extract from ints).
     Dense(DenseVector),
     MultiDense(Vec<DenseVector>),
     Sparse(PySparseVector),
 }
 
-impl From<VectorPersisted> for PyVectorType {
+impl From<VectorPersisted> for PyNamedVector {
     fn from(value: VectorPersisted) -> Self {
         match value {
-            VectorPersisted::Dense(dense) => PyVectorType::Dense(dense),
-            VectorPersisted::MultiDense(multi) => PyVectorType::MultiDense(multi),
-            VectorPersisted::Sparse(sparse) => PyVectorType::Sparse(PySparseVector(sparse)),
+            VectorPersisted::Dense(dense) => PyNamedVector::Dense(dense),
+            VectorPersisted::MultiDense(multi) => PyNamedVector::MultiDense(multi),
+            VectorPersisted::Sparse(sparse) => PyNamedVector::Sparse(PySparseVector(sparse)),
         }
     }
 }
 
-impl From<VectorInternal> for PyVectorType {
+impl From<VectorInternal> for PyNamedVector {
     fn from(value: VectorInternal) -> Self {
         match value {
-            VectorInternal::Dense(dense) => PyVectorType::Dense(dense),
+            VectorInternal::Dense(dense) => PyNamedVector::Dense(dense),
             VectorInternal::MultiDense(multi) => {
-                PyVectorType::MultiDense(multi.into_multi_vectors())
+                PyNamedVector::MultiDense(multi.into_multi_vectors())
             }
-            VectorInternal::Sparse(sparse) => PyVectorType::Sparse(PySparseVector(sparse)),
+            VectorInternal::Sparse(sparse) => PyNamedVector::Sparse(PySparseVector(sparse)),
         }
     }
 }
 
-impl From<PyVectorType> for VectorPersisted {
-    fn from(value: PyVectorType) -> Self {
+impl From<PyNamedVector> for VectorPersisted {
+    fn from(value: PyNamedVector) -> Self {
         match value {
-            PyVectorType::Dense(dense) => VectorPersisted::Dense(dense),
-            PyVectorType::MultiDense(multi) => VectorPersisted::MultiDense(multi),
-            PyVectorType::Sparse(sparse) => VectorPersisted::Sparse(sparse.0),
+            PyNamedVector::Dense(dense) => VectorPersisted::Dense(dense),
+            PyNamedVector::MultiDense(multi) => VectorPersisted::MultiDense(multi),
+            PyNamedVector::Sparse(sparse) => VectorPersisted::Sparse(sparse.0),
         }
     }
 }
 
-impl TryFrom<PyVectorType> for VectorInternal {
+impl TryFrom<PyNamedVector> for VectorInternal {
     type Error = PyErr;
 
-    fn try_from(value: PyVectorType) -> PyResult<Self> {
+    fn try_from(value: PyNamedVector) -> PyResult<Self> {
         let vector = match value {
-            PyVectorType::Dense(dense) => VectorInternal::Dense(dense),
-            PyVectorType::MultiDense(multi) => {
+            PyNamedVector::Dense(dense) => VectorInternal::Dense(dense),
+            PyNamedVector::MultiDense(multi) => {
                 VectorInternal::MultiDense(flat_multi_dense_from_nested(multi)?)
             }
-            PyVectorType::Sparse(sparse) => VectorInternal::Sparse(sparse.0),
+            PyNamedVector::Sparse(sparse) => VectorInternal::Sparse(sparse.0),
         };
 
         Ok(vector)

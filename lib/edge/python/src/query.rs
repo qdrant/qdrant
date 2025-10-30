@@ -285,7 +285,7 @@ pub struct PyMmr(MmrInternal);
 impl PyMmr {
     #[new]
     pub fn new(
-        vector: PyVectorType,
+        vector: PyNamedVector,
         using: String,
         lambda: f32,
         candidates_limit: usize,
