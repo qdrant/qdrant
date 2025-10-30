@@ -11,7 +11,7 @@ homepage = "https://qdrant.tech/"
 repository = "https://github.com/qdrant/qdrant"
 license = "Apache-2.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 default-run = "qdrant"
 
 [lints]
