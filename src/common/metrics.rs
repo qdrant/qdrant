@@ -858,7 +858,7 @@ impl ProcFsMetrics {
 impl MetricsProvider for ProcFsMetrics {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
         metrics.push(metric_family(
-            "process_mmap_count",
+            "process_open_mmaps",
             "count of open mmaps",
             MetricType::GAUGE,
             vec![gauge(self.mmap_count as f64, &[])],
@@ -866,7 +866,7 @@ impl MetricsProvider for ProcFsMetrics {
         ));
 
         metrics.push(metric_family(
-            "process_fds_count",
+            "process_open_fds",
             "count of currently open file descriptors",
             MetricType::GAUGE,
             vec![gauge(self.open_fds as f64, &[])],
@@ -879,7 +879,7 @@ impl MetricsProvider for ProcFsMetrics {
             (soft, hard) => min(soft, hard), // both limited, use minimum
         };
         metrics.push(metric_family(
-            "process_fds_limit",
+            "process_max_fds",
             "limit for open file descriptors",
             MetricType::GAUGE,
             vec![gauge(fds_limit as f64, &[])],
