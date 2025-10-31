@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::mem;
 
+use bytemuck::{TransparentWrapper, TransparentWrapperAlloc};
 use derive_more::Into;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -13,7 +13,6 @@ use super::*;
 
 #[pyclass(name = "Formula")]
 #[derive(Clone, Debug, Into)]
-#[repr(transparent)]
 pub struct PyFormula(ParsedFormula);
 
 #[pymethods]
@@ -22,7 +21,7 @@ impl PyFormula {
     pub fn new(formula: PyExpression, defaults: HashMap<String, PyValue>) -> PyResult<Self> {
         let formula = FormulaInternal {
             formula: ExpressionInternal::from(formula),
-            defaults: PyValue::into_rust_map(defaults),
+            defaults: PyValue::peel_map(defaults),
         };
 
         let formula = ParsedFormula::try_from(formula)
@@ -32,21 +31,9 @@ impl PyFormula {
     }
 }
 
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyExpression(ExpressionInternal);
-
-impl PyExpression {
-    pub fn from_rust_vec(expressions: Vec<ExpressionInternal>) -> Vec<Self> {
-        // `PyExpression` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(expressions) }
-    }
-
-    pub fn into_rust_vec(expressions: Vec<Self>) -> Vec<ExpressionInternal> {
-        // `PyExpression` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(expressions) }
-    }
-}
 
 impl<'py> FromPyObject<'py> for PyExpression {
     fn extract_bound(helper: &Bound<'py, PyAny>) -> PyResult<Self> {
@@ -65,10 +52,10 @@ impl<'py> FromPyObject<'py> for PyExpression {
                 ExpressionInternal::DatetimeKey(path.into())
             }
             PyExpressionInterface::Mult(exprs) => {
-                ExpressionInternal::Mult(PyExpression::into_rust_vec(exprs))
+                ExpressionInternal::Mult(PyExpression::peel_vec(exprs))
             }
             PyExpressionInterface::Sum(exprs) => {
-                ExpressionInternal::Sum(PyExpression::into_rust_vec(exprs))
+                ExpressionInternal::Sum(PyExpression::peel_vec(exprs))
             }
             PyExpressionInterface::Neg(expr) => ExpressionInternal::Neg(Box::new(expr.into())),
             PyExpressionInterface::Div {
@@ -129,10 +116,10 @@ impl<'py> IntoPyObject<'py> for PyExpression {
                 PyExpressionInterface::DatetimeKey(PyJsonPath(path))
             }
             ExpressionInternal::Mult(exprs) => {
-                PyExpressionInterface::Mult(PyExpression::from_rust_vec(exprs))
+                PyExpressionInterface::Mult(PyExpression::wrap_vec(exprs))
             }
             ExpressionInternal::Sum(exprs) => {
-                PyExpressionInterface::Sum(PyExpression::from_rust_vec(exprs))
+                PyExpressionInterface::Sum(PyExpression::wrap_vec(exprs))
             }
             ExpressionInternal::Neg(expr) => PyExpressionInterface::Neg(PyExpression(*expr)),
             ExpressionInternal::Div {

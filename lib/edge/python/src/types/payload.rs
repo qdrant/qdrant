@@ -1,21 +1,13 @@
-use std::mem;
-
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::types::*;
 
 use super::value::*;
 
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPayload(pub Payload);
-
-impl PyPayload {
-    pub fn from_ref(payload: &Payload) -> &Self {
-        // `PyPayload` has transparent representation, so we can safely transmute references
-        unsafe { mem::transmute(payload) }
-    }
-}
 
 impl<'py> FromPyObject<'py> for PyPayload {
     fn extract_bound(payload: &Bound<'py, PyAny>) -> PyResult<Self> {

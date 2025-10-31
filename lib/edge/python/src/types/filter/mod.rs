@@ -22,7 +22,6 @@ pub use self::value_count::*;
 
 #[pyclass(name = "Filter")]
 #[derive(Clone, Debug, Into)]
-#[repr(transparent)]
 pub struct PyFilter(pub Filter);
 
 #[pymethods]

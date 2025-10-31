@@ -1,5 +1,6 @@
 use std::mem;
 
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
 use pyo3::exceptions::PyValueError;
@@ -7,19 +8,16 @@ use pyo3::prelude::*;
 use segment::types::PointIdType;
 use uuid::Uuid;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Into)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPointId(pub PointIdType);
 
 impl PyPointId {
-    pub fn into_rust_vec(point_ids: Vec<PyPointId>) -> Vec<PointIdType> {
-        // `PyPointId` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(point_ids) }
-    }
-
-    pub fn into_rust_set(point_ids: ahash::HashSet<PyPointId>) -> ahash::HashSet<PointIdType> {
-        // `PyPointId` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(point_ids) }
+    pub fn peel_set(set: ahash::HashSet<Self>) -> ahash::HashSet<PointIdType>
+    where
+        Self: TransparentWrapper<PointIdType>,
+    {
+        unsafe { mem::transmute(set) }
     }
 }
 

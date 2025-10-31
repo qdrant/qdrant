@@ -1,3 +1,4 @@
+use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use ordered_float::OrderedFloat;
 use pyo3::prelude::*;
@@ -8,7 +9,6 @@ use shard::query::query_enum::QueryEnum;
 use crate::types::*;
 
 #[derive(Clone, Debug, Into)]
-#[repr(transparent)]
 pub struct PyQuery(QueryEnum);
 
 impl FromPyObject<'_> for PyQuery {
@@ -178,7 +178,7 @@ impl PyDiscoverQuery {
     pub fn new(target: PyNamedVector, pairs: Vec<PyContextPair>) -> PyResult<Self> {
         Ok(Self(DiscoveryQuery {
             target: VectorInternal::try_from(target)?,
-            pairs: PyContextPair::into_rust_vec(pairs),
+            pairs: PyContextPair::peel_vec(pairs),
         }))
     }
 }
@@ -192,22 +192,15 @@ impl PyContextQuery {
     #[new]
     pub fn new(pairs: Vec<PyContextPair>) -> Self {
         Self(ContextQuery {
-            pairs: PyContextPair::into_rust_vec(pairs),
+            pairs: PyContextPair::peel_vec(pairs),
         })
     }
 }
 
 #[pyclass(name = "ContextPair")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyContextPair(ContextPair<VectorInternal>);
-
-impl PyContextPair {
-    pub fn into_rust_vec(pairs: Vec<Self>) -> Vec<ContextPair<VectorInternal>> {
-        // `PyContextPair` has transparent representation, so transmuting is safe
-        unsafe { std::mem::transmute(pairs) }
-    }
-}
 
 #[pymethods]
 impl PyContextPair {
@@ -234,22 +227,16 @@ impl PyFeedbackSimpleQuery {
     ) -> PyResult<Self> {
         Ok(Self(FeedbackQueryInternal {
             target: VectorInternal::try_from(target)?,
-            feedback: PyFeedbackItem::into_rust_vec(feedback),
+            feedback: PyFeedbackItem::peel_vec(feedback),
             strategy: SimpleFeedbackStrategy::from(strategy),
         }))
     }
 }
 
 #[pyclass(name = "FeedbackItem")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyFeedbackItem(FeedbackItem<VectorInternal>);
-
-impl PyFeedbackItem {
-    pub fn into_rust_vec(items: Vec<Self>) -> Vec<FeedbackItem<VectorInternal>> {
-        // `PyFeedbackItem` has transparent representation, so transmuting is safe
-        unsafe { std::mem::transmute(items) }
-    }
-}
 
 #[pymethods]
 impl PyFeedbackItem {

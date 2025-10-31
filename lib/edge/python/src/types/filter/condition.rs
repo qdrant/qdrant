@@ -89,7 +89,7 @@ impl PyHasIdCondition {
     #[new]
     pub fn new(point_ids: ahash::HashSet<PyPointId>) -> Result<Self, PyErr> {
         Ok(Self(HasIdCondition {
-            has_id: MaybeArc::NoArc(ahash::AHashSet::from(PyPointId::into_rust_set(point_ids))),
+            has_id: MaybeArc::NoArc(ahash::AHashSet::from(PyPointId::peel_set(point_ids))),
         }))
     }
 }

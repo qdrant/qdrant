@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use bytemuck::TransparentWrapperAlloc as _;
 use derive_more::Into;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -52,7 +53,7 @@ impl PyUpdateOperation {
 
     #[staticmethod]
     pub fn delete_points(ids: Vec<PyPointId>) -> Self {
-        let point_ids = PyPointId::into_rust_vec(ids);
+        let point_ids = PyPointId::peel_vec(ids);
 
         let operation =
             CollectionUpdateOperations::PointOperation(point_ops::PointOperations::DeletePoints {
@@ -111,7 +112,7 @@ impl PyUpdateOperation {
 
     #[staticmethod]
     pub fn delete_vectors(ids: Vec<PyPointId>, vector_names: Vec<VectorNameBuf>) -> Self {
-        let point_ids = PyPointId::into_rust_vec(ids);
+        let point_ids = PyPointId::peel_vec(ids);
         let operation = CollectionUpdateOperations::VectorOperation(
             vector_ops::VectorOperations::DeleteVectors(
                 PointIdsList::from(point_ids),
@@ -137,7 +138,7 @@ impl PyUpdateOperation {
         payload: PyPayload,
         key: Option<String>,
     ) -> Result<Self, PyErr> {
-        let point_ids = PyPointId::into_rust_vec(ids);
+        let point_ids = PyPointId::peel_vec(ids);
         let payload = Payload::from(payload);
 
         let key = key
@@ -184,7 +185,7 @@ impl PyUpdateOperation {
     #[staticmethod]
     #[pyo3(signature = (ids, keys))]
     pub fn delete_payload(ids: Vec<PyPointId>, keys: Vec<String>) -> Result<Self, PyErr> {
-        let point_ids = PyPointId::into_rust_vec(ids);
+        let point_ids = PyPointId::peel_vec(ids);
 
         let keys: Vec<_> = keys
             .into_iter()
@@ -222,7 +223,7 @@ impl PyUpdateOperation {
 
     #[staticmethod]
     pub fn clear_payload(ids: Vec<PyPointId>) -> Self {
-        let point_ids = PyPointId::into_rust_vec(ids);
+        let point_ids = PyPointId::peel_vec(ids);
         let operation =
             CollectionUpdateOperations::PayloadOperation(payload_ops::PayloadOps::ClearPayload {
                 points: point_ids,
@@ -246,7 +247,7 @@ impl PyUpdateOperation {
         payload: PyPayload,
         key: Option<String>,
     ) -> Result<Self, PyErr> {
-        let point_ids = PyPointId::into_rust_vec(ids);
+        let point_ids = PyPointId::peel_vec(ids);
         let payload = Payload::from(payload);
 
         let key = key
