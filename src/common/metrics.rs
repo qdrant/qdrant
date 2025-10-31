@@ -127,7 +127,7 @@ impl MetricsProvider for TelemetryData {
         }
 
         #[cfg(target_os = "linux")]
-        match ProcFsMetrics::collect() {
+        match procfs_metrics::ProcFsMetrics::collect() {
             Ok(procfs_provider) => procfs_provider.add_metrics(metrics, prefix),
             Err(err) => log::warn!("Error reading procfs infos: {err:?}"),
         };
@@ -806,126 +806,214 @@ fn label_pair(name: &str, value: &str) -> LabelPair {
     label
 }
 
-/// Structure for holding /procfs metrics, that can be easily populated in metrics API.
 #[cfg(target_os = "linux")]
-struct ProcFsMetrics {
-    thread_count: usize,
-    mmap_count: usize,
-    system_mmap_limit: u64,
-    open_fds: usize,
-    max_fds_soft: u64,
-    max_fds_hard: u64,
-    minor_page_faults: u64,
-    major_page_faults: u64,
-    minor_children_page_faults: u64,
-    major_children_page_faults: u64,
-}
+mod procfs_metrics {
+    use std::collections::HashSet;
 
-#[cfg(target_os = "linux")]
-impl ProcFsMetrics {
-    /// Collect metrics from /procfs.
-    #[cfg(target_os = "linux")]
-    fn collect() -> Result<Self, procfs::ProcError> {
-        use procfs::process::{LimitValue, Process};
+    use itertools::Itertools;
+    use procfs::ProcError;
+    use procfs::process::{LimitValue, Process};
+    use prometheus::proto::{MetricFamily, MetricType};
 
-        let current_process = Process::myself()?;
+    use super::{MetricsProvider, counter, gauge, metric_family};
 
-        let thread_count = current_process.tasks()?.flatten().count();
-        let stat = current_process.stat()?;
-        let limits = current_process.limits()?;
+    /// Structure for holding /procfs metrics, that can be easily populated in metrics API.
+    pub(super) struct ProcFsMetrics {
+        thread_count: usize,
+        mmap_count: usize,
+        system_mmap_limit: u64,
+        open_fds: usize,
+        max_fds_soft: u64,
+        max_fds_hard: u64,
+        minor_page_faults: u64,
+        major_page_faults: u64,
+        minor_children_page_faults: u64,
+        major_children_page_faults: u64,
+        minor_alive_child_page_faults: u64,
+        major_alive_child_page_faults: u64,
+    }
 
-        fn format_limit(limit: LimitValue) -> u64 {
-            match limit {
-                LimitValue::Unlimited => 0,
-                LimitValue::Value(v) => v,
+    impl ProcFsMetrics {
+        /// Collect metrics from /procfs.
+        pub(super) fn collect() -> Result<Self, procfs::ProcError> {
+            let current_process = Process::myself()?;
+
+            let thread_count = current_process.tasks()?.flatten().count();
+            let stat = current_process.stat()?;
+            let limits = current_process.limits()?;
+
+            fn format_limit(limit: LimitValue) -> u64 {
+                match limit {
+                    LimitValue::Unlimited => 0,
+                    LimitValue::Value(v) => v,
+                }
             }
+
+            let max_fds_soft = format_limit(limits.max_open_files.soft_limit);
+            let max_fds_hard = format_limit(limits.max_open_files.hard_limit);
+
+            let (minor_alive_child_page_faults, major_alive_child_page_faults) =
+                faults_for_all_children(current_process.pid)?;
+
+            Ok(Self {
+                thread_count,
+                mmap_count: current_process.maps()?.len(),
+                system_mmap_limit: procfs::sys::vm::max_map_count()?,
+                open_fds: current_process.fd_count()?,
+                max_fds_soft,
+                max_fds_hard,
+                minor_page_faults: stat.minflt,
+                major_page_faults: stat.majflt,
+                minor_children_page_faults: stat.cminflt,
+                major_children_page_faults: stat.cmajflt,
+                minor_alive_child_page_faults,
+                major_alive_child_page_faults,
+            })
+        }
+    }
+
+    impl MetricsProvider for ProcFsMetrics {
+        fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
+            metrics.push(metric_family(
+                "process_threads",
+                "count of active threads",
+                MetricType::GAUGE,
+                vec![gauge(self.thread_count as f64, &[])],
+                prefix,
+            ));
+
+            metrics.push(metric_family(
+                "process_open_mmaps",
+                "count of open mmaps",
+                MetricType::GAUGE,
+                vec![gauge(self.mmap_count as f64, &[])],
+                prefix,
+            ));
+
+            metrics.push(metric_family(
+                "system_max_mmaps",
+                "system wide limit of open mmaps",
+                MetricType::GAUGE,
+                vec![gauge(self.system_mmap_limit as f64, &[])],
+                prefix,
+            ));
+
+            metrics.push(metric_family(
+                "process_open_fds",
+                "count of currently open file descriptors",
+                MetricType::GAUGE,
+                vec![gauge(self.open_fds as f64, &[])],
+                prefix,
+            ));
+
+            let fds_limit = match (self.max_fds_soft, self.max_fds_hard) {
+                (0, hard) => hard,                         // soft unlimited, use hard
+                (soft, 0) => soft,                         // hard unlimited, use soft
+                (soft, hard) => std::cmp::min(soft, hard), // both limited, use minimum
+            };
+            metrics.push(metric_family(
+                "process_max_fds",
+                "limit for open file descriptors",
+                MetricType::GAUGE,
+                vec![gauge(fds_limit as f64, &[])],
+                prefix,
+            ));
+
+            let minor_page_faults = self.minor_page_faults
+                + self.minor_children_page_faults
+                + self.minor_alive_child_page_faults;
+
+            let major_page_faults = self.major_page_faults
+                + self.major_children_page_faults
+                + self.major_alive_child_page_faults;
+
+            metrics.push(metric_family(
+                "process_minor_page_faults_total",
+                "count of minor page faults which didn't cause a disk access",
+                MetricType::COUNTER,
+                vec![counter(minor_page_faults as f64, &[])],
+                prefix,
+            ));
+
+            metrics.push(metric_family(
+                "process_major_page_faults_total",
+                "count of disk accesses caused by a mmap page fault",
+                MetricType::COUNTER,
+                vec![counter(major_page_faults as f64, &[])],
+                prefix,
+            ));
+        }
+    }
+
+    /// Returns the minor and major page faults of all children including grandchildren, etc.
+    pub fn faults_for_all_children(parent: i32) -> Result<(u64, u64), ProcError> {
+        let children = child_processes_helper(parent)?;
+        let mut min = 0;
+        let mut maj = 0;
+        for child in children {
+            let process = Process::new(child)?.stat()?;
+            min += process.minflt;
+            maj += process.majflt;
+        }
+        Ok((min, maj))
+    }
+
+    /// Returns a list of all children of a given process. This works recursively, including grandchildren, etc.
+    fn child_processes_helper(pid: i32) -> Result<Vec<i32>, ProcError> {
+        let mut seen = HashSet::from_iter(std::iter::once(pid));
+        let mut out = HashSet::default();
+        child_processes_recursive(pid, &mut seen, &mut out)?;
+        Ok(out.into_iter().collect())
+    }
+
+    /// Recursively collects all children of a process, specified by `pid`.
+    ///
+    /// Note that `seen` must include `pid` to prevent the parents pid appearing in the result.
+    fn child_processes_recursive(
+        pid: i32,
+        seen: &mut HashSet<i32>,
+        out: &mut HashSet<i32>,
+    ) -> Result<(), ProcError> {
+        let new_children = child_processes(pid, seen)?;
+
+        out.extend(new_children.iter().copied());
+
+        for new_pid in new_children.iter() {
+            child_processes_recursive(*new_pid, seen, out)?;
         }
 
-        let max_fds_soft = format_limit(limits.max_open_files.soft_limit);
-        let max_fds_hard = format_limit(limits.max_open_files.hard_limit);
-
-        Ok(Self {
-            thread_count,
-            mmap_count: current_process.maps()?.len(),
-            system_mmap_limit: procfs::sys::vm::max_map_count()?,
-            open_fds: current_process.fd_count()?,
-            max_fds_soft,
-            max_fds_hard,
-            minor_page_faults: stat.minflt,
-            major_page_faults: stat.majflt,
-            minor_children_page_faults: stat.cminflt,
-            major_children_page_faults: stat.cmajflt,
-        })
+        Ok(())
     }
-}
 
-#[cfg(target_os = "linux")]
-impl MetricsProvider for ProcFsMetrics {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
-        metrics.push(metric_family(
-            "process_threads",
-            "count of active threads",
-            MetricType::GAUGE,
-            vec![gauge(self.thread_count as f64, &[])],
-            prefix,
-        ));
+    /// Returns all new child processes of a parent process, specified by `parent_pid`, which haven't been seen yet.
+    fn child_processes(
+        parent_pid: i32,
+        seen: &mut HashSet<i32>,
+    ) -> Result<HashSet<i32>, ProcError> {
+        let process = Process::new(parent_pid)?;
 
-        metrics.push(metric_family(
-            "process_open_mmaps",
-            "count of open mmaps",
-            MetricType::GAUGE,
-            vec![gauge(self.mmap_count as f64, &[])],
-            prefix,
-        ));
+        // Iterator over all threads of the passed process.
+        let thread_iter = process.tasks()?.into_iter().flatten().map(|i| i.tid);
 
-        metrics.push(metric_family(
-            "system_max_mmaps",
-            "system wide limit of open mmaps",
-            MetricType::GAUGE,
-            vec![gauge(self.system_mmap_limit as f64, &[])],
-            prefix,
-        ));
-
-        metrics.push(metric_family(
-            "process_open_fds",
-            "count of currently open file descriptors",
-            MetricType::GAUGE,
-            vec![gauge(self.open_fds as f64, &[])],
-            prefix,
-        ));
-
-        let fds_limit = match (self.max_fds_soft, self.max_fds_hard) {
-            (0, hard) => hard,                         // soft unlimited, use hard
-            (soft, 0) => soft,                         // hard unlimited, use soft
-            (soft, hard) => std::cmp::min(soft, hard), // both limited, use minimum
-        };
-        metrics.push(metric_family(
-            "process_max_fds",
-            "limit for open file descriptors",
-            MetricType::GAUGE,
-            vec![gauge(fds_limit as f64, &[])],
-            prefix,
-        ));
-
-        // TODO: include counts for alive child processes
-        let minor_page_faults = self.minor_page_faults + self.minor_children_page_faults;
-        let major_page_faults = self.major_page_faults + self.major_children_page_faults;
-
-        metrics.push(metric_family(
-            "process_minor_page_faults_total",
-            "count of minor page faults which didn't cause a disk access",
-            MetricType::COUNTER,
-            vec![counter(minor_page_faults as f64, &[])],
-            prefix,
-        ));
-
-        metrics.push(metric_family(
-            "process_major_page_faults_total",
-            "count of disk accesses caused by a mmap page fault",
-            MetricType::COUNTER,
-            vec![counter(major_page_faults as f64, &[])],
-            prefix,
-        ));
+        thread_iter
+            .map(|tid| {
+                // Get the children for this thread id.
+                process
+                    .task_from_tid(tid)
+                    .and_then(|task| task.children())
+                    .map(|children| children.into_iter().map(|i| i as i32))
+            })
+            .flatten_ok()
+            .filter_ok(|i| {
+                // Ignore already seen pids.
+                if seen.contains(i) {
+                    false
+                } else {
+                    seen.insert(*i);
+                    true
+                }
+            })
+            .collect::<Result<HashSet<_>, ProcError>>()
     }
 }
 
