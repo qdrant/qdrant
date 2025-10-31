@@ -247,7 +247,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                     hw_measurement_acc.clone(),
                 )),
                 Some(name) => {
-                    let other_collection = collection_by_name(name.to_string()).await;
+                    let other_collection = collection_by_name(name.clone()).await;
                     match other_collection {
                         Some(other_collection) => {
                             vector_retrieves.push(retrieve_points_with_locked_collection(

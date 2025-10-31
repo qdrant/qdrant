@@ -545,7 +545,7 @@ impl SegmentEntry for Segment {
                     },
                     num_deleted_vectors: vector_storage.deleted_vector_count(),
                 };
-                (key.to_string(), vector_data_info)
+                (key.clone(), vector_data_info)
             })
             .collect();
 

@@ -24,7 +24,7 @@ pub mod pyro {
                 &config.identifier
             );
             // TODO: Add more tags like peerId and peerUrl
-            let agent = PyroscopeAgent::builder(config.url.to_string(), "qdrant".to_string())
+            let agent = PyroscopeAgent::builder(config.url.clone(), "qdrant".to_string())
                 .backend(backend_impl)
                 .tags(vec![("app", "Qdrant"), ("identifier", &config.identifier)])
                 .build()?;

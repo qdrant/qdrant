@@ -536,7 +536,7 @@ fn test_vector_compatibility_checks() {
     let internal_id = segment.lookup_internal_id(point_id).unwrap();
 
     // A set of broken vectors
-    let wrong_vectors_single = vec![
+    let wrong_vectors_single = [
         // Incorrect dimensionality
         (VECTOR1_NAME, vec![]),
         (VECTOR1_NAME, vec![0.0, 1.0, 0.0]),
@@ -548,7 +548,7 @@ fn test_vector_compatibility_checks() {
         ("aa", vec![0.0, 0.1, 0.2, 0.3]),
         ("bb", vec![0.0, 0.1]),
     ];
-    let wrong_vectors_multi = vec![
+    let wrong_vectors_multi = [
         // Incorrect dimensionality
         NamedVectors::from_ref(VECTOR1_NAME, [].as_slice().into()),
         NamedVectors::from_ref(VECTOR1_NAME, [0.0, 1.0, 0.0].as_slice().into()),
@@ -576,7 +576,7 @@ fn test_vector_compatibility_checks() {
             ("bb".into(), vec![1.0, 0.9]),
         ]),
     ];
-    let wrong_names = vec!["aa", "bb", ""];
+    let wrong_names = ["aa", "bb", ""];
 
     for (vector_name, vector) in wrong_vectors_single.iter() {
         let query_vector = vector.to_owned().into();
