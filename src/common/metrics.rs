@@ -817,6 +817,8 @@ mod procfs_metrics {
 
     use super::{MetricsProvider, counter, gauge, metric_family};
 
+    type Pid = i32;
+
     /// Structure for holding /procfs metrics, that can be easily populated in metrics API.
     pub(super) struct ProcFsMetrics {
         thread_count: usize,
@@ -946,7 +948,7 @@ mod procfs_metrics {
     }
 
     /// Returns the minor and major page faults of all children including grandchildren, etc.
-    pub fn faults_for_all_children(parent: i32) -> Result<(u64, u64), ProcError> {
+    pub fn faults_for_all_children(parent: Pid) -> Result<(u64, u64), ProcError> {
         let children = child_processes_helper(parent)?;
         let mut min = 0;
         let mut maj = 0;
@@ -959,7 +961,7 @@ mod procfs_metrics {
     }
 
     /// Returns a list of all children of a given process. This works recursively, including grandchildren, etc.
-    fn child_processes_helper(pid: i32) -> Result<Vec<i32>, ProcError> {
+    fn child_processes_helper(pid: Pid) -> Result<Vec<Pid>, ProcError> {
         let mut seen = HashSet::from_iter(std::iter::once(pid));
         let mut out = HashSet::default();
         child_processes_recursive(pid, &mut seen, &mut out)?;
@@ -970,9 +972,9 @@ mod procfs_metrics {
     ///
     /// Note that `seen` must include `pid` to prevent the parents pid appearing in the result.
     fn child_processes_recursive(
-        pid: i32,
-        seen: &mut HashSet<i32>,
-        out: &mut HashSet<i32>,
+        pid: Pid,
+        seen: &mut HashSet<Pid>,
+        out: &mut HashSet<Pid>,
     ) -> Result<(), ProcError> {
         let new_children = child_processes(pid, seen)?;
 
@@ -987,9 +989,9 @@ mod procfs_metrics {
 
     /// Returns all new child processes of a parent process, specified by `parent_pid`, which haven't been seen yet.
     fn child_processes(
-        parent_pid: i32,
-        seen: &mut HashSet<i32>,
-    ) -> Result<HashSet<i32>, ProcError> {
+        parent_pid: Pid,
+        seen: &mut HashSet<Pid>,
+    ) -> Result<HashSet<Pid>, ProcError> {
         let process = Process::new(parent_pid)?;
 
         // Iterator over all threads of the passed process.
@@ -1001,7 +1003,7 @@ mod procfs_metrics {
                 process
                     .task_from_tid(tid)
                     .and_then(|task| task.children())
-                    .map(|children| children.into_iter().map(|i| i as i32))
+                    .map(|children| children.into_iter().map(|i| i as Pid))
             })
             .flatten_ok()
             .filter_ok(|i| {
@@ -1013,7 +1015,7 @@ mod procfs_metrics {
                     true
                 }
             })
-            .collect::<Result<HashSet<_>, ProcError>>()
+            .collect::<Result<HashSet<Pid>, ProcError>>()
     }
 }
 
