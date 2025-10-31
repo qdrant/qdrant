@@ -1,6 +1,7 @@
 use std::mem;
 
 use derive_more::Into;
+use ordered_float::OrderedFloat;
 use pyo3::IntoPyObjectExt as _;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -29,13 +30,13 @@ impl PySearchRequest {
         score_threshold: Option<f32>,
     ) -> Self {
         Self(CoreSearchRequest {
-            query: query.into(),
-            filter: filter.map(Into::into),
-            params: params.map(Into::into),
+            query: QueryEnum::from(query),
+            filter: filter.map(Filter::from),
+            params: params.map(SearchParams::from),
             limit,
             offset,
-            with_vector: with_vector.map(Into::into),
-            with_payload: with_payload.map(Into::into),
+            with_vector: with_vector.map(WithVector::from),
+            with_payload: with_payload.map(WithPayloadInterface::from),
             score_threshold,
         })
     }
@@ -75,9 +76,9 @@ impl PySearchParams {
         Self(SearchParams {
             hnsw_ef,
             exact,
-            quantization: quantization.map(Into::into),
+            quantization: quantization.map(QuantizationSearchParams::from),
             indexed_only,
-            acorn: acorn.map(Into::into),
+            acorn: acorn.map(AcornSearchParams::from),
         })
     }
 }
@@ -108,7 +109,7 @@ impl PyAcornSearchParams {
     pub fn new(enable: bool, max_selectivity: Option<f64>) -> Self {
         Self(AcornSearchParams {
             enable,
-            max_selectivity: max_selectivity.map(Into::into),
+            max_selectivity: max_selectivity.map(OrderedFloat),
         })
     }
 }
@@ -122,6 +123,13 @@ impl<'py> FromPyObject<'py> for PyWithVector {
         enum Helper {
             Bool(bool),
             Selector(Vec<String>),
+        }
+
+        fn _variants(with_vector: WithVector) {
+            match with_vector {
+                WithVector::Bool(_) => {}
+                WithVector::Selector(_) => {}
+            }
         }
 
         let with_vector = match with_vector.extract()? {
@@ -164,12 +172,26 @@ impl<'py> FromPyObject<'py> for PyWithPayload {
         #[derive(FromPyObject)]
         enum Helper {
             Bool(bool),
-            // TODO: `Fields(Vec<JsonPath>)`!
-            // TODO: `Selector(PayloadSelector)`!
+            Fields(Vec<PyJsonPath>),
+            Selector(PyPayloadSelector),
+        }
+
+        fn _variants(with_payload: WithPayloadInterface) {
+            match with_payload {
+                WithPayloadInterface::Bool(_) => {}
+                WithPayloadInterface::Fields(_) => {}
+                WithPayloadInterface::Selector(_) => {}
+            }
         }
 
         let with_payload = match with_payload.extract()? {
             Helper::Bool(bool) => WithPayloadInterface::Bool(bool),
+            Helper::Fields(fields) => {
+                WithPayloadInterface::Fields(PyJsonPath::into_rust_vec(fields))
+            }
+            Helper::Selector(selector) => {
+                WithPayloadInterface::Selector(PayloadSelector::from(selector))
+            }
         };
 
         Ok(Self(with_payload))
@@ -194,10 +216,70 @@ impl<'py> IntoPyObject<'py> for &PyWithPayload {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match &self.0 {
             WithPayloadInterface::Bool(bool) => bool.into_bound_py_any(py),
-            WithPayloadInterface::Fields(_fields) => todo!(),
-            WithPayloadInterface::Selector(_selector) => todo!(),
+            WithPayloadInterface::Fields(fields) => {
+                PyJsonPath::from_slice(fields).into_bound_py_any(py)
+            }
+            WithPayloadInterface::Selector(selector) => PyPayloadSelector::from_ref(selector)
+                .clone()
+                .into_bound_py_any(py),
         }
     }
+}
+
+#[derive(Clone, Debug, Into)]
+#[repr(transparent)]
+pub struct PyPayloadSelector(PayloadSelector);
+
+impl PyPayloadSelector {
+    pub fn from_ref(selector: &PayloadSelector) -> &Self {
+        // `PyPayloadSelector` has transparent representation, so transmuting references is safe
+        unsafe { mem::transmute(selector) }
+    }
+}
+
+impl FromPyObject<'_> for PyPayloadSelector {
+    fn extract_bound(selector: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let selector = match selector.extract()? {
+            PyPayloadSelectorInterface::Include(keys) => {
+                PayloadSelector::Include(PayloadSelectorInclude {
+                    include: PyJsonPath::into_rust_vec(keys),
+                })
+            }
+            PyPayloadSelectorInterface::Exclude(keys) => {
+                PayloadSelector::Exclude(PayloadSelectorExclude {
+                    exclude: PyJsonPath::into_rust_vec(keys),
+                })
+            }
+        };
+
+        Ok(Self(selector))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for PyPayloadSelector {
+    type Target = PyPayloadSelectorInterface;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible?
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let selector = match self.0 {
+            PayloadSelector::Include(PayloadSelectorInclude { include }) => {
+                PyPayloadSelectorInterface::Include(PyJsonPath::from_rust_vec(include))
+            }
+            PayloadSelector::Exclude(PayloadSelectorExclude { exclude }) => {
+                PyPayloadSelectorInterface::Exclude(PyJsonPath::from_rust_vec(exclude))
+            }
+        };
+
+        Bound::new(py, selector)
+    }
+}
+
+#[pyclass(name = "PayloadSelector")]
+#[derive(Clone, Debug)]
+pub enum PyPayloadSelectorInterface {
+    Include(Vec<PyJsonPath>),
+    Exclude(Vec<PyJsonPath>),
 }
 
 #[pyclass(name = "ScoredPoint")]

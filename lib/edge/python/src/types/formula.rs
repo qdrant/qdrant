@@ -21,7 +21,7 @@ impl PyFormula {
     #[new]
     pub fn new(formula: PyExpression, defaults: HashMap<String, PyValue>) -> PyResult<Self> {
         let formula = FormulaInternal {
-            formula: formula.into(),
+            formula: ExpressionInternal::from(formula),
             defaults: PyValue::into_rust_map(defaults),
         };
 

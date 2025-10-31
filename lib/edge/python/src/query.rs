@@ -7,6 +7,9 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::data_types::order_by::{Direction, OrderBy, StartFrom};
 use segment::data_types::vectors::VectorInternal;
+use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
+use segment::json_path::JsonPath;
+use shard::query::query_enum::QueryEnum;
 use shard::query::*;
 
 use super::*;
@@ -95,13 +98,24 @@ impl<'py> FromPyObject<'py> for PyScoringQuery {
             Mmr(PyMmr),
         }
 
+        fn _variants(query: ScoringQuery) {
+            match query {
+                ScoringQuery::Vector(_) => {}
+                ScoringQuery::Fusion(_) => {}
+                ScoringQuery::OrderBy(_) => {}
+                ScoringQuery::Formula(_) => {}
+                ScoringQuery::Sample(_) => {}
+                ScoringQuery::Mmr(_) => {}
+            }
+        }
+
         let query = match query.extract()? {
-            Helper::Vector(query) => ScoringQuery::Vector(query.into()),
-            Helper::Fusion(fusion) => ScoringQuery::Fusion(fusion.into()),
-            Helper::OrderBy(order_by) => ScoringQuery::OrderBy(order_by.into()),
-            Helper::Formula(formula) => ScoringQuery::Formula(formula.into()),
-            Helper::Sample(sample) => ScoringQuery::Sample(sample.into()),
-            Helper::Mmr(mmr) => ScoringQuery::Mmr(mmr.into()),
+            Helper::Vector(query) => ScoringQuery::Vector(QueryEnum::from(query)),
+            Helper::Fusion(fusion) => ScoringQuery::Fusion(FusionInternal::from(fusion)),
+            Helper::OrderBy(order_by) => ScoringQuery::OrderBy(OrderBy::from(order_by)),
+            Helper::Formula(formula) => ScoringQuery::Formula(ParsedFormula::from(formula)),
+            Helper::Sample(sample) => ScoringQuery::Sample(SampleInternal::from(sample)),
+            Helper::Mmr(mmr) => ScoringQuery::Mmr(MmrInternal::from(mmr)),
         };
 
         Ok(Self(query))
@@ -145,7 +159,7 @@ impl PyOrderBy {
         start_from: Option<PyStartFrom>,
     ) -> PyResult<Self> {
         let order_by = OrderBy {
-            key: key.into(),
+            key: JsonPath::from(key),
             direction: direction.map(Direction::from),
             start_from: start_from.map(StartFrom::from),
         };
@@ -190,6 +204,14 @@ impl<'py> FromPyObject<'py> for PyStartFrom {
             Integer(IntPayloadType),
             Float(FloatPayloadType),
             DateTime(String),
+        }
+
+        fn _variants(start_from: StartFrom) {
+            match start_from {
+                StartFrom::Integer(_) => {}
+                StartFrom::Float(_) => {}
+                StartFrom::Datetime(_) => {}
+            }
         }
 
         let start_from = match start_from.extract()? {

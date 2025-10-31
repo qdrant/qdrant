@@ -19,19 +19,19 @@ impl PySegmentConfig {
         // TODO: Transmute!?
         let vector_data = vector_data
             .into_iter()
-            .map(|(vector, config)| (vector, config.into()))
+            .map(|(vector, config)| (vector, VectorDataConfig::from(config)))
             .collect();
 
         // TODO: Transmute!?
         let sparse_vector_data = sparse_vector_data
             .into_iter()
-            .map(|(vector, config)| (vector, config.into()))
+            .map(|(vector, config)| (vector, SparseVectorDataConfig::from(config)))
             .collect();
 
         Self(SegmentConfig {
             vector_data,
             sparse_vector_data,
-            payload_storage_type: payload_storage_type.into(),
+            payload_storage_type: PayloadStorageType::from(payload_storage_type),
         })
     }
 }
@@ -54,12 +54,12 @@ impl PyVectorDataConfig {
     ) -> Self {
         Self(VectorDataConfig {
             size,
-            distance: distance.into(),
-            storage_type: storage_type.into(),
-            index: index.into(),
-            quantization_config: quantization_config.map(Into::into),
-            multivector_config: multivector_config.map(Into::into),
-            datatype: datatype.map(Into::into),
+            distance: Distance::from(distance),
+            storage_type: VectorStorageType::from(storage_type),
+            index: Indexes::from(index),
+            quantization_config: quantization_config.map(QuantizationConfig::from),
+            multivector_config: multivector_config.map(MultiVectorConfig::from),
+            datatype: datatype.map(VectorStorageDatatype::from),
         })
     }
 }
@@ -158,7 +158,7 @@ impl PyMultiVectorConfig {
     #[new]
     pub fn new(comparator: PyMultiVectorComparator) -> Self {
         Self(MultiVectorConfig {
-            comparator: comparator.into(),
+            comparator: MultiVectorComparator::from(comparator),
         })
     }
 }

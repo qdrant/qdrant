@@ -11,6 +11,23 @@ use segment::json_path::JsonPath;
 #[repr(transparent)]
 pub struct PyJsonPath(pub JsonPath);
 
+impl PyJsonPath {
+    pub fn from_slice(paths: &[JsonPath]) -> &[Self] {
+        // `PyJsonPath` has transparent representation, so transmuting slices is safe
+        unsafe { std::mem::transmute(paths) }
+    }
+
+    pub fn from_rust_vec(paths: Vec<JsonPath>) -> Vec<Self> {
+        // `PyJsonPath` has transparent representation, so transmuting is safe
+        unsafe { std::mem::transmute(paths) }
+    }
+
+    pub fn into_rust_vec(paths: Vec<Self>) -> Vec<JsonPath> {
+        // `PyJsonPath` has transparent representation, so transmuting is safe
+        unsafe { std::mem::transmute(paths) }
+    }
+}
+
 impl<'py> FromPyObject<'py> for PyJsonPath {
     fn extract_bound(json_path: &Bound<'py, PyAny>) -> PyResult<Self> {
         let json_path: String = json_path.extract()?;
