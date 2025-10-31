@@ -268,7 +268,7 @@ pub trait ShardTransferConsensus: Send + Sync {
         remote_shard: &RemoteShard,
     ) -> CollectionResult<()> {
         let mut result = Err(CollectionError::service_error(
-            "`switch_partial_to_readactive_confirm_remote` exit without attempting any work, \
+            "`switch_partial_to_read_active_confirm_peers` exit without attempting any work, \
              this is a programming error",
         ));
 

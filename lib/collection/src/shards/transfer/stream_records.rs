@@ -51,7 +51,7 @@ pub(super) async fn transfer_stream_records(
     // way all readers can be switched to the new shard before any writers
     let sync_intermediate_state = transfer_config
         .to_shard_id
-        .is_some_and(|id| transfer_config.shard_id == id);
+        .is_some_and(|id| transfer_config.shard_id != id);
 
     // If syncing peers with intermediate replica state, all nodes must have a certain version
     if sync_intermediate_state {
