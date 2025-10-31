@@ -1015,7 +1015,7 @@ mod procfs_metrics {
                 match children {
                     Ok(children) => Some(Ok(children)),
                     // Filter out tasks/children that might not exist anymore.
-                    Err(ProcError::NotFound(_)) => return None,
+                    Err(ProcError::NotFound(_)) => None,
                     Err(err) => Some(Err(err)),
                 }
             })
