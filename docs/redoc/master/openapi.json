@@ -11295,7 +11295,7 @@
           "Recovery",
           "Resharding",
           "ReshardingScaleDown",
-          "ReadActive"
+          "ActiveRead"
         ]
       },
       "RemoteShardInfo": {
