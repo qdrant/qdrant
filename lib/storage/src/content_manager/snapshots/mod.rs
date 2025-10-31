@@ -59,10 +59,8 @@ pub async fn do_delete_collection_snapshot(
     collection_name: &str,
     snapshot_name: &str,
 ) -> Result<bool, StorageError> {
-    let collection_pass = access.check_collection_access(
-        collection_name,
-        AccessRequirements::new().write().whole().extras(),
-    )?;
+    let collection_pass = access
+        .check_collection_access(collection_name, AccessRequirements::new().write().extras())?;
 
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();

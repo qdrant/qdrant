@@ -19,7 +19,7 @@ impl HardwareTelemetry {
         let collection_data = match access {
             Access::Global(_) => all_hw_metrics,
             Access::Collection(collection_access_list) => {
-                let required_access = AccessRequirements::new().whole();
+                let required_access = AccessRequirements::new();
                 let allowed_collections =
                     collection_access_list.meeting_requirements(required_access);
                 let mut resolved_collection_data = HashMap::new();

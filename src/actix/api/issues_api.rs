@@ -12,7 +12,7 @@ async fn get_issues(ActixAccess(access): ActixAccess) -> impl Responder {
                 issues: issues::all_issues(),
             }),
             Access::Collection(collection_access_list) => {
-                let requirements = AccessRequirements::new().whole();
+                let requirements = AccessRequirements::new();
 
                 let mut allowed_issues = Vec::new();
                 for collection_name in collection_access_list.meeting_requirements(requirements) {
