@@ -809,6 +809,7 @@ fn label_pair(name: &str, value: &str) -> LabelPair {
 /// Structure for holding /procfs metrics, that can be easily populated in metrics API.
 #[cfg(target_os = "linux")]
 struct ProcFsMetrics {
+    thread_count: usize,
     mmap_count: usize,
     open_fds: usize,
     max_fds_soft: u64,
@@ -828,6 +829,7 @@ impl ProcFsMetrics {
 
         let current_process = Process::myself()?;
 
+        let thread_count = current_process.tasks()?.flatten().count();
         let stat = current_process.stat()?;
         let limits = current_process.limits()?;
 
@@ -842,6 +844,7 @@ impl ProcFsMetrics {
         let max_fds_hard = format_limit(limits.max_open_files.hard_limit);
 
         Ok(Self {
+            thread_count,
             mmap_count: current_process.maps()?.len(),
             open_fds: current_process.fd_count()?,
             max_fds_soft,
@@ -857,6 +860,14 @@ impl ProcFsMetrics {
 #[cfg(target_os = "linux")]
 impl MetricsProvider for ProcFsMetrics {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
+        metrics.push(metric_family(
+            "process_threads",
+            "count of active threads",
+            MetricType::GAUGE,
+            vec![gauge(self.thread_count as f64, &[])],
+            prefix,
+        ));
+
         metrics.push(metric_family(
             "process_open_mmaps",
             "count of open mmaps",
