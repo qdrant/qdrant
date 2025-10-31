@@ -811,6 +811,7 @@ fn label_pair(name: &str, value: &str) -> LabelPair {
 struct ProcFsMetrics {
     thread_count: usize,
     mmap_count: usize,
+    system_mmap_limit: u64,
     open_fds: usize,
     max_fds_soft: u64,
     max_fds_hard: u64,
@@ -846,6 +847,7 @@ impl ProcFsMetrics {
         Ok(Self {
             thread_count,
             mmap_count: current_process.maps()?.len(),
+            system_mmap_limit: procfs::sys::vm::max_map_count()?,
             open_fds: current_process.fd_count()?,
             max_fds_soft,
             max_fds_hard,
@@ -873,6 +875,14 @@ impl MetricsProvider for ProcFsMetrics {
             "count of open mmaps",
             MetricType::GAUGE,
             vec![gauge(self.mmap_count as f64, &[])],
+            prefix,
+        ));
+
+        metrics.push(metric_family(
+            "system_max_mmaps",
+            "system wide limit of open mmaps",
+            MetricType::GAUGE,
+            vec![gauge(self.system_mmap_limit as f64, &[])],
             prefix,
         ));
 
