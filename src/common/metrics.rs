@@ -1,4 +1,3 @@
-use std::cmp::min;
 use std::collections::HashMap;
 
 use api::rest::models::HardwareUsage;
@@ -808,6 +807,7 @@ fn label_pair(name: &str, value: &str) -> LabelPair {
 }
 
 /// Structure for holding /procfs metrics, that can be easily populated in metrics API.
+#[cfg(target_os = "linux")]
 struct ProcFsMetrics {
     mmap_count: usize,
     open_fds: usize,
@@ -819,6 +819,7 @@ struct ProcFsMetrics {
     major_children_page_faults: u64,
 }
 
+#[cfg(target_os = "linux")]
 impl ProcFsMetrics {
     /// Collect metrics from /procfs.
     #[cfg(target_os = "linux")]
@@ -853,6 +854,7 @@ impl ProcFsMetrics {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl MetricsProvider for ProcFsMetrics {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
         metrics.push(metric_family(
@@ -872,9 +874,9 @@ impl MetricsProvider for ProcFsMetrics {
         ));
 
         let fds_limit = match (self.max_fds_soft, self.max_fds_hard) {
-            (0, hard) => hard,               // soft unlimited, use hard
-            (soft, 0) => soft,               // hard unlimited, use soft
-            (soft, hard) => min(soft, hard), // both limited, use minimum
+            (0, hard) => hard,                         // soft unlimited, use hard
+            (soft, 0) => soft,                         // hard unlimited, use soft
+            (soft, hard) => std::cmp::min(soft, hard), // both limited, use minimum
         };
         metrics.push(metric_family(
             "process_max_fds",

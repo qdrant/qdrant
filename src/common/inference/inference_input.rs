@@ -47,7 +47,7 @@ impl From<InferenceData> for InferenceInput {
                 InferenceInput {
                     data: Value::String(text),
                     data_type: InferenceDataType::Text,
-                    model: model.to_string(),
+                    model: model.clone(),
                     options: options.map(DocumentOptions::into_options),
                 }
             }
@@ -60,7 +60,7 @@ impl From<InferenceData> for InferenceInput {
                 InferenceInput {
                     data: image,
                     data_type: InferenceDataType::Image,
-                    model: model.to_string(),
+                    model: model.clone(),
                     options: options.options,
                 }
             }
@@ -73,7 +73,7 @@ impl From<InferenceData> for InferenceInput {
                 InferenceInput {
                     data: object,
                     data_type: InferenceDataType::Object,
-                    model: model.to_string(),
+                    model: model.clone(),
                     options: options.options,
                 }
             }

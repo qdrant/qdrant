@@ -51,7 +51,7 @@ impl TryFrom<&serde_json::Value> for GroupId {
     /// Only allows Strings and Numbers to be converted into GroupId
     fn try_from(value: &serde_json::Value) -> Result<Self, Self::Error> {
         match value {
-            serde_json::Value::String(s) => Ok(Self::String(s.to_string())),
+            serde_json::Value::String(s) => Ok(Self::String(s.clone())),
             serde_json::Value::Number(n) => {
                 if let Some(n_u64) = n.as_u64() {
                     Ok(Self::NumberU64(n_u64))

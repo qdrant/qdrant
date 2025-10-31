@@ -215,7 +215,7 @@ pub trait ShardTransferConsensus: Send + Sync {
                 sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
             }
 
-            result = self.recovered_switch_to_partial(transfer_config, collection_id.to_string());
+            result = self.recovered_switch_to_partial(transfer_config, collection_id.clone());
 
             if let Err(err) = &result {
                 log::error!("Failed to propose recovered operation to consensus: {err}");

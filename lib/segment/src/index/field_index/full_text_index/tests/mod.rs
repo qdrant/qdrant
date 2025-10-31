@@ -178,7 +178,7 @@ fn test_prefix_search() {
 
     for (i, text) in texts.iter().enumerate() {
         index
-            .add_many(i as PointOffsetType, vec![text.to_string()], &hw_counter)
+            .add_many(i as PointOffsetType, vec![text.clone()], &hw_counter)
             .unwrap();
     }
 
