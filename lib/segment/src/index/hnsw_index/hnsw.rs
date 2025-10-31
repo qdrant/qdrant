@@ -28,6 +28,7 @@ use super::gpu::gpu_devices_manager::LockedGpuDevice;
 use super::gpu::gpu_insert_context::GpuInsertContext;
 #[cfg(feature = "gpu")]
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
+use super::point_scorer::BatchFilteredScorer;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::operation_time_statistics::{
@@ -1123,14 +1124,14 @@ impl HNSWIndex {
             .collect()
     }
 
-    fn search_plain_iterator(
+    fn search_plain_iterator_batched(
         &self,
-        vector: &QueryVector,
-        points: &mut dyn Iterator<Item = PointOffsetType>,
+        query_vectors: &[&QueryVector],
+        points: impl Iterator<Item = PointOffsetType>,
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
-    ) -> OperationResult<Vec<ScoredPointOffset>> {
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
         let quantized_vectors = self.quantized_vectors.borrow();
@@ -1140,60 +1141,65 @@ impl HNSWIndex {
             .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
 
         let is_stopped = vector_query_context.is_stopped();
+        let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
-        let points_scorer = Self::construct_search_scorer(
-            vector,
+        let batch_filtered_scorer = Self::construct_batch_search_scorer(
+            query_vectors,
             &vector_storage,
             quantized_vectors.as_ref(),
+            oversampled_top,
             deleted_points,
             params,
             vector_query_context.hardware_counter(),
             None,
         )?;
-        let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
-
-        let search_result = points_scorer.peek_top_iter(points, oversampled_top, &is_stopped)?;
-
-        let res = postprocess_search_result(
-            search_result,
-            id_tracker.deleted_point_bitslice(),
-            &vector_storage,
-            quantized_vectors.as_ref(),
-            vector,
-            params,
-            top,
-            vector_query_context.hardware_counter(),
-        )?;
-        Ok(res)
+        let search_results =
+            batch_filtered_scorer.peek_top_iter(points, oversampled_top, &is_stopped)?;
+        search_results
+            .into_iter()
+            .zip(query_vectors)
+            .map(|(search_result, query_vector)| {
+                postprocess_search_result(
+                    search_result,
+                    id_tracker.deleted_point_bitslice(),
+                    &vector_storage,
+                    quantized_vectors.as_ref(),
+                    query_vector,
+                    params,
+                    top,
+                    vector_query_context.hardware_counter(),
+                )
+            })
+            .collect()
     }
 
-    fn search_plain(
+    fn search_plain_batched(
         &self,
-        vector: &QueryVector,
+        vectors: &[&QueryVector],
         filtered_points: &[PointOffsetType],
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
-    ) -> OperationResult<Vec<ScoredPointOffset>> {
-        self.search_plain_iterator(
-            vector,
-            &mut filtered_points.iter().copied(),
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        self.search_plain_iterator_batched(
+            vectors,
+            filtered_points.iter().copied(),
             top,
             params,
             vector_query_context,
         )
     }
 
-    fn search_plain_unfiltered(
+    fn search_plain_unfiltered_batched(
         &self,
-        vector: &QueryVector,
+        vectors: &[&QueryVector],
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
-    ) -> OperationResult<Vec<ScoredPointOffset>> {
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let id_tracker = self.id_tracker.borrow();
-        let mut ids_iterator = id_tracker.iter_internal();
-        self.search_plain_iterator(vector, &mut ids_iterator, top, params, vector_query_context)
+        let ids_iterator = id_tracker.iter_internal();
+        self.search_plain_iterator_batched(vectors, ids_iterator, top, params, vector_query_context)
     }
 
     fn search_vectors_plain(
@@ -1205,18 +1211,12 @@ impl HNSWIndex {
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let payload_index = self.payload_index.borrow();
-        // share filtered points for all query vectors
         let filtered_points = payload_index.query_points(
             filter,
             &vector_query_context.hardware_counter(),
             &vector_query_context.is_stopped(),
         );
-        vectors
-            .iter()
-            .map(|vector| {
-                self.search_plain(vector, &filtered_points, top, params, vector_query_context)
-            })
-            .collect()
+        self.search_plain_batched(vectors, &filtered_points, top, params, vector_query_context)
     }
 
     fn discovery_search_with_graph(
@@ -1271,6 +1271,28 @@ impl HNSWIndex {
             vector_storage,
             quantization_enabled.then_some(quantized_storage).flatten(),
             filter_context.map(BoxCow::Owned),
+            deleted_points,
+            hardware_counter,
+        )
+    }
+
+    fn construct_batch_search_scorer<'a>(
+        vectors: &[&QueryVector],
+        vector_storage: &'a VectorStorageEnum,
+        quantized_storage: Option<&'a QuantizedVectors>,
+        top: usize,
+        deleted_points: &'a BitSlice,
+        params: Option<&SearchParams>,
+        hardware_counter: HardwareCounterCell,
+        filter_context: Option<Box<dyn FilterContext + 'a>>,
+    ) -> OperationResult<BatchFilteredScorer<'a>> {
+        let quantization_enabled = is_quantized_search(quantized_storage, params);
+        BatchFilteredScorer::new(
+            vectors,
+            vector_storage,
+            quantization_enabled.then_some(quantized_storage).flatten(),
+            filter_context.map(BoxCow::Owned),
+            top,
             deleted_points,
             hardware_counter,
         )
@@ -1340,13 +1362,7 @@ impl VectorIndex for HNSWIndex {
                     });
 
                     let params_ref = if exact { exact_params.as_ref() } else { params };
-
-                    vectors
-                        .iter()
-                        .map(|&vector| {
-                            self.search_plain_unfiltered(vector, top, params_ref, query_context)
-                        })
-                        .collect()
+                    self.search_plain_unfiltered_batched(&vectors, top, params_ref, query_context)
                 } else {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_hnsw);

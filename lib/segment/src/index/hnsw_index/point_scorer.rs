@@ -309,3 +309,118 @@ impl<'a> FilteredScorer<'a> {
         Ok(pq.into_sorted_vec())
     }
 }
+
+pub struct BatchFilteredScorer<'a> {
+    scorer_batch: Vec<(
+        Box<dyn RawScorer + 'a>,
+        FixedLengthPriorityQueue<ScoredPointOffset>,
+    )>,
+    filters: ScorerFilters<'a>,
+}
+
+impl<'a> BatchFilteredScorer<'a> {
+    /// Create a new batch filtered scorer.
+    ///
+    /// If present, `quantized_vectors` will be used for scoring, otherwise `vectors` will be used.
+    pub fn new(
+        queries: &[&QueryVector],
+        vectors: &'a VectorStorageEnum,
+        quantized_vectors: Option<&'a QuantizedVectors>,
+        filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+        top: usize,
+        point_deleted: &'a BitSlice,
+        hardware_counter: HardwareCounterCell,
+    ) -> OperationResult<Self> {
+        let scorer_batch = queries
+            .iter()
+            .map(|&query| {
+                let query = query.to_owned();
+                let hardware_counter = hardware_counter.fork();
+                let raw_scorer = match quantized_vectors {
+                    Some(quantized_vectors) => {
+                        quantized_vectors.raw_scorer(query, hardware_counter)
+                    }
+                    None => new_raw_scorer(query, vectors, hardware_counter),
+                };
+                let pq = FixedLengthPriorityQueue::new(top);
+                raw_scorer.map(|raw_scorer| (raw_scorer, pq))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let filters = ScorerFilters {
+            filter_context,
+            point_deleted,
+            vec_deleted: vectors.deleted_vector_bitslice(),
+        };
+        Ok(Self {
+            scorer_batch,
+            filters,
+        })
+    }
+
+    pub(crate) fn peek_top_all(
+        self,
+        top: usize,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
+        let iter = self
+            .filters
+            .point_deleted
+            .iter_zeros()
+            .map(|p| p as PointOffsetType);
+        self.peek_top_iter(iter, top, is_stopped)
+    }
+
+    pub(crate) fn peek_top_iter(
+        mut self,
+        mut points: impl Iterator<Item = PointOffsetType>,
+        top: usize,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
+        if top == 0 {
+            return Ok(vec![vec![]; self.scorer_batch.len()]);
+        }
+
+        // Reuse the same buffer for all chunks, to avoid reallocation
+        let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
+        let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
+
+        loop {
+            check_process_stopped(is_stopped)?;
+
+            let mut chunk_size = 0;
+            for point_id in &mut points {
+                check_process_stopped(is_stopped)?;
+                if !self.filters.check_vector(point_id) {
+                    continue;
+                }
+                chunk[chunk_size] = point_id;
+                chunk_size += 1;
+                if chunk_size == VECTOR_READ_BATCH_SIZE {
+                    break;
+                }
+            }
+
+            if chunk_size == 0 {
+                break;
+            }
+
+            for (raw_scorer, pq) in &mut self.scorer_batch {
+                raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
+
+                for i in 0..chunk_size {
+                    pq.push(ScoredPointOffset {
+                        idx: chunk[i],
+                        score: scores_buffer[i],
+                    });
+                }
+            }
+        }
+
+        let results = self
+            .scorer_batch
+            .into_iter()
+            .map(|(_, pq)| pq.into_sorted_vec())
+            .collect();
+        Ok(results)
+    }
+}
