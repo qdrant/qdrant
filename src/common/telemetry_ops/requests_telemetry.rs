@@ -157,7 +157,7 @@ impl RequestsTelemetry {
         tonic_collector: &TonicTelemetryCollector,
         detail: TelemetryDetail,
     ) -> Option<Self> {
-        let global_access = AccessRequirements::new().whole();
+        let global_access = AccessRequirements::new();
         if access.check_global_access(global_access).is_ok() {
             let rest = actix_collector.get_telemetry_data(detail);
             let grpc = tonic_collector.get_telemetry_data(detail);

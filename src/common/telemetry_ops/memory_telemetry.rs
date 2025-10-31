@@ -34,7 +34,7 @@ impl MemoryTelemetry {
         any(target_arch = "x86_64", target_arch = "aarch64")
     ))]
     pub fn collect(access: &Access) -> Option<MemoryTelemetry> {
-        let required_access = AccessRequirements::new().whole();
+        let required_access = AccessRequirements::new();
         if epoch::advance().is_ok() && access.check_global_access(required_access).is_ok() {
             Some(MemoryTelemetry {
                 active_bytes: stats::active::read().unwrap_or_default(),

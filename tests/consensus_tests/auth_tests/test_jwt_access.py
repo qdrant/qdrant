@@ -87,14 +87,13 @@ def setup(jwt_cluster):
 
 
 class Access:
-    def __init__(self, r, coll_rw, m=True, coll_r=None, coll_rw_payload=None, coll_prw=None):
+    def __init__(self, r, coll_rw, m=True, coll_r=None, everything=None, coll_prw=None):
         self.read = r
         self.coll_rw = coll_rw
         self.manage = m
         self.coll_r = r if coll_r is None else coll_r
-        self.coll_rw_payload = coll_rw if coll_rw_payload is None else coll_rw_payload
-        self.coll_r_payload = self.read and self.coll_rw_payload
         self.coll_prw = coll_prw
+        self.everything = everything
 
 
 class EndpointAccess:
@@ -115,7 +114,6 @@ ACTION_ACCESS = {
         True,
         "GET /collections/{collection_name}",
         "qdrant.Collections/Get",
-        coll_rw_payload=False,
     ),
     "create_collection": EndpointAccess(
         False, False, True, "PUT /collections/{collection_name}", "qdrant.Collections/Create"
@@ -132,7 +130,6 @@ ACTION_ACCESS = {
         True,
         "GET /collections/{collection_name}/cluster",
         "qdrant.Collections/CollectionClusterInfo",
-        coll_rw_payload=False,
     ),
     "collection_exists": EndpointAccess(
         True,
@@ -258,7 +255,6 @@ ACTION_ACCESS = {
         True,
         "PUT /collections/{collection_name}/index",
         "qdrant.Points/CreateFieldIndex",
-        coll_rw_payload=False,
         coll_prw=False,
     ),
     "delete_index": EndpointAccess(
@@ -267,7 +263,6 @@ ACTION_ACCESS = {
         True,
         "DELETE /collections/{collection_name}/index/{field_name}",
         "qdrant.Points/DeleteFieldIndex",
-        coll_rw_payload=False,
         coll_prw=False,
     ),
     ### Collection Snapshots ###
@@ -277,7 +272,6 @@ ACTION_ACCESS = {
         True,
         "GET /collections/{collection_name}/snapshots",
         "qdrant.Snapshots/List",
-        coll_rw_payload=False,
         coll_prw=False,
     ),
     "create_collection_snapshot": EndpointAccess(
@@ -286,7 +280,6 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/snapshots",
         "qdrant.Snapshots/Create",
-        coll_rw_payload=False,
         coll_prw=False,
     ),
     "delete_collection_snapshot": EndpointAccess(
@@ -295,7 +288,6 @@ ACTION_ACCESS = {
         True,
         "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
         "qdrant.Snapshots/Delete",
-        coll_rw_payload=False,
         coll_prw=False,
     ),
     "download_collection_snapshot": EndpointAccess(
@@ -303,7 +295,6 @@ ACTION_ACCESS = {
         True,
         True,
         "GET /collections/{collection_name}/snapshots/{snapshot_name}",
-        coll_rw_payload=False,
         coll_prw=False,
     ),
     "upload_collection_snapshot": EndpointAccess(
@@ -333,14 +324,12 @@ ACTION_ACCESS = {
         True,
         True,
         "POST /collections/{collection_name}/shards/{shard_id}/snapshots",
-        coll_rw_payload=False,
     ),
     "list_shard_snapshots": EndpointAccess(
         True,
         True,
         True,
         "GET /collections/{collection_name}/shards/{shard_id}/snapshots",
-        coll_rw_payload=False,
         coll_prw=False,
     ),
     "delete_shard_snapshot": EndpointAccess(
@@ -348,14 +337,12 @@ ACTION_ACCESS = {
         True,
         True,
         "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
-        coll_rw_payload=False,
     ),
     "download_shard_snapshot": EndpointAccess(
         True,
         True,
         True,
         "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
-        coll_rw_payload=False,
     ),
     ### Full Snapshots ###
     "list_full_snapshots": EndpointAccess(
@@ -385,7 +372,6 @@ ACTION_ACCESS = {
         True,
         True,
         "GET /collections/{collection_name}/points/{id}",
-        coll_rw_payload=False,
     ),
     "get_points": EndpointAccess(
         True,
@@ -393,7 +379,6 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points",
         "qdrant.Points/Get",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "upsert_points": EndpointAccess(
@@ -402,7 +387,6 @@ ACTION_ACCESS = {
         True,
         "PUT /collections/{collection_name}/points",
         "qdrant.Points/Upsert",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "update_points_batch": EndpointAccess(
@@ -411,7 +395,6 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/batch",
         "qdrant.Points/UpdateBatch",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "delete_points": EndpointAccess(
@@ -428,7 +411,6 @@ ACTION_ACCESS = {
         True,
         "PUT /collections/{collection_name}/points/vectors",
         "qdrant.Points/UpdateVectors",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "delete_vectors": EndpointAccess(
@@ -445,7 +427,6 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/payload",
         "qdrant.Points/SetPayload",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "overwrite_payload": EndpointAccess(
@@ -454,7 +435,6 @@ ACTION_ACCESS = {
         True,
         "PUT /collections/{collection_name}/points/payload",
         "qdrant.Points/OverwritePayload",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "delete_payload": EndpointAccess(
@@ -463,7 +443,6 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/payload/delete",
         "qdrant.Points/DeletePayload",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "clear_payload": EndpointAccess(
@@ -472,7 +451,6 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/payload/clear",
         "qdrant.Points/ClearPayload",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "scroll_points": EndpointAccess(
@@ -513,7 +491,6 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/recommend",
         "qdrant.Points/Recommend",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "recommend_points_batch": EndpointAccess(
@@ -522,7 +499,6 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/recommend/batch",
         "qdrant.Points/RecommendBatch",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "recommend_point_groups": EndpointAccess(
@@ -531,7 +507,6 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/recommend/groups",
         "qdrant.Points/RecommendGroups",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "discover_points": EndpointAccess(
@@ -540,7 +515,6 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/discover",
         "qdrant.Points/Discover",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "discover_points_batch": EndpointAccess(
@@ -549,7 +523,6 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/discover/batch",
         "qdrant.Points/DiscoverBatch",
-        coll_rw_payload=False,
         coll_prw=True,
     ),
     "count_points": EndpointAccess(
@@ -585,10 +558,10 @@ ACTION_ACCESS = {
         True, True, True, "POST /collections/{collection_name}/facet", "qdrant.Points/Facet"
     ),
     ### Service ###
-    "root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),
-    "readyz": EndpointAccess(True, True, True, "GET /readyz", "grpc.health.v1.Health/Check"),
-    "healthz": EndpointAccess(True, True, True, "GET /healthz", "grpc.health.v1.Health/Check"),
-    "livez": EndpointAccess(True, True, True, "GET /livez", "grpc.health.v1.Health/Check"),
+    "root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck", everything=True),
+    "readyz": EndpointAccess(True, True, True, "GET /readyz", "grpc.health.v1.Health/Check", everything=True),
+    "healthz": EndpointAccess(True, True, True, "GET /healthz", "grpc.health.v1.Health/Check", everything=True),
+    "livez": EndpointAccess(True, True, True, "GET /livez", "grpc.health.v1.Health/Check", everything=True),
     "telemetry": EndpointAccess(True, True, True, "GET /telemetry"),
     "metrics": EndpointAccess(True, False, True, "GET /metrics", coll_r=False),
     "get_issues": EndpointAccess(True, True, True, "GET /issues"),
@@ -664,7 +637,10 @@ def check_rest_access(
         token: str,
         path_params: dict = {},
         request_kwargs: dict = {},
+        expected_status_code: Optional[int] = None,
 ):
+    expected_status_code = 403 if expected_status_code is None else expected_status_code
+
     if isfunction(body):
         body = body()
 
@@ -685,12 +661,12 @@ def check_rest_access(
 
         if should_succeed:
             assert (
-                    res.status_code < 500 and res.status_code != 403
+                    res.status_code < 500 and res.status_code != expected_status_code
             ), f"{method} {path} failed with {res.status_code}: {res.text}"
         else:
             assert (
-                    res.status_code == 403
-            ), f"{method} {path} should've gotten `403` status code, but got `{res.status_code}: {res.text}`"
+                    res.status_code == expected_status_code
+            ), f"{method} {path} should've gotten `{expected_status_code}` status code, but got `{res.status_code}: {res.text}`"
 
     except requests.exceptions.ConnectionError as e:
         # File upload requests might hang if we get an early response (like 401 or 403),
@@ -718,8 +694,8 @@ def check_grpc_access(
                 pytest.fail(f"{service}/{method} failed with {e.code()}: {e.details()}")
         else:
             assert (
-                    e.code() == grpc.StatusCode.PERMISSION_DENIED
-            ), f"{service}/{method} should've gotten `PERMISSION_DENIED` status code, but got `{e.code()}: {e.details()}`"
+                    e.code() == grpc.StatusCode.PERMISSION_DENIED or e.code() == grpc.StatusCode.UNAUTHENTICATED
+            ), f"{service}/{method} should've gotten `PERMISSION_DENIED` or `UNAUTHENTICATED` status code, but got `{e.code()}: {e.details()}`"
 
 
 class GrpcClients:
@@ -734,18 +710,6 @@ class GrpcClients:
         self.coll_rw = grpc_requests.Client(
             GRPC_URI,
             interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_RW}")])],
-        )
-        self.coll_rw_payload = grpc_requests.Client(
-            GRPC_URI,
-            interceptors=[
-                MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_RW_PAYLOAD}")])
-            ],
-        )
-        self.coll_r_payload = grpc_requests.Client(
-            GRPC_URI,
-            interceptors=[
-                MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_R_PAYLOAD}")])
-            ],
         )
         self.m = grpc_requests.Client(
             GRPC_URI, interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_M}")])]
@@ -797,19 +761,21 @@ def check_access(
         method,
         path,
         rest_request,
-        allowed_for.coll_r_payload,
+        allowed_for.everything or False,  # Payload constraints deprecated
         TOKEN_COLL_R_PAYLOAD,
         path_params,
         rest_req_kwargs,
+        expected_status_code=401,
     )
     check_rest_access(
         method,
         path,
         rest_request,
-        allowed_for.coll_rw_payload,
+        allowed_for.everything or False,  # Payload constraints deprecated
         TOKEN_COLL_RW_PAYLOAD,
         path_params,
         rest_req_kwargs,
+        expected_status_code=401,
     )
 
     if allowed_for.coll_prw is not None:
@@ -861,12 +827,6 @@ def check_access(
         check_grpc_access(grpc.r, service, method, grpc_request, allowed_for.read)
         check_grpc_access(grpc.coll_r, service, method, grpc_request, allowed_for.coll_r)
         check_grpc_access(grpc.coll_rw, service, method, grpc_request, allowed_for.coll_rw)
-        check_grpc_access(
-            grpc.coll_r_payload, service, method, grpc_request, allowed_for.coll_r_payload
-        )
-        check_grpc_access(
-            grpc.coll_rw_payload, service, method, grpc_request, allowed_for.coll_rw_payload
-        )
         check_grpc_access(grpc.m, service, method, grpc_request, allowed_for.manage)
 
         # Check that API key is the same as manage token

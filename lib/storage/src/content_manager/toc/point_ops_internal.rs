@@ -56,8 +56,8 @@ impl TableOfContent {
         wait: bool,
         timeout: Option<Duration>,
     ) -> StorageResult<UpdateResult> {
-        let collection_pass = access
-            .check_collection_access(collection_name, AccessRequirements::new().write().whole())?;
+        let collection_pass =
+            access.check_collection_access(collection_name, AccessRequirements::new().write())?;
 
         self.get_collection(&collection_pass)
             .await?

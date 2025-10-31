@@ -40,14 +40,14 @@ impl TableOfContent {
     pub async fn recommend(
         &self,
         collection_name: &str,
-        mut request: RecommendRequestInternal,
+        request: RecommendRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selector: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<ScoredPoint>> {
-        let collection_pass = access.check_point_op(collection_name, &mut request)?;
+        let collection_pass = access.check_point_op(collection_name, &request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
         recommendations::recommend_by(
@@ -165,14 +165,14 @@ impl TableOfContent {
     pub async fn count(
         &self,
         collection_name: &str,
-        mut request: CountRequestInternal,
+        request: CountRequestInternal,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<CountResult> {
-        let collection_pass = access.check_point_op(collection_name, &mut request)?;
+        let collection_pass = access.check_point_op(collection_name, &request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
         collection
@@ -202,14 +202,14 @@ impl TableOfContent {
     pub async fn retrieve(
         &self,
         collection_name: &str,
-        mut request: PointRequestInternal,
+        request: PointRequestInternal,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<RecordInternal>> {
-        let collection_pass = access.check_point_op(collection_name, &mut request)?;
+        let collection_pass = access.check_point_op(collection_name, &request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
         collection
@@ -228,14 +228,14 @@ impl TableOfContent {
     pub async fn group(
         &self,
         collection_name: &str,
-        mut request: GroupRequest,
+        request: GroupRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<GroupsResult> {
-        let collection_pass = access.check_point_op(collection_name, &mut request)?;
+        let collection_pass = access.check_point_op(collection_name, &request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
 
@@ -257,14 +257,14 @@ impl TableOfContent {
     pub async fn discover(
         &self,
         collection_name: &str,
-        mut request: DiscoverRequestInternal,
+        request: DiscoverRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selector: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<ScoredPoint>> {
-        let collection_pass = access.check_point_op(collection_name, &mut request)?;
+        let collection_pass = access.check_point_op(collection_name, &request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
         discovery::discover(
@@ -326,14 +326,14 @@ impl TableOfContent {
     pub async fn scroll(
         &self,
         collection_name: &str,
-        mut request: ScrollRequestInternal,
+        request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<ScrollResult> {
-        let collection_pass = access.check_point_op(collection_name, &mut request)?;
+        let collection_pass = access.check_point_op(collection_name, &request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
         collection
@@ -385,14 +385,14 @@ impl TableOfContent {
     pub async fn facet(
         &self,
         collection_name: &str,
-        mut request: FacetParams,
+        request: FacetParams,
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
         access: Access,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<FacetResponse> {
-        let collection_pass = access.check_point_op(collection_name, &mut request)?;
+        let collection_pass = access.check_point_op(collection_name, &request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
 
@@ -412,14 +412,14 @@ impl TableOfContent {
     pub async fn search_points_matrix(
         &self,
         collection_name: &str,
-        mut request: CollectionSearchMatrixRequest,
+        request: CollectionSearchMatrixRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> Result<CollectionSearchMatrixResponse, StorageError> {
-        let collection_pass = access.check_point_op(collection_name, &mut request)?;
+        let collection_pass = access.check_point_op(collection_name, &request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
 
@@ -480,14 +480,14 @@ impl TableOfContent {
     pub async fn update(
         &self,
         collection_name: &str,
-        mut operation: OperationWithClockTag,
+        operation: OperationWithClockTag,
         wait: bool,
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
         access: Access,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<UpdateResult> {
-        let collection_pass = access.check_point_op(collection_name, &mut operation.operation)?;
+        let collection_pass = access.check_point_op(collection_name, &operation.operation)?;
 
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
         // so this method is cancel safe.

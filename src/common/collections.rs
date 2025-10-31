@@ -60,8 +60,7 @@ pub async fn do_get_collection(
     name: &str,
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
-    let collection_pass =
-        access.check_collection_access(name, AccessRequirements::new().whole())?;
+    let collection_pass = access.check_collection_access(name, AccessRequirements::new())?;
 
     let collection = toc.get_collection(&collection_pass).await?;
 
@@ -160,8 +159,8 @@ pub async fn do_list_snapshots(
     access: Access,
     collection_name: &str,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    let collection_pass = access
-        .check_collection_access(collection_name, AccessRequirements::new().whole().extras())?;
+    let collection_pass =
+        access.check_collection_access(collection_name, AccessRequirements::new().extras())?;
     Ok(toc
         .get_collection(&collection_pass)
         .await?
@@ -175,10 +174,7 @@ pub async fn do_create_snapshot(
     collection_name: &str,
 ) -> Result<SnapshotDescription, StorageError> {
     let collection_pass = access
-        .check_collection_access(
-            collection_name,
-            AccessRequirements::new().write().whole().extras(),
-        )?
+        .check_collection_access(collection_name, AccessRequirements::new().write().extras())?
         .into_static();
 
     let result = tokio::spawn(async move { toc.create_snapshot(&collection_pass).await }).await??;
@@ -192,7 +188,7 @@ pub async fn do_get_collection_cluster(
     name: &str,
 ) -> Result<CollectionClusterInfo, StorageError> {
     let collection_pass =
-        access.check_collection_access(name, AccessRequirements::new().whole().extras())?;
+        access.check_collection_access(name, AccessRequirements::new().extras())?;
     let collection = toc.get_collection(&collection_pass).await?;
     Ok(collection.cluster_info(toc.this_peer_id).await?)
 }
@@ -206,7 +202,7 @@ pub async fn do_update_collection_cluster(
 ) -> Result<bool, StorageError> {
     let collection_pass = access.check_collection_access(
         &collection_name,
-        AccessRequirements::new().write().manage().whole().extras(),
+        AccessRequirements::new().write().manage().extras(),
     )?;
 
     if dispatcher.consensus_state().is_none() {
