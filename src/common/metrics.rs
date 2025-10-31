@@ -962,8 +962,11 @@ mod procfs_metrics {
 
     /// Returns a list of all children of a given process. This works recursively, including grandchildren, etc.
     fn child_processes_helper(pid: Pid) -> Result<Vec<Pid>, ProcError> {
-        let mut seen = HashSet::from_iter(std::iter::once(pid));
+        let mut seen = HashSet::default();
+        seen.insert(pid); // Exclude parent Pid from results
+
         let mut out = HashSet::default();
+
         child_processes_recursive(pid, &mut seen, &mut out)?;
         Ok(out.into_iter().collect())
     }
@@ -994,28 +997,19 @@ mod procfs_metrics {
     ) -> Result<HashSet<Pid>, ProcError> {
         let process = Process::new(parent_pid)?;
 
-        // Iterator over all threads of the passed process.
-        let thread_iter = process.tasks()?.into_iter().flatten().map(|i| i.tid);
-
-        thread_iter
-            .map(|tid| {
-                // Get the children for this thread id.
-                process
-                    .task_from_tid(tid)
-                    .and_then(|task| task.children())
-                    .map(|children| children.into_iter().map(|i| i as Pid))
-            })
+        process
+            .tasks()?
+            .map(|task| task.and_then(|task| task.children()))
             .flatten_ok()
+            .map_ok(|i| i as Pid)
             .filter_ok(|i| {
-                // Ignore already seen pids.
-                if seen.contains(i) {
-                    false
-                } else {
+                let is_new = !seen.contains(i);
+                if is_new {
                     seen.insert(*i);
-                    true
                 }
+                is_new // Filter out if element has been seen before.
             })
-            .collect::<Result<HashSet<Pid>, ProcError>>()
+            .collect()
     }
 }
 
