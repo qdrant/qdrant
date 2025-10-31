@@ -951,8 +951,7 @@ mod procfs_metrics {
     /// Returns the minor and major page faults of all children including grandchildren, etc.
     pub fn faults_for_all_children(parent: Pid) -> Result<(u64, u64), ProcError> {
         let children = child_processes_helper(parent)?;
-        let mut min = 0;
-        let mut maj = 0;
+        let (mut min, mut maj) = (0, 0);
         for child in children {
             let stat = match Process::new(child).and_then(|i| i.stat()) {
                 Ok(proc) => proc,
@@ -969,39 +968,31 @@ mod procfs_metrics {
 
     /// Returns a list of all children of a given process. This works recursively, including grandchildren, etc.
     fn child_processes_helper(pid: Pid) -> Result<Vec<Pid>, ProcError> {
-        let mut seen = HashSet::default();
-        seen.insert(pid); // Exclude parent Pid from results
+        let mut pids = HashSet::default();
+        child_processes_recursive(pid, &mut pids)?;
 
-        let mut out = HashSet::default();
+        // Exclude parent Pid from results
+        pids.remove(&pid);
 
-        child_processes_recursive(pid, &mut seen, &mut out)?;
-        Ok(out.into_iter().collect())
+        Ok(pids.into_iter().collect())
     }
 
     /// Recursively collects all children of a process, specified by `pid`.
-    ///
-    /// Note that `seen` must include `pid` to prevent the parents pid appearing in the result.
-    fn child_processes_recursive(
-        pid: Pid,
-        seen: &mut HashSet<Pid>,
-        out: &mut HashSet<Pid>,
-    ) -> Result<(), ProcError> {
-        let new_children = child_processes(pid, seen)?;
+    fn child_processes_recursive(pid: Pid, pids: &mut HashSet<Pid>) -> Result<(), ProcError> {
+        for child_pid in child_processes(pid)? {
+            let is_new = pids.insert(child_pid);
 
-        out.extend(new_children.iter().copied());
-
-        for new_pid in new_children.iter() {
-            child_processes_recursive(*new_pid, seen, out)?;
+            // If PID is new we recurse into it
+            if is_new {
+                child_processes_recursive(child_pid, pids)?;
+            }
         }
 
         Ok(())
     }
 
-    /// Returns all new child processes of a parent process, specified by `parent_pid`, which haven't been seen yet.
-    fn child_processes(
-        parent_pid: Pid,
-        seen: &mut HashSet<Pid>,
-    ) -> Result<HashSet<Pid>, ProcError> {
+    /// Returns all new child processes of a parent process, specified by `parent_pid`.
+    fn child_processes(parent_pid: Pid) -> Result<HashSet<Pid>, ProcError> {
         let process = match Process::new(parent_pid) {
             Ok(proc) => proc,
             // Ignore children that don't exist anymore.
@@ -1022,13 +1013,6 @@ mod procfs_metrics {
             })
             .flatten_ok()
             .map_ok(|i| i as Pid)
-            .filter_ok(|i| {
-                let is_new = !seen.contains(i);
-                if is_new {
-                    seen.insert(*i);
-                }
-                is_new // Filter out if element has been seen before.
-            })
             .collect()
     }
 }
