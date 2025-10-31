@@ -809,8 +809,8 @@ fn label_pair(name: &str, value: &str) -> LabelPair {
 #[cfg(target_os = "linux")]
 mod procfs_metrics {
     use std::cmp::min;
-    use std::collections::HashSet;
 
+    use ahash::AHashSet;
     use itertools::Itertools;
     use procfs::ProcError;
     use procfs::process::{LimitValue, Process};
@@ -967,18 +967,18 @@ mod procfs_metrics {
     }
 
     /// Returns a list of all children of a given process. This works recursively, including grandchildren, etc.
-    fn child_processes_helper(pid: Pid) -> Result<Vec<Pid>, ProcError> {
-        let mut pids = HashSet::default();
+    fn child_processes_helper(pid: Pid) -> Result<AHashSet<Pid>, ProcError> {
+        let mut pids = AHashSet::default();
         child_processes_recursive(pid, &mut pids)?;
 
         // Exclude parent Pid from results
         pids.remove(&pid);
 
-        Ok(pids.into_iter().collect())
+        Ok(pids)
     }
 
     /// Recursively collects all children of a process, specified by `pid`.
-    fn child_processes_recursive(pid: Pid, pids: &mut HashSet<Pid>) -> Result<(), ProcError> {
+    fn child_processes_recursive(pid: Pid, pids: &mut AHashSet<Pid>) -> Result<(), ProcError> {
         for child_pid in child_processes(pid)? {
             let is_new = pids.insert(child_pid);
 
@@ -992,11 +992,11 @@ mod procfs_metrics {
     }
 
     /// Returns all new child processes of a parent process, specified by `parent_pid`.
-    fn child_processes(parent_pid: Pid) -> Result<HashSet<Pid>, ProcError> {
+    fn child_processes(parent_pid: Pid) -> Result<AHashSet<Pid>, ProcError> {
         let process = match Process::new(parent_pid) {
             Ok(proc) => proc,
             // Ignore children that don't exist anymore.
-            Err(ProcError::NotFound(_)) => return Ok(HashSet::default()),
+            Err(ProcError::NotFound(_)) => return Ok(AHashSet::default()),
             Err(err) => return Err(err),
         };
 
@@ -1014,6 +1014,37 @@ mod procfs_metrics {
             .flatten_ok()
             .map_ok(|i| i as Pid)
             .collect()
+    }
+
+    #[test]
+    fn test_child_processes() {
+        let my_pid = procfs::process::Process::myself().unwrap().pid;
+
+        // We have no children now
+        assert_eq!(child_processes_helper(my_pid).unwrap(), AHashSet::new(),);
+
+        // Spawn twho child processes
+        let mut child_1 = std::process::Command::new("sleep")
+            .arg("10s")
+            .spawn()
+            .unwrap();
+        let mut child_2 = std::process::Command::new("sleep")
+            .arg("10s")
+            .spawn()
+            .unwrap();
+        let child_1_pid = child_1.id() as Pid;
+        let child_2_pid = child_2.id() as Pid;
+
+        assert_eq!(
+            child_processes_helper(my_pid).unwrap(),
+            AHashSet::from([child_1_pid, child_2_pid]),
+        );
+
+        // Cleanup
+        child_1.kill().unwrap();
+        child_2.kill().unwrap();
+        let _ = child_1.wait();
+        let _ = child_2.wait();
     }
 }
 
