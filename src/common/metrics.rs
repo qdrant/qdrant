@@ -953,9 +953,15 @@ mod procfs_metrics {
         let mut min = 0;
         let mut maj = 0;
         for child in children {
-            let process = Process::new(child)?.stat()?;
-            min += process.minflt;
-            maj += process.majflt;
+            let stat = match Process::new(child).and_then(|i| i.stat()) {
+                Ok(proc) => proc,
+                // Ignore children that don't exist anymore.
+                Err(ProcError::NotFound(_)) => continue,
+                Err(err) => return Err(err),
+            };
+
+            min += stat.minflt;
+            maj += stat.majflt;
         }
         Ok((min, maj))
     }
@@ -995,11 +1001,24 @@ mod procfs_metrics {
         parent_pid: Pid,
         seen: &mut HashSet<Pid>,
     ) -> Result<HashSet<Pid>, ProcError> {
-        let process = Process::new(parent_pid)?;
+        let process = match Process::new(parent_pid) {
+            Ok(proc) => proc,
+            // Ignore children that don't exist anymore.
+            Err(ProcError::NotFound(_)) => return Ok(HashSet::default()),
+            Err(err) => return Err(err),
+        };
 
         process
             .tasks()?
-            .map(|task| task.and_then(|task| task.children()))
+            .filter_map(|task| {
+                let children = task.and_then(|task| task.children());
+                match children {
+                    Ok(children) => Some(Ok(children)),
+                    // Filter out tasks/children that might not exist anymore.
+                    Err(ProcError::NotFound(_)) => return None,
+                    Err(err) => Some(Err(err)),
+                }
+            })
             .flatten_ok()
             .map_ok(|i| i as Pid)
             .filter_ok(|i| {
