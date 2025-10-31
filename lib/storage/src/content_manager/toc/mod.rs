@@ -339,7 +339,7 @@ impl TableOfContent {
         for collection_pass in &all_collections {
             for alias in self.collection_aliases(collection_pass, access).await? {
                 aliases.push(AliasDescription {
-                    alias_name: alias.to_string(),
+                    alias_name: alias.clone(),
                     collection_name: collection_pass.to_string(),
                 });
             }
@@ -667,7 +667,7 @@ impl TableOfContent {
         self.collection_hw_metrics
             .iter()
             .map(|i| {
-                let key = i.key().to_string();
+                let key = i.key().clone();
                 let hw_usage = HardwareUsage {
                     cpu: i.get_cpu(),
                     payload_io_read: i.get_payload_io_read(),

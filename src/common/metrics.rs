@@ -808,6 +808,7 @@ fn label_pair(name: &str, value: &str) -> LabelPair {
 }
 
 /// Structure for holding /procfs metrics, that can be easily populated in metrics API.
+#[cfg_attr(not(target_os = "linux"), expect(dead_code))]
 struct ProcFsMetrics {
     mmap_count: usize,
     open_fds: usize,

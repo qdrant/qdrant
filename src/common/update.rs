@@ -830,7 +830,7 @@ pub async fn do_create_index(
     };
 
     let consensus_op = CollectionMetaOperations::CreatePayloadIndex(CreatePayloadIndex {
-        collection_name: collection_name.to_string(),
+        collection_name: collection_name.clone(),
         field_name: operation.field_name.clone(),
         field_schema: field_schema.clone(),
     });
@@ -899,7 +899,7 @@ pub async fn do_delete_index(
     // TODO: Is this cancel safe!?
 
     let consensus_op = CollectionMetaOperations::DropPayloadIndex(DropPayloadIndex {
-        collection_name: collection_name.to_string(),
+        collection_name: collection_name.clone(),
         field_name: index_name.clone(),
     });
 

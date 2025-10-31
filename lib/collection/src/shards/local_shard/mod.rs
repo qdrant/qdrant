@@ -911,7 +911,7 @@ impl LocalShard {
                         .optimizer_errors
                         .as_ref()
                         .map_or(OptimizersStatus::Ok, |err| {
-                            OptimizersStatus::Error(err.to_string())
+                            OptimizersStatus::Error(err.clone())
                         });
                     return Some((ShardStatus::Red, optimizer_status));
                 }
