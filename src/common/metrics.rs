@@ -1023,7 +1023,7 @@ mod procfs_metrics {
         // We have no children now
         assert_eq!(child_processes_helper(my_pid).unwrap(), AHashSet::new(),);
 
-        // Spawn twho child processes
+        // Spawn two child processes
         let mut child_1 = std::process::Command::new("sleep")
             .arg("10s")
             .spawn()
