@@ -250,10 +250,10 @@ pub trait ShardTransferConsensus: Send + Sync {
     }
 
     /// After a stream records transfer between different shard IDs, propose to switch shard to
-    /// `ReadActive` and confirm on remote shard
+    /// `ActiveRead` and confirm on remote shard
     ///
     /// This is called after shard stream records has been completed on the remote.
-    /// It submits a proposal to consensus to switch the shard state from `Partial` to `ReadActive`.
+    /// It submits a proposal to consensus to switch the shard state from `Partial` to `ActiveRead`.
     ///
     /// This method also confirms consensus applied the operation on ALL peers before returning. If
     /// it fails, it will be retried for up to `CONSENSUS_CONFIRM_RETRIES` times.
@@ -278,14 +278,14 @@ pub trait ShardTransferConsensus: Send + Sync {
             }
 
             log::trace!(
-                "Propose and confirm to switch peer from `Partial` into `ReadActive` state"
+                "Propose and confirm to switch peer from `Partial` into `ActiveRead` state"
             );
 
             result = self
                 .set_shard_replica_set_state(
                     collection_id.clone(),
                     remote_shard.id,
-                    ReplicaState::ReadActive,
+                    ReplicaState::ActiveRead,
                     Some(ReplicaState::Partial),
                 )
                 .await;
@@ -295,7 +295,7 @@ pub trait ShardTransferConsensus: Send + Sync {
                 continue;
             }
 
-            log::trace!("Wait for all peers to reach `ReadActive` state");
+            log::trace!("Wait for all peers to reach `ActiveRead` state");
 
             result = self.await_consensus_sync(channel_service).await;
 

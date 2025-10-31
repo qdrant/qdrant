@@ -15,9 +15,9 @@ use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus};
 
 pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
 
-/// Minimum version all peers need to be to use the intermediate `ReadActive` state during transfer
+/// Minimum version all peers need to be to use the intermediate `ActiveRead` state during transfer
 // TODO(1.16.0): once 1.16.0 is released, bump this to "1.16.0" with a const version
-const STATE_READ_ACTIVE_MIN_VERSION: &str = "1.15.6-dev";
+const STATE_ACTIVE_READ_MIN_VERSION: &str = "1.15.6-dev";
 
 /// Orchestrate shard transfer by streaming records
 ///
@@ -46,7 +46,7 @@ pub(super) async fn transfer_stream_records(
     let filter = transfer_config.filter;
     let merge_points = filter.is_some();
 
-    // Whether we need an intermediate replica state (ReadActive) during transfer to sync nodes
+    // Whether we need an intermediate replica state (ActiveRead) during transfer to sync nodes
     // We use this when transferring between different shard IDs to ensure data consistency, this
     // way all readers can be switched to the new shard before any writers
     let sync_intermediate_state = transfer_config
@@ -55,10 +55,10 @@ pub(super) async fn transfer_stream_records(
 
     // If syncing peers with intermediate replica state, all nodes must have a certain version
     if sync_intermediate_state {
-        let min_version = Version::parse(STATE_READ_ACTIVE_MIN_VERSION).unwrap();
+        let min_version = Version::parse(STATE_ACTIVE_READ_MIN_VERSION).unwrap();
         if !channel_service.all_peers_at_version(&min_version) {
             return Err(CollectionError::service_error(format!(
-                "Cannot perform shard transfer between different shards using streaming records because not all peers are version {STATE_READ_ACTIVE_MIN_VERSION} or higher"
+                "Cannot perform shard transfer between different shards using streaming records because not all peers are version {STATE_ACTIVE_READ_MIN_VERSION} or higher"
             )));
         }
     }
@@ -133,7 +133,7 @@ pub(super) async fn transfer_stream_records(
         }
     }
 
-    // Sync all peers with intermediate replica state, switch to ReadActive and sync all peers
+    // Sync all peers with intermediate replica state, switch to ActiveRead and sync all peers
     if sync_intermediate_state {
         log::trace!(
             "Shard {shard_id} recovered on {remote_peer_id} for stream records transfer, switching into next stage through consensus",
@@ -147,7 +147,7 @@ pub(super) async fn transfer_stream_records(
             .await
             .map_err(|err| {
                 CollectionError::service_error(format!(
-                    "Can't switch shard {shard_id} to ReadActive state after stream records transfer: {err}"
+                    "Can't switch shard {shard_id} to ActiveRead state after stream records transfer: {err}"
                 ))
             })?;
     }

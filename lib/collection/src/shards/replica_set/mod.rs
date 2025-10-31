@@ -789,7 +789,7 @@ impl ShardReplicaSet {
                     | ReplicaState::PartialSnapshot
                     | ReplicaState::Recovery
                     | ReplicaState::Resharding
-                    | ReplicaState::ReadActive => {
+                    | ReplicaState::ActiveRead => {
                         self.set_local(local_shard, Some(state)).await?;
                     }
                 }
@@ -1283,7 +1283,7 @@ pub enum ReplicaState {
     // Points are being migrated to this shard as part of resharding down
     ReshardingScaleDown,
     // Active for readers, Partial for writers
-    ReadActive,
+    ActiveRead,
 }
 
 impl ReplicaState {
@@ -1300,7 +1300,7 @@ impl ReplicaState {
             | ReplicaState::PartialSnapshot
             | ReplicaState::Recovery
             | ReplicaState::Resharding
-            | ReplicaState::ReadActive => false,
+            | ReplicaState::ActiveRead => false,
         }
     }
 
@@ -1317,7 +1317,7 @@ impl ReplicaState {
             | ReplicaState::Partial
             | ReplicaState::PartialSnapshot
             | ReplicaState::Recovery
-            | ReplicaState::ReadActive => false,
+            | ReplicaState::ActiveRead => false,
         }
     }
 
@@ -1333,7 +1333,7 @@ impl ReplicaState {
             | ReplicaState::Recovery
             | ReplicaState::Resharding
             | ReplicaState::ReshardingScaleDown
-            | ReplicaState::ReadActive => true,
+            | ReplicaState::ActiveRead => true,
 
             ReplicaState::Active
             | ReplicaState::Dead
@@ -1354,7 +1354,7 @@ impl ReplicaState {
             | ReplicaState::Dead
             | ReplicaState::Initializing
             | ReplicaState::Listener
-            | ReplicaState::ReadActive => false,
+            | ReplicaState::ActiveRead => false,
         }
     }
 }

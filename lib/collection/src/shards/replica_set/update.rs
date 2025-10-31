@@ -70,7 +70,7 @@ impl ShardReplicaSet {
             | ReplicaState::Initializing
             | ReplicaState::Resharding
             | ReplicaState::ReshardingScaleDown
-            | ReplicaState::ReadActive => local.get().update(operation, wait, hw_measurement).await,
+            | ReplicaState::ActiveRead => local.get().update(operation, wait, hw_measurement).await,
 
             ReplicaState::Listener => local.get().update(operation, false, hw_measurement).await,
 
@@ -579,7 +579,7 @@ impl ShardReplicaSet {
             ReplicaState::Recovery | ReplicaState::PartialSnapshot => false,
             ReplicaState::Resharding | ReplicaState::ReshardingScaleDown => true,
             ReplicaState::Dead => false,
-            ReplicaState::ReadActive => true,
+            ReplicaState::ActiveRead => true,
         };
 
         res && !self.is_locally_disabled(peer_id)
@@ -617,7 +617,7 @@ impl ShardReplicaSet {
                 | ReplicaState::PartialSnapshot
                 | ReplicaState::Resharding
                 | ReplicaState::ReshardingScaleDown
-                | ReplicaState::ReadActive => (),
+                | ReplicaState::ActiveRead => (),
             }
 
             // Handle a special case where transfer receiver is not in the expected replica state yet.
