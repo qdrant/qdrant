@@ -960,8 +960,8 @@ mod procfs_metrics {
                 Err(err) => return Err(err),
             };
 
-            min += stat.minflt;
-            maj += stat.majflt;
+            min += stat.minflt + stat.cminflt;
+            maj += stat.majflt + stat.cmajflt;
         }
         Ok((min, maj))
     }
