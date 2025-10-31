@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::collections::HashMap;
 
 use api::rest::models::HardwareUsage;
@@ -187,7 +188,7 @@ impl MetricsProvider for CollectionsTelemetry {
         // Vectors excluded from index-only requests.
         let mut indexed_only_excluded = vec![];
 
-        let mut total_dead_shards = 0;
+        let mut total_dead_replicas = 0;
 
         let mut vector_count_by_name = vec![];
 
@@ -291,7 +292,7 @@ impl MetricsProvider for CollectionsTelemetry {
                 ))
             }
 
-            total_dead_shards += collection
+            total_dead_replicas += collection
                 .shards
                 .iter()
                 .flatten()
@@ -301,7 +302,7 @@ impl MetricsProvider for CollectionsTelemetry {
 
         if !vector_count_by_name.is_empty() {
             metrics.push(metric_family(
-                "collection_vectors_total",
+                "collection_vectors",
                 "amount of vectors grouped by vector name",
                 MetricType::GAUGE,
                 vector_count_by_name,
@@ -360,10 +361,10 @@ impl MetricsProvider for CollectionsTelemetry {
         }
 
         metrics.push(metric_family(
-            "dead_shards_total",
+            "dead_replicas",
             "total amount of shard replicas in non-active state",
             MetricType::GAUGE,
-            vec![gauge(total_dead_shards as f64, &[])],
+            vec![gauge(total_dead_replicas as f64, &[])],
             prefix,
         ));
     }
@@ -670,9 +671,7 @@ impl OperationDurationMetricsBuilder {
 
     /// Build metrics and add them to the provided vector.
     pub fn build(self, global_prefix: Option<&str>, prefix: &str, metrics: &mut Vec<MetricFamily>) {
-        let prefix = global_prefix
-            .map(|global_prefix| format!("{global_prefix}{prefix}_"))
-            .unwrap_or_else(|| prefix.to_string());
+        let prefix = format!("{}{prefix}_", global_prefix.unwrap_or(""));
 
         if !self.total.is_empty() {
             metrics.push(metric_family(
@@ -857,7 +856,7 @@ impl ProcFsMetrics {
 impl MetricsProvider for ProcFsMetrics {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
         metrics.push(metric_family(
-            "procfs_mmap_count",
+            "process_open_mmaps",
             "count of open mmaps",
             MetricType::GAUGE,
             vec![gauge(self.mmap_count as f64, &[])],
@@ -865,58 +864,55 @@ impl MetricsProvider for ProcFsMetrics {
         ));
 
         metrics.push(metric_family(
-            "procfs_current_fds",
+            "process_open_fds",
             "count of currently open file descriptors",
             MetricType::GAUGE,
             vec![gauge(self.open_fds as f64, &[])],
             prefix,
         ));
 
+        let fds_limit = match (self.max_fds_soft, self.max_fds_hard) {
+            (0, hard) => hard,               // soft unlimited, use hard
+            (soft, 0) => soft,               // hard unlimited, use soft
+            (soft, hard) => min(soft, hard), // both limited, use minimum
+        };
         metrics.push(metric_family(
-            "procfs_soft_limit_fds",
-            "soft limit for open file descriptors",
+            "process_max_fds",
+            "limit for open file descriptors",
             MetricType::GAUGE,
-            vec![gauge(self.max_fds_soft as f64, &[])],
+            vec![gauge(fds_limit as f64, &[])],
             prefix,
         ));
 
         metrics.push(metric_family(
-            "procfs_hard_limit_fds",
-            "hard limit for open file descriptors",
-            MetricType::GAUGE,
-            vec![gauge(self.max_fds_hard as f64, &[])],
-            prefix,
-        ));
-
-        metrics.push(metric_family(
-            "procfs_minor_page_faults",
+            "process_minor_page_faults_total",
             "count of minor page faults which didn't cause a disk access",
-            MetricType::GAUGE,
-            vec![gauge(self.minor_page_faults as f64, &[])],
+            MetricType::COUNTER,
+            vec![counter(self.minor_page_faults as f64, &[])],
             prefix,
         ));
 
         metrics.push(metric_family(
-            "procfs_major_page_faults",
+            "process_major_page_faults_total",
             "count of disk accesses caused by a mmap page fault",
-            MetricType::GAUGE,
-            vec![gauge(self.major_page_faults as f64, &[])],
+            MetricType::COUNTER,
+            vec![counter(self.major_page_faults as f64, &[])],
             prefix,
         ));
 
         metrics.push(metric_family(
-            "procfs_children_minor_page_faults",
-            "count of minor page faults caused by waited-for children",
-            MetricType::GAUGE,
-            vec![gauge(self.minor_children_page_faults as f64, &[])],
+            "process_minor_page_faults_children_total",
+            "count of minor page faults caused by waited-for child processes",
+            MetricType::COUNTER,
+            vec![counter(self.minor_children_page_faults as f64, &[])],
             prefix,
         ));
 
         metrics.push(metric_family(
-            "procfs_children_major_page_faults",
-            "count of major page faults caused by waited-for children",
-            MetricType::GAUGE,
-            vec![gauge(self.major_children_page_faults as f64, &[])],
+            "process_major_page_faults_children_total",
+            "count of major page faults caused by waited-for child processes",
+            MetricType::COUNTER,
+            vec![counter(self.major_children_page_faults as f64, &[])],
             prefix,
         ));
     }
