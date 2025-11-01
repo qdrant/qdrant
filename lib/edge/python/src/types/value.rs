@@ -1,35 +1,23 @@
 use std::collections::HashMap;
 use std::mem;
 
+use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyValue(serde_json::Value);
 
 impl PyValue {
-    pub fn from_ref(value: &serde_json::Value) -> &Self {
-        // `PyValue` has transparent representation, so we can safely transmute references
-        unsafe { mem::transmute(value) }
-    }
-
-    pub fn from_slice(values: &[serde_json::Value]) -> &[Self] {
-        // `PyValue` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(values) }
-    }
-
-    pub fn into_rust_vec(values: Vec<Self>) -> Vec<serde_json::Value> {
-        // `PyValue` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(values) }
-    }
-
-    pub fn into_rust_map(values: HashMap<String, Self>) -> HashMap<String, serde_json::Value> {
-        // `PyValue` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(values) }
+    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, serde_json::Value>
+    where
+        Self: TransparentWrapper<serde_json::Value>,
+    {
+        unsafe { mem::transmute(map) }
     }
 }
 
@@ -64,7 +52,7 @@ impl<'py> FromPyObject<'py> for PyValue {
                 serde_json::Value::Number(num)
             }
             Helper::String(str) => serde_json::Value::String(str),
-            Helper::Array(arr) => serde_json::Value::Array(PyValue::into_rust_vec(arr)),
+            Helper::Array(arr) => serde_json::Value::Array(PyValue::peel_vec(arr)),
             Helper::Object(map) => serde_json::Value::Object(map),
         };
 
@@ -103,7 +91,7 @@ impl<'py> IntoPyObject<'py> for &PyValue {
                 }
             }
             serde_json::Value::String(str) => str.into_bound_py_any(py),
-            serde_json::Value::Array(arr) => PyValue::from_slice(arr).into_bound_py_any(py),
+            serde_json::Value::Array(arr) => PyValue::wrap_slice(arr).into_bound_py_any(py),
             serde_json::Value::Object(map) => value_map_into_py(map, py),
         }
     }
@@ -130,7 +118,7 @@ pub fn value_map_into_py<'py>(map: &ValueMap, py: Python<'py>) -> PyResult<Bound
 
     for (key, value) in map {
         let key = PyString::new(py, key);
-        let value = PyValue::from_ref(value).into_bound_py_any(py)?;
+        let value = PyValue::wrap_ref(value).into_bound_py_any(py)?;
         dict.set_item(key, value)?;
     }
 

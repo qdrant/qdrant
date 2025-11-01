@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::types::*;
 
 #[pyclass(name = "SegmentConfig")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PySegmentConfig(SegmentConfig);
 
 #[pymethods]
@@ -37,7 +39,8 @@ impl PySegmentConfig {
 }
 
 #[pyclass(name = "VectorDataConfig")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyVectorDataConfig(VectorDataConfig);
 
 #[pymethods]

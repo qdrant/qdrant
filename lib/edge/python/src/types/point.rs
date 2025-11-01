@@ -1,3 +1,4 @@
+use bytemuck::TransparentWrapper as _;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::types::{Payload, PointIdType};
@@ -34,6 +35,6 @@ impl PyPoint {
 
     #[getter]
     pub fn payload(&self) -> Option<&PyPayload> {
-        self.0.payload.as_ref().map(PyPayload::from_ref)
+        self.0.payload.as_ref().map(PyPayload::wrap_ref)
     }
 }
