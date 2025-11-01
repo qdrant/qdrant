@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 
-import os
-import shutil
-import uuid
-
 from qdrant_edge import *
+from common import *
 
 
 print("---- Point conversions ----")
@@ -21,32 +18,8 @@ for point in points:
 
 print("---- Load shard ----")
 
-DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), "data")
 
-# Clear and recreate data directory
-if os.path.exists(DATA_DIRECTORY):
-    shutil.rmtree(DATA_DIRECTORY)
-
-os.makedirs(DATA_DIRECTORY)
-
-# Load Qdrant Edge shard
-config = SegmentConfig(
-    vector_data={
-        "": VectorDataConfig(
-            size=4,
-            distance=Distance.DOT,
-            storage_type=VectorStorageType.CHUNKED_MMAP,
-            index=Indexes.PLAIN,
-            quantization_config=None,
-            multivector_config=None,
-            datatype=None,
-        ),
-    },
-    sparse_vector_data={},
-    payload_storage_type=PayloadStorageType.IN_RAM_MMAP,
-)
-
-shard = Shard(DATA_DIRECTORY, config)
+shard = load_new_shard()
 
 
 print("---- Upsert ----")
@@ -108,10 +81,8 @@ result = shard.query(QueryRequest(
     with_payload = True,
 ))
 
-for batches in result:
-    for points in batches:
-        for point in points:
-            print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
+for point in result:
+    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
 
 
 print("---- Search ----")

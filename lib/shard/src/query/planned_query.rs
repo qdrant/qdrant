@@ -42,10 +42,9 @@ pub struct MergePlan {
 
     /// How to merge the sources
     ///
-    /// If this is [None], then it means one of two things:
-    /// 1. It is a top-level query without prefetches, so sources must be of length 1.
-    /// 2. It is a top-level fusion query, so sources will be returned as-is. They will be merged later at collection level
-    pub rescore_params: Option<RescoreParams>,
+    /// If this is [None], then it means one thing:
+    /// * It is a top-level query without prefetches, so sources must be of length 1.
+    pub rescore_stage: Option<RescoreStage>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -58,6 +57,17 @@ pub enum Source {
 
     /// A nested prefetch
     Prefetch(Box<MergePlan>),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum RescoreStage {
+    /// Rescore at shard level, before merging results from all shards.
+    /// This is applicable if scores are independent for points
+    ShardLevel(RescoreParams),
+
+    /// Rescore results globally, once all results are obtained from all shards.
+    /// This is applicable if scores interdepend, like in Fusion
+    CollectionLevel(RescoreParams),
 }
 
 /// Defines how to merge multiple [sources](Source)
@@ -168,7 +178,7 @@ impl PlannedQuery {
         let merge_plan = MergePlan {
             sources,
             // Root-level query without prefetches means we won't do any extra rescoring
-            rescore_params: None,
+            rescore_stage: None,
         };
         Ok(RootPlan {
             merge_plan,
@@ -212,25 +222,31 @@ impl PlannedQuery {
                     params,
                 };
                 // Although MMR gets computed at collection level, we select top candidates via a nearest rescoring first
-                Some(rescore_params)
+                Some(RescoreStage::ShardLevel(rescore_params))
             }
             rescore @ (ScoringQuery::Vector(_)
             | ScoringQuery::OrderBy(_)
             | ScoringQuery::Formula(_)
-            | ScoringQuery::Sample(_)) => Some(RescoreParams {
+            | ScoringQuery::Sample(_)) => Some(RescoreStage::ShardLevel(RescoreParams {
                 rescore,
                 limit,
                 score_threshold: score_threshold.map(OrderedFloat),
                 params,
-            }),
+            })),
             // We will propagate the intermediate results. Fusion will take place at collection level.
-            // It is fine if this is None here.
-            ScoringQuery::Fusion(_) => None,
+            fusion @ ScoringQuery::Fusion(_) => {
+                Some(RescoreStage::CollectionLevel(RescoreParams {
+                    rescore: fusion,
+                    limit,
+                    score_threshold: score_threshold.map(OrderedFloat),
+                    params,
+                }))
+            }
         };
 
         let merge_plan = MergePlan {
             sources,
-            rescore_params,
+            rescore_stage: rescore_params,
         };
 
         Ok(RootPlan {
@@ -288,14 +304,19 @@ fn recurse_prefetches(
                 )
             })?;
 
+            // Even if this is a fusion request, it can only be executed at shard level here,
+            // because we can't forward the inner results to the collection level without
+            // materializing them first.
+            let rescore_stage = RescoreStage::ShardLevel(RescoreParams {
+                rescore,
+                limit,
+                score_threshold,
+                params,
+            });
+
             let merge_plan = MergePlan {
                 sources: inner_sources,
-                rescore_params: Some(RescoreParams {
-                    rescore,
-                    limit,
-                    score_threshold,
-                    params,
-                }),
+                rescore_stage: Some(rescore_stage),
             };
 
             Source::Prefetch(Box::new(merge_plan))

@@ -24,7 +24,7 @@ use shard::search_result_aggregator::BatchResultAggregator;
 use super::Shard;
 
 impl Shard {
-    pub fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ShardQueryResponse>> {
+    pub fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>> {
         let planned_query = PlannedQuery::try_from(vec![request])?;
 
         let PlannedQuery {
@@ -55,7 +55,10 @@ impl Shard {
             scored_points_batch.push(scored_points)
         }
 
-        Ok(scored_points_batch)
+        debug_assert_eq!(scored_points_batch.len(), 1);
+        let scored_points = scored_points_batch.pop().unwrap_or_default();
+
+        Ok(scored_points)
     }
 
     fn resolve_plan(
@@ -64,7 +67,7 @@ impl Shard {
         search_results: &mut Vec<Vec<ScoredPoint>>,
         scroll_results: &mut Vec<Vec<ScoredPoint>>,
         hw_measurement_acc: HwMeasurementAcc,
-    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+    ) -> OperationResult<Vec<ScoredPoint>> {
         let RootPlan {
             merge_plan,
             with_payload,
@@ -79,7 +82,16 @@ impl Shard {
             hw_measurement_acc.clone(),
         )?;
 
-        self.fill_with_payload_or_vectors(results, with_payload, with_vector, hw_measurement_acc)
+        let result = self
+            .fill_with_payload_or_vectors(
+                vec![results],
+                with_payload,
+                with_vector,
+                hw_measurement_acc,
+            )?
+            .pop()
+            .unwrap_or_default();
+        Ok(result)
     }
 
     fn recurse_prefetch(
@@ -89,10 +101,10 @@ impl Shard {
         scroll_results: &mut Vec<Vec<ScoredPoint>>,
         depth: usize,
         hw_counter_acc: HwMeasurementAcc,
-    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+    ) -> OperationResult<Vec<ScoredPoint>> {
         let MergePlan {
             sources: merge_plan_sources,
-            rescore_params,
+            rescore_stage: rescore_params,
         } = merge_plan;
 
         let max_len = merge_plan_sources.len();
@@ -110,30 +122,32 @@ impl Shard {
                 }
 
                 Source::Prefetch(merge_plan) => {
-                    let merged = self
-                        .recurse_prefetch(
-                            *merge_plan,
-                            search_results,
-                            scroll_results,
-                            depth + 1,
-                            hw_counter_acc.clone(),
-                        )?
-                        .into_iter();
+                    let merged = self.recurse_prefetch(
+                        *merge_plan,
+                        search_results,
+                        scroll_results,
+                        depth + 1,
+                        hw_counter_acc.clone(),
+                    )?;
 
-                    sources.extend(merged);
+                    sources.push(merged);
                 }
             }
         }
 
-        // Rescore or return plain sources
-        if let Some(rescore_params) = rescore_params {
-            let rescored = self.rescore(sources, rescore_params, hw_counter_acc)?;
-            Ok(vec![rescored])
-        } else {
-            // The sources here are passed to the next layer without any extra processing.
-            // It is either a query without prefetches, or a fusion request and the intermediate results are passed to the next layer.
-            debug_assert_eq!(depth, 0);
-            Ok(sources)
+        match rescore_params {
+            None => {
+                // The sources here are passed to the next layer without any extra processing.
+                // It should be a query without prefetches.
+                debug_assert_eq!(depth, 0);
+                Ok(sources.pop().unwrap_or_default())
+            }
+            Some(RescoreStage::ShardLevel(rescore_params))
+            | Some(RescoreStage::CollectionLevel(rescore_params)) => {
+                // In Edge, both shard-level and collection-level rescoring are handled the same way.
+                let rescored = self.rescore(sources, rescore_params, hw_counter_acc)?;
+                Ok(rescored)
+            }
         }
     }
 

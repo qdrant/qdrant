@@ -11,6 +11,7 @@ use parking_lot::Mutex;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
+use shard::query::planned_query::RescoreStage;
 use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 
@@ -239,24 +240,33 @@ impl LocalShard {
             // decrease timeout by the time spent so far (recursive calls)
             let timeout = timeout.saturating_sub(start_time.elapsed());
 
-            // Rescore or return plain sources
-            if let Some(rescore_params) = merge_plan.rescore_params {
-                let rescored = self
-                    .rescore(
-                        sources,
-                        rescore_params,
-                        search_runtime_handle,
-                        timeout,
-                        hw_counter_acc,
-                    )
-                    .await?;
+            match merge_plan.rescore_stage {
+                None => {
+                    // The sources here are passed to the next layer without any extra processing.
+                    // It should be a query without prefetches.
+                    debug_assert_eq!(depth, 0);
+                    debug_assert_eq!(sources.len(), 1);
+                    Ok(sources)
+                }
+                Some(RescoreStage::ShardLevel(rescore_params)) => {
+                    let rescored = self
+                        .rescore(
+                            sources,
+                            rescore_params,
+                            search_runtime_handle,
+                            timeout,
+                            hw_counter_acc,
+                        )
+                        .await?;
 
-                Ok(vec![rescored])
-            } else {
-                // The sources here are passed to the next layer without any extra processing.
-                // It is either a query without prefetches, or a fusion request and the intermediate results are passed to the next layer.
-                debug_assert_eq!(depth, 0);
-                Ok(sources)
+                    Ok(vec![rescored])
+                }
+                Some(RescoreStage::CollectionLevel(_)) => {
+                    // This re-scoring method requires full knowledge of all sources across all shards,
+                    // so we just pass the sources up to the collection level.
+                    debug_assert_eq!(depth, 0);
+                    Ok(sources)
+                }
             }
         }
         .boxed()

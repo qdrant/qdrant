@@ -95,7 +95,7 @@ fn test_try_from_double_rescore() {
             merge_plan: MergePlan {
                 sources: vec![Source::Prefetch(Box::from(MergePlan {
                     sources: vec![Source::SearchesIdx(0)],
-                    rescore_params: Some(RescoreParams {
+                    rescore_stage: Some(RescoreStage::ShardLevel(RescoreParams {
                         rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
                             VectorInternal::Dense(dummy_vector.clone()),
                             "full",
@@ -103,9 +103,9 @@ fn test_try_from_double_rescore() {
                         limit: 100,
                         score_threshold: None,
                         params: None,
-                    })
+                    }))
                 }))],
-                rescore_params: Some(RescoreParams {
+                rescore_stage: Some(RescoreStage::ShardLevel(RescoreParams {
                     rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
                         VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(vec![
                             dummy_vector
@@ -118,7 +118,7 @@ fn test_try_from_double_rescore() {
                         exact: true,
                         ..Default::default()
                     })
-                })
+                }))
             }
         }]
     );
@@ -167,7 +167,7 @@ fn test_try_from_no_prefetch() {
             with_vector: WithVector::Bool(true),
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0)],
-                rescore_params: None,
+                rescore_stage: None,
             },
         }]
     );
@@ -267,7 +267,12 @@ fn test_try_from_hybrid_query() {
             with_vector: WithVector::Bool(true),
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0), Source::SearchesIdx(1)],
-                rescore_params: None
+                rescore_stage: Some(RescoreStage::CollectionLevel(RescoreParams {
+                    rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
+                    limit: 50,
+                    score_threshold: None,
+                    params: None,
+                }))
             }
         }]
     );
@@ -306,6 +311,11 @@ fn test_base_params_mapping_in_try_from() {
         ),
     )));
 
+    let top_level_params = Some(SearchParams {
+        exact: true,
+        ..Default::default()
+    });
+
     let request = ShardQueryRequest {
         prefetches: vec![ShardPrefetch {
             prefetches: Vec::new(),
@@ -325,10 +335,7 @@ fn test_base_params_mapping_in_try_from() {
         offset: 49,
 
         // these params will be ignored because we have a prefetch
-        params: Some(SearchParams {
-            exact: true,
-            ..Default::default()
-        }),
+        params: top_level_params,
         with_payload: WithPayloadInterface::Bool(true),
         with_vector: WithVector::Bool(false),
     };
@@ -342,7 +349,12 @@ fn test_base_params_mapping_in_try_from() {
             with_vector: WithVector::Bool(false),
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0)],
-                rescore_params: None
+                rescore_stage: Some(RescoreStage::CollectionLevel(RescoreParams {
+                    rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
+                    limit: 99,
+                    score_threshold: Some(OrderedFloat(0.666)),
+                    params: top_level_params,
+                }))
             }
         }]
     );
@@ -566,7 +578,7 @@ fn test_from_batch_of_requests() {
                 with_payload: WithPayloadInterface::Bool(false),
                 merge_plan: MergePlan {
                     sources: vec![Source::SearchesIdx(0)],
-                    rescore_params: None,
+                    rescore_stage: None,
                 },
             },
             RootPlan {
@@ -574,7 +586,7 @@ fn test_from_batch_of_requests() {
                 with_payload: WithPayloadInterface::Bool(false),
                 merge_plan: MergePlan {
                     sources: vec![Source::ScrollsIdx(0)],
-                    rescore_params: None,
+                    rescore_stage: None,
                 },
             },
             RootPlan {
@@ -584,16 +596,21 @@ fn test_from_batch_of_requests() {
                     sources: vec![
                         Source::Prefetch(Box::from(MergePlan {
                             sources: vec![Source::SearchesIdx(1), Source::SearchesIdx(2),],
-                            rescore_params: Some(RescoreParams {
+                            rescore_stage: Some(RescoreStage::ShardLevel(RescoreParams {
                                 rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
                                 limit: 10,
                                 score_threshold: None,
                                 params: None,
-                            }),
+                            })),
                         })),
                         Source::ScrollsIdx(1),
                     ],
-                    rescore_params: None,
+                    rescore_stage: Some(RescoreStage::CollectionLevel(RescoreParams {
+                        rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
+                        limit: 10,
+                        score_threshold: None,
+                        params: None,
+                    })),
                 },
             },
         ]

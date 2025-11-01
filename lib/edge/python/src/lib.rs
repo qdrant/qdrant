@@ -74,9 +74,9 @@ impl PyShard {
         Ok(())
     }
 
-    pub fn query(&self, query: PyQueryRequest) -> Result<Vec<Vec<Vec<PyScoredPoint>>>> {
+    pub fn query(&self, query: PyQueryRequest) -> Result<Vec<PyScoredPoint>> {
         let points = self.0.query(query.into())?;
-        let points = PyScoredPoint::wrap_query_resp(points);
+        let points = PyScoredPoint::wrap_vec(points);
         Ok(points)
     }
 
