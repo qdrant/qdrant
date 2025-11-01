@@ -6,6 +6,7 @@ pub mod update;
 
 use std::path::PathBuf;
 
+use bytemuck::TransparentWrapperAlloc as _;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use segment::common::operation_error::OperationError;
@@ -46,6 +47,11 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::types::formula::{PyDecayKind, PyExpressionInterface, PyFormula};
     #[pymodule_export]
+    use super::types::query::{
+        PyContextPair, PyContextQuery, PyDiscoverQuery, PyFeedbackItem, PyFeedbackSimpleQuery,
+        PyQueryInterface, PyRecommendQuery, PySimpleFeedbackStrategy,
+    };
+    #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PySparseVector};
     #[pymodule_export]
     use super::update::PyUpdateOperation;
@@ -70,13 +76,13 @@ impl PyShard {
 
     pub fn query(&self, query: PyQueryRequest) -> Result<Vec<Vec<Vec<PyScoredPoint>>>> {
         let points = self.0.query(query.into())?;
-        let points = PyScoredPoint::from_rust_vec3(points);
+        let points = PyScoredPoint::wrap_query_resp(points);
         Ok(points)
     }
 
     pub fn search(&self, search: PySearchRequest) -> Result<Vec<PyScoredPoint>> {
         let points = self.0.search(search.into())?;
-        let points = PyScoredPoint::from_rust_vec(points);
+        let points = PyScoredPoint::wrap_vec(points);
         Ok(points)
     }
 
@@ -86,13 +92,13 @@ impl PyShard {
         with_payload: Option<PyWithPayload>,
         with_vector: Option<PyWithVector>,
     ) -> Result<Vec<PyRecord>> {
-        let point_ids = PyPointId::into_rust_vec(point_ids);
+        let point_ids = PyPointId::peel_vec(point_ids);
         let points = self.0.retrieve(
             &point_ids,
             with_payload.map(WithPayloadInterface::from),
             with_vector.map(WithVector::from),
         )?;
-        let points = PyRecord::from_rust_vec(points);
+        let points = PyRecord::wrap_vec(points);
         Ok(points)
     }
 }

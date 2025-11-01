@@ -1,5 +1,4 @@
-use std::mem;
-
+use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use ordered_float::OrderedFloat;
 use pyo3::IntoPyObjectExt;
@@ -16,7 +15,6 @@ use super::*;
 
 #[pyclass(name = "QueryRequest")]
 #[derive(Clone, Debug, Into)]
-#[repr(transparent)]
 pub struct PyQueryRequest(ShardQueryRequest);
 
 #[pymethods]
@@ -35,7 +33,7 @@ impl PyQueryRequest {
         with_payload: PyWithPayload,
     ) -> Self {
         Self(ShardQueryRequest {
-            prefetches: PyPrefetch::into_rust_vec(prefetches),
+            prefetches: PyPrefetch::peel_vec(prefetches),
             query: query.map(ScoringQuery::from),
             filter: filter.map(Filter::from),
             score_threshold: score_threshold.map(OrderedFloat),
@@ -49,16 +47,9 @@ impl PyQueryRequest {
 }
 
 #[pyclass(name = "Prefetch")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPrefetch(ShardPrefetch);
-
-impl PyPrefetch {
-    pub fn into_rust_vec(prefetches: Vec<Self>) -> Vec<ShardPrefetch> {
-        // `PyPrefetch` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(prefetches) }
-    }
-}
 
 #[pymethods]
 impl PyPrefetch {
@@ -72,7 +63,7 @@ impl PyPrefetch {
         score_threshold: Option<f32>,
     ) -> Self {
         Self(ShardPrefetch {
-            prefetches: PyPrefetch::into_rust_vec(prefetches),
+            prefetches: PyPrefetch::peel_vec(prefetches),
             query: query.map(ScoringQuery::from),
             limit,
             params: params.map(SearchParams::from),
@@ -83,7 +74,6 @@ impl PyPrefetch {
 }
 
 #[derive(Clone, Debug, Into)]
-#[repr(transparent)]
 pub struct PyScoringQuery(ScoringQuery);
 
 impl<'py> FromPyObject<'py> for PyScoringQuery {
@@ -123,16 +113,9 @@ impl<'py> FromPyObject<'py> for PyScoringQuery {
 }
 
 #[pyclass(name = "Fusion")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyFusion(FusionInternal);
-
-impl PyFusion {
-    pub fn from_ref(fusion: &FusionInternal) -> &Self {
-        // `PyFusion` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(fusion) }
-    }
-}
 
 #[pymethods]
 impl PyFusion {
@@ -147,7 +130,6 @@ impl PyFusion {
 
 #[pyclass(name = "OrderBy")]
 #[derive(Clone, Debug, Into)]
-#[repr(transparent)]
 pub struct PyOrderBy(OrderBy);
 
 #[pymethods]
@@ -194,7 +176,6 @@ impl From<PyDirection> for Direction {
 }
 
 #[derive(Clone, Debug, Into)]
-#[repr(transparent)]
 pub struct PyStartFrom(StartFrom);
 
 impl<'py> FromPyObject<'py> for PyStartFrom {
@@ -278,14 +259,13 @@ impl From<PySample> for SampleInternal {
 
 #[pyclass(name = "Mmr")]
 #[derive(Clone, Debug, Into)]
-#[repr(transparent)]
 pub struct PyMmr(MmrInternal);
 
 #[pymethods]
 impl PyMmr {
     #[new]
     pub fn new(
-        vector: PyVectorType,
+        vector: PyNamedVector,
         using: String,
         lambda: f32,
         candidates_limit: usize,

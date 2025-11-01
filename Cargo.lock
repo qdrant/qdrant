@@ -1938,6 +1938,7 @@ name = "edge-py"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "bytemuck",
  "derive_more 2.0.1",
  "edge",
  "ordered-float 5.1.0",
