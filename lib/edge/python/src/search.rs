@@ -1,11 +1,10 @@
 use std::mem;
 
+use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use ordered_float::OrderedFloat;
 use pyo3::IntoPyObjectExt as _;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use segment::data_types::vectors::NamedQuery;
 use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequest;
 
@@ -39,23 +38,6 @@ impl PySearchRequest {
             with_payload: with_payload.map(WithPayloadInterface::from),
             score_threshold,
         })
-    }
-}
-
-#[derive(Clone, Debug, Into)]
-pub struct PyQuery(QueryEnum);
-
-impl<'py> FromPyObject<'py> for PyQuery {
-    fn extract_bound(query: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let query = if let Ok(single) = query.extract() {
-            QueryEnum::Nearest(NamedQuery::default_dense(single))
-        } else {
-            return Err(PyValueError::new_err(format!(
-                "failed to convert Python object {query} into query"
-            )));
-        };
-
-        Ok(Self(query))
     }
 }
 
@@ -186,9 +168,7 @@ impl<'py> FromPyObject<'py> for PyWithPayload {
 
         let with_payload = match with_payload.extract()? {
             Helper::Bool(bool) => WithPayloadInterface::Bool(bool),
-            Helper::Fields(fields) => {
-                WithPayloadInterface::Fields(PyJsonPath::into_rust_vec(fields))
-            }
+            Helper::Fields(fields) => WithPayloadInterface::Fields(PyJsonPath::peel_vec(fields)),
             Helper::Selector(selector) => {
                 WithPayloadInterface::Selector(PayloadSelector::from(selector))
             }
@@ -217,37 +197,30 @@ impl<'py> IntoPyObject<'py> for &PyWithPayload {
         match &self.0 {
             WithPayloadInterface::Bool(bool) => bool.into_bound_py_any(py),
             WithPayloadInterface::Fields(fields) => {
-                PyJsonPath::from_slice(fields).into_bound_py_any(py)
+                PyJsonPath::wrap_slice(fields).into_bound_py_any(py)
             }
-            WithPayloadInterface::Selector(selector) => PyPayloadSelector::from_ref(selector)
+            WithPayloadInterface::Selector(selector) => PyPayloadSelector::wrap_ref(selector)
                 .clone()
                 .into_bound_py_any(py),
         }
     }
 }
 
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPayloadSelector(PayloadSelector);
-
-impl PyPayloadSelector {
-    pub fn from_ref(selector: &PayloadSelector) -> &Self {
-        // `PyPayloadSelector` has transparent representation, so transmuting references is safe
-        unsafe { mem::transmute(selector) }
-    }
-}
 
 impl FromPyObject<'_> for PyPayloadSelector {
     fn extract_bound(selector: &Bound<'_, PyAny>) -> PyResult<Self> {
         let selector = match selector.extract()? {
             PyPayloadSelectorInterface::Include(keys) => {
                 PayloadSelector::Include(PayloadSelectorInclude {
-                    include: PyJsonPath::into_rust_vec(keys),
+                    include: PyJsonPath::peel_vec(keys),
                 })
             }
             PyPayloadSelectorInterface::Exclude(keys) => {
                 PayloadSelector::Exclude(PayloadSelectorExclude {
-                    exclude: PyJsonPath::into_rust_vec(keys),
+                    exclude: PyJsonPath::peel_vec(keys),
                 })
             }
         };
@@ -264,10 +237,10 @@ impl<'py> IntoPyObject<'py> for PyPayloadSelector {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let selector = match self.0 {
             PayloadSelector::Include(PayloadSelectorInclude { include }) => {
-                PyPayloadSelectorInterface::Include(PyJsonPath::from_rust_vec(include))
+                PyPayloadSelectorInterface::Include(PyJsonPath::wrap_vec(include))
             }
             PayloadSelector::Exclude(PayloadSelectorExclude { exclude }) => {
-                PyPayloadSelectorInterface::Exclude(PyJsonPath::from_rust_vec(exclude))
+                PyPayloadSelectorInterface::Exclude(PyJsonPath::wrap_vec(exclude))
             }
         };
 
@@ -283,19 +256,16 @@ pub enum PyPayloadSelectorInterface {
 }
 
 #[pyclass(name = "ScoredPoint")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyScoredPoint(pub ScoredPoint);
 
 impl PyScoredPoint {
-    pub fn from_rust_vec(points: Vec<ScoredPoint>) -> Vec<Self> {
-        // `PyScoredPoint` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(points) }
-    }
-
-    pub fn from_rust_vec3(points: Vec<Vec<Vec<ScoredPoint>>>) -> Vec<Vec<Vec<Self>>> {
-        // `PyScoredPoint` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(points) }
+    pub fn wrap_query_resp(resp: Vec<Vec<Vec<ScoredPoint>>>) -> Vec<Vec<Vec<PyScoredPoint>>>
+    where
+        Self: TransparentWrapper<ScoredPoint>,
+    {
+        unsafe { mem::transmute(resp) }
     }
 }
 
@@ -323,6 +293,6 @@ impl PyScoredPoint {
 
     #[getter]
     pub fn payload(&self) -> Option<&PyPayload> {
-        self.0.payload.as_ref().map(PyPayload::from_ref)
+        self.0.payload.as_ref().map(PyPayload::wrap_ref)
     }
 }

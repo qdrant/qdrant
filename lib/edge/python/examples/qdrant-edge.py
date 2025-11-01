@@ -94,10 +94,30 @@ shard.update(UpdateOperation.upsert_points([
 ]))
 
 
+print("---- Query ----")
+
+result = shard.query(QueryRequest(
+    prefetches = [],
+    query = Query.Nearest([6.0, 9.0, 4.0, 2.0]),
+    filter = None,
+    score_threshold = None,
+    limit = 10,
+    offset = 0,
+    params = None,
+    with_vector = True,
+    with_payload = True,
+))
+
+for batches in result:
+    for points in batches:
+        for point in points:
+            print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
+
+
 print("---- Search ----")
 
 points = shard.search(SearchRequest(
-    query=[1.0, 1.0, 1.0, 1.0],
+    query=Query.Nearest([1.0, 1.0, 1.0, 1.0]),
     filter=None,
     params=None,
     limit=10,
@@ -127,7 +147,7 @@ search_filter = Filter(
 )
 
 points = shard.search(SearchRequest(
-    query=[1.0, 1.0, 1.0, 1.0],
+    query=Query.Nearest([1.0, 1.0, 1.0, 1.0]),
     filter=search_filter,
     params=None,
     limit=10,

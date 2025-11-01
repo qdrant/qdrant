@@ -8,7 +8,6 @@ use crate::types::{PyPointId, PyVector};
 
 #[pyclass(name = "PointVectors")]
 #[derive(Clone, Debug, Into)]
-#[repr(transparent)]
 pub struct PyPointVectors(pub PointVectorsPersisted);
 
 #[pymethods]

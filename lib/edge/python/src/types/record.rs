@@ -1,5 +1,4 @@
-use std::mem;
-
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::data_types::order_by::OrderValue;
@@ -8,16 +7,9 @@ use shard::retrieve::record_internal::RecordInternal;
 use crate::*;
 
 #[pyclass(name = "Record")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyRecord(pub RecordInternal);
-
-impl PyRecord {
-    pub fn from_rust_vec(records: Vec<RecordInternal>) -> Vec<Self> {
-        // `PyRecord` has transparent representation, so transmuting is safe
-        unsafe { mem::transmute(records) }
-    }
-}
 
 #[pymethods]
 impl PyRecord {
@@ -33,7 +25,7 @@ impl PyRecord {
 
     #[getter]
     pub fn payload(&self) -> Option<&PyPayload> {
-        self.0.payload.as_ref().map(PyPayload::from_ref)
+        self.0.payload.as_ref().map(PyPayload::wrap_ref)
     }
 
     #[getter]

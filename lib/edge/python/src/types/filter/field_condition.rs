@@ -15,7 +15,6 @@ use crate::types::range::PyRangeInterface;
 
 #[pyclass(name = "FieldCondition")]
 #[derive(Clone, Debug, Into)]
-#[repr(transparent)]
 pub struct PyFieldCondition(pub FieldCondition);
 
 #[pymethods]
