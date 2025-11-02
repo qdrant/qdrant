@@ -309,6 +309,7 @@ impl Collection {
             .zip(requests_batch.iter())
             .map(|(shards_results, request)| async {
                 // shards_results shape: [num_shards, num_intermediate_results, num_points]
+                // merged_intermediates shape: [num_intermediate_results, num_points]
                 let merged_intermediates = self
                     .merge_intermediate_results_from_shards(request, shards_results)
                     .await?;
@@ -406,7 +407,11 @@ impl Collection {
                 };
                 mmr_result
             }
-            _ => {
+            None
+            | Some(ScoringQuery::Vector(_))
+            | Some(ScoringQuery::OrderBy(_))
+            | Some(ScoringQuery::Formula(_))
+            | Some(ScoringQuery::Sample(_)) => {
                 // Otherwise, it will be a list with a single list of scored points.
                 debug_assert_eq!(intermediates.len(), 1);
                 intermediates.pop().ok_or_else(|| {

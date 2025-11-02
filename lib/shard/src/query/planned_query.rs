@@ -44,7 +44,7 @@ pub struct MergePlan {
     ///
     /// If this is [None], then it means one thing:
     /// * It is a top-level query without prefetches, so sources must be of length 1.
-    pub rescore_stage: Option<RescoreStage>,
+    pub rescore_stages: Option<RescoreStages>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -60,14 +60,30 @@ pub enum Source {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum RescoreStage {
+pub struct RescoreStages {
     /// Rescore at shard level, before merging results from all shards.
     /// This is applicable if scores are independent for points
-    ShardLevel(RescoreParams),
+    pub shard_level: Option<RescoreParams>,
 
     /// Rescore results globally, once all results are obtained from all shards.
     /// This is applicable if scores interdepend, like in Fusion
-    CollectionLevel(RescoreParams),
+    pub collection_level: Option<RescoreParams>,
+}
+
+impl RescoreStages {
+    pub fn shard_level(params: RescoreParams) -> Self {
+        Self {
+            shard_level: Some(params),
+            collection_level: None,
+        }
+    }
+
+    pub fn collection_level(params: RescoreParams) -> Self {
+        Self {
+            shard_level: None,
+            collection_level: Some(params),
+        }
+    }
 }
 
 /// Defines how to merge multiple [sources](Source)
@@ -164,6 +180,21 @@ impl PlannedQuery {
         params: Option<SearchParams>,
         limit: usize,
     ) -> OperationResult<RootPlan> {
+        let rescore_stages = match &query {
+            None => None,
+            Some(ScoringQuery::Vector(_)) => None,
+            Some(ScoringQuery::Fusion(_)) => None, // Expect fusion to have prefetches
+            Some(ScoringQuery::OrderBy(_)) => None,
+            Some(ScoringQuery::Formula(_)) => None,
+            Some(ScoringQuery::Sample(_)) => None,
+            Some(ScoringQuery::Mmr(_)) => Some(RescoreStages::collection_level(RescoreParams {
+                rescore: query.clone().unwrap(),
+                limit,
+                score_threshold: score_threshold.map(OrderedFloat),
+                params,
+            })),
+        };
+
         // Everything must come from a single source.
         let sources = vec![leaf_source_from_scoring_query(
             &mut self.searches,
@@ -178,7 +209,7 @@ impl PlannedQuery {
         let merge_plan = MergePlan {
             sources,
             // Root-level query without prefetches means we won't do any extra rescoring
-            rescore_stage: None,
+            rescore_stages,
         };
         Ok(RootPlan {
             merge_plan,
@@ -207,27 +238,41 @@ impl PlannedQuery {
             recurse_prefetches(&mut self.searches, &mut self.scrolls, prefetches, &filter)?;
 
         let rescore_params = match rescoring_query {
-            ScoringQuery::Mmr(MmrInternal {
-                vector,
-                using,
-                lambda: _,
-                candidates_limit,
-            }) => {
-                let rescore_params = RescoreParams {
+            ScoringQuery::Mmr(mmr) => {
+                let MmrInternal {
+                    vector,
+                    using,
+                    lambda: _,
+                    candidates_limit,
+                } = &mmr;
+
+                // Although MMR gets computed at collection level, we select top candidates via a nearest rescoring first
+                let shard_level_rescore_params = RescoreParams {
                     rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
-                        vector, using,
+                        vector.clone(),
+                        using,
                     ))),
-                    limit: candidates_limit,
+                    limit: *candidates_limit,
                     score_threshold: score_threshold.map(OrderedFloat),
                     params,
                 };
-                // Although MMR gets computed at collection level, we select top candidates via a nearest rescoring first
-                Some(RescoreStage::ShardLevel(rescore_params))
+
+                let collection_level_rescore_params = RescoreParams {
+                    rescore: ScoringQuery::Mmr(mmr),
+                    limit,
+                    score_threshold: score_threshold.map(OrderedFloat),
+                    params,
+                };
+
+                Some(RescoreStages {
+                    shard_level: Some(shard_level_rescore_params),
+                    collection_level: Some(collection_level_rescore_params),
+                })
             }
             rescore @ (ScoringQuery::Vector(_)
             | ScoringQuery::OrderBy(_)
             | ScoringQuery::Formula(_)
-            | ScoringQuery::Sample(_)) => Some(RescoreStage::ShardLevel(RescoreParams {
+            | ScoringQuery::Sample(_)) => Some(RescoreStages::shard_level(RescoreParams {
                 rescore,
                 limit,
                 score_threshold: score_threshold.map(OrderedFloat),
@@ -235,7 +280,7 @@ impl PlannedQuery {
             })),
             // We will propagate the intermediate results. Fusion will take place at collection level.
             fusion @ ScoringQuery::Fusion(_) => {
-                Some(RescoreStage::CollectionLevel(RescoreParams {
+                Some(RescoreStages::collection_level(RescoreParams {
                     rescore: fusion,
                     limit,
                     score_threshold: score_threshold.map(OrderedFloat),
@@ -246,7 +291,7 @@ impl PlannedQuery {
 
         let merge_plan = MergePlan {
             sources,
-            rescore_stage: rescore_params,
+            rescore_stages: rescore_params,
         };
 
         Ok(RootPlan {
@@ -307,7 +352,7 @@ fn recurse_prefetches(
             // Even if this is a fusion request, it can only be executed at shard level here,
             // because we can't forward the inner results to the collection level without
             // materializing them first.
-            let rescore_stage = RescoreStage::ShardLevel(RescoreParams {
+            let rescore_stage = RescoreStages::shard_level(RescoreParams {
                 rescore,
                 limit,
                 score_threshold,
@@ -316,7 +361,7 @@ fn recurse_prefetches(
 
             let merge_plan = MergePlan {
                 sources: inner_sources,
-                rescore_stage: Some(rescore_stage),
+                rescore_stages: Some(rescore_stage),
             };
 
             Source::Prefetch(Box::new(merge_plan))

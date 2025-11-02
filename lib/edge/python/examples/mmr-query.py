@@ -9,7 +9,7 @@ fill_dummy_data(shard)
 
 result = shard.query(QueryRequest(
     prefetches = [],
-    query = Mmr([6.0, 9.0, 4.0, 2.0], None, 1.0, 100),
+    query = Mmr([6.0, 9.0, 4.0, 2.0], None, 0.9, 100),
     filter = None,
     score_threshold = None,
     limit = 10,

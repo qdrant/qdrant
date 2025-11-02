@@ -95,7 +95,7 @@ fn test_try_from_double_rescore() {
             merge_plan: MergePlan {
                 sources: vec![Source::Prefetch(Box::from(MergePlan {
                     sources: vec![Source::SearchesIdx(0)],
-                    rescore_stage: Some(RescoreStage::ShardLevel(RescoreParams {
+                    rescore_stages: Some(RescoreStages::shard_level(RescoreParams {
                         rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
                             VectorInternal::Dense(dummy_vector.clone()),
                             "full",
@@ -105,7 +105,7 @@ fn test_try_from_double_rescore() {
                         params: None,
                     }))
                 }))],
-                rescore_stage: Some(RescoreStage::ShardLevel(RescoreParams {
+                rescore_stages: Some(RescoreStages::shard_level(RescoreParams {
                     rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
                         VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(vec![
                             dummy_vector
@@ -167,7 +167,7 @@ fn test_try_from_no_prefetch() {
             with_vector: WithVector::Bool(true),
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0)],
-                rescore_stage: None,
+                rescore_stages: None,
             },
         }]
     );
@@ -267,7 +267,7 @@ fn test_try_from_hybrid_query() {
             with_vector: WithVector::Bool(true),
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0), Source::SearchesIdx(1)],
-                rescore_stage: Some(RescoreStage::CollectionLevel(RescoreParams {
+                rescore_stages: Some(RescoreStages::collection_level(RescoreParams {
                     rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
                     limit: 50,
                     score_threshold: None,
@@ -349,7 +349,7 @@ fn test_base_params_mapping_in_try_from() {
             with_vector: WithVector::Bool(false),
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0)],
-                rescore_stage: Some(RescoreStage::CollectionLevel(RescoreParams {
+                rescore_stages: Some(RescoreStages::collection_level(RescoreParams {
                     rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
                     limit: 99,
                     score_threshold: Some(OrderedFloat(0.666)),
@@ -578,7 +578,7 @@ fn test_from_batch_of_requests() {
                 with_payload: WithPayloadInterface::Bool(false),
                 merge_plan: MergePlan {
                     sources: vec![Source::SearchesIdx(0)],
-                    rescore_stage: None,
+                    rescore_stages: None,
                 },
             },
             RootPlan {
@@ -586,7 +586,7 @@ fn test_from_batch_of_requests() {
                 with_payload: WithPayloadInterface::Bool(false),
                 merge_plan: MergePlan {
                     sources: vec![Source::ScrollsIdx(0)],
-                    rescore_stage: None,
+                    rescore_stages: None,
                 },
             },
             RootPlan {
@@ -596,7 +596,7 @@ fn test_from_batch_of_requests() {
                     sources: vec![
                         Source::Prefetch(Box::from(MergePlan {
                             sources: vec![Source::SearchesIdx(1), Source::SearchesIdx(2),],
-                            rescore_stage: Some(RescoreStage::ShardLevel(RescoreParams {
+                            rescore_stages: Some(RescoreStages::shard_level(RescoreParams {
                                 rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
                                 limit: 10,
                                 score_threshold: None,
@@ -605,7 +605,7 @@ fn test_from_batch_of_requests() {
                         })),
                         Source::ScrollsIdx(1),
                     ],
-                    rescore_stage: Some(RescoreStage::CollectionLevel(RescoreParams {
+                    rescore_stages: Some(RescoreStages::collection_level(RescoreParams {
                         rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
                         limit: 10,
                         score_threshold: None,

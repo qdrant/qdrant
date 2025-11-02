@@ -104,7 +104,7 @@ impl Shard {
     ) -> OperationResult<Vec<ScoredPoint>> {
         let MergePlan {
             sources: merge_plan_sources,
-            rescore_stage: rescore_params,
+            rescore_stages,
         } = merge_plan;
 
         let max_len = merge_plan_sources.len();
@@ -135,19 +135,32 @@ impl Shard {
             }
         }
 
-        match rescore_params {
-            None => {
-                // The sources here are passed to the next layer without any extra processing.
-                // It should be a query without prefetches.
-                debug_assert_eq!(depth, 0);
-                Ok(sources.pop().unwrap_or_default())
-            }
-            Some(RescoreStage::ShardLevel(rescore_params))
-            | Some(RescoreStage::CollectionLevel(rescore_params)) => {
-                // In Edge, both shard-level and collection-level rescoring are handled the same way.
-                let rescored = self.rescore(sources, rescore_params, hw_counter_acc)?;
-                Ok(rescored)
-            }
+        if let Some(rescore_stages) = rescore_stages {
+            let RescoreStages {
+                shard_level,
+                collection_level,
+            } = rescore_stages;
+
+            let shard_stage_result = if let Some(rescore_params) = shard_level {
+                vec![self.rescore(sources, rescore_params, hw_counter_acc.clone())?]
+            } else {
+                sources
+            };
+
+            let collection_result = if let Some(rescore_params) = collection_level {
+                self.rescore(shard_stage_result, rescore_params, hw_counter_acc)?
+            } else {
+                shard_stage_result.into_iter().next().unwrap_or_default()
+            };
+
+            // In Edge, both shard-level and collection-level rescoring are handled the same way.
+            Ok(collection_result)
+        } else {
+            // The sources here are passed to the next layer without any extra processing.
+            // It should be a query without prefetches.
+            debug_assert_eq!(depth, 0);
+            debug_assert_eq!(sources.len(), 1);
+            Ok(sources.pop().unwrap_or_default())
         }
     }
 
