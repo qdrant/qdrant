@@ -146,6 +146,13 @@ message DeletePoints {
   optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
 }
 
+message TruncatePoints {
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  optional WriteOrdering ordering = 3; // Write ordering guarantees
+  optional ShardKeySelector shard_key_selector = 4; // Option for custom sharding to specify used shard keys
+}
+
 message GetPoints {
   string collection_name = 1; // name of the collection
   repeated PointId ids = 2; // List of points to retrieve

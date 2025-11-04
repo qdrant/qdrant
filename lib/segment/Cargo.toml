@@ -50,7 +50,7 @@ tempfile = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true }
 itertools = { workspace = true }
-rocksdb = { version = "0.23.0", optional = true, default-features = false, features = [
+rocksdb = { version = "0.24.0", optional = true, default-features = false, features = [
     "bindgen-runtime",
     "snappy",
     "lz4",

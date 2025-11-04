@@ -359,6 +359,50 @@ pub async fn do_delete_points(
         PointsSelector::FilterSelector(FilterSelector { filter, shard_key }) => {
             (PointOperations::DeletePointsByFilter(filter), shard_key)
         }
+        _ => {
+            return Err(StorageError::bad_request(
+                "Truncate operation cannot be performed with 'All' points selector. Use 'truncate' endpoint instead.",
+            ));
+        }
+    };
+
+    let operation = CollectionUpdateOperations::PointOperation(operation);
+
+    update(
+        toc,
+        &collection_name,
+        operation,
+        internal_params,
+        params,
+        shard_key,
+        access,
+        hw_measurement_acc,
+    )
+    .await
+}
+
+pub async fn do_truncate_points(
+    toc_provider: impl CheckedTocProvider,
+    collection_name: String,
+    points: PointsSelector,
+    internal_params: InternalUpdateParams,
+    params: UpdateParams,
+    access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
+) -> Result<UpdateResult, StorageError> {
+    let toc = toc_provider
+        .check_strict_mode(&points, &collection_name, None, &access)
+        .await?;
+
+    let (operation, shard_key) = match points {
+        PointsSelector::AllSelector(AllSelector { shard_key }) => {
+            (PointOperations::TruncatePoints, shard_key)
+        }
+        _ => {
+            return Err(StorageError::bad_request(
+                "Truncate operation can only be performed with 'All' points selector.",
+            ));
+        }
     };
 
     let operation = CollectionUpdateOperations::PointOperation(operation);
@@ -636,6 +680,10 @@ pub async fn do_clear_payload(
         PointsSelector::FilterSelector(FilterSelector { filter, shard_key }) => {
             (PayloadOps::ClearPayloadByFilter(filter), shard_key)
         }
+        PointsSelector::AllSelector(AllSelector { shard_key }) => (
+            PayloadOps::ClearPayloadByFilter(Filter::default()),
+            shard_key,
+        ),
     };
 
     let operation = CollectionUpdateOperations::PayloadOperation(point_operation);

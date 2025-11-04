@@ -106,6 +106,39 @@ async fn delete_points(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
+#[post("/collections/{name}/points/truncate")]
+async fn truncate_points(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    operation: Json<PointsSelector>,
+    params: Query<UpdateParams>,
+    service_config: web::Data<ServiceConfig>,
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    let operation = operation.into_inner();
+
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+        Some(params.wait),
+    );
+    let timing = Instant::now();
+
+    let response = do_truncate_points(
+        StrictModeCheckedTocProvider::new(&dispatcher),
+        collection.into_inner().name,
+        operation,
+        InternalUpdateParams::default(),
+        params.into_inner(),
+        access,
+        request_hw_counter.get_counter(),
+    )
+    .await;
+
+    process_response(response, timing, request_hw_counter.to_rest_api())
+}
+
 #[put("/collections/{name}/points/vectors")]
 async fn update_vectors(
     dispatcher: web::Data<Dispatcher>,
@@ -425,6 +458,7 @@ async fn delete_field_index(
 pub fn config_update_api(cfg: &mut web::ServiceConfig) {
     cfg.service(upsert_points)
         .service(delete_points)
+        .service(truncate_points)
         .service(update_vectors)
         .service(delete_vectors)
         .service(set_payload)

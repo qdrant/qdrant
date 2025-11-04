@@ -22,6 +22,7 @@ impl StrictModeVerification for PointsSelector {
         match self {
             PointsSelector::FilterSelector(filter) => Some(&filter.filter),
             PointsSelector::PointIdsSelector(_) => None,
+            PointsSelector::AllSelector(_) => None,
         }
     }
 

@@ -3,7 +3,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use api::grpc::HardwareUsage;
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
@@ -16,6 +15,7 @@ use api::grpc::qdrant::{
     SyncPointsInternal, UpdateBatchInternal, UpdateVectorsInternal, UpsertPointsInternal,
 };
 use api::grpc::update_operation::Update;
+use api::grpc::{HardwareUsage, TruncatePointsInternal};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
@@ -127,6 +127,32 @@ impl PointsInternalService {
         delete(
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_points,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
+            FULL_ACCESS.clone(),
+            hw_metrics,
+        )
+        .await
+    }
+
+    async fn truncate_internal(
+        &self,
+        truncate_points_internal: TruncatePointsInternal,
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
+        let TruncatePointsInternal {
+            truncate_points,
+            shard_id,
+            clock_tag,
+        } = truncate_points_internal;
+
+        let truncate_points = extract_internal_request(truncate_points)?;
+
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            truncate_points.collection_name.clone(),
+        );
+
+        truncate(
+            StrictModeCheckedInternalTocProvider::new(&self.toc),
+            truncate_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
             hw_metrics,
@@ -470,6 +496,15 @@ impl PointsInternal for PointsInternalService {
         self.delete_internal(request.into_inner()).await
     }
 
+    async fn truncate(
+        &self,
+        request: Request<TruncatePointsInternal>,
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
+        validate_and_log(request.get_ref());
+
+        self.truncate_internal(request.into_inner()).await
+    }
+
     async fn update_vectors(
         &self,
         request: Request<UpdateVectorsInternal>,
@@ -575,6 +610,7 @@ impl PointsInternal for PointsInternalService {
                             .await?
                     }
                     Update::Delete(delete) => self.delete_internal(delete).await?,
+                    Update::Truncate(truncate) => self.truncate_internal(truncate).await?,
                     Update::UpdateVectors(update_vectors) => {
                         self.update_vectors_internal(update_vectors, inference_token.clone())
                             .await?
