@@ -96,6 +96,13 @@ async fn _do_recover_from_snapshot(
 
     let toc = dispatcher.toc(&access, &pass);
 
+    // Measure this scope for metrics/telemetry.
+    // (This must be a named variable so it doesn't get dropped prematurely!)
+    let _measure_guard = toc
+        .snapshot_telemetry_collector(collection_pass.name())
+        .running_snapshot_recovery
+        .measure_scope();
+
     let this_peer_id = toc.this_peer_id;
 
     let is_distributed = toc.is_distributed();
@@ -348,7 +355,7 @@ async fn _do_recover_from_snapshot(
 
     // Explicitly trigger optimizers for the collection we have recovered. This prevents them from
     // remaining in grey state if the snapshot is not optimized.
-    // See: <ttps://github.com/qdrant/qdrant/issues/5139>
+    // See: <https://github.com/qdrant/qdrant/issues/5139>
     collection.trigger_optimizers().await;
 
     // Remove tmp collection dir

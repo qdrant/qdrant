@@ -44,6 +44,7 @@ use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
+use crate::content_manager::toc::telemetry::TocTelemetryCollector;
 use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::types::StorageConfig;
 
@@ -82,6 +83,8 @@ pub struct TableOfContent {
     collection_create_lock: Mutex<()>,
     /// Aggregation of all hardware measurements for each alias or collection config.
     collection_hw_metrics: DashMap<CollectionId, HwSharedDrain>,
+    /// Collector for various telemetry/metrics.
+    telemetry: TocTelemetryCollector,
 }
 
 impl TableOfContent {
@@ -198,6 +201,7 @@ impl TableOfContent {
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
             collection_hw_metrics: DashMap::new(),
+            telemetry: TocTelemetryCollector::default(),
         }
     }
 

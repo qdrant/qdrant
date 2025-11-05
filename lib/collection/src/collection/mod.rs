@@ -30,7 +30,6 @@ use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::collection::telemetry::CollectionTelemetryCollector;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::collection_size_stats::{
     CollectionSizeAtomicStats, CollectionSizeStats, CollectionSizeStatsCache,
@@ -90,8 +89,6 @@ pub struct Collection {
     collection_stats_cache: CollectionSizeStatsCache,
     // Background tasks to clean shards
     shard_clean_tasks: ShardCleanTasks,
-    // Counter for currently running snapshot tasks.
-    telemetry_stats: CollectionTelemetryCollector,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -197,7 +194,6 @@ impl Collection {
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
-            telemetry_stats: CollectionTelemetryCollector::default(),
         })
     }
 
@@ -312,7 +308,6 @@ impl Collection {
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
-            telemetry_stats: CollectionTelemetryCollector::default(),
         }
     }
 

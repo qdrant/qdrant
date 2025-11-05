@@ -37,9 +37,17 @@ pub struct CollectionTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub shard_clean_tasks: Option<HashMap<ShardId, ShardCleanStatusTelemetry>>,
+}
+
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
+pub struct CollectionSnapshotTelemetry {
+    pub id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub running_snapshots: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub running_snapshot_recovery: Option<usize>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_snapshot_creations: Option<usize>,

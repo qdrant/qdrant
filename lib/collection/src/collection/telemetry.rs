@@ -1,20 +1,7 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use common::types::{DetailsLevel, TelemetryDetail};
 
 use crate::collection::Collection;
 use crate::telemetry::{CollectionConfigTelemetry, CollectionTelemetry};
-
-/// Collects telemetry data for a collection.
-#[derive(Default)]
-pub struct CollectionTelemetryCollector {
-    // Counter for currently running snapshot tasks.
-    pub running_snapshots: Arc<AtomicUsize>,
-
-    // Counter for snapshot creations since startup, until now.
-    pub snapshots_total: Arc<AtomicUsize>,
-}
 
 impl Collection {
     pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> CollectionTelemetry {
@@ -41,13 +28,6 @@ impl Collection {
 
         let shard_clean_tasks = self.clean_local_shards_statuses();
 
-        let running_snapshots = self
-            .telemetry_stats
-            .running_snapshots
-            .load(Ordering::Relaxed);
-
-        let total_snapshots = self.telemetry_stats.snapshots_total.load(Ordering::Relaxed);
-
         CollectionTelemetry {
             id: self.name(),
             init_time_ms: self.init_time.as_millis() as u64,
@@ -56,8 +36,6 @@ impl Collection {
             transfers,
             resharding,
             shard_clean_tasks: (!shard_clean_tasks.is_empty()).then_some(shard_clean_tasks),
-            running_snapshots: Some(running_snapshots),
-            total_snapshot_creations: Some(total_snapshots),
         }
     }
 }

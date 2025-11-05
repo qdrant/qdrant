@@ -11795,6 +11795,13 @@
               "$ref": "#/components/schemas/CollectionTelemetryEnum"
             },
             "nullable": true
+          },
+          "snapshots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CollectionSnapshotTelemetry"
+            },
+            "nullable": true
           }
         }
       },
@@ -12904,6 +12911,35 @@
           },
           "params": {
             "$ref": "#/components/schemas/CollectionParams"
+          }
+        }
+      },
+      "CollectionSnapshotTelemetry": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "running_snapshots": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "running_snapshot_recovery": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "total_snapshot_creations": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
