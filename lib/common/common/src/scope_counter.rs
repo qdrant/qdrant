@@ -55,7 +55,9 @@ impl Drop for ScopeCounterGuard {
 
 #[cfg(test)]
 mod test {
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread::{self, JoinHandle};
+    use std::time::Duration;
 
     use super::*;
 
@@ -65,21 +67,64 @@ mod test {
 
         {
             let _measure_guard = counter.measure_scope();
+            assert_eq!(counter.get(Ordering::SeqCst), 1);
         }
 
-        assert_eq!(counter.get(Ordering::SeqCst), 1);
+        assert_eq!(counter.get(Ordering::SeqCst), 0);
     }
 
     #[test]
     fn test_scope_counter_loop() {
         let counter = ScopeCounter::new();
 
-        const LEN: usize = 100;
+        for _ in 0..100 {
+            let _measure_guard = counter.measure_scope();
+            assert_eq!(counter.get(Ordering::SeqCst), 1);
+        }
+
+        assert_eq!(counter.get(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_scope_counter_threads() {
+        let counter = ScopeCounter::new();
+
+        let run = Arc::new(AtomicBool::new(true));
+        let mut handles: Vec<JoinHandle<()>> = vec![];
+        let started_threads = Arc::new(AtomicUsize::new(0));
+
+        const LEN: usize = 20;
 
         for _ in 0..LEN {
-            let _measure_guard = counter.measure_scope();
+            let counter_clone = counter.clone();
+            let run_clone = run.clone();
+            let started_threads_clone = started_threads.clone();
+            let handle = thread::spawn(move || {
+                let _guard = counter_clone.measure_scope();
+
+                started_threads_clone.fetch_add(1, Ordering::Relaxed);
+
+                while run_clone.load(Ordering::Relaxed) {
+                    thread::sleep(Duration::from_secs(1));
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait until all threads have started.
+        // To prevent this test becoming flaky by waiting a constant amount of time, we use an atomic counter here.
+        while started_threads.load(Ordering::Relaxed) < LEN {
+            thread::sleep(Duration::from_secs(1));
         }
 
         assert_eq!(counter.get(Ordering::SeqCst), LEN);
+
+        // Stop spawned threads
+        run.store(false, Ordering::Release);
+
+        // Wait for them to gracefully finish.
+        for handle in handles {
+            handle.join().unwrap();
+        }
     }
 }
