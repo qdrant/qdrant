@@ -9,9 +9,13 @@ mod collections_common;
 mod query_common;
 mod update_common;
 
+use std::time::Duration;
+
 use collection::operations::validation;
 use tonic::Status;
 use validator::Validate;
+
+use crate::actix::api::read_params::HOUR_IN_SECONDS;
 
 /// Validate the given request and fail on error.
 ///
@@ -27,6 +31,16 @@ fn validate_and_log(request: &impl Validate) {
     if let Err(ref err) = request.validate() {
         validation::warn_validation_errors("Internal gRPC", err);
     }
+}
+
+/// Converts the given `seconds` into `Duration` and limits it to 1h.
+pub(crate) fn limit_timeout(seconds: u64) -> Duration {
+    Duration::from_secs(std::cmp::min(seconds, HOUR_IN_SECONDS))
+}
+
+/// Converts the given `seconds` into `Duration` and limits it to 1h.
+pub(crate) fn limit_timeout_opt(seconds: Option<u64>) -> Option<Duration> {
+    seconds.map(limit_timeout)
 }
 
 #[cfg(test)]

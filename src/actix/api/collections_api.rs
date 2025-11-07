@@ -1,33 +1,43 @@
-use std::time::Duration;
-
 use actix_web::rt::time::Instant;
 use actix_web::{HttpResponse, Responder, delete, get, patch, post, put, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::verification::new_unchecked_verification_pass;
-use serde::Deserialize;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     DeleteCollectionOperation, UpdateCollection, UpdateCollectionOperation,
 };
 use storage::dispatcher::Dispatcher;
-use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::api::StrictCollectionPath;
+use crate::actix::api::collections_api::request_params::WaitTimeout;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response};
 use crate::common::collections::*;
 
-#[derive(Debug, Deserialize, Validate)]
-pub struct WaitTimeout {
-    #[validate(range(min = 1))]
-    timeout: Option<u64>,
-}
+pub(crate) mod request_params {
+    use std::cmp;
+    use std::time::Duration;
 
-impl WaitTimeout {
-    pub fn timeout(&self) -> Option<Duration> {
-        self.timeout.map(Duration::from_secs)
+    use serde::Deserialize;
+    use validator::Validate;
+
+    use crate::actix::api::read_params::HOUR_IN_SECONDS;
+
+    #[derive(Debug, Deserialize, Validate)]
+    pub struct WaitTimeout {
+        #[validate(range(min = 1))]
+        timeout: Option<u64>,
+    }
+
+    impl WaitTimeout {
+        /// Returns the timeout, limited to 1h.
+        pub fn timeout(&self) -> Option<Duration> {
+            self.timeout
+                .map(|i| cmp::min(i, HOUR_IN_SECONDS))
+                .map(Duration::from_secs)
+        }
     }
 }
 
@@ -249,15 +259,23 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use actix_web::web::Query;
 
     use super::WaitTimeout;
+    use crate::actix::api::read_params::HOUR_IN_SECONDS;
 
     #[test]
     fn timeout_is_deserialized() {
         let timeout: WaitTimeout = Query::from_query("").unwrap().0;
-        assert!(timeout.timeout.is_none());
+        assert!(timeout.timeout().is_none());
         let timeout: WaitTimeout = Query::from_query("timeout=10").unwrap().0;
-        assert_eq!(timeout.timeout, Some(10))
+        assert_eq!(timeout.timeout(), Some(Duration::from_secs(10)));
+        let timeout: WaitTimeout = Query::from_query("timeout=9999").unwrap().0;
+        assert_eq!(
+            timeout.timeout(),
+            Some(Duration::from_secs(HOUR_IN_SECONDS))
+        );
     }
 }

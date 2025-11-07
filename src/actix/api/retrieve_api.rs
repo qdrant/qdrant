@@ -76,17 +76,13 @@ async fn get_point(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let pass = match check_strict_mode_timeout(
-        params.timeout_as_secs(),
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(p) => p,
-        Err(err) => return process_response_error(err, Instant::now(), None),
-    };
+    let pass =
+        match check_strict_mode_timeout(params.timeout(), &collection.name, &dispatcher, &access)
+            .await
+        {
+            Ok(p) => p,
+            Err(err) => return process_response_error(err, Instant::now(), None),
+        };
 
     let Ok(point_id) = point.id.parse::<PointIdType>() else {
         let err = StorageError::BadInput {
@@ -132,17 +128,13 @@ async fn get_points(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let pass = match check_strict_mode_timeout(
-        params.timeout_as_secs(),
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(p) => p,
-        Err(err) => return process_response_error(err, Instant::now(), None),
-    };
+    let pass =
+        match check_strict_mode_timeout(params.timeout(), &collection.name, &dispatcher, &access)
+            .await
+        {
+            Ok(p) => p,
+            Err(err) => return process_response_error(err, Instant::now(), None),
+        };
 
     let PointRequest {
         point_request,
@@ -199,7 +191,7 @@ async fn scroll_points(
 
     let pass = match check_strict_mode(
         &scroll_request,
-        params.timeout_as_secs(),
+        params.timeout(),
         &collection.name,
         &dispatcher,
         &access,

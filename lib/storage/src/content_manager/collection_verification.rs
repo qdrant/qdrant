@@ -1,5 +1,6 @@
 use std::iter;
 use std::sync::Arc;
+use std::time::Duration;
 
 use collection::operations::verification::{
     StrictModeVerification, VerificationPass, check_timeout, new_unchecked_verification_pass,
@@ -16,7 +17,7 @@ use crate::rbac::{Access, AccessRequirements};
 ///       This method should only be used if you only have `TableOfContent` without `Dispatcher`, like in internal API.
 pub async fn check_strict_mode_toc_batch<'a, I>(
     requests: impl Iterator<Item = &'a I>,
-    timeout: Option<usize>,
+    timeout: Option<Duration>,
     collection_name: &str,
     toc: &TableOfContent,
     access: &Access,
@@ -50,7 +51,7 @@ where
 
 pub async fn check_strict_mode_batch<'a, I>(
     requests: impl Iterator<Item = &'a I>,
-    timeout: Option<usize>,
+    timeout: Option<Duration>,
     collection_name: &str,
     dispatcher: &Dispatcher,
     access: &Access,
@@ -64,7 +65,7 @@ where
 
 pub async fn check_strict_mode(
     request: &impl StrictModeVerification,
-    timeout: Option<usize>,
+    timeout: Option<Duration>,
     collection_name: &str,
     dispatcher: &Dispatcher,
     access: &Access,
@@ -85,7 +86,7 @@ pub async fn check_strict_mode(
 ///       This method should only be used if you only have `TableOfContent` without `Dispatcher`, like in internal API.
 pub async fn check_strict_mode_toc(
     request: &impl StrictModeVerification,
-    timeout: Option<usize>,
+    timeout: Option<Duration>,
     collection_name: &str,
     toc: &TableOfContent,
     access: &Access,
@@ -94,7 +95,7 @@ pub async fn check_strict_mode_toc(
 }
 
 pub async fn check_strict_mode_timeout(
-    timeout: Option<usize>,
+    timeout: Option<Duration>,
     collection_name: &str,
     dispatcher: &Dispatcher,
     access: &Access,

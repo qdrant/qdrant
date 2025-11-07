@@ -1,3 +1,4 @@
+use std::cmp;
 use std::num::NonZeroU64;
 use std::time::Duration;
 
@@ -6,22 +7,25 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use validator::Validate;
 
+/// 1 Hour in seconds.
+pub const HOUR_IN_SECONDS: u64 = 60 * 60;
+
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, JsonSchema, Validate)]
 pub struct ReadParams {
     #[serde(default, deserialize_with = "deserialize_read_consistency")]
     #[validate(nested)]
     pub consistency: Option<ReadConsistency>,
     /// If set, overrides global timeout for this request. Unit is seconds.
-    pub timeout: Option<NonZeroU64>,
+    timeout: Option<NonZeroU64>,
 }
 
 impl ReadParams {
+    /// Returns the timeout passed as parameter and limit it to max 1 hour.
     pub fn timeout(&self) -> Option<Duration> {
-        self.timeout.map(|num| Duration::from_secs(num.get()))
-    }
-
-    pub(crate) fn timeout_as_secs(&self) -> Option<usize> {
-        self.timeout.map(|i| i.get() as usize)
+        self.timeout
+            // Limit the timeout to 1 hour.
+            .map(|num| cmp::min(num.get(), HOUR_IN_SECONDS) as usize)
+            .map(|secs| Duration::from_secs(secs as u64))
     }
 }
 

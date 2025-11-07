@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use api::grpc::qdrant::collections_internal_server::CollectionsInternal;
 use api::grpc::qdrant::{
@@ -13,6 +13,7 @@ use tonic::{Request, Response, Status};
 
 use super::validate_and_log;
 use crate::tonic::api::collections_common::get;
+use crate::tonic::api::limit_timeout;
 
 const FULL_ACCESS: Access = Access::full("Internal API");
 
@@ -96,7 +97,8 @@ impl CollectionsInternal for CollectionsInternalService {
             timeout,
         } = request;
         let state = state.try_into()?;
-        let timeout = Duration::from_secs(timeout);
+
+        let timeout = limit_timeout(timeout);
 
         let collection_read = self
             .toc

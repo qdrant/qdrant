@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use api::grpc::Usage;
 use api::grpc::qdrant::points_server::Points;
@@ -30,6 +30,7 @@ use crate::common::inference::token::extract_token;
 use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
+use crate::tonic::api::limit_timeout_opt;
 use crate::tonic::auth::extract_access;
 
 pub struct PointsService {
@@ -376,7 +377,7 @@ impl Points for PointsService {
             timeout,
         } = request.into_inner();
 
-        let timeout = timeout.map(Duration::from_secs);
+        let timeout = limit_timeout_opt(timeout);
 
         let mut requests = Vec::new();
 
@@ -484,13 +485,15 @@ impl Points for PointsService {
         let hw_metrics =
             self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
 
+        let timeout = limit_timeout_opt(timeout);
+
         let res = recommend_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             &collection_name,
             recommend_points,
             read_consistency,
             access,
-            timeout.map(Duration::from_secs),
+            timeout,
             hw_metrics,
         )
         .await?;
@@ -553,13 +556,14 @@ impl Points for PointsService {
 
         let hw_metrics =
             self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
+        let timeout = limit_timeout_opt(timeout);
         let res = discover_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             &collection_name,
             discover_points,
             read_consistency,
             access,
-            timeout.map(Duration::from_secs),
+            timeout,
             hw_metrics,
         )
         .await?;
@@ -634,7 +638,9 @@ impl Points for PointsService {
             read_consistency,
             timeout,
         } = request;
-        let timeout = timeout.map(Duration::from_secs);
+
+        let timeout = limit_timeout_opt(timeout);
+
         let hw_metrics =
             self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
         let res = query_batch(
