@@ -24,8 +24,8 @@ impl ReadParams {
     pub fn timeout(&self) -> Option<Duration> {
         self.timeout
             // Limit the timeout to 1 hour.
-            .map(|num| cmp::min(num.get(), HOUR_IN_SECONDS) as usize)
-            .map(|secs| Duration::from_secs(secs as u64))
+            .map(|num| cmp::min(num.get(), HOUR_IN_SECONDS))
+            .map(|secs| Duration::from_secs(secs))
     }
 }
 

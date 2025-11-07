@@ -154,7 +154,7 @@ pub fn try_record_from_grpc(
     })
 }
 
-const HOURS_IN_SECONDS: u64 = 60 * 60;
+const HOUR_IN_SECONDS: u64 = 60 * 60;
 
 #[allow(clippy::type_complexity)]
 pub fn try_discover_request_from_grpc(
@@ -226,7 +226,7 @@ pub fn try_discover_request_from_grpc(
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timeout = timeout
-        .map(|i| cmp::min(i, HOURS_IN_SECONDS))
+        .map(|i| cmp::min(i, HOUR_IN_SECONDS))
         .map(Duration::from_secs);
 
     Ok((
