@@ -68,7 +68,7 @@ impl LocalShard {
         save_wal: bool,
     ) -> CollectionResult<()> {
         let segments = self.segments.clone();
-        let wal = self.wal.wal.clone();
+        let wal = self.wal.as_ref().map(|w| w.wal.clone());
 
         if !save_wal {
             // If we are not saving WAL, we still need to make sure that all submitted by this point
@@ -108,9 +108,15 @@ impl LocalShard {
 
             if save_wal {
                 // snapshot all shard's WAL
-                Self::snapshot_wal(wal, &tar_c)
-            } else {
+                if let Some(wal) = wal {
+                    Self::snapshot_wal(wal, &tar_c)
+                } else {
+                    Ok(())
+                }
+            } else if let Some(wal) = wal {
                 Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
+            } else {
+                Ok(())
             }
         })
         .await??;

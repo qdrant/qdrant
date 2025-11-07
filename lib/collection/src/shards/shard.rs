@@ -261,6 +261,12 @@ impl Shard {
             }
         };
 
+        // Handle read-only mode (no WAL)
+        let Some(wal) = wal else {
+            log::debug!("Cannot resolve WAL delta in read-only mode");
+            return Ok(None);
+        };
+
         // Resolve WAL delta and report
         match wal.resolve_wal_delta(recovery_point).await {
             Ok(Some(version)) => {
@@ -284,12 +290,15 @@ impl Shard {
 
     pub async fn wal_version(&self) -> CollectionResult<Option<u64>> {
         match self {
-            Self::Local(local_shard) => local_shard.wal.wal_version().await.map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Cannot get WAL version on {}: {err}",
-                    self.variant_name(),
-                ))
-            }),
+            Self::Local(local_shard) => match &local_shard.wal {
+                Some(wal) => wal.wal_version().await.map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Cannot get WAL version on {}: {err}",
+                        self.variant_name(),
+                    ))
+                }),
+                None => Ok(None),
+            },
 
             Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 Err(CollectionError::service_error(format!(

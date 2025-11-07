@@ -214,6 +214,7 @@ impl Collection {
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
+        read_only: bool,
     ) -> Self {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
@@ -280,6 +281,7 @@ impl Collection {
                 update_runtime.clone().unwrap_or_else(Handle::current),
                 search_runtime.clone().unwrap_or_else(Handle::current),
                 optimizer_resource_budget.clone(),
+                read_only,
             )
             .await;
 

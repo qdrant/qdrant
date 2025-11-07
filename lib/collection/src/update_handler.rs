@@ -115,8 +115,8 @@ pub struct UpdateHandler {
     /// Sender to stop flush worker
     flush_stop: Option<oneshot::Sender<()>>,
     runtime_handle: Handle,
-    /// WAL, required for operations
-    wal: LockedWal,
+    /// WAL, required for operations (None in read-only mode)
+    wal: Option<LockedWal>,
     /// Always keep this WAL version and later and prevent acknowledging/truncating from the WAL.
     /// This is used when other bits of code still depend on information in the WAL, such as the
     /// queue proxy shard.
@@ -155,7 +155,7 @@ impl UpdateHandler {
         optimizer_resource_budget: ResourceBudget,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         flush_interval_sec: u64,
         max_optimization_threads: Option<usize>,
         clocks: LocalShardClocks,
@@ -293,7 +293,7 @@ impl UpdateHandler {
     /// If so - attempts to re-apply all failed operations.
     async fn try_recover(
         segments: LockedSegmentHolder,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) -> CollectionResult<usize> {
@@ -302,16 +302,20 @@ impl UpdateHandler {
         match first_failed_operation_option {
             None => {}
             Some(first_failed_op) => {
-                let wal_lock = wal.lock().await;
-                for (op_num, operation) in wal_lock.read(first_failed_op) {
-                    CollectionUpdater::update(
-                        &segments,
-                        op_num,
-                        operation.operation,
-                        update_operation_lock.clone(),
-                        update_tracker.clone(),
-                        &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
-                    )?;
+                if let Some(wal) = wal {
+                    let wal_lock = wal.lock().await;
+                    for (op_num, operation) in wal_lock.read(first_failed_op) {
+                        CollectionUpdater::update(
+                            &segments,
+                            op_num,
+                            operation.operation,
+                            update_operation_lock.clone(),
+                            update_tracker.clone(),
+                            &HardwareCounterCell::disposable(),
+                        )?;
+                    }
+                } else {
+                    log::warn!("Cannot recover from failed operation in read-only mode");
                 }
             }
         };
@@ -622,7 +626,7 @@ impl UpdateHandler {
         sender: Sender<OptimizerSignal>,
         mut receiver: Receiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
@@ -764,7 +768,7 @@ impl UpdateHandler {
         collection_name: CollectionId,
         mut receiver: Receiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
@@ -779,11 +783,17 @@ impl UpdateHandler {
                     hw_measurements,
                 }) => {
                     let flush_res = if wait {
-                        wal.blocking_lock().flush().map_err(|err| {
-                            CollectionError::service_error(format!(
-                                "Can't flush WAL before operation {op_num} - {err}"
+                        if let Some(ref wal) = wal {
+                            wal.blocking_lock().flush().map_err(|err| {
+                                CollectionError::service_error(format!(
+                                    "Can't flush WAL before operation {op_num} - {err}"
+                                ))
+                            })
+                        } else {
+                            Err(CollectionError::service_error(
+                                "Cannot flush WAL in read-only mode".to_string(),
                             ))
-                        })
+                        }
                     } else {
                         Ok(())
                     };
@@ -856,7 +866,7 @@ impl UpdateHandler {
     #[allow(clippy::too_many_arguments)]
     fn flush_worker_fn(
         segments: LockedSegmentHolder,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         wal_keep_from: Arc<AtomicU64>,
         clocks: LocalShardClocks,
         flush_interval_sec: u64,
@@ -864,6 +874,14 @@ impl UpdateHandler {
         mut stop_receiver: oneshot::Receiver<()>,
         shard_path: PathBuf,
     ) {
+        let Some(wal) = wal else {
+            log::debug!(
+                "Flush worker disabled in read-only mode for shard {}",
+                shard_path.display()
+            );
+            return;
+        };
+
         loop {
             // Stop flush worker on signal or if sender was dropped
             // Even if timer did not finish

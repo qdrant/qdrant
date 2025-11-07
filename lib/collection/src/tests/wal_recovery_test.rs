@@ -94,6 +94,7 @@ async fn test_delete_from_indexed_payload() {
         current_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        false, // read_only
     )
     .await
     .unwrap();
@@ -121,6 +122,7 @@ async fn test_delete_from_indexed_payload() {
         current_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
+        false, // read_only
     )
     .await
     .unwrap();
