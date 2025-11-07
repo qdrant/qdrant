@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use collection::telemetry::{
     CollectionSnapshotTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
 };
-use common::scope_counter::{ScopeCounter, ScopeCounterGuard};
+use common::scope_tracker::{ScopeTracker, ScopeTrackerGuard};
 use common::types::TelemetryDetail;
 use dashmap::DashMap;
 
@@ -27,10 +27,10 @@ pub struct TocTelemetryData {
 #[derive(Default, Clone)]
 pub struct SnapshotTelemetryCollector {
     // Counter for currently running snapshot tasks.
-    pub running_snapshots: ScopeCounter,
+    pub running_snapshots: ScopeTracker,
 
     // Counter for currently running snapshot tasks.
-    pub running_snapshot_recovery: ScopeCounter,
+    pub running_snapshot_recovery: ScopeTracker,
 
     // Counter for snapshot creations since startup, until now.
     pub snapshots_total: Arc<AtomicUsize>,
@@ -110,9 +110,9 @@ impl TableOfContent {
     ///
     /// Returns `ScopeCounterGuard` to measure the scope of snapshot creation.
     /// Therefore this must always be bound to a variable in order to correctly account for the whole scope.
-    /// For more information see [`ScopeCounter`] and [`ScopeCounterGuard`].
+    /// For more information see [`ScopeTracker`] and [`ScopeTrackerGuard`].
     #[must_use]
-    pub fn count_snapshot_creation(&self, collection_name: &str) -> ScopeCounterGuard {
+    pub fn count_snapshot_creation(&self, collection_name: &str) -> ScopeTrackerGuard {
         // Increment current running counter.
         let running_snapshots_guard = self
             .snapshot_telemetry_collector(collection_name)

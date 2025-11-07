@@ -29,7 +29,7 @@ impl Collection {
         let shard_clean_tasks = self.clean_local_shards_statuses();
 
         CollectionTelemetry {
-            id: self.name(),
+            id: self.name().to_string(),
             init_time_ms: self.init_time.as_millis() as u64,
             config: CollectionConfigTelemetry::from(self.collection_config.read().await.clone()),
             shards: shards_telemetry,

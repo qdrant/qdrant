@@ -334,8 +334,8 @@ impl Collection {
         true
     }
 
-    pub fn name(&self) -> String {
-        self.id.clone()
+    pub fn name(&self) -> &str {
+        &self.id
     }
 
     pub async fn uuid(&self) -> Option<uuid::Uuid> {
@@ -621,7 +621,11 @@ impl Collection {
                         "Transfer {:?} does not exist, but not reported as cancelled. Reporting now.",
                         transfer.key(),
                     );
-                    on_transfer_failure(transfer, self.name(), "transfer task does not exist");
+                    on_transfer_failure(
+                        transfer,
+                        self.name().to_string(),
+                        "transfer task does not exist",
+                    );
                 }
                 Some(TaskResult::Running) => (),
                 Some(TaskResult::Finished) => {
@@ -629,14 +633,14 @@ impl Collection {
                         "Transfer {:?} is finished successfully, but not reported. Reporting now.",
                         transfer.key(),
                     );
-                    on_transfer_success(transfer, self.name());
+                    on_transfer_success(transfer, self.name().to_string());
                 }
                 Some(TaskResult::Failed) => {
                     log::debug!(
                         "Transfer {:?} is failed, but not reported as failed. Reporting now.",
                         transfer.key(),
                     );
-                    on_transfer_failure(transfer, self.name(), "transfer failed");
+                    on_transfer_failure(transfer, self.name().to_string(), "transfer failed");
                 }
             }
         }

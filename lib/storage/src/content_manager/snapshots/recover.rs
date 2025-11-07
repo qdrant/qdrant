@@ -32,7 +32,7 @@ pub async fn activate_shard(
             &collection.name()
         );
         toc.send_set_replica_state_proposal(
-            collection.name(),
+            collection.name().to_string(),
             peer_id,
             *shard_id,
             ReplicaState::Active,

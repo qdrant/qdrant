@@ -275,7 +275,7 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .create_shard_snapshot(&self.snapshots_path, &self.name(), shard_id, temp_dir)
+            .create_shard_snapshot(&self.snapshots_path, self.name(), shard_id, temp_dir)
             .await
     }
 
@@ -291,7 +291,7 @@ impl Collection {
         )
         .map_err(|_| shard_not_found_error(shard_id))?;
 
-        ShardHolder::stream_shard_snapshot(shard, &self.name(), shard_id, manifest, temp_dir).await
+        ShardHolder::stream_shard_snapshot(shard, self.name(), shard_id, manifest, temp_dir).await
     }
 
     /// # Cancel safety
@@ -320,7 +320,7 @@ impl Collection {
         .await??;
 
         let collection_path = self.path.clone();
-        let collection_name = self.name();
+        let collection_name = self.name().to_string();
 
         let temp_dir = temp_dir.to_path_buf();
 
