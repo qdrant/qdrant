@@ -25,7 +25,7 @@ impl ReadParams {
         self.timeout
             // Limit the timeout to 1 hour.
             .map(|num| cmp::min(num.get(), HOUR_IN_SECONDS))
-            .map(|secs| Duration::from_secs(secs))
+            .map(Duration::from_secs)
     }
 }
 
