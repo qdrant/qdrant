@@ -213,6 +213,8 @@ impl MetricsProvider for CollectionsTelemetry {
 
         let mut vector_count_by_name = Vec::with_capacity(num_collections);
 
+        let mut collection_updates = vec![];
+
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
                 CollectionTelemetryEnum::Full(collection_telemetry) => collection_telemetry,
@@ -223,6 +225,11 @@ impl MetricsProvider for CollectionsTelemetry {
 
             total_optimizations_running.push(gauge(
                 collection.count_optimizers_running() as f64,
+                &[("id", &collection.id)],
+            ));
+
+            collection_updates.push(gauge(
+                collection.updates_running() as f64,
                 &[("id", &collection.id)],
             ));
 
@@ -445,6 +452,14 @@ impl MetricsProvider for CollectionsTelemetry {
             "total amount of snapshots created",
             MetricType::COUNTER,
             snapshots_created_total,
+            prefix,
+        ));
+
+        metrics.push(metric_family(
+            "collection_running_updates",
+            "currently running shard updates",
+            MetricType::GAUGE,
+            collection_updates,
             prefix,
         ));
     }

@@ -1,12 +1,13 @@
 use std::future::{self, Future};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 
+use common::scope_tracker::{ScopeTracker, ScopeTrackerGuard};
 use tokio::sync::watch;
 
 #[derive(Clone, Debug)]
 pub struct UpdateTracker {
-    update_operations: Arc<AtomicUsize>,
+    update_operations: ScopeTracker,
     update_notifier: Arc<watch::Sender<()>>,
 }
 
@@ -22,8 +23,12 @@ impl Default for UpdateTracker {
 }
 
 impl UpdateTracker {
+    pub fn running_updates(&self) -> usize {
+        self.update_operations.get(Ordering::Relaxed)
+    }
+
     pub fn is_update_in_progress(&self) -> bool {
-        self.update_operations.load(Ordering::Relaxed) > 0
+        self.running_updates() > 0
     }
 
     pub fn watch_for_update(&self) -> impl Future<Output = ()> {
@@ -37,28 +42,14 @@ impl UpdateTracker {
         }
     }
 
-    pub fn update(&self) -> UpdateGuard {
-        if self.update_operations.fetch_add(1, Ordering::Relaxed) == 0 {
+    #[must_use]
+    pub fn update(&self) -> ScopeTrackerGuard {
+        let (old_value, guard) = self.update_operations.get_and_measure();
+
+        if old_value == 0 {
             self.update_notifier.send_replace(());
         }
 
-        UpdateGuard::new(self.update_operations.clone())
-    }
-}
-
-#[derive(Debug)]
-pub struct UpdateGuard {
-    update_operations: Arc<AtomicUsize>,
-}
-
-impl UpdateGuard {
-    fn new(update_operations: Arc<AtomicUsize>) -> Self {
-        Self { update_operations }
-    }
-}
-
-impl Drop for UpdateGuard {
-    fn drop(&mut self) {
-        self.update_operations.fetch_sub(1, Ordering::Relaxed);
+        guard
     }
 }

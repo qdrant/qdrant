@@ -22,6 +22,16 @@ impl ScopeTracker {
         ScopeTrackerGuard::measure(self)
     }
 
+    /// Does the same way of measuring as `measure_scope` but additionally returns the counter value.
+    /// This value gets evaluated *before* starting to count.
+    /// This function is equally as expensive as `measure_scope`.
+    ///
+    /// The returned guard must always be bound to a variable, to not get dropped prematurely!
+    #[must_use]
+    pub fn get_and_measure(&self) -> (usize, ScopeTrackerGuard) {
+        ScopeTrackerGuard::get_and_measure(self)
+    }
+
     /// Get the current value of the counter.
     pub fn get(&self, ordering: Ordering) -> usize {
         self.inner.load(ordering)
@@ -39,9 +49,15 @@ pub struct ScopeTrackerGuard {
 impl ScopeTrackerGuard {
     #[must_use]
     fn measure(scope_tracker: &ScopeTracker) -> Self {
+        Self::get_and_measure(scope_tracker).1
+    }
+
+    #[must_use]
+    fn get_and_measure(scope_tracker: &ScopeTracker) -> (usize, Self) {
         let scope_tracker = scope_tracker.clone();
-        scope_tracker.inner.fetch_add(COUNT_SIZE, Ordering::SeqCst);
-        Self { scope_tracker }
+        // Increment the passed counter to start measuring
+        let old_value = scope_tracker.inner.fetch_add(COUNT_SIZE, Ordering::SeqCst);
+        (old_value, Self { scope_tracker })
     }
 }
 

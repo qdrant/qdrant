@@ -115,6 +115,15 @@ impl CollectionTelemetry {
                 },
             )
     }
+
+    pub fn updates_running(&self) -> usize {
+        self.shards
+            .iter()
+            .flatten()
+            .filter_map(|shard| shard.local.as_ref())
+            .filter_map(|i| i.running_update_operations)
+            .sum()
+    }
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
