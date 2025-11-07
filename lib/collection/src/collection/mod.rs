@@ -199,6 +199,15 @@ impl Collection {
         })
     }
 
+    /// Load an existing collection from disk.
+    ///
+    /// # Arguments
+    ///
+    /// * `read_only` - If true, opens the collection in read-only mode. In this mode:
+    ///   - Write-ahead log (WAL) is not loaded or created
+    ///   - All write operations will fail with an error
+    ///   - No filesystem modifications are made during operation
+    ///   - Suitable for read-only filesystems or serving read-only replicas
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
         collection_id: CollectionId,

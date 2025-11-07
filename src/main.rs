@@ -319,20 +319,8 @@ fn main() -> anyhow::Result<()> {
             settings.cluster.peer_id,
         )?
     } else {
-        let raft_state_path = Path::new(&settings.storage.storage_path).join("raft_state.json");
-        if !raft_state_path.exists() {
-            return Err(anyhow::anyhow!(
-                "Consensus state file does not exist at {}. Cannot start in read-only mode.",
-                raft_state_path.display()
-            ));
-        }
-        // Load existing state without initialization (reinit must be false in read-only mode)
-        Persistent::load_or_init(
-            &settings.storage.storage_path,
-            bootstrap.is_none(),
-            false, // Never reinit in read-only mode
-            settings.cluster.peer_id,
-        )?
+        // Load existing state in read-only mode without any filesystem writes
+        Persistent::load_read_only(&settings.storage.storage_path)?
     };
 
     let is_distributed_deployment = settings.cluster.enabled;

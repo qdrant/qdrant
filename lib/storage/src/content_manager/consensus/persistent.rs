@@ -101,6 +101,34 @@ impl Persistent {
         self.save()
     }
 
+    /// Load existing raft state in read-only mode without any filesystem writes.
+    ///
+    /// This method:
+    /// - Only reads from existing raft_state.json
+    /// - Never creates directories or files
+    /// - Never migrates legacy formats
+    /// - Never performs cleanup operations
+    ///
+    /// Use this when loading state on a read-only filesystem.
+    pub fn load_read_only(storage_path: impl AsRef<Path>) -> Result<Self, StorageError> {
+        let path_json = storage_path.as_ref().join(STATE_FILE_NAME);
+
+        if !path_json.exists() {
+            return Err(StorageError::service_error(format!(
+                "Raft state file not found at {}. Cannot start in read-only mode without existing state.",
+                path_json.display()
+            )));
+        }
+
+        log::info!(
+            "Loading raft state in read-only mode from {}",
+            path_json.display()
+        );
+        let state = Self::load_json(path_json)?;
+        log::debug!("State: {state:?}");
+        Ok(state)
+    }
+
     /// Returns state and if it was initialized for the first time
     ///
     /// `peer_id` is used only when raft state is not found.
