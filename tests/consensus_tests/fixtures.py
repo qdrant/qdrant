@@ -93,7 +93,9 @@ def upsert_random_points(
     shard_key=None,
     num_cities=None,
     headers={},
+    extra_payload=None,
 ):
+    extra_payload = extra_payload or {}
 
     def get_vector():
         # Create points in first peer's collection
@@ -115,7 +117,10 @@ def upsert_random_points(
                     {
                         "id": i + offset,
                         "vector": get_vector(),
-                        "payload": {"city": random.choice(CITIES[:num_cities]) if num_cities is not None else random.choice(CITIES)},
+                        "payload": {
+                            **extra_payload,
+                            "city": random.choice(CITIES[:num_cities]) if num_cities is not None else random.choice(CITIES)
+                        },
                     }
                     for i in range(size)
                 ],
