@@ -166,3 +166,24 @@ def test_tenant_promotion_simple(tmp_path: pathlib.Path):
     results3 = search_points(peer_api_uris[0])
     match, msg = match_results(results, results3)
     assert match, f"Results differ after tenant1 promotion complete: {msg}"
+
+    # Delete records from the old shard
+    resp = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points/delete?wait=true",
+        json={
+            "filter": {
+                "must": {
+                    "key": "tenant",
+                    "match": {
+                        "value": "tenant1"
+                    }
+                }
+            },
+            "shard_key": "default"
+        }
+    )
+    assert_http_ok(resp)
+
+    results4 = search_points(peer_api_uris[0])
+    match, msg = match_results(results, results4)
+    assert match, f"Results differ after tenant1 deletion from old shard: {msg}"
