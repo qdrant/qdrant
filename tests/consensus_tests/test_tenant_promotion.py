@@ -60,7 +60,7 @@ def search_points(peer_url):
 def test_tenant_promotion_simple(tmp_path: pathlib.Path):
     assert_project_root()
 
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=6000)
 
     create_collection_with_custom_sharding(peer_api_uris[0], collection=COLLECTION_NAME, shard_number=N_SHARDS,
                                            replication_factor=N_REPLICAS)
@@ -71,7 +71,6 @@ def test_tenant_promotion_simple(tmp_path: pathlib.Path):
         shard_key="default",
         shard_number=N_SHARDS,
         replication_factor=N_REPLICAS,
-        # initial_state="Partial",
     )
 
     n_points = 1_000

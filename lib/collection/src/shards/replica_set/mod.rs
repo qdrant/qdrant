@@ -1034,6 +1034,20 @@ impl ShardReplicaSet {
         is_active_or_resharding && !self.is_locally_disabled(peer_id)
     }
 
+    fn are_all_partial(&self) -> bool {
+        if self.replica_state.read().peers().is_empty() {
+            return false;
+        }
+
+        // todo: Check if we have custom sharding mode enabled. It's a must
+
+        self.replica_state
+            .read()
+            .peers()
+            .values()
+            .all(|state| matches!(state, ReplicaState::Partial))
+    }
+
     fn peer_is_initializing(&self, peer_id: PeerId) -> bool {
         let is_initializing = matches!(self.peer_state(peer_id), Some(ReplicaState::Initializing));
         is_initializing && !self.is_locally_disabled(peer_id)

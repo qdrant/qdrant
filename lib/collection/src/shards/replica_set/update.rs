@@ -514,8 +514,10 @@ impl ShardReplicaSet {
         if !successes
             .iter()
             .any(|&(peer_id, _)| self.peer_is_active_or_resharding(peer_id))
+            && !self.are_all_partial() // All replicas are partial only when creating new shard key for tenant promotion
         {
             return Err(CollectionError::service_error(format!(
+                // throws error
                 "Failed to apply operation to at least one `Active` replica. \
                  Consistency of this update is not guaranteed. Please retry. {failure_error}",
             )));
