@@ -1034,18 +1034,17 @@ impl ShardReplicaSet {
         is_active_or_resharding && !self.is_locally_disabled(peer_id)
     }
 
-    fn are_all_partial(&self) -> bool {
-        if self.replica_state.read().peers().is_empty() {
+    /// Is the current replica set used for tenant promotion
+    fn is_tenant_promotion(&self) -> bool {
+        // If there's only on peer and it's in Partial state, it's a promotion
+        // since we don't support promotion with multiple destination replicas
+        if self.shard_key.is_none() {
+            // No custom sharding means no promotion
             return false;
         }
 
-        // todo: Check if we have custom sharding mode enabled. It's a must
-
-        self.replica_state
-            .read()
-            .peers()
-            .values()
-            .all(|state| matches!(state, ReplicaState::Partial))
+        let peers = self.replica_state.read().peers();
+        peers.len() == 1 && matches!(peers.values().next(), Some(ReplicaState::Partial))
     }
 
     fn peer_is_initializing(&self, peer_id: PeerId) -> bool {
