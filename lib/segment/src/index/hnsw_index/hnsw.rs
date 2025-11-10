@@ -28,7 +28,7 @@ use super::gpu::gpu_devices_manager::LockedGpuDevice;
 use super::gpu::gpu_insert_context::GpuInsertContext;
 #[cfg(feature = "gpu")]
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
-use super::point_scorer::BatchFilteredScorer;
+use super::point_scorer::BatchFilteredSearcher;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::operation_time_statistics::{
@@ -1143,7 +1143,7 @@ impl HNSWIndex {
         let is_stopped = vector_query_context.is_stopped();
         let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
-        let batch_filtered_scorer = Self::construct_batch_search_scorer(
+        let batch_filtered_searcher = Self::construct_batch_searcher(
             query_vectors,
             &vector_storage,
             quantized_vectors.as_ref(),
@@ -1154,7 +1154,7 @@ impl HNSWIndex {
             None,
         )?;
         let search_results =
-            batch_filtered_scorer.peek_top_iter(points, oversampled_top, &is_stopped)?;
+            batch_filtered_searcher.peek_top_iter(points, oversampled_top, &is_stopped)?;
         search_results
             .into_iter()
             .zip(query_vectors)
@@ -1276,7 +1276,7 @@ impl HNSWIndex {
         )
     }
 
-    fn construct_batch_search_scorer<'a>(
+    fn construct_batch_searcher<'a>(
         vectors: &[&QueryVector],
         vector_storage: &'a VectorStorageEnum,
         quantized_storage: Option<&'a QuantizedVectors>,
@@ -1285,9 +1285,9 @@ impl HNSWIndex {
         params: Option<&SearchParams>,
         hardware_counter: HardwareCounterCell,
         filter_context: Option<Box<dyn FilterContext + 'a>>,
-    ) -> OperationResult<BatchFilteredScorer<'a>> {
+    ) -> OperationResult<BatchFilteredSearcher<'a>> {
         let quantization_enabled = is_quantized_search(quantized_storage, params);
-        BatchFilteredScorer::new(
+        BatchFilteredSearcher::new(
             vectors,
             vector_storage,
             quantization_enabled.then_some(quantized_storage).flatten(),

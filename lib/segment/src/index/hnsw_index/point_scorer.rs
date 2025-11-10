@@ -310,7 +310,7 @@ impl<'a> FilteredScorer<'a> {
     }
 }
 
-pub struct BatchFilteredScorer<'a> {
+pub struct BatchFilteredSearcher<'a> {
     scorer_batch: Vec<(
         Box<dyn RawScorer + 'a>,
         FixedLengthPriorityQueue<ScoredPointOffset>,
@@ -318,7 +318,7 @@ pub struct BatchFilteredScorer<'a> {
     filters: ScorerFilters<'a>,
 }
 
-impl<'a> BatchFilteredScorer<'a> {
+impl<'a> BatchFilteredSearcher<'a> {
     /// Create a new batch filtered scorer.
     ///
     /// If present, `quantized_vectors` will be used for scoring, otherwise `vectors` will be used.
