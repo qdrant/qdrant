@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 
 
 [dependencies]
-edge = { path = "../../edge" } # ".." does not play with with Dependabot
+edge = { path = "../../edge" } # ".." does not play well with Dependabot
 segment = { path = "../../segment", default-features = false }
 shard = { path = "../../shard" }
 sparse = { path = "../../sparse" }
