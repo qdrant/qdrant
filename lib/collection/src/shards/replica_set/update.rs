@@ -571,18 +571,7 @@ impl ShardReplicaSet {
             return false;
         };
 
-        let res = match state {
-            ReplicaState::Active => true,
-            ReplicaState::Partial => true,
-            ReplicaState::Initializing => true,
-            ReplicaState::Listener => true,
-            ReplicaState::Recovery | ReplicaState::PartialSnapshot => false,
-            ReplicaState::Resharding | ReplicaState::ReshardingScaleDown => true,
-            ReplicaState::Dead => false,
-            ReplicaState::ActiveRead => true,
-        };
-
-        res && !self.is_locally_disabled(peer_id)
+        state.is_updatable() && !self.is_locally_disabled(peer_id)
     }
 
     fn peer_is_resharding(&self, peer_id: PeerId) -> bool {

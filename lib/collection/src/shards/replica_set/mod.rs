@@ -475,6 +475,15 @@ impl ShardReplicaSet {
             .collect()
     }
 
+    pub fn readable_shards(&self) -> Vec<PeerId> {
+        let replica_state = self.replica_state.read();
+        replica_state
+            .readable_peers() // This includes `ActiveRead`, `Active`, and `ReshardingScaleDown` replicas!
+            .into_iter()
+            .filter(|&peer_id| !self.is_locally_disabled(peer_id))
+            .collect()
+    }
+
     /// Wait for a local shard to be initialized.
     ///
     /// Uses a blocking thread internally.
@@ -1026,17 +1035,7 @@ impl ShardReplicaSet {
     fn peer_is_readable(&self, peer_id: PeerId) -> bool {
         let peer_state = self.peer_state(peer_id);
         let is_readable = match peer_state {
-            Some(ReplicaState::Active) => true,
-            Some(ReplicaState::ReshardingScaleDown) => true,
-            Some(ReplicaState::ActiveRead) => true,
-            // False from here on
-            Some(ReplicaState::Dead) => false,
-            Some(ReplicaState::Partial) => false,
-            Some(ReplicaState::Initializing) => false,
-            Some(ReplicaState::Listener) => false,
-            Some(ReplicaState::PartialSnapshot) => false,
-            Some(ReplicaState::Recovery) => false,
-            Some(ReplicaState::Resharding) => false,
+            Some(state) => state.is_readable(),
             None => false,
         };
 
@@ -1049,17 +1048,7 @@ impl ShardReplicaSet {
     /// - It can be a primary replica for ordered writes
     fn peer_can_be_source_of_truth(&self, peer_id: PeerId) -> bool {
         let can_be_source_of_truth = match self.peer_state(peer_id) {
-            Some(ReplicaState::Active) => true,
-            Some(ReplicaState::ActiveRead) => true, // Can be only one replica per shard_id
-            Some(ReplicaState::Resharding) => true, // Can be only one replica per shard_id
-            Some(ReplicaState::ReshardingScaleDown) => true, // Acts like Active, until resharding is committed
-            // false from here on
-            Some(ReplicaState::Partial) => false,
-            Some(ReplicaState::Initializing) => false,
-            Some(ReplicaState::Listener) => false,
-            Some(ReplicaState::PartialSnapshot) => false,
-            Some(ReplicaState::Recovery) => false,
-            Some(ReplicaState::Dead) => false,
+            Some(state) => state.can_be_source_of_truth(),
             None => false,
         };
 
@@ -1265,6 +1254,13 @@ impl ReplicaSetState {
             .collect()
     }
 
+    pub fn readable_peers(&self) -> Vec<PeerId> {
+        self.peers
+            .iter()
+            .filter_map(|(peer_id, state)| state.is_readable().then_some(*peer_id))
+            .collect()
+    }
+
     pub fn active_or_resharding_peers(&self) -> impl Iterator<Item = PeerId> + '_ {
         self.peers.iter().filter_map(|(peer_id, state)| {
             matches!(
@@ -1329,6 +1325,56 @@ impl ReplicaState {
             | ReplicaState::Recovery
             | ReplicaState::Resharding
             | ReplicaState::ActiveRead => false,
+        }
+    }
+
+    /// Check that replica has full dataset, so it can be used for read operations.
+    pub fn is_readable(self) -> bool {
+        match self {
+            ReplicaState::Active => true,
+            ReplicaState::ReshardingScaleDown => true,
+            ReplicaState::ActiveRead => true,
+            // False from here on
+            ReplicaState::Dead => false,
+            ReplicaState::Partial => false,
+            ReplicaState::Initializing => false,
+            ReplicaState::Listener => false,
+            ReplicaState::PartialSnapshot => false,
+            ReplicaState::Recovery => false,
+            ReplicaState::Resharding => false,
+        }
+    }
+
+    pub fn is_updatable(self) -> bool {
+        match self {
+            ReplicaState::Active => true,
+            ReplicaState::Partial => true,
+            ReplicaState::Initializing => true,
+            ReplicaState::Listener => true,
+            ReplicaState::Recovery | ReplicaState::PartialSnapshot => false,
+            ReplicaState::Resharding | ReplicaState::ReshardingScaleDown => true,
+            ReplicaState::Dead => false,
+            ReplicaState::ActiveRead => true,
+        }
+    }
+
+    /// Check if this peer can be used as a source of truth within a shard_id.
+    /// For instance:
+    /// - It can be the only receiver of updates
+    /// - It can be a primary replica for ordered writes
+    pub fn can_be_source_of_truth(self) -> bool {
+        match self {
+            ReplicaState::Active => true,
+            ReplicaState::ActiveRead => true, // Can be only one replica per shard_id
+            ReplicaState::Resharding => true, // Can be only one replica per shard_id
+            ReplicaState::ReshardingScaleDown => true, // Acts like Active, until resharding is committed
+            // false from here on
+            ReplicaState::Partial => false,
+            ReplicaState::Initializing => false,
+            ReplicaState::Listener => false,
+            ReplicaState::PartialSnapshot => false,
+            ReplicaState::Recovery => false,
+            ReplicaState::Dead => false,
         }
     }
 
