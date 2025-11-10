@@ -1,5 +1,3 @@
-use std::mem;
-
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use ordered_float::OrderedFloat;
@@ -259,15 +257,6 @@ pub enum PyPayloadSelectorInterface {
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyScoredPoint(pub ScoredPoint);
-
-impl PyScoredPoint {
-    pub fn wrap_query_resp(resp: Vec<Vec<Vec<ScoredPoint>>>) -> Vec<Vec<Vec<PyScoredPoint>>>
-    where
-        Self: TransparentWrapper<ScoredPoint>,
-    {
-        unsafe { mem::transmute(resp) }
-    }
-}
 
 #[pymethods]
 impl PyScoredPoint {
