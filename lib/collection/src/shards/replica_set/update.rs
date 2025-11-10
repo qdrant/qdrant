@@ -517,7 +517,6 @@ impl ShardReplicaSet {
             && !self.is_tenant_promotion()
         {
             return Err(CollectionError::service_error(format!(
-                // throws error
                 "Failed to apply operation to at least one `Active` replica. \
                  Consistency of this update is not guaranteed. Please retry. {failure_error}",
             )));
