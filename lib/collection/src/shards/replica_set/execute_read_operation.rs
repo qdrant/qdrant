@@ -56,7 +56,7 @@ impl ShardReplicaSet {
         let read_consistency = read_consistency.unwrap_or_default();
 
         let local_count = usize::from(self.peer_state(self.this_peer_id()).is_some());
-        let active_local_count = usize::from(self.peer_is_active(self.this_peer_id()));
+        let active_local_count = usize::from(self.peer_is_readable(self.this_peer_id()));
         let initializing_local_count = usize::from(self.peer_is_initializing(self.this_peer_id()));
 
         let remotes = self.remotes.read().await;
@@ -66,7 +66,7 @@ impl ShardReplicaSet {
         // TODO(resharding): Handle resharded shard?
         let active_remotes_count = remotes
             .iter()
-            .filter(|remote| self.peer_is_active(remote.peer_id))
+            .filter(|remote| self.peer_is_readable(remote.peer_id))
             .count();
         let initializing_remotes_count = remotes
             .iter()
@@ -177,9 +177,9 @@ impl ShardReplicaSet {
             None => (None, false, None),
         };
 
-        let local_is_active = self.peer_is_active(self.this_peer_id());
+        let local_is_readable = self.peer_is_readable(self.this_peer_id());
 
-        let local_operation = if local_is_active {
+        let local_operation = if local_is_readable {
             let local_operation = async {
                 let Some(local) = local else {
                     return Err(CollectionError::service_error(format!(
@@ -197,14 +197,14 @@ impl ShardReplicaSet {
         };
 
         // TODO(resharding): Handle resharded shard?
-        let mut active_remotes: Vec<_> = remotes
+        let mut readable_remotes: Vec<_> = remotes
             .iter()
-            .filter(|remote| self.peer_is_active(remote.peer_id))
+            .filter(|remote| self.peer_is_readable(remote.peer_id))
             .collect();
 
-        active_remotes.shuffle(&mut rand::rng());
+        readable_remotes.shuffle(&mut rand::rng());
 
-        let remote_operations = active_remotes.into_iter().map(|remote| {
+        let remote_operations = readable_remotes.into_iter().map(|remote| {
             read_operation(remote)
                 .map(|result| (result, false))
                 .right_future()
@@ -218,7 +218,7 @@ impl ShardReplicaSet {
         // - Local is not available: default fan-out is 1
         // - There is no local: default fan-out is 1
 
-        let default_fan_out = if is_local_ready && local_is_active {
+        let default_fan_out = if is_local_ready && local_is_readable {
             0
         } else {
             1
@@ -275,7 +275,7 @@ impl ShardReplicaSet {
                     }
                 }
 
-                _ = &mut update_watcher, if local_is_active && !is_local_operation_resolved => {
+                _ = &mut update_watcher, if local_is_readable && !is_local_operation_resolved => {
                     pending_operations.extend(operations.next());
                     continue;
                 }

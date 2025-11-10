@@ -180,7 +180,7 @@ impl ShardReplicaSet {
 
         peer_ids
             .into_iter()
-            .filter(|&peer_id| self.peer_is_active_or_resharding(peer_id)) // re-acquire replica_state read lock
+            .filter(|&peer_id| self.peer_can_be_source_of_truth(peer_id)) // re-acquire replica_state read lock
             .max()
     }
 
@@ -512,7 +512,7 @@ impl ShardReplicaSet {
         // Successes must have applied to at least one active replica
         if !successes
             .iter()
-            .any(|&(peer_id, _)| self.peer_is_active_or_resharding(peer_id))
+            .any(|&(peer_id, _)| self.peer_can_be_source_of_truth(peer_id))
         {
             return Err(CollectionError::service_error(format!(
                 "Failed to apply operation to at least one `Active` replica. \

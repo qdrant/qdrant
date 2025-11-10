@@ -1016,23 +1016,54 @@ impl ShardReplicaSet {
     fn peer_is_active(&self, peer_id: PeerId) -> bool {
         // This is used *exclusively* during `execute_*_read_operation`, and so it *should* consider
         // `ReshardingScaleDown` replicas
-        let is_active = matches!(
-            self.peer_state(peer_id),
-            Some(ReplicaState::Active | ReplicaState::ReshardingScaleDown)
-        );
+        let is_active = self
+            .peer_state(peer_id)
+            .is_some_and(ReplicaState::is_active);
 
         is_active && !self.is_locally_disabled(peer_id)
     }
 
-    fn peer_is_active_or_resharding(&self, peer_id: PeerId) -> bool {
-        let is_active_or_resharding = matches!(
-            self.peer_state(peer_id),
-            Some(
-                ReplicaState::Active | ReplicaState::Resharding | ReplicaState::ReshardingScaleDown
-            )
-        );
+    fn peer_is_readable(&self, peer_id: PeerId) -> bool {
+        let peer_state = self.peer_state(peer_id);
+        let is_readable = match peer_state {
+            Some(ReplicaState::Active) => true,
+            Some(ReplicaState::ReshardingScaleDown) => true,
+            Some(ReplicaState::ActiveRead) => true,
+            // False from here on
+            Some(ReplicaState::Dead) => false,
+            Some(ReplicaState::Partial) => false,
+            Some(ReplicaState::Initializing) => false,
+            Some(ReplicaState::Listener) => false,
+            Some(ReplicaState::PartialSnapshot) => false,
+            Some(ReplicaState::Recovery) => false,
+            Some(ReplicaState::Resharding) => false,
+            None => false,
+        };
 
-        is_active_or_resharding && !self.is_locally_disabled(peer_id)
+        is_readable && !self.is_locally_disabled(peer_id)
+    }
+
+    /// Check if this peer can be used as a source of truth within a shard_id.
+    /// For instance:
+    /// - It can be the only receiver of updates
+    /// - It can be a primary replica for ordered writes
+    fn peer_can_be_source_of_truth(&self, peer_id: PeerId) -> bool {
+        let can_be_source_of_truth = match self.peer_state(peer_id) {
+            Some(ReplicaState::Active) => true,
+            Some(ReplicaState::ActiveRead) => true, // Can be only one replica per shard_id
+            Some(ReplicaState::Resharding) => true, // Can be only one replica per shard_id
+            Some(ReplicaState::ReshardingScaleDown) => true, // Acts like Active, until resharding is commited
+            // false from here on
+            Some(ReplicaState::Partial) => false,
+            Some(ReplicaState::Initializing) => false,
+            Some(ReplicaState::Listener) => false,
+            Some(ReplicaState::PartialSnapshot) => false,
+            Some(ReplicaState::Recovery) => false,
+            Some(ReplicaState::Dead) => false,
+            None => false,
+        };
+
+        can_be_source_of_truth && !self.is_locally_disabled(peer_id)
     }
 
     fn peer_is_initializing(&self, peer_id: PeerId) -> bool {
@@ -1229,11 +1260,7 @@ impl ReplicaSetState {
             .iter()
             .filter_map(|(peer_id, state)| {
                 // We consider `ReshardingScaleDown` to be `Active`!
-                matches!(
-                    state,
-                    ReplicaState::Active | ReplicaState::ReshardingScaleDown
-                )
-                .then_some(*peer_id)
+                state.is_active().then_some(*peer_id)
             })
             .collect()
     }
@@ -1288,6 +1315,7 @@ pub enum ReplicaState {
 
 impl ReplicaState {
     /// Check if replica state is active
+    /// Used to define if this replica can be used as a source of truth.
     pub fn is_active(self) -> bool {
         match self {
             ReplicaState::Active => true,
@@ -1305,7 +1333,8 @@ impl ReplicaState {
     }
 
     /// Check whether the replica state is active or listener or resharding.
-    pub fn is_active_or_listener_or_resharding(self) -> bool {
+    /// Healthy state means that replica does not require **automatic** recovery.
+    pub fn is_healthy(self) -> bool {
         match self {
             ReplicaState::Active
             | ReplicaState::Listener
