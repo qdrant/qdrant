@@ -1036,13 +1036,13 @@ impl ShardReplicaSet {
 
     /// Is the current replica set used for tenant promotion
     fn is_tenant_promotion(&self) -> bool {
-        // If there's only on peer and it's in Partial state, it's a promotion
-        // since we don't support promotion with multiple destination replicas
+        // No custom sharding means no promotion
         if self.shard_key.is_none() {
-            // No custom sharding means no promotion
             return false;
         }
 
+        // If there's only on peer and it's in Partial state, it's a promotion
+        // since we don't support promotion with multiple destination replicas
         let peers = self.replica_state.read().peers();
         peers.len() == 1 && matches!(peers.values().next(), Some(ReplicaState::Partial))
     }
