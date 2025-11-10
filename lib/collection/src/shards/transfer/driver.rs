@@ -61,12 +61,14 @@ pub async fn transfer_shard(
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
             transfer_stream_records(
+                transfer_config,
                 shard_holder.clone(),
                 progress,
                 local_shard_id,
                 remote_shard,
+                &channel_service,
+                consensus,
                 &collection_id,
-                transfer_config.filter,
             )
             .await?;
         }

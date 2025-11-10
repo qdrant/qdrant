@@ -2042,6 +2042,8 @@ pub enum ReplicaState {
     Resharding = 7,
     /// Points are being migrated to this shard as part of scale-down resharding
     ReshardingScaleDown = 8,
+    /// Active for readers, Partial for writers
+    ActiveRead = 9,
 }
 impl ReplicaState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2059,6 +2061,7 @@ impl ReplicaState {
             ReplicaState::Recovery => "Recovery",
             ReplicaState::Resharding => "Resharding",
             ReplicaState::ReshardingScaleDown => "ReshardingScaleDown",
+            ReplicaState::ActiveRead => "ActiveRead",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2073,6 +2076,7 @@ impl ReplicaState {
             "Recovery" => Some(Self::Recovery),
             "Resharding" => Some(Self::Resharding),
             "ReshardingScaleDown" => Some(Self::ReshardingScaleDown),
+            "ActiveRead" => Some(Self::ActiveRead),
             _ => None,
         }
     }

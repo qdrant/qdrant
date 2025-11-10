@@ -69,9 +69,8 @@ impl ShardReplicaSet {
             ReplicaState::Partial
             | ReplicaState::Initializing
             | ReplicaState::Resharding
-            | ReplicaState::ReshardingScaleDown => {
-                local.get().update(operation, wait, hw_measurement).await
-            }
+            | ReplicaState::ReshardingScaleDown
+            | ReplicaState::ActiveRead => local.get().update(operation, wait, hw_measurement).await,
 
             ReplicaState::Listener => local.get().update(operation, false, hw_measurement).await,
 
@@ -181,7 +180,7 @@ impl ShardReplicaSet {
 
         peer_ids
             .into_iter()
-            .filter(|&peer_id| self.peer_is_active_or_resharding(peer_id)) // re-acquire replica_state read lock
+            .filter(|&peer_id| self.peer_can_be_source_of_truth(peer_id)) // re-acquire replica_state read lock
             .max()
     }
 
@@ -513,7 +512,7 @@ impl ShardReplicaSet {
         // Successes must have applied to at least one active replica
         if !successes
             .iter()
-            .any(|&(peer_id, _)| self.peer_is_active_or_resharding(peer_id))
+            .any(|&(peer_id, _)| self.peer_can_be_source_of_truth(peer_id))
         {
             return Err(CollectionError::service_error(format!(
                 "Failed to apply operation to at least one `Active` replica. \
@@ -572,17 +571,7 @@ impl ShardReplicaSet {
             return false;
         };
 
-        let res = match state {
-            ReplicaState::Active => true,
-            ReplicaState::Partial => true,
-            ReplicaState::Initializing => true,
-            ReplicaState::Listener => true,
-            ReplicaState::Recovery | ReplicaState::PartialSnapshot => false,
-            ReplicaState::Resharding | ReplicaState::ReshardingScaleDown => true,
-            ReplicaState::Dead => false,
-        };
-
-        res && !self.is_locally_disabled(peer_id)
+        state.is_updatable() && !self.is_locally_disabled(peer_id)
     }
 
     fn peer_is_resharding(&self, peer_id: PeerId) -> bool {
@@ -616,7 +605,8 @@ impl ShardReplicaSet {
                 | ReplicaState::Recovery
                 | ReplicaState::PartialSnapshot
                 | ReplicaState::Resharding
-                | ReplicaState::ReshardingScaleDown => (),
+                | ReplicaState::ReshardingScaleDown
+                | ReplicaState::ActiveRead => (),
             }
 
             // Handle a special case where transfer receiver is not in the expected replica state yet.
