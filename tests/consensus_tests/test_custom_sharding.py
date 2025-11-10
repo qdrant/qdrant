@@ -1,8 +1,8 @@
 import concurrent.futures
 import pathlib
 import threading
-import time
 
+from .custom_sharding import create_collection_with_custom_sharding, create_shard, delete_shard
 from .fixtures import *
 from .utils import *
 
@@ -11,66 +11,6 @@ N_SHARDS = 1
 N_REPLICAS = 1
 
 COLLECTION_NAME = "test_collection"
-
-
-def create_collection_with_custom_sharding(
-        peer_url,
-        collection=COLLECTION_NAME,
-        shard_number=1,
-        replication_factor=1,
-        write_consistency_factor=1,
-        timeout=10
-):
-    # Create collection in peer_url
-    r_batch = requests.put(
-        f"{peer_url}/collections/{collection}?timeout={timeout}", json={
-            "vectors": {
-                "size": 4,
-                "distance": "Dot"
-            },
-            "shard_number": shard_number,
-            "replication_factor": replication_factor,
-            "write_consistency_factor": write_consistency_factor,
-            "sharding_method": "custom",
-        })
-    assert_http_ok(r_batch)
-
-
-def create_shard(
-        peer_url,
-        collection,
-        shard_key,
-        shard_number=1,
-        replication_factor=1,
-        placement=None,
-        initial_state=None,
-        timeout=10
-):
-    r_batch = requests.put(
-        f"{peer_url}/collections/{collection}/shards?timeout={timeout}", json={
-            "shard_key": shard_key,
-            "shards_number": shard_number,
-            "replication_factor": replication_factor,
-            "placement": placement,
-            "initial_state": initial_state,
-        })
-    assert_http_ok(r_batch)
-
-
-def delete_shard(
-        peer_url,
-        collection,
-        shard_key,
-        timeout=10
-):
-    r_batch = requests.post(
-        f"{peer_url}/collections/{collection}/shards/delete?timeout={timeout}",
-        json={
-            "shard_key": shard_key,
-        }
-    )
-    assert_http_ok(r_batch)
-
 
 def test_shard_consistency(tmp_path: pathlib.Path):
     assert_project_root()

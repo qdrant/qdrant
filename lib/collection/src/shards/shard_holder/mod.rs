@@ -572,6 +572,8 @@ impl ShardHolder {
                 let (shard_ids_to_query, used_shard_key) =
                     self.route_with_fallback_for_read(key)?;
 
+                log::trace!("Search routing with fallback: {used_shard_key:?}");
+
                 for shard_id in shard_ids_to_query {
                     if let Some(replica_set) = self.shards.get(&shard_id) {
                         res.push((replica_set, Some(used_shard_key)));

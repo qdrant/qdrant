@@ -283,6 +283,7 @@ pub trait ShardTransferConsensus: Send + Sync {
 
             result = self
                 .set_shard_replica_set_state(
+                    Some(remote_shard.peer_id),
                     collection_id.clone(),
                     remote_shard.id,
                     ReplicaState::ActiveRead,
@@ -480,12 +481,15 @@ pub trait ShardTransferConsensus: Send + Sync {
 
     /// Set the shard replica state on this peer through consensus
     ///
+    /// If the peer ID is not provided, this will set the replica state for the current peer.
+    ///
     /// # Warning
     ///
     /// This only submits a proposal to consensus. Calling this does not guarantee that consensus
     /// will actually apply the operation across the cluster.
     async fn set_shard_replica_set_state(
         &self,
+        peer_id: Option<PeerId>,
         collection_id: CollectionId,
         shard_id: ShardId,
         state: ReplicaState,
@@ -498,6 +502,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     /// operation.
     async fn set_shard_replica_set_state_confirm_and_retry(
         &self,
+        peer_id: Option<PeerId>,
         collection_id: &CollectionId,
         shard_id: ShardId,
         state: ReplicaState,
@@ -515,7 +520,13 @@ pub trait ShardTransferConsensus: Send + Sync {
 
             log::trace!("Propose and confirm set shard replica set state");
             result = self
-                .set_shard_replica_set_state(collection_id.clone(), shard_id, state, from_state)
+                .set_shard_replica_set_state(
+                    peer_id,
+                    collection_id.clone(),
+                    shard_id,
+                    state,
+                    from_state,
+                )
                 .await;
 
             match &result {
