@@ -2148,7 +2148,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            shard::wal::WalError::InitWalError(_)
+            shard::wal::WalError::ReadOnlyWalError
         ));
 
         let recovery_point = wal_mode.recovery_point().await;
