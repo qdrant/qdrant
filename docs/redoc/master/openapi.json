@@ -11675,8 +11675,8 @@
             "type": "boolean"
           },
           "appendable_quantization": {
-            "description": "Use appendable quantization in appendable plain segments.",
-            "default": false,
+            "description": "Use appendable quantization in appendable plain segments.\n\nEnabled by default in Qdrant 1.16.0.",
+            "default": true,
             "type": "boolean"
           }
         }

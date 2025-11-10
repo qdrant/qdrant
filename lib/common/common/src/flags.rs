@@ -59,7 +59,8 @@ pub struct FeatureFlags {
     pub migrate_rocksdb_payload_indices: bool,
 
     /// Use appendable quantization in appendable plain segments.
-    // TODO(1.16.0): enable by default
+    ///
+    /// Enabled by default in Qdrant 1.16.0.
     pub appendable_quantization: bool,
 }
 
@@ -75,7 +76,7 @@ impl Default for FeatureFlags {
             migrate_rocksdb_vector_storage: false,
             migrate_rocksdb_payload_storage: false,
             migrate_rocksdb_payload_indices: false,
-            appendable_quantization: false,
+            appendable_quantization: true,
         }
     }
 }
