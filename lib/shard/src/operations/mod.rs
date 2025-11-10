@@ -2,12 +2,13 @@ pub mod payload_ops;
 pub mod point_ops;
 pub mod vector_ops;
 
-use crate::PeerId;
-use crate::operations::point_ops::PointOperations;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PointIdType};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
+
+use crate::PeerId;
+use crate::operations::point_ops::PointOperations;
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants, Hash)]
 #[strum_discriminants(derive(EnumIter))]
