@@ -1,8 +1,5 @@
-import concurrent.futures
 import multiprocessing
 import pathlib
-import threading
-import time
 
 from .custom_sharding import create_collection_with_custom_sharding, create_shard
 from .fixtures import *
