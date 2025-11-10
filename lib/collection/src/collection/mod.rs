@@ -199,6 +199,15 @@ impl Collection {
         })
     }
 
+    /// Load an existing collection from disk.
+    ///
+    /// # Arguments
+    ///
+    /// * `read_only` - If true, opens the collection in read-only mode. In this mode:
+    ///   - Write-ahead log (WAL) is not loaded or created
+    ///   - All write operations will fail with an error
+    ///   - No filesystem modifications are made during operation
+    ///   - Suitable for read-only filesystems or serving read-only replicas
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
         collection_id: CollectionId,
@@ -214,6 +223,7 @@ impl Collection {
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
+        read_only: bool,
     ) -> Self {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
@@ -280,6 +290,7 @@ impl Collection {
                 update_runtime.clone().unwrap_or_else(Handle::current),
                 search_runtime.clone().unwrap_or_else(Handle::current),
                 optimizer_resource_budget.clone(),
+                read_only,
             )
             .await;
 

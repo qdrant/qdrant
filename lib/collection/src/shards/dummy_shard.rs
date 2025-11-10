@@ -89,7 +89,7 @@ impl DummyShard {
     }
 
     fn dummy<T>(&self) -> CollectionResult<T> {
-        Err(CollectionError::service_error(self.message.to_string()))
+        Err(CollectionError::service_error(self.message.clone()))
     }
 }
 

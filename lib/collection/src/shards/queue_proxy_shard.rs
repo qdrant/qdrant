@@ -35,6 +35,7 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
+use crate::wal_delta::WalMode;
 
 /// Number of operations in batch when syncing
 const BATCH_SIZE: usize = 10;
@@ -75,10 +76,16 @@ impl QueueProxyShard {
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
-    ) -> Self {
-        Self {
-            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_keep_from, progress).await),
+    ) -> Result<Self, (LocalShard, CollectionError)> {
+        if let Err(err) = wrapped_shard
+            .wal
+            .ensure_writable("create queue proxy shard")
+        {
+            return Err((wrapped_shard, err));
         }
+        Ok(Self {
+            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_keep_from, progress).await),
+        })
     }
 
     /// Queue proxy the given local shard and point to the remote shard, from a specific WAL version.
@@ -99,8 +106,19 @@ impl QueueProxyShard {
         version: u64,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Result<Self, (LocalShard, CollectionError)> {
+        // Check if WAL is writable before proceeding
+        if !wrapped_shard.wal.supports_writable_operations() {
+            return Err((
+                wrapped_shard,
+                CollectionError::service_error(
+                    "Cannot create queue proxy shard in read-only mode".to_string(),
+                ),
+            ));
+        }
+
         // Lock WAL until we've successfully created the queue proxy shard
-        let wal = wrapped_shard.wal.wal.clone();
+        // Since we verified supports_writable_operations() above, this should never fail
+        let wal = wrapped_shard.wal.writable_wal().unwrap().clone();
         let wal_lock = wal.lock().await;
 
         // If start version is not in current WAL bounds [first_idx, last_idx + 1], we cannot reliably transfer WAL
@@ -414,7 +432,14 @@ impl Inner {
         wal_keep_from: Arc<AtomicU64>,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
-        let start_from = wrapped_shard.wal.wal.lock().await.last_index() + 1;
+        // Since both constructors check for writable operations and return errors for read-only WALs,
+        // we can safely assume the WAL is writable here
+        let start_from = match &wrapped_shard.wal {
+            WalMode::Writable(wal) => wal.wal.lock().await.last_index() + 1,
+            WalMode::ReadOnly(_) => {
+                unreachable!("WAL should be writable - constructors check this")
+            }
+        };
         Self::new_from_version(
             wrapped_shard,
             remote_shard,
@@ -488,7 +513,7 @@ impl Inner {
 
         // Lock wall, count pending items to transfer, grab batch
         let (pending_count, total, batch) = {
-            let wal = self.wrapped_shard.wal.wal.lock().await;
+            let wal = self.wrapped_shard.wal.writable_wal()?.lock().await;
             let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
             let items_total = (transfer_from - self.started_at) + items_left;
             let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();

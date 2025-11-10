@@ -603,6 +603,7 @@ impl ShardHolder {
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
+        read_only: bool,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
@@ -661,6 +662,7 @@ impl ShardHolder {
                 update_runtime.clone(),
                 search_runtime.clone(),
                 optimizer_resource_budget.clone(),
+                read_only,
             )
             .await;
 

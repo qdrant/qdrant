@@ -296,6 +296,7 @@ mod test {
                 None,
                 ResourceBudget::default(),
                 None,
+                false, // read_only
             )
             .await;
         }

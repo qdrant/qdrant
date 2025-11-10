@@ -62,7 +62,7 @@ pub async fn handle_existing_collections(
         let sharding_method = params.sharding_method;
 
         let mut collection_create_operation = CreateCollectionOperation::new(
-            collection_name.to_string(),
+            collection_name.clone(),
             CreateCollection {
                 vectors: params.vectors,
                 sparse_vectors: params.sparse_vectors,
@@ -122,7 +122,7 @@ pub async fn handle_existing_collections(
 
                     consensus_operations.push(CollectionMetaOperations::CreateShardKey(
                         CreateShardKey {
-                            collection_name: collection_name.to_string(),
+                            collection_name: collection_name.clone(),
                             shard_key: shard_key.clone(),
                             placement,
                         },
@@ -142,7 +142,7 @@ pub async fn handle_existing_collections(
                 let _res = dispatcher_arc
                     .submit_collection_meta_op(
                         CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
-                            collection_name: collection_name.to_string(),
+                            collection_name: collection_name.clone(),
                             shard_id,
                             peer_id: this_peer_id,
                             state: ReplicaState::Active,

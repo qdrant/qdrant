@@ -252,6 +252,7 @@ impl ShardReplicaSet {
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
+        read_only: bool,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init_default(shard_path.join(REPLICA_STATE_FILE)).unwrap();
@@ -304,6 +305,7 @@ impl ShardReplicaSet {
                     update_runtime.clone(),
                     search_runtime.clone(),
                     optimizer_resource_budget.clone(),
+                    read_only,
                 )
                 .await;
 

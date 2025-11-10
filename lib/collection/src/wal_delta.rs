@@ -5,6 +5,7 @@ use shard::wal::SerdeWal;
 use thiserror::Error;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{ClockTag, OperationWithClockTag};
 use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
 
@@ -27,6 +28,32 @@ pub struct RecoverableWal {
     ///   - (so if we advance these clocks, we have to advance `newest_clocks` as well)
     /// - this WAL cannot resolve any delta below any of these clocks
     pub(super) oldest_clocks: Arc<Mutex<ClockMap>>,
+}
+
+/// A read-only WAL that only contains clock maps without an actual WAL file handle.
+pub struct ReadOnlyWal {
+    /// Map of all highest seen clocks for each peer and clock ID.
+    pub(super) newest_clocks: Arc<Mutex<ClockMap>>,
+
+    /// Map of all clocks and ticks that are cut off.
+    pub(super) oldest_clocks: Arc<Mutex<ClockMap>>,
+}
+
+impl ReadOnlyWal {
+    pub fn new(newest_clocks: Arc<Mutex<ClockMap>>, oldest_clocks: Arc<Mutex<ClockMap>>) -> Self {
+        Self {
+            newest_clocks,
+            oldest_clocks,
+        }
+    }
+}
+
+/// WAL mode that can be either writable or read-only.
+pub enum WalMode {
+    /// Writable WAL with full functionality
+    Writable(RecoverableWal),
+    /// Read-only WAL with clock maps only
+    ReadOnly(ReadOnlyWal),
 }
 
 impl RecoverableWal {
@@ -144,6 +171,113 @@ impl RecoverableWal {
     }
 }
 
+impl WalMode {
+    /// Write a record to the WAL, guarantee durability.
+    ///
+    /// Returns an error in read-only mode.
+    #[must_use = "returned record number and WAL lock must be used carefully"]
+    pub async fn lock_and_write(
+        &self,
+        operation: &mut OperationWithClockTag,
+    ) -> shard::wal::Result<(u64, OwnedMutexGuard<SerdeWal<OperationWithClockTag>>)> {
+        match self {
+            WalMode::Writable(wal) => wal.lock_and_write(operation).await,
+            WalMode::ReadOnly(_) => Err(shard::wal::WalError::ReadOnlyWalError),
+        }
+    }
+
+    /// Update the cutoff clock map based on the given recovery point
+    ///
+    /// This is a no-op in read-only mode.
+    pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) {
+        match self {
+            WalMode::Writable(wal) => wal.update_cutoff(cutoff).await,
+            WalMode::ReadOnly(_) => {}
+        }
+    }
+
+    /// Get a recovery point for this WAL.
+    pub async fn recovery_point(&self) -> RecoveryPoint {
+        match self {
+            WalMode::Writable(wal) => wal.recovery_point().await,
+            WalMode::ReadOnly(wal) => wal.newest_clocks.lock().await.to_recovery_point(),
+        }
+    }
+
+    pub async fn resolve_wal_delta(
+        &self,
+        recovery_point: RecoveryPoint,
+    ) -> Result<Option<u64>, WalDeltaError> {
+        match self {
+            WalMode::Writable(wal) => wal.resolve_wal_delta(recovery_point).await,
+            WalMode::ReadOnly(_) => {
+                // Cannot resolve WAL delta in read-only mode as we don't have WAL entries
+                Err(WalDeltaError::ReadOnlyMode)
+            }
+        }
+    }
+
+    pub async fn wal_version(&self) -> Result<Option<u64>, WalDeltaError> {
+        match self {
+            WalMode::Writable(wal) => wal.wal_version().await,
+            WalMode::ReadOnly(_) => Ok(None),
+        }
+    }
+
+    /// Get the underlying LockedWal if this is a writable WAL.
+    pub fn as_writable_wal(&self) -> Option<&LockedWal> {
+        match self {
+            WalMode::Writable(wal) => Some(&wal.wal),
+            WalMode::ReadOnly(_) => None,
+        }
+    }
+
+    /// Get the newest clocks from either mode.
+    pub fn newest_clocks(&self) -> &Arc<Mutex<ClockMap>> {
+        match self {
+            WalMode::Writable(wal) => &wal.newest_clocks,
+            WalMode::ReadOnly(wal) => &wal.newest_clocks,
+        }
+    }
+
+    /// Get the oldest clocks from either mode.
+    pub fn oldest_clocks(&self) -> &Arc<Mutex<ClockMap>> {
+        match self {
+            WalMode::Writable(wal) => &wal.oldest_clocks,
+            WalMode::ReadOnly(wal) => &wal.oldest_clocks,
+        }
+    }
+
+    /// Check if this WAL mode supports direct operations.
+    ///
+    /// This replaces explicit `matches!(wal, WalMode::Writable(_))` checks.
+    pub fn supports_writable_operations(&self) -> bool {
+        matches!(self, WalMode::Writable(_))
+    }
+
+    /// Perform operation that requires writable WAL, returning error if in read-only mode.
+    ///
+    /// This is a convenience method to reduce boilerplate in places that need to check
+    /// for writable WAL before performing operations.
+    pub fn ensure_writable(&self, operation_name: &str) -> CollectionResult<()> {
+        if !self.supports_writable_operations() {
+            return Err(CollectionError::bad_request(format!(
+                "Cannot {operation_name} in read-only mode"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Get the underlying LockedWal for operations that require direct WAL access.
+    ///
+    /// This method should be used when you need direct access to the WAL and have already
+    /// verified that writable operations are supported.
+    pub fn writable_wal(&self) -> CollectionResult<&LockedWal> {
+        self.as_writable_wal()
+            .ok_or_else(|| CollectionError::bad_request("Cannot access WAL in read-only mode"))
+    }
+}
+
 /// Resolve the WAL delta for the given `recovery_point`
 ///
 /// A `local_wal`, `newest_clocks` and `oldest_clocks` are required to resolve the
@@ -244,6 +378,8 @@ fn resolve_wal_delta(
 pub enum WalDeltaError {
     #[error("recovery point has no clocks to resolve delta for")]
     Empty,
+    #[error("cannot resolve WAL delta in read-only mode")]
+    ReadOnlyMode,
     #[error("recovery point requests clocks this WAL does not know about")]
     UnknownClocks,
     #[error("recovery point requests higher clocks this WAL has")]
@@ -1978,5 +2114,130 @@ mod tests {
             allow_gaps,
         )
         .unwrap_err();
+    }
+
+    fn fixture_read_only_wal() -> (ReadOnlyWal, TempDir) {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let options = WalOptions {
+            segment_capacity: 1024 * 1024,
+            segment_queue_len: 0,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
+        };
+        let wal = SerdeWal::new(dir.path().to_str().unwrap(), options).unwrap();
+        let recoverable_wal = RecoverableWal::new(
+            Arc::new(Mutex::new(wal)),
+            Arc::new(Mutex::new(ClockMap::default())),
+            Arc::new(Mutex::new(ClockMap::default())),
+        );
+
+        let read_only_wal = ReadOnlyWal::new(
+            recoverable_wal.newest_clocks.clone(),
+            recoverable_wal.oldest_clocks.clone(),
+        );
+
+        (read_only_wal, dir)
+    }
+
+    #[tokio::test]
+    async fn test_wal_mode_read_only_methods() {
+        let (read_only_wal, _dir) = fixture_read_only_wal();
+        let wal_mode = WalMode::ReadOnly(read_only_wal);
+        let mut operation =
+            OperationWithClockTag::new(mock_operation(1), Some(ClockTag::new(1, 0, 0)));
+        let result = wal_mode.lock_and_write(&mut operation).await;
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            shard::wal::WalError::ReadOnlyWalError
+        ));
+
+        let recovery_point = wal_mode.recovery_point().await;
+        assert!(recovery_point.is_empty());
+
+        let result = wal_mode.resolve_wal_delta(RecoveryPoint::default()).await;
+        assert!(matches!(result.unwrap_err(), WalDeltaError::ReadOnlyMode));
+
+        let result = wal_mode.wal_version().await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+
+        wal_mode.update_cutoff(&RecoveryPoint::default()).await;
+        assert!(wal_mode.as_writable_wal().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_wal_mode_helper_methods() {
+        let (writable_wal, _dir) = fixture_empty_wal();
+        let (read_only_wal, _dir2) = fixture_read_only_wal();
+        let writable_mode = WalMode::Writable(writable_wal);
+        let read_only_mode = WalMode::ReadOnly(read_only_wal);
+
+        assert!(writable_mode.supports_writable_operations());
+        assert!(!read_only_mode.supports_writable_operations());
+        assert!(writable_mode.ensure_writable("test operation").is_ok());
+        assert!(read_only_mode.ensure_writable("test operation").is_err());
+        assert!(writable_mode.writable_wal().is_ok());
+        assert!(read_only_mode.writable_wal().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_read_only_wal_clock_maps() {
+        let (writable_wal, _dir) = fixture_empty_wal();
+        let mut operation =
+            OperationWithClockTag::new(mock_operation(1), Some(ClockTag::new(1, 0, 1)));
+        let (_, _) = writable_wal.lock_and_write(&mut operation).await.unwrap();
+        let read_only_wal = ReadOnlyWal::new(
+            writable_wal.newest_clocks.clone(),
+            writable_wal.oldest_clocks.clone(),
+        );
+        let read_only_mode = WalMode::ReadOnly(read_only_wal);
+        let newest_clocks = read_only_mode.newest_clocks();
+        let oldest_clocks = read_only_mode.oldest_clocks();
+        let writable_newest = {
+            let guard = writable_wal.newest_clocks.lock().await;
+            guard.clone()
+        };
+
+        let writable_oldest = {
+            let guard = writable_wal.oldest_clocks.lock().await;
+            guard.clone()
+        };
+
+        let read_only_newest = newest_clocks.lock().await.clone();
+        let read_only_oldest = oldest_clocks.lock().await.clone();
+
+        assert_eq!(writable_newest, read_only_newest);
+        assert_eq!(writable_oldest, read_only_oldest);
+    }
+
+    #[tokio::test]
+    async fn test_wal_mode_update_cutoff_read_only() {
+        let (read_only_wal, _dir) = fixture_read_only_wal();
+        let wal_mode = WalMode::ReadOnly(read_only_wal);
+        let recovery_point = RecoveryPoint::default();
+        wal_mode.update_cutoff(&recovery_point).await;
+    }
+
+    #[tokio::test]
+    async fn test_wal_mode_error_messages() {
+        let (read_only_wal, _dir) = fixture_read_only_wal();
+        let wal_mode = WalMode::ReadOnly(read_only_wal);
+
+        let result = wal_mode.ensure_writable("perform writes");
+        assert!(result.is_err());
+        let error_str = format!("{:?}", result.unwrap_err());
+        assert!(error_str.contains("Cannot perform writes in read-only mode"));
+
+        let result = wal_mode.writable_wal();
+        assert!(result.is_err());
+        let error_str = format!("{:?}", result.unwrap_err());
+        assert!(error_str.contains("Cannot access WAL in read-only mode"));
+
+        let mut operation =
+            OperationWithClockTag::new(mock_operation(1), Some(ClockTag::new(1, 0, 0)));
+        let result = wal_mode.lock_and_write(&mut operation).await;
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(matches!(error, shard::wal::WalError::ReadOnlyWalError));
     }
 }

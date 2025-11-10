@@ -99,7 +99,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
     let mut offset = 0; // elements for Plain, bytes for Compressed/CompressedWithVectors
     let mut offsets = Vec::with_capacity(total_offsets_len as usize);
     offsets.push(0);
-    for level in 0..levels_count {
+    for (level, _) in point_count_by_level.iter().enumerate() {
         let count = point_count_by_level.iter().skip(level).sum::<u64>() as usize;
         let (level_m, mut iter) = match level {
             0 => (hnsw_m.m0, Either::Left((0..count).map(|x| x as u32))),

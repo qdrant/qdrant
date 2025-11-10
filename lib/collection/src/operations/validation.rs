@@ -45,9 +45,9 @@ fn describe_error(
 ) -> String {
     // Prefer to return message if set
     if let Some(message) = message {
-        return message.to_string();
+        return message.clone().into_owned();
     } else if let Some(Value::String(message)) = params.get("message") {
-        return message.to_string();
+        return message.clone();
     }
 
     // Generate messages based on codes

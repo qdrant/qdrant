@@ -63,7 +63,7 @@ fn test_update_proxy_segments() {
 
     let _proxy_id = wrap_proxy(segments.clone(), sid1, dir.path());
 
-    let vectors = vec![
+    let vectors = [
         only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
         only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
     ];

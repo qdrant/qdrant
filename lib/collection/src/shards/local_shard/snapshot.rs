@@ -68,7 +68,7 @@ impl LocalShard {
         save_wal: bool,
     ) -> CollectionResult<()> {
         let segments = self.segments.clone();
-        let wal = self.wal.wal.clone();
+        let wal = self.wal.as_writable_wal().cloned();
 
         if !save_wal {
             // If we are not saving WAL, we still need to make sure that all submitted by this point
@@ -81,13 +81,13 @@ impl LocalShard {
         }
 
         let segments_path = Self::segments_path(&self.path);
-        let segment_config = self
-            .collection_config
-            .read()
-            .await
-            .to_base_segment_config()?;
+        let config_guard = self.collection_config.read().await;
+        let segment_config = config_guard.to_base_segment_config()?;
+        let wal_options = WalOptions::from(&config_guard.wal_config);
+        drop(config_guard);
         let payload_index_schema = self.payload_index_schema.clone();
         let temp_path = temp_path.to_owned();
+        let shard_path = self.path.clone();
 
         let tar_c = tar.clone();
         let update_lock = self.update_operation_lock.clone();
@@ -106,11 +106,28 @@ impl LocalShard {
                 update_lock,
             )?;
 
-            if save_wal {
-                // snapshot all shard's WAL
-                Self::snapshot_wal(wal, &tar_c)
-            } else {
-                Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
+            match (wal, save_wal) {
+                (Some(wal), true) => {
+                    // snapshot all shard's WAL
+                    Self::snapshot_wal(wal, &tar_c)
+                }
+                (Some(wal), false) => {
+                    // Create empty WAL compatible with stored data
+                    Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
+                }
+                (None, false) => {
+                    // In read-only mode, create empty WAL from disk WAL files if they exist
+                    Self::snapshot_empty_wal_from_disk(
+                        &shard_path,
+                        &temp_path,
+                        &tar_c,
+                        &wal_options,
+                    )
+                }
+                (None, true) => {
+                    // In read-only mode with save_wal=true, copy existing WAL files from disk if present
+                    Self::copy_wal_files_from_disk(&shard_path, &tar_c)
+                }
             }
         })
         .await??;
@@ -135,6 +152,124 @@ impl LocalShard {
             (wal_guard.segment_capacity(), wal_guard.last_index())
         };
 
+        let wal_options = WalOptions {
+            segment_capacity,
+            segment_queue_len: 0,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
+        };
+
+        Self::create_empty_wal_for_snapshot(temp_path, tar, latest_op_num, &wal_options)
+    }
+
+    /// Create empty WAL from disk WAL files in read-only mode
+    ///
+    /// This reads the WAL directory from disk and creates an empty WAL compatible with the stored data.
+    /// It checks if temp_path is writable before proceeding.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called within an asynchronous execution context.
+    fn snapshot_empty_wal_from_disk(
+        shard_path: &Path,
+        temp_path: &Path,
+        tar: &tar_ext::BuilderExt,
+        wal_options: &WalOptions,
+    ) -> CollectionResult<()> {
+        let wal_path = LocalShard::wal_path(shard_path);
+
+        // Check if WAL directory exists on disk
+        if !wal_path.exists() {
+            // No WAL files to copy, create empty WAL
+            return Self::create_empty_wal_for_snapshot(temp_path, tar, 0, wal_options);
+        }
+
+        // Check if temp_path is writable
+        // If temp_path is part of ./storage, it might not be writable
+        let test_file = temp_path.join(".wal_writability_test");
+        if let Err(err) = std::fs::File::create(&test_file) {
+            return Err(CollectionError::service_error(format!(
+                "temp_path {} is not writable: {err}",
+                temp_path.display()
+            )));
+        }
+        let _ = std::fs::remove_file(&test_file).inspect_err(|err| {
+            log::warn!(
+                "Failed to clean up writability test file {}: {err}",
+                test_file.display()
+            );
+        });
+
+        let latest_op_num =
+            match Self::read_last_op_index_from_disk(&wal_path, temp_path, wal_options) {
+                Ok(idx) => idx,
+                Err(err) => {
+                    return Err(CollectionError::service_error(format!(
+                        "Failed to inspect WAL at {} for snapshot: {err}",
+                        wal_path.display()
+                    )));
+                }
+            };
+
+        Self::create_empty_wal_for_snapshot(temp_path, tar, latest_op_num, wal_options)
+    }
+
+    fn read_last_op_index_from_disk(
+        wal_path: &Path,
+        temp_path: &Path,
+        wal_options: &WalOptions,
+    ) -> CollectionResult<u64> {
+        let wal_copy_dir = tempfile::tempdir_in(temp_path).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can not create temporary WAL inspection directory: {err}",
+            ))
+        })?;
+        let wal_copy_path = wal_copy_dir.path().to_path_buf();
+        Self::copy_wal_directory(wal_path, &wal_copy_path).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to copy WAL files from {}: {err}",
+                wal_path.display()
+            ))
+        })?;
+
+        let wal_open_options = WalOptions {
+            segment_capacity: wal_options.segment_capacity,
+            segment_queue_len: 0,
+            retain_closed: wal_options.retain_closed,
+        };
+
+        let wal = Wal::with_options(&wal_copy_path, &wal_open_options).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to open copied WAL from {}: {err}",
+                wal_path.display()
+            ))
+        })?;
+
+        Ok(if wal.num_entries() == 0 {
+            0
+        } else {
+            wal.last_index()
+        })
+    }
+
+    fn copy_wal_directory(source: &Path, destination: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(destination)?;
+        for entry in std::fs::read_dir(source)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                let target = destination.join(entry.file_name());
+                std::fs::copy(entry.path(), target)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Function to create an empty WAL for snapshot
+    fn create_empty_wal_for_snapshot(
+        temp_path: &Path,
+        tar: &tar_ext::BuilderExt,
+        latest_op_num: u64,
+        wal_options: &WalOptions,
+    ) -> CollectionResult<()> {
         let temp_dir = tempfile::tempdir_in(temp_path).map_err(|err| {
             CollectionError::service_error(format!(
                 "Can not create temporary directory for WAL: {err}",
@@ -144,9 +279,9 @@ impl LocalShard {
         Wal::generate_empty_wal_starting_at_index(
             temp_dir.path(),
             &WalOptions {
-                segment_capacity,
+                segment_capacity: wal_options.segment_capacity,
                 segment_queue_len: 0,
-                retain_closed: NonZeroUsize::new(1).unwrap(),
+                retain_closed: wal_options.retain_closed,
             },
             latest_op_num,
         )
@@ -158,6 +293,43 @@ impl LocalShard {
             .map_err(|err| {
                 CollectionError::service_error(format!("Error while archiving WAL: {err}"))
             })
+    }
+
+    /// Copy existing WAL files from disk in read-only mode
+    ///
+    /// This copies WAL files directly from the shard's WAL directory on disk.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called within an asynchronous execution context.
+    fn copy_wal_files_from_disk(
+        shard_path: &Path,
+        tar: &tar_ext::BuilderExt,
+    ) -> CollectionResult<()> {
+        let wal_path = LocalShard::wal_path(shard_path);
+
+        if !wal_path.exists() {
+            return Ok(());
+        }
+
+        let tar = tar.descend(Path::new(WAL_PATH))?;
+        for entry in std::fs::read_dir(&wal_path).map_err(|err| {
+            CollectionError::service_error(format!("Can't read WAL directory: {err}",))
+        })? {
+            let entry = entry.map_err(|err| {
+                CollectionError::service_error(format!("Can't read WAL directory: {err}",))
+            })?;
+
+            if entry.file_name() == ".wal" {
+                continue;
+            }
+
+            tar.blocking_append_file(&entry.path(), Path::new(&entry.file_name()))
+                .map_err(|err| {
+                    CollectionError::service_error(format!("Error while archiving WAL: {err}"))
+                })?;
+        }
+        Ok(())
     }
 
     /// snapshot WAL

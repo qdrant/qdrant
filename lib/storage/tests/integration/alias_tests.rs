@@ -94,6 +94,7 @@ fn test_alias_operation() {
         ChannelService::new(6333, None),
         0,
         Some(propose_operation_sender),
+        false,
     ));
     let dispatcher = Dispatcher::new(toc);
 

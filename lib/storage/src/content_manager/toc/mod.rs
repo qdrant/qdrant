@@ -99,13 +99,25 @@ impl TableOfContent {
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
+        read_only: bool,
     ) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
-        create_dir_all(&collections_path).expect("Can't create Collections directory");
-        if let Some(path) = storage_config.temp_path.as_deref() {
-            let temp_path = Path::new(path);
-            create_dir_all(temp_path).expect("Can't create temporary files directory");
+
+        if !read_only {
+            create_dir_all(&collections_path).expect("Can't create Collections directory");
+            if let Some(path) = storage_config.temp_path.as_deref() {
+                let temp_path = Path::new(path);
+                create_dir_all(temp_path).expect("Can't create temporary files directory");
+            }
         }
+
+        if read_only && !collections_path.exists() {
+            panic!(
+                "Collections directory does not exist at {}. Cannot start in read-only mode.",
+                collections_path.display()
+            );
+        }
+
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
         let mut collections: HashMap<String, Collection> = Default::default();
@@ -161,6 +173,7 @@ impl TableOfContent {
                 Some(update_runtime.handle().clone()),
                 optimizer_resource_budget.clone(),
                 storage_config.optimizers_overwrite.clone(),
+                read_only,
             ));
 
             collections.insert(collection_name, collection);
@@ -186,7 +199,7 @@ impl TableOfContent {
             }
         };
 
-        TableOfContent {
+        let toc = TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: Arc::new(storage_config.clone()),
             search_runtime,
@@ -203,7 +216,19 @@ impl TableOfContent {
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
             collection_hw_metrics: DashMap::new(),
+        };
+
+        if read_only {
+            toc.set_locks(
+                true,
+                Some(
+                    "Instance is running in read-only mode. Write operations are not allowed."
+                        .to_string(),
+                ),
+            );
         }
+
+        toc
     }
 
     /// Return `true` if service is working in distributed mode.
@@ -347,8 +372,8 @@ impl TableOfContent {
         for collection_pass in &all_collections {
             for alias in self.collection_aliases(collection_pass, access).await? {
                 aliases.push(AliasDescription {
-                    alias_name: alias.to_string(),
-                    collection_name: collection_pass.to_string(),
+                    alias_name: alias.clone(),
+                    collection_name: collection_pass.name().to_string(),
                 });
             }
         }
@@ -675,7 +700,7 @@ impl TableOfContent {
         self.collection_hw_metrics
             .iter()
             .map(|i| {
-                let key = i.key().to_string();
+                let key = i.key().clone();
                 let hw_usage = HardwareUsage {
                     cpu: i.get_cpu(),
                     payload_io_read: i.get_payload_io_read(),
