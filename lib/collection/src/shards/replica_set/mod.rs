@@ -1052,7 +1052,7 @@ impl ShardReplicaSet {
             Some(ReplicaState::Active) => true,
             Some(ReplicaState::ActiveRead) => true, // Can be only one replica per shard_id
             Some(ReplicaState::Resharding) => true, // Can be only one replica per shard_id
-            Some(ReplicaState::ReshardingScaleDown) => true, // Acts like Active, until resharding is commited
+            Some(ReplicaState::ReshardingScaleDown) => true, // Acts like Active, until resharding is committed
             // false from here on
             Some(ReplicaState::Partial) => false,
             Some(ReplicaState::Initializing) => false,
