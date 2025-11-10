@@ -8,6 +8,8 @@ authors = [
 license = "Apache-2.0"
 edition = "2024"
 
+[lints]
+workspace = true
 
 [features]
 testing = []

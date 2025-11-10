@@ -151,12 +151,15 @@ impl Shard {
         } = rescore_params;
 
         match rescore {
-            ScoringQuery::Fusion(fusion) => self.fusion_rescore(
-                sources.into_iter(),
-                fusion,
-                score_threshold.map(OrderedFloat::into_inner),
-                limit,
-            ),
+            ScoringQuery::Fusion(fusion) => {
+                let top_fused = Self::fusion_rescore(
+                    sources.into_iter(),
+                    fusion,
+                    score_threshold.map(OrderedFloat::into_inner),
+                    limit,
+                );
+                Ok(top_fused)
+            }
 
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
@@ -220,12 +223,11 @@ impl Shard {
     }
 
     fn fusion_rescore(
-        &self,
         sources: impl Iterator<Item = Vec<ScoredPoint>>,
         fusion: FusionInternal,
         score_threshold: Option<f32>,
         limit: usize,
-    ) -> OperationResult<Vec<ScoredPoint>> {
+    ) -> Vec<ScoredPoint> {
         let fused = match fusion {
             FusionInternal::RrfK(k) => rrf_scoring(sources, k),
             FusionInternal::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
@@ -241,7 +243,7 @@ impl Shard {
             fused.into_iter().take(limit).collect()
         };
 
-        Ok(top_fused)
+        top_fused
     }
 
     pub fn rescore_with_formula(
