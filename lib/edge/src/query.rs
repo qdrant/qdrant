@@ -55,8 +55,14 @@ impl Shard {
             scored_points_batch.push(scored_points)
         }
 
-        debug_assert_eq!(scored_points_batch.len(), 1);
-        let scored_points = scored_points_batch.pop().unwrap_or_default();
+        let [scored_points] = scored_points_batch
+            .try_into()
+            .map_err(|unconverted: Vec<_>| {
+                OperationError::service_error(format!(
+                    "unexpected scored points batch size: expected 1, received {}",
+                    unconverted.len(),
+                ))
+            })?;
 
         Ok(scored_points)
     }
@@ -82,15 +88,20 @@ impl Shard {
             hw_measurement_acc.clone(),
         )?;
 
-        let result = self
+        let [result] = self
             .fill_with_payload_or_vectors(
                 vec![results],
                 with_payload,
                 with_vector,
                 hw_measurement_acc,
             )?
-            .pop()
-            .unwrap_or_default();
+            .try_into()
+            .map_err(|unconverted: Vec<_>| {
+                OperationError::service_error(format!(
+                    "expected single result after filling payload/vectors, got {}",
+                    unconverted.len(),
+                ))
+            })?;
         Ok(result)
     }
 
@@ -150,6 +161,7 @@ impl Shard {
             let collection_result = if let Some(rescore_params) = collection_level {
                 self.rescore(shard_stage_result, rescore_params, hw_counter_acc)?
             } else {
+                // Only one shard result is expected at this point.
                 shard_stage_result.into_iter().next().unwrap_or_default()
             };
 
@@ -160,7 +172,14 @@ impl Shard {
             // It should be a query without prefetches.
             debug_assert_eq!(depth, 0);
             debug_assert_eq!(sources.len(), 1);
-            Ok(sources.pop().unwrap_or_default())
+            let [result] = sources.try_into().map_err(|unconverted: Vec<_>| {
+                OperationError::service_error(format!(
+                    "expected single source without rescore stages, got {}",
+                    unconverted.len(),
+                ))
+            })?;
+
+            Ok(result)
         }
     }
 

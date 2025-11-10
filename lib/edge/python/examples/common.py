@@ -4,9 +4,9 @@ import uuid
 
 from qdrant_edge import *
 
-print("---- Load shard ----")
 
 def load_new_shard():
+    print("---- Load shard ----")
     DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), "data")
 
     # Clear and recreate data directory

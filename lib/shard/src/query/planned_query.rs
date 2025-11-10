@@ -237,7 +237,7 @@ impl PlannedQuery {
         let sources =
             recurse_prefetches(&mut self.searches, &mut self.scrolls, prefetches, &filter)?;
 
-        let rescore_params = match rescoring_query {
+        let rescore_stages = match rescoring_query {
             ScoringQuery::Mmr(mmr) => {
                 let MmrInternal {
                     vector,
@@ -247,7 +247,7 @@ impl PlannedQuery {
                 } = &mmr;
 
                 // Although MMR gets computed at collection level, we select top candidates via a nearest rescoring first
-                let shard_level_rescore_params = RescoreParams {
+                let shard_level = RescoreParams {
                     rescore: ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
                         vector.clone(),
                         using,
@@ -257,7 +257,7 @@ impl PlannedQuery {
                     params,
                 };
 
-                let collection_level_rescore_params = RescoreParams {
+                let collection_level = RescoreParams {
                     rescore: ScoringQuery::Mmr(mmr),
                     limit,
                     score_threshold: score_threshold.map(OrderedFloat),
@@ -265,8 +265,8 @@ impl PlannedQuery {
                 };
 
                 Some(RescoreStages {
-                    shard_level: Some(shard_level_rescore_params),
-                    collection_level: Some(collection_level_rescore_params),
+                    shard_level: Some(shard_level),
+                    collection_level: Some(collection_level),
                 })
             }
             rescore @ (ScoringQuery::Vector(_)
@@ -291,7 +291,7 @@ impl PlannedQuery {
 
         let merge_plan = MergePlan {
             sources,
-            rescore_stages: rescore_params,
+            rescore_stages,
         };
 
         Ok(RootPlan {
@@ -352,7 +352,7 @@ fn recurse_prefetches(
             // Even if this is a fusion request, it can only be executed at shard level here,
             // because we can't forward the inner results to the collection level without
             // materializing them first.
-            let rescore_stage = RescoreStages::shard_level(RescoreParams {
+            let rescore_stages = RescoreStages::shard_level(RescoreParams {
                 rescore,
                 limit,
                 score_threshold,
@@ -361,7 +361,7 @@ fn recurse_prefetches(
 
             let merge_plan = MergePlan {
                 sources: inner_sources,
-                rescore_stages: Some(rescore_stage),
+                rescore_stages: Some(rescore_stages),
             };
 
             Source::Prefetch(Box::new(merge_plan))
