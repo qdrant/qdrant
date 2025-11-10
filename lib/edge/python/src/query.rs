@@ -5,7 +5,7 @@ use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::data_types::order_by::{Direction, OrderBy, StartFrom};
-use segment::data_types::vectors::VectorInternal;
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::json_path::JsonPath;
 use shard::query::query_enum::QueryEnum;
@@ -266,13 +266,13 @@ impl PyMmr {
     #[new]
     pub fn new(
         vector: PyNamedVector,
-        using: String,
+        using: Option<String>,
         lambda: f32,
         candidates_limit: usize,
     ) -> PyResult<Self> {
         let mmr = MmrInternal {
             vector: VectorInternal::try_from(vector)?,
-            using,
+            using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
             lambda: OrderedFloat(lambda),
             candidates_limit,
         };
