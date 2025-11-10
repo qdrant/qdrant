@@ -160,8 +160,15 @@ def test_tenant_promotion_simple(tmp_path: pathlib.Path):
     match, msg = match_results(results, results2)
     assert match, f"Results differ after tenant1 promotion start: {msg}"
 
-    # Wait all transfers complete
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    # Wait all transfers complete on all peers
+    for peer_url in peer_api_uris:
+        wait_for_collection_shard_transfers_count(peer_url, COLLECTION_NAME, 0)
+        # Check that new shard have active state
+        info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+        for shard in info["local_shards"]:
+            assert shard['state'] == 'Active'
+        for shard in info["remote_shards"]:
+            assert shard['state'] == 'Active'
 
     results3 = search_points(peer_api_uris[0])
     match, msg = match_results(results, results3)
