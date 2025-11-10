@@ -67,7 +67,7 @@ impl SegmentHolder {
 
         if !sync && self.is_background_flushing() {
             // There is already a background flush ongoing, return current max persisted version
-            return self.get_max_persisted_version(segment_reads, lock_order);
+            return Ok(self.get_max_persisted_version(segment_reads, lock_order));
         }
 
         // This lock also prevents multiple parallel sync flushes
@@ -97,7 +97,7 @@ impl SegmentHolder {
             );
         }
 
-        self.get_max_persisted_version(segment_reads, lock_order)
+        Ok(self.get_max_persisted_version(segment_reads, lock_order))
     }
 
     /// Defines naive flush ordering for segments.
@@ -148,7 +148,7 @@ impl SegmentHolder {
         &self,
         segment_reads: Vec<RwLockReadGuard<'_, dyn SegmentEntry>>,
         lock_order: Vec<SegmentId>,
-    ) -> OperationResult<SeqNumberType> {
+    ) -> SeqNumberType {
         // Start with the max_persisted_vesrion at the set overwrite value, which may just be 0
         // Any of the segments we flush may increase this if they have a higher persisted version
         // The overwrite is required to ensure we acknowledge no-op operations in WAL that didn't hit any segment
@@ -184,12 +184,12 @@ impl SegmentHolder {
             log::trace!(
                 "Some segments have unsaved changes, lowest unsaved version: {min_unsaved_version}"
             );
-            Ok(min_unsaved_version)
+            min_unsaved_version
         } else {
             log::trace!(
                 "All segments flushed successfully, max persisted version: {max_persisted_version}"
             );
-            Ok(max_persisted_version)
+            max_persisted_version
         }
     }
 
