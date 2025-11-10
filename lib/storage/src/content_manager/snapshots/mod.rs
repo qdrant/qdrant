@@ -132,7 +132,7 @@ async fn _do_create_full_snapshot(
     let mut alias_mapping: HashMap<String, String> = Default::default();
     for collection_pass in &all_collections {
         for alias in toc.collection_aliases(collection_pass, &access).await? {
-            alias_mapping.insert(alias.to_string(), collection_pass.name().to_string());
+            alias_mapping.insert(alias.clone(), collection_pass.name().to_string());
         }
     }
 

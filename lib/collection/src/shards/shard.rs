@@ -20,6 +20,7 @@ use crate::shards::proxy_shard::ProxyShard;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
+use crate::wal_delta::WalMode;
 
 pub type ShardId = u32;
 
@@ -261,18 +262,18 @@ impl Shard {
             }
         };
 
-        // Handle read-only mode (no WAL)
-        let Some(wal) = wal else {
-            log::debug!("Cannot resolve WAL delta in read-only mode");
-            return Ok(None);
-        };
-
         // Resolve WAL delta and report
         match wal.resolve_wal_delta(recovery_point).await {
             Ok(Some(version)) => {
+                let record_count = match wal {
+                    WalMode::Writable(recoverable_wal) => {
+                        let wal_guard = recoverable_wal.wal.lock().await;
+                        wal_guard.last_index().saturating_sub(version)
+                    }
+                    WalMode::ReadOnly(_) => 0,
+                };
                 log::debug!(
-                    "Resolved WAL delta from {version}, which counts {} records",
-                    wal.wal.lock().await.last_index().saturating_sub(version),
+                    "Resolved WAL delta from {version}, which counts {record_count} records",
                 );
                 Ok(Some(version))
             }
@@ -291,13 +292,13 @@ impl Shard {
     pub async fn wal_version(&self) -> CollectionResult<Option<u64>> {
         match self {
             Self::Local(local_shard) => match &local_shard.wal {
-                Some(wal) => wal.wal_version().await.map_err(|err| {
+                WalMode::Writable(wal) => wal.wal_version().await.map_err(|err| {
                     CollectionError::service_error(format!(
                         "Cannot get WAL version on {}: {err}",
                         self.variant_name(),
                     ))
                 }),
-                None => Ok(None),
+                WalMode::ReadOnly(_) => Ok(None),
             },
 
             Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {

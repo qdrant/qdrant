@@ -81,8 +81,7 @@ async fn test_read_only_mode() {
             CountRequestInternal {
                 filter: None,
                 exact: true,
-            }
-            .into(),
+            },
             None,
             &ShardSelectorInternal::All,
             None,
@@ -109,7 +108,7 @@ async fn test_read_only_mode() {
         .await;
     assert!(matches!(
         upsert_result,
-        Err(CollectionError::ServiceError { .. })
+        Err(CollectionError::BadRequest { .. })
     ));
 
     // Test 4: Delete fails
@@ -125,7 +124,7 @@ async fn test_read_only_mode() {
         .await;
     assert!(matches!(
         delete_result,
-        Err(CollectionError::ServiceError { .. })
+        Err(CollectionError::BadRequest { .. })
     ));
 
     // Test 5: Data remains unchanged after failed operations
@@ -134,8 +133,7 @@ async fn test_read_only_mode() {
             CountRequestInternal {
                 filter: None,
                 exact: true,
-            }
-            .into(),
+            },
             None,
             &ShardSelectorInternal::All,
             None,

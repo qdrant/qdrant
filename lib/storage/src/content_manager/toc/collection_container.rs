@@ -177,7 +177,7 @@ impl TableOfContent {
                     let shard_distribution =
                         CollectionShardDistribution::from_shards_info(state.shards.clone());
                     let collection = Collection::new(
-                        id.to_string(),
+                        id.clone(),
                         self.this_peer_id,
                         &collection_path,
                         &snapshots_path,
@@ -190,16 +190,16 @@ impl TableOfContent {
                         self.channel_service.clone(),
                         Self::change_peer_from_state_callback(
                             self.consensus_proposal_sender.clone(),
-                            id.to_string(),
+                            id.clone(),
                             ReplicaState::Dead,
                         ),
                         Self::request_shard_transfer_callback(
                             self.consensus_proposal_sender.clone(),
-                            id.to_string(),
+                            id.clone(),
                         ),
                         Self::abort_shard_transfer_callback(
                             self.consensus_proposal_sender.clone(),
-                            id.to_string(),
+                            id.clone(),
                         ),
                         Some(self.search_runtime.handle().clone()),
                         Some(self.update_runtime.handle().clone()),
@@ -208,7 +208,7 @@ impl TableOfContent {
                     )
                     .await?;
                     collections.validate_collection_not_exists(id)?;
-                    collections.insert(id.to_string(), collection);
+                    collections.insert(id.clone(), collection);
                 }
 
                 let Some(collection) = collections.get(id) else {

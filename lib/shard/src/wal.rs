@@ -238,6 +238,12 @@ pub enum WalError {
     ClockRejected,
 }
 
+impl WalError {
+    pub fn is_read_only(&self) -> bool {
+        matches!(self, WalError::InitWalError(msg) if msg.contains("read-only"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(not(target_os = "windows"))]

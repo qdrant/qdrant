@@ -72,25 +72,25 @@ impl ShardOperation for LocalShard {
             // It is *critical* to hold `_wal_lock` while sending operation to the update handler!
             //
             // TODO: Refactor `lock_and_write`, so this is less terrible? :/
-            let (operation_id, _wal_lock) = if let Some(ref wal) = self.wal {
-                match wal.lock_and_write(&mut operation).await {
-                    Ok(id_and_lock) => id_and_lock,
+            let (operation_id, _wal_lock) = match self.wal.lock_and_write(&mut operation).await {
+                Ok(id_and_lock) => id_and_lock,
 
-                    Err(shard::wal::WalError::ClockRejected) => {
-                        // Propagate clock rejection to operation sender
-                        return Ok(UpdateResult {
-                            operation_id: None,
-                            status: UpdateStatus::ClockRejected,
-                            clock_tag: operation.clock_tag,
-                        });
-                    }
-
-                    Err(err) => return Err(err.into()),
+                Err(shard::wal::WalError::ClockRejected) => {
+                    // Propagate clock rejection to operation sender
+                    return Ok(UpdateResult {
+                        operation_id: None,
+                        status: UpdateStatus::ClockRejected,
+                        clock_tag: operation.clock_tag,
+                    });
                 }
-            } else {
-                return Err(CollectionError::service_error(
-                    "Cannot write operations in read-only mode",
-                ));
+
+                Err(shard::wal::WalError::InitWalError(msg)) if msg.contains("read-only") => {
+                    return Err(CollectionError::bad_request(
+                        "Cannot write operations in read-only mode",
+                    ));
+                }
+
+                Err(err) => return Err(err.into()),
             };
 
             channel_permit.send(UpdateSignal::Operation(OperationData {

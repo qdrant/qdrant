@@ -250,13 +250,11 @@ fn main() -> anyhow::Result<()> {
 
     if !args.read_only {
         create_dir_all(&settings.storage.storage_path)?;
-    } else {
-        if !Path::new(&settings.storage.storage_path).exists() {
-            return Err(anyhow::anyhow!(
-                "Storage directory does not exist at {}. Cannot start in read-only mode.",
-                settings.storage.storage_path
-            ));
-        }
+    } else if !Path::new(&settings.storage.storage_path).exists() {
+        return Err(anyhow::anyhow!(
+            "Storage directory does not exist at {}. Cannot start in read-only mode.",
+            settings.storage.storage_path
+        ));
     }
 
     if !args.read_only {

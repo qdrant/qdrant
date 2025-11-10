@@ -564,7 +564,7 @@ fn test_vector_compatibility_checks() {
     let internal_id = segment.lookup_internal_id(point_id).unwrap();
 
     // A set of broken vectors
-    let wrong_vectors_single = vec![
+    let wrong_vectors_single = [
         // Incorrect dimensionality
         (VECTOR1_NAME, vec![]),
         (VECTOR1_NAME, vec![0.0, 1.0, 0.0]),

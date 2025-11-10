@@ -35,6 +35,7 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
+use crate::wal_delta::WalMode;
 
 /// Number of operations in batch when syncing
 const BATCH_SIZE: usize = 10;
@@ -76,13 +77,11 @@ impl QueueProxyShard {
         wal_keep_from: Arc<AtomicU64>,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Result<Self, (LocalShard, CollectionError)> {
-        if wrapped_shard.wal.is_none() {
-            return Err((
-                wrapped_shard,
-                CollectionError::service_error(
-                    "Cannot create queue proxy shard in read-only mode".to_string(),
-                ),
-            ));
+        if let Err(err) = wrapped_shard
+            .wal
+            .ensure_writable("create queue proxy shard")
+        {
+            return Err((wrapped_shard, err));
         }
         Ok(Self {
             inner: Some(Inner::new(wrapped_shard, remote_shard, wal_keep_from, progress).await),
@@ -107,16 +106,19 @@ impl QueueProxyShard {
         version: u64,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Result<Self, (LocalShard, CollectionError)> {
-        // Lock WAL until we've successfully created the queue proxy shard
-        let Some(ref recoverable_wal) = wrapped_shard.wal else {
+        // Check if WAL is writable before proceeding
+        if !wrapped_shard.wal.supports_writable_operations() {
             return Err((
                 wrapped_shard,
                 CollectionError::service_error(
                     "Cannot create queue proxy shard in read-only mode".to_string(),
                 ),
             ));
-        };
-        let wal = recoverable_wal.wal.clone();
+        }
+
+        // Lock WAL until we've successfully created the queue proxy shard
+        // Since we verified supports_writable_operations() above, this should never fail
+        let wal = wrapped_shard.wal.writable_wal().unwrap().clone();
         let wal_lock = wal.lock().await;
 
         // If start version is not in current WAL bounds [first_idx, last_idx + 1], we cannot reliably transfer WAL
@@ -430,9 +432,13 @@ impl Inner {
         wal_keep_from: Arc<AtomicU64>,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
+        // Since both constructors check for writable operations and return errors for read-only WALs,
+        // we can safely assume the WAL is writable here
         let start_from = match &wrapped_shard.wal {
-            Some(wal) => wal.wal.lock().await.last_index() + 1,
-            None => 0,
+            WalMode::Writable(wal) => wal.wal.lock().await.last_index() + 1,
+            WalMode::ReadOnly(_) => {
+                unreachable!("WAL should be writable - constructors check this")
+            }
         };
         Self::new_from_version(
             wrapped_shard,
@@ -507,12 +513,7 @@ impl Inner {
 
         // Lock wall, count pending items to transfer, grab batch
         let (pending_count, total, batch) = {
-            let Some(ref recoverable_wal) = self.wrapped_shard.wal else {
-                return Err(CollectionError::service_error(
-                    "Cannot transfer WAL in read-only mode",
-                ));
-            };
-            let wal = recoverable_wal.wal.lock().await;
+            let wal = self.wrapped_shard.wal.writable_wal()?.lock().await;
             let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
             let items_total = (transfer_from - self.started_at) + items_left;
             let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
