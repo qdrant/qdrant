@@ -167,11 +167,11 @@ impl PySparseVector {
         self.0.values.as_slice()
     }
 
-    fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
+    fn __repr__(&self) -> String {
+        format!(
             "SparseVector(indices={:?}, values={:?})",
             self.indices(),
             self.values()
-        ))
+        )
     }
 }

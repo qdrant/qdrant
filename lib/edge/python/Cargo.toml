@@ -5,6 +5,8 @@ authors = ["Qdrant Team <info@qdrant.tech>"]
 license = "Apache-2.0"
 edition = "2024"
 
+[lints]
+workspace = true
 
 [lib]
 name = "qdrant_edge"
