@@ -1,50 +1,60 @@
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
+use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use segment::types::*;
 use segment::utils::maybe_arc::MaybeArc;
 
 use crate::types::*;
 
-#[derive(Clone, Debug, IntoPyObject, FromPyObject)]
-#[expect(clippy::large_enum_variant)]
-pub enum PyCondition {
-    Field(PyFieldCondition),
-    IsEmpty(PyIsEmptyCondition),
-    IsNull(PyIsNullCondition),
-    HasId(PyHasIdCondition),
-    HasVector(PyHasVectorCondition),
-    Nested(PyNestedCondition),
-    Filter(PyFilter),
-}
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyCondition(pub Condition);
 
-impl From<PyCondition> for Condition {
-    fn from(condition: PyCondition) -> Self {
-        match condition {
-            PyCondition::Field(field) => Condition::Field(FieldCondition::from(field)),
-            PyCondition::IsEmpty(is_empty) => Condition::IsEmpty(IsEmptyCondition::from(is_empty)),
-            PyCondition::IsNull(is_null) => Condition::IsNull(IsNullCondition::from(is_null)),
-            PyCondition::HasId(has_id) => Condition::HasId(HasIdCondition::from(has_id)),
-            PyCondition::HasVector(has_vector) => {
-                Condition::HasVector(HasVectorCondition::from(has_vector))
-            }
-            PyCondition::Nested(nested) => Condition::Nested(NestedCondition::from(nested)),
-            PyCondition::Filter(filter) => Condition::Filter(Filter::from(filter)),
+impl FromPyObject<'_> for PyCondition {
+    fn extract_bound(condition: &Bound<'_, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        #[expect(clippy::large_enum_variant)]
+        enum Helper {
+            Field(PyFieldCondition),
+            IsEmpty(PyIsEmptyCondition),
+            IsNull(PyIsNullCondition),
+            HasId(PyHasIdCondition),
+            HasVector(PyHasVectorCondition),
+            Nested(PyNestedCondition),
+            Filter(PyFilter),
         }
+
+        let condition = match condition.extract()? {
+            Helper::Field(field) => Condition::Field(field.into()),
+            Helper::IsEmpty(is_empty) => Condition::IsEmpty(is_empty.into()),
+            Helper::IsNull(is_null) => Condition::IsNull(is_null.into()),
+            Helper::HasId(has_id) => Condition::HasId(has_id.into()),
+            Helper::HasVector(has_vector) => Condition::HasVector(has_vector.into()),
+            Helper::Nested(nested) => Condition::Nested(nested.into()),
+            Helper::Filter(filter) => Condition::Filter(filter.into()),
+        };
+
+        Ok(Self(condition))
     }
 }
 
-impl From<Condition> for PyCondition {
-    fn from(condition: Condition) -> Self {
-        match condition {
-            Condition::Field(field) => PyCondition::Field(PyFieldCondition(field)),
-            Condition::IsEmpty(is_empty) => PyCondition::IsEmpty(PyIsEmptyCondition(is_empty)),
-            Condition::IsNull(is_null) => PyCondition::IsNull(PyIsNullCondition(is_null)),
-            Condition::HasId(has_id) => PyCondition::HasId(PyHasIdCondition(has_id)),
+impl<'py> IntoPyObject<'py> for PyCondition {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self.0 {
+            Condition::Field(field) => PyFieldCondition(field).into_bound_py_any(py),
+            Condition::IsEmpty(is_empty) => PyIsEmptyCondition(is_empty).into_bound_py_any(py),
+            Condition::IsNull(is_null) => PyIsNullCondition(is_null).into_bound_py_any(py),
+            Condition::HasId(has_id) => PyHasIdCondition(has_id).into_bound_py_any(py),
             Condition::HasVector(has_vector) => {
-                PyCondition::HasVector(PyHasVectorCondition(has_vector))
+                PyHasVectorCondition(has_vector).into_bound_py_any(py)
             }
-            Condition::Nested(nested) => PyCondition::Nested(PyNestedCondition(nested)),
-            Condition::Filter(filter) => PyCondition::Filter(PyFilter(filter)),
+            Condition::Nested(nested) => PyNestedCondition(nested).into_bound_py_any(py),
+            Condition::Filter(filter) => PyFilter(filter).into_bound_py_any(py),
             Condition::CustomIdChecker(_) => {
                 unreachable!("CustomIdChecker condition is not expected in Python bindings")
             }

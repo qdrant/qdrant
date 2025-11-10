@@ -7,9 +7,10 @@ pub mod nested;
 pub mod range;
 pub mod value_count;
 
+use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use pyo3::prelude::*;
-use segment::types::{Condition, Filter, MinShould};
+use segment::types::{Filter, MinShould};
 
 pub use self::condition::*;
 pub use self::field_condition::*;
@@ -21,7 +22,8 @@ pub use self::range::*;
 pub use self::value_count::*;
 
 #[pyclass(name = "Filter")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyFilter(pub Filter);
 
 #[pymethods]
@@ -33,20 +35,12 @@ impl PyFilter {
         should: Option<Vec<PyCondition>>,
         must_not: Option<Vec<PyCondition>>,
         min_should: Option<PyMinShould>,
-    ) -> Result<Self, PyErr> {
-        let must: Option<Vec<_>> = must.map(|must| must.into_iter().map(Condition::from).collect());
-        let should: Option<Vec<_>> =
-            should.map(|should| should.into_iter().map(Condition::from).collect());
-        let must_not: Option<Vec<_>> =
-            must_not.map(|must_not| must_not.into_iter().map(Condition::from).collect());
-
-        let min_should: Option<MinShould> = min_should.map(|min_should| min_should.0);
-
-        Ok(Self(Filter {
-            should,
-            min_should,
-            must,
-            must_not,
-        }))
+    ) -> Self {
+        Self(Filter {
+            must: must.map(PyCondition::peel_vec),
+            should: should.map(PyCondition::peel_vec),
+            must_not: must_not.map(PyCondition::peel_vec),
+            min_should: min_should.map(MinShould::from),
+        })
     }
 }

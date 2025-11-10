@@ -3,7 +3,7 @@ use pyo3::{pyclass, pymethods};
 use segment::types::ValuesCount;
 
 #[pyclass(name = "ValuesCount")]
-#[derive(Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into)]
 pub struct PyValuesCount(pub ValuesCount);
 
 #[pymethods]

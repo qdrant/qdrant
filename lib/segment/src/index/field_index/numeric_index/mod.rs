@@ -1017,7 +1017,7 @@ where
                         _ => None,
                     },
                 };
-                let cardinality = self.range_cardinality(&RangeInterface::Float(range.clone()));
+                let cardinality = self.range_cardinality(&RangeInterface::Float(range));
                 let condition = PayloadBlockCondition {
                     condition: FieldCondition::new_range(key.clone(), range),
                     cardinality: cardinality.exp,
