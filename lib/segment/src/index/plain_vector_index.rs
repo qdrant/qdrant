@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 
-use super::hnsw_index::point_scorer::BatchFilteredScorer;
+use super::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::{
@@ -119,7 +119,7 @@ impl VectorIndex for PlainVectorIndex {
             .then_some(quantized_storage.as_ref())
             .flatten();
         let oversampled_top = get_oversampled_top(quantized_storage.as_ref(), params, top);
-        let batch_scorer = BatchFilteredScorer::new(
+        let batch_searcher = BatchFilteredSearcher::new(
             query_vectors,
             &vector_storage,
             quantized_vectors,
@@ -133,13 +133,13 @@ impl VectorIndex for PlainVectorIndex {
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
                 let filtered_ids_vec = payload_index.query_points(filter, &hw_counter, &is_stopped);
-                batch_scorer.peek_top_iter(
+                batch_searcher.peek_top_iter(
                     &mut filtered_ids_vec.iter().copied(),
                     oversampled_top,
                     &is_stopped,
                 )?
             }
-            None => batch_scorer.peek_top_all(oversampled_top, &is_stopped)?,
+            None => batch_searcher.peek_top_all(oversampled_top, &is_stopped)?,
         };
 
         search_results
