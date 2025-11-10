@@ -182,9 +182,7 @@ impl WalMode {
     ) -> shard::wal::Result<(u64, OwnedMutexGuard<SerdeWal<OperationWithClockTag>>)> {
         match self {
             WalMode::Writable(wal) => wal.lock_and_write(operation).await,
-            WalMode::ReadOnly(_) => Err(shard::wal::WalError::InitWalError(
-                "Cannot write operations in read-only mode".to_string(),
-            )),
+            WalMode::ReadOnly(_) => Err(shard::wal::WalError::ReadOnlyWalError),
         }
     }
 
@@ -2239,7 +2237,7 @@ mod tests {
             OperationWithClockTag::new(mock_operation(1), Some(ClockTag::new(1, 0, 0)));
         let result = wal_mode.lock_and_write(&mut operation).await;
         assert!(result.is_err());
-        let error_str = format!("{:?}", result.unwrap_err());
-        assert!(error_str.contains("Cannot write operations in read-only mode"));
+        let error = result.unwrap_err();
+        assert!(matches!(error, shard::wal::WalError::ReadOnlyWalError));
     }
 }

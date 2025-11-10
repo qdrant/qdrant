@@ -234,13 +234,20 @@ pub enum WalError {
     WriteWalError(String),
     #[error("Can't truncate WAL: {0}")]
     TruncateWalError(String),
+    #[error("WAL operation failed: read-only mode")]
+    ReadOnlyWalError,
     #[error("Operation rejected by WAL for old clock")]
     ClockRejected,
 }
 
 impl WalError {
+    /// Check if this error indicates a read-only WAL operation failure.
+    ///
+    /// This method checks specifically for the `ReadOnlyWalError` variant,
+    /// providing a type-safe way to detect read-only conditions without
+    /// relying on fragile string matching.
     pub fn is_read_only(&self) -> bool {
-        matches!(self, WalError::InitWalError(msg) if msg.contains("read-only"))
+        matches!(self, WalError::ReadOnlyWalError)
     }
 }
 
