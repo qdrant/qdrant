@@ -105,7 +105,7 @@ impl<'py> IntoPyObject<'py> for PyExpression {
             ExpressionInternal::Constant(var) => PyExpressionInterface::Constant(var),
             ExpressionInternal::Variable(var) => PyExpressionInterface::Variable(var),
             ExpressionInternal::Condition(cond) => {
-                PyExpressionInterface::Condition(PyCondition::from(*cond))
+                PyExpressionInterface::Condition(PyCondition(*cond))
             }
             ExpressionInternal::GeoDistance { origin, to } => PyExpressionInterface::GeoDistance {
                 origin: PyGeoPoint(origin),

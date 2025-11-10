@@ -1,37 +1,35 @@
-use std::str::FromStr;
-
 use derive_more::Into;
 use ordered_float::OrderedFloat;
-use pyo3::exceptions::PyTypeError;
-use pyo3::{FromPyObject, IntoPyObject, PyErr, pyclass, pymethods};
-use segment::types::{DateTimePayloadType, FloatPayloadType, Range, RangeInterface};
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use segment::types::*;
 
-#[derive(Clone, Debug, IntoPyObject, FromPyObject)]
-pub enum PyRangeInterface {
+#[derive(Copy, Clone, Debug, IntoPyObject, FromPyObject)]
+pub enum PyRange {
     Float(PyRangeFloat),
     DateTime(PyRangeDateTime),
 }
 
-impl From<PyRangeInterface> for RangeInterface {
-    fn from(value: PyRangeInterface) -> Self {
-        match value {
-            PyRangeInterface::Float(v) => RangeInterface::Float(v.0),
-            PyRangeInterface::DateTime(v) => RangeInterface::DateTime(v.0),
+impl From<RangeInterface> for PyRange {
+    fn from(range: RangeInterface) -> Self {
+        match range {
+            RangeInterface::Float(float) => PyRange::Float(PyRangeFloat(float)),
+            RangeInterface::DateTime(date_time) => PyRange::DateTime(PyRangeDateTime(date_time)),
         }
     }
 }
 
-impl From<RangeInterface> for PyRangeInterface {
-    fn from(value: RangeInterface) -> Self {
-        match value {
-            RangeInterface::Float(v) => PyRangeInterface::Float(PyRangeFloat(v)),
-            RangeInterface::DateTime(v) => PyRangeInterface::DateTime(PyRangeDateTime(v)),
+impl From<PyRange> for RangeInterface {
+    fn from(range: PyRange) -> Self {
+        match range {
+            PyRange::Float(float) => RangeInterface::Float(float.0),
+            PyRange::DateTime(date_time) => RangeInterface::DateTime(date_time.0),
         }
     }
 }
 
 #[pyclass(name = "RangeFloat")]
-#[derive(Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into)]
 pub struct PyRangeFloat(pub Range<OrderedFloat<FloatPayloadType>>);
 
 #[pymethods]
@@ -54,16 +52,8 @@ impl PyRangeFloat {
 }
 
 #[pyclass(name = "RangeDateTime")]
-#[derive(Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into)]
 pub struct PyRangeDateTime(pub Range<DateTimePayloadType>);
-
-fn parse_datetime(datetine_string: Option<String>) -> Result<Option<DateTimePayloadType>, PyErr> {
-    datetine_string
-        .as_ref()
-        .map(|s| DateTimePayloadType::from_str(s))
-        .transpose()
-        .map_err(|e| PyErr::new::<PyTypeError, _>(e.to_string()))
-}
 
 #[pymethods]
 impl PyRangeDateTime {
@@ -75,16 +65,21 @@ impl PyRangeDateTime {
         lte: Option<String>,
         lt: Option<String>,
     ) -> Result<Self, PyErr> {
-        let gte_time = parse_datetime(gte)?;
-        let gt_time = parse_datetime(gt)?;
-        let lte_time = parse_datetime(lte)?;
-        let lt_time = parse_datetime(lt)?;
-
         Ok(Self(Range {
-            gte: gte_time,
-            gt: gt_time,
-            lte: lte_time,
-            lt: lt_time,
+            gte: parse_datetime_opt(gte.as_deref())?,
+            gt: parse_datetime_opt(gt.as_deref())?,
+            lte: parse_datetime_opt(lte.as_deref())?,
+            lt: parse_datetime_opt(lt.as_deref())?,
         }))
     }
+}
+
+fn parse_datetime_opt(date_time: Option<&str>) -> PyResult<Option<DateTimeWrapper>> {
+    date_time.map(parse_datetime).transpose()
+}
+
+fn parse_datetime(date_time: &str) -> PyResult<DateTimeWrapper> {
+    date_time
+        .parse()
+        .map_err(|err| PyValueError::new_err(format!("failed to parse date-time: {err}")))
 }
