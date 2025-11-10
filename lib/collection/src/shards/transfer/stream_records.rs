@@ -2,16 +2,22 @@ use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
-use segment::types::Filter;
+use semver::Version;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
 use crate::shards::CollectionId;
+use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus};
 
 pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
+
+/// Minimum version all peers need to be to use the intermediate `ActiveRead` state during transfer
+// TODO(1.16.0): once 1.16.0 is released, bump this to "1.16.0" with a const version
+const STATE_ACTIVE_READ_MIN_VERSION: &str = "1.15.6-dev";
 
 /// Orchestrate shard transfer by streaming records
 ///
@@ -24,17 +30,38 @@ pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
 /// # Cancel safety
 ///
 /// This function is cancel safe.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn transfer_stream_records(
+    transfer_config: ShardTransfer,
     shard_holder: Arc<LockedShardHolder>,
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
+    channel_service: &ChannelService,
+    consensus: &dyn ShardTransferConsensus,
     collection_id: &CollectionId,
-    filter: Option<Filter>,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     let cutoff;
+    let filter = transfer_config.filter;
     let merge_points = filter.is_some();
+
+    // Whether we need an intermediate replica state (ActiveRead) during transfer to sync nodes
+    // We use this when transferring between different shard IDs to ensure data consistency, this
+    // way all readers can be switched to the new shard before any writers
+    let sync_intermediate_state = transfer_config
+        .to_shard_id
+        .is_some_and(|id| transfer_config.shard_id != id);
+
+    // If syncing peers with intermediate replica state, all nodes must have a certain version
+    if sync_intermediate_state {
+        let min_version = Version::parse(STATE_ACTIVE_READ_MIN_VERSION).unwrap();
+        if !channel_service.all_peers_at_version(&min_version) {
+            return Err(CollectionError::service_error(format!(
+                "Cannot perform shard transfer between different shards using streaming records because not all peers are version {STATE_ACTIVE_READ_MIN_VERSION} or higher"
+            )));
+        }
+    }
 
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
 
@@ -104,6 +131,25 @@ pub(super) async fn transfer_stream_records(
         if offset.is_none() {
             break;
         }
+    }
+
+    // Sync all peers with intermediate replica state, switch to ActiveRead and sync all peers
+    if sync_intermediate_state {
+        log::trace!(
+            "Shard {shard_id} recovered on {remote_peer_id} for stream records transfer, switching into next stage through consensus",
+        );
+        consensus
+            .switch_partial_to_read_active_confirm_peers(
+                channel_service,
+                collection_id,
+                &remote_shard,
+            )
+            .await
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Can't switch shard {shard_id} to ActiveRead state after stream records transfer: {err}"
+                ))
+            })?;
     }
 
     // Update cutoff point on remote shard, disallow recovery before it

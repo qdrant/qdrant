@@ -625,16 +625,16 @@ impl ShardHolder {
         let fallback_shard_ids = shard_key_to_ids_mapping.remove(&key.fallback);
 
         if let Some(target_shard_ids) = target_shard_ids {
-            let replicas = target_shard_ids
+            let target_replicas = target_shard_ids
                 .iter()
                 .filter_map(|shard_id| self.shards.get(shard_id))
                 .collect::<Vec<_>>();
 
-            let target_shards_active = replicas
+            let target_shards_active = target_replicas
                 .iter()
-                .all(|replica_set| !replica_set.active_shards(false).is_empty());
+                .all(|replica_set| !replica_set.readable_shards().is_empty());
 
-            if !replicas.is_empty() && target_shards_active {
+            if !target_replicas.is_empty() && target_shards_active {
                 // 1st condition is required to handle empty shard keys (2nd one returns true)
                 Ok((target_shard_ids, &key.target))
             } else if let Some(fallback_shard_ids) = fallback_shard_ids {
@@ -671,16 +671,17 @@ impl ShardHolder {
         let fallback_shard_ids = shard_key_to_ids_mapping.remove(&fallback);
 
         if let Some(target_shard_ids) = target_shard_ids {
-            let replicas = target_shard_ids
+            let target_replicas = target_shard_ids
                 .iter()
                 .filter_map(|shard_id| self.shards.get(shard_id))
                 .collect::<Vec<_>>();
 
-            let target_shards_active = replicas
+            // Check that at least one active replica per shard exists
+            let target_shards_active = target_replicas
                 .iter()
                 .all(|replica_set| !replica_set.active_shards(false).is_empty());
 
-            if replicas.is_empty() {
+            if target_replicas.is_empty() {
                 return if let Some(fallback_shard_ids) = fallback_shard_ids {
                     Ok(vec![(fallback_shard_ids, fallback)])
                 } else {
@@ -699,8 +700,12 @@ impl ShardHolder {
                 // Target:
                 // Shard_id 1 -> replicas: A (Partial)
                 // Shard_id 2 -> replicas: B (Active)
-                // In this case we want to propagate update to all shards and replicas
-                // Means the process of initialization is still ongoing
+                // In this case target is still receiving updates. We need to fallback.
+
+                // Target:
+                // Shard_id 1 -> replicas: A (ActiveRead)
+                // Shard_id 2 -> replicas: B (Active)
+                // We need to send to both target and fallback to ensure consistency.
 
                 // Target:
                 // Shard_id 1 -> replicas: A (Partial) B (Active)
@@ -710,10 +715,22 @@ impl ShardHolder {
                 // Shard_id 1 -> replicas: A (Partial) B (Dead)
                 // This is not possible, as we never deactivate last active replica
 
-                let is_all_replicas_in_partial = replicas.iter().any(|replica_set| {
-                    replica_set.check_peers_state_all(|state| state == ReplicaState::Partial)
+                // Target:
+                // Shard_id 1 -> replicas: A (ActiveRead) B (Dead)
+                // This is not possible, as we never deactivate last active replica
+
+                // Target:
+                // Shard_id 1 -> replicas: A (ActiveRead)
+                // We need to send to both target and fallback to ensure consistency.
+
+                // Target:
+                // Shard_id 1 -> replicas: A (Dead)
+                // Can be, if transfer failed. We just fallback.
+
+                let is_all_replicas_in_read_active = target_replicas.iter().any(|replica_set| {
+                    replica_set.check_peers_state_all(|state| state == ReplicaState::ActiveRead)
                 });
-                if is_all_replicas_in_partial {
+                if is_all_replicas_in_read_active {
                     Ok(vec![
                         (target_shard_ids, target),
                         (fallback_shard_ids, fallback),

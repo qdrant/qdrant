@@ -325,7 +325,7 @@ impl Task {
                     continue;
                 };
 
-                if state.is_active_or_listener_or_resharding() {
+                if state.is_healthy() {
                     continue;
                 }
 
