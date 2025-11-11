@@ -970,7 +970,9 @@ mod procfs_metrics {
 
     /// Recursively collects all children of a process, specified by `pid`.
     fn child_processes_recursive(pid: Pid, pids: &mut AHashSet<Pid>) -> Result<(), ProcError> {
-        for child_pid in child_processes(pid)? {
+        for child_pid in child_processes(pid) {
+            let child_pid = child_pid?;
+
             let is_new = pids.insert(child_pid);
 
             // If PID is new we recurse into it
@@ -983,16 +985,20 @@ mod procfs_metrics {
     }
 
     /// Returns all new child processes of a parent process, specified by `parent_pid`.
-    fn child_processes(parent_pid: Pid) -> Result<AHashSet<Pid>, ProcError> {
+    fn child_processes(parent_pid: Pid) -> Box<dyn Iterator<Item = Result<Pid, ProcError>>> {
         let process = match Process::new(parent_pid) {
             Ok(proc) => proc,
             // Ignore children that don't exist anymore.
-            Err(ProcError::NotFound(_)) => return Ok(AHashSet::default()),
-            Err(err) => return Err(err),
+            Err(ProcError::NotFound(_)) => return Box::new(std::iter::empty()),
+            Err(err) => return Box::new(std::iter::once(Err(err))),
         };
 
-        process
-            .tasks()?
+        let tasks = match process.tasks() {
+            Ok(tasks) => tasks,
+            Err(err) => return Box::new(std::iter::once(Err(err))),
+        };
+
+        let pids = tasks
             .filter_map(|task| {
                 let children = task.and_then(|task| task.children());
                 match children {
@@ -1003,8 +1009,9 @@ mod procfs_metrics {
                 }
             })
             .flatten_ok()
-            .map_ok(|i| i as Pid)
-            .collect()
+            .map_ok(|i| i as Pid);
+
+        Box::new(pids)
     }
 
     #[test]
