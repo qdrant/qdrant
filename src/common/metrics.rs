@@ -366,7 +366,7 @@ impl MetricsProvider for CollectionsTelemetry {
         };
 
         metrics.push(metric_family(
-            "active_replicas_min",
+            "collection_active_replicas_min",
             "minimum number of active replicas across all shards",
             MetricType::GAUGE,
             vec![gauge(total_min_active_replicas as f64, &[])],
@@ -374,7 +374,7 @@ impl MetricsProvider for CollectionsTelemetry {
         ));
 
         metrics.push(metric_family(
-            "active_replicas_max",
+            "collection_active_replicas_max",
             "maximum number of active replicas across all shards",
             MetricType::GAUGE,
             vec![gauge(total_max_active_replicas as f64, &[])],
@@ -400,7 +400,7 @@ impl MetricsProvider for CollectionsTelemetry {
         }
 
         metrics.push(metric_family(
-            "dead_replicas",
+            "collection_dead_replicas",
             "total amount of shard replicas in non-active state",
             MetricType::GAUGE,
             vec![gauge(total_dead_replicas as f64, &[])],
