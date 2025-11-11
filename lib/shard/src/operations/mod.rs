@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 
 use crate::PeerId;
+use crate::operations::point_ops::PointOperations;
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants, Hash)]
 #[strum_discriminants(derive(EnumIter))]
@@ -39,6 +40,25 @@ impl CollectionUpdateOperations {
             Self::PointOperation(op) => op.point_ids(),
             Self::VectorOperation(op) => op.point_ids(),
             Self::PayloadOperation(op) => op.point_ids(),
+            Self::FieldIndexOperation(_) => None,
+        }
+    }
+
+    /// List point IDs that can be created during the operation.
+    /// Do not list IDs that are deleted or modified.
+    pub fn upsert_point_ids(&self) -> Option<Vec<PointIdType>> {
+        match self {
+            Self::PointOperation(op) => match op {
+                PointOperations::UpsertPoints(op) => Some(op.point_ids()),
+                PointOperations::UpsertPointsConditional(op) => Some(op.points_op.point_ids()),
+                PointOperations::DeletePoints { .. } => None,
+                PointOperations::DeletePointsByFilter(_) => None,
+                PointOperations::SyncPoints(op) => {
+                    Some(op.points.iter().map(|point| point.id).collect())
+                }
+            },
+            Self::VectorOperation(_) => None,
+            Self::PayloadOperation(_) => None,
             Self::FieldIndexOperation(_) => None,
         }
     }
