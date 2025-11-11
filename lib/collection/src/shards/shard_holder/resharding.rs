@@ -7,6 +7,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Condition, CustomIdCheckerCondition as _, Filter, ShardKey};
 
 use super::ShardHolder;
+use crate::config::ShardingMethod;
 use crate::hash_ring::{self, HashRingRouter};
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::cluster_ops::ReshardingDirection;
@@ -29,6 +30,26 @@ impl ShardHolder {
             shard_id,
             shard_key,
         } = resharding_key;
+
+        // Additional shard key check
+        // For auto sharding no shard key must be provided, with custom sharding it must be provided
+        match self.sharding_method {
+            ShardingMethod::Auto => {
+                if shard_key.is_some() {
+                    return Err(CollectionError::bad_request(format!(
+                        "cannot specify shard key {} on collection with auto sharding",
+                        shard_key_fmt(shard_key),
+                    )));
+                }
+            }
+            ShardingMethod::Custom => {
+                if shard_key.is_none() {
+                    return Err(CollectionError::bad_request(
+                        "must specify shard key on collection with custom sharding",
+                    ));
+                }
+            }
+        }
 
         let ring = get_ring(&mut self.rings, shard_key)?;
 
