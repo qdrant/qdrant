@@ -962,8 +962,8 @@ mod procfs_metrics {
         let mut pids = AHashSet::default();
         child_processes_recursive(pid, &mut pids)?;
 
-        // Exclude parent Pid from results
-        pids.remove(&pid);
+        // We don't expect to include parent Pid
+        debug_assert!(!pids.contains(&pid));
 
         Ok(pids)
     }
