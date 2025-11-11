@@ -826,8 +826,8 @@ mod procfs_metrics {
         mmap_count: usize,
         system_mmap_limit: u64,
         open_fds: usize,
-        max_fds_soft: u64,
-        max_fds_hard: u64,
+        max_fds_soft: LimitValue,
+        max_fds_hard: LimitValue,
         minor_page_faults: u64,
         major_page_faults: u64,
         minor_children_page_faults: u64,
@@ -845,16 +845,6 @@ mod procfs_metrics {
             let stat = current_process.stat()?;
             let limits = current_process.limits()?;
 
-            fn format_limit(limit: LimitValue) -> u64 {
-                match limit {
-                    LimitValue::Unlimited => 0,
-                    LimitValue::Value(v) => v,
-                }
-            }
-
-            let max_fds_soft = format_limit(limits.max_open_files.soft_limit);
-            let max_fds_hard = format_limit(limits.max_open_files.hard_limit);
-
             let (minor_alive_child_page_faults, major_alive_child_page_faults) =
                 faults_for_all_children(current_process.pid)?;
 
@@ -863,8 +853,8 @@ mod procfs_metrics {
                 mmap_count: current_process.maps()?.len(),
                 system_mmap_limit: procfs::sys::vm::max_map_count()?,
                 open_fds: current_process.fd_count()?,
-                max_fds_soft,
-                max_fds_hard,
+                max_fds_soft: limits.max_open_files.soft_limit,
+                max_fds_hard: limits.max_open_files.hard_limit,
                 minor_page_faults: stat.minflt,
                 major_page_faults: stat.majflt,
                 minor_children_page_faults: stat.cminflt,
@@ -910,9 +900,10 @@ mod procfs_metrics {
             ));
 
             let fds_limit = match (self.max_fds_soft, self.max_fds_hard) {
-                (0, hard) => hard,               // soft unlimited, use hard
-                (soft, 0) => soft,               // hard unlimited, use soft
-                (soft, hard) => min(soft, hard), // both limited, use minimum
+                (LimitValue::Unlimited, LimitValue::Value(hard)) => hard, // soft unlimited, use hard
+                (LimitValue::Value(soft), LimitValue::Unlimited) => soft, // hard unlimited, use soft
+                (LimitValue::Value(soft), LimitValue::Value(hard)) => min(soft, hard), // both limited, use minimum
+                (LimitValue::Unlimited, LimitValue::Unlimited) => 0, // both unlimited
             };
             metrics.push(metric_family(
                 "process_max_fds",
