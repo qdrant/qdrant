@@ -326,6 +326,19 @@ impl MetricsProvider for CollectionsTelemetry {
             ));
         }
 
+        // Deprecated since 1.16.0
+        let vector_count = vector_count_by_name
+            .iter()
+            .map(|m| m.get_gauge().get_value())
+            .sum();
+        metrics.push(metric_family(
+            "collections_vector_total",
+            "total number of vectors in all collections (deprecated)",
+            MetricType::GAUGE,
+            vec![gauge(vector_count, &[])],
+            prefix,
+        ));
+
         if !vector_count_by_name.is_empty() {
             metrics.push(metric_family(
                 "collection_vectors",
