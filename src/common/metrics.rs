@@ -98,19 +98,34 @@ impl MetricsData {
 
     /// Creates a new `MetricsData` from telemetry data and an optional prefix for metrics names.
     pub fn new_from_telemetry(telemetry_data: TelemetryData, prefix: Option<&str>) -> Self {
-        let mut metrics = vec![];
+        let mut metrics = MetricsData::empty();
         telemetry_data.add_metrics(&mut metrics, prefix);
-        Self { metrics }
+        metrics
+    }
+
+    /// Adds the given `metrics_family` to the `MetricsData` collection, if `Some`.
+    fn push_metric(&mut self, metric_family: Option<MetricFamily>) {
+        if let Some(metric_family) = metric_family {
+            self.metrics.push(metric_family);
+        }
+    }
+
+    /// Creates an empty collection of Prometheus metric families `MetricsData`.
+    /// This should only be used when you explicitly need an empty collection to gather metrics.
+    ///
+    /// In most cases, you should use [`MetricsData::new_from_telemetry`] to initialize new metrics data.
+    fn empty() -> Self {
+        Self { metrics: vec![] }
     }
 }
 
 trait MetricsProvider {
     /// Add metrics definitions for this.
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>);
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>);
 }
 
 impl MetricsProvider for TelemetryData {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         self.app.add_metrics(metrics, prefix);
         self.collections.add_metrics(metrics, prefix);
         if let Some(cluster) = &self.cluster {
@@ -135,8 +150,8 @@ impl MetricsProvider for TelemetryData {
 }
 
 impl MetricsProvider for AppBuildTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
-        metrics.push(metric_family(
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        metrics.push_metric(metric_family(
             "app_info",
             "information about qdrant server",
             MetricType::GAUGE,
@@ -153,8 +168,8 @@ impl MetricsProvider for AppBuildTelemetry {
 }
 
 impl MetricsProvider for AppFeaturesTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
-        metrics.push(metric_family(
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        metrics.push_metric(metric_family(
             "app_status_recovery_mode",
             "features enabled in qdrant server",
             MetricType::GAUGE,
@@ -165,8 +180,8 @@ impl MetricsProvider for AppFeaturesTelemetry {
 }
 
 impl MetricsProvider for CollectionsTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
-        metrics.push(metric_family(
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        metrics.push_metric(metric_family(
             "collections_total",
             "number of collections",
             MetricType::GAUGE,
@@ -299,25 +314,21 @@ impl MetricsProvider for CollectionsTelemetry {
                 .count();
         }
 
-        if !vector_count_by_name.is_empty() {
-            metrics.push(metric_family(
-                "collection_vectors",
-                "amount of vectors grouped by vector name",
-                MetricType::GAUGE,
-                vector_count_by_name,
-                prefix,
-            ));
-        }
+        metrics.push_metric(metric_family(
+            "collection_vectors",
+            "amount of vectors grouped by vector name",
+            MetricType::GAUGE,
+            vector_count_by_name,
+            prefix,
+        ));
 
-        if !indexed_only_excluded.is_empty() {
-            metrics.push(metric_family(
-                "collection_indexed_only_excluded_points",
-                "amount of points excluded in indexed_only requests",
-                MetricType::GAUGE,
-                indexed_only_excluded,
-                prefix,
-            ));
-        }
+        metrics.push_metric(metric_family(
+            "collection_indexed_only_excluded_points",
+            "amount of points excluded in indexed_only requests",
+            MetricType::GAUGE,
+            indexed_only_excluded,
+            prefix,
+        ));
 
         let total_min_active_replicas = if total_min_active_replicas == usize::MAX {
             0
@@ -325,7 +336,7 @@ impl MetricsProvider for CollectionsTelemetry {
             total_min_active_replicas
         };
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "active_replicas_min",
             "minimum number of active replicas across all shards",
             MetricType::GAUGE,
@@ -333,7 +344,7 @@ impl MetricsProvider for CollectionsTelemetry {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "active_replicas_max",
             "maximum number of active replicas across all shards",
             MetricType::GAUGE,
@@ -341,7 +352,7 @@ impl MetricsProvider for CollectionsTelemetry {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "optimizer_running_processes",
             "number of currently running optimization processes",
             MetricType::GAUGE,
@@ -349,17 +360,15 @@ impl MetricsProvider for CollectionsTelemetry {
             prefix,
         ));
 
-        if !points_per_collection.is_empty() {
-            metrics.push(metric_family(
-                "collection_points",
-                "approximate amount of points per collection",
-                MetricType::GAUGE,
-                points_per_collection,
-                prefix,
-            ));
-        }
+        metrics.push_metric(metric_family(
+            "collection_points",
+            "approximate amount of points per collection",
+            MetricType::GAUGE,
+            points_per_collection,
+            prefix,
+        ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "dead_replicas",
             "total amount of shard replicas in non-active state",
             MetricType::GAUGE,
@@ -370,7 +379,7 @@ impl MetricsProvider for CollectionsTelemetry {
 }
 
 impl MetricsProvider for ClusterTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         let ClusterTelemetry {
             enabled,
             status,
@@ -380,7 +389,7 @@ impl MetricsProvider for ClusterTelemetry {
             metadata: _,
         } = self;
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "cluster_enabled",
             "is cluster support enabled",
             MetricType::GAUGE,
@@ -395,15 +404,15 @@ impl MetricsProvider for ClusterTelemetry {
 }
 
 impl MetricsProvider for ClusterStatusTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
-        metrics.push(metric_family(
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        metrics.push_metric(metric_family(
             "cluster_peers_total",
             "total number of cluster peers",
             MetricType::GAUGE,
             vec![gauge(self.number_of_peers as f64, &[])],
             prefix,
         ));
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "cluster_term",
             "current cluster term",
             MetricType::COUNTER,
@@ -412,21 +421,21 @@ impl MetricsProvider for ClusterStatusTelemetry {
         ));
 
         if let Some(ref peer_id) = self.peer_id.map(|p| p.to_string()) {
-            metrics.push(metric_family(
+            metrics.push_metric(metric_family(
                 "cluster_commit",
                 "index of last committed (finalized) operation cluster peer is aware of",
                 MetricType::COUNTER,
                 vec![counter(self.commit as f64, &[("peer_id", peer_id)])],
                 prefix,
             ));
-            metrics.push(metric_family(
+            metrics.push_metric(metric_family(
                 "cluster_pending_operations_total",
                 "total number of pending operations for cluster peer",
                 MetricType::GAUGE,
                 vec![gauge(self.pending_operations as f64, &[])],
                 prefix,
             ));
-            metrics.push(metric_family(
+            metrics.push_metric(metric_family(
                 "cluster_voter",
                 "is cluster peer a voter or learner",
                 MetricType::GAUGE,
@@ -438,14 +447,14 @@ impl MetricsProvider for ClusterStatusTelemetry {
 }
 
 impl MetricsProvider for RequestsTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         self.rest.add_metrics(metrics, prefix);
         self.grpc.add_metrics(metrics, prefix);
     }
 }
 
 impl MetricsProvider for WebApiTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         let mut builder = OperationDurationMetricsBuilder::default();
         for (endpoint, responses) in &self.responses {
             let Some((method, endpoint)) = endpoint.split_once(' ') else {
@@ -472,7 +481,7 @@ impl MetricsProvider for WebApiTelemetry {
 }
 
 impl MetricsProvider for GrpcTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         let mut builder = OperationDurationMetricsBuilder::default();
         for (endpoint, stats) in &self.responses {
             // Endpoint must be whitelisted
@@ -489,36 +498,36 @@ impl MetricsProvider for GrpcTelemetry {
 }
 
 impl MetricsProvider for MemoryTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
-        metrics.push(metric_family(
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        metrics.push_metric(metric_family(
             "memory_active_bytes",
             "Total number of bytes in active pages allocated by the application",
             MetricType::GAUGE,
             vec![gauge(self.active_bytes as f64, &[])],
             prefix,
         ));
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "memory_allocated_bytes",
             "Total number of bytes allocated by the application",
             MetricType::GAUGE,
             vec![gauge(self.allocated_bytes as f64, &[])],
             prefix,
         ));
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "memory_metadata_bytes",
             "Total number of bytes dedicated to metadata",
             MetricType::GAUGE,
             vec![gauge(self.metadata_bytes as f64, &[])],
             prefix,
         ));
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "memory_resident_bytes",
             "Maximum number of bytes in physically resident data pages mapped",
             MetricType::GAUGE,
             vec![gauge(self.resident_bytes as f64, &[])],
             prefix,
         ));
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "memory_retained_bytes",
             "Total number of bytes in virtual memory mappings",
             MetricType::GAUGE,
@@ -539,7 +548,7 @@ impl HardwareTelemetry {
 }
 
 impl MetricsProvider for HardwareTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         // MetricType::COUNTER requires non-empty collection data.
         if self.collection_data.is_empty() {
             return;
@@ -557,7 +566,7 @@ impl MetricsProvider for HardwareTelemetry {
             vector_io_write: _,
         } = HardwareUsage::default();
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "collection_hardware_metric_cpu",
             "CPU measurements of a collection",
             MetricType::COUNTER,
@@ -565,7 +574,7 @@ impl MetricsProvider for HardwareTelemetry {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "collection_hardware_metric_payload_io_read",
             "Total IO payload read metrics of a collection",
             MetricType::COUNTER,
@@ -573,7 +582,7 @@ impl MetricsProvider for HardwareTelemetry {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "collection_hardware_metric_payload_index_io_read",
             "Total IO payload index read metrics of a collection",
             MetricType::COUNTER,
@@ -581,7 +590,7 @@ impl MetricsProvider for HardwareTelemetry {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "collection_hardware_metric_payload_index_io_write",
             "Total IO payload index write metrics of a collection",
             MetricType::COUNTER,
@@ -589,7 +598,7 @@ impl MetricsProvider for HardwareTelemetry {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "collection_hardware_metric_payload_io_write",
             "Total IO payload write metrics of a collection",
             MetricType::COUNTER,
@@ -597,7 +606,7 @@ impl MetricsProvider for HardwareTelemetry {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "collection_hardware_metric_vector_io_read",
             "Total IO vector read metrics of a collection",
             MetricType::COUNTER,
@@ -605,7 +614,7 @@ impl MetricsProvider for HardwareTelemetry {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "collection_hardware_metric_vector_io_write",
             "Total IO vector write metrics of a collection",
             MetricType::COUNTER,
@@ -669,63 +678,51 @@ impl OperationDurationMetricsBuilder {
     }
 
     /// Build metrics and add them to the provided vector.
-    pub fn build(self, global_prefix: Option<&str>, prefix: &str, metrics: &mut Vec<MetricFamily>) {
+    pub fn build(self, global_prefix: Option<&str>, prefix: &str, metrics: &mut MetricsData) {
         let prefix = format!("{}{prefix}_", global_prefix.unwrap_or(""));
 
-        if !self.total.is_empty() {
-            metrics.push(metric_family(
-                "responses_total",
-                "total number of responses",
-                MetricType::COUNTER,
-                self.total,
-                Some(&prefix),
-            ));
-        }
-        if !self.fail_total.is_empty() {
-            metrics.push(metric_family(
-                "responses_fail_total",
-                "total number of failed responses",
-                MetricType::COUNTER,
-                self.fail_total,
-                Some(&prefix),
-            ));
-        }
-        if !self.avg_secs.is_empty() {
-            metrics.push(metric_family(
-                "responses_avg_duration_seconds",
-                "average response duration",
-                MetricType::GAUGE,
-                self.avg_secs,
-                Some(&prefix),
-            ));
-        }
-        if !self.min_secs.is_empty() {
-            metrics.push(metric_family(
-                "responses_min_duration_seconds",
-                "minimum response duration",
-                MetricType::GAUGE,
-                self.min_secs,
-                Some(&prefix),
-            ));
-        }
-        if !self.max_secs.is_empty() {
-            metrics.push(metric_family(
-                "responses_max_duration_seconds",
-                "maximum response duration",
-                MetricType::GAUGE,
-                self.max_secs,
-                Some(&prefix),
-            ));
-        }
-        if !self.duration_histogram_secs.is_empty() {
-            metrics.push(metric_family(
-                "responses_duration_seconds",
-                "response duration histogram",
-                MetricType::HISTOGRAM,
-                self.duration_histogram_secs,
-                Some(&prefix),
-            ));
-        }
+        metrics.push_metric(metric_family(
+            "responses_total",
+            "total number of responses",
+            MetricType::COUNTER,
+            self.total,
+            Some(&prefix),
+        ));
+        metrics.push_metric(metric_family(
+            "responses_fail_total",
+            "total number of failed responses",
+            MetricType::COUNTER,
+            self.fail_total,
+            Some(&prefix),
+        ));
+        metrics.push_metric(metric_family(
+            "responses_avg_duration_seconds",
+            "average response duration",
+            MetricType::GAUGE,
+            self.avg_secs,
+            Some(&prefix),
+        ));
+        metrics.push_metric(metric_family(
+            "responses_min_duration_seconds",
+            "minimum response duration",
+            MetricType::GAUGE,
+            self.min_secs,
+            Some(&prefix),
+        ));
+        metrics.push_metric(metric_family(
+            "responses_max_duration_seconds",
+            "maximum response duration",
+            MetricType::GAUGE,
+            self.max_secs,
+            Some(&prefix),
+        ));
+        metrics.push_metric(metric_family(
+            "responses_duration_seconds",
+            "response duration histogram",
+            MetricType::HISTOGRAM,
+            self.duration_histogram_secs,
+            Some(&prefix),
+        ));
     }
 }
 
@@ -735,7 +732,12 @@ fn metric_family(
     r#type: MetricType,
     metrics: Vec<Metric>,
     prefix: Option<&str>,
-) -> MetricFamily {
+) -> Option<MetricFamily> {
+    // We can't create a new `MetricsFamily` without metrics.
+    if metrics.is_empty() {
+        return None;
+    }
+
     let mut metric_family = MetricFamily::default();
 
     let name_with_prefix = prefix
@@ -746,7 +748,8 @@ fn metric_family(
     metric_family.set_help(help.into());
     metric_family.set_field_type(r#type);
     metric_family.set_metric(metrics);
-    metric_family
+
+    Some(metric_family)
 }
 
 fn counter(value: f64, labels: &[(&str, &str)]) -> Metric {
@@ -861,8 +864,8 @@ impl ProcFsMetrics {
 
 #[cfg(target_os = "linux")]
 impl MetricsProvider for ProcFsMetrics {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
-        metrics.push(metric_family(
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        metrics.push_metric(metric_family(
             "process_threads",
             "count of active threads",
             MetricType::GAUGE,
@@ -870,7 +873,7 @@ impl MetricsProvider for ProcFsMetrics {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "process_open_mmaps",
             "count of open mmaps",
             MetricType::GAUGE,
@@ -878,7 +881,7 @@ impl MetricsProvider for ProcFsMetrics {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "system_max_mmaps",
             "system wide limit of open mmaps",
             MetricType::GAUGE,
@@ -886,7 +889,7 @@ impl MetricsProvider for ProcFsMetrics {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "process_open_fds",
             "count of currently open file descriptors",
             MetricType::GAUGE,
@@ -899,7 +902,7 @@ impl MetricsProvider for ProcFsMetrics {
             (soft, 0) => soft,                         // hard unlimited, use soft
             (soft, hard) => std::cmp::min(soft, hard), // both limited, use minimum
         };
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "process_max_fds",
             "limit for open file descriptors",
             MetricType::GAUGE,
@@ -907,7 +910,7 @@ impl MetricsProvider for ProcFsMetrics {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "process_minor_page_faults_total",
             "count of minor page faults which didn't cause a disk access",
             MetricType::COUNTER,
@@ -915,7 +918,7 @@ impl MetricsProvider for ProcFsMetrics {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "process_major_page_faults_total",
             "count of disk accesses caused by a mmap page fault",
             MetricType::COUNTER,
@@ -923,7 +926,7 @@ impl MetricsProvider for ProcFsMetrics {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "process_minor_page_faults_children_total",
             "count of minor page faults caused by waited-for child processes",
             MetricType::COUNTER,
@@ -931,7 +934,7 @@ impl MetricsProvider for ProcFsMetrics {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "process_major_page_faults_children_total",
             "count of major page faults caused by waited-for child processes",
             MetricType::COUNTER,
