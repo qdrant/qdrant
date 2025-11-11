@@ -56,11 +56,14 @@ def test_consensus_compaction(tmp_path: pathlib.Path):
     peer_dirs.append(make_peer_folder(tmp_path, N_PEERS))
     new_url = start_peer(peer_dirs[-1], "peer_3_extra.log", bootstrap_uri, port=21000, extra_env=env)
     peer_api_uris.append(new_url)
+
+    # Wait for collection to be ready on the new peer
     wait_all_peers_up([new_url])
+    wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=[new_url])
 
     # Ensure cluster metadata is consistent on all peers
     # Failed before <https://github.com/qdrant/qdrant/pull/6014>
-    get_metadata_key(peer_api_uris, 'my_metadata', 'My value!')
+    assert_consistent_metadata_key(peer_api_uris, 'my_metadata', 'My value!')
 
 
 def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
@@ -136,14 +139,15 @@ def put_metadata_key(peer_uris: list[str], key: str, value: Any):
     resp = requests.put(f"{peer_uris[0]}/cluster/metadata/keys/{key}?wait=true", json=value)
     assert_http_ok(resp)
     sleep(CONSENSUS_WAIT_SECONDS)
-    get_metadata_key(peer_uris, key, value)
+    assert_consistent_metadata_key(peer_uris, key, value)
 
 
-def get_metadata_key(peer_uris: list[str], key: str, expected_value: Any):
-    for peer_uri in peer_uris:
+def assert_consistent_metadata_key(peer_uris: list[str], key: str, expected_value: Any):
+    for peer_id, peer_uri in enumerate(peer_uris):
         resp = requests.get(f"{peer_uri}/cluster/metadata/keys/{key}")
         assert_http_ok(resp)
-        assert resp.json()['result'] == expected_value
+        peer_key_value = resp.json()['result']
+        assert peer_key_value == expected_value, f"incorrect metadata key value for peers[{peer_id}] '{peer_uri}' - expected '{expected_value}' but got '{peer_key_value}'"
 
 
 def check_shard_keys(peer_uris: list[str], collection_name: str, shard_keys: dict[int, Any]):
