@@ -66,6 +66,7 @@ pub struct ShardHolder {
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access, does not use locking
     shard_id_to_key_mapping: AHashMap<ShardId, ShardKey>,
+    sharding_method: ShardingMethod,
 }
 
 pub type LockedShardHolder = RwLock<ShardHolder>;
@@ -106,6 +107,8 @@ impl ShardHolder {
             rings,
             key_mapping,
             shard_id_to_key_mapping,
+            // Assume default sharding method, until we set it on load
+            sharding_method: ShardingMethod::default(),
         })
     }
 
@@ -246,15 +249,23 @@ impl ShardHolder {
     }
 
     fn rebuild_rings(&mut self) {
-        let mut rings = HashMap::from([(None, HashRingRouter::single())]);
-        let ids_to_key = self.get_shard_id_to_key_mapping();
-        for shard_id in self.shards.keys() {
-            let shard_key = ids_to_key.get(shard_id).cloned();
-            rings
-                .entry(shard_key)
-                .or_insert_with(HashRingRouter::single)
-                .add(*shard_id);
-        }
+        let mut rings = match self.sharding_method {
+            // With auto sharding, we have a single hash ring
+            ShardingMethod::Auto => HashMap::from([(None, HashRingRouter::single())]),
+            // With custom sharding, we have a hash ring per shard key
+            ShardingMethod::Custom => {
+                let mut rings = HashMap::new();
+                let ids_to_key = self.get_shard_id_to_key_mapping();
+                for shard_id in self.shards.keys() {
+                    let shard_key = ids_to_key.get(shard_id).cloned();
+                    rings
+                        .entry(shard_key)
+                        .or_insert_with(HashRingRouter::single)
+                        .add(*shard_id);
+                }
+                rings
+            }
+        };
 
         // Restore resharding hash ring if resharding is active and haven't reached
         // `WriteHashRingCommitted` stage yet
@@ -781,13 +792,15 @@ impl ShardHolder {
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
-        let (shard_ids_list, shard_id_to_key_mapping) = match collection_config
+        // Bump sharding method based on collection config
+        self.sharding_method = collection_config
             .read()
             .await
             .params
             .sharding_method
-            .unwrap_or_default()
-        {
+            .unwrap_or_default();
+
+        let (shard_ids_list, shard_id_to_key_mapping) = match self.sharding_method {
             ShardingMethod::Auto => {
                 let ids_list = (0..shard_number).collect::<Vec<_>>();
                 let shard_id_to_key_mapping = AHashMap::new();
