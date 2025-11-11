@@ -33,7 +33,7 @@ impl Collection {
         ShardReplicaSet::build(
             shard_id,
             shard_key,
-            self.name(),
+            self.name().to_string(),
             self.this_peer_id,
             is_local,
             peers,

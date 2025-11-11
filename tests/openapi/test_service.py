@@ -67,7 +67,7 @@ def test_telemetry_detail(level: int):
         return
     else:
         assert set(result.keys()) == {'id', 'app', 'collections', 'cluster', 'requests', 'memory', 'hardware'}
-        assert set(result['collections'].keys()) == {'number_of_collections', 'collections'}
+        assert set(result['collections'].keys()) == {'number_of_collections', 'collections', 'snapshots'}
 
     last_queried = endpoint['200']['last_responded'].replace('Z', '+00:00')
     last_queried = datetime.fromisoformat(last_queried)

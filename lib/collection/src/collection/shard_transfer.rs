@@ -112,7 +112,7 @@ impl Collection {
 
                 let shard = LocalShard::build(
                     to_shard_id,
-                    self.name(),
+                    self.name().to_string(),
                     &to_replica_set.shard_path,
                     self.collection_config.clone(),
                     self.shared_storage_config.clone(),

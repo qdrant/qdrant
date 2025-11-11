@@ -214,7 +214,7 @@ where
         request_batch,
         |(_req, shard)| shard,
         |(req, _), acc| {
-            discovery_into_core_search(&collection.name(), req, &all_vectors_records_map).map(
+            discovery_into_core_search(collection.name(), req, &all_vectors_records_map).map(
                 |core_req| {
                     acc.push(core_req);
                 },

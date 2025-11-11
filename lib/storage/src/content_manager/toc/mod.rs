@@ -44,6 +44,7 @@ use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
+use crate::content_manager::toc::telemetry::TocTelemetryCollector;
 use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::types::StorageConfig;
 
@@ -82,6 +83,8 @@ pub struct TableOfContent {
     collection_create_lock: Mutex<()>,
     /// Aggregation of all hardware measurements for each alias or collection config.
     collection_hw_metrics: DashMap<CollectionId, HwSharedDrain>,
+    /// Collector for various telemetry/metrics.
+    telemetry: TocTelemetryCollector,
 }
 
 impl TableOfContent {
@@ -198,6 +201,7 @@ impl TableOfContent {
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
             collection_hw_metrics: DashMap::new(),
+            telemetry: TocTelemetryCollector::default(),
         }
     }
 
@@ -479,8 +483,11 @@ impl TableOfContent {
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
             for collection in collections.values() {
                 for transfer in collection.get_related_transfers(self.this_peer_id).await {
-                    let cancel_transfer =
-                        ConsensusOperations::abort_transfer(collection.name(), transfer, reason);
+                    let cancel_transfer = ConsensusOperations::abort_transfer(
+                        collection.name().to_string(),
+                        transfer,
+                        reason,
+                    );
                     proposal_sender.send(cancel_transfer)?;
                 }
             }
