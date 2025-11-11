@@ -77,19 +77,19 @@ impl CollectionContainer for TableOfContent {
             for collection in collections.values() {
                 let finish_shard_initialize = Self::change_peer_state_callback(
                     self.consensus_proposal_sender.clone(),
-                    collection.name(),
+                    collection.name().to_string(),
                     ReplicaState::Active,
                     Some(ReplicaState::Initializing),
                 );
                 let convert_to_listener_callback = Self::change_peer_state_callback(
                     self.consensus_proposal_sender.clone(),
-                    collection.name(),
+                    collection.name().to_string(),
                     ReplicaState::Listener,
                     Some(ReplicaState::Active),
                 );
                 let convert_from_listener_to_active_callback = Self::change_peer_state_callback(
                     self.consensus_proposal_sender.clone(),
-                    collection.name(),
+                    collection.name().to_string(),
                     ReplicaState::Active,
                     Some(ReplicaState::Listener),
                 );

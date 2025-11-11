@@ -34,6 +34,11 @@ pub async fn create_shard_snapshot(
         .check_collection_access(&collection_name, AccessRequirements::new().write().extras())?;
     let collection = toc.get_collection(&collection_pass).await?;
 
+    let _telemetry_scope_guard = toc
+        .snapshot_telemetry_collector(&collection_name)
+        .running_snapshots
+        .measure_scope();
+
     let snapshot = collection
         .create_shard_snapshot(shard_id, &toc.optional_temp_or_snapshot_temp_path()?)
         .await?;
@@ -55,6 +60,11 @@ pub async fn stream_shard_snapshot(
         .check_collection_access(&collection_name, AccessRequirements::new().write().extras())?;
 
     let collection = toc.get_collection(&collection_pass).await?;
+
+    let _telemetry_scope_guard = toc
+        .snapshot_telemetry_collector(&collection_name)
+        .running_snapshots
+        .measure_scope();
 
     if let Some(old_manifest) = &manifest {
         let current_manifest = collection.get_partial_snapshot_manifest(shard_id).await?;
@@ -236,6 +246,11 @@ pub async fn recover_shard_snapshot_impl(
     recovery_type: RecoveryType,
     cancel: cancel::CancellationToken,
 ) -> Result<(), StorageError> {
+    let _recover_tracker_guard = toc
+        .snapshot_telemetry_collector(collection.name())
+        .running_snapshot_recovery
+        .measure_scope();
+
     // `Collection::restore_shard_snapshot` and `activate_shard` calls *have to* be executed as a
     // single transaction
     //
@@ -292,7 +307,7 @@ pub async fn recover_shard_snapshot_impl(
 
                 for &(peer, _) in other_active_replicas.iter() {
                     toc.send_set_replica_state_proposal(
-                        collection.name(),
+                        collection.name().to_string(),
                         peer,
                         shard,
                         ReplicaState::Dead,
@@ -303,7 +318,7 @@ pub async fn recover_shard_snapshot_impl(
 
             SnapshotPriority::Replica => {
                 toc.send_set_replica_state_proposal(
-                    collection.name(),
+                    collection.name().to_string(),
                     toc.this_peer_id,
                     shard,
                     ReplicaState::Dead,

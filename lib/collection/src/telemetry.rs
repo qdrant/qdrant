@@ -40,6 +40,20 @@ pub struct CollectionTelemetry {
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
+pub struct CollectionSnapshotTelemetry {
+    pub id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub running_snapshots: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub running_snapshot_recovery: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_snapshot_creations: Option<usize>,
+}
+
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct CollectionsAggregatedTelemetry {
     pub vectors: usize,
     pub optimizers_status: OptimizersStatus,

@@ -12,6 +12,7 @@ mod shard_transfer;
 mod sharding_keys;
 mod snapshots;
 mod state_management;
+mod telemetry;
 
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -22,7 +23,6 @@ use std::time::Duration;
 use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
-use common::types::{DetailsLevel, TelemetryDetail};
 use io::storage_version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
@@ -54,9 +54,7 @@ use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{CollectionId, replica_set};
-use crate::telemetry::{
-    CollectionConfigTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
-};
+use crate::telemetry::CollectionsAggregatedTelemetry;
 
 /// Collection's data is split into several shards.
 pub struct Collection {
@@ -336,8 +334,8 @@ impl Collection {
         true
     }
 
-    pub fn name(&self) -> String {
-        self.id.clone()
+    pub fn name(&self) -> &str {
+        &self.id
     }
 
     pub async fn uuid(&self) -> Option<uuid::Uuid> {
@@ -623,7 +621,11 @@ impl Collection {
                         "Transfer {:?} does not exist, but not reported as cancelled. Reporting now.",
                         transfer.key(),
                     );
-                    on_transfer_failure(transfer, self.name(), "transfer task does not exist");
+                    on_transfer_failure(
+                        transfer,
+                        self.name().to_string(),
+                        "transfer task does not exist",
+                    );
                 }
                 Some(TaskResult::Running) => (),
                 Some(TaskResult::Finished) => {
@@ -631,14 +633,14 @@ impl Collection {
                         "Transfer {:?} is finished successfully, but not reported. Reporting now.",
                         transfer.key(),
                     );
-                    on_transfer_success(transfer, self.name());
+                    on_transfer_success(transfer, self.name().to_string());
                 }
                 Some(TaskResult::Failed) => {
                     log::debug!(
                         "Transfer {:?} is failed, but not reported as failed. Reporting now.",
                         transfer.key(),
                     );
-                    on_transfer_failure(transfer, self.name(), "transfer failed");
+                    on_transfer_failure(transfer, self.name().to_string(), "transfer failed");
                 }
             }
         }
@@ -776,41 +778,6 @@ impl Collection {
         }
 
         Ok(())
-    }
-
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> CollectionTelemetry {
-        let (shards_telemetry, transfers, resharding) = {
-            if detail.level >= DetailsLevel::Level3 {
-                let shards_holder = self.shards_holder.read().await;
-                let mut shards_telemetry = Vec::new();
-                for shard in shards_holder.all_shards() {
-                    shards_telemetry.push(shard.get_telemetry_data(detail).await)
-                }
-                (
-                    Some(shards_telemetry),
-                    Some(shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await)),
-                    Some(
-                        shards_holder
-                            .get_resharding_operations_info()
-                            .unwrap_or_default(),
-                    ),
-                )
-            } else {
-                (None, None, None)
-            }
-        };
-
-        let shard_clean_tasks = self.clean_local_shards_statuses();
-
-        CollectionTelemetry {
-            id: self.name(),
-            init_time_ms: self.init_time.as_millis() as u64,
-            config: CollectionConfigTelemetry::from(self.collection_config.read().await.clone()),
-            shards: shards_telemetry,
-            transfers,
-            resharding,
-            shard_clean_tasks: (!shard_clean_tasks.is_empty()).then_some(shard_clean_tasks),
-        }
     }
 
     pub async fn get_aggregated_telemetry_data(&self) -> CollectionsAggregatedTelemetry {

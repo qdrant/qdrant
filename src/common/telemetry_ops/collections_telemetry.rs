@@ -1,4 +1,6 @@
-use collection::telemetry::{CollectionTelemetry, CollectionsAggregatedTelemetry};
+use collection::telemetry::{
+    CollectionSnapshotTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
+};
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -22,29 +24,37 @@ pub struct CollectionsTelemetry {
     pub max_collections: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collections: Option<Vec<CollectionTelemetryEnum>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshots: Option<Vec<CollectionSnapshotTelemetry>>,
 }
 
 impl CollectionsTelemetry {
     pub async fn collect(detail: TelemetryDetail, access: &Access, toc: &TableOfContent) -> Self {
         let number_of_collections = toc.all_collections(access).await.len();
-        let collections = if detail.level >= DetailsLevel::Level1 {
+        let (collections, snapshots) = if detail.level >= DetailsLevel::Level1 {
             let telemetry_data = if detail.level >= DetailsLevel::Level2 {
-                toc.get_telemetry_data(detail, access)
-                    .await
+                let toc_telemetry = toc.get_telemetry_data(detail, access).await;
+
+                let collections: Vec<_> = toc_telemetry
+                    .collection_telemetry
                     .into_iter()
                     .map(|t| CollectionTelemetryEnum::Full(Box::new(t)))
-                    .collect()
+                    .collect();
+
+                (collections, toc_telemetry.snapshot_telemetry)
             } else {
-                toc.get_aggregated_telemetry_data(access)
+                let collections = toc
+                    .get_aggregated_telemetry_data(access)
                     .await
                     .into_iter()
                     .map(CollectionTelemetryEnum::Aggregated)
-                    .collect()
+                    .collect();
+                (collections, vec![])
             };
 
-            Some(telemetry_data)
+            (Some(telemetry_data.0), Some(telemetry_data.1))
         } else {
-            None
+            (None, None)
         };
 
         let max_collections = toc.max_collections();
@@ -53,6 +63,7 @@ impl CollectionsTelemetry {
             number_of_collections,
             max_collections,
             collections,
+            snapshots,
         }
     }
 }
