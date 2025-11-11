@@ -49,7 +49,7 @@ impl DummyShard {
     }
 
     pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
-        self.dummy()
+        Ok(SnapshotManifest::default())
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
