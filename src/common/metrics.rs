@@ -1016,6 +1016,9 @@ mod procfs_metrics {
 
     #[test]
     fn test_child_processes() {
+        use nix::sys::wait::waitpid;
+        use nix::unistd::{ForkResult, fork};
+
         let my_pid = procfs::process::Process::myself().unwrap().pid;
 
         // We have no children now
@@ -1023,22 +1026,51 @@ mod procfs_metrics {
 
         // Spawn two child processes
         let mut child_1 = std::process::Command::new("sleep")
-            .arg("10s")
+            .arg("3s")
             .spawn()
             .unwrap();
         let mut child_2 = std::process::Command::new("sleep")
-            .arg("10s")
+            .arg("3s")
             .spawn()
             .unwrap();
         let child_1_pid = child_1.id() as Pid;
         let child_2_pid = child_2.id() as Pid;
 
+        // Recursively fork process to create a grandchild
+        let fork_1 = match unsafe { fork().unwrap() } {
+            ForkResult::Parent { child } => child,
+            ForkResult::Child => {
+                let fork_2 = match unsafe { fork().unwrap() } {
+                    ForkResult::Parent { child } => child,
+                    ForkResult::Child => {
+                        std::thread::sleep(std::time::Duration::from_secs(3));
+                        std::process::exit(0);
+                    }
+                };
+                waitpid(fork_2, None).unwrap();
+                std::process::exit(0);
+            }
+        };
+
+        // Give forks a second to spawn
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // We expect exactly 4 children (3 direct, 1 grandchild)
+        // We don't know the PID of the grandchild here, so we expect three children and one extra
+        let child_pids = child_processes_helper(my_pid).unwrap();
+        assert_eq!(child_pids.len(), 4);
         assert_eq!(
-            child_processes_helper(my_pid).unwrap(),
-            AHashSet::from([child_1_pid, child_2_pid]),
+            child_pids
+                .difference(&AHashSet::from([child_1_pid, child_2_pid, fork_1.into()]))
+                .count(),
+            1,
+            "expect exactly one extra child",
         );
 
-        // Cleanup
+        // Cleanup fork
+        waitpid(fork_1, None).unwrap();
+
+        // Cleanup processes
         child_1.kill().unwrap();
         child_2.kill().unwrap();
         let _ = child_1.wait();

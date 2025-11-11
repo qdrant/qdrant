@@ -44,6 +44,7 @@ sealed_test = "1.1.0"
 
 tempfile = { workspace = true }
 rusty-hook = "^0.11.2"
+nix = { workspace = true, features = ["process"] }
 
 mockito = "1.7"
 
