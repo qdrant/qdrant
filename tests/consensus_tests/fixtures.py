@@ -68,12 +68,14 @@ def update_points_payload(
         points,
         collection_name="test_collection",
         wait="true",
+        shard_key=None,
 ):
     r_batch = requests.post(
         f"{peer_url}/collections/{collection_name}/points/payload?wait={wait}",
         json={
             "points": points,
             "payload": {"city": random.choice(CITIES)},
+            "shard_key": shard_key,
         },
     )
     assert_http_ok(r_batch)
