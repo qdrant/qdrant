@@ -396,7 +396,7 @@ impl MetricsProvider for CollectionsTelemetry {
 
         if !snapshots_currently_running.is_empty() {
             metrics.push(metric_family(
-                "snapshot_currently_runnning",
+                "snapshot_currently_running",
                 "amount of snapshot creations that are currently running",
                 MetricType::GAUGE,
                 snapshots_currently_running,
@@ -406,7 +406,7 @@ impl MetricsProvider for CollectionsTelemetry {
 
         if !snapshot_recovery_running.is_empty() {
             metrics.push(metric_family(
-                "snapshot_recovery_runnning",
+                "snapshot_recovery_running",
                 "amount of snapshot recovery operations currently running",
                 MetricType::GAUGE,
                 snapshot_recovery_running,
