@@ -190,9 +190,9 @@ impl MetricsProvider for CollectionsTelemetry {
         let mut total_dead_replicas = 0;
 
         // Snapshot metrics
-        let mut snapshots_currently_running = vec![];
-        let mut snapshot_recovery_running = vec![];
-        let mut snapshots_total = vec![];
+        let mut snapshots_creation_running = vec![];
+        let mut snapshots_recovery_running = vec![];
+        let mut snapshots_created_total = vec![];
 
         let mut vector_count_by_name = vec![];
 
@@ -307,18 +307,18 @@ impl MetricsProvider for CollectionsTelemetry {
         for snapshot_telemetry in self.snapshots.iter().flatten() {
             let id = &snapshot_telemetry.id;
 
-            snapshot_recovery_running.push(gauge(
+            snapshots_recovery_running.push(gauge(
                 snapshot_telemetry
                     .running_snapshot_recovery
                     .unwrap_or_default() as f64,
                 &[("id", id)],
             ));
-            snapshots_currently_running.push(gauge(
+            snapshots_creation_running.push(gauge(
                 snapshot_telemetry.running_snapshots.unwrap_or_default() as f64,
                 &[("id", id)],
             ));
 
-            snapshots_total.push(counter(
+            snapshots_created_total.push(counter(
                 snapshot_telemetry
                     .total_snapshot_creations
                     .unwrap_or_default() as f64,
@@ -394,32 +394,32 @@ impl MetricsProvider for CollectionsTelemetry {
             prefix,
         ));
 
-        if !snapshots_currently_running.is_empty() {
+        if !snapshots_creation_running.is_empty() {
             metrics.push(metric_family(
-                "snapshot_currently_running",
+                "snapshot_creation_running",
                 "amount of snapshot creations that are currently running",
                 MetricType::GAUGE,
-                snapshots_currently_running,
+                snapshots_creation_running,
                 prefix,
             ));
         }
 
-        if !snapshot_recovery_running.is_empty() {
+        if !snapshots_recovery_running.is_empty() {
             metrics.push(metric_family(
                 "snapshot_recovery_running",
                 "amount of snapshot recovery operations currently running",
                 MetricType::GAUGE,
-                snapshot_recovery_running,
+                snapshots_recovery_running,
                 prefix,
             ));
         }
 
-        if !snapshots_total.is_empty() {
+        if !snapshots_created_total.is_empty() {
             metrics.push(metric_family(
-                "snapshot_creations_total",
+                "snapshot_created_total",
                 "total amount of snapshots created",
                 MetricType::COUNTER,
-                snapshots_total,
+                snapshots_created_total,
                 prefix,
             ));
         }
