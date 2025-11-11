@@ -175,7 +175,7 @@ impl MetricsProvider for CollectionsTelemetry {
         ));
 
         // Optimizers
-        let mut total_optimizations_running = 0;
+        let mut total_optimizations_running = vec![];
 
         // Min/Max/Expected/Active replicas over all shards.
         let mut total_min_active_replicas = usize::MAX;
@@ -204,7 +204,10 @@ impl MetricsProvider for CollectionsTelemetry {
                 }
             };
 
-            total_optimizations_running += collection.count_optimizers_running();
+            total_optimizations_running.push(gauge(
+                collection.count_optimizers_running() as f64,
+                &[("id", &collection.id)],
+            ));
 
             let min_max_active_replicas = collection
                 .shards
@@ -381,13 +384,15 @@ impl MetricsProvider for CollectionsTelemetry {
             prefix,
         ));
 
-        metrics.push(metric_family(
-            "optimizer_running_processes",
-            "number of currently running optimization processes",
-            MetricType::GAUGE,
-            vec![gauge(total_optimizations_running as f64, &[])],
-            prefix,
-        ));
+        if !total_optimizations_running.is_empty() {
+            metrics.push(metric_family(
+                "collection_running_optimizations",
+                "number of currently running optimization tasks per collection",
+                MetricType::GAUGE,
+                total_optimizations_running,
+                prefix,
+            ));
+        }
 
         if !points_per_collection.is_empty() {
             metrics.push(metric_family(
