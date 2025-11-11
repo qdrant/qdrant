@@ -78,7 +78,10 @@ impl ShardHolder {
         }
     }
 
-    pub fn new(collection_path: &Path) -> CollectionResult<Self> {
+    pub fn new(
+        collection_path: &Path,
+        collection_config: &CollectionConfigInternal,
+    ) -> CollectionResult<Self> {
         let shard_transfers =
             SaveOnDisk::load_or_init_default(collection_path.join(SHARD_TRANSFERS_FILE))?;
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
@@ -95,7 +98,11 @@ impl ShardHolder {
             }
         }
 
-        let rings = HashMap::from([(None, HashRingRouter::single())]);
+        let sharding_method = collection_config.params.sharding_method.unwrap_or_default();
+        let rings = match sharding_method {
+            ShardingMethod::Auto => HashMap::from([(None, HashRingRouter::single())]),
+            ShardingMethod::Custom => HashMap::new(),
+        };
 
         let (shard_transfer_changes, _) = broadcast::channel(64);
 
@@ -107,8 +114,7 @@ impl ShardHolder {
             rings,
             key_mapping,
             shard_id_to_key_mapping,
-            // Assume default sharding method, until we set it on load
-            sharding_method: ShardingMethod::default(),
+            sharding_method,
         })
     }
 
@@ -792,13 +798,16 @@ impl ShardHolder {
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
-        // Bump sharding method based on collection config
-        self.sharding_method = collection_config
-            .read()
-            .await
-            .params
-            .sharding_method
-            .unwrap_or_default();
+        debug_assert_eq!(
+            collection_config
+                .read()
+                .await
+                .params
+                .sharding_method
+                .unwrap_or_default(),
+            self.sharding_method,
+            "expect sharding method to remain the same",
+        );
 
         let (shard_ids_list, shard_id_to_key_mapping) = match self.sharding_method {
             ShardingMethod::Auto => {
