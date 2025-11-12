@@ -96,6 +96,7 @@ impl TryFrom<rest::VectorStructOutput> for grpc::VectorsOutput {
 }
 
 impl From<VectorInternal> for grpc::VectorOutput {
+    #[expect(deprecated)]
     fn from(vector: VectorInternal) -> Self {
         match vector {
             VectorInternal::Dense(vector) => Self {
@@ -166,6 +167,7 @@ impl TryFrom<grpc::Vectors> for rest::VectorStruct {
         match vectors_options {
             Some(vectors_options) => Ok(match vectors_options {
                 grpc::vectors::VectorsOptions::Vector(vector) => {
+                    #[expect(deprecated)]
                     let grpc::Vector {
                         data,
                         indices,
@@ -239,6 +241,7 @@ impl TryFrom<grpc::Vector> for rest::Vector {
     type Error = Status;
 
     fn try_from(vector: grpc::Vector) -> Result<Self, Self::Error> {
+        #[expect(deprecated)]
         let grpc::Vector {
             data,
             indices,
@@ -304,6 +307,7 @@ impl grpc::MultiDenseVector {
 impl TryFrom<grpc::VectorOutput> for VectorInternal {
     type Error = OperationError;
 
+    #[expect(deprecated)]
     fn try_from(vector: grpc::VectorOutput) -> Result<Self, Self::Error> {
         let grpc::VectorOutput {
             data,
@@ -347,6 +351,8 @@ impl TryFrom<grpc::VectorOutput> for VectorInternal {
 
 impl TryFrom<grpc::VectorsOutput> for VectorStructInternal {
     type Error = OperationError;
+
+    #[expect(deprecated)]
     fn try_from(vectors_output: grpc::VectorsOutput) -> Result<Self, Self::Error> {
         let grpc::VectorsOutput { vectors_options } = vectors_output;
         match vectors_options {
@@ -413,6 +419,7 @@ impl From<VectorInternal> for grpc::Vector {
     fn from(vector: VectorInternal) -> Self {
         // ToDo(v1.17): before deprecating `data`, `indices`, and `vectors_count`, ensure
         //             that `vector` field is generated here.
+        #[expect(deprecated)]
         match vector {
             VectorInternal::Dense(vector) => Self {
                 data: vector,
@@ -481,6 +488,7 @@ impl TryFrom<grpc::Vector> for VectorInternal {
     type Error = Status;
 
     fn try_from(vector: grpc::Vector) -> Result<Self, Self::Error> {
+        #[expect(deprecated)]
         let grpc::Vector {
             data,
             indices,
