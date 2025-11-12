@@ -296,8 +296,7 @@ impl CollectionConfigInternal {
                              is not compatible with multivectors. This option will be ignored."
                         ),
                     });
-                }
-                if !vector_quantization {
+                } else if !vector_quantization {
                     warnings.push(CollectionWarning {
                         message: format!(
                             "The `hnsw_config.inline_storage` option for vector '{vector_name}' \
