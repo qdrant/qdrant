@@ -97,8 +97,9 @@ impl PyAcornSearchParams {
 #[derive(Clone, Debug, Into)]
 pub struct PyWithVector(WithVector);
 
-impl<'py> FromPyObject<'py> for PyWithVector {
-    fn extract_bound(with_vector: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for PyWithVector {
+    type Error = PyErr;
+    fn extract(with_vector: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         enum Helper {
             Bool(bool),
@@ -147,8 +148,9 @@ impl<'py> IntoPyObject<'py> for &PyWithVector {
 #[derive(Clone, Debug, Into)]
 pub struct PyWithPayload(WithPayloadInterface);
 
-impl<'py> FromPyObject<'py> for PyWithPayload {
-    fn extract_bound(with_payload: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for PyWithPayload {
+    type Error = PyErr;
+    fn extract(with_payload: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         enum Helper {
             Bool(bool),
@@ -208,8 +210,9 @@ impl<'py> IntoPyObject<'py> for &PyWithPayload {
 #[repr(transparent)]
 pub struct PyPayloadSelector(PayloadSelector);
 
-impl FromPyObject<'_> for PyPayloadSelector {
-    fn extract_bound(selector: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for PyPayloadSelector {
+    type Error = PyErr;
+    fn extract(selector: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
         let selector = match selector.extract()? {
             PyPayloadSelectorInterface::Include(keys) => {
                 PayloadSelector::Include(PayloadSelectorInclude {

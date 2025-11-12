@@ -35,8 +35,9 @@ impl PyFormula {
 #[repr(transparent)]
 pub struct PyExpression(ExpressionInternal);
 
-impl<'py> FromPyObject<'py> for PyExpression {
-    fn extract_bound(helper: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for PyExpression {
+    type Error = PyErr;
+    fn extract(helper: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
         let expr = match helper.extract()? {
             PyExpressionInterface::Constant(val) => ExpressionInternal::Constant(val),
             PyExpressionInterface::Variable(var) => ExpressionInternal::Variable(var),
