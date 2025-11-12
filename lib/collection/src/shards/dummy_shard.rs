@@ -12,6 +12,7 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
     WithPayloadInterface, WithVector,
 };
+use shard::operations::CollectionUpdateOperations;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
@@ -20,6 +21,7 @@ use crate::operations::OperationWithClockTag;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
     OptimizersStatus, PointRequestInternal, ScrollRequestInternal, ShardStatus, UpdateResult,
+    UpdateStatus,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::shard_trait::ShardOperation;
@@ -99,11 +101,18 @@ impl DummyShard {
 impl ShardOperation for DummyShard {
     async fn update(
         &self,
-        _: OperationWithClockTag,
+        op: OperationWithClockTag,
         _: bool,
         _: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        self.dummy()
+        match &op.operation {
+            CollectionUpdateOperations::FieldIndexOperation(_) => Ok(UpdateResult {
+                operation_id: None,
+                status: UpdateStatus::Acknowledged,
+                clock_tag: None,
+            }),
+            _ => self.dummy(),
+        }
     }
 
     /// Forward read-only `scroll_by` to `wrapped_shard`
