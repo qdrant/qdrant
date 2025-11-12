@@ -129,7 +129,7 @@ impl VectorIndex for PlainVectorIndex {
             query_context.hardware_counter(),
         )?;
 
-        let search_results = match filter {
+        let mut search_results = match filter {
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
                 let filtered_ids_vec = payload_index.query_points(filter, &hw_counter, &is_stopped);
@@ -142,22 +142,19 @@ impl VectorIndex for PlainVectorIndex {
             None => batch_searcher.peek_top_all(oversampled_top, &is_stopped)?,
         };
 
-        search_results
-            .into_iter()
-            .zip(query_vectors)
-            .map(|(search_result, query_vector)| {
-                postprocess_search_result(
-                    search_result,
-                    id_tracker.deleted_point_bitslice(),
-                    &vector_storage,
-                    quantized_storage.as_ref(),
-                    query_vector,
-                    params,
-                    top,
-                    query_context.hardware_counter(),
-                )
-            })
-            .collect()
+        for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {
+            *search_result = postprocess_search_result(
+                std::mem::take(search_result),
+                id_tracker.deleted_point_bitslice(),
+                &vector_storage,
+                quantized_storage.as_ref(),
+                query_vector,
+                params,
+                top,
+                query_context.hardware_counter(),
+            )?;
+        }
+        Ok(search_results.to_vec())
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {

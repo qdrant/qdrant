@@ -1153,24 +1153,21 @@ impl HNSWIndex {
             vector_query_context.hardware_counter(),
             None,
         )?;
-        let search_results =
+        let mut search_results =
             batch_filtered_searcher.peek_top_iter(points, oversampled_top, &is_stopped)?;
-        search_results
-            .into_iter()
-            .zip(query_vectors)
-            .map(|(search_result, query_vector)| {
-                postprocess_search_result(
-                    search_result,
-                    id_tracker.deleted_point_bitslice(),
-                    &vector_storage,
-                    quantized_vectors.as_ref(),
-                    query_vector,
-                    params,
-                    top,
-                    vector_query_context.hardware_counter(),
-                )
-            })
-            .collect()
+        for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {
+            *search_result = postprocess_search_result(
+                std::mem::take(search_result),
+                id_tracker.deleted_point_bitslice(),
+                &vector_storage,
+                quantized_vectors.as_ref(),
+                query_vector,
+                params,
+                top,
+                vector_query_context.hardware_counter(),
+            )?;
+        }
+        Ok(search_results.to_vec())
     }
 
     fn search_plain_batched(
@@ -1362,7 +1359,7 @@ impl VectorIndex for HNSWIndex {
                     });
 
                     let params_ref = if exact { exact_params.as_ref() } else { params };
-                    self.search_plain_unfiltered_batched(&vectors, top, params_ref, query_context)
+                    self.search_plain_unfiltered_batched(vectors, top, params_ref, query_context)
                 } else {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_hnsw);
