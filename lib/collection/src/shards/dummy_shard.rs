@@ -106,6 +106,7 @@ impl ShardOperation for DummyShard {
         _: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         match &op.operation {
+            // Allow (and ignore) field operations here as they'll be applied again when the shard is recovered
             CollectionUpdateOperations::FieldIndexOperation(_) => Ok(UpdateResult {
                 operation_id: None,
                 status: UpdateStatus::Acknowledged,
