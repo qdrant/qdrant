@@ -741,6 +741,7 @@ message CreateShardKey {
   optional uint32 shards_number = 2; // Number of shards to create per shard key
   optional uint32 replication_factor = 3; // Number of replicas of each shard to create
   repeated uint64 placement = 4; // List of peer ids, allowed to create shards. If empty - all peers are allowed
+  optional ReplicaState initial_state = 5; // Initial state of created replicas. Warning: use with care.
 }
 
 message DeleteShardKey {
