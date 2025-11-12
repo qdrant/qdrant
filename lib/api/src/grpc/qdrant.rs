@@ -1552,7 +1552,7 @@ pub struct CreateShardKey {
     /// List of peer ids, allowed to create shards. If empty - all peers are allowed
     #[prost(uint64, repeated, tag = "4")]
     pub placement: ::prost::alloc::vec::Vec<u64>,
-    /// Initial state of created replicas.
+    /// Initial state of created replicas. Warning: use with care.
     #[prost(enumeration = "ReplicaState", optional, tag = "5")]
     pub initial_state: ::core::option::Option<i32>,
 }
