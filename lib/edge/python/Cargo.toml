@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 
 
 [dependencies]
-edge = { path = "../../edge" } # ".." does not play well with Dependabot
+edge = { path = ".." }
 segment = { path = "../../segment", default-features = false }
 shard = { path = "../../shard" }
 sparse = { path = "../../sparse" }
@@ -30,5 +30,5 @@ version = "2.0"
 features = ["into"]
 
 [dependencies.pyo3]
-version = "0.26"
+version = "0.27.1"
 features = ["uuid"]
