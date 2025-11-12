@@ -62,10 +62,15 @@ pub struct ShardHolder {
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
+    /// Hash rings per shard key
+    ///
+    /// In case of auto sharding, this only hash a `None` hash ring. In case of custom sharding,
+    /// this only has hash rings for defined shard keys excluding `None`.
     pub(crate) rings: HashMap<Option<ShardKey>, HashRingRouter>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access, does not use locking
     shard_id_to_key_mapping: AHashMap<ShardId, ShardKey>,
+    sharding_method: ShardingMethod,
 }
 
 pub type LockedShardHolder = RwLock<ShardHolder>;
@@ -77,7 +82,7 @@ impl ShardHolder {
         }
     }
 
-    pub fn new(collection_path: &Path) -> CollectionResult<Self> {
+    pub fn new(collection_path: &Path, sharding_method: ShardingMethod) -> CollectionResult<Self> {
         let shard_transfers =
             SaveOnDisk::load_or_init_default(collection_path.join(SHARD_TRANSFERS_FILE))?;
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
@@ -94,7 +99,10 @@ impl ShardHolder {
             }
         }
 
-        let rings = HashMap::from([(None, HashRingRouter::single())]);
+        let rings = match sharding_method {
+            ShardingMethod::Auto => HashMap::from([(None, HashRingRouter::single())]),
+            ShardingMethod::Custom => HashMap::new(),
+        };
 
         let (shard_transfer_changes, _) = broadcast::channel(64);
 
@@ -106,6 +114,7 @@ impl ShardHolder {
             rings,
             key_mapping,
             shard_id_to_key_mapping,
+            sharding_method,
         })
     }
 
@@ -246,10 +255,25 @@ impl ShardHolder {
     }
 
     fn rebuild_rings(&mut self) {
-        let mut rings = HashMap::from([(None, HashRingRouter::single())]);
+        let mut rings = match self.sharding_method {
+            // With auto sharding, we have a single hash ring
+            ShardingMethod::Auto => HashMap::from([(None, HashRingRouter::single())]),
+            // With custom sharding, we have a hash ring per shard key
+            ShardingMethod::Custom => HashMap::new(),
+        };
+
+        // Add shards and shard keys
         let ids_to_key = self.get_shard_id_to_key_mapping();
         for shard_id in self.shards.keys() {
             let shard_key = ids_to_key.get(shard_id).cloned();
+            debug_assert!(
+                matches!(
+                    (self.sharding_method, &shard_key),
+                    (ShardingMethod::Auto, None) | (ShardingMethod::Custom, Some(_)),
+                ),
+                "auto sharding cannot have shard key, custom sharding must have shard key ({:?}, {shard_key:?})",
+                self.sharding_method,
+            );
             rings
                 .entry(shard_key)
                 .or_insert_with(HashRingRouter::single)
@@ -781,13 +805,7 @@ impl ShardHolder {
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
-        let (shard_ids_list, shard_id_to_key_mapping) = match collection_config
-            .read()
-            .await
-            .params
-            .sharding_method
-            .unwrap_or_default()
-        {
+        let (shard_ids_list, shard_id_to_key_mapping) = match self.sharding_method {
             ShardingMethod::Auto => {
                 let ids_list = (0..shard_number).collect::<Vec<_>>();
                 let shard_id_to_key_mapping = AHashMap::new();
