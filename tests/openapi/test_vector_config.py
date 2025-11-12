@@ -244,7 +244,7 @@ def test_disable_indexing(on_disk_vectors):
                 "hnsw_config": {"inline_storage": True},
                 "multivector_config": {"comparator": "max_sim"},
             },
-            2,
+            1,
         ),
     ],
 )
