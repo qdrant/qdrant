@@ -1552,6 +1552,9 @@ pub struct CreateShardKey {
     /// List of peer ids, allowed to create shards. If empty - all peers are allowed
     #[prost(uint64, repeated, tag = "4")]
     pub placement: ::prost::alloc::vec::Vec<u64>,
+    /// Initial state of created replicas.
+    #[prost(enumeration = "ReplicaState", optional, tag = "5")]
+    pub initial_state: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
