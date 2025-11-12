@@ -255,6 +255,7 @@ impl Validate for grpc::FieldCondition {
 
 impl Validate for grpc::Vector {
     fn validate(&self) -> Result<(), ValidationErrors> {
+        #[expect(deprecated)]
         let grpc::Vector {
             data,
             indices,
