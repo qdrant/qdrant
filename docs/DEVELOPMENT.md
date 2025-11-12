@@ -110,9 +110,9 @@ To run Qdrant on local development environment you need to install below:
     ```
 - Install Python dependencies for testing
     ```shell
-    poetry -C tests install --sync
+    poetry -C tests install --no-root
     ```
-    Then you could use `poetry -C run pytest tests/openapi` and `poetry -C run pytest tests/consensus_tests` to run the tests.
+    Then you could use `poetry -P tests run pytest tests/openapi` and `poetry -P tests run pytest tests/consensus_tests` to run the tests.
 - Use the web UI
 
     Web UI repo is [in a separate repo](https://github.com/qdrant/qdrant-web-ui), but there's a utility script to sync it to the `static` folder:
