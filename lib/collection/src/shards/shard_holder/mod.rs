@@ -62,6 +62,10 @@ pub struct ShardHolder {
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
+    /// Hash rings per shard key
+    ///
+    /// In case of auto sharding, this only hash a `None` hash ring. In case of custom sharding,
+    /// this only has hash rings for defined shard keys excluding `None`.
     pub(crate) rings: HashMap<Option<ShardKey>, HashRingRouter>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access, does not use locking
@@ -255,19 +259,25 @@ impl ShardHolder {
             // With auto sharding, we have a single hash ring
             ShardingMethod::Auto => HashMap::from([(None, HashRingRouter::single())]),
             // With custom sharding, we have a hash ring per shard key
-            ShardingMethod::Custom => {
-                let mut rings = HashMap::new();
-                let ids_to_key = self.get_shard_id_to_key_mapping();
-                for shard_id in self.shards.keys() {
-                    let shard_key = ids_to_key.get(shard_id).cloned();
-                    rings
-                        .entry(shard_key)
-                        .or_insert_with(HashRingRouter::single)
-                        .add(*shard_id);
-                }
-                rings
-            }
+            ShardingMethod::Custom => HashMap::new(),
         };
+
+        // Add shards and shard keys
+        let ids_to_key = self.get_shard_id_to_key_mapping();
+        for shard_id in self.shards.keys() {
+            let shard_key = ids_to_key.get(shard_id).cloned();
+            debug_assert!(
+                matches!(
+                    (self.sharding_method, &shard_key),
+                    (ShardingMethod::Auto, None) | (ShardingMethod::Custom, Some(_)),
+                ),
+                "auto sharding cannot have shard key, custom sharding must have shard key",
+            );
+            rings
+                .entry(shard_key)
+                .or_insert_with(HashRingRouter::single)
+                .add(*shard_id);
+        }
 
         // Restore resharding hash ring if resharding is active and haven't reached
         // `WriteHashRingCommitted` stage yet
