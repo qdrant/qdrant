@@ -794,17 +794,6 @@ impl ShardHolder {
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
-        debug_assert_eq!(
-            collection_config
-                .read()
-                .await
-                .params
-                .sharding_method
-                .unwrap_or_default(),
-            self.sharding_method,
-            "expect sharding method to remain the same",
-        );
-
         let (shard_ids_list, shard_id_to_key_mapping) = match self.sharding_method {
             ShardingMethod::Auto => {
                 let ids_list = (0..shard_number).collect::<Vec<_>>();
