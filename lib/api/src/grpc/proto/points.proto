@@ -65,9 +65,9 @@ message InferenceObject {
 }
 
 message Vector {
-  repeated float data = 1; // Vector data (flatten for multi vectors), deprecated
-  optional SparseIndices indices = 2; // Sparse indices for sparse vectors, deprecated
-  optional uint32 vectors_count = 3; // Number of vectors per multi vector, deprecated
+  repeated float data = 1 [deprecated=true]; // Vector data (flatten for multi vectors), deprecated
+  optional SparseIndices indices = 2 [deprecated=true]; // Sparse indices for sparse vectors, deprecated
+  optional uint32 vectors_count = 3 [deprecated=true]; // Number of vectors per multi vector, deprecated
   oneof vector {
     DenseVector dense = 101; // Dense vector
     SparseVector sparse = 102; // Sparse vector
@@ -79,9 +79,9 @@ message Vector {
 }
 
 message VectorOutput {
-  repeated float data = 1; // Vector data (flatten for multi vectors), deprecated
-  optional SparseIndices indices = 2; // Sparse indices for sparse vectors, deprecated
-  optional uint32 vectors_count = 3; // Number of vectors per multi vector, deprecated
+  repeated float data = 1 [deprecated=true]; // Vector data (flatten for multi vectors), deprecated
+  optional SparseIndices indices = 2 [deprecated=true]; // Sparse indices for sparse vectors, deprecated
+  optional uint32 vectors_count = 3 [deprecated=true]; // Number of vectors per multi vector, deprecated
   oneof vector {
     DenseVector dense = 101; // Dense vector
     SparseVector sparse = 102; // Sparse vector
