@@ -51,3 +51,7 @@ harness = false
 [[bench]]
 name = "binary"
 harness = false
+
+[[bench]]
+name = "p_square"
+harness = false
