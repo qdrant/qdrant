@@ -174,27 +174,29 @@ impl MetricsProvider for CollectionsTelemetry {
             prefix,
         ));
 
+        let num_collections = self.collections.as_ref().map_or(0, |c| c.len());
+
         // Optimizers
-        let mut total_optimizations_running = vec![];
+        let mut total_optimizations_running = Vec::with_capacity(num_collections);
 
         // Min/Max/Expected/Active replicas over all shards.
         let mut total_min_active_replicas = usize::MAX;
         let mut total_max_active_replicas = 0;
 
         // Points per collection
-        let mut points_per_collection = vec![];
+        let mut points_per_collection = Vec::with_capacity(num_collections);
 
         // Vectors excluded from index-only requests.
-        let mut indexed_only_excluded = vec![];
+        let mut indexed_only_excluded = Vec::with_capacity(num_collections);
 
         let mut total_dead_replicas = 0;
 
         // Snapshot metrics
-        let mut snapshots_creation_running = vec![];
-        let mut snapshots_recovery_running = vec![];
-        let mut snapshots_created_total = vec![];
+        let mut snapshots_creation_running = Vec::with_capacity(num_collections);
+        let mut snapshots_recovery_running = Vec::with_capacity(num_collections);
+        let mut snapshots_created_total = Vec::with_capacity(num_collections);
 
-        let mut vector_count_by_name = vec![];
+        let mut vector_count_by_name = Vec::with_capacity(num_collections);
 
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
