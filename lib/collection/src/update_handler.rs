@@ -140,7 +140,7 @@ pub struct UpdateHandler {
     /// Write lock must be held for updates, while read lock must be held for scroll
     scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
 
-    update_tracker: UpdateTracker,
+    pub(crate) update_tracker: UpdateTracker,
 }
 
 impl UpdateHandler {

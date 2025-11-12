@@ -1057,6 +1057,17 @@ impl LocalShard {
         }
         Ok(())
     }
+
+    /// Return the amount of currently running update operations of this local shard.
+    pub async fn update_operations(&self) -> usize {
+        // TODO: find a (clean) way to prevent locking here.
+        // `self.update_tracker` is atomic which could be cloned without the need of locking the whole `UpdateTracker`.
+        self.update_handler
+            .lock()
+            .await
+            .update_tracker
+            .running_updates()
+    }
 }
 
 impl Drop for LocalShard {

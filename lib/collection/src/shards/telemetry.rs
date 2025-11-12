@@ -72,6 +72,8 @@ pub struct LocalShardTelemetry {
     pub async_scorer: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indexed_only_excluded_vectors: Option<HashMap<String, usize>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub running_update_operations: Option<usize>,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize, Default)]
