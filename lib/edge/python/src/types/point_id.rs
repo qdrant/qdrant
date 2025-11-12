@@ -21,8 +21,9 @@ impl PyPointId {
     }
 }
 
-impl<'py> FromPyObject<'py> for PyPointId {
-    fn extract_bound(point_id: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for PyPointId {
+    type Error = PyErr;
+    fn extract(point_id: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         enum Helper {
             NumId(u64),

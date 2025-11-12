@@ -11,8 +11,9 @@ use crate::types::*;
 #[repr(transparent)]
 pub struct PyCondition(pub Condition);
 
-impl FromPyObject<'_> for PyCondition {
-    fn extract_bound(condition: &Bound<'_, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for PyCondition {
+    type Error = PyErr;
+    fn extract(condition: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         #[expect(clippy::large_enum_variant)]
         enum Helper {

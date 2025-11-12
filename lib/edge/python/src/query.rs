@@ -76,8 +76,10 @@ impl PyPrefetch {
 #[derive(Clone, Debug, Into)]
 pub struct PyScoringQuery(ScoringQuery);
 
-impl<'py> FromPyObject<'py> for PyScoringQuery {
-    fn extract_bound(query: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for PyScoringQuery {
+    type Error = PyErr;
+
+    fn extract(query: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         enum Helper {
             Vector(PyQuery),
@@ -178,8 +180,10 @@ impl From<PyDirection> for Direction {
 #[derive(Clone, Debug, Into)]
 pub struct PyStartFrom(StartFrom);
 
-impl<'py> FromPyObject<'py> for PyStartFrom {
-    fn extract_bound(start_from: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for PyStartFrom {
+    type Error = PyErr;
+
+    fn extract(start_from: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         enum Helper {
             Integer(IntPayloadType),
