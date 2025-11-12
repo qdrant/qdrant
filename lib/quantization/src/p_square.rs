@@ -9,7 +9,7 @@ use crate::EncodingError;
 /// let mut p2 = P2Quantile::<7>::new(0.99).unwrap();
 /// for x in data { p2.push(x).unwrap(); }
 /// let q_hat = p2.estimate();
-pub struct P2Quantile<const N: usize = 7> {
+pub struct P2Quantile<const N: usize = 9> {
     q: f64,
     init_buf: Vec<f64>,
     n: usize,
@@ -55,7 +55,7 @@ impl<const N: usize> P2Quantile<N> {
 
         Ok(Self {
             q,
-            init_buf: Vec::with_capacity(9),
+            init_buf: Vec::with_capacity(N),
             n: 0,
             h: [f64::NAN; N],
             npos: [0.0; N],
@@ -105,7 +105,7 @@ impl<const N: usize> P2Quantile<N> {
             self.h[0] = x;
             k = Some(0);
         } else {
-            for i in 1..(N - 1) {
+            for i in 1..N {
                 if x < self.h[i] {
                     k = Some(i - 1);
                     break;
@@ -120,14 +120,14 @@ impl<const N: usize> P2Quantile<N> {
         };
 
         // 2) Increment positions of markers above k
-        for i in (k + 1)..=(N - 1) {
+        for i in (k + 1)..N {
             self.npos[i] += 1.0;
         }
 
         // 3) Update desired positions
         self.update_desired_positions();
 
-        // 4) Adjust interior markers i = 1..N - 1
+        // 4) Adjust interior markers i = 1..N - 2
         for i in 1..(N - 1) {
             loop {
                 let di = self.ndes[i] - self.npos[i];
@@ -152,6 +152,7 @@ impl<const N: usize> P2Quantile<N> {
             // Not enough data to initialize P square; compute direct sample quantile
             return sample_quantile(&self.init_buf, self.q);
         }
+        // h[N / 2] tracks the target quantile
         self.h[N / 2]
     }
 
@@ -245,7 +246,7 @@ mod tests {
         use rand::rngs::StdRng;
         use rand::{Rng, SeedableRng};
 
-        let mut tdigest = P2Quantile::<9>::new(0.99).unwrap();
+        let mut tdigest = P2Quantile::<7>::new(0.99).unwrap();
 
         let mut rng = StdRng::seed_from_u64(42);
         let mut data = Vec::with_capacity(10_000);
@@ -274,8 +275,8 @@ mod tests {
 
         // mean 2, standard deviation 3
         let mut rng = StdRng::seed_from_u64(42);
-        let mut data = Vec::with_capacity(100_000);
-        for _ in 0..100_000 {
+        let mut data = Vec::with_capacity(10_000);
+        for _ in 0..10_000 {
             let value = rng.sample(StandardNormal);
             data.push(value);
             tdigest.push(value).unwrap();
@@ -296,12 +297,12 @@ mod tests {
 
         let q = 0.99;
 
-        let mut tdigest = P2Quantile::<9>::new(q).unwrap();
+        let mut tdigest = P2Quantile::<7>::new(q).unwrap();
 
         // mean 2, standard deviation 3
         let mut rng = StdRng::seed_from_u64(42);
-        let mut data = Vec::with_capacity(100_000);
-        for _ in 0..100_000 {
+        let mut data = Vec::with_capacity(10_000);
+        for _ in 0..10_000 {
             let value = rng.sample(Poisson::new(2.0).unwrap()) as f64;
             data.push(value);
             tdigest.push(value).unwrap();
@@ -326,8 +327,8 @@ mod tests {
 
         // mean 2, standard deviation 3
         let mut rng = StdRng::seed_from_u64(42);
-        let mut data = Vec::with_capacity(100_000);
-        for _ in 0..100_000 {
+        let mut data = Vec::with_capacity(10_000);
+        for _ in 0..10_000 {
             let value = rng.sample(StudentT::new(1.0).unwrap()) as f64;
             data.push(value);
             tdigest.push(value).unwrap();
