@@ -12,6 +12,7 @@ N_REPLICAS = 1
 
 COLLECTION_NAME = "test_collection"
 
+
 def test_shard_consistency(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -247,7 +248,7 @@ def test_create_shard_key_read_availability(tmp_path: pathlib.Path):
     peer_urls, _, _ = start_cluster(tmp_path, N_PEERS)
 
     # Wait until all peers submit their metadata to consensus 🙄
-    wait_for_peer_metadata(peer_urls[0], )
+    wait_for_peer_metadata(peer_urls[0])
 
     create_collection_with_custom_sharding(peer_urls[0], shard_number = N_SHARDS, replication_factor = N_PEERS)
     wait_collection_exists_and_active_on_all_peers(collection_name = COLLECTION_NAME, peer_api_uris = peer_urls)
@@ -272,6 +273,7 @@ def test_create_shard_key_read_availability(tmp_path: pathlib.Path):
 
     # Assert that all search requests succeeded while custom shard was being created
     assert all(search_future.result() for search_future in concurrent.futures.as_completed(search_futures))
+
 
 def test_shard_key_initial_state_partial(tmp_path: pathlib.Path):
     """
@@ -329,6 +331,7 @@ def wait_for_peer_metadata(peer_url: str):
         print(json.dumps(get_telemetry(peer_url), indent = 2))
         raise e
 
+
 def check_peer_metadata(peer_url: str):
     telemetry = get_telemetry(peer_url)
 
@@ -339,11 +342,13 @@ def check_peer_metadata(peer_url: str):
 
     return metadata and peers and all(metadata.get(peer) for peer in peers)
 
+
 def get_telemetry(peer_url: str):
     resp = requests.get(f"{peer_url}/telemetry?details_level=3")
     assert_http_ok(resp)
 
     return resp.json()["result"]
+
 
 def try_search_random(peer_url: str, cancel: threading.Event):
     while not cancel.is_set():

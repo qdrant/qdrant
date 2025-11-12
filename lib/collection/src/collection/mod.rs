@@ -118,7 +118,8 @@ impl Collection {
     ) -> CollectionResult<Self> {
         let start_time = std::time::Instant::now();
 
-        let mut shard_holder = ShardHolder::new(path)?;
+        let sharding_method = collection_config.params.sharding_method.unwrap_or_default();
+        let mut shard_holder = ShardHolder::new(path, sharding_method)?;
         shard_holder.set_shard_key_mappings(shard_key_mapping.clone().unwrap_or_default())?;
 
         let payload_index_schema = Arc::new(Self::load_payload_index_schema(path)?);
@@ -246,7 +247,9 @@ impl Collection {
         });
         collection_config.validate_and_warn();
 
-        let mut shard_holder = ShardHolder::new(path).expect("Can not create shard holder");
+        let sharding_method = collection_config.params.sharding_method.unwrap_or_default();
+        let mut shard_holder =
+            ShardHolder::new(path, sharding_method).expect("Can not create shard holder");
 
         let mut effective_optimizers_config = collection_config.optimizer_config.clone();
 
