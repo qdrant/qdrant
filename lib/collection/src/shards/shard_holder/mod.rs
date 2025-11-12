@@ -271,7 +271,8 @@ impl ShardHolder {
                     (self.sharding_method, &shard_key),
                     (ShardingMethod::Auto, None) | (ShardingMethod::Custom, Some(_)),
                 ),
-                "auto sharding cannot have shard key, custom sharding must have shard key",
+                "auto sharding cannot have shard key, custom sharding must have shard key ({:?}, {shard_key:?})",
+                self.sharding_method,
             );
             rings
                 .entry(shard_key)
