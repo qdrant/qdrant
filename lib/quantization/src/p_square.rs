@@ -13,11 +13,15 @@ pub struct P2Quantile<const N: usize = 9> {
     q: f64,
     init_buf: Vec<f64>,
     n: usize,
-    h: [f64; N],
-    npos: [f64; N],
-    ndes: [f64; N],
-    p: [f64; N],
+    markers: [Marker; N],
     initialized: bool,
+}
+
+struct Marker {
+    h: f64,
+    npos: f64,
+    ndes: f64,
+    p: f64,
 }
 
 impl<const N: usize> P2Quantile<N> {
@@ -57,10 +61,12 @@ impl<const N: usize> P2Quantile<N> {
             q,
             init_buf: Vec::with_capacity(N),
             n: 0,
-            h: [f64::NAN; N],
-            npos: [0.0; N],
-            ndes: [0.0; N],
-            p: p.as_slice().try_into().map_err(|_| {
+            markers: (0..N).map(|i| Marker {
+                h: f64::NAN,
+                npos: 0.0,
+                ndes: 0.0,
+                p: p[i],
+            }).collect::<Vec<_>>().try_into().map_err(|_| {
                 EncodingError::EncodingError("Cannot convert vec into array".to_string())
             })?,
             initialized: false,
@@ -80,15 +86,11 @@ impl<const N: usize> P2Quantile<N> {
             if self.init_buf.len() == N {
                 self.init_buf.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 for i in 0..N {
-                    self.h[i] = self.init_buf[i];
+                    self.markers[i].h = self.init_buf[i];
                 }
-                self.npos = (1..=N)
-                    .map(|x| x as f64)
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .map_err(|_| {
-                        EncodingError::EncodingError("Cannot convert vec into array".to_string())
-                    })?;
+                for i in 0..N {
+                    self.markers[i].npos = (i + 1) as f64;
+                }
                 self.update_desired_positions();
                 self.initialized = true;
                 self.init_buf.clear();
@@ -101,12 +103,12 @@ impl<const N: usize> P2Quantile<N> {
         // 1) Identify cell k and update extreme markers if needed
         // k is the cell index in [0..N - 1]
         let mut k: Option<usize> = None;
-        if x < self.h[0] {
-            self.h[0] = x;
+        if x < self.markers[0].h {
+            self.markers[0].h = x;
             k = Some(0);
         } else {
             for i in 1..N {
-                if x < self.h[i] {
+                if x < self.markers[i].h {
                     k = Some(i - 1);
                     break;
                 }
@@ -115,13 +117,13 @@ impl<const N: usize> P2Quantile<N> {
         let k = if let Some(k) = k {
             k
         } else {
-            self.h[N - 1] = x;
+            self.markers[N - 1].h = x;
             N - 1
         };
 
         // 2) Increment positions of markers above k
         for i in (k + 1)..N {
-            self.npos[i] += 1.0;
+            self.markers[i].npos += 1.0;
         }
 
         // 3) Update desired positions
@@ -130,10 +132,10 @@ impl<const N: usize> P2Quantile<N> {
         // 4) Adjust interior markers i = 1..N - 2
         for i in 1..(N - 1) {
             loop {
-                let di = self.ndes[i] - self.npos[i];
-                if di >= 1.0 && (self.npos[i + 1] - self.npos[i]) > 1.0 {
+                let di = self.markers[i].ndes - self.markers[i].npos;
+                if di >= 1.0 && (self.markers[i + 1].npos - self.markers[i].npos) > 1.0 {
                     self.adjust_marker(i, 1.0);
-                } else if di <= -1.0 && (self.npos[i - 1] - self.npos[i]) < -1.0 {
+                } else if di <= -1.0 && (self.markers[i - 1].npos - self.markers[i].npos) < -1.0 {
                     self.adjust_marker(i, -1.0);
                 } else {
                     break;
@@ -152,27 +154,27 @@ impl<const N: usize> P2Quantile<N> {
             // Not enough data to initialize P square; compute direct sample quantile
             return sample_quantile(&self.init_buf, self.q);
         }
-        // h[N / 2] tracks the target quantile
-        self.h[N / 2]
+        // `N / 2` marker tracks the target quantile
+        self.markers[N / 2].h
     }
 
     fn update_desired_positions(&mut self) {
         // ndes[i] = 1 + p[i] * (n - 1)
         let nf = self.n as f64;
         for i in 0..N {
-            self.ndes[i] = 1.0 + self.p[i] * (nf - 1.0);
+            self.markers[i].ndes = 1.0 + self.markers[i].p * (nf - 1.0);
         }
     }
 
     fn adjust_marker(&mut self, i: usize, dsign: f64) {
         // Try parabolic prediction
-        let n_im1 = self.npos[i - 1];
-        let n_i = self.npos[i];
-        let n_ip1 = self.npos[i + 1];
-        let h_im1 = self.h[i - 1];
-        let h_i = self.h[i];
-        let h_ip1 = self.h[i + 1];
-
+        let n_im1 = self.markers[i - 1].npos;
+        let n_i = self.markers[i].npos;
+        let n_ip1 = self.markers[i + 1].npos;
+        let h_im1 = self.markers[i - 1].h;
+        let h_i = self.markers[i].h;
+        let h_ip1 = self.markers[i + 1].h;
+    
         let denom = n_ip1 - n_im1;
         let mut h_par = h_i;
         if denom != 0.0 {
@@ -193,8 +195,8 @@ impl<const N: usize> P2Quantile<N> {
             }
         };
 
-        self.h[i] = h_new;
-        self.npos[i] += dsign;
+        self.markers[i].h = h_new;
+        self.markers[i].npos += dsign;
     }
 }
 
