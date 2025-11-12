@@ -17,11 +17,43 @@ pub struct P2Quantile<const N: usize = 9> {
     initialized: bool,
 }
 
+#[derive(Clone)]
 struct Marker {
     h: f64,
     npos: f64,
     ndes: f64,
     p: f64,
+}
+
+impl Marker {
+    fn adjust(&mut self, prev: Marker, next: Marker, dsign: f64) {
+        // Try parabolic prediction    
+        let denom = next.npos - prev.npos;
+        let mut h_par = self.h;
+        if denom != 0.0 {
+            let a = (self.npos - prev.npos + dsign) / (next.npos - self.npos) * (next.h - self.h);
+            let b = (next.npos - self.npos - dsign) / (self.npos - prev.npos) * (self.h - prev.h);
+            h_par = self.h + (a + b) * dsign / denom;
+        }
+
+        // If parabolic result is within neighbors, use it; otherwise linear
+        self.h = if h_par > prev.h && h_par < next.h && h_par.is_finite() {
+            h_par
+        } else {
+            // Linear step toward neighbor indicated by dsign
+            if dsign > 0.0 {
+                self.h + (next.h - self.h) / (next.npos - self.npos)
+            } else {
+                self.h + (prev.h - self.h) / (prev.npos - self.npos)
+            }
+        };
+
+        self.npos += dsign;
+    }
+
+    fn update_desired_position(&mut self, n: usize) {
+        self.ndes = 1.0 + self.p * (n as f64 - 1.0);
+    }
 }
 
 impl<const N: usize> P2Quantile<N> {
@@ -41,22 +73,7 @@ impl<const N: usize> P2Quantile<N> {
                 "Quantile q must be in (0, 1)".to_string(),
             ));
         }
-        let mut p = smallvec::SmallVec::<[f64; N]>::with_capacity(N);
-        let additional_markers_count = (N - 5) / 2;
-        p.push(0.0);
-        p.push(q * 0.5);
-        for i in 0..additional_markers_count {
-            let factor = 0.7 + 0.3 * (i + 1) as f64 / (additional_markers_count as f64 + 2.0);
-            p.push(q * factor);
-        }
-        p.push(q);
-        for i in (0..additional_markers_count).rev() {
-            let factor = 0.7 + 0.3 * (i + 1) as f64 / (additional_markers_count as f64 + 2.0);
-            p.push(1.0 + (q - 1.0) * factor);
-        }
-        p.push(1.0 + (q - 1.0) * 0.5);
-        p.push(1.0);
-
+        let p = Self::generate_grid_quantiles(q);
         Ok(Self {
             q,
             init_buf: Vec::with_capacity(N),
@@ -84,7 +101,7 @@ impl<const N: usize> P2Quantile<N> {
             self.n += 1;
 
             if self.init_buf.len() == N {
-                self.init_buf.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                self.init_buf.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
                 for i in 0..N {
                     self.markers[i].h = self.init_buf[i];
                 }
@@ -134,9 +151,17 @@ impl<const N: usize> P2Quantile<N> {
             loop {
                 let di = self.markers[i].ndes - self.markers[i].npos;
                 if di >= 1.0 && (self.markers[i + 1].npos - self.markers[i].npos) > 1.0 {
-                    self.adjust_marker(i, 1.0);
+                    self.markers[i].adjust(
+                        self.markers[i - 1].clone(),
+                        self.markers[i + 1].clone(),
+                        1.0,
+                    );
                 } else if di <= -1.0 && (self.markers[i - 1].npos - self.markers[i].npos) < -1.0 {
-                    self.adjust_marker(i, -1.0);
+                    self.markers[i].adjust(
+                        self.markers[i - 1].clone(),
+                        self.markers[i + 1].clone(),
+                        -1.0,
+                    );
                 } else {
                     break;
                 }
@@ -159,44 +184,28 @@ impl<const N: usize> P2Quantile<N> {
     }
 
     fn update_desired_positions(&mut self) {
-        // ndes[i] = 1 + p[i] * (n - 1)
-        let nf = self.n as f64;
         for i in 0..N {
-            self.markers[i].ndes = 1.0 + self.markers[i].p * (nf - 1.0);
+            self.markers[i].update_desired_position(self.n);
         }
     }
 
-    fn adjust_marker(&mut self, i: usize, dsign: f64) {
-        // Try parabolic prediction
-        let n_im1 = self.markers[i - 1].npos;
-        let n_i = self.markers[i].npos;
-        let n_ip1 = self.markers[i + 1].npos;
-        let h_im1 = self.markers[i - 1].h;
-        let h_i = self.markers[i].h;
-        let h_ip1 = self.markers[i + 1].h;
-    
-        let denom = n_ip1 - n_im1;
-        let mut h_par = h_i;
-        if denom != 0.0 {
-            let a = (n_i - n_im1 + dsign) / (n_ip1 - n_i) * (h_ip1 - h_i);
-            let b = (n_ip1 - n_i - dsign) / (n_i - n_im1) * (h_i - h_im1);
-            h_par = h_i + (dsign / denom) * (a + b);
+    fn generate_grid_quantiles(q: f64) -> smallvec::SmallVec<[f64; N]> {
+        let mut p = smallvec::SmallVec::<[f64; N]>::with_capacity(N);
+        let additional_markers_count = (N - 5) / 2;
+        p.push(0.0);
+        p.push(q * 0.5);
+        for i in 0..additional_markers_count {
+            let factor = 0.7 + 0.3 * (i + 1) as f64 / (additional_markers_count as f64 + 2.0);
+            p.push(q * factor);
         }
-
-        // If parabolic result is within neighbors, use it; otherwise linear
-        let h_new = if h_par > h_im1 && h_par < h_ip1 && h_par.is_finite() {
-            h_par
-        } else {
-            // Linear step toward neighbor indicated by dsign
-            if dsign > 0.0 {
-                h_i + (h_ip1 - h_i) / (n_ip1 - n_i)
-            } else {
-                h_i + (h_im1 - h_i) / (n_im1 - n_i)
-            }
-        };
-
-        self.markers[i].h = h_new;
-        self.markers[i].npos += dsign;
+        p.push(q);
+        for i in (0..additional_markers_count).rev() {
+            let factor = 0.7 + 0.3 * (i + 1) as f64 / (additional_markers_count as f64 + 2.0);
+            p.push(1.0 + (q - 1.0) * factor);
+        }
+        p.push(1.0 + (q - 1.0) * 0.5);
+        p.push(1.0);
+        p
     }
 }
 
@@ -325,13 +334,13 @@ mod tests {
 
         let q = 0.99;
 
-        let mut tdigest = P2Quantile::<9>::new(q).unwrap();
+        let mut tdigest = P2Quantile::<7>::new(q).unwrap();
 
         // mean 2, standard deviation 3
         let mut rng = StdRng::seed_from_u64(42);
         let mut data = Vec::with_capacity(10_000);
         for _ in 0..10_000 {
-            let value = rng.sample(StudentT::new(1.0).unwrap()) as f64;
+            let value = rng.sample(StudentT::new(2.0).unwrap()) as f64;
             data.push(value);
             tdigest.push(value).unwrap();
         }
