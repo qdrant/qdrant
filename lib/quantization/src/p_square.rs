@@ -9,85 +9,32 @@ use crate::EncodingError;
 /// let mut p2 = P2Quantile::<7>::new(0.99).unwrap();
 /// for x in data { p2.push(x).unwrap(); }
 /// let q_hat = p2.estimate();
-pub struct P2Quantile<const N: usize = 9> {
-    q: f64,
-    init_buf: Vec<f64>,
-    n: usize,
-    markers: [Marker; N],
-    initialized: bool,
-}
-
-#[derive(Clone)]
-struct Marker {
-    h: f64,
-    npos: f64,
-    ndes: f64,
-    p: f64,
-}
-
-impl Marker {
-    fn adjust(&mut self, prev: Marker, next: Marker, dsign: f64) {
-        // Try parabolic prediction    
-        let denom = next.npos - prev.npos;
-        let mut h_par = self.h;
-        if denom != 0.0 {
-            let a = (self.npos - prev.npos + dsign) / (next.npos - self.npos) * (next.h - self.h);
-            let b = (next.npos - self.npos - dsign) / (self.npos - prev.npos) * (self.h - prev.h);
-            h_par = self.h + (a + b) * dsign / denom;
-        }
-
-        // If parabolic result is within neighbors, use it; otherwise linear
-        self.h = if h_par > prev.h && h_par < next.h && h_par.is_finite() {
-            h_par
-        } else {
-            // Linear step toward neighbor indicated by dsign
-            if dsign > 0.0 {
-                self.h + (next.h - self.h) / (next.npos - self.npos)
-            } else {
-                self.h + (prev.h - self.h) / (prev.npos - self.npos)
-            }
-        };
-
-        self.npos += dsign;
-    }
-
-    fn update_desired_position(&mut self, n: usize) {
-        self.ndes = 1.0 + self.p * (n as f64 - 1.0);
-    }
+pub enum P2Quantile<const N: usize = 7> {
+    Linear(P2QuantileLinear<N>),
+    Impl(P2QuantileImpl<N>),
 }
 
 impl<const N: usize> P2Quantile<N> {
     pub fn new(q: f64) -> Result<Self, EncodingError> {
         if N < 5 {
-            return Err(EncodingError::ArgumentsError(
+            return Err(EncodingError::EncodingError(
                 "P2Quantile requires at least 5 markers".to_string(),
             ));
         }
         if N.is_multiple_of(2) {
-            return Err(EncodingError::ArgumentsError(
+            return Err(EncodingError::EncodingError(
                 "P2Quantile requires an odd number of markers".to_string(),
             ));
         }
         if q <= 0.0 || q >= 1.0 {
-            return Err(EncodingError::ArgumentsError(
+            return Err(EncodingError::EncodingError(
                 "Quantile q must be in (0, 1)".to_string(),
             ));
         }
-        let p = Self::generate_grid_quantiles(q);
-        Ok(Self {
+        Ok(Self::Linear(P2QuantileLinear {
             q,
-            init_buf: Vec::with_capacity(N),
-            n: 0,
-            markers: (0..N).map(|i| Marker {
-                h: f64::NAN,
-                npos: 0.0,
-                ndes: 0.0,
-                p: p[i],
-            }).collect::<Vec<_>>().try_into().map_err(|_| {
-                EncodingError::EncodingError("Cannot convert vec into array".to_string())
-            })?,
-            initialized: false,
-        })
+            buf: Default::default(),
+        }))
     }
 
     /// Push one observation.
@@ -96,25 +43,56 @@ impl<const N: usize> P2Quantile<N> {
             return Ok(());
         }
 
-        if !self.initialized {
-            self.init_buf.push(x);
-            self.n += 1;
-
-            if self.init_buf.len() == N {
-                self.init_buf.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-                for i in 0..N {
-                    self.markers[i].h = self.init_buf[i];
+        match self {
+            P2Quantile::Linear(linear) => {
+                linear.buf.push(x);
+                if linear.buf.len() == N {
+                    *self = P2Quantile::Impl(P2QuantileImpl::new_from_linear(linear));
                 }
-                for i in 0..N {
-                    self.markers[i].npos = (i + 1) as f64;
-                }
-                self.update_desired_positions();
-                self.initialized = true;
-                self.init_buf.clear();
+                Ok(())
             }
-            return Ok(());
+            P2Quantile::Impl(p2) => p2.push(x),
         }
+    }
 
+    /// Get resulting quantile estimation.
+    pub fn estimate(self) -> f64 {
+        match self {
+            P2Quantile::Linear(linear) => linear.estimate(),
+            P2Quantile::Impl(p2) => p2.estimate(),
+        }
+    }
+}
+
+pub struct P2QuantileImpl<const N: usize> {
+    n: usize,
+    markers: [Marker; N],
+}
+
+impl<const N: usize> P2QuantileImpl<N> {
+    fn new_from_linear(linear: &P2QuantileLinear<N>) -> Self {
+        assert_eq!(linear.buf.len(), N);
+
+        let mut buf = linear.buf.clone();
+        buf.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let p = Self::generate_grid_quantiles(linear.q);
+        let mut markers = [Marker::default(); N];
+        for i in 0..N {
+            markers[i].h = buf[i];
+            markers[i].p = p[i];
+            markers[i].npos = (i + 1) as f64;
+            markers[i].update_desired_position(N);
+        }
+        P2QuantileImpl { n: N, markers }
+    }
+
+    fn estimate(self) -> f64 {
+        // `N / 2` marker tracks the target quantile
+        self.markers[N / 2].h
+    }
+
+    fn push(&mut self, x: f64) -> Result<(), EncodingError> {
         self.n += 1;
 
         // 1) Identify cell k and update extreme markers if needed
@@ -144,49 +122,16 @@ impl<const N: usize> P2Quantile<N> {
         }
 
         // 3) Update desired positions
-        self.update_desired_positions();
-
-        // 4) Adjust interior markers i = 1..N - 2
-        for i in 1..(N - 1) {
-            loop {
-                let di = self.markers[i].ndes - self.markers[i].npos;
-                if di >= 1.0 && (self.markers[i + 1].npos - self.markers[i].npos) > 1.0 {
-                    self.markers[i].adjust(
-                        self.markers[i - 1].clone(),
-                        self.markers[i + 1].clone(),
-                        1.0,
-                    );
-                } else if di <= -1.0 && (self.markers[i - 1].npos - self.markers[i].npos) < -1.0 {
-                    self.markers[i].adjust(
-                        self.markers[i - 1].clone(),
-                        self.markers[i + 1].clone(),
-                        -1.0,
-                    );
-                } else {
-                    break;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn estimate(self) -> f64 {
-        if self.n == 0 {
-            return f64::NAN;
-        }
-        if !self.initialized {
-            // Not enough data to initialize P square; compute direct sample quantile
-            return sample_quantile(&self.init_buf, self.q);
-        }
-        // `N / 2` marker tracks the target quantile
-        self.markers[N / 2].h
-    }
-
-    fn update_desired_positions(&mut self) {
         for i in 0..N {
             self.markers[i].update_desired_position(self.n);
         }
+
+        // 4) Adjust interior markers
+        for i in 1..(N - 1) {
+            self.markers[i].adjust(self.markers[i - 1], self.markers[i + 1]);
+        }
+
+        Ok(())
     }
 
     fn generate_grid_quantiles(q: f64) -> smallvec::SmallVec<[f64; N]> {
@@ -209,145 +154,299 @@ impl<const N: usize> P2Quantile<N> {
     }
 }
 
-/// Simple linear-interpolated sample quantile
-fn sample_quantile(xs: &[f64], q: f64) -> f64 {
-    let n = xs.len();
-    if n == 0 {
-        return f64::NAN;
-    }
-    if n == 1 {
-        return xs[0];
-    }
-    let mut v = xs.to_owned();
-    v.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+#[derive(Clone, Copy, Default)]
+struct Marker {
+    h: f64,
+    npos: f64,
+    ndes: f64,
+    p: f64,
+}
 
-    let k = q * (n as f64 - 1.0);
-    let lo = k.floor() as usize;
-    let hi = k.ceil() as usize;
-    if lo == hi {
-        v[lo]
-    } else {
-        let frac = k - lo as f64;
-        v[lo] + frac * (v[hi] - v[lo])
+impl Marker {
+    fn adjust(&mut self, prev: Marker, next: Marker) {
+        loop {
+            let di = self.ndes - self.npos;
+            if di >= 1.0 && (next.npos - self.npos) > 1.0 {
+                self.adjust_step(&prev, &next, 1.0);
+            } else if di <= -1.0 && (prev.npos - self.npos) < -1.0 {
+                self.adjust_step(&prev, &next, -1.0);
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn adjust_step(&mut self, prev: &Marker, next: &Marker, dsign: f64) {
+        // Try parabolic prediction
+        let denom = next.npos - prev.npos;
+        let mut h_par = self.h;
+        if denom != 0.0 {
+            let a = (self.npos - prev.npos + dsign) / (next.npos - self.npos) * (next.h - self.h);
+            let b = (next.npos - self.npos - dsign) / (self.npos - prev.npos) * (self.h - prev.h);
+            h_par = self.h + (a + b) * dsign / denom;
+        }
+
+        // If parabolic result is within neighbors, use it; otherwise linear
+        self.h = if h_par > prev.h && h_par < next.h && h_par.is_finite() {
+            h_par
+        } else {
+            // Linear step toward neighbor indicated by dsign
+            if dsign > 0.0 {
+                self.h + (next.h - self.h) / (next.npos - self.npos)
+            } else {
+                self.h + (prev.h - self.h) / (prev.npos - self.npos)
+            }
+        };
+
+        self.npos += dsign;
+    }
+
+    fn update_desired_position(&mut self, n: usize) {
+        self.ndes = 1.0 + self.p * (n as f64 - 1.0);
+    }
+}
+
+pub struct P2QuantileLinear<const N: usize> {
+    q: f64,
+    buf: smallvec::SmallVec<[f64; N]>,
+}
+
+impl<const N: usize> P2QuantileLinear<N> {
+    /// Simple linear-interpolated sample quantile
+    fn estimate(mut self) -> f64 {
+        let n = self.buf.len();
+        if n == 0 {
+            // No data
+            return 0.0;
+        }
+        if n == 1 {
+            return self.buf[0];
+        }
+        self.buf.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let k = self.q * (n as f64 - 1.0);
+        let lo = k.floor() as usize;
+        let hi = k.ceil() as usize;
+        if lo == hi {
+            self.buf[lo]
+        } else {
+            let frac = k - lo as f64;
+            self.buf[lo] + frac * (self.buf[hi] - self.buf[lo])
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+    use rand_distr::{Poisson, StandardNormal, StudentT};
+
     use super::*;
 
-    fn true_quantile(data: &Vec<f64>, q: f64) -> f64 {
-        let mut v = data.clone();
-        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let n = v.len();
-        let k = q * (n as f64 - 1.0);
-        let lo = k.floor() as usize;
-        let hi = k.ceil() as usize;
-        if lo == hi {
-            v[lo]
-        } else {
-            let frac = k - lo as f64;
-            v[lo] + frac * (v[hi] - v[lo])
-        }
-    }
+    const N: usize = 7;
+    const COUNT: usize = 10_000;
 
     #[test]
-    fn test_random_stable() {
-        // Simple stability check
-        use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
-
-        let mut tdigest = P2Quantile::<7>::new(0.99).unwrap();
+    fn test_p_square() {
+        // Test P2 quantile estimator on uniformly distributed data
+        const QUANTILE: f64 = 0.99;
+        // In case of uniform distribution, the theoretical value of quantile is equal to the quantile level
+        const THEOTICAL_VALUE: f64 = QUANTILE;
+        const ERROR: f64 = 1e-2;
+        let mut p2 = P2Quantile::<N>::new(QUANTILE).unwrap();
 
         let mut rng = StdRng::seed_from_u64(42);
-        let mut data = Vec::with_capacity(10_000);
-        for _ in 0..10_000 {
+        let mut data = Vec::with_capacity(COUNT);
+        for _ in 0..COUNT {
             let value = rng.random::<f64>();
             data.push(value);
-            tdigest.push(value).unwrap();
+
+            p2.push(value).unwrap();
         }
 
-        let true_p95 = true_quantile(&data, 0.99);
+        // Take P square estimation
+        let p = p2.estimate();
 
-        let p95 = tdigest.estimate();
-        assert_eq!(p95, true_p95);
+        // Compare with linear estimation
+        let linear_p = P2QuantileLinear::<N> {
+            q: QUANTILE,
+            buf: smallvec::SmallVec::from_slice(data.as_slice()),
+        }
+        .estimate();
+        assert!((p - linear_p).abs() < ERROR);
+
+        // Compare with theoretical value
+        assert!((p - THEOTICAL_VALUE).abs() < ERROR);
     }
 
     #[test]
-    fn test_random_normal() {
-        // Simple stability check
-        use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
-        use rand_distr::StandardNormal;
+    fn test_p_square_normal() {
+        // Test P2 quantile estimator on normally N(0, 1) distributed data
+        // Take percentile corresponding to 2 standard deviations (2 sigmas)
+        // It'a approximately 97.72 percentile
+        const QUANTILE: f64 = 0.9772;
+        // The theoretical value of 97.72 percentile for N(0, 1) is approximately 2 sigmas, i.e., 2.0
+        const THEOTICAL_VALUE: f64 = 2.0;
+        const ERROR: f64 = 0.1; // allow 5% error (0.1 / 2.0 = 0.05 = 5%)
 
-        let q = 1.0 - (1.0 - 0.9544) / 2.0;
+        let mut p2 = P2Quantile::<N>::new(QUANTILE).unwrap();
 
-        let mut tdigest = P2Quantile::<7>::new(q).unwrap();
-
-        // mean 2, standard deviation 3
         let mut rng = StdRng::seed_from_u64(42);
-        let mut data = Vec::with_capacity(10_000);
-        for _ in 0..10_000 {
+        let mut data = Vec::with_capacity(COUNT);
+        for _ in 0..COUNT {
             let value = rng.sample(StandardNormal);
             data.push(value);
-            tdigest.push(value).unwrap();
+
+            p2.push(value).unwrap();
         }
 
-        let true_p95 = true_quantile(&data, q);
+        // Take P square estimation
+        let p = p2.estimate();
 
-        let p95 = tdigest.estimate();
-        assert_eq!(p95, true_p95);
+        // Compare with linear estimation
+        let linear_p = P2QuantileLinear::<N> {
+            q: QUANTILE,
+            buf: smallvec::SmallVec::from_slice(data.as_slice()),
+        }
+        .estimate();
+        assert!((p - linear_p).abs() < ERROR);
+
+        // Compare with theoretical value
+        assert!((p - THEOTICAL_VALUE).abs() < ERROR);
     }
 
     #[test]
-    fn test_random_poisson() {
-        // Simple stability check
-        use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
-        use rand_distr::Poisson;
+    fn test_p_square_normal_low() {
+        // Same as test_p_square_normal but with 100 - 97.72 = 2.28 percentile
+        // Test P2 quantile estimator on normally N(0, 1) distributed data
+        // Take percentile corresponding to -2 standard deviations (-2 sigmas)
+        // It'a approximately 2.28 percentile
+        const QUANTILE: f64 = 0.0228;
+        // The theoretical value of 2.28 percentile for N(0, 1) is approximately -2 sigmas, i.e., -2.0
+        const THEOTICAL_VALUE: f64 = -2.0;
+        const ERROR: f64 = 0.1; // allow 5% error (0.1 / 2.0 = 0.05 = 5%)
 
-        let q = 0.99;
+        let mut p2 = P2Quantile::<N>::new(QUANTILE).unwrap();
 
-        let mut tdigest = P2Quantile::<7>::new(q).unwrap();
-
-        // mean 2, standard deviation 3
         let mut rng = StdRng::seed_from_u64(42);
-        let mut data = Vec::with_capacity(10_000);
-        for _ in 0..10_000 {
+        let mut data = Vec::with_capacity(COUNT);
+        for _ in 0..COUNT {
+            let value = rng.sample(StandardNormal);
+            data.push(value);
+
+            p2.push(value).unwrap();
+        }
+
+        // Take P square estimation
+        let p = p2.estimate();
+
+        // Compare with linear estimation
+        let linear_p = P2QuantileLinear::<N> {
+            q: QUANTILE,
+            buf: smallvec::SmallVec::from_slice(data.as_slice()),
+        }
+        .estimate();
+        assert!((p - linear_p).abs() < ERROR);
+
+        // Compare with theoretical value
+        assert!((p - THEOTICAL_VALUE).abs() < ERROR);
+    }
+
+    #[test]
+    fn test_p_square_poisson() {
+        // Take Poisson-distributed data with mean 2. It's case of non-symmetric and non-normal distribution.
+        const QUANTILE: f64 = 0.99;
+        // The theoretical value of 99 percentile is 6.0
+        const THEOTICAL_VALUE: f64 = 6.0;
+        const ERROR: f64 = 0.3; // allow 5% error (0.3 / 6.0 = 0.05 = 5%)
+
+        let mut p2 = P2Quantile::<N>::new(QUANTILE).unwrap();
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let mut data = Vec::with_capacity(COUNT);
+        for _ in 0..COUNT {
             let value = rng.sample(Poisson::new(2.0).unwrap()) as f64;
             data.push(value);
-            tdigest.push(value).unwrap();
+
+            p2.push(value).unwrap();
         }
 
-        let true_p95 = true_quantile(&data, q);
+        // Take P square estimation
+        let p = p2.estimate();
 
-        let p95 = tdigest.estimate();
-        assert_eq!(p95, true_p95);
+        // Compare with linear estimation
+        let linear_p = P2QuantileLinear::<N> {
+            q: QUANTILE,
+            buf: smallvec::SmallVec::from_slice(data.as_slice()),
+        }
+        .estimate();
+        assert!((p - linear_p).abs() < ERROR);
+
+        // Compare with theoretical value
+        assert!((p - THEOTICAL_VALUE).abs() < ERROR);
     }
 
     #[test]
-    fn test_random_student() {
-        // Simple stability check
-        use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
-        use rand_distr::StudentT;
+    fn test_p_square_student() {
+        // Corner case test with Student t-distribution with low degrees of freedom (heavy tails)
+        // StudentT-distributed data with 2 degrees of freedom has heavy tails and infinite variance.
+        const QUANTILE: f64 = 0.99;
+        // The theoretical value of 99 percentile is somewhat around 6.9646
+        const THEOTICAL_VALUE: f64 = 6.9646;
+        const ERROR: f64 = 0.69646; // 10% error because of heavy tails
 
-        let q = 0.99;
+        let mut p2 = P2Quantile::<N>::new(QUANTILE).unwrap();
 
-        let mut tdigest = P2Quantile::<7>::new(q).unwrap();
-
-        // mean 2, standard deviation 3
         let mut rng = StdRng::seed_from_u64(42);
-        let mut data = Vec::with_capacity(10_000);
-        for _ in 0..10_000 {
+        let mut data = Vec::with_capacity(COUNT);
+        for _ in 0..COUNT {
             let value = rng.sample(StudentT::new(2.0).unwrap()) as f64;
             data.push(value);
-            tdigest.push(value).unwrap();
+
+            p2.push(value).unwrap();
         }
 
-        let true_p95 = true_quantile(&data, q);
+        // Take P square estimation
+        let p = p2.estimate();
 
-        let p95 = tdigest.estimate();
-        assert_eq!(p95, true_p95);
+        // Compare with linear estimation
+        let linear_p = P2QuantileLinear::<N> {
+            q: QUANTILE,
+            buf: smallvec::SmallVec::from_slice(data.as_slice()),
+        }
+        .estimate();
+        assert!((p - linear_p).abs() < ERROR);
+
+        // Compare with theoretical value
+        assert!((p - THEOTICAL_VALUE).abs() < ERROR);
+    }
+
+    #[test]
+    fn test_p_square_zeros() {
+        let mut p2 = P2Quantile::<N>::new(0.99).unwrap();
+        for _ in 0..COUNT {
+            p2.push(0.0).unwrap();
+        }
+
+        // Take P square estimation
+        let p = p2.estimate();
+
+        // Should be exactly zero
+        assert_eq!(p, 0.0);
+    }
+
+    #[test]
+    fn test_p_square_linear() {
+        let mut p2 = P2Quantile::<N>::new(0.99).unwrap();
+        p2.push(0.0).unwrap();
+        p2.push(0.0).unwrap();
+        p2.push(0.0).unwrap();
+
+        // Take P square estimation
+        let p = p2.estimate();
+
+        // Should be exactly zero
+        assert_eq!(p, 0.0);
     }
 }
