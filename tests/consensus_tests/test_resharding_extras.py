@@ -191,7 +191,7 @@ def test_fix_reshard_down_without_shard_key(tmp_path: pathlib.Path):
     # Wait until all peers submit their metadata to consensus 🙄
     wait_for_peer_metadata(peer_urls[0])
 
-    create_collection_with_custom_sharding(peer_urls[0], shard_number = N_SHARDS, replication_factor = N_PEERS)
+    create_collection_with_custom_sharding(peer_urls[0], replication_factor = N_PEERS)
     wait_collection_exists_and_active_on_all_peers(collection_name = COLLECTION_NAME, peer_api_uris = peer_urls)
 
     # Create a shard key
@@ -219,7 +219,7 @@ def test_fix_reshard_down_without_shard_key(tmp_path: pathlib.Path):
         info = get_cluster_info(peer_url)
         assert info["consensus_thread_status"]["consensus_thread_status"] == "working"
 
-    # We expect resharding operation to have been ignored
+    # Expect resharding operation to have been ignored
     # We still have two shards and two replicas each
     info = get_collection_cluster_info(peer_urls[0], COLLECTION_NAME)
     assert "resharding_operations" not in info
