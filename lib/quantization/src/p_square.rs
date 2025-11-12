@@ -385,7 +385,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let mut data = Vec::with_capacity(COUNT);
         for _ in 0..COUNT {
-            let value = rng.sample(Poisson::new(2.0).unwrap()) as f64;
+            let value = rng.sample(Poisson::new(2.0).unwrap());
             data.push(value);
 
             p2.push(value);
@@ -420,7 +420,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let mut data = Vec::with_capacity(COUNT);
         for _ in 0..COUNT {
-            let value = rng.sample(StudentT::new(2.0).unwrap()) as f64;
+            let value = rng.sample(StudentT::new(2.0).unwrap());
             data.push(value);
 
             p2.push(value);
