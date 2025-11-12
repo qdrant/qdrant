@@ -59,7 +59,7 @@ jobs:
         docker push $GITHUB_TAG
         
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
-        cosign sign --yes "${DOCKERHUB_TAG}@${DIGEST}"
+        cosign sign --new-bundle-format=false --use-signing-config=false--yes "${DOCKERHUB_TAG}@${DIGEST}"
 
         # Build unprivileged image for Docker Hub
         DOCKERHUB_TAG_UNPRIVILEGED="qdrant/qdrant:${{ github.ref_name }}-unprivileged"
@@ -76,7 +76,7 @@ jobs:
         docker push $GITHUB_TAG_UNPRIVILEGED
         
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG_UNPRIVILEGED} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
-        cosign sign --yes "${DOCKERHUB_TAG_UNPRIVILEGED}@${DIGEST}"
+        cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG_UNPRIVILEGED}@${DIGEST}"
 
   build-gpu:
     runs-on: [self-hosted, linux, x64]
@@ -128,7 +128,7 @@ jobs:
         docker push $GITHUB_TAG
         
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
-        cosign sign --yes "${DOCKERHUB_TAG}@${DIGEST}"
+        cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG}@${DIGEST}"
 
         # Build GPU AMD image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}-gpu-amd"
@@ -145,4 +145,4 @@ jobs:
         docker push $GITHUB_TAG
         
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
-        cosign sign --yes "${DOCKERHUB_TAG}@${DIGEST}"
+        cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG}@${DIGEST}"
