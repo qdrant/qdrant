@@ -174,27 +174,29 @@ impl MetricsProvider for CollectionsTelemetry {
             prefix,
         ));
 
+        let num_collections = self.collections.as_ref().map_or(0, |c| c.len());
+
         // Optimizers
-        let mut total_optimizations_running = 0;
+        let mut total_optimizations_running = Vec::with_capacity(num_collections);
 
         // Min/Max/Expected/Active replicas over all shards.
         let mut total_min_active_replicas = usize::MAX;
         let mut total_max_active_replicas = 0;
 
         // Points per collection
-        let mut points_per_collection = vec![];
+        let mut points_per_collection = Vec::with_capacity(num_collections);
 
         // Vectors excluded from index-only requests.
-        let mut indexed_only_excluded = vec![];
+        let mut indexed_only_excluded = Vec::with_capacity(num_collections);
 
         let mut total_dead_replicas = 0;
 
         // Snapshot metrics
-        let mut snapshots_creation_running = vec![];
-        let mut snapshots_recovery_running = vec![];
-        let mut snapshots_created_total = vec![];
+        let mut snapshots_creation_running = Vec::with_capacity(num_collections);
+        let mut snapshots_recovery_running = Vec::with_capacity(num_collections);
+        let mut snapshots_created_total = Vec::with_capacity(num_collections);
 
-        let mut vector_count_by_name = vec![];
+        let mut vector_count_by_name = Vec::with_capacity(num_collections);
 
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
@@ -204,7 +206,10 @@ impl MetricsProvider for CollectionsTelemetry {
                 }
             };
 
-            total_optimizations_running += collection.count_optimizers_running();
+            total_optimizations_running.push(gauge(
+                collection.count_optimizers_running() as f64,
+                &[("id", &collection.id)],
+            ));
 
             let min_max_active_replicas = collection
                 .shards
@@ -326,6 +331,18 @@ impl MetricsProvider for CollectionsTelemetry {
             ));
         }
 
+        let vector_count = vector_count_by_name
+            .iter()
+            .map(|m| m.get_gauge().get_value())
+            .sum();
+        metrics.push(metric_family(
+            "collections_vector_total",
+            "total number of vectors in all collections",
+            MetricType::GAUGE,
+            vec![gauge(vector_count, &[])],
+            prefix,
+        ));
+
         if !vector_count_by_name.is_empty() {
             metrics.push(metric_family(
                 "collection_vectors",
@@ -353,7 +370,7 @@ impl MetricsProvider for CollectionsTelemetry {
         };
 
         metrics.push(metric_family(
-            "active_replicas_min",
+            "collection_active_replicas_min",
             "minimum number of active replicas across all shards",
             MetricType::GAUGE,
             vec![gauge(total_min_active_replicas as f64, &[])],
@@ -361,20 +378,22 @@ impl MetricsProvider for CollectionsTelemetry {
         ));
 
         metrics.push(metric_family(
-            "active_replicas_max",
+            "collection_active_replicas_max",
             "maximum number of active replicas across all shards",
             MetricType::GAUGE,
             vec![gauge(total_max_active_replicas as f64, &[])],
             prefix,
         ));
 
-        metrics.push(metric_family(
-            "optimizer_running_processes",
-            "number of currently running optimization processes",
-            MetricType::GAUGE,
-            vec![gauge(total_optimizations_running as f64, &[])],
-            prefix,
-        ));
+        if !total_optimizations_running.is_empty() {
+            metrics.push(metric_family(
+                "collection_running_optimizations",
+                "number of currently running optimization tasks per collection",
+                MetricType::GAUGE,
+                total_optimizations_running,
+                prefix,
+            ));
+        }
 
         if !points_per_collection.is_empty() {
             metrics.push(metric_family(
@@ -387,7 +406,7 @@ impl MetricsProvider for CollectionsTelemetry {
         }
 
         metrics.push(metric_family(
-            "dead_replicas",
+            "collection_dead_replicas",
             "total amount of shard replicas in non-active state",
             MetricType::GAUGE,
             vec![gauge(total_dead_replicas as f64, &[])],
