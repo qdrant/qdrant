@@ -78,10 +78,7 @@ impl ShardHolder {
         }
     }
 
-    pub fn new(
-        collection_path: &Path,
-        collection_config: &CollectionConfigInternal,
-    ) -> CollectionResult<Self> {
+    pub fn new(collection_path: &Path, sharding_method: ShardingMethod) -> CollectionResult<Self> {
         let shard_transfers =
             SaveOnDisk::load_or_init_default(collection_path.join(SHARD_TRANSFERS_FILE))?;
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
@@ -98,7 +95,6 @@ impl ShardHolder {
             }
         }
 
-        let sharding_method = collection_config.params.sharding_method.unwrap_or_default();
         let rings = match sharding_method {
             ShardingMethod::Auto => HashMap::from([(None, HashRingRouter::single())]),
             ShardingMethod::Custom => HashMap::new(),
