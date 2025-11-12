@@ -289,19 +289,18 @@ impl CollectionConfigInternal {
                 vector_config.quantization_config.is_some() || self.quantization_config.is_some();
 
             if vector_hnsw.inline_storage.unwrap_or_default() {
-                if !vector_quantization {
-                    warnings.push(CollectionWarning {
-                        message: format!(
-                            "The `hnsw_config.inline_storage` option for vector '{vector_name}' \
-                             requires quantization to be enabled. This option will be ignored."
-                        ),
-                    });
-                }
                 if vector_config.multivector_config.is_some() {
                     warnings.push(CollectionWarning {
                         message: format!(
                             "The `hnsw_config.inline_storage` option for vector '{vector_name}' \
                              is not compatible with multivectors. This option will be ignored."
+                        ),
+                    });
+                } else if !vector_quantization {
+                    warnings.push(CollectionWarning {
+                        message: format!(
+                            "The `hnsw_config.inline_storage` option for vector '{vector_name}' \
+                             requires quantization to be enabled. This option will be ignored."
                         ),
                     });
                 }
