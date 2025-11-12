@@ -16,7 +16,7 @@ fn p_square(c: &mut Criterion) {
         b.iter(|| {
             let mut p2 = P2Quantile::<5>::new(quantile).unwrap();
             for &x in &data {
-                p2.push(x).unwrap();
+                p2.push(x);
             }
             black_box(p2.estimate());
         });
@@ -26,7 +26,7 @@ fn p_square(c: &mut Criterion) {
         b.iter(|| {
             let mut p2 = P2Quantile::<7>::new(quantile).unwrap();
             for &x in &data {
-                p2.push(x).unwrap();
+                p2.push(x);
             }
             black_box(p2.estimate());
         });
@@ -36,7 +36,7 @@ fn p_square(c: &mut Criterion) {
         b.iter(|| {
             let mut p2 = P2Quantile::<9>::new(quantile).unwrap();
             for &x in &data {
-                p2.push(x).unwrap();
+                p2.push(x);
             }
             black_box(p2.estimate());
         });

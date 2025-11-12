@@ -38,9 +38,9 @@ impl<const N: usize> P2Quantile<N> {
     }
 
     /// Push one observation.
-    pub fn push(&mut self, x: f64) -> Result<(), EncodingError> {
+    pub fn push(&mut self, x: f64) {
         if !x.is_finite() {
-            return Ok(());
+            return;
         }
 
         match self {
@@ -50,7 +50,6 @@ impl<const N: usize> P2Quantile<N> {
                 if linear.observations.len() == N {
                     *self = P2Quantile::Impl(P2QuantileImpl::new_from_linear(linear));
                 }
-                Ok(())
             }
             P2Quantile::Impl(p2) => p2.push(x),
         }
@@ -93,28 +92,22 @@ impl<const N: usize> P2QuantileImpl<N> {
         self.markers[N / 2].height
     }
 
-    fn push(&mut self, x: f64) -> Result<(), EncodingError> {
+    fn push(&mut self, x: f64) {
         self.count += 1;
 
         // 1) Identify cell k and update extreme markers if needed
         // k is the cell index in [0..N - 1]
-        let mut k: Option<usize> = None;
-        if x < self.markers[0].height {
+        let k = if x < self.markers[0].height {
+            // update minimum marker
             self.markers[0].height = x;
-            k = Some(0);
-        } else {
-            for i in 1..N {
-                if x < self.markers[i].height {
-                    k = Some(i - 1);
-                    break;
-                }
-            }
-        }
-        let k = if let Some(k) = k {
-            k
-        } else {
+            0
+        } else if x > self.markers[N - 1].height {
+            // update maximum marker
             self.markers[N - 1].height = x;
             N - 1
+        } else {
+            // otherwise find the markers cell
+            self.find_marker(x)
         };
 
         // 2) Increment positions of markers above k
@@ -131,8 +124,15 @@ impl<const N: usize> P2QuantileImpl<N> {
         for i in 1..(N - 1) {
             self.markers[i].adjust(self.markers[i - 1], self.markers[i + 1]);
         }
+    }
 
-        Ok(())
+    fn find_marker(&self, x: f64) -> usize {
+        for i in 1..N {
+            if x <= self.markers[i].height {
+                return i - 1;
+            }
+        }
+        N - 1
     }
 
     /// Generate target probabilities for markers
@@ -152,7 +152,7 @@ impl<const N: usize> P2QuantileImpl<N> {
             let factor = 0.7 + 0.3 * (i + 1) as f64 / (additional_markers_count as f64 + 2.0);
             p[i + 2] = q * factor;
         }
-    
+
         // middle marker, tracks the required quantile
         p[N / 2] = q;
 
@@ -162,7 +162,7 @@ impl<const N: usize> P2QuantileImpl<N> {
             let factor = 0.7 + 0.3 * (i + 1) as f64 / (additional_markers_count as f64 + 2.0);
             p[i + additional_markers_count + 3] = 1.0 + (q - 1.0) * factor;
         }
-    
+
         p[N - 2] = 1.0 + (q - 1.0) * 0.5;
         p[N - 1] = 1.0;
         p
@@ -196,8 +196,12 @@ impl Marker {
         let denom = next.n_position - prev.n_position;
         let mut h_par = self.height;
         if denom != 0.0 {
-            let a = (self.n_position - prev.n_position + dsign) / (next.n_position - self.n_position) * (next.height - self.height);
-            let b = (next.n_position - self.n_position - dsign) / (self.n_position - prev.n_position) * (self.height - prev.height);
+            let a = (self.n_position - prev.n_position + dsign)
+                / (next.n_position - self.n_position)
+                * (next.height - self.height);
+            let b = (next.n_position - self.n_position - dsign)
+                / (self.n_position - prev.n_position)
+                * (self.height - prev.height);
             h_par = self.height + (a + b) * dsign / denom;
         }
 
@@ -236,7 +240,8 @@ impl<const N: usize> P2QuantileLinear<N> {
         if self.observations.len() == 1 {
             return self.observations[0];
         }
-        self.observations.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        self.observations
+            .sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 
         let k = self.quantile * (self.observations.len() as f64 - 1.0);
         let lo = k.floor() as usize;
@@ -276,7 +281,7 @@ mod tests {
             let value = rng.random::<f64>();
             data.push(value);
 
-            p2.push(value).unwrap();
+            p2.push(value);
         }
 
         // Take P square estimation
@@ -312,7 +317,7 @@ mod tests {
             let value = rng.sample(StandardNormal);
             data.push(value);
 
-            p2.push(value).unwrap();
+            p2.push(value);
         }
 
         // Take P square estimation
@@ -349,7 +354,7 @@ mod tests {
             let value = rng.sample(StandardNormal);
             data.push(value);
 
-            p2.push(value).unwrap();
+            p2.push(value);
         }
 
         // Take P square estimation
@@ -383,7 +388,7 @@ mod tests {
             let value = rng.sample(Poisson::new(2.0).unwrap()) as f64;
             data.push(value);
 
-            p2.push(value).unwrap();
+            p2.push(value);
         }
 
         // Take P square estimation
@@ -418,7 +423,7 @@ mod tests {
             let value = rng.sample(StudentT::new(2.0).unwrap()) as f64;
             data.push(value);
 
-            p2.push(value).unwrap();
+            p2.push(value);
         }
 
         // Take P square estimation
@@ -440,7 +445,7 @@ mod tests {
     fn test_p_square_zeros() {
         let mut p2 = P2Quantile::<N>::new(0.99).unwrap();
         for _ in 0..COUNT {
-            p2.push(0.0).unwrap();
+            p2.push(0.0);
         }
 
         // Take P square estimation
@@ -453,9 +458,9 @@ mod tests {
     #[test]
     fn test_p_square_linear() {
         let mut p2 = P2Quantile::<N>::new(0.99).unwrap();
-        p2.push(0.0).unwrap();
-        p2.push(0.0).unwrap();
-        p2.push(0.0).unwrap();
+        p2.push(0.0);
+        p2.push(0.0);
+        p2.push(0.0);
 
         // Take P square estimation
         let p = p2.estimate();
