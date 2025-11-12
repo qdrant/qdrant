@@ -57,7 +57,7 @@ jobs:
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
-        
+
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
         cosign sign --new-bundle-format=false --use-signing-config=false--yes "${DOCKERHUB_TAG}@${DIGEST}"
 
@@ -74,7 +74,7 @@ jobs:
         docker pull $DOCKERHUB_TAG_UNPRIVILEGED
         docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GITHUB_TAG_UNPRIVILEGED
         docker push $GITHUB_TAG_UNPRIVILEGED
-        
+
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG_UNPRIVILEGED} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
         cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG_UNPRIVILEGED}@${DIGEST}"
 
@@ -126,7 +126,7 @@ jobs:
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
-        
+
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
         cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG}@${DIGEST}"
 
@@ -143,6 +143,6 @@ jobs:
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
-        
+
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
         cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG}@${DIGEST}"
