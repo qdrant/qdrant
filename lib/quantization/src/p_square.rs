@@ -60,7 +60,9 @@ impl<const N: usize> P2Quantile<N> {
             h: [f64::NAN; N],
             npos: [0.0; N],
             ndes: [0.0; N],
-            p: p.as_slice().try_into().map_err(|_| EncodingError::EncodingError("Cannot convert vec into array".to_string()))?,
+            p: p.as_slice().try_into().map_err(|_| {
+                EncodingError::EncodingError("Cannot convert vec into array".to_string())
+            })?,
             initialized: false,
         })
     }
@@ -80,7 +82,13 @@ impl<const N: usize> P2Quantile<N> {
                 for i in 0..N {
                     self.h[i] = self.init_buf[i];
                 }
-                self.npos = (1..=N).map(|x| x as f64).collect::<Vec<_>>().try_into().map_err(|_| EncodingError::EncodingError("Cannot convert vec into array".to_string()))?;
+                self.npos = (1..=N)
+                    .map(|x| x as f64)
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .map_err(|_| {
+                        EncodingError::EncodingError("Cannot convert vec into array".to_string())
+                    })?;
                 self.update_desired_positions();
                 self.initialized = true;
                 self.init_buf.clear();
@@ -234,9 +242,8 @@ mod tests {
     #[test]
     fn test_random_stable() {
         // Simple stability check
-        use rand::SeedableRng;
         use rand::rngs::StdRng;
-        use rand::Rng;
+        use rand::{Rng, SeedableRng};
 
         let mut tdigest = P2Quantile::<9>::new(0.99).unwrap();
 
@@ -257,9 +264,8 @@ mod tests {
     #[test]
     fn test_random_normal() {
         // Simple stability check
-        use rand::SeedableRng;
         use rand::rngs::StdRng;
-        use rand::Rng;
+        use rand::{Rng, SeedableRng};
         use rand_distr::StandardNormal;
 
         let q = 1.0 - (1.0 - 0.9544) / 2.0;
@@ -284,9 +290,8 @@ mod tests {
     #[test]
     fn test_random_poisson() {
         // Simple stability check
-        use rand::SeedableRng;
         use rand::rngs::StdRng;
-        use rand::Rng;
+        use rand::{Rng, SeedableRng};
         use rand_distr::Poisson;
 
         let q = 0.99;
@@ -311,9 +316,8 @@ mod tests {
     #[test]
     fn test_random_student() {
         // Simple stability check
-        use rand::SeedableRng;
         use rand::rngs::StdRng;
-        use rand::Rng;
+        use rand::{Rng, SeedableRng};
         use rand_distr::StudentT;
 
         let q = 0.99;
