@@ -32,8 +32,8 @@ impl<const N: usize> P2Quantile<N> {
             ));
         }
         Ok(Self::Linear(P2QuantileLinear {
-            q,
-            buf: Default::default(),
+            quantile: q,
+            observations: Default::default(),
         }))
     }
 
@@ -45,8 +45,9 @@ impl<const N: usize> P2Quantile<N> {
 
         match self {
             P2Quantile::Linear(linear) => {
-                linear.buf.push(x);
-                if linear.buf.len() == N {
+                // in linear case just collect observations until we have N of them
+                linear.observations.push(x);
+                if linear.observations.len() == N {
                     *self = P2Quantile::Impl(P2QuantileImpl::new_from_linear(linear));
                 }
                 Ok(())
@@ -65,45 +66,45 @@ impl<const N: usize> P2Quantile<N> {
 }
 
 pub struct P2QuantileImpl<const N: usize> {
-    n: usize,
+    count: usize,
     markers: [Marker; N],
 }
 
 impl<const N: usize> P2QuantileImpl<N> {
     fn new_from_linear(linear: &P2QuantileLinear<N>) -> Self {
-        assert_eq!(linear.buf.len(), N);
+        assert_eq!(linear.observations.len(), N);
 
-        let mut buf = linear.buf.clone();
+        let mut buf = linear.observations.clone();
         buf.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 
-        let p = Self::generate_grid_quantiles(linear.q);
+        let p = Self::generate_grid_probabilities(linear.quantile);
         let mut markers = [Marker::default(); N];
         for i in 0..N {
-            markers[i].h = buf[i];
-            markers[i].p = p[i];
-            markers[i].npos = (i + 1) as f64;
+            markers[i].height = buf[i];
+            markers[i].target_propability = p[i];
+            markers[i].n_position = (i + 1) as f64;
             markers[i].update_desired_position(N);
         }
-        P2QuantileImpl { n: N, markers }
+        P2QuantileImpl { count: N, markers }
     }
 
     fn estimate(self) -> f64 {
         // `N / 2` marker tracks the target quantile
-        self.markers[N / 2].h
+        self.markers[N / 2].height
     }
 
     fn push(&mut self, x: f64) -> Result<(), EncodingError> {
-        self.n += 1;
+        self.count += 1;
 
         // 1) Identify cell k and update extreme markers if needed
         // k is the cell index in [0..N - 1]
         let mut k: Option<usize> = None;
-        if x < self.markers[0].h {
-            self.markers[0].h = x;
+        if x < self.markers[0].height {
+            self.markers[0].height = x;
             k = Some(0);
         } else {
             for i in 1..N {
-                if x < self.markers[i].h {
+                if x < self.markers[i].height {
                     k = Some(i - 1);
                     break;
                 }
@@ -112,18 +113,18 @@ impl<const N: usize> P2QuantileImpl<N> {
         let k = if let Some(k) = k {
             k
         } else {
-            self.markers[N - 1].h = x;
+            self.markers[N - 1].height = x;
             N - 1
         };
 
         // 2) Increment positions of markers above k
         for i in (k + 1)..N {
-            self.markers[i].npos += 1.0;
+            self.markers[i].n_position += 1.0;
         }
 
         // 3) Update desired positions
         for i in 0..N {
-            self.markers[i].update_desired_position(self.n);
+            self.markers[i].update_desired_position(self.count);
         }
 
         // 4) Adjust interior markers
@@ -134,41 +135,55 @@ impl<const N: usize> P2QuantileImpl<N> {
         Ok(())
     }
 
-    fn generate_grid_quantiles(q: f64) -> smallvec::SmallVec<[f64; N]> {
-        let mut p = smallvec::SmallVec::<[f64; N]>::with_capacity(N);
+    /// Generate target probabilities for markers
+    /// In the original P-square with 5 markers, the target probabilities are:
+    /// p = [0, q/2, q, (1 + q)/2, 1]
+    /// This function generalizes this to N markers by placing additional markers
+    /// between the second and the middle, and between the middle and the second last.
+    fn generate_grid_probabilities(q: f64) -> [f64; N] {
+        let mut p = [0.0; N];
         let additional_markers_count = (N - 5) / 2;
-        p.push(0.0);
-        p.push(q * 0.5);
+        p[0] = 0.0;
+        p[1] = q * 0.5;
+
+        // add extended marker probabilities
         for i in 0..additional_markers_count {
+            // just lerp between q/2 and be more close to the middle
             let factor = 0.7 + 0.3 * (i + 1) as f64 / (additional_markers_count as f64 + 2.0);
-            p.push(q * factor);
+            p[i + 2] = q * factor;
         }
-        p.push(q);
+    
+        // middle marker, tracks the required quantile
+        p[N / 2] = q;
+
+        // add extended marker probabilities
         for i in (0..additional_markers_count).rev() {
+            // just lerp between q and (1 + q)/2 and be more close to the middle
             let factor = 0.7 + 0.3 * (i + 1) as f64 / (additional_markers_count as f64 + 2.0);
-            p.push(1.0 + (q - 1.0) * factor);
+            p[i + additional_markers_count + 3] = 1.0 + (q - 1.0) * factor;
         }
-        p.push(1.0 + (q - 1.0) * 0.5);
-        p.push(1.0);
+    
+        p[N - 2] = 1.0 + (q - 1.0) * 0.5;
+        p[N - 1] = 1.0;
         p
     }
 }
 
 #[derive(Clone, Copy, Default)]
 struct Marker {
-    h: f64,
-    npos: f64,
-    ndes: f64,
-    p: f64,
+    height: f64,
+    n_position: f64,
+    n_desired: f64,
+    target_propability: f64,
 }
 
 impl Marker {
     fn adjust(&mut self, prev: Marker, next: Marker) {
         loop {
-            let di = self.ndes - self.npos;
-            if di >= 1.0 && (next.npos - self.npos) > 1.0 {
+            let di = self.n_desired - self.n_position;
+            if di >= 1.0 && (next.n_position - self.n_position) > 1.0 {
                 self.adjust_step(&prev, &next, 1.0);
-            } else if di <= -1.0 && (prev.npos - self.npos) < -1.0 {
+            } else if di <= -1.0 && (prev.n_position - self.n_position) < -1.0 {
                 self.adjust_step(&prev, &next, -1.0);
             } else {
                 break;
@@ -178,60 +193,59 @@ impl Marker {
 
     fn adjust_step(&mut self, prev: &Marker, next: &Marker, dsign: f64) {
         // Try parabolic prediction
-        let denom = next.npos - prev.npos;
-        let mut h_par = self.h;
+        let denom = next.n_position - prev.n_position;
+        let mut h_par = self.height;
         if denom != 0.0 {
-            let a = (self.npos - prev.npos + dsign) / (next.npos - self.npos) * (next.h - self.h);
-            let b = (next.npos - self.npos - dsign) / (self.npos - prev.npos) * (self.h - prev.h);
-            h_par = self.h + (a + b) * dsign / denom;
+            let a = (self.n_position - prev.n_position + dsign) / (next.n_position - self.n_position) * (next.height - self.height);
+            let b = (next.n_position - self.n_position - dsign) / (self.n_position - prev.n_position) * (self.height - prev.height);
+            h_par = self.height + (a + b) * dsign / denom;
         }
 
         // If parabolic result is within neighbors, use it; otherwise linear
-        self.h = if h_par > prev.h && h_par < next.h && h_par.is_finite() {
+        self.height = if h_par > prev.height && h_par < next.height && h_par.is_finite() {
             h_par
         } else {
             // Linear step toward neighbor indicated by dsign
             if dsign > 0.0 {
-                self.h + (next.h - self.h) / (next.npos - self.npos)
+                self.height + (next.height - self.height) / (next.n_position - self.n_position)
             } else {
-                self.h + (prev.h - self.h) / (prev.npos - self.npos)
+                self.height + (prev.height - self.height) / (prev.n_position - self.n_position)
             }
         };
 
-        self.npos += dsign;
+        self.n_position += dsign;
     }
 
     fn update_desired_position(&mut self, n: usize) {
-        self.ndes = 1.0 + self.p * (n as f64 - 1.0);
+        self.n_desired = 1.0 + self.target_propability * (n as f64 - 1.0);
     }
 }
 
 pub struct P2QuantileLinear<const N: usize> {
-    q: f64,
-    buf: smallvec::SmallVec<[f64; N]>,
+    quantile: f64,
+    observations: smallvec::SmallVec<[f64; N]>,
 }
 
 impl<const N: usize> P2QuantileLinear<N> {
     /// Simple linear-interpolated sample quantile
     fn estimate(mut self) -> f64 {
-        let n = self.buf.len();
-        if n == 0 {
+        if self.observations.is_empty() {
             // No data
             return 0.0;
         }
-        if n == 1 {
-            return self.buf[0];
+        if self.observations.len() == 1 {
+            return self.observations[0];
         }
-        self.buf.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        self.observations.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 
-        let k = self.q * (n as f64 - 1.0);
+        let k = self.quantile * (self.observations.len() as f64 - 1.0);
         let lo = k.floor() as usize;
         let hi = k.ceil() as usize;
         if lo == hi {
-            self.buf[lo]
+            self.observations[lo]
         } else {
             let frac = k - lo as f64;
-            self.buf[lo] + frac * (self.buf[hi] - self.buf[lo])
+            self.observations[lo] + frac * (self.observations[hi] - self.observations[lo])
         }
     }
 }
@@ -270,8 +284,8 @@ mod tests {
 
         // Compare with linear estimation
         let linear_p = P2QuantileLinear::<N> {
-            q: QUANTILE,
-            buf: smallvec::SmallVec::from_slice(data.as_slice()),
+            quantile: QUANTILE,
+            observations: smallvec::SmallVec::from_slice(data.as_slice()),
         }
         .estimate();
         assert!((p - linear_p).abs() < ERROR);
@@ -306,8 +320,8 @@ mod tests {
 
         // Compare with linear estimation
         let linear_p = P2QuantileLinear::<N> {
-            q: QUANTILE,
-            buf: smallvec::SmallVec::from_slice(data.as_slice()),
+            quantile: QUANTILE,
+            observations: smallvec::SmallVec::from_slice(data.as_slice()),
         }
         .estimate();
         assert!((p - linear_p).abs() < ERROR);
@@ -343,8 +357,8 @@ mod tests {
 
         // Compare with linear estimation
         let linear_p = P2QuantileLinear::<N> {
-            q: QUANTILE,
-            buf: smallvec::SmallVec::from_slice(data.as_slice()),
+            quantile: QUANTILE,
+            observations: smallvec::SmallVec::from_slice(data.as_slice()),
         }
         .estimate();
         assert!((p - linear_p).abs() < ERROR);
@@ -377,8 +391,8 @@ mod tests {
 
         // Compare with linear estimation
         let linear_p = P2QuantileLinear::<N> {
-            q: QUANTILE,
-            buf: smallvec::SmallVec::from_slice(data.as_slice()),
+            quantile: QUANTILE,
+            observations: smallvec::SmallVec::from_slice(data.as_slice()),
         }
         .estimate();
         assert!((p - linear_p).abs() < ERROR);
@@ -412,8 +426,8 @@ mod tests {
 
         // Compare with linear estimation
         let linear_p = P2QuantileLinear::<N> {
-            q: QUANTILE,
-            buf: smallvec::SmallVec::from_slice(data.as_slice()),
+            quantile: QUANTILE,
+            observations: smallvec::SmallVec::from_slice(data.as_slice()),
         }
         .estimate();
         assert!((p - linear_p).abs() < ERROR);
