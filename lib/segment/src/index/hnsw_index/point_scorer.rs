@@ -5,7 +5,6 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::BoxCow;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
-use smallvec::SmallVec;
 
 use crate::common::operation_error::{CancellableResult, OperationResult, check_process_stopped};
 use crate::data_types::vectors::QueryVector;
@@ -312,12 +311,10 @@ impl<'a> FilteredScorer<'a> {
 }
 
 pub struct BatchFilteredSearcher<'a> {
-    scorer_batch: SmallVec<
-        [(
-            Box<dyn RawScorer + 'a>,
-            FixedLengthPriorityQueue<ScoredPointOffset>,
-        ); 1],
-    >,
+    scorer_batch: Vec<(
+        Box<dyn RawScorer + 'a>,
+        FixedLengthPriorityQueue<ScoredPointOffset>,
+    )>,
     filters: ScorerFilters<'a>,
 }
 
@@ -348,7 +345,7 @@ impl<'a> BatchFilteredSearcher<'a> {
                 let pq = FixedLengthPriorityQueue::new(top);
                 raw_scorer.map(|raw_scorer| (raw_scorer, pq))
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
         let filters = ScorerFilters {
             filter_context,
             point_deleted,
@@ -364,7 +361,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         self,
         top: usize,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<SmallVec<[Vec<ScoredPointOffset>; 1]>> {
+    ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
         let iter = self
             .filters
             .point_deleted
@@ -378,9 +375,9 @@ impl<'a> BatchFilteredSearcher<'a> {
         mut points: impl Iterator<Item = PointOffsetType>,
         top: usize,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<SmallVec<[Vec<ScoredPointOffset>; 1]>> {
+    ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
         if top == 0 {
-            return Ok(smallvec::smallvec![vec![]; self.scorer_batch.len()]);
+            return Ok(vec![vec![]; self.scorer_batch.len()]);
         }
 
         // Reuse the same buffer for all chunks, to avoid reallocation
