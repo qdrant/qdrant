@@ -15,6 +15,151 @@ N_REPLICAS = 1
 COLLECTION_NAME = "test_collection"
 
 
+def test_reshard_down_preconditions(tmp_path: pathlib.Path):
+    """
+    Test that we block resharding down when there isn't enough shards.
+    """
+
+    assert_project_root()
+
+    # Allow resharding
+    env = {
+        "QDRANT__CLUSTER__RESHARDING_ENABLED": "true",
+    }
+
+    # Bootstrap cluster
+    peer_urls, _, _ = start_cluster(tmp_path, N_PEERS, extra_env=env)
+
+    # Wait until all peers submit their metadata to consensus 🙄
+    wait_for_peer_metadata(peer_urls[0])
+
+    create_collection(peer_urls[0], shard_number = 1, replication_factor = N_PEERS)
+    wait_collection_exists_and_active_on_all_peers(collection_name = COLLECTION_NAME, peer_api_uris = peer_urls)
+
+    # Cannot shard down on a shard key with auto sharding method
+    response = start_resharding(
+        peer_urls[0],
+        COLLECTION_NAME,
+        "down",
+        peer_id = None,
+        shard_key = "invalid",
+    )
+    assert not response.ok, response.text
+    assert response.json()["status"]["error"] == ("Bad request: sharding key \"invalid\" does not exist for collection test_collection")
+
+    # Cannot shard down when we have just one shard
+    response = start_resharding(
+        peer_urls[0],
+        COLLECTION_NAME,
+        "down",
+        peer_id = None,
+        shard_key = None,
+    )
+    assert not response.ok, response.text
+    assert response.json()["status"]["error"] == ("Bad request: cannot remove shard 0 by resharding down, it is the last shard")
+
+    # We expect resharding to not have started
+    info = get_collection_cluster_info(peer_urls[0], COLLECTION_NAME)
+    assert "resharding_operations" not in info
+    assert len(info["local_shards"]) + len(info["remote_shards"]) == 1 * N_PEERS
+
+    # Ensure consensus is still working
+    for peer_url in peer_urls:
+        info = get_cluster_info(peer_url)
+        assert info["consensus_thread_status"]["consensus_thread_status"] == "working"
+
+
+def test_reshard_down_preconditions_custom_sharding(tmp_path: pathlib.Path):
+    """
+    Test that we block resharding down when there isn't enough shards.
+    """
+
+    assert_project_root()
+
+    # Allow resharding
+    env = {
+        "QDRANT__CLUSTER__RESHARDING_ENABLED": "true",
+    }
+
+    # Bootstrap cluster
+    peer_urls, _, _ = start_cluster(tmp_path, N_PEERS, extra_env=env)
+
+    # Wait until all peers submit their metadata to consensus 🙄
+    wait_for_peer_metadata(peer_urls[0])
+
+    create_collection_with_custom_sharding(peer_urls[0], replication_factor = N_PEERS)
+    wait_collection_exists_and_active_on_all_peers(collection_name = COLLECTION_NAME, peer_api_uris = peer_urls)
+
+    # Create shard keys
+    create_shard(
+        peer_urls[0],
+        COLLECTION_NAME,
+        shard_key = f"test1",
+        shard_number = 1,
+        replication_factor = 2,
+    )
+    create_shard(
+        peer_urls[0],
+        COLLECTION_NAME,
+        shard_key = f"test2",
+        shard_number = 2,
+        replication_factor = 2,
+    )
+
+    # Cannot reshard down on key with just one shard
+    response = start_resharding(
+        peer_urls[0],
+        COLLECTION_NAME,
+        "down",
+        peer_id = None,
+        shard_key = "test1",
+    )
+    assert not response.ok, response.text
+    assert response.json()["status"]["error"] == ("Bad request: cannot remove shard 1 by resharding down, it is the last shard")
+
+    # Cannot reshard down on a key that we don't know
+    response = start_resharding(
+        peer_urls[0],
+        COLLECTION_NAME,
+        "down",
+        peer_id = None,
+        shard_key = "invalid",
+    )
+    assert not response.ok, response.text
+    assert response.json()["status"]["error"] == ("Bad request: sharding key \"invalid\" does not exist for collection test_collection")
+
+    # Can reshard down when we have multiple shards
+    response = start_resharding(
+        peer_urls[0],
+        COLLECTION_NAME,
+        "down",
+        peer_id = None,
+        shard_key = "test2",
+    )
+    assert_http_ok(response)
+
+    # Expect resharding to have started
+    info = get_collection_cluster_info(peer_urls[0], COLLECTION_NAME)
+    assert "resharding_operations" in info and len(info["resharding_operations"]) == 1
+
+    # Abort resharding
+    response = abort_resharding(
+        peer_urls[0],
+        COLLECTION_NAME,
+    )
+    assert_http_ok(response)
+
+    # Expect resharding to have stopped
+    info = get_collection_cluster_info(peer_urls[0], COLLECTION_NAME)
+    assert "resharding_operations" not in info
+    assert len(info["local_shards"]) + len(info["remote_shards"]) == 3 * 2
+
+    # Ensure consensus is still working
+    for peer_url in peer_urls:
+        info = get_cluster_info(peer_url)
+        assert info["consensus_thread_status"]["consensus_thread_status"] == "working"
+
+
 def test_fix_reshard_down_without_shard_key(tmp_path: pathlib.Path):
     """
     Test that we correctly set up the internal hash rings for custom sharding.
