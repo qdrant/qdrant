@@ -201,9 +201,7 @@ pub trait IdTracker: fmt::Debug {
         for external_id in to_remove {
             self.drop(external_id)?;
             #[cfg(debug_assertions)]
-            {
-                log::debug!("dropped version for point {external_id} without version");
-            }
+            log::debug!("dropped mapping for point {external_id} without version");
         }
         Ok(to_return)
     }
