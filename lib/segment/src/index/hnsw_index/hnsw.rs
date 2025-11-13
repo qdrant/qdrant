@@ -1153,8 +1153,7 @@ impl HNSWIndex {
             vector_query_context.hardware_counter(),
             None,
         )?;
-        let mut search_results =
-            batch_filtered_searcher.peek_top_iter(points, oversampled_top, &is_stopped)?;
+        let mut search_results = batch_filtered_searcher.peek_top_iter(points, &is_stopped)?;
         for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {
             *search_result = postprocess_search_result(
                 std::mem::take(search_result),
