@@ -607,6 +607,7 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
     }));
 
     let hw_counter = HardwareCounterCell::new();
+    let is_stopped = AtomicBool::new(false);
 
     let estimation_struct = test_segments
         .struct_segment
@@ -624,7 +625,7 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
         .plain_segment
         .payload_index
         .borrow()
-        .query_points(&filter, &hw_counter);
+        .query_points(&filter, &hw_counter, &is_stopped);
 
     let real_number = plain_result.len();
 
@@ -633,7 +634,7 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
         .struct_segment
         .payload_index
         .borrow()
-        .query_points(&filter, &hw_counter)
+        .query_points(&filter, &hw_counter, &is_stopped)
         .into_iter()
         // null index does not track deleted points, so we need to filter them out here. In callsites,
         // the deleted check is done externally anyway

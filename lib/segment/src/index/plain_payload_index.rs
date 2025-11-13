@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -15,7 +16,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
-use crate::index::{BuildIndexResult, PayloadIndex};
+use crate::index::{BuildIndexResult, PayloadIndex, STOP_CHECK_INTERVAL};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
@@ -163,13 +164,28 @@ impl PayloadIndex for PlainPayloadIndex {
         &self,
         query: &Filter,
         hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
     ) -> Vec<PointOffsetType> {
         let filter_context = self.filter_context(query, hw_counter);
-        self.id_tracker
+        let mut results = Vec::new();
+
+        for (i, point_offset) in self
+            .id_tracker
             .borrow()
             .iter_internal()
             .filter(|id| filter_context.check(*id))
-            .collect()
+            .enumerate()
+        {
+            if i.is_multiple_of(STOP_CHECK_INTERVAL)
+                && is_stopped.load(std::sync::atomic::Ordering::Relaxed)
+            {
+                return vec![];
+            }
+
+            results.push(point_offset);
+        }
+
+        results
     }
 
     fn indexed_points(&self, _field: PayloadKeyTypeRef) -> usize {

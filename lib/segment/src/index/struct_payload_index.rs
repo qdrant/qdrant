@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -30,7 +31,7 @@ use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
-use crate::index::{BuildIndexResult, PayloadIndex};
+use crate::index::{BuildIndexResult, PayloadIndex, STOP_CHECK_INTERVAL};
 use crate::json_path::JsonPath;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
@@ -945,12 +946,25 @@ impl PayloadIndex for StructPayloadIndex {
         &self,
         query: &Filter,
         hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
     ) -> Vec<PointOffsetType> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let query_cardinality = self.estimate_cardinality(query, hw_counter);
         let id_tracker = self.id_tracker.borrow();
-        self.iter_filtered_points(query, &*id_tracker, &query_cardinality, hw_counter)
-            .collect()
+
+        let mut results = Vec::new();
+
+        for (i, point_offset) in self
+            .iter_filtered_points(query, &*id_tracker, &query_cardinality, hw_counter)
+            .enumerate()
+        {
+            if i.is_multiple_of(STOP_CHECK_INTERVAL) && is_stopped.load(Ordering::Relaxed) {
+                return vec![];
+            }
+            results.push(point_offset);
+        }
+
+        results
     }
 
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {

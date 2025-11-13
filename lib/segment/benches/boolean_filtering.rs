@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -38,12 +39,16 @@ pub fn plain_boolean_query_points(c: &mut Criterion) {
     let mut result_size = 0;
     let mut query_count = 0;
 
+    let is_stopped = AtomicBool::new(false);
+
     let hw_counter = HardwareCounterCell::new();
 
     group.bench_function("plain", |b| {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
-            result_size += plain_index.query_points(&filter, &hw_counter).len();
+            result_size += plain_index
+                .query_points(&filter, &hw_counter, &is_stopped)
+                .len();
             query_count += 1;
         })
     });
@@ -66,12 +71,16 @@ pub fn struct_boolean_query_points(c: &mut Criterion) {
     let mut group = c.benchmark_group("boolean-query-points");
     let hw_counter = HardwareCounterCell::new();
 
+    let is_stopped = AtomicBool::new(false);
+
     let mut result_size = 0;
     let mut query_count = 0;
     group.bench_function("binary-index", |b| {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
-            result_size += struct_index.query_points(&filter, &hw_counter).len();
+            result_size += struct_index
+                .query_points(&filter, &hw_counter, &is_stopped)
+                .len();
             query_count += 1;
         })
     });
@@ -116,6 +125,8 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         )
         .unwrap();
 
+    let is_stopped = AtomicBool::new(false);
+
     let mut group = c.benchmark_group("boolean-query-points");
 
     let mut result_size = 0;
@@ -123,7 +134,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     group.bench_function("keyword-index", |b| {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
-            result_size += index.query_points(&filter, &hw_counter).len();
+            result_size += index.query_points(&filter, &hw_counter, &is_stopped).len();
             query_count += 1;
         })
     });

@@ -111,7 +111,7 @@ impl VectorIndex for PlainVectorIndex {
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
                 let quantized_storage = self.quantized_vectors.borrow();
-                let filtered_ids_vec = payload_index.query_points(filter, &hw_counter);
+                let filtered_ids_vec = payload_index.query_points(filter, &hw_counter, &is_stopped);
                 let deleted_points = query_context
                     .deleted_points()
                     .unwrap_or_else(|| id_tracker.deleted_point_bitslice());

@@ -1203,8 +1203,11 @@ impl HNSWIndex {
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let payload_index = self.payload_index.borrow();
         // share filtered points for all query vectors
-        let filtered_points =
-            payload_index.query_points(filter, &vector_query_context.hardware_counter());
+        let filtered_points = payload_index.query_points(
+            filter,
+            &vector_query_context.hardware_counter(),
+            &vector_query_context.is_stopped(),
+        );
         vectors
             .iter()
             .map(|vector| {
