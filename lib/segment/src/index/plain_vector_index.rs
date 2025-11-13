@@ -150,7 +150,7 @@ impl VectorIndex for PlainVectorIndex {
                 query_context.hardware_counter(),
             )?;
         }
-        Ok(search_results.to_vec())
+        Ok(search_results)
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
