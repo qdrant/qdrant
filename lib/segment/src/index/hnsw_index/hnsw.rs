@@ -1273,6 +1273,7 @@ impl HNSWIndex {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn construct_batch_searcher<'a>(
         vectors: &[&QueryVector],
         vector_storage: &'a VectorStorageEnum,
