@@ -554,6 +554,7 @@ impl HNSWIndex {
                         id_tracker_ref.deref(),
                         &payload_index_ref,
                         &vector_storage_ref,
+                        stopped,
                     );
 
                     if !is_tenant
@@ -673,6 +674,7 @@ impl HNSWIndex {
         id_tracker: &IdTrackerSS,
         payload_index: &StructPayloadIndex,
         vector_storage: &VectorStorageEnum,
+        stopped: &AtomicBool,
     ) -> Vec<PointOffsetType> {
         let filter = Filter::new_must(Field(condition));
 
@@ -689,6 +691,7 @@ impl HNSWIndex {
                 id_tracker,
                 &cardinality_estimation,
                 &disposed_hw_counter,
+                stopped,
             )
             .filter(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
             .collect()

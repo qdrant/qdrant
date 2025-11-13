@@ -161,6 +161,10 @@ impl<'a> SegmentQueryContext<'a> {
         self
     }
 
+    pub fn is_stopped(&self) -> bool {
+        self.query_context.is_stopped()
+    }
+
     pub fn fork(&self) -> Self {
         Self {
             query_context: self.query_context,

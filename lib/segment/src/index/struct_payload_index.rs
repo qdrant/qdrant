@@ -1,16 +1,3 @@
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
-use common::either_variant::EitherVariant;
-use common::types::PointOffsetType;
-use fs_err as fs;
-use schemars::_serde_json::Value;
-
 use super::field_index::facet_index::FacetIndexEnum;
 #[cfg(feature = "rocksdb")]
 use super::field_index::index_selector::IndexSelectorRocksDb;
@@ -31,7 +18,7 @@ use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
-use crate::index::{BuildIndexResult, PayloadIndex, STOP_CHECK_INTERVAL};
+use crate::index::{BuildIndexResult, PayloadIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
@@ -41,6 +28,18 @@ use crate::types::{
     PayloadContainer, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, VectorNameBuf,
 };
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
+use common::either_variant::EitherVariant;
+use common::iterator_ext::stoppable_iter::StoppableIter;
+use common::types::PointOffsetType;
+use fs_err as fs;
+use schemars::_serde_json::Value;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 #[derive(Debug)]
 #[allow(clippy::enum_variant_names)]
@@ -618,9 +617,10 @@ impl StructPayloadIndex {
         id_tracker: &'a IdTrackerSS,
         query_cardinality: &'a CardinalityEstimation,
         hw_counter: &'a HardwareCounterCell,
+        is_stopped: &'a AtomicBool,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = id_tracker.iter_internal();
+            let full_scan_iterator = StoppableIter::new(id_tracker.iter_internal(), is_stopped);
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
@@ -644,7 +644,8 @@ impl StructPayloadIndex {
                     .iter_conditions()
                     .all(|condition| query_cardinality.is_primary(condition));
 
-                let joined_primary_iterator = primary_iterators.into_iter().flatten();
+                let joined_primary_iterator =
+                    StoppableIter::new(primary_iterators.into_iter().flatten(), is_stopped);
 
                 return if all_conditions_are_primary {
                     // All conditions are primary clauses,
@@ -667,8 +668,9 @@ impl StructPayloadIndex {
             // and applying full filter.
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
 
-            let iter = id_tracker
-                .iter_internal()
+            let id_tracker_iterator = StoppableIter::new(id_tracker.iter_internal(), is_stopped);
+
+            let iter = id_tracker_iterator
                 .measure_hw_with_cell(hw_counter, size_of::<PointOffsetType>(), |i| {
                     i.cpu_counter()
                 })
@@ -951,20 +953,14 @@ impl PayloadIndex for StructPayloadIndex {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let query_cardinality = self.estimate_cardinality(query, hw_counter);
         let id_tracker = self.id_tracker.borrow();
-
-        let mut results = Vec::new();
-
-        for (i, point_offset) in self
-            .iter_filtered_points(query, &*id_tracker, &query_cardinality, hw_counter)
-            .enumerate()
-        {
-            if i.is_multiple_of(STOP_CHECK_INTERVAL) && is_stopped.load(Ordering::Relaxed) {
-                return vec![];
-            }
-            results.push(point_offset);
-        }
-
-        results
+        self.iter_filtered_points(
+            query,
+            &*id_tracker,
+            &query_cardinality,
+            hw_counter,
+            is_stopped,
+        )
+        .collect()
     }
 
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {

@@ -14,9 +14,6 @@ use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
 
-/// Interval for checking whether operation should be stopped
-pub(crate) const STOP_CHECK_INTERVAL: usize = 100;
-
 pub enum BuildIndexResult {
     /// Index was built
     Built(Vec<FieldIndex>),

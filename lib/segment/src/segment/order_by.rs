@@ -37,8 +37,7 @@ impl Segment {
         let start_from = order_by.start_from();
 
         let values_ids_iterator = payload_index
-            .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation, hw_counter)
-            .check_stop(|| is_stopped.load(Ordering::Relaxed))
+            .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation, hw_counter, is_stopped)
             .flat_map(|internal_id| {
                 // Repeat a point for as many values as it has
                 numeric_index

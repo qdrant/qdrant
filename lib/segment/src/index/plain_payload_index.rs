@@ -3,12 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
-use fs_err as fs;
-use schemars::_serde_json::Value;
-
 use super::field_index::FieldIndex;
 use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
@@ -16,10 +10,16 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
-use crate::index::{BuildIndexResult, PayloadIndex, STOP_CHECK_INTERVAL};
+use crate::index::{BuildIndexResult, PayloadIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
+use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::stoppable_iter::StoppableIter;
+use common::types::PointOffsetType;
+use fs_err as fs;
+use schemars::_serde_json::Value;
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -167,25 +167,12 @@ impl PayloadIndex for PlainPayloadIndex {
         is_stopped: &AtomicBool,
     ) -> Vec<PointOffsetType> {
         let filter_context = self.filter_context(query, hw_counter);
-        let mut results = Vec::new();
-
-        for (i, point_offset) in self
-            .id_tracker
-            .borrow()
-            .iter_internal()
+        let id_tracker = self.id_tracker.borrow();
+        let all_points_iter = id_tracker.iter_internal();
+        let stoppable_all_points_iter = StoppableIter::new(all_points_iter, is_stopped);
+        stoppable_all_points_iter
             .filter(|id| filter_context.check(*id))
-            .enumerate()
-        {
-            if i.is_multiple_of(STOP_CHECK_INTERVAL)
-                && is_stopped.load(std::sync::atomic::Ordering::Relaxed)
-            {
-                return vec![];
-            }
-
-            results.push(point_offset);
-        }
-
-        results
+            .collect()
     }
 
     fn indexed_points(&self, _field: PayloadKeyTypeRef) -> usize {

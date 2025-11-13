@@ -71,3 +71,7 @@ harness = false
 [[bench]]
 name = "hw_counter"
 harness = false
+
+[[bench]]
+name = "atomic_stop"
+harness = false
