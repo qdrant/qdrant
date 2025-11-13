@@ -224,7 +224,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     let query: QueryVector = [0.0, 1.0, 1.1, 1.0].into();
 
     let searcher = BatchFilteredSearcher::new_for_test(
-        &[query.clone()],
+        std::slice::from_ref(&query),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
         2,
