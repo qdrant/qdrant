@@ -11,7 +11,7 @@ fn main() {
 
     let last_index = wal.last_index();
 
-    eprintln!("last_index = {:#?}", last_index);
+    eprintln!("last_index = {last_index}");
 
     wal.truncate(last_index).unwrap();
     wal.flush_open_segment().unwrap();
