@@ -71,14 +71,16 @@ where
     }
 
     let Some(log_file) = &config.log_file else {
-        return Err(anyhow::format_err!("log file is not specified"));
+        return Err(anyhow::format_err!(
+            "log file is not specified (it can only be specified in the config file)"
+        ));
     };
 
     let writer = fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(log_file)
-        .with_context(|| format!("failed to open {log_file} log-file"))?;
+        .with_context(|| format!("failed to open log file {log_file}"))?;
 
     let layer = fmt::Layer::default()
         .with_writer(Mutex::new(io::BufWriter::with_capacity(
