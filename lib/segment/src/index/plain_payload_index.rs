@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
-use common::iterator_ext::stoppable_iter::StoppableIter;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use schemars::_serde_json::Value;
