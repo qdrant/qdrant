@@ -311,13 +311,13 @@ impl<'a> FilteredScorer<'a> {
     }
 }
 
+struct BatchSearch<'a> {
+    raw_scorer: Box<dyn RawScorer + 'a>,
+    pq: FixedLengthPriorityQueue<ScoredPointOffset>,
+}
+
 pub struct BatchFilteredSearcher<'a> {
-    scorer_batch: SmallVec<
-        [(
-            Box<dyn RawScorer + 'a>,
-            FixedLengthPriorityQueue<ScoredPointOffset>,
-        ); 1],
-    >,
+    scorer_batch: SmallVec<[BatchSearch<'a>; 1]>,
     filters: ScorerFilters<'a>,
 }
 
@@ -346,7 +346,7 @@ impl<'a> BatchFilteredSearcher<'a> {
                     None => new_raw_scorer(query, vectors, hardware_counter),
                 };
                 let pq = FixedLengthPriorityQueue::new(top);
-                raw_scorer.map(|raw_scorer| (raw_scorer, pq))
+                raw_scorer.map(|raw_scorer| BatchSearch { raw_scorer, pq })
             })
             .collect::<Result<_, _>>()?;
         let filters = ScorerFilters {
@@ -407,7 +407,7 @@ impl<'a> BatchFilteredSearcher<'a> {
                 break;
             }
 
-            for (raw_scorer, pq) in &mut self.scorer_batch {
+            for BatchSearch { raw_scorer, pq } in &mut self.scorer_batch {
                 raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
 
                 for i in 0..chunk_size {
@@ -422,7 +422,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         let results = self
             .scorer_batch
             .into_iter()
-            .map(|(_, pq)| pq.into_sorted_vec())
+            .map(|BatchSearch { pq, .. }| pq.into_sorted_vec())
             .collect();
         Ok(results)
     }
