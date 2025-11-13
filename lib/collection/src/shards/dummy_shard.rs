@@ -106,13 +106,17 @@ impl ShardOperation for DummyShard {
         _: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         match &op.operation {
-            // Allow (and ignore) field operations here as they'll be applied again when the shard is recovered
+            CollectionUpdateOperations::PointOperation(_) => self.dummy(),
+            CollectionUpdateOperations::VectorOperation(_) => self.dummy(),
+            CollectionUpdateOperations::PayloadOperation(_) => self.dummy(),
+
+            // Allow (and ignore) field index operations. Field index schema is stored in collection
+            // config, and indices will be created (if needed) when dummy shard is recovered.
             CollectionUpdateOperations::FieldIndexOperation(_) => Ok(UpdateResult {
                 operation_id: None,
                 status: UpdateStatus::Acknowledged,
                 clock_tag: None,
             }),
-            _ => self.dummy(),
         }
     }
 
