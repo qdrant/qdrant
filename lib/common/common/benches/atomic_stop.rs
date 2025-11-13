@@ -14,7 +14,7 @@ fn bench_atomic_stop(c: &mut Criterion) {
         b.iter(|| {
             let size = rng.random_range(1_000_000..=2_000_000);
             // Sum regular iterator
-            let sum = (0..size).map(|x| x + 1).sum::<u64>();
+            let sum = (0..size).map(|x| black_box(x + 1)).sum::<u64>();
             black_box(sum);
         });
     });
@@ -26,7 +26,7 @@ fn bench_atomic_stop(c: &mut Criterion) {
             let size = rng.random_range(1_000_000..=2_000_000);
             let sum = (0..size)
                 .check_stop_every(100, || stop_flag.load(Ordering::Relaxed))
-                .map(|x| x + 1)
+                .map(|x| black_box(x + 1))
                 .sum::<u64>();
             black_box(sum);
         });
@@ -36,7 +36,7 @@ fn bench_atomic_stop(c: &mut Criterion) {
         b.iter(|| {
             let size = rng.random_range(1_000_000..=2_000_000);
             let sum = StoppableIter::new(0..size, &stop_flag)
-                .map(|x| x + 1)
+                .map(|x| black_box(x + 1))
                 .sum::<u64>();
             black_box(sum);
         });
