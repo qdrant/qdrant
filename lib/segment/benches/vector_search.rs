@@ -12,7 +12,7 @@ use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::data_types::vectors::{DenseVector, VectorInternal, VectorRef};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
-use segment::index::hnsw_index::point_scorer::FilteredScorer;
+use segment::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use segment::types::{Distance, VectorStorageDatatype};
 use segment::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use segment::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
@@ -72,12 +72,13 @@ fn benchmark_naive(c: &mut Criterion) {
         b.iter(|| {
             let vector = random_vector(DIM);
             let vector = vector.as_slice().into();
-            FilteredScorer::new_for_test(
-                vector,
+            BatchFilteredSearcher::new_for_test(
+                &[vector],
                 &storage,
                 borrowed_id_tracker.deleted_point_bitslice(),
+                10,
             )
-            .peek_top_all(10, &DEFAULT_STOPPED)
+            .peek_top_all(&DEFAULT_STOPPED)
             .unwrap();
         })
     });

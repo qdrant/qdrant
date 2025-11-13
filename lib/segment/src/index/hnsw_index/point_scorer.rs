@@ -323,7 +323,7 @@ pub struct BatchFilteredSearcher<'a> {
 }
 
 impl<'a> BatchFilteredSearcher<'a> {
-    /// Create a new batch filtered scorer.
+    /// Create a new batch filtered searcher.
     ///
     /// If present, `quantized_vectors` will be used for scoring, otherwise `vectors` will be used.
     pub fn new(
@@ -362,7 +362,45 @@ impl<'a> BatchFilteredSearcher<'a> {
         })
     }
 
-    pub(crate) fn peek_top_all(
+    /// Create a new batched filtered searcher for testing purposes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`new_raw_scorer`] fails.
+    #[cfg(feature = "testing")]
+    pub fn new_for_test(
+        vectors: &[QueryVector],
+        vector_storage: &'a VectorStorageEnum,
+        point_deleted: &'a BitSlice,
+        top: usize,
+    ) -> Self {
+        let scorer_batch = vectors
+            .iter()
+            .map(|vector| {
+                let raw_scorer = new_raw_scorer(
+                    vector.to_owned(),
+                    vector_storage,
+                    HardwareCounterCell::new(),
+                )
+                .unwrap();
+                BatchSearch {
+                    raw_scorer,
+                    pq: FixedLengthPriorityQueue::new(top),
+                }
+            })
+            .collect();
+        Self {
+            scorer_batch,
+            filters: ScorerFilters {
+                filter_context: None,
+                point_deleted,
+                vec_deleted: vector_storage.deleted_vector_bitslice(),
+            },
+            top,
+        }
+    }
+
+    pub fn peek_top_all(
         self,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
@@ -374,7 +412,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         self.peek_top_iter(iter, is_stopped)
     }
 
-    pub(crate) fn peek_top_iter(
+    pub fn peek_top_iter(
         mut self,
         mut points: impl Iterator<Item = PointOffsetType>,
         is_stopped: &AtomicBool,

@@ -323,7 +323,7 @@ mod tests {
     use crate::data_types::vectors::{DenseVector, QueryVector};
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::id_tracker_base::IdTracker;
-    use crate::index::hnsw_index::point_scorer::FilteredScorer;
+    use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::quantized::quantized_vectors::{
@@ -413,19 +413,32 @@ mod tests {
 
         assert_eq!(stored_ids, [0, 1, 3, 4]);
 
-        let scorer = FilteredScorer::new_for_test(
-            points[2].as_slice().into(),
+        let searcher = BatchFilteredSearcher::new_for_test(
+            &[points[2].as_slice().into()],
             &storage,
             borrowed_id_tracker.deleted_point_bitslice(),
+            2,
         );
-        let res = scorer.peek_top_all(2, &DEFAULT_STOPPED).unwrap();
+        let res = searcher
+            .peek_top_all(&DEFAULT_STOPPED)
+            .unwrap()
+            .pop()
+            .unwrap();
 
         assert_eq!(res.len(), 2);
 
         assert_ne!(res[0].idx, 2);
 
-        let res = scorer
-            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, &DEFAULT_STOPPED)
+        let searcher = BatchFilteredSearcher::new_for_test(
+            &[points[2].as_slice().into()],
+            &storage,
+            borrowed_id_tracker.deleted_point_bitslice(),
+            2,
+        );
+        let res = searcher
+            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+            .unwrap()
+            .pop()
             .unwrap();
 
         assert_eq!(res.len(), 2);
@@ -487,20 +500,22 @@ mod tests {
 
         let vector = vec![0.0, 1.0, 1.1, 1.0];
         let query = vector.as_slice().into();
-        let scorer = FilteredScorer::new_for_test(
-            query,
+        let searcher = BatchFilteredSearcher::new_for_test(
+            &[query],
             &storage,
             borrowed_id_tracker.deleted_point_bitslice(),
+            5,
         );
 
-        let closest = scorer
-            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+        let closest = searcher
+            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+            .unwrap()
+            .pop()
             .unwrap();
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
         assert_eq!(closest[0].idx, 0);
         assert_eq!(closest[1].idx, 1);
         assert_eq!(closest[2].idx, 4);
-        drop(scorer);
 
         // Delete 1, redelete 2
         storage.delete_vector(1 as PointOffsetType).unwrap();
@@ -514,18 +529,20 @@ mod tests {
         let vector = vec![1.0, 0.0, 0.0, 0.0];
         let query = vector.as_slice().into();
 
-        let scorer = FilteredScorer::new_for_test(
-            query,
+        let searcher = BatchFilteredSearcher::new_for_test(
+            &[query],
             &storage,
             borrowed_id_tracker.deleted_point_bitslice(),
+            5,
         );
-        let closest = scorer
-            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+        let closest = searcher
+            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+            .unwrap()
+            .pop()
             .unwrap();
         assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
         assert_eq!(closest[0].idx, 4);
         assert_eq!(closest[1].idx, 0);
-        drop(scorer);
 
         // Delete all
         storage.delete_vector(0 as PointOffsetType).unwrap();
@@ -538,12 +555,17 @@ mod tests {
 
         let vector = vec![1.0, 0.0, 0.0, 0.0];
         let query = vector.as_slice().into();
-        let scorer = FilteredScorer::new_for_test(
-            query,
+        let searcher = BatchFilteredSearcher::new_for_test(
+            &[query],
             &storage,
             borrowed_id_tracker.deleted_point_bitslice(),
+            5,
         );
-        let closest = scorer.peek_top_all(5, &DEFAULT_STOPPED).unwrap();
+        let closest = searcher
+            .peek_top_all(&DEFAULT_STOPPED)
+            .unwrap()
+            .pop()
+            .unwrap();
         assert!(closest.is_empty(), "must have no results, all deleted");
     }
 
@@ -595,16 +617,17 @@ mod tests {
 
         let vector = vec![0.0, 1.0, 1.1, 1.0];
         let query = vector.as_slice().into();
-        let scorer = FilteredScorer::new_for_test(
-            query,
+        let searcher = BatchFilteredSearcher::new_for_test(
+            &[query],
             &storage,
             borrowed_id_tracker.deleted_point_bitslice(),
+            5,
         );
-        let closest = scorer
-            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+        let closest = searcher
+            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+            .unwrap()
+            .pop()
             .unwrap();
-
-        drop(scorer);
 
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
         assert_eq!(closest[0].idx, 0);
