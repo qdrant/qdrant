@@ -140,26 +140,44 @@ fn kubernetes_healthz() -> impl Responder {
 }
 
 #[get("/logger")]
-async fn get_logger_config(handle: web::Data<tracing::LoggerHandle>) -> impl Responder {
+async fn get_logger_config(
+    ActixAccess(access): ActixAccess,
+    handle: web::Data<tracing::LoggerHandle>,
+) -> impl Responder {
     let timing = Instant::now();
-    let result = handle.get_config().await;
-    helpers::process_response(Ok(result), timing, None)
+
+    let future = async {
+        let _ = access.check_global_access(AccessRequirements::new())?;
+        let config = handle.get_config().await;
+        Ok(config)
+    };
+
+    helpers::process_response(future.await, timing, None)
 }
 
 #[post("/logger")]
 async fn update_logger_config(
+    ActixAccess(access): ActixAccess,
     handle: web::Data<tracing::LoggerHandle>,
-    config: web::Json<tracing::LoggerConfig>,
+    mut config: web::Json<tracing::LoggerConfig>,
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let result = handle
-        .update_config(config.into_inner())
-        .await
-        .map(|_| true)
-        .map_err(|err| StorageError::service_error(err.to_string()));
+    let future = async {
+        let _ = access.check_global_access(AccessRequirements::new().manage())?;
 
-    helpers::process_response(result, timing, None)
+        // Log file can only be set in Qdrant config file
+        config.on_disk.log_file = None;
+
+        handle
+            .update_config(config.into_inner())
+            .await
+            .map_err(|err| StorageError::service_error(err.to_string()))?;
+
+        Ok(true)
+    };
+
+    helpers::process_response(future.await, timing, None)
 }
 
 // Configure services
