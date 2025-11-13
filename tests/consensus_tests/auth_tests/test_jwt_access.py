@@ -566,7 +566,7 @@ ACTION_ACCESS = {
     "metrics": EndpointAccess(True, False, True, "GET /metrics", coll_r=False),
     "get_issues": EndpointAccess(True, True, True, "GET /issues"),
     "clear_issues": EndpointAccess(False, False, True, "DELETE /issues"),
-    "get_logger_config": EndpointAccess(True, False, False, "GET /logger", coll_r=False),
+    "get_logger_config": EndpointAccess(True, False, True, "GET /logger", coll_r=False),
     "update_logger_config": EndpointAccess(False, False, True, "POST /logger"),
 }
 
