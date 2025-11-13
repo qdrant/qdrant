@@ -133,13 +133,9 @@ impl VectorIndex for PlainVectorIndex {
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
                 let filtered_ids_vec = payload_index.query_points(filter, &hw_counter, &is_stopped);
-                batch_searcher.peek_top_iter(
-                    &mut filtered_ids_vec.iter().copied(),
-                    oversampled_top,
-                    &is_stopped,
-                )?
+                batch_searcher.peek_top_iter(&mut filtered_ids_vec.iter().copied(), &is_stopped)?
             }
-            None => batch_searcher.peek_top_all(oversampled_top, &is_stopped)?,
+            None => batch_searcher.peek_top_all(&is_stopped)?,
         };
 
         for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {

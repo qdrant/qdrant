@@ -319,6 +319,7 @@ struct BatchSearch<'a> {
 pub struct BatchFilteredSearcher<'a> {
     scorer_batch: SmallVec<[BatchSearch<'a>; 1]>,
     filters: ScorerFilters<'a>,
+    top: usize,
 }
 
 impl<'a> BatchFilteredSearcher<'a> {
@@ -357,12 +358,12 @@ impl<'a> BatchFilteredSearcher<'a> {
         Ok(Self {
             scorer_batch,
             filters,
+            top,
         })
     }
 
     pub(crate) fn peek_top_all(
         self,
-        top: usize,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
         let iter = self
@@ -370,16 +371,15 @@ impl<'a> BatchFilteredSearcher<'a> {
             .point_deleted
             .iter_zeros()
             .map(|p| p as PointOffsetType);
-        self.peek_top_iter(iter, top, is_stopped)
+        self.peek_top_iter(iter, is_stopped)
     }
 
     pub(crate) fn peek_top_iter(
         mut self,
         mut points: impl Iterator<Item = PointOffsetType>,
-        top: usize,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
-        if top == 0 {
+        if self.top == 0 {
             return Ok(vec![vec![]; self.scorer_batch.len()]);
         }
 
