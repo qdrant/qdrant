@@ -3,6 +3,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::stoppable_iter::StoppableIter;
+use common::types::PointOffsetType;
+use fs_err as fs;
+use schemars::_serde_json::Value;
+
 use super::field_index::FieldIndex;
 use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
@@ -14,12 +21,6 @@ use crate::index::{BuildIndexResult, PayloadIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
-use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::stoppable_iter::StoppableIter;
-use common::types::PointOffsetType;
-use fs_err as fs;
-use schemars::_serde_json::Value;
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///

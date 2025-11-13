@@ -1,3 +1,17 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
+use common::either_variant::EitherVariant;
+use common::iterator_ext::stoppable_iter::StoppableIter;
+use common::types::PointOffsetType;
+use fs_err as fs;
+use schemars::_serde_json::Value;
+
 use super::field_index::facet_index::FacetIndexEnum;
 #[cfg(feature = "rocksdb")]
 use super::field_index::index_selector::IndexSelectorRocksDb;
@@ -28,18 +42,6 @@ use crate::types::{
     PayloadContainer, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, VectorNameBuf,
 };
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
-use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
-use common::either_variant::EitherVariant;
-use common::iterator_ext::stoppable_iter::StoppableIter;
-use common::types::PointOffsetType;
-use fs_err as fs;
-use schemars::_serde_json::Value;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 #[derive(Debug)]
 #[allow(clippy::enum_variant_names)]
