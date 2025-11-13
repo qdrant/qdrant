@@ -251,6 +251,7 @@ impl SegmentsSearcher {
                     // all searches for futures that are already dropped. Not using this allows
                     // users to create a humongous queue of search tasks, even though the searches
                     // are already invalidated.
+                    // See: <https://github.com/qdrant/qdrant/pull/7530>
                     let search = AbortOnDropHandle::new(search);
 
                     (segment, search)
@@ -309,6 +310,7 @@ impl SegmentsSearcher {
                     // all searches for futures that are already dropped. Not using this allows
                     // users to create a humongous queue of search tasks, even though the searches
                     // are already invalidated.
+                    // See: <https://github.com/qdrant/qdrant/pull/7530>
                     let handle = AbortOnDropHandle::new(handle);
 
                     res.push(handle);
