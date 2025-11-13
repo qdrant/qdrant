@@ -84,8 +84,7 @@ pub struct CreateShardingKey {
     pub placement: Option<Vec<PeerId>>,
     /// Initial state of the shards for this key
     /// If not specified, will be `Initializing` first and then `Active`
-
-    #[schemars(skip)] // unstable feature, hide for internal use
+    /// Warning: do not change this unless you know what you are doing
     pub initial_state: Option<ReplicaState>,
 }
 
