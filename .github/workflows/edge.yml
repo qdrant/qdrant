@@ -1,0 +1,68 @@
+name: Qdrant Edge
+
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ '**' ]
+
+jobs:
+  qdrant-edge-py:
+    name: Build Qdrant Edge Python bindings
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+
+      - name: Enable mold
+        run: |
+          mkdir .cargo
+
+          cat >.cargo/config.toml <<-EOF
+          [target.x86_64-unknown-linux-gnu]
+          linker = "clang"
+          rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/bin/mold"]
+          EOF
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Checkout Qdrant
+        uses: actions/checkout@v5
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Qdrant Edge
+        run: |
+          cd lib/edge/python
+
+          python -m venv .venv
+          source .venv/bin/activate
+
+          maturin develop --no-default-features
+
+      - name: Run Qdrant Edge examples
+        run: |
+          cd lib/edge/python
+
+          source .venv/bin/activate
+
+          python examples/qdrant-edge.py
+          python examples/fusion-query.py
+          python examples/mmr-query.py
