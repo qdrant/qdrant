@@ -1166,7 +1166,7 @@ impl HNSWIndex {
                 vector_query_context.hardware_counter(),
             )?;
         }
-        Ok(search_results.to_vec())
+        Ok(search_results)
     }
 
     fn search_plain_batched(
