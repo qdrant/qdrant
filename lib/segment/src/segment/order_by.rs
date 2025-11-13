@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
@@ -123,7 +123,7 @@ impl Segment {
         };
 
         let reads = filtered_iter
-            .check_stop(|| is_stopped.load(Ordering::Relaxed))
+            .stop_if(is_stopped)
             .filter_map(|(value, internal_id)| {
                 id_tracker
                     .external_id(internal_id)

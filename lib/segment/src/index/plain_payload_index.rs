@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::IteratorExt;
 use common::iterator_ext::stoppable_iter::StoppableIter;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -170,8 +171,8 @@ impl PayloadIndex for PlainPayloadIndex {
         let filter_context = self.filter_context(query, hw_counter);
         let id_tracker = self.id_tracker.borrow();
         let all_points_iter = id_tracker.iter_internal();
-        let stoppable_all_points_iter = StoppableIter::new(all_points_iter, is_stopped);
-        stoppable_all_points_iter
+        all_points_iter
+            .stop_if(is_stopped)
             .filter(|id| filter_context.check(*id))
             .collect()
     }

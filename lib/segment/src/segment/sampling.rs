@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
@@ -49,7 +49,7 @@ impl Segment {
         self.id_tracker
             .borrow()
             .iter_random()
-            .check_stop(|| is_stopped.load(Ordering::Relaxed))
+            .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map(|(external_id, _)| external_id)
             .take(limit)

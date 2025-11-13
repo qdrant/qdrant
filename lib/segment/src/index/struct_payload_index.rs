@@ -7,6 +7,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::either_variant::EitherVariant;
+use common::iterator_ext::IteratorExt;
 use common::iterator_ext::stoppable_iter::StoppableIter;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -622,11 +623,12 @@ impl StructPayloadIndex {
         is_stopped: &'a AtomicBool,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = StoppableIter::new(id_tracker.iter_internal(), is_stopped);
+            let full_scan_iterator = id_tracker.iter_internal();
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
             // Worst case: query expected to return few matches, but index can't be used
-            let matched_points =
-                full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
+            let matched_points = full_scan_iterator
+                .stop_if(is_stopped)
+                .filter(move |i| struct_filtered_context.check(*i));
 
             EitherVariant::A(matched_points)
         } else {
@@ -647,7 +649,7 @@ impl StructPayloadIndex {
                     .all(|condition| query_cardinality.is_primary(condition));
 
                 let joined_primary_iterator =
-                    StoppableIter::new(primary_iterators.into_iter().flatten(), is_stopped);
+                    primary_iterators.into_iter().flatten().stop_if(is_stopped);
 
                 return if all_conditions_are_primary {
                     // All conditions are primary clauses,
@@ -670,9 +672,10 @@ impl StructPayloadIndex {
             // and applying full filter.
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
 
-            let id_tracker_iterator = StoppableIter::new(id_tracker.iter_internal(), is_stopped);
+            let id_tracker_iterator = id_tracker.iter_internal();
 
             let iter = id_tracker_iterator
+                .stop_if(is_stopped)
                 .measure_hw_with_cell(hw_counter, size_of::<PointOffsetType>(), |i| {
                     i.cpu_counter()
                 })
