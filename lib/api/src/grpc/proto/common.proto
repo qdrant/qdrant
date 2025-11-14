@@ -2,7 +2,6 @@ syntax = "proto3";
 package qdrant;
 
 option csharp_namespace = "Qdrant.Client.Grpc";
-option java_outer_classname = "Points";
 
 import "google/protobuf/timestamp.proto";
 
