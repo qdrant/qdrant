@@ -4,6 +4,7 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 import "json_with_int.proto";
+import "common.proto";
 
 enum Datatype {
   Default = 0;
@@ -11,6 +12,10 @@ enum Datatype {
   Uint8 = 2;
   Float16 = 3;
 }
+
+// ---------------------------------------------
+// ------------- Collection Config -------------
+// ---------------------------------------------
 
 message VectorParams {
   uint64 size = 1; // Size of the vectors
@@ -724,6 +729,12 @@ message RestartTransfer {
   ShardTransferMethod method = 4;
 }
 
+message ReplicatePoints {
+    ShardKey from_shard_key = 1; // Source shard key
+    ShardKey to_shard_key = 2; // Target shard key
+    optional Filter filter = 3; // If set - only points matching the filter will be replicated
+}
+
 enum ShardTransferMethod {
   StreamRecords = 0; // Stream shard records in batches
   Snapshot = 1; // Snapshot the shard and recover it on the target peer
@@ -758,6 +769,7 @@ message UpdateCollectionClusterSetupRequest {
     CreateShardKey create_shard_key = 7;
     DeleteShardKey delete_shard_key = 8;
     RestartTransfer restart_transfer = 9;
+    ReplicatePoints replicate_points = 10;
   }
   optional uint64 timeout = 6; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
 }

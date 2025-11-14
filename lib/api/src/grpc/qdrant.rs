@@ -99,6 +99,328 @@ impl NullValue {
         }
     }
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointId {
+    #[prost(oneof = "point_id::PointIdOptions", tags = "1, 2")]
+    pub point_id_options: ::core::option::Option<point_id::PointIdOptions>,
+}
+/// Nested message and enum types in `PointId`.
+pub mod point_id {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum PointIdOptions {
+        /// Numerical ID of the point
+        #[prost(uint64, tag = "1")]
+        Num(u64),
+        /// UUID
+        #[prost(string, tag = "2")]
+        Uuid(::prost::alloc::string::String),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoPoint {
+    #[prost(double, tag = "1")]
+    pub lon: f64,
+    #[prost(double, tag = "2")]
+    pub lat: f64,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Filter {
+    /// At least one of those conditions should match
+    #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
+    pub should: ::prost::alloc::vec::Vec<Condition>,
+    /// All conditions must match
+    #[prost(message, repeated, tag = "2")]
+    #[validate(nested)]
+    pub must: ::prost::alloc::vec::Vec<Condition>,
+    /// All conditions must NOT match
+    #[prost(message, repeated, tag = "3")]
+    #[validate(nested)]
+    pub must_not: ::prost::alloc::vec::Vec<Condition>,
+    /// At least minimum amount of given conditions should match
+    #[prost(message, optional, tag = "4")]
+    #[validate(nested)]
+    pub min_should: ::core::option::Option<MinShould>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MinShould {
+    #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
+    pub conditions: ::prost::alloc::vec::Vec<Condition>,
+    #[prost(uint64, tag = "2")]
+    pub min_count: u64,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Condition {
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6, 7")]
+    #[validate(nested)]
+    pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
+}
+/// Nested message and enum types in `Condition`.
+pub mod condition {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum ConditionOneOf {
+        #[prost(message, tag = "1")]
+        Field(super::FieldCondition),
+        #[prost(message, tag = "2")]
+        IsEmpty(super::IsEmptyCondition),
+        #[prost(message, tag = "3")]
+        HasId(super::HasIdCondition),
+        #[prost(message, tag = "4")]
+        Filter(super::Filter),
+        #[prost(message, tag = "5")]
+        IsNull(super::IsNullCondition),
+        #[prost(message, tag = "6")]
+        Nested(super::NestedCondition),
+        #[prost(message, tag = "7")]
+        HasVector(super::HasVectorCondition),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IsEmptyCondition {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IsNullCondition {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HasIdCondition {
+    #[prost(message, repeated, tag = "1")]
+    pub has_id: ::prost::alloc::vec::Vec<PointId>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HasVectorCondition {
+    #[prost(string, tag = "1")]
+    pub has_vector: ::prost::alloc::string::String,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NestedCondition {
+    /// Path to nested object
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    /// Filter condition
+    #[prost(message, optional, tag = "2")]
+    #[validate(nested)]
+    pub filter: ::core::option::Option<Filter>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FieldCondition {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    /// Check if point has field with a given value
+    #[prost(message, optional, tag = "2")]
+    pub r#match: ::core::option::Option<Match>,
+    /// Check if points value lies in a given range
+    #[prost(message, optional, tag = "3")]
+    pub range: ::core::option::Option<Range>,
+    /// Check if points geolocation lies in a given area
+    #[prost(message, optional, tag = "4")]
+    pub geo_bounding_box: ::core::option::Option<GeoBoundingBox>,
+    /// Check if geo point is within a given radius
+    #[prost(message, optional, tag = "5")]
+    pub geo_radius: ::core::option::Option<GeoRadius>,
+    /// Check number of values for a specific field
+    #[prost(message, optional, tag = "6")]
+    pub values_count: ::core::option::Option<ValuesCount>,
+    /// Check if geo point is within a given polygon
+    #[prost(message, optional, tag = "7")]
+    pub geo_polygon: ::core::option::Option<GeoPolygon>,
+    /// Check if datetime is within a given range
+    #[prost(message, optional, tag = "8")]
+    pub datetime_range: ::core::option::Option<DatetimeRange>,
+    /// Check if field is empty
+    #[prost(bool, optional, tag = "9")]
+    pub is_empty: ::core::option::Option<bool>,
+    /// Check if field is null
+    #[prost(bool, optional, tag = "10")]
+    pub is_null: ::core::option::Option<bool>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Match {
+    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
+    pub match_value: ::core::option::Option<r#match::MatchValue>,
+}
+/// Nested message and enum types in `Match`.
+pub mod r#match {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum MatchValue {
+        /// Match string keyword
+        #[prost(string, tag = "1")]
+        Keyword(::prost::alloc::string::String),
+        /// Match integer
+        #[prost(int64, tag = "2")]
+        Integer(i64),
+        /// Match boolean
+        #[prost(bool, tag = "3")]
+        Boolean(bool),
+        /// Match text
+        #[prost(string, tag = "4")]
+        Text(::prost::alloc::string::String),
+        /// Match multiple keywords
+        #[prost(message, tag = "5")]
+        Keywords(super::RepeatedStrings),
+        /// Match multiple integers
+        #[prost(message, tag = "6")]
+        Integers(super::RepeatedIntegers),
+        /// Match any other value except those integers
+        #[prost(message, tag = "7")]
+        ExceptIntegers(super::RepeatedIntegers),
+        /// Match any other value except those keywords
+        #[prost(message, tag = "8")]
+        ExceptKeywords(super::RepeatedStrings),
+        /// Match phrase text
+        #[prost(string, tag = "9")]
+        Phrase(::prost::alloc::string::String),
+        /// Match any word in the text
+        #[prost(string, tag = "10")]
+        TextAny(::prost::alloc::string::String),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RepeatedStrings {
+    #[prost(string, repeated, tag = "1")]
+    pub strings: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RepeatedIntegers {
+    #[prost(int64, repeated, tag = "1")]
+    pub integers: ::prost::alloc::vec::Vec<i64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Range {
+    #[prost(double, optional, tag = "1")]
+    pub lt: ::core::option::Option<f64>,
+    #[prost(double, optional, tag = "2")]
+    pub gt: ::core::option::Option<f64>,
+    #[prost(double, optional, tag = "3")]
+    pub gte: ::core::option::Option<f64>,
+    #[prost(double, optional, tag = "4")]
+    pub lte: ::core::option::Option<f64>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DatetimeRange {
+    #[prost(message, optional, tag = "1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
+    pub lt: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    #[prost(message, optional, tag = "2")]
+    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
+    pub gt: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    #[prost(message, optional, tag = "3")]
+    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
+    pub gte: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    #[prost(message, optional, tag = "4")]
+    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
+    pub lte: ::core::option::Option<::prost_wkt_types::Timestamp>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoBoundingBox {
+    /// north-west corner
+    #[prost(message, optional, tag = "1")]
+    pub top_left: ::core::option::Option<GeoPoint>,
+    /// south-east corner
+    #[prost(message, optional, tag = "2")]
+    pub bottom_right: ::core::option::Option<GeoPoint>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoRadius {
+    /// Center of the circle
+    #[prost(message, optional, tag = "1")]
+    pub center: ::core::option::Option<GeoPoint>,
+    /// In meters
+    #[prost(float, tag = "2")]
+    pub radius: f32,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoLineString {
+    /// Ordered sequence of GeoPoints representing the line
+    #[prost(message, repeated, tag = "1")]
+    pub points: ::prost::alloc::vec::Vec<GeoPoint>,
+}
+/// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must consist of a minimum of 4 points.
+/// Additionally, the first and last points of each GeoLineString must be the same.
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoPolygon {
+    /// The exterior line bounds the surface
+    #[prost(message, optional, tag = "1")]
+    #[validate(
+        custom(function = "crate::grpc::validate::validate_geo_polygon_exterior")
+    )]
+    pub exterior: ::core::option::Option<GeoLineString>,
+    /// Interior lines (if present) bound holes within the surface
+    #[prost(message, repeated, tag = "2")]
+    #[validate(
+        custom(function = "crate::grpc::validate::validate_geo_polygon_interiors")
+    )]
+    pub interiors: ::prost::alloc::vec::Vec<GeoLineString>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ValuesCount {
+    #[prost(uint64, optional, tag = "1")]
+    pub lt: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "2")]
+    pub gt: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "3")]
+    pub gte: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "4")]
+    pub lte: ::core::option::Option<u64>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1526,6 +1848,20 @@ pub struct RestartTransfer {
     #[prost(enumeration = "ShardTransferMethod", tag = "4")]
     pub method: i32,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReplicatePoints {
+    /// Source shard key
+    #[prost(message, optional, tag = "1")]
+    pub from_shard_key: ::core::option::Option<ShardKey>,
+    /// Target shard key
+    #[prost(message, optional, tag = "2")]
+    pub to_shard_key: ::core::option::Option<ShardKey>,
+    /// If set - only points matching the filter will be replicated
+    #[prost(message, optional, tag = "3")]
+    pub filter: ::core::option::Option<Filter>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1578,7 +1914,7 @@ pub struct UpdateCollectionClusterSetupRequest {
     pub timeout: ::core::option::Option<u64>,
     #[prost(
         oneof = "update_collection_cluster_setup_request::Operation",
-        tags = "2, 3, 4, 5, 7, 8, 9"
+        tags = "2, 3, 4, 5, 7, 8, 9, 10"
     )]
     #[validate(nested)]
     pub operation: ::core::option::Option<
@@ -1605,6 +1941,8 @@ pub mod update_collection_cluster_setup_request {
         DeleteShardKey(super::DeleteShardKey),
         #[prost(message, tag = "9")]
         RestartTransfer(super::RestartTransfer),
+        #[prost(message, tag = "10")]
+        ReplicatePoints(super::ReplicatePoints),
     }
 }
 #[derive(serde::Serialize)]
@@ -4202,27 +4540,6 @@ pub mod read_consistency {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PointId {
-    #[prost(oneof = "point_id::PointIdOptions", tags = "1, 2")]
-    pub point_id_options: ::core::option::Option<point_id::PointIdOptions>,
-}
-/// Nested message and enum types in `PointId`.
-pub mod point_id {
-    #[derive(serde::Serialize)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum PointIdOptions {
-        /// Numerical ID of the point
-        #[prost(uint64, tag = "1")]
-        Num(u64),
-        /// UUID
-        #[prost(string, tag = "2")]
-        Uuid(::prost::alloc::string::String),
-    }
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SparseIndices {
     #[prost(uint32, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u32>,
@@ -6666,298 +6983,6 @@ pub struct SearchMatrixOffsetsResponse {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Filter {
-    /// At least one of those conditions should match
-    #[prost(message, repeated, tag = "1")]
-    #[validate(nested)]
-    pub should: ::prost::alloc::vec::Vec<Condition>,
-    /// All conditions must match
-    #[prost(message, repeated, tag = "2")]
-    #[validate(nested)]
-    pub must: ::prost::alloc::vec::Vec<Condition>,
-    /// All conditions must NOT match
-    #[prost(message, repeated, tag = "3")]
-    #[validate(nested)]
-    pub must_not: ::prost::alloc::vec::Vec<Condition>,
-    /// At least minimum amount of given conditions should match
-    #[prost(message, optional, tag = "4")]
-    #[validate(nested)]
-    pub min_should: ::core::option::Option<MinShould>,
-}
-#[derive(validator::Validate)]
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MinShould {
-    #[prost(message, repeated, tag = "1")]
-    #[validate(nested)]
-    pub conditions: ::prost::alloc::vec::Vec<Condition>,
-    #[prost(uint64, tag = "2")]
-    pub min_count: u64,
-}
-#[derive(validator::Validate)]
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Condition {
-    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6, 7")]
-    #[validate(nested)]
-    pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
-}
-/// Nested message and enum types in `Condition`.
-pub mod condition {
-    #[derive(serde::Serialize)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum ConditionOneOf {
-        #[prost(message, tag = "1")]
-        Field(super::FieldCondition),
-        #[prost(message, tag = "2")]
-        IsEmpty(super::IsEmptyCondition),
-        #[prost(message, tag = "3")]
-        HasId(super::HasIdCondition),
-        #[prost(message, tag = "4")]
-        Filter(super::Filter),
-        #[prost(message, tag = "5")]
-        IsNull(super::IsNullCondition),
-        #[prost(message, tag = "6")]
-        Nested(super::NestedCondition),
-        #[prost(message, tag = "7")]
-        HasVector(super::HasVectorCondition),
-    }
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct IsEmptyCondition {
-    #[prost(string, tag = "1")]
-    pub key: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct IsNullCondition {
-    #[prost(string, tag = "1")]
-    pub key: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct HasIdCondition {
-    #[prost(message, repeated, tag = "1")]
-    pub has_id: ::prost::alloc::vec::Vec<PointId>,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct HasVectorCondition {
-    #[prost(string, tag = "1")]
-    pub has_vector: ::prost::alloc::string::String,
-}
-#[derive(validator::Validate)]
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NestedCondition {
-    /// Path to nested object
-    #[prost(string, tag = "1")]
-    pub key: ::prost::alloc::string::String,
-    /// Filter condition
-    #[prost(message, optional, tag = "2")]
-    #[validate(nested)]
-    pub filter: ::core::option::Option<Filter>,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FieldCondition {
-    #[prost(string, tag = "1")]
-    pub key: ::prost::alloc::string::String,
-    /// Check if point has field with a given value
-    #[prost(message, optional, tag = "2")]
-    pub r#match: ::core::option::Option<Match>,
-    /// Check if points value lies in a given range
-    #[prost(message, optional, tag = "3")]
-    pub range: ::core::option::Option<Range>,
-    /// Check if points geolocation lies in a given area
-    #[prost(message, optional, tag = "4")]
-    pub geo_bounding_box: ::core::option::Option<GeoBoundingBox>,
-    /// Check if geo point is within a given radius
-    #[prost(message, optional, tag = "5")]
-    pub geo_radius: ::core::option::Option<GeoRadius>,
-    /// Check number of values for a specific field
-    #[prost(message, optional, tag = "6")]
-    pub values_count: ::core::option::Option<ValuesCount>,
-    /// Check if geo point is within a given polygon
-    #[prost(message, optional, tag = "7")]
-    pub geo_polygon: ::core::option::Option<GeoPolygon>,
-    /// Check if datetime is within a given range
-    #[prost(message, optional, tag = "8")]
-    pub datetime_range: ::core::option::Option<DatetimeRange>,
-    /// Check if field is empty
-    #[prost(bool, optional, tag = "9")]
-    pub is_empty: ::core::option::Option<bool>,
-    /// Check if field is null
-    #[prost(bool, optional, tag = "10")]
-    pub is_null: ::core::option::Option<bool>,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
-    pub match_value: ::core::option::Option<r#match::MatchValue>,
-}
-/// Nested message and enum types in `Match`.
-pub mod r#match {
-    #[derive(serde::Serialize)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum MatchValue {
-        /// Match string keyword
-        #[prost(string, tag = "1")]
-        Keyword(::prost::alloc::string::String),
-        /// Match integer
-        #[prost(int64, tag = "2")]
-        Integer(i64),
-        /// Match boolean
-        #[prost(bool, tag = "3")]
-        Boolean(bool),
-        /// Match text
-        #[prost(string, tag = "4")]
-        Text(::prost::alloc::string::String),
-        /// Match multiple keywords
-        #[prost(message, tag = "5")]
-        Keywords(super::RepeatedStrings),
-        /// Match multiple integers
-        #[prost(message, tag = "6")]
-        Integers(super::RepeatedIntegers),
-        /// Match any other value except those integers
-        #[prost(message, tag = "7")]
-        ExceptIntegers(super::RepeatedIntegers),
-        /// Match any other value except those keywords
-        #[prost(message, tag = "8")]
-        ExceptKeywords(super::RepeatedStrings),
-        /// Match phrase text
-        #[prost(string, tag = "9")]
-        Phrase(::prost::alloc::string::String),
-        /// Match any word in the text
-        #[prost(string, tag = "10")]
-        TextAny(::prost::alloc::string::String),
-    }
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RepeatedStrings {
-    #[prost(string, repeated, tag = "1")]
-    pub strings: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RepeatedIntegers {
-    #[prost(int64, repeated, tag = "1")]
-    pub integers: ::prost::alloc::vec::Vec<i64>,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Range {
-    #[prost(double, optional, tag = "1")]
-    pub lt: ::core::option::Option<f64>,
-    #[prost(double, optional, tag = "2")]
-    pub gt: ::core::option::Option<f64>,
-    #[prost(double, optional, tag = "3")]
-    pub gte: ::core::option::Option<f64>,
-    #[prost(double, optional, tag = "4")]
-    pub lte: ::core::option::Option<f64>,
-}
-#[derive(validator::Validate)]
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DatetimeRange {
-    #[prost(message, optional, tag = "1")]
-    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
-    pub lt: ::core::option::Option<::prost_wkt_types::Timestamp>,
-    #[prost(message, optional, tag = "2")]
-    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
-    pub gt: ::core::option::Option<::prost_wkt_types::Timestamp>,
-    #[prost(message, optional, tag = "3")]
-    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
-    pub gte: ::core::option::Option<::prost_wkt_types::Timestamp>,
-    #[prost(message, optional, tag = "4")]
-    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
-    pub lte: ::core::option::Option<::prost_wkt_types::Timestamp>,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GeoBoundingBox {
-    /// north-west corner
-    #[prost(message, optional, tag = "1")]
-    pub top_left: ::core::option::Option<GeoPoint>,
-    /// south-east corner
-    #[prost(message, optional, tag = "2")]
-    pub bottom_right: ::core::option::Option<GeoPoint>,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GeoRadius {
-    /// Center of the circle
-    #[prost(message, optional, tag = "1")]
-    pub center: ::core::option::Option<GeoPoint>,
-    /// In meters
-    #[prost(float, tag = "2")]
-    pub radius: f32,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GeoLineString {
-    /// Ordered sequence of GeoPoints representing the line
-    #[prost(message, repeated, tag = "1")]
-    pub points: ::prost::alloc::vec::Vec<GeoPoint>,
-}
-/// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must consist of a minimum of 4 points.
-/// Additionally, the first and last points of each GeoLineString must be the same.
-#[derive(validator::Validate)]
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GeoPolygon {
-    /// The exterior line bounds the surface
-    #[prost(message, optional, tag = "1")]
-    #[validate(
-        custom(function = "crate::grpc::validate::validate_geo_polygon_exterior")
-    )]
-    pub exterior: ::core::option::Option<GeoLineString>,
-    /// Interior lines (if present) bound holes within the surface
-    #[prost(message, repeated, tag = "2")]
-    #[validate(
-        custom(function = "crate::grpc::validate::validate_geo_polygon_interiors")
-    )]
-    pub interiors: ::prost::alloc::vec::Vec<GeoLineString>,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ValuesCount {
-    #[prost(uint64, optional, tag = "1")]
-    pub lt: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag = "2")]
-    pub gt: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag = "3")]
-    pub gte: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag = "4")]
-    pub lte: ::core::option::Option<u64>,
-}
-#[derive(validator::Validate)]
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsSelector {
     #[prost(oneof = "points_selector::PointsSelectorOneOf", tags = "1, 2")]
     #[validate(nested)]
@@ -6996,15 +7021,6 @@ pub struct PointStruct {
     #[prost(message, optional, tag = "4")]
     #[validate(nested)]
     pub vectors: ::core::option::Option<Vectors>,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GeoPoint {
-    #[prost(double, tag = "1")]
-    pub lon: f64,
-    #[prost(double, tag = "2")]
-    pub lat: f64,
 }
 /// ---
 ///

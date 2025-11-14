@@ -108,6 +108,7 @@ impl Validate for grpc::update_collection_cluster_setup_request::Operation {
             Operation::CreateShardKey(op) => op.validate(),
             Operation::DeleteShardKey(op) => op.validate(),
             Operation::RestartTransfer(op) => op.validate(),
+            Operation::ReplicatePoints(op) => op.validate(),
         }
     }
 }
@@ -176,6 +177,12 @@ impl Validate for grpc::DeleteShardKey {
 }
 
 impl Validate for grpc::RestartTransfer {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        Ok(())
+    }
+}
+
+impl Validate for grpc::ReplicatePoints {
     fn validate(&self) -> Result<(), ValidationErrors> {
         Ok(())
     }
