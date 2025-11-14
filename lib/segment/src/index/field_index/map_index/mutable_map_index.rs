@@ -2,12 +2,14 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::iter;
 use std::path::PathBuf;
+#[cfg(feature = "rocksdb")]
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::config::StorageOptions;
 use gridstore::{Blob, Gridstore};
+#[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
 use roaring::RoaringBitmap;
 #[cfg(feature = "rocksdb")]
@@ -53,7 +55,7 @@ where
 {
     #[cfg(feature = "rocksdb")]
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
-    Gridstore(Arc<RwLock<Gridstore<Vec<T>>>>),
+    Gridstore(Gridstore<Vec<T>>),
 }
 
 impl<N: MapIndexKey + ?Sized> MutableMapIndex<N>
@@ -185,7 +187,7 @@ where
             point_to_values,
             indexed_points,
             values_count,
-            storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
+            storage: Storage::Gridstore(store),
         }))
     }
 
@@ -209,7 +211,7 @@ where
 
         self.point_to_values[idx as usize] = Vec::with_capacity(values.len());
 
-        match &self.storage {
+        match &mut self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
                 let mut hw_cell_wb = hw_counter
@@ -236,7 +238,6 @@ where
 
                 let values = values.into_iter().map(|v| v.into()).collect::<Vec<_>>();
                 store
-                    .write()
                     .put_value(idx, &values, hw_counter_ref)
                     .map_err(|err| {
                         OperationError::service_error(format!(
@@ -268,7 +269,7 @@ where
             }
         }
 
-        match &self.storage {
+        match &mut self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => {
                 for value in &removed_values {
@@ -277,7 +278,7 @@ where
                 }
             }
             Storage::Gridstore(store) => {
-                store.write().delete_value(idx);
+                store.delete_value(idx);
             }
         }
 
@@ -285,11 +286,11 @@ where
     }
 
     #[inline]
-    pub(super) fn clear(&self) -> OperationResult<()> {
-        match &self.storage {
+    pub(super) fn clear(&mut self) -> OperationResult<()> {
+        match &mut self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Gridstore(store) => store.write().clear().map_err(|err| {
+            Storage::Gridstore(store) => store.clear().map_err(|err| {
                 OperationError::service_error(format!("Failed to clear mutable map index: {err}",))
             }),
         }
@@ -300,16 +301,9 @@ where
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Gridstore(store) => {
-                let store =
-                    Arc::into_inner(store).expect("exclusive strong reference to Gridstore");
-
-                store.into_inner().clear().map_err(|err| {
-                    OperationError::service_error(format!(
-                        "Failed to wipe mutable map index: {err}",
-                    ))
-                })
-            }
+            Storage::Gridstore(mut store) => store.clear().map_err(|err| {
+                OperationError::service_error(format!("Failed to wipe mutable map index: {err}",))
+            }),
         }
     }
 
@@ -321,7 +315,7 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => Ok(()),
-            Storage::Gridstore(index) => index.read().clear_cache().map_err(|err| {
+            Storage::Gridstore(index) => index.clear_cache().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable map index gridstore cache: {err}"
                 ))
@@ -334,7 +328,7 @@ where
         match &self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(_) => vec![],
-            Storage::Gridstore(store) => store.read().files(),
+            Storage::Gridstore(store) => store.files(),
         }
     }
 
@@ -344,22 +338,13 @@ where
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(store) => {
-                let store = Arc::downgrade(store);
+                let storage_flusher = store.flusher();
                 Box::new(move || {
-                    store
-                        .upgrade()
-                        .ok_or_else(|| {
-                            OperationError::service_error(
-                                "Failed to flush mutable map index, backing Gridstore storage is already dropped",
-                            )
-                        })?
-                        .read()
-                        .flush()
-                        .map_err(|err| {
-                            OperationError::service_error(format!(
-                                "Failed to flush mutable map index gridstore: {err}"
-                            ))
-                        })
+                    storage_flusher().map_err(|err| {
+                        OperationError::service_error(format!(
+                            "Failed to flush mutable map index gridstore: {err}"
+                        ))
+                    })
                 })
             }
         }

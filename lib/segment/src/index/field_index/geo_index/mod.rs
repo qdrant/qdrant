@@ -463,7 +463,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexBuilder {
     type FieldIndexType = GeoMapIndex;
 
     fn init(&mut self) -> OperationResult<()> {
-        match &self.0 {
+        match &mut self.0 {
             GeoMapIndex::Mutable(index) => index.clear(),
             GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Cannot use immutable index as a builder type",
@@ -500,7 +500,7 @@ impl FieldIndexBuilderTrait for GeoMapImmutableIndexBuilder {
     type FieldIndexType = GeoMapIndex;
 
     fn init(&mut self) -> OperationResult<()> {
-        match &self.index {
+        match &mut self.index {
             GeoMapIndex::Mutable(index) => index.clear(),
             GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Cannot use immutable index as a builder type",
