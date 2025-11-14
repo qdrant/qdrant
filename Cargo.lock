@@ -2555,6 +2555,7 @@ dependencies = [
  "memmap2",
  "memory",
  "parking_lot",
+ "priority-queue",
  "proptest",
  "rand 0.9.2",
  "rocksdb",
@@ -4688,6 +4689,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "353e1ca18966c16d9deb1c69278edbc5f194139612772bd9537af60ac231e1e6"
 dependencies = [
  "elliptic-curve",
+]
+
+[[package]]
+name = "priority-queue"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5676d703dda103cbb035b653a9f11448c0a7216c7926bd35fcb5865475d0c970"
+dependencies = [
+ "autocfg",
+ "equivalent",
+ "indexmap 2.9.0",
 ]
 
 [[package]]
