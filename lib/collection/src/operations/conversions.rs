@@ -18,13 +18,13 @@ use segment::common::operation_error::OperationError;
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use segment::types::{
-    Distance, HnswConfig, MultiVectorConfig, QuantizationConfig, StrictModeConfigOutput,
+    Distance, Filter, HnswConfig, MultiVectorConfig, QuantizationConfig, StrictModeConfigOutput,
     WithPayloadInterface,
 };
 use shard::retrieve::record_internal::RecordInternal;
 use tonic::Status;
 
-use super::cluster_ops::ReshardingDirection;
+use super::cluster_ops::{ReplicatePoints, ReplicatePointsOperation, ReshardingDirection};
 use super::consistency_params::ReadConsistency;
 use super::types::{
     CollectionConfig, ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal,
@@ -1676,6 +1676,29 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                         from_peer_id,
                         to_peer_id,
                         method: ShardTransferMethod::try_from(method)?,
+                    },
+                })
+            }
+            Operation::ReplicatePoints(op) => {
+                let api::grpc::qdrant::ReplicatePoints {
+                    from_shard_key,
+                    to_shard_key,
+                    filter,
+                } = op;
+
+                ClusterOperations::ReplicatePoints(ReplicatePointsOperation {
+                    replicate_points: ReplicatePoints {
+                        filter: filter.map(Filter::try_from).transpose()?,
+                        from_shard_key: from_shard_key
+                            .and_then(convert_shard_key_from_grpc)
+                            .ok_or_else(|| {
+                                Status::invalid_argument("from_shard_key is not specified")
+                            })?,
+                        to_shard_key: to_shard_key
+                            .and_then(convert_shard_key_from_grpc)
+                            .ok_or_else(|| {
+                                Status::invalid_argument("to_shard_key is not specified")
+                            })?,
                     },
                 })
             }
