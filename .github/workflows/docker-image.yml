@@ -19,7 +19,7 @@ jobs:
     - uses: actions/checkout@v5
     - uses: Swatinem/rust-cache@v2
     - name: Install cosign
-      uses: sigstore/cosign-installer@v3.10.0
+      uses: sigstore/cosign-installer@v4.0.0
     - name: Get current tag
       id: vars
       run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
@@ -57,9 +57,9 @@ jobs:
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
-        
+
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
-        cosign sign --yes "${DOCKERHUB_TAG}@${DIGEST}"
+        cosign sign --new-bundle-format=false --use-signing-config=false--yes "${DOCKERHUB_TAG}@${DIGEST}"
 
         # Build unprivileged image for Docker Hub
         DOCKERHUB_TAG_UNPRIVILEGED="qdrant/qdrant:${{ github.ref_name }}-unprivileged"
@@ -74,9 +74,9 @@ jobs:
         docker pull $DOCKERHUB_TAG_UNPRIVILEGED
         docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GITHUB_TAG_UNPRIVILEGED
         docker push $GITHUB_TAG_UNPRIVILEGED
-        
+
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG_UNPRIVILEGED} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
-        cosign sign --yes "${DOCKERHUB_TAG_UNPRIVILEGED}@${DIGEST}"
+        cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG_UNPRIVILEGED}@${DIGEST}"
 
   build-gpu:
     runs-on: [self-hosted, linux, x64]
@@ -88,7 +88,7 @@ jobs:
     - uses: actions/checkout@v5
     - uses: Swatinem/rust-cache@v2
     - name: Install cosign
-      uses: sigstore/cosign-installer@v3.10.0
+      uses: sigstore/cosign-installer@v4.0.0
     - name: Get current tag
       id: vars
       run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
@@ -126,9 +126,9 @@ jobs:
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
-        
+
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
-        cosign sign --yes "${DOCKERHUB_TAG}@${DIGEST}"
+        cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG}@${DIGEST}"
 
         # Build GPU AMD image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}-gpu-amd"
@@ -143,6 +143,6 @@ jobs:
         docker pull $DOCKERHUB_TAG
         docker tag $DOCKERHUB_TAG $GITHUB_TAG
         docker push $GITHUB_TAG
-        
+
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
-        cosign sign --yes "${DOCKERHUB_TAG}@${DIGEST}"
+        cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG}@${DIGEST}"
