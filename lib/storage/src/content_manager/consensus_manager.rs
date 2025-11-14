@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Receiver;
 use tokio::time::error::Elapsed;
+use tokio_util::task::AbortOnDropHandle;
 use tonic::transport::Uri;
 
 use super::CollectionContainer;
@@ -728,9 +729,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         let is_leader_established = self.is_leader_established.clone();
 
-        let await_ready_for_timeout_future = tokio::task::spawn_blocking(move || {
-            is_leader_established.await_ready_for_timeout(wait_timeout)
-        });
+        let await_ready_for_timeout_future =
+            AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+                is_leader_established.await_ready_for_timeout(wait_timeout)
+            }));
 
         let is_leader_established = await_ready_for_timeout_future
             .await
