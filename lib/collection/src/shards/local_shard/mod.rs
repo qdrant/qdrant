@@ -344,7 +344,7 @@ impl LocalShard {
         let mut segment_stream = futures::stream::iter(segment_paths)
             .map(|segment_path| {
                 let payload_index_schema = Arc::clone(&payload_index_schema);
-                tokio::task::spawn_blocking(move || {
+                let handle = tokio::task::spawn_blocking(move || {
                     let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
 
                     let Some(mut segment) = segment else {
@@ -367,7 +367,8 @@ impl LocalShard {
                     }
 
                     CollectionResult::Ok(Some(segment))
-                })
+                });
+                AbortOnDropHandle::new(handle)
             })
             .buffer_unordered(MAX_CONCURRENT_SEGMENT_LOADS);
 
