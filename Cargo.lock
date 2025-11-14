@@ -5193,6 +5193,7 @@ dependencies = [
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
+ "tokio-util",
  "tonic 0.11.0",
  "tonic-reflection",
  "tower 0.5.2",
