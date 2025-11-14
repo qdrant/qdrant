@@ -4,6 +4,7 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 import "collections.proto";
+import "common.proto";
 import "google/protobuf/timestamp.proto";
 import "json_with_int.proto";
 
