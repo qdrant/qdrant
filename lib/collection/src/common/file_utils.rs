@@ -5,8 +5,16 @@ use fs_extra::dir::CopyOptions;
 
 use crate::operations::types::{CollectionError, CollectionResult};
 
-/// Move directory from one location to another.
+/// Move directory from one location to another
+///
 /// Handles the case when the source and destination are on different filesystems.
+///
+/// # Cancel safety
+///
+/// This function is cancel safe.
+///
+/// If the future is dropped, moving the directory will either fully complete or not start at all.
+/// With the exception of file IO errors in which case data may be partially moved.
 pub async fn move_dir(from: impl Into<PathBuf>, to: impl Into<PathBuf>) -> CollectionResult<()> {
     let from = from.into();
     let to = to.into();
@@ -36,21 +44,21 @@ pub async fn move_dir(from: impl Into<PathBuf>, to: impl Into<PathBuf>) -> Colle
     //     }
     // }
 
-    if !to.exists() {
-        log::trace!("Creating destination directory {}", to.display());
-
-        tokio_fs::create_dir(&to).await.map_err(|err| {
-            CollectionError::service_error(format!(
-                "failed to move directory {} to {}: \
-                 failed to create destination directory: \
-                 {err}",
-                from.display(),
-                to.display(),
-            ))
-        })?;
-    }
-
     tokio::task::spawn_blocking(move || {
+        if !to.exists() {
+            log::trace!("Creating destination directory {}", to.display());
+
+            fs_err::create_dir(&to).map_err(|err| {
+                CollectionError::service_error(format!(
+                    "failed to move directory {} to {}: \
+                    failed to create destination directory: \
+                    {err}",
+                    from.display(),
+                    to.display(),
+                ))
+            })?;
+        }
+
         log::trace!("Moving directory {} to {}", from.display(), to.display());
 
         let opts = CopyOptions::new().content_only(true).overwrite(true);
