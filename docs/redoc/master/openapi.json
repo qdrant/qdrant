@@ -11389,36 +11389,13 @@
         }
       },
       "ShardTransferMethod": {
-        "description": "Methods for transferring a shard from one node to another.",
-        "oneOf": [
-          {
-            "description": "Stream all shard records in batches until the whole shard is transferred.",
-            "type": "string",
-            "enum": [
-              "stream_records"
-            ]
-          },
-          {
-            "description": "Snapshot the shard, transfer and restore it on the receiver.",
-            "type": "string",
-            "enum": [
-              "snapshot"
-            ]
-          },
-          {
-            "description": "Attempt to transfer shard difference by WAL delta.",
-            "type": "string",
-            "enum": [
-              "wal_delta"
-            ]
-          },
-          {
-            "description": "Shard transfer for resharding: stream all records in batches until all points are transferred.",
-            "type": "string",
-            "enum": [
-              "resharding_stream_records"
-            ]
-          }
+        "description": "Methods for transferring a shard from one node to another.\n\n- `stream_records` - Stream all shard records in batches until the whole shard is transferred.\n\n- `snapshot` - Snapshot the shard, transfer and restore it on the receiver.\n\n- `wal_delta` - Attempt to transfer shard difference by WAL delta.\n\n- `resharding_stream_records` - Shard transfer for resharding: stream all records in batches until all points are transferred.",
+        "type": "string",
+        "enum": [
+          "stream_records",
+          "snapshot",
+          "wal_delta",
+          "resharding_stream_records"
         ]
       },
       "ReshardingInfo": {
@@ -11455,22 +11432,11 @@
         }
       },
       "ReshardingDirection": {
-        "description": "Resharding direction, scale up or down in number of shards",
-        "oneOf": [
-          {
-            "description": "Scale up, add a new shard",
-            "type": "string",
-            "enum": [
-              "up"
-            ]
-          },
-          {
-            "description": "Scale down, remove a shard",
-            "type": "string",
-            "enum": [
-              "down"
-            ]
-          }
+        "description": "Resharding direction, scale up or down in number of shards\n\n- `up` - Scale up, add a new shard\n\n- `down` - Scale down, remove a shard",
+        "type": "string",
+        "enum": [
+          "up",
+          "down"
         ]
       },
       "TelemetryData": {
