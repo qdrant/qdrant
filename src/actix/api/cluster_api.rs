@@ -11,16 +11,40 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 use validator::Validate;
 
+use crate::actix::api::cluster_api::request_params::QueryParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers;
 
-#[derive(Debug, Deserialize, Validate)]
-struct QueryParams {
-    #[serde(default)]
-    force: bool,
-    #[serde(default)]
-    #[validate(range(min = 1))]
-    timeout: Option<u64>,
+mod request_params {
+    use std::cmp;
+    use std::time::Duration;
+
+    use serde::Deserialize;
+    use validator::Validate;
+
+    use crate::actix::api::read_params::HOUR_IN_SECONDS;
+
+    #[derive(Debug, Deserialize, Validate)]
+    pub(super) struct QueryParams {
+        #[serde(default)]
+        force: bool,
+        #[serde(default)]
+        #[validate(range(min = 1))]
+        timeout: Option<u64>,
+    }
+
+    impl QueryParams {
+        /// Returns the passed timeout, limited to 1h.
+        pub fn timeout(&self) -> Option<Duration> {
+            self.timeout
+                .map(|timeout| cmp::min(timeout, HOUR_IN_SECONDS))
+                .map(Duration::from_secs)
+        }
+
+        pub fn force(&self) -> bool {
+            self.force
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
@@ -73,7 +97,7 @@ fn remove_peer(
         let peer_id = peer_id.into_inner();
 
         let has_shards = toc.peer_has_shards(peer_id).await;
-        if !params.force && has_shards {
+        if !params.force() && has_shards {
             return Err(StorageError::BadRequest {
                 description: format!("Cannot remove peer {peer_id} as there are shards on it"),
             });
@@ -84,7 +108,7 @@ fn remove_peer(
                 consensus_state
                     .propose_consensus_op_with_await(
                         ConsensusOperations::RemovePeer(peer_id),
-                        params.timeout.map(std::time::Duration::from_secs),
+                        params.timeout(),
                     )
                     .await
             }

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use collection::operations::verification::StrictModeVerification;
 use storage::content_manager::collection_verification::{
@@ -15,7 +16,7 @@ pub trait CheckedTocProvider {
         &self,
         request: &impl StrictModeVerification,
         collection_name: &str,
-        timeout: Option<usize>,
+        timeout: Option<Duration>,
         access: &Access,
     ) -> Result<&Arc<TableOfContent>, StorageError>;
 
@@ -24,7 +25,7 @@ pub trait CheckedTocProvider {
         requests: &[I],
         conv: impl Fn(&I) -> &R,
         collection_name: &str,
-        timeout: Option<usize>,
+        timeout: Option<Duration>,
         access: &Access,
     ) -> Result<&Arc<TableOfContent>, StorageError>
     where
@@ -48,7 +49,7 @@ impl CheckedTocProvider for UncheckedTocProvider<'_> {
         &self,
         _request: &impl StrictModeVerification,
         _collection_name: &str,
-        _timeout: Option<usize>,
+        _timeout: Option<Duration>,
         _access: &Access,
     ) -> Result<&Arc<TableOfContent>, StorageError> {
         // No checks here
@@ -60,7 +61,7 @@ impl CheckedTocProvider for UncheckedTocProvider<'_> {
         _requests: &[I],
         _conv: impl Fn(&I) -> &R,
         _collection_name: &str,
-        _timeout: Option<usize>,
+        _timeout: Option<Duration>,
         _access: &Access,
     ) -> Result<&Arc<TableOfContent>, StorageError>
     where
@@ -88,7 +89,7 @@ impl CheckedTocProvider for StrictModeCheckedTocProvider<'_> {
         &self,
         request: &impl StrictModeVerification,
         collection_name: &str,
-        timeout: Option<usize>,
+        timeout: Option<Duration>,
         access: &Access,
     ) -> Result<&Arc<TableOfContent>, StorageError> {
         let pass =
@@ -101,7 +102,7 @@ impl CheckedTocProvider for StrictModeCheckedTocProvider<'_> {
         requests: &[I],
         conv: impl Fn(&I) -> &R,
         collection_name: &str,
-        timeout: Option<usize>,
+        timeout: Option<Duration>,
         access: &Access,
     ) -> Result<&Arc<TableOfContent>, StorageError>
     where
@@ -138,7 +139,7 @@ impl CheckedTocProvider for StrictModeCheckedInternalTocProvider<'_> {
         &self,
         request: &impl StrictModeVerification,
         collection_name: &str,
-        timeout: Option<usize>,
+        timeout: Option<Duration>,
         access: &Access,
     ) -> Result<&Arc<TableOfContent>, StorageError> {
         check_strict_mode_toc(request, timeout, collection_name, self.toc, access).await?;
@@ -150,7 +151,7 @@ impl CheckedTocProvider for StrictModeCheckedInternalTocProvider<'_> {
         requests: &[I],
         conv: impl Fn(&I) -> &R,
         collection_name: &str,
-        timeout: Option<usize>,
+        timeout: Option<Duration>,
         access: &Access,
     ) -> Result<&Arc<TableOfContent>, StorageError>
     where

@@ -9,6 +9,7 @@ mod search;
 mod update;
 
 use std::fmt::Display;
+use std::time::Duration;
 
 use itertools::Itertools;
 use segment::json_path::JsonPath;
@@ -202,10 +203,14 @@ fn check_filter_limits(
 }
 
 pub fn check_timeout(
-    timeout: usize,
+    timeout: Duration,
     strict_mode_config: &StrictModeConfig,
 ) -> CollectionResult<()> {
-    check_limit_opt(Some(timeout), strict_mode_config.max_timeout, "timeout")
+    check_limit_opt(
+        Some(timeout.as_secs()),
+        strict_mode_config.max_timeout.map(|i| i as u64),
+        "timeout",
+    )
 }
 
 pub(crate) fn check_bool_opt(
