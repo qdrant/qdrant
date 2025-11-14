@@ -1,3 +1,5 @@
+use tokio_util::task::AbortOnDropHandle;
+
 use super::*;
 
 /// # Cancel safety
@@ -5,6 +7,8 @@ use super::*;
 /// This function is cancel safe.
 ///
 /// If cancelled, the cancellation token provided to the `task` will be triggered automatically.
+///
+/// This may prematurely abort the blocking task if it has not started yet.
 pub async fn spawn_cancel_on_drop<Out, Task>(task: Task) -> Result<Out, Error>
 where
     Task: FnOnce(CancellationToken) -> Out + Send + 'static,
@@ -18,7 +22,8 @@ where
     };
 
     let guard = cancel.drop_guard();
-    let output = tokio::task::spawn_blocking(task).await?;
+    let handle = AbortOnDropHandle::new(tokio::task::spawn_blocking(task));
+    let output = handle.await?;
     guard.disarm();
 
     Ok(output)
