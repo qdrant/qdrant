@@ -4,6 +4,7 @@ pub mod encoded_vectors_binary;
 pub mod encoded_vectors_pq;
 pub mod encoded_vectors_u8;
 pub mod kmeans;
+pub mod p_square;
 pub mod quantile;
 pub mod vector_stats;
 
