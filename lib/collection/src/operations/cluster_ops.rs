@@ -310,13 +310,15 @@ pub struct StartResharding {
 }
 
 /// Resharding direction, scale up or down in number of shards
+/// `up` - Scale up, add a new shard
+/// `down` - Scale down, remove a shard
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReshardingDirection {
-    /// Scale up, add a new shard
+    // Scale up, add a new shard
     #[default]
     Up,
-    /// Scale down, remove a shard
+    // Scale down, remove a shard
     Down,
 }
 
