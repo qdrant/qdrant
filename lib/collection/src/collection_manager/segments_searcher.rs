@@ -534,9 +534,9 @@ fn search_in_segment(
     segment_query_context: &SegmentQueryContext,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     if segment_query_context.is_stopped() {
-        return Err(CollectionError::Cancelled {
-            description: "Search in segment was cancelled".to_string(),
-        });
+        return Err(CollectionError::cancelled(
+            "Search in segment was cancelled",
+        ));
     }
 
     let batch_size = request.searches.len();

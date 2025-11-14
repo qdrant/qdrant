@@ -958,6 +958,12 @@ impl CollectionError {
         Self::NotFound { what: what.into() }
     }
 
+    pub fn cancelled(description: impl Into<String>) -> Self {
+        Self::Cancelled {
+            description: description.into(),
+        }
+    }
+
     pub fn bad_request(description: impl Into<String>) -> Self {
         Self::BadRequest {
             description: description.into(),

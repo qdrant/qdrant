@@ -523,8 +523,8 @@ pub trait SegmentOptimizer {
         let desired_cpus = permit.num_io as usize;
         let indexing_permit = resource_budget
             .replace_with(permit, desired_cpus, 0, stopped)
-            .map_err(|_| CollectionError::Cancelled {
-                description: "optimization cancelled while waiting for budget".to_string(),
+            .map_err(|_| {
+                CollectionError::cancelled("optimization cancelled while waiting for budget")
             })?;
 
         let mut rng = rand::rng();
