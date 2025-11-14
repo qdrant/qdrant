@@ -314,7 +314,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 let mut filtered_points = match prefiltered_points {
                     Some(filtered_points) => filtered_points.iter().copied(),
                     None => {
-                        let filtered_points = payload_index.query_points(filter, &hw_counter);
+                        let filtered_points =
+                            payload_index.query_points(filter, &hw_counter, &is_stopped);
                         *prefiltered_points = Some(filtered_points);
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
@@ -353,7 +354,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let ids = match prefiltered_points {
             Some(filtered_points) => filtered_points.iter(),
             None => {
-                let filtered_points = payload_index.query_points(filter, &hw_counter);
+                let filtered_points = payload_index.query_points(filter, &hw_counter, &is_stopped);
                 *prefiltered_points = Some(filtered_points);
                 prefiltered_points.as_ref().unwrap().iter()
             }

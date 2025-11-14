@@ -51,7 +51,7 @@ impl Segment {
         let mut error = None;
         let rescored = points_to_rescore
             .into_iter()
-            .check_stop(|| is_stopped.load(Ordering::Relaxed))
+            .stop_if(is_stopped)
             .filter_map(|internal_id| {
                 match scorer.score(internal_id) {
                     Ok(new_score) => Some(ScoredPointOffset {

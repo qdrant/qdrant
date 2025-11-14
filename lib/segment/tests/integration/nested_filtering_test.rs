@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -60,6 +61,7 @@ fn test_filtering_context_consistency() {
     let mut points = HashMap::new();
 
     let hw_counter = HardwareCounterCell::new();
+    let is_stopped = AtomicBool::new(false);
 
     for (idx, payload) in nested_payloads().into_iter().enumerate() {
         points.insert(idx, payload.clone());
@@ -142,7 +144,7 @@ fn test_filtering_context_consistency() {
         );
 
         let nested_filter_0 = Filter::new_must(nested_condition_0);
-        let res0 = index.query_points(&nested_filter_0, &hw_counter);
+        let res0 = index.query_points(&nested_filter_0, &hw_counter, &is_stopped);
 
         let filter_context = index.filter_context(&nested_filter_0, &hw_counter);
 
@@ -180,7 +182,7 @@ fn test_filtering_context_consistency() {
 
         let nested_filter_1 = Filter::new_must(nested_condition_1);
 
-        let res1 = index.query_points(&nested_filter_1, &hw_counter);
+        let res1 = index.query_points(&nested_filter_1, &hw_counter, &is_stopped);
 
         let filter_context = index.filter_context(&nested_filter_1, &hw_counter);
 
@@ -215,7 +217,7 @@ fn test_filtering_context_consistency() {
 
         let nested_filter_2 = Filter::new_must(nested_condition_2);
 
-        let res2 = index.query_points(&nested_filter_2, &hw_counter);
+        let res2 = index.query_points(&nested_filter_2, &hw_counter, &is_stopped);
 
         let filter_context = index.filter_context(&nested_filter_2, &hw_counter);
 
@@ -260,7 +262,7 @@ fn test_filtering_context_consistency() {
             must_not: None,
         };
 
-        let res3 = index.query_points(&nested_filter_3, &hw_counter);
+        let res3 = index.query_points(&nested_filter_3, &hw_counter, &is_stopped);
 
         let filter_context = index.filter_context(&nested_filter_3, &hw_counter);
 

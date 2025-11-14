@@ -775,7 +775,7 @@ impl SegmentHolder {
             let points = ids
                 .iter()
                 .cloned()
-                .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                .stop_if(is_stopped)
                 .filter(|id| read_segment.has_point(*id));
             for point in points {
                 let is_ok = f(point, &read_segment)?;
