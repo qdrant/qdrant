@@ -1082,6 +1082,7 @@ fn deduplicate_points_async(
         .deduplicate_points_tasks()
         .into_iter()
         .map(tokio::task::spawn_blocking)
+        .map(AbortOnDropHandle::new)
         .collect();
 
     async move {
