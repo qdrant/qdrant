@@ -3,11 +3,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 use tokio::task::JoinHandle;
+use tokio_util::task::AbortOnDropHandle;
 
 type PanicPayload = Box<dyn Any + Send + 'static>;
 
+/// A task that can be asked to stop
+///
+/// If this future is dropped the blocking task may be aborted prematurely if it has not started
+/// yet.
 pub struct StoppableTaskHandle<T> {
-    pub join_handle: JoinHandle<Option<T>>,
+    pub join_handle: AbortOnDropHandle<Option<T>>,
     started: Arc<AtomicBool>,
     stopped: Weak<AtomicBool>,
     panic_handler: Option<Box<dyn Fn(PanicPayload) + Sync + Send>>,
@@ -30,7 +35,7 @@ impl<T> StoppableTaskHandle<T> {
 
     pub fn stop(self) -> Option<JoinHandle<Option<T>>> {
         self.ask_to_stop();
-        self.is_started().then_some(self.join_handle)
+        self.is_started().then_some(self.join_handle.detach())
     }
 
     /// Join this stoppable task and handle any panics
@@ -87,18 +92,20 @@ where
     // Weak reference is sufficient
     let stopped_w = Arc::downgrade(&stopped);
 
+    let handle = tokio::task::spawn_blocking(move || {
+        // TODO: Should we use `Ordering::Acquire` or `Ordering::SeqCst`? 🤔
+        if stopped.load(Ordering::Relaxed) {
+            return None;
+        }
+
+        // TODO: Should we use `Ordering::Release` or `Ordering::SeqCst`? 🤔
+        started.store(true, Ordering::Relaxed);
+
+        Some(f(&stopped))
+    });
+
     StoppableTaskHandle {
-        join_handle: tokio::task::spawn_blocking(move || {
-            // TODO: Should we use `Ordering::Acquire` or `Ordering::SeqCst`? 🤔
-            if stopped.load(Ordering::Relaxed) {
-                return None;
-            }
-
-            // TODO: Should we use `Ordering::Release` or `Ordering::SeqCst`? 🤔
-            started.store(true, Ordering::Relaxed);
-
-            Some(f(&stopped))
-        }),
+        join_handle: AbortOnDropHandle::new(handle),
         started: started_c,
         stopped: stopped_w,
         panic_handler,

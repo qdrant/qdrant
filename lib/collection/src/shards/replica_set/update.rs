@@ -5,6 +5,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
+use tokio_util::task::AbortOnDropHandle;
 
 use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, clock_set};
 use crate::operations::point_ops::WriteOrdering;
@@ -459,29 +460,30 @@ impl ShardReplicaSet {
                         .map(|(peer_id, _)| *peer_id)
                         .collect();
 
-                    let shards_disabled = tokio::task::spawn_blocking(move || {
-                        replica_state.wait_for(
-                            |state| {
-                                peer_ids.iter().all(|peer_id| {
-                                    // Not found means that peer is dead
+                    let shards_disabled =
+                        AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+                            replica_state.wait_for(
+                                |state| {
+                                    peer_ids.iter().all(|peer_id| {
+                                        // Not found means that peer is dead
 
-                                    // Wait for replica deactivation.
-                                    let is_active = matches!(
-                                        state.peers.get(peer_id),
-                                        Some(
-                                            ReplicaState::Active
-                                                | ReplicaState::Resharding
-                                                | ReplicaState::ReshardingScaleDown
-                                        )
-                                    );
+                                        // Wait for replica deactivation.
+                                        let is_active = matches!(
+                                            state.peers.get(peer_id),
+                                            Some(
+                                                ReplicaState::Active
+                                                    | ReplicaState::Resharding
+                                                    | ReplicaState::ReshardingScaleDown
+                                            )
+                                        );
 
-                                    !is_active
-                                })
-                            },
-                            timeout,
-                        )
-                    })
-                    .await?;
+                                        !is_active
+                                    })
+                                },
+                                timeout,
+                            )
+                        }))
+                        .await?;
 
                     if !shards_disabled {
                         return Err(CollectionError::service_error(format!(

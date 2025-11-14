@@ -6,6 +6,7 @@ use std::time::Duration;
 use common::defaults;
 use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
+use tokio_util::task::AbortOnDropHandle;
 
 use super::Collection;
 use crate::operations::cluster_ops::ReshardingDirection;
@@ -486,7 +487,7 @@ impl Collection {
                     )
             });
 
-            match shard_transfer_requested.await {
+            match AbortOnDropHandle::new(shard_transfer_requested).await {
                 Ok(true) => Ok(()),
 
                 Ok(false) => {

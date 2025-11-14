@@ -5,6 +5,7 @@ use segment::types::ScoredPoint;
 use shard::query::MmrInternal;
 use shard::query::mmr::mmr_from_points_with_vector as mmr_from_points_with_vector_impl;
 use tokio::runtime::Handle;
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -24,7 +25,7 @@ pub async fn mmr_from_points_with_vector(
         .get_params(&mmr.using)
         .and_then(|vector_params| vector_params.multivector_config);
 
-    let task = search_runtime_handle.spawn_blocking(move || {
+    let handle = search_runtime_handle.spawn_blocking(move || {
         mmr_from_points_with_vector_impl(
             points_with_vector,
             mmr,
@@ -34,6 +35,7 @@ pub async fn mmr_from_points_with_vector(
             hw_measurement_acc,
         )
     });
+    let task = AbortOnDropHandle::new(handle);
 
     let result = tokio::time::timeout(timeout, task)
         .await

@@ -7,6 +7,7 @@ use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::types::{SizeStats, VectorNameBuf};
 use segment::vector_storage::common::get_async_scorer;
 use shard::segment_holder::SegmentHolder;
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::config::CollectionConfigInternal;
 use crate::operations::types::OptimizersStatus;
@@ -23,7 +24,7 @@ impl LocalShard {
         } else {
             let locked_collection_config = self.collection_config.clone();
 
-            tokio::task::spawn_blocking(move || {
+            let handle = tokio::task::spawn_blocking(move || {
                 // blocking sync lock
                 let segments_guard = segments.read();
 
@@ -37,8 +38,8 @@ impl LocalShard {
                     get_index_only_excluded_vectors(&segments_guard, &collection_config);
 
                 (segments_telemetry, indexed_only_excluded_vectors)
-            })
-            .await
+            });
+            AbortOnDropHandle::new(handle).await
         };
 
         if let Err(err) = &segments_data {
@@ -106,8 +107,8 @@ impl LocalShard {
                 None => OptimizersStatus::Ok,
                 Some(err) => OptimizersStatus::Error(err.clone()),
             }
-        })
-        .await;
+        });
+        let status = AbortOnDropHandle::new(status).await;
 
         match status {
             Ok(status) => status,
@@ -149,8 +150,8 @@ impl LocalShard {
                 payloads_size_bytes,
                 num_points,
             }
-        })
-        .await;
+        });
+        let stats = AbortOnDropHandle::new(stats).await;
 
         if let Err(err) = &stats {
             log::error!("failed to get size stats: {err}");

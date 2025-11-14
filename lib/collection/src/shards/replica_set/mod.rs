@@ -24,6 +24,7 @@ use segment::types::{ExtendedPointId, Filter, ShardKey};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
+use tokio_util::task::AbortOnDropHandle;
 
 use self::partial_snapshot_meta::PartialSnapshotMeta;
 use super::CollectionId;
@@ -554,7 +555,9 @@ impl ShardReplicaSet {
         // TODO: Propagate cancellation into `spawn_blocking` task!?
 
         let replica_state = self.replica_state.clone();
-        let task = tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout));
+        let task = AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+            replica_state.wait_for(check, timeout)
+        }));
 
         async move {
             let status = task.await.map_err(|err| {
