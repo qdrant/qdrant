@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -249,9 +249,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     ) -> OperationResult<Range<PointOffsetType>> {
         let hw_counter = HardwareCounterCell::disposable(); // This function is only used for internal operations. No need to measure.
         let start_index = self.next_point_offset as PointOffsetType;
-        for (other_vector, other_deleted) in
-            other_vectors.check_stop(|| stopped.load(Ordering::Relaxed))
-        {
+        for (other_vector, other_deleted) in other_vectors.stop_if(stopped) {
             // Do not perform preprocessing - vectors should be already processed
             let other_vector = other_vector.as_vec_ref().try_into()?;
             let new_id = self.next_point_offset as PointOffsetType;

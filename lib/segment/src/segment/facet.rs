@@ -1,5 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
@@ -21,8 +21,6 @@ impl Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
-        const STOP_CHECK_INTERVAL: usize = 100;
-
         let payload_index = self.payload_index.borrow();
 
         // Shortcut if this segment has no points, prevent division by zero later
@@ -52,8 +50,13 @@ impl Segment {
                 // go over the filtered points and aggregate the values
                 // aka. read from other indexes
                 let iter = payload_index
-                    .iter_filtered_points(filter, &*id_tracker, &filter_cardinality, hw_counter)
-                    .check_stop_every(STOP_CHECK_INTERVAL, || is_stopped.load(Ordering::Relaxed))
+                    .iter_filtered_points(
+                        filter,
+                        &*id_tracker,
+                        &filter_cardinality,
+                        hw_counter,
+                        is_stopped,
+                    )
                     .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                     .fold(HashMap::new(), |mut map, point_id| {
                         facet_index
@@ -77,7 +80,7 @@ impl Segment {
 
                 let iter = facet_index
                     .iter_values_map(hw_counter)
-                    .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                    .stop_if(is_stopped)
                     .filter_map(|(value, iter)| {
                         let count = iter
                             .unique()
@@ -94,7 +97,7 @@ impl Segment {
             // just count how many points each value has
             let iter = facet_index
                 .iter_counts_per_value()
-                .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                .stop_if(is_stopped)
                 .filter(|hit| hit.count > 0);
 
             Either::Right(iter)
@@ -127,8 +130,13 @@ impl Segment {
             let filter_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
 
             payload_index
-                .iter_filtered_points(filter, &*id_tracker, &filter_cardinality, hw_counter)
-                .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                .iter_filtered_points(
+                    filter,
+                    &*id_tracker,
+                    &filter_cardinality,
+                    hw_counter,
+                    is_stopped,
+                )
                 .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                 .fold(BTreeSet::new(), |mut set, point_id| {
                     set.extend(facet_index.get_point_values(point_id));
@@ -140,7 +148,7 @@ impl Segment {
         } else {
             facet_index
                 .iter_values()
-                .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                .stop_if(is_stopped)
                 .map(|value_ref| value_ref.to_owned())
                 .collect()
         };

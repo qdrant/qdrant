@@ -1,12 +1,16 @@
 #[cfg(any(test, feature = "testing"))]
 use std::fmt::Debug;
+use std::sync::atomic::AtomicBool;
 
 use check_stopped::CheckStopped;
 use on_final_count::OnFinalCount;
 
+use crate::iterator_ext::stoppable_iter::StoppableIter;
+
 pub(super) mod on_final_count;
 
 mod check_stopped;
+pub mod stoppable_iter;
 
 pub trait IteratorExt: Iterator {
     /// Periodically check if the iteration should be stopped.
@@ -19,15 +23,13 @@ pub trait IteratorExt: Iterator {
         CheckStopped::new(self, every, f)
     }
 
-    /// Periodically check if the iteration should be stopped.
-    /// The closure `f` is called every 500 iterations, and should return `true` if the iteration should be stopped.
+    /// Stops the iterator if `is_stopped` is set to true
     #[inline]
-    fn check_stop<F>(self, f: F) -> CheckStopped<Self, F>
+    fn stop_if<'a>(self, is_stopped: &'a AtomicBool) -> StoppableIter<'a, Self>
     where
-        F: Fn() -> bool,
         Self: Sized,
     {
-        self.check_stop_every(500, f)
+        StoppableIter::new(self, is_stopped)
     }
 
     /// Will execute the callback when the iterator is dropped.

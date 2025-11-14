@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
@@ -71,7 +71,7 @@ impl Segment {
         self.id_tracker
             .borrow()
             .iter_from(offset)
-            .check_stop(|| is_stopped.load(Ordering::Relaxed))
+            .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map(|(external_id, _)| external_id)
             .take(limit.unwrap_or(usize::MAX))
@@ -104,8 +104,13 @@ impl Segment {
         let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
 
         let ids_iterator = payload_index
-            .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation, hw_counter)
-            .check_stop(|| is_stopped.load(Ordering::Relaxed))
+            .iter_filtered_points(
+                condition,
+                &*id_tracker,
+                &cardinality_estimation,
+                hw_counter,
+                is_stopped,
+            )
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);
                 match external_id {

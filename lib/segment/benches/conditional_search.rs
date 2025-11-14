@@ -1,6 +1,8 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
+use std::sync::atomic::AtomicBool;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -27,6 +29,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     let plain_index = create_plain_payload_index(dir.path(), NUM_POINTS, seed);
 
     let hw_counter = HardwareCounterCell::new();
+    let is_stopped = AtomicBool::new(false);
 
     let mut result_size = 0;
     let mut query_count = 0;
@@ -34,7 +37,9 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     group.bench_function("conditional-search-query-points", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
-            result_size += plain_index.query_points(&filter, &hw_counter).len();
+            result_size += plain_index
+                .query_points(&filter, &hw_counter, &is_stopped)
+                .len();
             query_count += 1;
         })
     });
@@ -52,7 +57,9 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     group.bench_function("conditional-search-query-points-large", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 1);
-            result_size += plain_index.query_points(&filter, &hw_counter).len();
+            result_size += plain_index
+                .query_points(&filter, &hw_counter, &is_stopped)
+                .len();
             query_count += 1;
         })
     });
@@ -134,6 +141,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
     let seed = 42;
 
     let hw_counter = HardwareCounterCell::new();
+    let is_stopped = AtomicBool::new(false);
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
@@ -152,7 +160,9 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
     group.bench_function("struct-conditional-search-query-points", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
-            result_size += struct_index.query_points(&filter, &hw_counter).len();
+            result_size += struct_index
+                .query_points(&filter, &hw_counter, &is_stopped)
+                .len();
             query_count += 1;
         })
     });

@@ -2,6 +2,7 @@
 mod prof;
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -47,6 +48,7 @@ fn range_filtering(c: &mut Criterion) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
     let hw_counter = HardwareCounterCell::new();
+    let is_stopped = AtomicBool::new(false);
 
     // generate points with payload
     let mut payload_storage = InMemoryPayloadStorage::default();
@@ -102,7 +104,7 @@ fn range_filtering(c: &mut Criterion) {
         b.iter_batched(
             || random_range_filter(&mut rng, FLT_KEY),
             |filter| {
-                result_size += index.query_points(&filter, &hw_counter).len();
+                result_size += index.query_points(&filter, &hw_counter, &is_stopped).len();
                 query_count += 1;
             },
             BatchSize::SmallInput,
@@ -113,7 +115,7 @@ fn range_filtering(c: &mut Criterion) {
         b.iter_batched(
             || random_range_filter(&mut rng, INT_KEY),
             |filter| {
-                result_size += index.query_points(&filter, &hw_counter).len();
+                result_size += index.query_points(&filter, &hw_counter, &is_stopped).len();
                 query_count += 1;
             },
             BatchSize::SmallInput,
@@ -139,7 +141,7 @@ fn range_filtering(c: &mut Criterion) {
         b.iter_batched(
             || random_range_filter(&mut rng, FLT_KEY),
             |filter| {
-                result_size += index.query_points(&filter, &hw_counter).len();
+                result_size += index.query_points(&filter, &hw_counter, &is_stopped).len();
                 query_count += 1;
             },
             BatchSize::SmallInput,
@@ -150,7 +152,7 @@ fn range_filtering(c: &mut Criterion) {
         b.iter_batched(
             || random_range_filter(&mut rng, INT_KEY),
             |filter| {
-                result_size += index.query_points(&filter, &hw_counter).len();
+                result_size += index.query_points(&filter, &hw_counter, &is_stopped).len();
                 query_count += 1;
             },
             BatchSize::SmallInput,

@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use schemars::_serde_json::Value;
@@ -163,11 +165,13 @@ impl PayloadIndex for PlainPayloadIndex {
         &self,
         query: &Filter,
         hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
     ) -> Vec<PointOffsetType> {
         let filter_context = self.filter_context(query, hw_counter);
-        self.id_tracker
-            .borrow()
-            .iter_internal()
+        let id_tracker = self.id_tracker.borrow();
+        let all_points_iter = id_tracker.iter_internal();
+        all_points_iter
+            .stop_if(is_stopped)
             .filter(|id| filter_context.check(*id))
             .collect()
     }

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -81,10 +82,13 @@ pub trait PayloadIndex {
     /// Return list of all point ids, which satisfy filtering criteria
     ///
     /// A best estimation of the number of available points should be given.
+    ///
+    /// If `is_stopped` is set to true during execution, the function should return early with no results.
     fn query_points(
         &self,
         query: &Filter,
         hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
     ) -> Vec<PointOffsetType>;
 
     /// Return number of points, indexed by this field
