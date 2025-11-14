@@ -134,10 +134,14 @@ impl ShardTransferKey {
 }
 
 /// Methods for transferring a shard from one node to another.
-/// `stream_records` - Stream all shard records in batches until the whole shard is transferred.
-/// `snapshot` - Snapshot the shard, transfer and restore it on the receiver.
-/// `wal_delta` - Attempt to transfer shard difference by WAL delta.
-/// `resharding_stream_records` - Shard transfer for resharding: stream all records in batches until all points are transferred.
+///
+/// - `stream_records` - Stream all shard records in batches until the whole shard is transferred.
+///
+/// - `snapshot` - Snapshot the shard, transfer and restore it on the receiver.
+///
+/// - `wal_delta` - Attempt to transfer shard difference by WAL delta.
+///
+/// - `resharding_stream_records` - Shard transfer for resharding: stream all records in batches until all points are transferred.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ShardTransferMethod {
