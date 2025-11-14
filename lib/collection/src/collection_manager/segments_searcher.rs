@@ -24,7 +24,7 @@ use shard::retrieve::retrieve_blocking::retrieve_blocking;
 use shard::search::CoreSearchRequestBatch;
 use shard::search_result_aggregator::BatchResultAggregator;
 use tokio::runtime::Handle;
-use tokio::task::JoinHandle;
+use tokio_util::task::AbortOnDropHandle;
 
 use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
@@ -52,7 +52,7 @@ pub struct SegmentsSearcher;
 impl SegmentsSearcher {
     /// Execute searches in parallel and return results in the same order as the searches were provided
     async fn execute_searches(
-        searches: Vec<JoinHandle<SegmentSearchExecutedResult>>,
+        searches: Vec<AbortOnDropHandle<SegmentSearchExecutedResult>>,
     ) -> CollectionResult<(BatchSearchResult, Vec<Vec<bool>>)> {
         let results_len = searches.len();
 
@@ -246,6 +246,14 @@ impl SegmentsSearcher {
                             )
                         }
                     });
+
+                    // We MUST wrap the search handle in AbortOnDropHandle to ensure that we skip
+                    // all searches for futures that are already dropped. Not using this allows
+                    // users to create a humongous queue of search tasks, even though the searches
+                    // are already invalidated.
+                    // See: <https://github.com/qdrant/qdrant/pull/7530>
+                    let search = AbortOnDropHandle::new(search);
+
                     (segment, search)
                 })
                 .unzip()
@@ -286,7 +294,7 @@ impl SegmentsSearcher {
                             .collect(),
                     });
 
-                    res.push(runtime_handle.spawn_blocking(move || {
+                    let handle = runtime_handle.spawn_blocking(move || {
                         let segment_query_context =
                             query_context_arc_segment.get_segment_query_context();
 
@@ -296,7 +304,16 @@ impl SegmentsSearcher {
                             false,
                             &segment_query_context,
                         )
-                    }))
+                    });
+
+                    // We MUST wrap the search handle in AbortOnDropHandle to ensure that we skip
+                    // all searches for futures that are already dropped. Not using this allows
+                    // users to create a humongous queue of search tasks, even though the searches
+                    // are already invalidated.
+                    // See: <https://github.com/qdrant/qdrant/pull/7530>
+                    let handle = AbortOnDropHandle::new(handle);
+
+                    res.push(handle);
                 }
                 res
             };
