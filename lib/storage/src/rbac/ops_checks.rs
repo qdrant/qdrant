@@ -702,6 +702,12 @@ mod tests_ops {
                 check_collection_update_operations_delete_points(&op);
             }
 
+            PointOperationsDiscriminants::TruncatePoints => {
+                let op =
+                    CollectionUpdateOperations::PointOperation(PointOperations::TruncatePoints);
+                assert_requires_whole_write_access(&op);
+            }
+
             PointOperationsDiscriminants::DeletePointsByFilter => {
                 let op = CollectionUpdateOperations::PointOperation(
                     PointOperations::DeletePointsByFilter(make_filter_from_ids(vec![

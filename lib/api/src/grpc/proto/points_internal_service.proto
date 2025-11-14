@@ -10,6 +10,7 @@ service PointsInternal {
   rpc Upsert (UpsertPointsInternal) returns (PointsOperationResponseInternal) {}
   rpc Sync (SyncPointsInternal) returns (PointsOperationResponseInternal) {}
   rpc Delete (DeletePointsInternal) returns (PointsOperationResponseInternal) {}
+  rpc Truncate (TruncatePointsInternal) returns (PointsOperationResponseInternal) {}
   rpc UpdateVectors (UpdateVectorsInternal) returns (PointsOperationResponseInternal) {}
   rpc DeleteVectors (DeleteVectorsInternal) returns (PointsOperationResponseInternal) {}
   rpc SetPayload (SetPayloadPointsInternal) returns (PointsOperationResponseInternal) {}
@@ -52,6 +53,12 @@ message UpsertPointsInternal {
 
 message DeletePointsInternal {
   DeletePoints delete_points = 1;
+  optional uint32 shard_id = 2;
+  optional ClockTag clock_tag = 3;
+}
+
+message TruncatePointsInternal {
+  TruncatePoints truncate_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
 }
@@ -111,6 +118,7 @@ message UpdateOperation {
         ClearPayloadPointsInternal clear_payload = 9;
         CreateFieldIndexCollectionInternal create_field_index = 10;
         DeleteFieldIndexCollectionInternal delete_field_index = 11;
+        TruncatePointsInternal truncate = 12;
     }
 }
 

@@ -68,6 +68,7 @@ impl EstimateOperationEffectArea for point_ops::PointOperations {
                     sync_op.points.iter().map(|x| x.id).collect(),
                 ))
             }
+            point_ops::PointOperations::TruncatePoints => OperationEffectArea::Empty,
         }
     }
 }

@@ -552,7 +552,6 @@ impl OperationsByMode {
                     } = operation;
                     points_op.into_update_only(Some(condition))
                 }
-
                 PointOperations::DeletePoints { ids } => {
                     vec![CollectionUpdateOperations::PointOperation(
                         PointOperations::DeletePoints { ids },
@@ -566,6 +565,11 @@ impl OperationsByMode {
                 PointOperations::SyncPoints(op) => {
                     vec![CollectionUpdateOperations::PointOperation(
                         PointOperations::SyncPoints(op),
+                    )]
+                }
+                PointOperations::TruncatePoints => {
+                    vec![CollectionUpdateOperations::PointOperation(
+                        PointOperations::TruncatePoints,
                     )]
                 }
             },

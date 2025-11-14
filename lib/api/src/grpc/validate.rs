@@ -218,6 +218,7 @@ impl Validate for grpc::update_operation::Update {
             Update::ClearPayload(op) => op.validate(),
             Update::CreateFieldIndex(op) => op.validate(),
             Update::DeleteFieldIndex(op) => op.validate(),
+            Update::Truncate(op) => op.validate(),
         }
     }
 }
@@ -707,5 +708,21 @@ mod tests {
             good_polygon.validate().is_ok(),
             "good polygon should not error on validation"
         );
+    }
+}
+
+impl Validate for grpc::TruncatePointsInternal {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        if let Some(truncate_points) = &self.truncate_points {
+            if truncate_points.collection_name.is_empty() {
+                let mut errors = ValidationErrors::new();
+                errors.add(
+                    "collection_name",
+                    ValidationError::new("collection_name cannot be empty"),
+                );
+                return Err(errors);
+            }
+        }
+        Ok(())
     }
 }

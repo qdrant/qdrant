@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use api::conversions::json::{json_path_from_proto, proto_to_payloads};
-use api::grpc;
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointStructList};
 use api::grpc::qdrant::{
@@ -12,13 +11,13 @@ use api::grpc::qdrant::{
     UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
     points_update_operation,
 };
-use api::grpc::{HardwareUsage, InferenceUsage, Usage};
+use api::grpc::{self, HardwareUsage, InferenceUsage, TruncatePoints, Usage};
 use api::rest::schema::{PointInsertOperations, PointsList};
 use api::rest::{PointStruct, PointVectors, ShardKeySelector, UpdateVectors, VectorStruct};
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::conversions::try_points_selector_from_grpc;
 use collection::operations::payload_ops::DeletePayload;
-use collection::operations::point_ops::{self, PointOperations, PointSyncOperation};
+use collection::operations::point_ops::{self, AllSelector, PointOperations, PointSyncOperation};
 use collection::operations::vector_ops::DeleteVectors;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
@@ -113,6 +112,43 @@ pub async fn delete(
         toc_provider,
         collection_name,
         points_selector,
+        internal_params,
+        UpdateParams::from_grpc(wait, ordering)?,
+        access,
+        request_hw_counter.get_counter(),
+    )
+    .await?;
+
+    let response =
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
+    Ok(Response::new(response))
+}
+
+pub async fn truncate(
+    toc_provider: impl CheckedTocProvider,
+    truncate_points: TruncatePoints,
+    internal_params: InternalUpdateParams,
+    access: Access,
+    request_hw_counter: RequestHwCounter,
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
+    let TruncatePoints {
+        collection_name,
+        wait,
+        ordering,
+        shard_key_selector,
+    } = truncate_points;
+
+    let point_selector = point_ops::PointsSelector::AllSelector(AllSelector {
+        shard_key: shard_key_selector
+            .map(ShardKeySelector::try_from)
+            .transpose()?,
+    });
+
+    let timing = Instant::now();
+    let result = do_truncate_points(
+        toc_provider,
+        collection_name,
+        point_selector,
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
@@ -888,6 +924,7 @@ fn extract_points_selector(
         match points_selector {
             point_ops::PointsSelector::PointIdsSelector(points) => (Some(points.points), None),
             point_ops::PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
+            point_ops::PointsSelector::AllSelector(_) => (None, None),
         }
     } else {
         return Err(Status::invalid_argument("points_selector is expected"));

@@ -10,9 +10,11 @@ use api::grpc::qdrant::{
     SyncPointsInternal, UpdatePointVectors, UpdateVectorsInternal, UpsertPoints,
     UpsertPointsInternal, Vectors, VectorsSelector,
 };
+use api::grpc::{TruncatePoints, TruncatePointsInternal};
 use segment::data_types::vectors::VectorStructInternal;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PointIdType, ScoredPoint, VectorNameBuf};
+use shard::operations::point_ops::TruncateOperation;
 use tonic::Status;
 
 use crate::operations::conversions::write_ordering_to_proto;
@@ -80,6 +82,26 @@ pub fn internal_upsert_points(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
             update_filter: None,
+        }),
+    })
+}
+
+pub fn internal_truncate_points(
+    shard_id: Option<ShardId>,
+    clock_tag: Option<ClockTag>,
+    collection_name: String,
+    _operation: TruncateOperation,
+    wait: bool,
+    ordering: Option<WriteOrdering>,
+) -> CollectionResult<TruncatePointsInternal> {
+    Ok(TruncatePointsInternal {
+        shard_id,
+        clock_tag: clock_tag.map(Into::into),
+        truncate_points: Some(TruncatePoints {
+            collection_name,
+            wait: Some(wait),
+            ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
         }),
     })
 }
