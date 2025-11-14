@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::dispatcher::Dispatcher;
@@ -207,7 +208,7 @@ async fn _do_create_full_snapshot(
 
         Ok::<(), StorageError>(())
     });
-    archiving.await??;
+    AbortOnDropHandle::new(archiving).await??;
 
     let snapshot_description = snapshot_manager
         .store_file(&temp_full_snapshot_path, &full_snapshot_path)

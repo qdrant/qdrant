@@ -6780,6 +6780,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
+ "tokio-util",
  "tonic 0.11.0",
  "tracing",
  "url",
