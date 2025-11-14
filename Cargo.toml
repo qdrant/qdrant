@@ -301,6 +301,13 @@ bench = false
 required-features = ["service_debug"]
 
 [[bin]]
+name = "wal_pop"
+path = "src/wal_pop.rs"
+test = false
+bench = false
+required-features = ["service_debug"]
+
+[[bin]]
 name = "segment_inspector"
 path = "src/segment_inspector.rs"
 test = false
