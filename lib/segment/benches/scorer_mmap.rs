@@ -10,7 +10,7 @@ use segment::data_types::named_vectors::CowVector;
 use segment::data_types::vectors::{DenseVector, QueryVector};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
-use segment::index::hnsw_index::point_scorer::FilteredScorer;
+use segment::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use segment::types::Distance;
 use segment::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage;
 use segment::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
@@ -63,12 +63,13 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
         b.iter_batched(
             || QueryVector::from(random_vector(DIM)),
             |vector| {
-                FilteredScorer::new_for_test(
-                    vector,
+                BatchFilteredSearcher::new_for_test(
+                    &[vector],
                     &storage,
                     borrowed_id_tracker.deleted_point_bitslice(),
+                    10,
                 )
-                .peek_top_all(10, &DEFAULT_STOPPED)
+                .peek_top_all(&DEFAULT_STOPPED)
                 .unwrap()
             },
             BatchSize::SmallInput,
