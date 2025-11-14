@@ -33,6 +33,8 @@ class PeerProcess:
 
     def kill(self):
         self.proc.kill()
+        self.proc.wait()
+
         # remove allocated ports from the dictionary
         # so they can be used afterwards
         del busy_ports[self.http_port]
