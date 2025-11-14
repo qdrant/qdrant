@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use tokio::sync::Mutex;
 use tokio::time::Instant;
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::operations::types::{CollectionError, CollectionResult};
 
@@ -103,11 +104,11 @@ impl DiskUsageWatcher {
             return Ok(None);
         }
         let path = self.disk_path.clone();
-        let result = tokio::task::spawn_blocking(move || fs4::available_space(path.as_path()))
-            .await
-            .map_err(|e| {
-                CollectionError::service_error(format!("Failed to join async task: {e}"))
-            })?;
+        let result = AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+            fs4::available_space(path.as_path())
+        }))
+        .await
+        .map_err(|e| CollectionError::service_error(format!("Failed to join async task: {e}")))?;
 
         let result = match result {
             Ok(result) => Some(result),

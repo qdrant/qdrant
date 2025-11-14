@@ -8,6 +8,7 @@ use segment::common::anonymize::Anonymize;
 use serde::Serialize;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
+use tokio_util::task::AbortOnDropHandle;
 use uuid::Uuid;
 
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppBuildTelemetryCollector};
@@ -79,14 +80,13 @@ impl TelemetryCollector {
                 .clone();
             let runtime_handle = toc.general_runtime_handle().clone();
             let access_collection = access.clone();
-            runtime_handle
-                .spawn_blocking(move || {
-                    // Re-enter the async runtime in this blocking thread
-                    tokio::runtime::Handle::current().block_on(async move {
-                        CollectionsTelemetry::collect(detail, &access_collection, &toc).await
-                    })
+            let handle = runtime_handle.spawn_blocking(move || {
+                // Re-enter the async runtime in this blocking thread
+                tokio::runtime::Handle::current().block_on(async move {
+                    CollectionsTelemetry::collect(detail, &access_collection, &toc).await
                 })
-                .await
+            });
+            AbortOnDropHandle::new(handle).await
         };
 
         let collections_telemetry = collections_telemetry

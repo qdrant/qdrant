@@ -12,6 +12,7 @@ use segment::types::{Condition, FieldCondition, Filter, Match};
 use shard::common::stopping_guard::StoppingGuard;
 use tokio::runtime::Handle;
 use tokio::time::error::Elapsed;
+use tokio_util::task::AbortOnDropHandle;
 
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
@@ -35,12 +36,13 @@ impl LocalShard {
             let is_stopped = stopping_guard.get_is_stopped();
 
             let hw_counter = hw_counter.fork();
-            search_runtime_handle.spawn_blocking(move || {
+            let task = search_runtime_handle.spawn_blocking(move || {
                 let get_segment = segment.get();
                 let read_segment = get_segment.read();
 
                 read_segment.facet(&request, &is_stopped, &hw_counter)
-            })
+            });
+            AbortOnDropHandle::new(task)
         };
 
         let all_reads = {
@@ -157,7 +159,7 @@ impl LocalShard {
             let is_stopped = stopping_guard.get_is_stopped();
 
             let hw_counter = hw_counter.fork();
-            handle.spawn_blocking(move || {
+            let task = handle.spawn_blocking(move || {
                 let get_segment = segment.get();
                 let read_segment = get_segment.read();
 
@@ -167,7 +169,8 @@ impl LocalShard {
                     &is_stopped,
                     &hw_counter,
                 )
-            })
+            });
+            AbortOnDropHandle::new(task)
         };
 
         let hw_counter = hw_measurement_acc.get_counter_cell();

@@ -16,6 +16,7 @@ use segment::types::{
 use shard::common::stopping_guard::StoppingGuard;
 use shard::retrieve::record_internal::RecordInternal;
 use tokio::runtime::Handle;
+use tokio_util::task::AbortOnDropHandle;
 
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
@@ -159,7 +160,7 @@ impl LocalShard {
         let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
-            search_runtime_handle.spawn_blocking(move || {
+            let task = search_runtime_handle.spawn_blocking(move || {
                 segment.get().read().read_filtered(
                     offset,
                     Some(limit),
@@ -167,7 +168,8 @@ impl LocalShard {
                     &is_stopped,
                     &hw_counter,
                 )
-            })
+            });
+            AbortOnDropHandle::new(task)
         };
 
         let hw_counter = hw_measurement_acc.get_counter_cell();
@@ -245,7 +247,7 @@ impl LocalShard {
             let order_by = order_by.clone();
 
             let hw_counter = hw_counter.fork();
-            search_runtime_handle.spawn_blocking(move || {
+            let task = search_runtime_handle.spawn_blocking(move || {
                 segment.get().read().read_ordered_filtered(
                     Some(limit),
                     filter.as_ref(),
@@ -253,7 +255,8 @@ impl LocalShard {
                     &is_stopped,
                     &hw_counter,
                 )
-            })
+            });
+            AbortOnDropHandle::new(task)
         };
 
         let hw_counter = hw_measurement_acc.get_counter_cell();
@@ -341,7 +344,7 @@ impl LocalShard {
             let filter = filter.cloned();
 
             let hw_counter = hw_counter.fork();
-            search_runtime_handle.spawn_blocking(move || {
+            let task = search_runtime_handle.spawn_blocking(move || {
                 let get_segment = segment.get();
                 let read_segment = get_segment.read();
 
@@ -354,7 +357,8 @@ impl LocalShard {
                         &hw_counter,
                     ),
                 )
-            })
+            });
+            AbortOnDropHandle::new(task)
         };
 
         let hw_counter = hw_measurement_acc.get_counter_cell();
