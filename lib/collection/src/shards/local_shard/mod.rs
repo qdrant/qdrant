@@ -50,6 +50,7 @@ use shard::wal::SerdeWal;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc};
+use tokio_util::task::AbortOnDropHandle;
 
 use self::clock_map::{ClockMap, RecoveryPoint};
 use self::disk_usage_watcher::DiskUsageWatcher;
@@ -884,8 +885,8 @@ impl LocalShard {
                         max: acc.max + x.max,
                     }
                 })
-        })
-        .await?;
+        });
+        let cardinality = AbortOnDropHandle::new(cardinality).await?;
         Ok(cardinality)
     }
 
@@ -927,8 +928,8 @@ impl LocalShard {
                 } else {
                     None
                 }
-            })
-            .await;
+            });
+            let has_errored_optimizers = AbortOnDropHandle::new(has_errored_optimizers).await;
 
             match has_errored_optimizers {
                 Err(err) => log::error!("Failed to get local_shard_status: {err}"),
@@ -985,8 +986,8 @@ impl LocalShard {
                 }
             }
             (schema, indexed_vectors_count, points_count, segments_count)
-        })
-        .await;
+        });
+        let segment_info = AbortOnDropHandle::new(segment_info).await;
 
         if let Err(err) = &segment_info {
             log::error!("Failed to get local shard info: {err}");
