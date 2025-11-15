@@ -1069,6 +1069,16 @@ pub struct LookupLocation {
     pub shard_key: Option<ShardKeySelector>,
 }
 
+#[allow(clippy::unnecessary_wraps)]
+fn default_group_offset_u32() -> Option<u32> {
+    Some(0)
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn default_group_offset_usize() -> Option<usize> {
+    Some(0)
+}
+
 #[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct BaseGroupRequest {
     /// Payload field to group by, must be a string or number field.
@@ -1084,6 +1094,11 @@ pub struct BaseGroupRequest {
     /// Maximum amount of groups to return
     #[validate(range(min = 1))]
     pub limit: u32,
+
+    /// Offset of the group to start returning results from.
+    #[serde(default = "default_group_offset_u32")]
+    #[schemars(default = "default_group_offset_u32")]
+    pub offset: Option<u32>,
 
     /// Look for points in another collection using the group ids
     pub with_lookup: Option<WithLookupInterface>,
@@ -1171,6 +1186,12 @@ pub struct QueryBaseGroupRequest {
     /// Maximum amount of groups to return. Default is 10.
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
+
+    /// Offset of the group to start returning results from. Default is 0.
+    #[validate(range(min = 0))]
+    #[serde(default = "default_group_offset_usize")]
+    #[schemars(default = "default_group_offset_usize")]
+    pub offset: Option<usize>,
 
     /// Look for points in another collection using the group ids
     pub with_lookup: Option<WithLookupInterface>,

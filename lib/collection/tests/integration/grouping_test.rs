@@ -137,6 +137,52 @@ mod group_by {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn searching_with_offset() {
+        let resources = setup(16, 8).await;
+
+        let mut base_request = resources.request.clone();
+        base_request.limit = 8;
+
+        let base_groups = GroupBy::new(
+            base_request.clone(),
+            &resources.collection,
+            |_| async { unreachable!() },
+            HwMeasurementAcc::new(),
+        )
+        .execute()
+        .await
+        .expect("base grouping");
+
+        assert!(base_groups.len() >= 5, "expected at least 5 groups");
+
+        let mut paged_request = base_request.clone();
+        paged_request.limit = 3;
+        paged_request.offset = 2;
+
+        let paged_groups = GroupBy::new(
+            paged_request.clone(),
+            &resources.collection,
+            |_| async { unreachable!() },
+            HwMeasurementAcc::new(),
+        )
+        .execute()
+        .await
+        .expect("paged grouping");
+
+        assert_eq!(paged_groups.len(), paged_request.limit);
+
+        let expected_ids: Vec<_> = base_groups
+            .iter()
+            .skip(paged_request.offset)
+            .take(paged_request.limit)
+            .map(|group| group.id.clone())
+            .collect();
+        let actual_ids: Vec<_> = paged_groups.iter().map(|group| group.id.clone()).collect();
+
+        assert_eq!(actual_ids, expected_ids);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn recommending() {
         let resources = setup(16, 8).await;
 

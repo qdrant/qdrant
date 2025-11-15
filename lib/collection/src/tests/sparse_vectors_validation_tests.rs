@@ -100,6 +100,7 @@ fn validate_error_sparse_vector_search_groups_request_internal() {
             group_by: "sparse".parse().unwrap(),
             group_size: 5,
             limit: 5,
+            offset: None,
             with_lookup: None,
         },
     });
