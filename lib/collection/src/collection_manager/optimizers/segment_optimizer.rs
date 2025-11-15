@@ -736,7 +736,8 @@ pub trait SegmentOptimizer {
 
         // Replace proxy segments with new optimized segment
         let point_count = optimized_segment.available_point_count();
-        let (_, proxies) = write_segments_guard.swap_new(optimized_segment, &proxy_ids);
+        let (optimized_segment_id, proxies) =
+            write_segments_guard.swap_new(optimized_segment, &proxy_ids);
         debug_assert_eq!(
             proxies.len(),
             proxy_ids.len(),
@@ -747,6 +748,18 @@ pub trait SegmentOptimizer {
             // Temp segment might be taken into another parallel optimization
             // so it is not necessary exist by this time
             write_segments_guard.remove_segment_if_not_needed(cow_segment_id)?;
+        }
+
+        // We must flush the optimized segment before deleting all our source segments to prevent
+        // data loss
+        if let Some(optimized_segment) = write_segments_guard.get(optimized_segment_id) {
+            optimized_segment.get().read().flush(true).map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to flush optimized segment to disk after promoting it: {err}",
+                ))
+            })?;
+        } else {
+            debug_assert!(false, "we must still have the optimized segment");
         }
 
         // Release reference counter for each optimized segment
