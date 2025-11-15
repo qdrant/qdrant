@@ -36,6 +36,12 @@ fn main() {
     } else if target_arch == "aarch64" && target_feature.split(',').any(|feat| feat == "neon") {
         builder.file("cpp/neon.c");
         builder.flag("-O3");
+    } else if target_arch == "loongarch64" {
+        builder.file("cpp/lsx.c");
+        builder.file("cpp/lasx.c");
+        builder.flag("-O3");
+        builder.flag("-mlsx");
+        builder.flag("-mlasx");
     }
 
     builder.compile("simd_utils");

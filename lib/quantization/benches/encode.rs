@@ -71,6 +71,26 @@ fn encode_dot_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "loongarch64")]
+    group.bench_function("score all u8 lasx", |b| {
+        b.iter(|| {
+            let mut _s = 0.0;
+            for i in 0..vectors_count as u32 {
+                _s = i8_encoded.score_point_lasx(&encoded_query, i);
+            }
+        });
+    });
+
+    #[cfg(target_arch = "loongarch64")]
+    group.bench_function("score all u8 lsx", |b| {
+        b.iter(|| {
+            let mut _s = 0.0;
+            for i in 0..vectors_count as u32 {
+                _s = i8_encoded.score_point_lsx(&encoded_query, i);
+            }
+        });
+    });
+
     let permutor = Permutor::new(vectors_count as u64);
     let permutation: Vec<u32> = permutor.map(|i| i as u32).collect();
 
@@ -100,6 +120,26 @@ fn encode_dot_bench(c: &mut Criterion) {
         b.iter(|| {
             for &i in &permutation {
                 _s = i8_encoded.score_point_neon(&encoded_query, i);
+            }
+        });
+    });
+
+    #[cfg(target_arch = "loongarch64")]
+    group.bench_function("score random access u8 lasx", |b| {
+        let mut _s = 0.0;
+        b.iter(|| {
+            for &i in &permutation {
+                _s = i8_encoded.score_point_lasx(&encoded_query, i);
+            }
+        });
+    });
+
+    #[cfg(target_arch = "loongarch64")]
+    group.bench_function("score random access u8 lsx", |b| {
+        let mut _s = 0.0;
+        b.iter(|| {
+            for &i in &permutation {
+                _s = i8_encoded.score_point_lsx(&encoded_query, i);
             }
         });
     });
@@ -169,6 +209,26 @@ fn encode_l1_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "loongarch64")]
+    group.bench_function("score all u8 lasx", |b| {
+        b.iter(|| {
+            let mut _s = 0.0;
+            for i in 0..vectors_count as u32 {
+                _s = i8_encoded.score_point_lasx(&encoded_query, i);
+            }
+        });
+    });
+
+    #[cfg(target_arch = "loongarch64")]
+    group.bench_function("score all u8 lsx", |b| {
+        b.iter(|| {
+            let mut _s = 0.0;
+            for i in 0..vectors_count as u32 {
+                _s = i8_encoded.score_point_lsx(&encoded_query, i);
+            }
+        });
+    });
+
     let permutor = Permutor::new(vectors_count as u64);
     let permutation: Vec<u32> = permutor.map(|i| i as u32).collect();
 
@@ -198,6 +258,26 @@ fn encode_l1_bench(c: &mut Criterion) {
         b.iter(|| {
             for &i in &permutation {
                 _s = i8_encoded.score_point_neon(&encoded_query, i);
+            }
+        });
+    });
+
+    #[cfg(target_arch = "loongarch64")]
+    group.bench_function("score random access u8 lasx", |b| {
+        let mut _s = 0.0;
+        b.iter(|| {
+            for &i in &permutation {
+                _s = i8_encoded.score_point_lasx(&encoded_query, i);
+            }
+        });
+    });
+
+    #[cfg(target_arch = "loongarch64")]
+    group.bench_function("score random access u8 lsx", |b| {
+        let mut _s = 0.0;
+        b.iter(|| {
+            for &i in &permutation {
+                _s = i8_encoded.score_point_lsx(&encoded_query, i);
             }
         });
     });

@@ -438,6 +438,19 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         }
     }
 
+    #[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+    unsafe fn score_point_lsx(&self, query: &EncodedQueryPQ, centroids: &[u8]) -> f32 {
+        unsafe {
+            let len = centroids.len();
+            let centroids_count = self.metadata.centroids.len();
+
+            let centroids = centroids.as_ptr();
+            let lut = query.lut.as_ptr();
+            let sum = impl_score_point_lsx(lut, centroids, len as u32, centroids_count as u32);
+            sum
+        }
+    }
+
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     unsafe fn score_point_neon(&self, query: &EncodedQueryPQ, centroids: &[u8]) -> f32 {
         unsafe {
@@ -661,6 +674,21 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
             return unsafe { self.score_point_neon(query, bytes) };
         }
 
+        #[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+        if std::arch::is_loongarch_feature_detected!("lsx") {
+            return unsafe { self.score_point_lsx(query, bytes) };
+        }
+
         self.score_point_simple(query, bytes)
     }
+}
+
+#[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+unsafe extern "C" {
+    fn impl_score_point_lsx(
+        query_ptr: *const f32,
+        vector_ptr: *const u8,
+        size: u32,
+        offset: u32,
+    ) -> f32;
 }
