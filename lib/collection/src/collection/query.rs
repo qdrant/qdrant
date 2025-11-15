@@ -2,6 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::{TryFutureExt, future};
 use itertools::{Either, Itertools};
@@ -618,6 +619,7 @@ impl Collection {
 
         // Shape: [num_internal_queries, num_shards, num_scored_points]
         let all_shards_result_by_transposed = transposed_iter(all_shards_results);
+        let mut seen = AHashSet::new();
 
         for (query_info, shards_results) in
             query_infos.into_iter().zip(all_shards_result_by_transposed)
@@ -655,6 +657,8 @@ impl Collection {
                     ),
                 }
                 .dedup()
+                // Deduplicate non-consecutive points by specific scored point fields
+                .filter(|point| seen.insert(point.dedup_key()))
                 .take(query_info.take)
                 .collect();
 
@@ -684,6 +688,8 @@ impl Collection {
             };
 
             results.push(intermediate_result);
+
+            seen.clear();
         }
 
         Ok(results)
