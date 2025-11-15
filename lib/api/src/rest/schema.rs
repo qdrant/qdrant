@@ -1338,6 +1338,13 @@ pub struct FacetResponse {
     pub hits: Vec<FacetValueHit>,
 }
 
+/// Response containing the computed average vector
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct AverageVectorResponse {
+    /// The computed average vector
+    pub vector: VectorOutput,
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct PointStruct {
