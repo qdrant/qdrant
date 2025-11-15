@@ -35,6 +35,7 @@ pub struct SharedStorageConfig {
     pub snapshots_config: SnapshotsConfig,
     pub hnsw_global_config: HnswGlobalConfig,
     pub search_thread_count: usize,
+    pub read_only_mode: bool,
 }
 
 impl Default for SharedStorageConfig {
@@ -54,6 +55,7 @@ impl Default for SharedStorageConfig {
             snapshots_config: default::Default::default(),
             hnsw_global_config: HnswGlobalConfig::default(),
             search_thread_count: common::defaults::search_thread_count(common::cpu::get_num_cpus()),
+            read_only_mode: false,
         }
     }
 }
@@ -75,6 +77,7 @@ impl SharedStorageConfig {
         snapshots_config: SnapshotsConfig,
         hnsw_global_config: HnswGlobalConfig,
         search_thread_count: usize,
+        read_only_mode: bool,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
@@ -95,6 +98,7 @@ impl SharedStorageConfig {
             snapshots_config,
             hnsw_global_config,
             search_thread_count,
+            read_only_mode,
         }
     }
 }
