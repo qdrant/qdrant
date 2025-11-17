@@ -31,7 +31,7 @@ io = { path = "../common/io" }
 strum = { workspace = true }
 bytemuck = { workspace = true }
 parking_lot = { workspace = true }
-smallvec = { workspace = true }
+ordered-float = { workspace = true }
 arrayvec = "0.7.6"
 
 [dev-dependencies]

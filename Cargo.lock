@@ -5218,6 +5218,7 @@ dependencies = [
  "memory",
  "num-traits",
  "num_threads",
+ "ordered-float 5.1.0",
  "parking_lot",
  "permutation_iterator",
  "quantization",
@@ -5226,7 +5227,6 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "smallvec",
  "strum",
  "tempfile",
 ]

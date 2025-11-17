@@ -1,3 +1,5 @@
+use ordered_float::NotNan;
+
 use crate::EncodingError;
 
 /// Extended version of P-square one-quantile estimator by Jain & Chlamtac (1985).
@@ -45,6 +47,10 @@ impl<const N: usize> P2Quantile<N> {
 
         match self {
             P2Quantile::Linear(linear) => {
+                let Ok(x) = NotNan::new(x) else {
+                    return;
+                };
+
                 // in linear case just collect observations until we have N of them
                 linear.observations.push(x);
                 if linear.observations.len() == N {
@@ -79,7 +85,7 @@ impl<const N: usize> P2QuantileImpl<N> {
         let p = Self::generate_grid_probabilities(linear.quantile);
         let mut markers = [Marker::default(); N];
         for i in 0..N {
-            markers[i].height = buf[i];
+            markers[i].height = buf[i].into_inner();
             markers[i].target_propability = p[i];
             markers[i].n_position = (i + 1) as f64;
             markers[i].update_desired_position(N);
@@ -228,7 +234,7 @@ impl Marker {
 
 pub struct P2QuantileLinear<const N: usize> {
     quantile: f64,
-    observations: arrayvec::ArrayVec<f64, N>,
+    observations: arrayvec::ArrayVec<NotNan<f64>, N>,
 }
 
 impl<const N: usize> P2QuantileLinear<N> {
@@ -238,24 +244,24 @@ impl<const N: usize> P2QuantileLinear<N> {
     }
 }
 
-fn estimate_quantile_from_slice(observations: &mut [f64], quantile: f64) -> f64 {
+fn estimate_quantile_from_slice(observations: &mut [NotNan<f64>], quantile: f64) -> f64 {
     if observations.is_empty() {
         // No data
         return 0.0;
     }
     if observations.len() == 1 {
-        return observations[0];
+        return observations[0].into_inner();
     }
-    observations.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+    observations.sort_unstable();
 
     let k = quantile * (observations.len() as f64 - 1.0);
     let lo = k.floor() as usize;
     let hi = k.ceil() as usize;
     if lo == hi {
-        observations[lo]
+        observations[lo].into_inner()
     } else {
         let frac = k - lo as f64;
-        observations[lo] + frac * (observations[hi] - observations[lo])
+        observations[lo].into_inner() + frac * (observations[hi] - observations[lo]).into_inner()
     }
 }
 
@@ -283,7 +289,7 @@ mod tests {
         let mut data = Vec::with_capacity(COUNT);
         for _ in 0..COUNT {
             let value = rng.random::<f64>();
-            data.push(value);
+            data.push(value.try_into().unwrap());
 
             p2.push(value);
         }
@@ -314,8 +320,8 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let mut data = Vec::with_capacity(COUNT);
         for _ in 0..COUNT {
-            let value = rng.sample(StandardNormal);
-            data.push(value);
+            let value: f64 = rng.sample(StandardNormal);
+            data.push(value.try_into().unwrap());
 
             p2.push(value);
         }
@@ -347,8 +353,8 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         let mut data = Vec::with_capacity(COUNT);
         for _ in 0..COUNT {
-            let value = rng.sample(StandardNormal);
-            data.push(value);
+            let value: f64 = rng.sample(StandardNormal);
+            data.push(value.try_into().unwrap());
 
             p2.push(value);
         }
@@ -378,7 +384,7 @@ mod tests {
         let mut data = Vec::with_capacity(COUNT);
         for _ in 0..COUNT {
             let value = rng.sample(Poisson::new(2.0).unwrap());
-            data.push(value);
+            data.push(value.try_into().unwrap());
 
             p2.push(value);
         }
@@ -409,7 +415,7 @@ mod tests {
         let mut data = Vec::with_capacity(COUNT);
         for _ in 0..COUNT {
             let value = rng.sample(StudentT::new(2.0).unwrap());
-            data.push(value);
+            data.push(value.try_into().unwrap());
 
             p2.push(value);
         }
