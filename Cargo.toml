@@ -18,7 +18,7 @@ default-run = "qdrant"
 workspace = true
 
 [features]
-default = ["rocksdb"]
+default = []
 service_debug = ["parking_lot/deadlock_detection"]
 tracing = [
     "api/tracing",
