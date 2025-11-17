@@ -45,17 +45,20 @@ pub struct FeatureFlags {
     pub migrate_rocksdb_id_tracker: bool,
 
     /// Migrate RocksDB based vector storages into new format on start.
-    // TODO(1.16.1): enable by default
+    ///
+    /// Enabled by default in Qdrant 1.16.1.
     pub migrate_rocksdb_vector_storage: bool,
 
     /// Migrate RocksDB based payload storages into new format on start.
-    // TODO(1.16.1): enable by default
+    ///
+    /// Enabled by default in Qdrant 1.16.1.
     pub migrate_rocksdb_payload_storage: bool,
 
     /// Migrate RocksDB based payload indices into new format on start.
     ///
     /// Rebuilds a new payload index from scratch.
-    // TODO(1.16.1): enable by default
+    ///
+    /// Enabled by default in Qdrant 1.16.1.
     pub migrate_rocksdb_payload_indices: bool,
 
     /// Use appendable quantization in appendable plain segments.
@@ -73,9 +76,9 @@ impl Default for FeatureFlags {
             payload_storage_skip_rocksdb: true,
             incremental_hnsw_building: true,
             migrate_rocksdb_id_tracker: true,
-            migrate_rocksdb_vector_storage: false,
-            migrate_rocksdb_payload_storage: false,
-            migrate_rocksdb_payload_indices: false,
+            migrate_rocksdb_vector_storage: true,
+            migrate_rocksdb_payload_storage: true,
+            migrate_rocksdb_payload_indices: true,
             appendable_quantization: true,
         }
     }
