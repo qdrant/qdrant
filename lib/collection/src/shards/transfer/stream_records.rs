@@ -16,8 +16,7 @@ use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus};
 pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
 
 /// Minimum version all peers need to be to use the intermediate `ActiveRead` state during transfer
-// TODO(1.16.0): once 1.16.0 is released, bump this to "1.16.0" with a const version
-const STATE_ACTIVE_READ_MIN_VERSION: &str = "1.15.6-dev";
+const STATE_ACTIVE_READ_MIN_VERSION: Version = Version::new(1, 16, 0);
 
 /// Orchestrate shard transfer by streaming records
 ///
@@ -54,13 +53,12 @@ pub(super) async fn transfer_stream_records(
         .is_some_and(|id| transfer_config.shard_id != id);
 
     // If syncing peers with intermediate replica state, all nodes must have a certain version
-    if sync_intermediate_state {
-        let min_version = Version::parse(STATE_ACTIVE_READ_MIN_VERSION).unwrap();
-        if !channel_service.all_peers_at_version(&min_version) {
-            return Err(CollectionError::service_error(format!(
-                "Cannot perform shard transfer between different shards using streaming records because not all peers are version {STATE_ACTIVE_READ_MIN_VERSION} or higher"
-            )));
-        }
+    if sync_intermediate_state
+        && !channel_service.all_peers_at_version(&STATE_ACTIVE_READ_MIN_VERSION)
+    {
+        return Err(CollectionError::service_error(format!(
+            "Cannot perform shard transfer between different shards using streaming records because not all peers are version {STATE_ACTIVE_READ_MIN_VERSION} or higher"
+        )));
     }
 
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
