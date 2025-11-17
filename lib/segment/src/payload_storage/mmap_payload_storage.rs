@@ -19,11 +19,11 @@ const STORAGE_PATH: &str = "payload_storage";
 
 impl Blob for Payload {
     fn to_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap()
+        simd_json::to_vec(self).unwrap()
     }
 
-    fn from_bytes(data: Vec<u8>) -> Self {
-        serde_json::from_slice(&data).unwrap()
+    fn from_bytes(mut data: Vec<u8>) -> Self {
+        simd_json::from_slice(&mut data).unwrap()
     }
 }
 
