@@ -242,7 +242,7 @@ pub struct UpdateCollection {
     /// HNSW parameters to update for the collection index. If none - it is left unchanged.
     #[validate(nested)]
     pub hnsw_config: Option<HnswConfigDiff>,
-    /// WAL parameters for the collection. If none - it is left unchanged.
+    /// WAL parameters for the collection. Changes are effective only on Qdrant restart. If none - it is left unchanged.
     #[validate(nested)]
     pub wal_config: Option<WalConfigDiff>,
     /// Quantization parameters to update. If none - it is left unchanged.
