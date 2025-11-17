@@ -263,8 +263,8 @@ impl Blob for SparseVector {
         bincode::serialize(&self).expect("Sparse vector serialization should not fail")
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        bincode::deserialize(data).expect("Sparse vector deserialization should not fail")
+    fn from_bytes(data: Vec<u8>) -> Self {
+        bincode::deserialize(&data).expect("Sparse vector deserialization should not fail")
     }
 }
 

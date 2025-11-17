@@ -21,8 +21,8 @@ impl Blob for Payload {
         serde_json::to_vec(self).unwrap()
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        serde_json::from_slice(data).unwrap()
+    fn from_bytes(data: Vec<u8>) -> Self {
+        serde_json::from_slice(&data).unwrap()
     }
 }
 
@@ -132,7 +132,7 @@ mod tests {
         );
         let bytes = payload.to_bytes();
 
-        let deserialized = Payload::from_bytes(&bytes);
+        let deserialized = Payload::from_bytes(bytes);
         assert_eq!(payload, deserialized);
     }
 }

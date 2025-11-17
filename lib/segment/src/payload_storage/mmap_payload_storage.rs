@@ -22,8 +22,8 @@ impl Blob for Payload {
         serde_json::to_vec(self).unwrap()
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        serde_json::from_slice(data).unwrap()
+    fn from_bytes(data: Vec<u8>) -> Self {
+        serde_json::from_slice(&data).unwrap()
     }
 }
 

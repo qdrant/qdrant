@@ -258,7 +258,7 @@ impl<V: Blob> Gridstore<V> {
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
-        let value = V::from_bytes(&decompressed);
+        let value = V::from_bytes(decompressed);
 
         Some(value)
     }
@@ -444,7 +444,7 @@ impl<V: Blob> Gridstore<V> {
         } = self.tracker.write().unset(point_offset)?;
         let raw = self.read_from_pages::<false>(page_id, block_offset, length);
         let decompressed = self.decompress(raw);
-        let value = V::from_bytes(&decompressed);
+        let value = V::from_bytes(decompressed);
 
         Some(value)
     }
@@ -508,7 +508,7 @@ impl<V: Blob> Gridstore<V> {
             hw_counter.incr_delta(raw.len());
 
             let decompressed = self.decompress(raw);
-            let value = V::from_bytes(&decompressed);
+            let value = V::from_bytes(decompressed);
             if !callback(point_offset, value)? {
                 return Ok(());
             }
@@ -535,7 +535,7 @@ impl<V: Blob> Gridstore<V> {
                  }| {
                     let raw = self.read_from_pages::<true>(page_id, block_offset, length);
                     let decompressed = self.decompress(raw);
-                    V::from_bytes(&decompressed)
+                    V::from_bytes(decompressed)
                 },
             );
             match callback(point_offset, value.as_ref()) {
@@ -1175,7 +1175,7 @@ mod tests {
         let payload_bytes = payload.to_bytes();
         let compressed = compress_lz4(&payload_bytes);
         let decompressed = decompress_lz4(&compressed);
-        let decompressed_payload = <Payload as Blob>::from_bytes(&decompressed);
+        let decompressed_payload = <Payload as Blob>::from_bytes(decompressed);
         assert_eq!(payload, decompressed_payload);
     }
 

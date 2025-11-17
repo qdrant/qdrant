@@ -3,7 +3,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 pub trait Blob {
     fn to_bytes(&self) -> Vec<u8>;
 
-    fn from_bytes(bytes: &[u8]) -> Self;
+    fn from_bytes(bytes: Vec<u8>) -> Self;
 }
 
 impl Blob for Vec<u8> {
@@ -11,8 +11,8 @@ impl Blob for Vec<u8> {
         self.clone()
     }
 
-    fn from_bytes(bytes: &[u8]) -> Self {
-        bytes.to_vec()
+    fn from_bytes(bytes: Vec<u8>) -> Self {
+        bytes
     }
 }
 
@@ -21,8 +21,8 @@ impl Blob for Vec<ecow::EcoString> {
         serde_cbor::to_vec(self).expect("Failed to serialize Vec<ecow::EcoString>")
     }
 
-    fn from_bytes(bytes: &[u8]) -> Self {
-        serde_cbor::from_slice(bytes).expect("Failed to deserialize Vec<ecow::EcoString>")
+    fn from_bytes(bytes: Vec<u8>) -> Self {
+        serde_cbor::from_slice(&bytes).expect("Failed to deserialize Vec<ecow::EcoString>")
     }
 }
 
@@ -33,7 +33,7 @@ impl Blob for Vec<(f64, f64)> {
             .collect()
     }
 
-    fn from_bytes(bytes: &[u8]) -> Self {
+    fn from_bytes(bytes: Vec<u8>) -> Self {
         assert!(
             bytes.len().is_multiple_of(size_of::<f64>() * 2),
             "unexpected number of bytes for Vec<(f64, f64)>",
@@ -64,7 +64,7 @@ macro_rules! impl_blob_vec_zerocopy {
                     .collect()
             }
 
-            fn from_bytes(bytes: &[u8]) -> Self {
+            fn from_bytes(bytes: Vec<u8>) -> Self {
                 assert!(
                     bytes.len().is_multiple_of(size_of::<$type>()),
                     "unexpected number of bytes for Vec<{}>",
