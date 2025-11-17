@@ -70,7 +70,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         {
             let mut config = self.collection_config.write().await;
-            config.wal_config = wal_config_diff.update(&config.wal_config)?;
+            config.wal_config = config.wal_config.update(&wal_config_diff);
         }
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
