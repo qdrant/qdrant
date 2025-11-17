@@ -228,31 +228,34 @@ impl Marker {
 
 pub struct P2QuantileLinear<const N: usize> {
     quantile: f64,
-    observations: smallvec::SmallVec<[f64; N]>,
+    observations: arrayvec::ArrayVec<f64, N>,
 }
 
 impl<const N: usize> P2QuantileLinear<N> {
     /// Simple linear-interpolated sample quantile
     fn estimate(mut self) -> f64 {
-        if self.observations.is_empty() {
-            // No data
-            return 0.0;
-        }
-        if self.observations.len() == 1 {
-            return self.observations[0];
-        }
-        self.observations
-            .sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        estimate_quantile_from_slice(&mut self.observations, self.quantile)
+    }
+}
 
-        let k = self.quantile * (self.observations.len() as f64 - 1.0);
-        let lo = k.floor() as usize;
-        let hi = k.ceil() as usize;
-        if lo == hi {
-            self.observations[lo]
-        } else {
-            let frac = k - lo as f64;
-            self.observations[lo] + frac * (self.observations[hi] - self.observations[lo])
-        }
+fn estimate_quantile_from_slice(observations: &mut [f64], quantile: f64) -> f64 {
+    if observations.is_empty() {
+        // No data
+        return 0.0;
+    }
+    if observations.len() == 1 {
+        return observations[0];
+    }
+    observations.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let k = quantile * (observations.len() as f64 - 1.0);
+    let lo = k.floor() as usize;
+    let hi = k.ceil() as usize;
+    if lo == hi {
+        observations[lo]
+    } else {
+        let frac = k - lo as f64;
+        observations[lo] + frac * (observations[hi] - observations[lo])
     }
 }
 
@@ -289,11 +292,7 @@ mod tests {
         let p = p2.estimate();
 
         // Compare with linear estimation
-        let linear_p = P2QuantileLinear::<N> {
-            quantile: QUANTILE,
-            observations: smallvec::SmallVec::from_slice(data.as_slice()),
-        }
-        .estimate();
+        let linear_p = estimate_quantile_from_slice(data.as_mut_slice(), QUANTILE);
         assert!((p - linear_p).abs() < ERROR);
 
         // Compare with theoretical value
@@ -325,11 +324,7 @@ mod tests {
         let p = p2.estimate();
 
         // Compare with linear estimation
-        let linear_p = P2QuantileLinear::<N> {
-            quantile: QUANTILE,
-            observations: smallvec::SmallVec::from_slice(data.as_slice()),
-        }
-        .estimate();
+        let linear_p = estimate_quantile_from_slice(data.as_mut_slice(), QUANTILE);
         assert!((p - linear_p).abs() < ERROR);
 
         // Compare with theoretical value
@@ -362,11 +357,7 @@ mod tests {
         let p = p2.estimate();
 
         // Compare with linear estimation
-        let linear_p = P2QuantileLinear::<N> {
-            quantile: QUANTILE,
-            observations: smallvec::SmallVec::from_slice(data.as_slice()),
-        }
-        .estimate();
+        let linear_p = estimate_quantile_from_slice(data.as_mut_slice(), QUANTILE);
         assert!((p - linear_p).abs() < ERROR);
 
         // Compare with theoretical value
@@ -396,11 +387,7 @@ mod tests {
         let p = p2.estimate();
 
         // Compare with linear estimation
-        let linear_p = P2QuantileLinear::<N> {
-            quantile: QUANTILE,
-            observations: smallvec::SmallVec::from_slice(data.as_slice()),
-        }
-        .estimate();
+        let linear_p = estimate_quantile_from_slice(data.as_mut_slice(), QUANTILE);
         assert!((p - linear_p).abs() < ERROR);
 
         // Compare with theoretical value
@@ -431,11 +418,7 @@ mod tests {
         let p = p2.estimate();
 
         // Compare with linear estimation
-        let linear_p = P2QuantileLinear::<N> {
-            quantile: QUANTILE,
-            observations: smallvec::SmallVec::from_slice(data.as_slice()),
-        }
-        .estimate();
+        let linear_p = estimate_quantile_from_slice(data.as_mut_slice(), QUANTILE);
         assert!((p - linear_p).abs() < ERROR);
 
         // Compare with theoretical value
@@ -474,14 +457,12 @@ mod tests {
     fn test_p_square_extended_grid() {
         // Check increasing order
         let grid = P2QuantileImpl::<7>::generate_grid_probabilities(0.99);
-        println!("{:?}", grid);
         for i in 1..grid.len() {
             assert!(grid[i] > grid[i - 1]);
         }
 
         // Check increasing order
         let grid = P2QuantileImpl::<9>::generate_grid_probabilities(0.99);
-        println!("{:?}", grid);
         for i in 1..grid.len() {
             assert!(grid[i] > grid[i - 1]);
         }
