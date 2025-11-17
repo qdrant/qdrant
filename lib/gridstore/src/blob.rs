@@ -70,10 +70,15 @@ macro_rules! impl_blob_vec_zerocopy {
                     "unexpected number of bytes for Vec<{}>",
                     stringify!($type),
                 );
-                bytes
-                    .chunks(size_of::<$type>())
-                    .map(|v| <$type>::read_from_bytes(v).expect("invalid chunk size for type T"))
-                    .collect()
+                match bytemuck::try_cast_vec(bytes) {
+                    Ok(data) => data,
+                    Err((_, bytes)) => bytes
+                        .chunks(size_of::<$type>())
+                        .map(|v| {
+                            <$type>::read_from_bytes(v).expect("invalid chunk size for type T")
+                        })
+                        .collect(),
+                }
             }
         }
     };

@@ -14,6 +14,7 @@ bench_rocksdb = ["dep:rocksdb"]
 
 [dependencies]
 ahash = { workspace = true }
+bytemuck = { workspace = true }
 ecow = { workspace = true }
 fs-err = { workspace = true }
 memmap2 = { workspace = true }
