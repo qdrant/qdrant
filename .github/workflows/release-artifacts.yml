@@ -52,7 +52,7 @@ jobs:
         run: |
           bash -x tools/sync-web-ui.sh
           cargo install cargo-deb
-          cargo deb --no-strip --target ${{ matrix.target }}
+          cargo deb --no-strip --features rocksdb --target ${{ matrix.target }}
       - name: Upload Debian package
         if: matrix.target == 'x86_64-unknown-linux-musl'
         uses: svenstaro/upload-release-action@v2
@@ -106,7 +106,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build
-        run: cargo build --release --locked
+        run: cargo build --features rocksdb --release --locked
 
       - name: Build and publish
         uses: taiki-e/upload-rust-binary-action@v1
@@ -137,7 +137,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build release binary
-        run: cargo build --release --locked
+        run: cargo build --features rocksdb --release --locked
 
       - name: Build AppImage
         shell: bash
