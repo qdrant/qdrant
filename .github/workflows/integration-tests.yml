@@ -37,7 +37,7 @@ jobs:
           poetry -C tests check --lock
           poetry -C tests install --no-root
       - name: Build
-        run: cargo build --features "service_debug data-consistency-check" --locked
+        run: cargo build --features "service_debug data-consistency-check rocksdb" --locked
       - name: Run integration tests
         run: poetry --project tests run bash ./tests/integration-tests.sh
         shell: bash
@@ -68,7 +68,7 @@ jobs:
           poetry -C tests check --lock
           poetry -C tests install --no-root
       - name: Build
-        run: cargo build --features "service_debug data-consistency-check" --locked
+        run: cargo build --features "service_debug data-consistency-check rocksdb" --locked
       - name: Run integration tests - 1 peer
         run: poetry --project tests run bash ./tests/integration-tests.sh distributed
         shell: bash
@@ -183,11 +183,11 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install clang jq
       - name: Build
-        run: cargo build --bin qdrant --locked
+        run: cargo build --bin qdrant --features rocksdb --locked
       - name: Run Shard Snapshot API Tests (local)
         shell: bash
         run: |
-          cargo run &
+          cargo run --features rocksdb &
           trap 'kill $(jobs -p) &>/dev/null || :' EXIT
           sleep 10
 
@@ -202,7 +202,7 @@ jobs:
           export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__SECRET_KEY=minioadmin
           export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ENDPOINT_URL=http://127.0.0.1:9000
 
-          cargo run &
+          cargo run --features rocksdb &
           trap 'kill $(jobs -p) &>/dev/null || :' EXIT
           sleep 10
 
