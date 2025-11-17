@@ -107,7 +107,11 @@ impl VectorIndex for PlainVectorIndex {
 
         let hw_counter = query_context.hardware_counter();
 
-        let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
+        let _timer = ScopeDurationMeasurer::new(if filter.is_some() {
+            &self.filtered_searches_telemetry
+        } else {
+            &self.unfiltered_searches_telemetry
+        });
         let vector_storage = self.vector_storage.borrow();
         let quantized_storage = self.quantized_vectors.borrow();
         let id_tracker = self.id_tracker.borrow();
