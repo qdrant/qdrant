@@ -4783,6 +4783,23 @@ pub struct DeletePoints {
     #[prost(message, optional, tag = "5")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TruncatePoints {
+    /// name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    /// Write ordering guarantees
+    #[prost(message, optional, tag = "3")]
+    pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Option for custom sharding to specify used shard keys
+    #[prost(message, optional, tag = "4")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -9777,6 +9794,17 @@ pub struct DeletePointsInternal {
     pub clock_tag: ::core::option::Option<ClockTag>,
 }
 #[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TruncatePointsInternal {
+    #[prost(message, optional, tag = "1")]
+    pub truncate_points: ::core::option::Option<TruncatePoints>,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
+}
+#[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -9878,7 +9906,7 @@ pub struct DeleteFieldIndexCollectionInternal {
 pub struct UpdateOperation {
     #[prost(
         oneof = "update_operation::Update",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
     )]
     #[validate(nested)]
     pub update: ::core::option::Option<update_operation::Update>,
@@ -9911,6 +9939,8 @@ pub mod update_operation {
         CreateFieldIndex(super::CreateFieldIndexCollectionInternal),
         #[prost(message, tag = "11")]
         DeleteFieldIndex(super::DeleteFieldIndexCollectionInternal),
+        #[prost(message, tag = "12")]
+        Truncate(super::TruncatePointsInternal),
     }
 }
 #[derive(serde::Serialize)]
@@ -10680,6 +10710,31 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "Delete"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn truncate(
+            &mut self,
+            request: impl tonic::IntoRequest<super::TruncatePointsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/Truncate",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "Truncate"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn update_vectors(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateVectorsInternal>,
@@ -11100,6 +11155,13 @@ pub mod points_internal_server {
             tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
+        async fn truncate(
+            &self,
+            request: tonic::Request<super::TruncatePointsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Status,
+        >;
         async fn update_vectors(
             &self,
             request: tonic::Request<super::UpdateVectorsInternal>,
@@ -11406,6 +11468,52 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/Truncate" => {
+                    #[allow(non_camel_case_types)]
+                    struct TruncateSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::TruncatePointsInternal>
+                    for TruncateSvc<T> {
+                        type Response = super::PointsOperationResponseInternal;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::TruncatePointsInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PointsInternal>::truncate(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = TruncateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

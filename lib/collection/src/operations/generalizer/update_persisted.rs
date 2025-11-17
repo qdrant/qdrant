@@ -64,6 +64,7 @@ impl Generalizer for PointOperations {
             PointOperations::SyncPoints(sync_operation) => {
                 PointOperations::SyncPoints(sync_operation.remove_details())
             }
+            PointOperations::TruncatePoints => PointOperations::TruncatePoints,
         }
     }
 }
