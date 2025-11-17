@@ -157,10 +157,11 @@ impl<const N: usize> P2QuantileImpl<N> {
         p[N / 2] = q;
 
         // add extended marker probabilities
-        for i in (0..additional_markers_count).rev() {
-            // just lerp between q and (1 + q)/2 and be more close to the middle
-            let factor = 0.7 + 0.3 * (i + 1) as f64 / (additional_markers_count as f64 + 2.0);
-            p[i + additional_markers_count + 3] = 1.0 + (q - 1.0) * factor;
+        for i in 0..additional_markers_count {
+            let factor = 0.7
+                + 0.3 * (additional_markers_count - i) as f64
+                    / (additional_markers_count as f64 + 2.0);
+            p[N / 2 + 1 + i] = 1.0 + (q - 1.0) * factor;
         }
 
         p[N - 2] = 1.0 + (q - 1.0) * 0.5;
@@ -467,5 +468,28 @@ mod tests {
 
         // Should be exactly zero
         assert_eq!(p, 0.0);
+    }
+
+    #[test]
+    fn test_p_square_extended_grid() {
+        // Check increasing order
+        let grid = P2QuantileImpl::<7>::generate_grid_probabilities(0.99);
+        println!("{:?}", grid);
+        for i in 1..grid.len() {
+            assert!(grid[i] > grid[i - 1]);
+        }
+
+        // Check increasing order
+        let grid = P2QuantileImpl::<9>::generate_grid_probabilities(0.99);
+        println!("{:?}", grid);
+        for i in 1..grid.len() {
+            assert!(grid[i] > grid[i - 1]);
+        }
+
+        // Check increasing order
+        let grid = P2QuantileImpl::<11>::generate_grid_probabilities(0.99);
+        for i in 1..grid.len() {
+            assert!(grid[i] > grid[i - 1]);
+        }
     }
 }
