@@ -178,13 +178,27 @@ impl Validate for grpc::DeleteShardKey {
 
 impl Validate for grpc::RestartTransfer {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        Ok(())
+        validate_shard_different_peers(
+            self.from_peer_id,
+            self.to_peer_id,
+            self.shard_id,
+            self.to_shard_id,
+        )
     }
 }
 
 impl Validate for grpc::ReplicatePoints {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        Ok(())
+        if self.from_shard_key != self.to_shard_key {
+            return Ok(());
+        }
+
+        let mut errors = ValidationErrors::new();
+        errors.add(
+            "to_shard_key",
+            validator::ValidationError::new("must be different from from_shard_key"),
+        );
+        Err(errors)
     }
 }
 
