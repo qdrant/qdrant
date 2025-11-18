@@ -77,12 +77,12 @@ impl<const N: usize> P2QuantileImpl<N> {
         assert_eq!(linear.observations.len(), N);
 
         let mut buf = linear.observations.clone();
-        buf.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        buf.sort_unstable();
 
         let p = Self::generate_grid_probabilities(linear.quantile);
         let mut markers = [Marker::default(); N];
         for i in 0..N {
-            markers[i].height = buf[i].into_inner();
+            markers[i].height = *buf[i];
             markers[i].target_probability = p[i];
             markers[i].n_position = (i + 1) as f64;
             markers[i].update_desired_position(N);
@@ -247,7 +247,7 @@ fn estimate_quantile_from_slice(observations: &mut [NotNan<f64>], quantile: f64)
         return 0.0;
     }
     if observations.len() == 1 {
-        return observations[0].into_inner();
+        return *observations[0];
     }
     observations.sort_unstable();
 
@@ -255,10 +255,10 @@ fn estimate_quantile_from_slice(observations: &mut [NotNan<f64>], quantile: f64)
     let lo = k.floor() as usize;
     let hi = k.ceil() as usize;
     if lo == hi {
-        observations[lo].into_inner()
+        *observations[lo]
     } else {
         let frac = k - lo as f64;
-        observations[lo].into_inner() + frac * (observations[hi] - observations[lo]).into_inner()
+        *observations[lo] + frac * (*observations[hi] - *observations[lo])
     }
 }
 
