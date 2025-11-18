@@ -83,7 +83,7 @@ impl<const N: usize> P2QuantileImpl<N> {
         let mut markers = [Marker::default(); N];
         for i in 0..N {
             markers[i].height = buf[i].into_inner();
-            markers[i].target_propability = p[i];
+            markers[i].target_probability = p[i];
             markers[i].n_position = (i + 1) as f64;
             markers[i].update_desired_position(N);
         }
@@ -178,7 +178,7 @@ struct Marker {
     height: f64,
     n_position: f64,
     n_desired: f64,
-    target_propability: f64,
+    target_probability: f64,
 }
 
 impl Marker {
@@ -225,7 +225,7 @@ impl Marker {
     }
 
     fn update_desired_position(&mut self, n: usize) {
-        self.n_desired = 1.0 + self.target_propability * (n as f64 - 1.0);
+        self.n_desired = 1.0 + self.target_probability * (n as f64 - 1.0);
     }
 }
 
