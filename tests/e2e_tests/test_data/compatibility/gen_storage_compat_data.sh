@@ -57,7 +57,7 @@ until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collecti
 done
 
 # Run python script to populate db
-tests/storage-compat/populate_db.py
+test_data/compatibility/populate_db.py
 
 # Wait for indexing to finish
 sleep 1
