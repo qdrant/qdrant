@@ -15,12 +15,12 @@ pub enum PyMatch {
 impl From<PyMatch> for Match {
     fn from(value: PyMatch) -> Self {
         match value {
-            PyMatch::Value(v) => Match::Value(MatchValue::from(v)),
-            PyMatch::Text(v) => Match::Text(MatchText::from(v)),
-            PyMatch::TextAny(v) => Match::TextAny(MatchTextAny::from(v)),
-            PyMatch::Phrase(v) => Match::Phrase(MatchPhrase::from(v)),
-            PyMatch::Any(v) => Match::Any(MatchAny::from(v)),
-            PyMatch::Except(v) => Match::Except(MatchExcept::from(v)),
+            PyMatch::Value(value) => Match::Value(MatchValue::from(value)),
+            PyMatch::Text(text) => Match::Text(MatchText::from(text)),
+            PyMatch::TextAny(text_any) => Match::TextAny(MatchTextAny::from(text_any)),
+            PyMatch::Phrase(phrase) => Match::Phrase(MatchPhrase::from(phrase)),
+            PyMatch::Any(any) => Match::Any(MatchAny::from(any)),
+            PyMatch::Except(except) => Match::Except(MatchExcept::from(except)),
         }
     }
 }
@@ -28,12 +28,12 @@ impl From<PyMatch> for Match {
 impl From<Match> for PyMatch {
     fn from(value: Match) -> Self {
         match value {
-            Match::Value(v) => PyMatch::Value(PyMatchValue(v)),
-            Match::Text(v) => PyMatch::Text(PyMatchText(v)),
-            Match::TextAny(v) => PyMatch::TextAny(PyMatchTextAny(v)),
-            Match::Phrase(v) => PyMatch::Phrase(PyMatchPhrase(v)),
-            Match::Any(v) => PyMatch::Any(PyMatchAny(v)),
-            Match::Except(v) => PyMatch::Except(PyMatchExcept(v)),
+            Match::Value(value) => PyMatch::Value(PyMatchValue(value)),
+            Match::Text(text) => PyMatch::Text(PyMatchText(text)),
+            Match::TextAny(text_any) => PyMatch::TextAny(PyMatchTextAny(text_any)),
+            Match::Phrase(phrase) => PyMatch::Phrase(PyMatchPhrase(phrase)),
+            Match::Any(any) => PyMatch::Any(PyMatchAny(any)),
+            Match::Except(except) => PyMatch::Except(PyMatchExcept(except)),
         }
     }
 }
@@ -49,6 +49,23 @@ impl PyMatchValue {
         Self(MatchValue {
             value: ValueVariants::from(value),
         })
+    }
+}
+
+#[derive(Clone, Debug, FromPyObject, IntoPyObject)]
+pub enum PyValueVariants {
+    String(String),
+    Integer(IntPayloadType),
+    Bool(bool),
+}
+
+impl From<PyValueVariants> for ValueVariants {
+    fn from(value: PyValueVariants) -> Self {
+        match value {
+            PyValueVariants::String(str) => ValueVariants::String(str),
+            PyValueVariants::Integer(int) => ValueVariants::Integer(int),
+            PyValueVariants::Bool(bool) => ValueVariants::Bool(bool),
+        }
     }
 }
 
@@ -116,23 +133,6 @@ impl PyMatchExcept {
     }
 }
 
-#[derive(Clone, Debug, IntoPyObject, FromPyObject)]
-pub enum PyValueVariants {
-    String(String),
-    Integer(IntPayloadType),
-    Bool(bool),
-}
-
-impl From<PyValueVariants> for ValueVariants {
-    fn from(value: PyValueVariants) -> Self {
-        match value {
-            PyValueVariants::String(s) => ValueVariants::String(s),
-            PyValueVariants::Integer(i) => ValueVariants::Integer(i),
-            PyValueVariants::Bool(b) => ValueVariants::Bool(b),
-        }
-    }
-}
-
 #[derive(Clone, Debug, FromPyObject, IntoPyObject)]
 pub enum PyAnyVariants {
     Strings(Vec<String>),
@@ -140,10 +140,10 @@ pub enum PyAnyVariants {
 }
 
 impl From<PyAnyVariants> for AnyVariants {
-    fn from(value: PyAnyVariants) -> Self {
-        match value {
-            PyAnyVariants::Strings(s) => AnyVariants::Strings(s.into_iter().collect()),
-            PyAnyVariants::Integers(i) => AnyVariants::Integers(i.into_iter().collect()),
+    fn from(any: PyAnyVariants) -> Self {
+        match any {
+            PyAnyVariants::Strings(str) => AnyVariants::Strings(str.into_iter().collect()),
+            PyAnyVariants::Integers(int) => AnyVariants::Integers(int.into_iter().collect()),
         }
     }
 }

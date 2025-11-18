@@ -2,6 +2,7 @@ use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
+use segment::json_path::JsonPath;
 use segment::types::*;
 use segment::utils::maybe_arc::MaybeArc;
 
@@ -73,7 +74,9 @@ impl PyIsEmptyCondition {
     #[new]
     pub fn new(key: PyJsonPath) -> Result<Self, PyErr> {
         Ok(Self(IsEmptyCondition {
-            is_empty: PayloadField { key: key.into() },
+            is_empty: PayloadField {
+                key: JsonPath::from(key),
+            },
         }))
     }
 }
@@ -87,7 +90,9 @@ impl PyIsNullCondition {
     #[new]
     pub fn new(key: PyJsonPath) -> Result<Self, PyErr> {
         Ok(Self(IsNullCondition {
-            is_null: PayloadField { key: key.into() },
+            is_null: PayloadField {
+                key: JsonPath::from(key),
+            },
         }))
     }
 }
