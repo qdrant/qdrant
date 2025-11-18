@@ -607,7 +607,7 @@ impl SegmentHolder {
             interval = interval.saturating_mul(2);
             if interval.as_secs() >= 10 {
                 log::warn!(
-                    "Trying to read-lock all collection segments is taking a long time. This could be a deadlock and may block new updates.",
+                    "Trying to read-lock a segments is taking a long time. This could be a deadlock and may block new updates.",
                 );
             }
         }
