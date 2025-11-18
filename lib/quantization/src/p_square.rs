@@ -21,16 +21,10 @@ pub enum P2Quantile<const N: usize = 7> {
 
 impl<const N: usize> P2Quantile<N> {
     pub fn new(q: f64) -> Result<Self, EncodingError> {
-        if N < 5 {
-            return Err(EncodingError::EncodingError(
-                "P2Quantile requires at least 5 markers".to_string(),
-            ));
-        }
-        if N.is_multiple_of(2) {
-            return Err(EncodingError::EncodingError(
-                "P2Quantile requires an odd number of markers".to_string(),
-            ));
-        }
+        const {
+            assert!(N >= 5, "P2Quantile requires at least 5 markers");
+            assert!(N % 2 == 1, "P2Quantile requires an odd number of markers");
+        };
         if q <= 0.0 || q >= 1.0 {
             return Err(EncodingError::EncodingError(
                 "Quantile q must be in (0, 1)".to_string(),
