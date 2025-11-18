@@ -1,6 +1,5 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use bitvec::slice::BitSlice;
@@ -10,7 +9,6 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use gridstore::Gridstore;
 use gridstore::config::{Compression, StorageOptions};
-use parking_lot::RwLock;
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::flags::bitvec_flags::BitvecFlags;
@@ -28,7 +26,7 @@ const STORAGE_DIRNAME: &str = "store";
 /// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]
 pub struct MmapSparseVectorStorage {
-    storage: Arc<RwLock<Gridstore<StoredSparseVector>>>,
+    storage: Gridstore<StoredSparseVector>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -76,7 +74,7 @@ impl MmapSparseVectorStorage {
             .unwrap_or_default();
 
         Ok(Self {
-            storage: Arc::new(RwLock::new(storage)),
+            storage,
             deleted,
             deleted_count,
             next_point_offset,
@@ -110,7 +108,7 @@ impl MmapSparseVectorStorage {
         let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
 
         Ok(Self {
-            storage: Arc::new(RwLock::new(storage)),
+            storage,
             deleted,
             deleted_count: 0,
             next_point_offset: 0,
@@ -141,10 +139,9 @@ impl MmapSparseVectorStorage {
         vector: Option<&SparseVector>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let mut storage_guard = self.storage.write();
         if let Some(vector) = vector {
             // upsert vector
-            storage_guard
+            self.storage
                 .put_value(
                     key,
                     &StoredSparseVector::from(vector),
@@ -153,7 +150,7 @@ impl MmapSparseVectorStorage {
                 .map_err(OperationError::service_error)?;
         } else {
             // delete vector
-            storage_guard.delete_value(key);
+            self.storage.delete_value(key);
         }
 
         self.next_point_offset = std::cmp::max(self.next_point_offset, key as usize + 1);
@@ -165,14 +162,14 @@ impl MmapSparseVectorStorage {
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
         // deleted bitvec is already in-memory
-        self.storage.read().populate()?;
+        self.storage.populate()?;
         Ok(())
     }
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.deleted.clear_cache()?;
-        self.storage.read().clear_cache()?;
+        self.storage.clear_cache()?;
         Ok(())
     }
 }
@@ -187,11 +184,12 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
         &self,
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
-        let storage = self.storage.read();
         let result = if P::IS_SEQUENTIAL {
-            storage.get_value::<true>(key, &HardwareCounterCell::disposable()) // Vector storage read IO not measured
+            self.storage
+                .get_value::<true>(key, &HardwareCounterCell::disposable()) // Vector storage read IO not measured
         } else {
-            storage.get_value::<false>(key, &HardwareCounterCell::disposable())
+            self.storage
+                .get_value::<false>(key, &HardwareCounterCell::disposable())
         };
         result.map(SparseVector::try_from).transpose()
     }
@@ -267,27 +265,28 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 
     fn flusher(&self) -> crate::common::Flusher {
-        let storage = self.storage.clone();
+        let storage_flusher = self.storage.flusher();
         let deleted_flags_flusher = self.deleted.flusher();
         Box::new(move || {
             deleted_flags_flusher()?;
-            storage.read().flush().map_err(|err| {
+            storage_flusher().map_err(|err| {
                 OperationError::service_error(format!(
-                    "Failed to flush mmap sparse vector storage: {err}"
+                    "Failed to flush mmap sparse vector gridstore: {err}"
                 ))
-            })
+            })?;
+            Ok(())
         })
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        let mut files = self.storage.read().files();
+        let mut files = self.storage.files();
         files.extend(self.deleted.files());
 
         files
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        self.storage.read().immutable_files()
+        self.storage.immutable_files()
     }
 
     fn delete_vector(
