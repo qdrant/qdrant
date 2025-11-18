@@ -13,7 +13,7 @@ class TestStorageCompatibility:
     """Test storage and snapshot compatibility with defined previous Qdrant versions."""
 
     PREV_PATCH_VERSION = "v1.16.0"
-    PREV_MINOR_VERSION = "v1.15.4"
+    PREV_MINOR_VERSION = "v1.15.5"
 
     EXPECTED_COLLECTIONS = [
         "test_collection_vector_memory",
