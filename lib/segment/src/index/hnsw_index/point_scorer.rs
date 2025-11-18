@@ -38,6 +38,19 @@ use crate::vector_storage::{
 ///                                                              - Scoring logic
 ///                                                              - Complex queries
 /// ```
+///
+/// The `BatchFilteredSearcher` contains an array of `RawScorer`s, a common filter and certain parameters.
+///
+/// ```plaintext
+///  BatchFilterScorer      RawScorer
+/// ┌─────────────────┐ ┌───────────────┐
+/// │ [RawScorer] ◄───┼─┤ QueryScorer ◄─┼── (ditto)
+/// │                 │ └───────────────┘
+/// │ FilterContext   │
+/// │                 │
+/// │ top             │
+/// └─────────────────┘
+/// ```
 pub struct FilteredScorer<'a> {
     raw_scorer: Box<dyn RawScorer + 'a>,
     filters: ScorerFilters<'a>,
@@ -311,6 +324,7 @@ impl<'a> FilteredScorer<'a> {
     }
 }
 
+// We keep each scorer with its queue to reduce allocations and improve data locality.
 struct BatchSearch<'a> {
     raw_scorer: Box<dyn RawScorer + 'a>,
     pq: FixedLengthPriorityQueue<ScoredPointOffset>,
