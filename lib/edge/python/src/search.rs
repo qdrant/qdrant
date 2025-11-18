@@ -128,7 +128,7 @@ impl<'py> IntoPyObject<'py> for PyWithVector {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
     }
 }
@@ -138,7 +138,7 @@ impl<'py> IntoPyObject<'py> for &PyWithVector {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
             WithVector::Bool(bool) => bool.into_bound_py_any(py),
             WithVector::Selector(vectors) => vectors.into_bound_py_any(py),
@@ -185,7 +185,7 @@ impl<'py> IntoPyObject<'py> for PyWithPayload {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
     }
 }
@@ -195,7 +195,7 @@ impl<'py> IntoPyObject<'py> for &PyWithPayload {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
             WithPayloadInterface::Bool(bool) => bool.into_bound_py_any(py),
             WithPayloadInterface::Fields(fields) => {
@@ -238,7 +238,7 @@ impl<'py> IntoPyObject<'py> for PyPayloadSelector {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         let selector = match self.0 {
             PayloadSelector::Include(PayloadSelectorInclude { include }) => {
                 PyPayloadSelectorInterface::Include(PyJsonPath::wrap_vec(include))

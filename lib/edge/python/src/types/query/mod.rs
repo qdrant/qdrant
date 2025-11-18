@@ -62,7 +62,7 @@ impl<'py> IntoPyObject<'py> for PyQuery {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         let query = match self.0 {
             QueryEnum::Nearest(NamedQuery { query, using }) => PyQueryInterface::Nearest {
                 query: PyNamedVector::from(query),
