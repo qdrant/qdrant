@@ -27,21 +27,13 @@ impl PySegmentConfig {
     }
 
     #[getter]
-    pub fn vector_data(&self) -> HashMap<String, PyVectorDataConfig> {
-        self.0
-            .vector_data
-            .iter()
-            .map(|(vector, conf)| (vector.clone(), PyVectorDataConfig(conf.clone())))
-            .collect()
+    pub fn vector_data(&self) -> &HashMap<String, PyVectorDataConfig> {
+        PyVectorDataConfig::wrap_map_ref(&self.0.vector_data)
     }
 
     #[getter]
-    pub fn sparse_vector_data(&self) -> HashMap<String, PySparseVectorDataConfig> {
-        self.0
-            .sparse_vector_data
-            .iter()
-            .map(|(vector, conf)| (vector.clone(), PySparseVectorDataConfig(conf.clone())))
-            .collect()
+    pub fn sparse_vector_data(&self) -> &HashMap<String, PySparseVectorDataConfig> {
+        PySparseVectorDataConfig::wrap_map_ref(&self.0.sparse_vector_data)
     }
 }
 
@@ -52,6 +44,13 @@ pub struct PyVectorDataConfig(VectorDataConfig);
 
 impl PyVectorDataConfig {
     fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorDataConfig>
+    where
+        Self: TransparentWrapper<VectorDataConfig>,
+    {
+        unsafe { mem::transmute(map) }
+    }
+
+    fn wrap_map_ref(map: &HashMap<String, VectorDataConfig>) -> &HashMap<String, Self>
     where
         Self: TransparentWrapper<VectorDataConfig>,
     {
@@ -115,6 +114,16 @@ impl PyVectorDataConfig {
     #[getter]
     pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
         self.0.datatype.map(PyVectorStorageDatatype)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyVectorDataConfig {
+    type Target = PyVectorDataConfig;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        Bound::new(py, self.clone())
     }
 }
 
@@ -278,11 +287,28 @@ impl PySparseVectorDataConfig {
     {
         unsafe { mem::transmute(map) }
     }
+
+    fn wrap_map_ref(map: &HashMap<String, SparseVectorDataConfig>) -> &HashMap<String, Self>
+    where
+        Self: TransparentWrapper<SparseVectorDataConfig>,
+    {
+        unsafe { mem::transmute(map) }
+    }
 }
 
 #[pymethods]
 impl PySparseVectorDataConfig {
     // TODO!?
+}
+
+impl<'py> IntoPyObject<'py> for &PySparseVectorDataConfig {
+    type Target = PySparseVectorDataConfig;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(*self, py)
+    }
 }
 
 #[pyclass(name = "PayloadStorageType")]
