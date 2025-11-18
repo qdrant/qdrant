@@ -1125,7 +1125,7 @@ def test_restart_transfer_operation():
             "restart_transfer": {
                 "shard_id": SHARD_ID,
                 "from_peer_id": PEER_ID,
-                "to_peer_id": PEER_ID,
+                "to_peer_id": PEER_ID + 6,
                 "method": "stream_records",
             }
         },
@@ -1135,7 +1135,7 @@ def test_restart_transfer_operation():
             "restart_transfer": {
                 "shard_id": SHARD_ID,
                 "from_peer_id": PEER_ID,
-                "to_peer_id": PEER_ID,
+                "to_peer_id": PEER_ID + 6,
                 "method": 0,
             },
         },
