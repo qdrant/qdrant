@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::mem;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -18,21 +19,9 @@ impl PySegmentConfig {
         sparse_vector_data: HashMap<String, PySparseVectorDataConfig>,
         payload_storage_type: PyPayloadStorageType,
     ) -> Self {
-        // TODO: Transmute!?
-        let vector_data = vector_data
-            .into_iter()
-            .map(|(vector, config)| (vector, VectorDataConfig::from(config)))
-            .collect();
-
-        // TODO: Transmute!?
-        let sparse_vector_data = sparse_vector_data
-            .into_iter()
-            .map(|(vector, config)| (vector, SparseVectorDataConfig::from(config)))
-            .collect();
-
         Self(SegmentConfig {
-            vector_data,
-            sparse_vector_data,
+            vector_data: PyVectorDataConfig::peel_map(vector_data),
+            sparse_vector_data: PySparseVectorDataConfig::peel_map(sparse_vector_data),
             payload_storage_type: PayloadStorageType::from(payload_storage_type),
         })
     }
@@ -42,6 +31,15 @@ impl PySegmentConfig {
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyVectorDataConfig(VectorDataConfig);
+
+impl PyVectorDataConfig {
+    fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorDataConfig>
+    where
+        Self: TransparentWrapper<VectorDataConfig>,
+    {
+        unsafe { mem::transmute(map) }
+    }
+}
 
 #[pymethods]
 impl PyVectorDataConfig {
@@ -211,8 +209,18 @@ impl PyVectorStorageDatatype {
 }
 
 #[pyclass(name = "SparseVectorDataConfig")]
-#[derive(Copy, Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PySparseVectorDataConfig(SparseVectorDataConfig);
+
+impl PySparseVectorDataConfig {
+    fn peel_map(map: HashMap<String, Self>) -> HashMap<String, SparseVectorDataConfig>
+    where
+        Self: TransparentWrapper<SparseVectorDataConfig>,
+    {
+        unsafe { mem::transmute(map) }
+    }
+}
 
 #[pymethods]
 impl PySparseVectorDataConfig {
