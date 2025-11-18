@@ -413,9 +413,9 @@ impl Collection {
         let collection_path = self.path.clone();
 
         async move {
-            let shards_holder = shards_holder.read_owned().await;
+            let shards_holder_guard = shards_holder.clone().read_owned().await;
 
-            let Some(replica_set) = shards_holder.get_shard(shard_id) else {
+            let Some(replica_set) = shards_holder_guard.get_shard(shard_id) else {
                 return Err(CollectionError::service_error(format!(
                     "Shard {shard_id} doesn't exist, repartition is not supported yet"
                 )));
@@ -427,42 +427,14 @@ impl Collection {
                 .wait_for_local(defaults::CONSENSUS_META_OP_WAIT)
                 .await?;
 
-            if !replica_set.is_local().await {
-                // We have proxy or something, we need to unwrap it
-                log::warn!("Unwrapping proxy shard {shard_id}");
-                replica_set.un_proxify_local().await?;
-            }
-
-            if replica_set.is_dummy().await {
-                // We can reach here because of either of these:
-                // 1. Qdrant is in recovery mode, and user intentionally triggered a transfer
-                // 2. Shard is dirty (shard initializing flag), and Qdrant triggered a transfer to recover from Dead state after an update fails
-                //
-                // In both cases, it's safe to drop existing local shard data
-                log::debug!(
-                    "Initiating transfer to dummy shard {}. Initializing empty local shard first",
-                    replica_set.shard_id,
-                );
-                replica_set.init_empty_local_shard().await?;
-
-                let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
-
-                if tokio_fs::try_exists(&shard_flag).await.is_ok() {
-                    // We can delete initializing flag without waiting for transfer to finish
-                    // because if transfer fails in between, Qdrant will retry it.
-                    tokio_fs::remove_file(&shard_flag).await?;
-                    log::debug!("Removed shard initializing flag {shard_flag:?}");
-                }
-            }
-
             let this_peer_id = replica_set.this_peer_id();
 
             let shard_transfer_requested = tokio::task::spawn_blocking(move || {
                 // We can guarantee that replica_set is not None, cause we checked it before
                 // and `shards_holder` is holding the lock.
                 // This is a workaround for lifetime checker.
-                let replica_set = shards_holder.get_shard(shard_id).unwrap();
-                let shard_transfer_registered = shards_holder.shard_transfers.wait_for(
+                let replica_set = shards_holder_guard.get_shard(shard_id).unwrap();
+                let shard_transfer_registered = shards_holder_guard.shard_transfers.wait_for(
                     |shard_transfers| {
                         shard_transfers.iter().any(|shard_transfer| {
                             let to_shard_id = shard_transfer
@@ -505,7 +477,50 @@ impl Collection {
                      Failed to execute wait-for-consensus-notification task: \
                      {err}"
                 ))),
+            }?;
+
+            // At this point we made sure that receiver replica is synced and expecting incoming
+            // shard transfer.
+            // Further checks are an extra safety net, in normal situation they should not fail.
+
+            let shards_holder_guard = shards_holder.read_owned().await;
+
+            let Some(replica_set) = shards_holder_guard.get_shard(shard_id) else {
+                return Err(CollectionError::service_error(format!(
+                    "Shard {shard_id} doesn't exist, repartition is not supported yet"
+                )));
+            };
+
+            if replica_set.is_proxy().await {
+                debug_assert!(false, "We should not have proxy shard here");
+                // We have proxy or something, we need to unwrap it
+                log::error!("Unwrapping proxy shard {shard_id}");
+                replica_set.un_proxify_local().await?;
             }
+
+            if replica_set.is_dummy().await {
+                // We can reach here because of either of these:
+                // 1. Qdrant is in recovery mode, and user intentionally triggered a transfer
+                // 2. Shard is dirty (shard initializing flag), and Qdrant triggered a transfer to recover from Dead state after an update fails
+                //
+                // In both cases, it's safe to drop existing local shard data
+                log::debug!(
+                    "Initiating transfer to dummy shard {}. Initializing empty local shard first",
+                    replica_set.shard_id,
+                );
+                replica_set.init_empty_local_shard().await?;
+
+                let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
+
+                if tokio_fs::try_exists(&shard_flag).await.is_ok() {
+                    // We can delete initializing flag without waiting for transfer to finish
+                    // because if transfer fails in between, Qdrant will retry it.
+                    tokio_fs::remove_file(&shard_flag).await?;
+                    log::debug!("Removed shard initializing flag {shard_flag:?}");
+                }
+            }
+
+            Ok(())
         }
     }
 
