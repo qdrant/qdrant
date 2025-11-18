@@ -1,10 +1,8 @@
 use derive_more::Into;
 use ordered_float::OrderedFloat;
 use pyo3::exceptions::PyValueError;
-use pyo3::{PyErr, pyclass, pymethods};
-use segment::types::{
-    GeoBoundingBox, GeoLineString, GeoPoint, GeoPolygon, GeoPolygonShadow, GeoRadius,
-};
+use pyo3::prelude::*;
+use segment::types::*;
 
 #[pyclass(name = "GeoPoint")]
 #[derive(Clone, Debug, Into)]

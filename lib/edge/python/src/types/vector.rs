@@ -9,7 +9,7 @@ use shard::operations::point_ops::{VectorPersisted, VectorStructPersisted};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
-#[derive(Clone, Debug, IntoPyObject, FromPyObject)]
+#[derive(Clone, Debug, FromPyObject, IntoPyObject)]
 pub enum PyVector {
     // Put Int first so ints don't get parsed as floats (since f64 can extract from ints).
     Single(DenseVector),
@@ -85,7 +85,7 @@ impl TryFrom<PyVector> for VectorStructInternal {
     }
 }
 
-#[derive(Clone, Debug, IntoPyObject, FromPyObject)]
+#[derive(Clone, Debug, FromPyObject, IntoPyObject)]
 pub enum PyNamedVector {
     // Put Int first so ints don't get parsed as floats (since f64 can extract from ints).
     Dense(DenseVector),

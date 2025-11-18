@@ -1,11 +1,8 @@
 use derive_more::Into;
-use pyo3::{FromPyObject, IntoPyObject, pyclass, pymethods};
-use segment::types::{
-    AnyVariants, IntPayloadType, Match, MatchAny, MatchExcept, MatchPhrase, MatchText,
-    MatchTextAny, MatchValue, ValueVariants,
-};
+use pyo3::prelude::*;
+use segment::types::*;
 
-#[derive(Clone, Debug, IntoPyObject, FromPyObject)]
+#[derive(Clone, Debug, FromPyObject, IntoPyObject)]
 pub enum PyMatch {
     Value(PyMatchValue),
     Text(PyMatchText),
@@ -136,7 +133,7 @@ impl From<PyValueVariants> for ValueVariants {
     }
 }
 
-#[derive(Clone, Debug, IntoPyObject, FromPyObject)]
+#[derive(Clone, Debug, FromPyObject, IntoPyObject)]
 pub enum PyAnyVariants {
     Strings(Vec<String>),
     Integers(Vec<IntPayloadType>),

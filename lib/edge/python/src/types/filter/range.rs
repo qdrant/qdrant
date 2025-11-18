@@ -4,7 +4,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::types::*;
 
-#[derive(Copy, Clone, Debug, IntoPyObject, FromPyObject)]
+#[derive(Copy, Clone, Debug, FromPyObject, IntoPyObject)]
 pub enum PyRange {
     Float(PyRangeFloat),
     DateTime(PyRangeDateTime),
