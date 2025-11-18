@@ -64,6 +64,7 @@ pub struct DropShardingKeyOperation {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct RestartTransferOperation {
+    #[validate(nested)]
     pub restart_transfer: RestartTransfer,
 }
 
@@ -94,7 +95,7 @@ pub struct DropShardingKey {
     pub shard_key: ShardKey,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct RestartTransfer {
     pub shard_id: ShardId,
@@ -258,6 +259,17 @@ pub struct MoveShard {
     pub from_peer_id: PeerId,
     /// Method for transferring the shard from one node to another
     pub method: Option<ShardTransferMethod>,
+}
+
+impl Validate for RestartTransfer {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        validate_shard_different_peers(
+            self.from_peer_id,
+            self.to_peer_id,
+            self.shard_id,
+            self.to_shard_id,
+        )
+    }
 }
 
 impl Validate for MoveShard {
