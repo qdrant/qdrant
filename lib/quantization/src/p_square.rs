@@ -3,14 +3,17 @@ use ordered_float::NotNan;
 use crate::EncodingError;
 
 /// Extended version of P-square one-quantile estimator by Jain & Chlamtac (1985).
-/// https://www.cse.wustl.edu/~jain/papers/ftp/psqr.pdf
+///
+/// <https://www.cse.wustl.edu/~jain/papers/ftp/psqr.pdf>
 /// By default, P-square uses 5 markers to estimate a single quantile.
 /// This implementation is extended to support an arbitrary odd number of markers N >= 5
 ///
 /// Usage:
+/// ```ignore
 /// let mut p2 = P2Quantile::<7>::new(0.99).unwrap();
 /// for x in data { p2.push(x).unwrap(); }
 /// let q_hat = p2.estimate();
+/// ```
 pub enum P2Quantile<const N: usize = 7> {
     Linear(P2QuantileLinear<N>),
     Impl(P2QuantileImpl<N>),
