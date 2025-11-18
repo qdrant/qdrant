@@ -278,7 +278,7 @@ mod tests {
         // Test P2 quantile estimator on uniformly distributed data
         const QUANTILE: f64 = 0.99;
         // In case of uniform distribution, the theoretical value of quantile is equal to the quantile level
-        const THEOTICAL_VALUE: f64 = QUANTILE;
+        const THEORETICAL_VALUE: f64 = QUANTILE;
         const ERROR: f64 = 1e-2;
         let mut p2 = P2Quantile::<N>::new(QUANTILE).unwrap();
 
@@ -299,7 +299,7 @@ mod tests {
         assert!((p - linear_p).abs() < ERROR);
 
         // Compare with theoretical value
-        assert!((p - THEOTICAL_VALUE).abs() < ERROR);
+        assert!((p - THEORETICAL_VALUE).abs() < ERROR);
     }
 
     #[test]
@@ -309,7 +309,7 @@ mod tests {
         // It'a approximately 97.72 percentile
         const QUANTILE: f64 = 0.9772;
         // The theoretical value of 97.72 percentile for N(0, 1) is approximately 2 sigmas, i.e., 2.0
-        const THEOTICAL_VALUE: f64 = 2.0;
+        const THEORETICAL_VALUE: f64 = 2.0;
         const ERROR: f64 = 0.1; // allow 5% error (0.1 / 2.0 = 0.05 = 5%)
 
         let mut p2 = P2Quantile::<N>::new(QUANTILE).unwrap();
@@ -331,7 +331,7 @@ mod tests {
         assert!((p - linear_p).abs() < ERROR);
 
         // Compare with theoretical value
-        assert!((p - THEOTICAL_VALUE).abs() < ERROR);
+        assert!((p - THEORETICAL_VALUE).abs() < ERROR);
     }
 
     #[test]
@@ -342,7 +342,7 @@ mod tests {
         // It'a approximately 2.28 percentile
         const QUANTILE: f64 = 0.0228;
         // The theoretical value of 2.28 percentile for N(0, 1) is approximately -2 sigmas, i.e., -2.0
-        const THEOTICAL_VALUE: f64 = -2.0;
+        const THEORETICAL_VALUE: f64 = -2.0;
         const ERROR: f64 = 0.1; // allow 5% error (0.1 / 2.0 = 0.05 = 5%)
 
         let mut p2 = P2Quantile::<N>::new(QUANTILE).unwrap();
@@ -364,7 +364,7 @@ mod tests {
         assert!((p - linear_p).abs() < ERROR);
 
         // Compare with theoretical value
-        assert!((p - THEOTICAL_VALUE).abs() < ERROR);
+        assert!((p - THEORETICAL_VALUE).abs() < ERROR);
     }
 
     #[test]
@@ -372,7 +372,7 @@ mod tests {
         // Take Poisson-distributed data with mean 2. It's case of non-symmetric and non-normal distribution.
         const QUANTILE: f64 = 0.99;
         // The theoretical value of 99 percentile is 6.0
-        const THEOTICAL_VALUE: f64 = 6.0;
+        const THEORETICAL_VALUE: f64 = 6.0;
         const ERROR: f64 = 0.3; // allow 5% error (0.3 / 6.0 = 0.05 = 5%)
 
         let mut p2 = P2Quantile::<N>::new(QUANTILE).unwrap();
@@ -394,7 +394,7 @@ mod tests {
         assert!((p - linear_p).abs() < ERROR);
 
         // Compare with theoretical value
-        assert!((p - THEOTICAL_VALUE).abs() < ERROR);
+        assert!((p - THEORETICAL_VALUE).abs() < ERROR);
     }
 
     #[test]
@@ -403,7 +403,7 @@ mod tests {
         // StudentT-distributed data with 2 degrees of freedom has heavy tails and infinite variance.
         const QUANTILE: f64 = 0.99;
         // The theoretical value of 99 percentile is somewhat around 6.9646
-        const THEOTICAL_VALUE: f64 = 6.9646;
+        const THEORETICAL_VALUE: f64 = 6.9646;
         const ERROR: f64 = 0.69646; // 10% error because of heavy tails
 
         let mut p2 = P2Quantile::<N>::new(QUANTILE).unwrap();
@@ -425,7 +425,7 @@ mod tests {
         assert!((p - linear_p).abs() < ERROR);
 
         // Compare with theoretical value
-        assert!((p - THEOTICAL_VALUE).abs() < ERROR);
+        assert!((p - THEORETICAL_VALUE).abs() < ERROR);
     }
 
     #[test]
