@@ -23,7 +23,7 @@ impl<'py> IntoPyObject<'py> for PyPayload {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
     }
 }
@@ -33,7 +33,7 @@ impl<'py> IntoPyObject<'py> for &PyPayload {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         value_map_into_py(&self.0.0, py)
     }
 }

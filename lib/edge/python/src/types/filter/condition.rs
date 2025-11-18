@@ -46,7 +46,7 @@ impl<'py> IntoPyObject<'py> for PyCondition {
     type Output = Bound<'py, PyAny>;
     type Error = PyErr; // Infallible
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
             Condition::Field(field) => PyFieldCondition(field).into_bound_py_any(py),
             Condition::IsEmpty(is_empty) => PyIsEmptyCondition(is_empty).into_bound_py_any(py),

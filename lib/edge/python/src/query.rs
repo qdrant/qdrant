@@ -220,7 +220,7 @@ impl<'py> IntoPyObject<'py> for PyStartFrom {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
 
-    fn into_pyobject(self, py: Python<'py>) -> std::result::Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
     }
 }
@@ -230,7 +230,7 @@ impl<'py> IntoPyObject<'py> for &PyStartFrom {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
 
-    fn into_pyobject(self, py: Python<'py>) -> std::result::Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
             StartFrom::Integer(int) => int.into_bound_py_any(py),
             StartFrom::Float(float) => float.into_bound_py_any(py),

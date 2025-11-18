@@ -60,7 +60,7 @@ impl<'py> IntoPyObject<'py> for PyPointId {
     type Output = Bound<'py, PyAny>;
     type Error = PyErr; // Infallible
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
     }
 }
@@ -70,7 +70,7 @@ impl<'py> IntoPyObject<'py> for &PyPointId {
     type Output = Bound<'py, PyAny>;
     type Error = PyErr; // Infallible
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
             PointIdType::NumId(id) => id.into_bound_py_any(py),
             PointIdType::Uuid(uuid) => uuid.into_bound_py_any(py),
