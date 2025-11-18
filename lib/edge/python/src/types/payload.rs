@@ -9,9 +9,10 @@ use super::value::*;
 #[repr(transparent)]
 pub struct PyPayload(pub Payload);
 
-impl<'py> FromPyObject<'_, 'py> for PyPayload {
+impl FromPyObject<'_, '_> for PyPayload {
     type Error = PyErr;
-    fn extract(payload: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+
+    fn extract(payload: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let payload = value_map_from_py(&payload)?;
         Ok(Self(Payload(payload)))
     }

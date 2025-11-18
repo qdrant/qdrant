@@ -11,9 +11,10 @@ use crate::types::*;
 #[derive(Clone, Debug, Into)]
 pub struct PyQuery(QueryEnum);
 
-impl<'py> FromPyObject<'_, 'py> for PyQuery {
+impl FromPyObject<'_, '_> for PyQuery {
     type Error = PyErr;
-    fn extract(query: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+
+    fn extract(query: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let query = match query.extract()? {
             PyQueryInterface::Nearest { query, using } => QueryEnum::Nearest(NamedQuery {
                 query: VectorInternal::try_from(query)?,

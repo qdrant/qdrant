@@ -21,9 +21,10 @@ impl PyValue {
     }
 }
 
-impl<'py> FromPyObject<'_, 'py> for PyValue {
+impl FromPyObject<'_, '_> for PyValue {
     type Error = PyErr;
-    fn extract(value: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+
+    fn extract(value: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         enum Helper {
             Bool(bool),
