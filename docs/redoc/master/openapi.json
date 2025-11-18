@@ -11627,18 +11627,18 @@
             "type": "boolean"
           },
           "migrate_rocksdb_vector_storage": {
-            "description": "Migrate RocksDB based vector storages into new format on start.",
-            "default": false,
+            "description": "Migrate RocksDB based vector storages into new format on start.\n\nEnabled by default in Qdrant 1.16.1.",
+            "default": true,
             "type": "boolean"
           },
           "migrate_rocksdb_payload_storage": {
-            "description": "Migrate RocksDB based payload storages into new format on start.",
-            "default": false,
+            "description": "Migrate RocksDB based payload storages into new format on start.\n\nEnabled by default in Qdrant 1.16.1.",
+            "default": true,
             "type": "boolean"
           },
           "migrate_rocksdb_payload_indices": {
-            "description": "Migrate RocksDB based payload indices into new format on start.\n\nRebuilds a new payload index from scratch.",
-            "default": false,
+            "description": "Migrate RocksDB based payload indices into new format on start.\n\nRebuilds a new payload index from scratch.\n\nEnabled by default in Qdrant 1.16.1.",
+            "default": true,
             "type": "boolean"
           },
           "appendable_quantization": {
