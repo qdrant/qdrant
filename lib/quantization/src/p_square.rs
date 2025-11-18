@@ -38,23 +38,22 @@ impl<const N: usize> P2Quantile<N> {
 
     /// Push one observation.
     pub fn push(&mut self, x: f64) {
+        let Ok(x) = NotNan::new(x) else {
+            return;
+        };
         if !x.is_finite() {
             return;
         }
 
         match self {
             P2Quantile::Linear(linear) => {
-                let Ok(x) = NotNan::new(x) else {
-                    return;
-                };
-
                 // in linear case just collect observations until we have N of them
                 linear.observations.push(x);
                 if linear.observations.len() == N {
                     *self = P2Quantile::Impl(P2QuantileImpl::new_from_linear(linear));
                 }
             }
-            P2Quantile::Impl(p2) => p2.push(x),
+            P2Quantile::Impl(p2) => p2.push(*x),
         }
     }
 
