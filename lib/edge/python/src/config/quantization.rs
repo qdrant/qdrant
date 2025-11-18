@@ -4,4 +4,4 @@ use segment::types::*;
 
 #[pyclass(name = "QuantizationConfig")]
 #[derive(Clone, Debug, Into)]
-pub struct PyQuantizationConfig(QuantizationConfig); // TODO
+pub struct PyQuantizationConfig(pub QuantizationConfig); // TODO

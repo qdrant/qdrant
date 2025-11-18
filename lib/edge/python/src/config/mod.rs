@@ -32,6 +32,29 @@ impl PySegmentConfig {
             payload_storage_type: PayloadStorageType::from(payload_storage_type),
         })
     }
+
+    #[getter]
+    pub fn vector_data(&self) -> HashMap<String, PyVectorDataConfig> {
+        self.0
+            .vector_data
+            .iter()
+            .map(|(vector, conf)| (vector.clone(), PyVectorDataConfig(conf.clone())))
+            .collect()
+    }
+
+    #[getter]
+    pub fn sparse_vector_data(&self) -> HashMap<String, PySparseVectorDataConfig> {
+        self.0
+            .sparse_vector_data
+            .iter()
+            .map(|(vector, conf)| (vector.clone(), PySparseVectorDataConfig(conf.clone())))
+            .collect()
+    }
+
+    #[getter]
+    pub fn payload_storage_type(&self) -> PyPayloadStorageType {
+        PyPayloadStorageType::from(self.0.payload_storage_type)
+    }
 }
 
 #[pyclass(name = "PayloadStorageType")]

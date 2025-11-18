@@ -11,7 +11,7 @@ use super::quantization::*;
 #[pyclass(name = "VectorDataConfig")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-pub struct PyVectorDataConfig(VectorDataConfig);
+pub struct PyVectorDataConfig(pub VectorDataConfig);
 
 impl PyVectorDataConfig {
     pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorDataConfig>
@@ -43,6 +43,41 @@ impl PyVectorDataConfig {
             multivector_config: multivector_config.map(MultiVectorConfig::from),
             datatype: datatype.map(VectorStorageDatatype::from),
         })
+    }
+
+    #[getter]
+    pub fn size(&self) -> usize {
+        self.0.size
+    }
+
+    #[getter]
+    pub fn distance(&self) -> PyDistance {
+        PyDistance::from(self.0.distance)
+    }
+
+    #[getter]
+    pub fn storage_type(&self) -> PyVectorStorageType {
+        PyVectorStorageType::from(self.0.storage_type)
+    }
+
+    #[getter]
+    pub fn index(&self) -> PyIndexes {
+        PyIndexes(self.0.index.clone())
+    }
+
+    #[getter]
+    pub fn quantization_config(&self) -> Option<PyQuantizationConfig> {
+        self.0.quantization_config.clone().map(PyQuantizationConfig)
+    }
+
+    #[getter]
+    pub fn multivector_config(&self) -> Option<PyMultiVectorConfig> {
+        self.0.multivector_config.map(PyMultiVectorConfig)
+    }
+
+    #[getter]
+    pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
+        self.0.datatype.map(PyVectorStorageDatatype::from)
     }
 }
 
@@ -140,6 +175,11 @@ impl PyMultiVectorConfig {
         Self(MultiVectorConfig {
             comparator: MultiVectorComparator::from(comparator),
         })
+    }
+
+    #[getter]
+    pub fn comparator(&self) -> PyMultiVectorComparator {
+        PyMultiVectorComparator::from(self.0.comparator)
     }
 }
 

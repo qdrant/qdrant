@@ -9,7 +9,7 @@ use segment::types::*;
 #[pyclass(name = "SparseVectorDataConfig")]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-pub struct PySparseVectorDataConfig(SparseVectorDataConfig); // TODO
+pub struct PySparseVectorDataConfig(pub SparseVectorDataConfig); // TODO
 
 impl PySparseVectorDataConfig {
     pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, SparseVectorDataConfig>
