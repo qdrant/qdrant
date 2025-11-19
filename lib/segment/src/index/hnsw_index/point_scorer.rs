@@ -459,6 +459,7 @@ impl<'a> BatchFilteredSearcher<'a> {
                 break;
             }
 
+            // Switching the loops improves batching performance, but slightly degrades single-query performance.
             for BatchSearch { raw_scorer, pq } in &mut self.scorer_batch {
                 raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
 
