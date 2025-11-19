@@ -15,7 +15,7 @@ pub struct ShardKeyMapping {
     shard_key_to_shard_ids: HashMap<ShardKey, HashSet<ShardId>>,
 
     /// `true` if the ShardKeyMapping was specified in the old format.
-    /// TODO(shardkey): Remove once all keys are migrated.
+    // TODO(1.17.0): Remove once all keys are migrated.
     #[serde(skip)]
     pub(crate) was_old_format: bool,
 }

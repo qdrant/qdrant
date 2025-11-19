@@ -91,7 +91,7 @@ impl ShardHolder {
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
             SaveOnDisk::load_or_init_default(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
 
-        // TODO(shardkey): Remove once the old shardkey format has been removed entirely.
+        // TODO(1.17.0): Remove once the old shardkey format has been removed entirely.
         Self::migrate_shard_key_if_needed(&key_mapping)?;
 
         let mut shard_id_to_key_mapping = AHashMap::new();
@@ -1448,7 +1448,7 @@ impl ShardHolder {
     }
 
     /// Migrates the old shard-key format to the new one if necessary.
-    /// TODO(shardkey): Remove once the old shardkey format has been removed entirely.
+    // TODO(1.17.0): Remove once the old shardkey format has been removed entirely.
     fn migrate_shard_key_if_needed(
         key_mapping: &SaveOnDisk<ShardKeyMapping>,
     ) -> CollectionResult<()> {
