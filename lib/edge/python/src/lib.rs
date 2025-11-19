@@ -24,8 +24,9 @@ mod qdrant_edge {
     use super::PyShard;
     #[pymodule_export]
     use super::config::{
-        PyDistance, PyIndexes, PyMultiVectorComparator, PyMultiVectorConfig, PyPayloadStorageType,
-        PyQuantizationConfig, PySegmentConfig, PySparseVectorDataConfig, PyVectorDataConfig,
+        PyBinaryQuantizationConfig, PyDistance, PyHnswIndexConfig, PyMultiVectorComparator,
+        PyMultiVectorConfig, PyPayloadStorageType, PyPlainIndexConfig, PyProductQuantizationConfig,
+        PyScalarQuantizationConfig, PySegmentConfig, PySparseVectorDataConfig, PyVectorDataConfig,
         PyVectorStorageDatatype, PyVectorStorageType,
     };
     #[pymodule_export]
