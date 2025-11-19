@@ -42,14 +42,14 @@ use crate::vector_storage::{
 /// The `BatchFilteredSearcher` contains an array of `RawScorer`s, a common filter and certain parameters.
 ///
 /// ```plaintext
-///  BatchFilterScorer      RawScorer
-/// ┌─────────────────┐ ┌───────────────┐
-/// │ [RawScorer] ◄───┼─┤ QueryScorer ◄─┼── (ditto)
-/// │                 │ └───────────────┘
-/// │ FilterContext   │
-/// │                 │
-/// │ top             │
-/// └─────────────────┘
+/// BatchFilteredSearcher  RawScorer
+///  ┌─────────────────┐  ┌───────────────┐
+///  │ [RawScorer] ◄───┼──┤ QueryScorer ◄─┼── (ditto)
+///  │                 │  └───────────────┘
+///  │ FilterContext   │
+///  │                 │
+///  │ top             │
+///  └─────────────────┘
 /// ```
 pub struct FilteredScorer<'a> {
     raw_scorer: Box<dyn RawScorer + 'a>,
