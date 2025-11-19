@@ -79,7 +79,7 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
 
 // Batched search gives performance benefit only when memory is contended.
 // For a single-threaded criterion run, it only shows that batching penalty is relatively small.
-// We might run a thread pool explicitely, though.
+// We might run a thread pool explicitly, though.
 fn benchmark_scorer_mmap_4(c: &mut Criterion) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
