@@ -77,18 +77,54 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
     });
 }
 
+// Batched search gives performance benefit only when memory is contended.
+// For a single-threaded criterion run, it only shows that batching penalty is relatively small.
+// We might run a thread pool explicitely, though.
+fn benchmark_scorer_mmap_4(c: &mut Criterion) {
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+
+    let dist = Distance::Dot;
+    let (storage, id_tracker) = init_mmap_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
+    let borrowed_id_tracker = id_tracker.borrow();
+
+    let mut group = c.benchmark_group("storage-score-all");
+
+    group.bench_function("storage batched vector scoring, 4 vectors batch", |b| {
+        b.iter_batched(
+            || {
+                [
+                    QueryVector::from(random_vector(DIM)),
+                    QueryVector::from(random_vector(DIM)),
+                    QueryVector::from(random_vector(DIM)),
+                    QueryVector::from(random_vector(DIM)),
+                ]
+            },
+            |vecs| {
+                BatchFilteredSearcher::new_for_test(
+                    &vecs,
+                    &storage,
+                    borrowed_id_tracker.deleted_point_bitslice(),
+                    10,
+                )
+                .peek_top_all(&DEFAULT_STOPPED)
+                .unwrap()
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
 #[cfg(not(target_os = "windows"))]
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
-    targets = benchmark_scorer_mmap
+    targets = benchmark_scorer_mmap, benchmark_scorer_mmap_4,
 }
 
 #[cfg(target_os = "windows")]
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = benchmark_scorer_mmap,
+    targets = benchmark_scorer_mmap, benchmark_scorer_mmap_double,
 }
 
 criterion_main!(benches);
