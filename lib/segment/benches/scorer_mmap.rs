@@ -124,7 +124,7 @@ criterion_group! {
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = benchmark_scorer_mmap, benchmark_scorer_mmap_double,
+    targets = benchmark_scorer_mmap, benchmark_scorer_mmap_4,
 }
 
 criterion_main!(benches);

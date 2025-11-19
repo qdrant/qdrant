@@ -142,7 +142,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let vector: Vec<Vec<f32>> = vec![vec![2.0; vector_dim]];
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let searcher = BatchFilteredSearcher::new_for_test(
-        &[query],
+        std::slice::from_ref(&query),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
         5,
@@ -169,7 +169,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let vector: Vec<Vec<f32>> = vec![vec![1.0; vector_dim]];
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let searcher = BatchFilteredSearcher::new_for_test(
-        &[query],
+        std::slice::from_ref(&query),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
         5,
@@ -195,7 +195,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let vector: Vec<Vec<f32>> = vec![vec![1.0; vector_dim]];
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let searcher = BatchFilteredSearcher::new_for_test(
-        &[query],
+        std::slice::from_ref(&query),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
         5,
@@ -259,7 +259,7 @@ fn do_test_update_from_delete_points(
     let query = QueryVector::Nearest(vector.try_into().unwrap());
 
     let searcher = BatchFilteredSearcher::new_for_test(
-        &[query],
+        std::slice::from_ref(&query),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
         5,

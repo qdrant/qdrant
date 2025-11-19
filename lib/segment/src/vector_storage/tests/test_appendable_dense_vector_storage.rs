@@ -63,7 +63,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let vector = vec![0.0, 1.0, 1.1, 1.0];
     let query = vector.as_slice().into();
     let searcher = BatchFilteredSearcher::new_for_test(
-        &[query],
+        std::slice::from_ref(&query),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
         5,
@@ -90,7 +90,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let vector = vec![1.0, 0.0, 0.0, 0.0];
     let query = vector.as_slice().into();
     let searcher = BatchFilteredSearcher::new_for_test(
-        &[query],
+        std::slice::from_ref(&query),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
         5,
@@ -116,7 +116,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let vector = vec![1.0, 0.0, 0.0, 0.0];
     let query = vector.as_slice().into();
     let searcher = BatchFilteredSearcher::new_for_test(
-        &[query],
+        std::slice::from_ref(&query),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
         5,
@@ -175,7 +175,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let query = vector.as_slice().into();
 
     let searcher = BatchFilteredSearcher::new_for_test(
-        &[query],
+        std::slice::from_ref(&query),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
         5,
