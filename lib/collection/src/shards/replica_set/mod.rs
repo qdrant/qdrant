@@ -398,9 +398,22 @@ impl ShardReplicaSet {
         self.local.read().await.is_some()
     }
 
+    /// Checks if the shard exists locally and not a proxy.
     pub async fn is_local(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Shard::Local(_) | Shard::Dummy(_)))
+    }
+
+    pub async fn is_proxy(&self) -> bool {
+        let local_read = self.local.read().await;
+        match *local_read {
+            None => false,
+            Some(Shard::Local(_)) => false,
+            Some(Shard::Proxy(_)) => true,
+            Some(Shard::ForwardProxy(_)) => true,
+            Some(Shard::QueueProxy(_)) => true,
+            Some(Shard::Dummy(_)) => false,
+        }
     }
 
     pub async fn is_queue_proxy(&self) -> bool {
