@@ -145,7 +145,7 @@ impl VectorIndex for PlainVectorIndex {
         for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {
             *search_result = postprocess_search_result(
                 std::mem::take(search_result),
-                id_tracker.deleted_point_bitslice(),
+                deleted_points,
                 &vector_storage,
                 quantized_storage.as_ref(),
                 query_vector,
