@@ -19,7 +19,7 @@ class TestStorageCompatibility:
         "v1.15.3",
         "v1.15.2",
         "v1.15.1",
-        "v1.15.0",
+        #"v1.15.0", # TODO when restoring Qdrant adds a missing payload_storage folder owned by `root` which messes up the cleanup
     ]
 
     EXPECTED_COLLECTIONS = [
