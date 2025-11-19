@@ -12,8 +12,15 @@ from e2e_tests.utils import extract_archive
 class TestStorageCompatibility:
     """Test storage and snapshot compatibility with defined previous Qdrant versions."""
 
-    PREV_PATCH_VERSION = "v1.16.0"
-    PREV_MINOR_VERSION = "v1.15.5"
+    VERSIONS = [
+        "v1.16.0",
+        "v1.15.5",
+        "v1.15.4",
+        "v1.15.3",
+        "v1.15.2",
+        "v1.15.1",
+        "v1.15.0",
+    ]
 
     EXPECTED_COLLECTIONS = [
         "test_collection_vector_memory",
@@ -106,7 +113,7 @@ class TestStorageCompatibility:
         return True
 
 
-    @pytest.mark.parametrize("version", [PREV_PATCH_VERSION, PREV_MINOR_VERSION])
+    @pytest.mark.parametrize("version", VERSIONS)
     def test_storage_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version, qdrant_container_factory):
         """Test storage compatibility with previous versions."""
         compatibility_file = self._download_compatibility_data(version, temp_storage_dir)
@@ -125,7 +132,7 @@ class TestStorageCompatibility:
         if not self._check_collections(container_info.host, container_info.http_port):
             pytest.fail(f"Storage compatibility failed for {version}")
 
-    @pytest.mark.parametrize("version", [PREV_PATCH_VERSION, PREV_MINOR_VERSION])
+    @pytest.mark.parametrize("version", VERSIONS)
     def test_snapshot_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version, qdrant_container_factory):
         """Test snapshot recovery compatibility with previous versions."""
         compatibility_file = self._download_compatibility_data(version, temp_storage_dir)
