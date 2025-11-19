@@ -437,7 +437,6 @@ impl<'a> BatchFilteredSearcher<'a> {
 
         // Reuse the same buffer for all chunks, to avoid reallocation
         let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
-        let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
 
         loop {
             check_process_stopped(is_stopped)?;
@@ -459,13 +458,12 @@ impl<'a> BatchFilteredSearcher<'a> {
                 break;
             }
 
-            for BatchSearch { raw_scorer, pq } in &mut self.scorer_batch {
-                raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
-
-                for i in 0..chunk_size {
+            for point_id in &chunk[..chunk_size] {
+                for BatchSearch { raw_scorer, pq } in &mut self.scorer_batch {
+                    let score = raw_scorer.score_point(*point_id);
                     pq.push(ScoredPointOffset {
-                        idx: chunk[i],
-                        score: scores_buffer[i],
+                        idx: *point_id,
+                        score,
                     });
                 }
             }
