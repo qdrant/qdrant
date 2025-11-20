@@ -14,7 +14,7 @@ use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 #[cfg(feature = "rocksdb")]
@@ -82,15 +82,17 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         negatives: vec![],
     });
     // Because nearest search for raw scorer is incorrect,
-    let scorer = FilteredScorer::new_for_test(
-        query_vector,
+    let searcher = BatchFilteredSearcher::new_for_test(
+        &[query_vector],
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
+        5,
     );
-    let closest = scorer
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+    let mut results = searcher
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap();
-    drop(scorer);
+    assert_eq!(results.len(), 1);
+    let closest = results.pop().unwrap();
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
     assert_eq!(closest[1].idx, 1);
@@ -174,15 +176,19 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         positives: vec![vector.into()],
         negatives: vec![],
     });
-    let scorer = FilteredScorer::new_for_test(
-        query_vector,
+    let searcher = BatchFilteredSearcher::new_for_test(
+        &[query_vector],
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
+        5,
     );
-    let closest = scorer
-        .peek_top_iter(&mut [0, 1, 2, 3, 4, 5].iter().cloned(), 5, &DEFAULT_STOPPED)
+    let mut results = searcher
+        .peek_top_iter(&mut [0, 1, 2, 3, 4, 5].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap();
-    drop(scorer);
+
+    assert_eq!(results.len(), 1);
+
+    let closest = results.pop().unwrap();
 
     assert_eq!(
         closest.len(),

@@ -248,7 +248,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         .unwrap();
 
     let mut raw_scorer = FilteredScorer::new(
-        query,
+        query.clone(),
         storage,
         None,
         None,
@@ -256,8 +256,21 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         HardwareCounterCell::new(),
     )
     .unwrap();
-    let closest = raw_scorer
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, &DEFAULT_STOPPED)
+
+    let searcher = BatchFilteredSearcher::new(
+        &[&query],
+        storage,
+        None,
+        None,
+        2,
+        borrowed_id_tracker.deleted_point_bitslice(),
+        HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let closest = searcher
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+        .unwrap()
+        .pop()
         .unwrap();
 
     let query_points = vec![0, 1, 2, 3, 4];
