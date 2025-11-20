@@ -30,6 +30,7 @@ pub fn create_update_runtime(max_optimization_threads: usize) -> io::Result<Runt
 
     update_runtime_builder
         .enable_time()
+        .enable_io()
         .worker_threads(num_cpus)
         .thread_name_fn(move || {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
