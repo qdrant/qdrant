@@ -9,7 +9,6 @@ from e2e_tests.client_utils import ClientUtils
 from e2e_tests.utils import extract_archive
 
 
-@pytest.mark.xdist_group("compatibility")
 class TestStorageCompatibility:
     """Test storage and snapshot compatibility with defined previous Qdrant versions.
 
@@ -126,6 +125,7 @@ class TestStorageCompatibility:
         return True
 
 
+    @pytest.mark.xdist_group("compatibility")
     @pytest.mark.parametrize("version", VERSIONS)
     def test_storage_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version,
                                    qdrant_container_factory):
@@ -146,6 +146,7 @@ class TestStorageCompatibility:
         if not self._check_collections(container_info.host, container_info.http_port):
             pytest.fail(f"Storage compatibility failed for {version}")
 
+    @pytest.mark.xdist_group("compatibility")
     @pytest.mark.parametrize("version", VERSIONS)
     def test_snapshot_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version,
                                     qdrant_container_factory):

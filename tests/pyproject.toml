@@ -24,6 +24,9 @@ qdrant-client = "^1.15.1"
 markers = [
     "xdist_group: group tests to run on the same worker (for pytest-xdist)",
 ]
+addopts = """
+    --dist=loadgroup
+"""
 
 [build-system]
 requires = ["poetry-core"]
