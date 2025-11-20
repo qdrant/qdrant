@@ -110,6 +110,21 @@ def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
     # Single partial snapshot recovery request allowed at the same time
     assert any(response.status_code == 503 for response in responses), "Subsequent partial snapshot recovery requests have to be rejected during partial snapshot recovery"
 
+def test_partial_snapshot_replica_state_during_recovery(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 10_000, recover_read=True, wait_for_green=True)
+
+    res = recover_partial_snapshot_from(read_peer, write_peer, wait = False)
+    # Immediately check replica state after starting recovery
+    read_telemetry = get_telemetry_collections(read_peer)
+
+    read_replica_states = set(read_telemetry[0]['shards'][0]['replicate_states'].values())
+    read_replica_partial_snapshot_state = read_telemetry[0]['shards'][0]['partial_snapshot']
+
+    assert read_replica_partial_snapshot_state['is_recovering']
+    assert read_replica_states == {"PartialSnapshot"}
+
 def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -286,9 +301,13 @@ def recover_collection_snapshot(peer_url: str, snapshot_url: str):
 
 def recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, shard = 0, wait = True):
     resp = try_recover_partial_snapshot_from(peer_url, recover_peer_url, shard, wait)
-    assert_http_ok(resp)
 
-    return resp.json()["result"]
+    if wait:
+        assert_http_ok(resp, 200)
+        return resp.json()["result"]
+    else:
+        assert_http_ok(resp, 202)
+        return resp.json()
 
 def try_recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, shard = 0, wait = True):
     resp = requests.post(
