@@ -33,10 +33,6 @@ jobs:
             target: aarch64-unknown-linux-musl
             manylinux: musllinux_1_2
 
-          - arch: armv7l
-            target: armv7-unknown-linux-musleabihf
-            manylinux: musllinux_1_2
-
     steps:
       - name: Checkout Qdrant
         uses: actions/checkout@v5
