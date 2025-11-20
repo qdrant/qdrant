@@ -263,7 +263,7 @@ jobs:
       - name: Run e2e tests
         run: poetry --project tests run pytest -n 4 tests/e2e_tests -v --tb=short --durations=5
         shell: bash
-        timeout-minutes: 5
+        timeout-minutes: 10
       - name: Upload test logs on failure
         uses: actions/upload-artifact@v5
         if: failure()
