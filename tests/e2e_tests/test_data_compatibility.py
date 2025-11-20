@@ -1,6 +1,8 @@
 import shutil
+import uuid
 
 import pytest
+import requests
 from pathlib import Path
 
 from e2e_tests.conftest import QdrantContainerConfig
@@ -42,22 +44,33 @@ class TestStorageCompatibility:
     ]
 
     @staticmethod
-    def _get_compatibility_file(version: str, compatibility_data_cache, temp_storage_dir: Path) -> Path:
-        """Get compatibility archive from cache and copy to temp storage directory.
+    def _download_compatibility_data(version: str, storage_test_dir: Path):
+        """Download compatibility data for a specific version.
 
         Args:
             version: Version string (e.g., "v1.16.0")
-            compatibility_data_cache: Cache fixture that provides downloaded archives
-            temp_storage_dir: Temporary directory for this test
+            storage_test_dir: Directory to download the archive to
 
         Returns:
-            Path to the copied compatibility archive in temp_storage_dir
+            Path to the downloaded compatibility archive
         """
-        cached_archive = compatibility_data_cache.get(version)
+        # Use test-specific filename to avoid conflicts in parallel execution
+        test_id = str(uuid.uuid4())[:8]
+        compatibility_file = storage_test_dir / f"compatibility_{version}_{test_id}.tar"
 
-        # Copy to temp_storage_dir for extraction
-        compatibility_file = temp_storage_dir / f"compatibility-{version}.tar"
-        shutil.copy2(cached_archive, compatibility_file)
+        url = f"https://storage.googleapis.com/qdrant-backward-compatibility/compatibility-{version}.tar"
+
+        print(f"Downloading compatibility data for {version}...")
+
+        try:
+            with requests.get(url, stream=True, timeout=(10, 300)) as response:
+                response.raise_for_status()
+                with open(compatibility_file, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            f.write(chunk)
+        except requests.exceptions.RequestException as e:
+            pytest.skip(f"Could not download compatibility data for {version}: {e}")
 
         return compatibility_file
 
@@ -116,9 +129,9 @@ class TestStorageCompatibility:
 
     @pytest.mark.parametrize("version", VERSIONS)
     def test_storage_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version,
-                                   qdrant_container_factory, compatibility_data_cache):
+                                   qdrant_container_factory):
         """Test storage compatibility with previous versions."""
-        compatibility_file = self._get_compatibility_file(version, compatibility_data_cache, temp_storage_dir)
+        compatibility_file = self._download_compatibility_data(version, temp_storage_dir)
         storage_dir = self._extract_storage_data(compatibility_file, temp_storage_dir)
 
         config = QdrantContainerConfig(
@@ -136,9 +149,9 @@ class TestStorageCompatibility:
 
     @pytest.mark.parametrize("version", VERSIONS)
     def test_snapshot_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version,
-                                    qdrant_container_factory, compatibility_data_cache):
+                                    qdrant_container_factory):
         """Test snapshot recovery compatibility with previous versions."""
-        compatibility_file = self._get_compatibility_file(version, compatibility_data_cache, temp_storage_dir)
+        compatibility_file = self._download_compatibility_data(version, temp_storage_dir)
         self._extract_storage_data(compatibility_file, temp_storage_dir)
         snapshot_file = self._extract_snapshot_data(temp_storage_dir)
 

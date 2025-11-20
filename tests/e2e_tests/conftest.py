@@ -1,13 +1,10 @@
 import shutil
 import subprocess
-import fcntl
-import time
 from pathlib import Path
-from typing import Generator, Dict
+from typing import Generator
 
 import pytest
 import docker
-import requests
 from docker.errors import ImageNotFound
 
 from .models import QdrantContainerConfig
@@ -43,75 +40,6 @@ def test_data_dir() -> Path:
         Path: Absolute path to tests/e2e_tests/test_data directory
     """
     return Path(__file__).parent / "test_data"
-
-
-@pytest.fixture(scope="session")
-def compatibility_data_cache(tmp_path_factory) -> Dict[str, Path]:
-    """
-    Session-scoped fixture to download and cache compatibility data archives.
-
-    This fixture ensures each version's archive is downloaded only once per test session,
-    even with parallel test execution. Uses file-based locking to prevent race conditions
-    when multiple workers try to download the same file.
-
-    Returns:
-        Dict[str, Path]: Mapping of version strings to downloaded archive file paths
-    """
-    cache_dir = tmp_path_factory.mktemp("compatibility_cache")
-    downloaded_archives = {}
-
-    def download_with_lock(version: str) -> Path:
-        """Download compatibility data for a version with file locking."""
-        if version in downloaded_archives:
-            return downloaded_archives[version]
-
-        archive_file = cache_dir / f"compatibility-{version}.tar"
-        lock_file = cache_dir / f"compatibility-{version}.lock"
-
-        # Create lock file
-        lock_file.touch(exist_ok=True)
-
-        with open(lock_file, 'w') as lock_fd:
-            # Acquire exclusive lock (blocks until available)
-            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
-
-            try:
-                # Check if another worker already downloaded it while we were waiting
-                if archive_file.exists():
-                    print(f"Compatibility data for {version} already downloaded by another worker")
-                    downloaded_archives[version] = archive_file
-                    return archive_file
-
-                # Download the archive
-                url = f"https://storage.googleapis.com/qdrant-backward-compatibility/compatibility-{version}.tar"
-                print(f"Downloading compatibility data for {version}...")
-
-                try:
-                    with requests.get(url, stream=True, timeout=(10, 300)) as response:
-                        response.raise_for_status()
-                        with open(archive_file, 'wb') as f:
-                            for chunk in response.iter_content(chunk_size=1024 * 1024):
-                                if chunk:
-                                    f.write(chunk)
-
-                    print(f"Successfully downloaded compatibility data for {version}")
-                    downloaded_archives[version] = archive_file
-                    return archive_file
-
-                except requests.exceptions.RequestException as e:
-                    print(f"Failed to download compatibility data for {version}: {e}")
-                    raise
-
-            finally:
-                # Release lock
-                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
-
-    # Return a dictionary-like object that downloads on access
-    class CompatibilityCache:
-        def get(self, version: str) -> Path:
-            return download_with_lock(version)
-
-    return CompatibilityCache()
 
 
 @pytest.fixture(scope="session")
@@ -315,10 +243,26 @@ def temp_storage_dir(request) -> Generator[Path, None, None]:
     finally:
         if test_dir.exists():
             try:
+                # Try to fix permissions before removal (Docker may create root-owned files)
+                subprocess.run(
+                    ["chmod", "-R", "u+w", str(test_dir)],
+                    capture_output=True,
+                    check=False
+                )
                 shutil.rmtree(test_dir)
                 print(f"Cleaned up temp storage directory: {test_dir}")
             except Exception as e:
+                # If cleanup still fails, try with sudo (last resort for CI)
                 print(f"Warning: Failed to remove temp storage directory {test_dir}: {e}")
+                try:
+                    subprocess.run(
+                        ["sudo", "rm", "-rf", str(test_dir)],
+                        capture_output=True,
+                        check=False
+                    )
+                    print(f"Cleaned up temp storage directory with sudo: {test_dir}")
+                except Exception as sudo_error:
+                    print(f"Failed to cleanup even with sudo: {sudo_error}")
 
 
 @pytest.fixture(scope="function")
