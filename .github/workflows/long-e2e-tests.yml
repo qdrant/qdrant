@@ -1,0 +1,79 @@
+name: Integration tests
+
+on:
+  push:
+    branches: [ master ]
+  schedule:
+    - cron: '30 3 * * *'  # At 03:30
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  POETRY_VERSION: 2.1.3
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+
+    # Setup minio server
+    services:
+      minio:
+        image: satantime/minio-server
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ACCESS_KEY: "minioadmin"
+          MINIO_SECRET_KEY: "minioadmin"
+
+    steps:
+      - name: Setup test bucket
+        env:
+          AWS_ACCESS_KEY_ID: "minioadmin"
+          AWS_SECRET_ACCESS_KEY: "minioadmin"
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
+
+      - uses: actions/checkout@v5
+        with:
+          lfs: true  # Fetch LFS files automatically
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install Python dependencies
+        run: |
+          poetry -C tests check --lock
+          poetry -C tests install --no-root
+      - name: Build Qdrant Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: qdrant/qdrant:e2e-tests
+          cache-from: |
+            type=gha,scope=${{ github.ref }}-e2e
+            type=gha,scope=${{ github.base_ref }}-e2e
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}-e2e
+          load: true
+          build-args: |
+            PROFILE=ci
+            FEATURES=data-consistency-check
+      - name: Verify Docker image
+        run: docker images | grep qdrant
+      - name: Run e2e tests
+        run: poetry --project tests run pytest -n 4 tests/e2e_tests -v --tb=short --durations=5 -m "longrunning"
+        shell: bash
+        timeout-minutes: 5
+      - name: Upload test logs on failure
+        uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: e2e-test-logs
+          path: |
+            tests/e2e_tests/test_*.log
+            tests/e2e_tests/**/logs/
+          retention-days: 7
