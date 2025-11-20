@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 
-use super::hnsw_index::point_scorer::FilteredScorer;
+use super::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::{
@@ -83,7 +83,7 @@ impl PlainVectorIndex {
 impl VectorIndex for PlainVectorIndex {
     fn search(
         &self,
-        vectors: &[&QueryVector],
+        query_vectors: &[&QueryVector],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -97,101 +97,64 @@ impl VectorIndex for PlainVectorIndex {
                 &query_context.hardware_counter(),
             )
         {
-            return Ok(vec![vec![]; vectors.len()]);
+            return Ok(vec![vec![]; query_vectors.len()]);
+        }
+        if top == 0 {
+            return Ok(vec![vec![]; query_vectors.len()]);
         }
 
         let is_stopped = query_context.is_stopped();
 
         let hw_counter = query_context.hardware_counter();
 
-        match filter {
+        let _timer = ScopeDurationMeasurer::new(if filter.is_some() {
+            &self.filtered_searches_telemetry
+        } else {
+            &self.unfiltered_searches_telemetry
+        });
+        let vector_storage = self.vector_storage.borrow();
+        let quantized_storage = self.quantized_vectors.borrow();
+        let id_tracker = self.id_tracker.borrow();
+        let deleted_points = query_context
+            .deleted_points()
+            .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
+        let quantization_enabled = is_quantized_search(quantized_storage.as_ref(), params);
+        let quantized_vectors = quantization_enabled
+            .then_some(quantized_storage.as_ref())
+            .flatten();
+        let oversampled_top = get_oversampled_top(quantized_storage.as_ref(), params, top);
+        let batch_searcher = BatchFilteredSearcher::new(
+            query_vectors,
+            &vector_storage,
+            quantized_vectors,
+            None,
+            oversampled_top,
+            deleted_points,
+            query_context.hardware_counter(),
+        )?;
+
+        let mut search_results = match filter {
             Some(filter) => {
-                let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
-                let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
-                let vector_storage = self.vector_storage.borrow();
-                let quantized_storage = self.quantized_vectors.borrow();
                 let filtered_ids_vec = payload_index.query_points(filter, &hw_counter, &is_stopped);
-                let deleted_points = query_context
-                    .deleted_points()
-                    .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
-                vectors
-                    .iter()
-                    .map(|&vector| {
-                        let quantization_enabled =
-                            is_quantized_search(quantized_storage.as_ref(), params);
-                        let scorer = FilteredScorer::new(
-                            vector.to_owned(),
-                            &vector_storage,
-                            quantization_enabled
-                                .then_some(quantized_storage.as_ref())
-                                .flatten(),
-                            None,
-                            deleted_points,
-                            query_context.hardware_counter(),
-                        )?;
-                        let oversampled_top =
-                            get_oversampled_top(quantized_storage.as_ref(), params, top);
-                        let search_result = scorer.peek_top_iter(
-                            &mut filtered_ids_vec.iter().copied(),
-                            oversampled_top,
-                            &is_stopped,
-                        )?;
-                        let res = postprocess_search_result(
-                            search_result,
-                            id_tracker.deleted_point_bitslice(),
-                            &vector_storage,
-                            quantized_storage.as_ref(),
-                            vector,
-                            params,
-                            top,
-                            query_context.hardware_counter(),
-                        )?;
-                        Ok(res)
-                    })
-                    .collect()
+                batch_searcher.peek_top_iter(&mut filtered_ids_vec.iter().copied(), &is_stopped)?
             }
-            None => {
-                let _timer = ScopeDurationMeasurer::new(&self.unfiltered_searches_telemetry);
-                let vector_storage = self.vector_storage.borrow();
-                let quantized_storage = self.quantized_vectors.borrow();
-                let id_tracker = self.id_tracker.borrow();
-                let deleted_points = query_context
-                    .deleted_points()
-                    .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
-                vectors
-                    .iter()
-                    .map(|&vector| {
-                        let quantization_enabled =
-                            is_quantized_search(quantized_storage.as_ref(), params);
-                        let scorer = FilteredScorer::new(
-                            vector.to_owned(),
-                            &vector_storage,
-                            quantization_enabled
-                                .then_some(quantized_storage.as_ref())
-                                .flatten(),
-                            None,
-                            deleted_points,
-                            query_context.hardware_counter(),
-                        )?;
-                        let oversampled_top =
-                            get_oversampled_top(quantized_storage.as_ref(), params, top);
-                        let search_result = scorer.peek_top_all(oversampled_top, &is_stopped)?;
-                        let res = postprocess_search_result(
-                            search_result,
-                            id_tracker.deleted_point_bitslice(),
-                            &vector_storage,
-                            quantized_storage.as_ref(),
-                            vector,
-                            params,
-                            top,
-                            query_context.hardware_counter(),
-                        )?;
-                        Ok(res)
-                    })
-                    .collect()
-            }
+            None => batch_searcher.peek_top_all(&is_stopped)?,
+        };
+
+        for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {
+            *search_result = postprocess_search_result(
+                std::mem::take(search_result),
+                deleted_points,
+                &vector_storage,
+                quantized_storage.as_ref(),
+                query_vector,
+                params,
+                top,
+                query_context.hardware_counter(),
+            )?;
         }
+        Ok(search_results)
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {

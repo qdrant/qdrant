@@ -5,6 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::BoxCow;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+use smallvec::SmallVec;
 
 use crate::common::operation_error::{CancellableResult, OperationResult, check_process_stopped};
 use crate::data_types::vectors::QueryVector;
@@ -36,6 +37,19 @@ use crate::vector_storage::{
 ///                                                              └──────────────────┘
 ///                                                              - Scoring logic
 ///                                                              - Complex queries
+/// ```
+///
+/// The `BatchFilteredSearcher` contains an array of `RawScorer`s, a common filter and certain parameters.
+///
+/// ```plaintext
+/// BatchFilteredSearcher  RawScorer
+///  ┌─────────────────┐  ┌───────────────┐
+///  │ [RawScorer] ◄───┼──┤ QueryScorer ◄─┼── (ditto)
+///  │                 │  └───────────────┘
+///  │ FilterContext   │
+///  │                 │
+///  │ top             │
+///  └─────────────────┘
 /// ```
 pub struct FilteredScorer<'a> {
     raw_scorer: Box<dyn RawScorer + 'a>,
@@ -307,5 +321,162 @@ impl<'a> FilteredScorer<'a> {
         }
 
         Ok(pq.into_sorted_vec())
+    }
+}
+
+// We keep each scorer with its queue to reduce allocations and improve data locality.
+struct BatchSearch<'a> {
+    raw_scorer: Box<dyn RawScorer + 'a>,
+    pq: FixedLengthPriorityQueue<ScoredPointOffset>,
+}
+
+pub struct BatchFilteredSearcher<'a> {
+    scorer_batch: SmallVec<[BatchSearch<'a>; 1]>,
+    filters: ScorerFilters<'a>,
+    top: usize,
+}
+
+impl<'a> BatchFilteredSearcher<'a> {
+    /// Create a new batch filtered searcher.
+    ///
+    /// If present, `quantized_vectors` will be used for scoring, otherwise `vectors` will be used.
+    pub fn new(
+        queries: &[&QueryVector],
+        vectors: &'a VectorStorageEnum,
+        quantized_vectors: Option<&'a QuantizedVectors>,
+        filter_context: Option<BoxCow<'a, dyn FilterContext + 'a>>,
+        top: usize,
+        point_deleted: &'a BitSlice,
+        hardware_counter: HardwareCounterCell,
+    ) -> OperationResult<Self> {
+        let scorer_batch = queries
+            .iter()
+            .map(|&query| {
+                let query = query.to_owned();
+                let hardware_counter = hardware_counter.fork();
+                let raw_scorer = match quantized_vectors {
+                    Some(quantized_vectors) => {
+                        quantized_vectors.raw_scorer(query, hardware_counter)
+                    }
+                    None => new_raw_scorer(query, vectors, hardware_counter),
+                };
+                let pq = FixedLengthPriorityQueue::new(top);
+                raw_scorer.map(|raw_scorer| BatchSearch { raw_scorer, pq })
+            })
+            .collect::<Result<_, _>>()?;
+        let filters = ScorerFilters {
+            filter_context,
+            point_deleted,
+            vec_deleted: vectors.deleted_vector_bitslice(),
+        };
+        Ok(Self {
+            scorer_batch,
+            filters,
+            top,
+        })
+    }
+
+    /// Create a new batched filtered searcher for testing purposes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`new_raw_scorer`] fails.
+    #[cfg(feature = "testing")]
+    pub fn new_for_test(
+        vectors: &[QueryVector],
+        vector_storage: &'a VectorStorageEnum,
+        point_deleted: &'a BitSlice,
+        top: usize,
+    ) -> Self {
+        let scorer_batch = vectors
+            .iter()
+            .map(|vector| {
+                let raw_scorer = new_raw_scorer(
+                    vector.to_owned(),
+                    vector_storage,
+                    HardwareCounterCell::new(),
+                )
+                .unwrap();
+                BatchSearch {
+                    raw_scorer,
+                    pq: FixedLengthPriorityQueue::new(top),
+                }
+            })
+            .collect();
+        Self {
+            scorer_batch,
+            filters: ScorerFilters {
+                filter_context: None,
+                point_deleted,
+                vec_deleted: vector_storage.deleted_vector_bitslice(),
+            },
+            top,
+        }
+    }
+
+    pub fn peek_top_all(
+        self,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
+        let iter = self
+            .filters
+            .point_deleted
+            .iter_zeros()
+            .map(|p| p as PointOffsetType);
+        self.peek_top_iter(iter, is_stopped)
+    }
+
+    pub fn peek_top_iter(
+        mut self,
+        mut points: impl Iterator<Item = PointOffsetType>,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
+        if self.top == 0 {
+            return Ok(vec![vec![]; self.scorer_batch.len()]);
+        }
+
+        // Reuse the same buffer for all chunks, to avoid reallocation
+        let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
+        let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
+
+        loop {
+            check_process_stopped(is_stopped)?;
+
+            let mut chunk_size = 0;
+            for point_id in &mut points {
+                check_process_stopped(is_stopped)?;
+                if !self.filters.check_vector(point_id) {
+                    continue;
+                }
+                chunk[chunk_size] = point_id;
+                chunk_size += 1;
+                if chunk_size == VECTOR_READ_BATCH_SIZE {
+                    break;
+                }
+            }
+
+            if chunk_size == 0 {
+                break;
+            }
+
+            // Switching the loops improves batching performance, but slightly degrades single-query performance.
+            for BatchSearch { raw_scorer, pq } in &mut self.scorer_batch {
+                raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
+
+                for i in 0..chunk_size {
+                    pq.push(ScoredPointOffset {
+                        idx: chunk[i],
+                        score: scores_buffer[i],
+                    });
+                }
+            }
+        }
+
+        let results = self
+            .scorer_batch
+            .into_iter()
+            .map(|BatchSearch { pq, .. }| pq.into_sorted_vec())
+            .collect();
+        Ok(results)
     }
 }

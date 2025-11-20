@@ -12,7 +12,7 @@ use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::data_types::vectors::{DenseVector, VectorInternal, VectorRef};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
-use segment::index::hnsw_index::point_scorer::FilteredScorer;
+use segment::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use segment::types::{Distance, VectorStorageDatatype};
 use segment::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use segment::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
@@ -72,12 +72,45 @@ fn benchmark_naive(c: &mut Criterion) {
         b.iter(|| {
             let vector = random_vector(DIM);
             let vector = vector.as_slice().into();
-            FilteredScorer::new_for_test(
-                vector,
+            BatchFilteredSearcher::new_for_test(
+                &[vector],
                 &storage,
                 borrowed_id_tracker.deleted_point_bitslice(),
+                10,
             )
-            .peek_top_all(10, &DEFAULT_STOPPED)
+            .peek_top_all(&DEFAULT_STOPPED)
+            .unwrap();
+        })
+    });
+}
+
+// Batched search gives performance benefit only when memory is contended.
+// For a single-threaded criterion run, it only shows that batching penalty is relatively small.
+// We might run a thread pool explicitly, though.
+fn benchmark_naive_4(c: &mut Criterion) {
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+
+    let dist = Distance::Dot;
+    let (storage, id_tracker) = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
+    let borrowed_id_tracker = id_tracker.borrow();
+
+    let mut group = c.benchmark_group("storage-score-all");
+
+    group.bench_function("storage vector search, 4 vectors batch", |b| {
+        b.iter(|| {
+            let vectors = [
+                random_vector(DIM).into(),
+                random_vector(DIM).into(),
+                random_vector(DIM).into(),
+                random_vector(DIM).into(),
+            ];
+            BatchFilteredSearcher::new_for_test(
+                &vectors,
+                &storage,
+                borrowed_id_tracker.deleted_point_bitslice(),
+                10,
+            )
+            .peek_top_all(&DEFAULT_STOPPED)
             .unwrap();
         })
     });
@@ -111,5 +144,10 @@ fn random_access_benchmark(c: &mut Criterion) {
     eprintln!("total_score = {total_score:?}");
 }
 
-criterion_group!(benches, benchmark_naive, random_access_benchmark);
+criterion_group!(
+    benches,
+    benchmark_naive,
+    benchmark_naive_4,
+    random_access_benchmark
+);
 criterion_main!(benches);
