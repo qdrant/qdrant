@@ -78,6 +78,9 @@ pub async fn convert_query_groups_request_from_rest(
         limit: group_request
             .limit
             .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
+        offset: group_request
+            .offset
+            .unwrap_or(CollectionQueryRequest::DEFAULT_OFFSET),
         group_by: group_request.group_by,
         group_size: group_request
             .group_size

@@ -55,6 +55,9 @@ pub struct QueryGroupRequest {
 
     /// Limit of groups to return
     pub groups: usize,
+
+    /// Offset of groups to skip
+    pub offset: usize,
 }
 
 #[cfg(test)]
