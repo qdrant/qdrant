@@ -39,6 +39,14 @@ paths:
           schema:
             type: integer
             minimum: 0
+        - name: timeout
+          in: query
+          description: "Timeout for this request"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
       responses: #@ response(reference("TelemetryData"))
 
   /metrics:
@@ -55,6 +63,14 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: timeout
+          in: query
+          description: "Timeout for this request"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
       responses:
         "200":
           description: Metrics data in Prometheus format
