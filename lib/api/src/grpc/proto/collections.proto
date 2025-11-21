@@ -4,7 +4,7 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 import "json_with_int.proto";
-import "common.proto";
+import "qdrant_common.proto";
 
 enum Datatype {
   Default = 0;
