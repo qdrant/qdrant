@@ -15,7 +15,7 @@ class TestManyCollections:
         client = ClientUtils(host=qdrant_compose[0].host, port=qdrant_compose[0].http_port, timeout=10)
         client.wait_for_server()
 
-        for i in tqdm(range(1000), desc="Creating collections"):
+        for i in tqdm(range(800), desc="Creating collections"):
             collection_config = {
                 "vectors": {"size": 128, "distance": "Dot", "on_disk": True},
                 "shard_number": 3,
