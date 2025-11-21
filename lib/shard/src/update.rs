@@ -5,7 +5,6 @@ use std::sync::atomic::AtomicBool;
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::iproduct;
-use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::named_vectors::NamedVectors;
@@ -16,6 +15,7 @@ use segment::types::{
     SeqNumberType, VectorNameBuf,
 };
 
+use crate::measurable_rwlock::measurable_parking_lot::{RwLock, RwLockWriteGuard};
 use crate::operations::FieldIndexOperations;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{

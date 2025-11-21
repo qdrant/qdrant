@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use parking_lot::RwLock;
 use segment::types::SeqNumberType;
+use shard::measurable_rwlock::measurable_parking_lot::RwLock;
 use shard::update::*;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;

@@ -40,13 +40,13 @@ use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
-use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
 };
+use shard::measurable_rwlock::measurable_parking_lot::{Mutex as ParkingMutex, RwLock};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::wal::SerdeWal;

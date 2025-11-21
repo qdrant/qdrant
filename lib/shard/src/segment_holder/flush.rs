@@ -2,7 +2,7 @@ use std::cmp::{max, min};
 use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
 
-use parking_lot::{RwLock, RwLockReadGuard};
+use crate::measurable_rwlock::measurable_parking_lot::{RwLock, RwLockReadGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::SegmentEntry;
 use segment::types::SeqNumberType;

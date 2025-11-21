@@ -17,7 +17,6 @@ use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::save_on_disk::SaveOnDisk;
-use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
@@ -27,6 +26,9 @@ use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNu
 use smallvec::{SmallVec, smallvec};
 
 use crate::locked_segment::LockedSegment;
+use crate::measurable_rwlock::measurable_parking_lot::{
+    Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard,
+};
 use crate::payload_index_schema::PayloadIndexSchema;
 
 pub type SegmentId = usize;

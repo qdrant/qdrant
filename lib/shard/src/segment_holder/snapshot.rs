@@ -4,7 +4,6 @@ use std::sync::Arc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use io::storage_version::StorageVersion;
-use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
 use segment::data_types::manifest::SnapshotManifest;
 use segment::entry::SegmentEntry;
@@ -12,6 +11,9 @@ use segment::segment::SegmentVersion;
 use segment::types::SegmentConfig;
 
 use crate::locked_segment::LockedSegment;
+use crate::measurable_rwlock::measurable_parking_lot::{
+    RwLockUpgradableReadGuard, RwLockWriteGuard,
+};
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::proxy_segment::ProxySegment;
 use crate::segment_holder::{SegmentHolder, SegmentId};

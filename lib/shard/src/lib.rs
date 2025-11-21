@@ -10,6 +10,7 @@ pub mod search_result_aggregator;
 pub mod segment_holder;
 pub mod update;
 pub mod wal;
+pub mod measurable_rwlock;
 
 pub mod common;
 #[cfg(feature = "testing")]
