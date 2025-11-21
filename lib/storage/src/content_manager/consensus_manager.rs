@@ -113,18 +113,27 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Self {
         let mut wal = ConsensusOpWal::new(storage_path);
 
-        // If WAL has newer commits than what we have applied, truncate them and resync
-        let last_committed = persistent_state.state().hard_state.commit;
-        if let Ok(Some(last)) = wal.last_entry()
-            && last.index > last_committed
-        {
-            let extra_entries = last.index - last_committed;
-            let truncate_from = last_committed + 1;
-            log::warn!(
-                "Consensus WAL has {extra_entries} unapplied entries, truncating from index {truncate_from} onwards"
+        // If WAL has more entries than we have applied, truncate them and resync
+        if let Ok(Some(last)) = wal.last_entry() {
+            let last_committed = persistent_state.state().hard_state.commit;
+            let last_wal_commit_applied =
+                last_committed.saturating_sub(persistent_state.latest_snapshot_meta.index);
+            let last_wal_commit = last.index;
+
+            debug_assert!(
+                last_wal_commit >= last_wal_commit_applied,
+                "consensus WAL is missing entries, last committed index is {last_wal_commit} but WAL goes up to {last_wal_commit_applied}",
             );
-            wal.truncate(truncate_from)
-                .expect("Failed to truncate WAL on startup");
+
+            let extra_entries = last_wal_commit.saturating_sub(last_wal_commit_applied);
+            if extra_entries > 0 {
+                let truncate_from = last_wal_commit_applied + 1;
+                log::warn!(
+                    "Consensus WAL has {extra_entries} unapplied entries, truncating from index {truncate_from} onwards"
+                );
+                wal.truncate(truncate_from)
+                    .expect("Failed to truncate WAL on startup");
+            }
         }
 
         Self {
