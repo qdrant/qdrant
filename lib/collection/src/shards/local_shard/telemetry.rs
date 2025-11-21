@@ -1,52 +1,72 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use common::types::{DetailsLevel, TelemetryDetail};
 use segment::common::BYTES_IN_KB;
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::types::{SizeStats, VectorNameBuf};
 use segment::vector_storage::common::get_async_scorer;
+use shard::common::stopping_guard::StoppingGuard;
 use shard::segment_holder::SegmentHolder;
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::config::CollectionConfigInternal;
-use crate::operations::types::OptimizersStatus;
+use crate::operations::types::{CollectionError, CollectionResult, OptimizersStatus};
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
 
 impl LocalShard {
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+    pub async fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        timeout: Duration,
+        is_stopped_guard: &StoppingGuard,
+    ) -> CollectionResult<LocalShardTelemetry> {
         let segments = self.segments.clone();
 
         let segments_data = if detail.level < DetailsLevel::Level4 {
             Ok((vec![], HashMap::default()))
         } else {
             let locked_collection_config = self.collection_config.clone();
-
+            let is_stopped_guard = is_stopped_guard.clone();
             let handle = tokio::task::spawn_blocking(move || {
                 // blocking sync lock
-                let segments_guard = segments.read();
+                let Some(segments_guard) = segments.try_read_for(timeout) else {
+                    return Err(CollectionError::timeout(
+                        timeout.as_secs() as usize,
+                        "shard telemetry",
+                    ));
+                };
 
-                let segments_telemetry = segments_guard
-                    .iter()
-                    .map(|(_id, segment)| segment.get().read().get_telemetry_data(detail))
-                    .collect();
+                let mut segments_telemetry = Vec::with_capacity(segments_guard.len());
+                for (_id, segment) in segments_guard.iter() {
+                    if is_stopped_guard.is_stopped() {
+                        return Ok((vec![], HashMap::default()));
+                    }
+
+                    // blocking sync lock
+                    let Some(segment_guard) = segment.get().try_read_for(timeout) else {
+                        return Err(CollectionError::timeout(
+                            timeout.as_secs() as usize,
+                            "shard telemetry",
+                        ));
+                    };
+
+                    segments_telemetry.push(segment_guard.get_telemetry_data(detail))
+                }
 
                 let collection_config = locked_collection_config.blocking_read();
                 let indexed_only_excluded_vectors =
                     get_index_only_excluded_vectors(&segments_guard, &collection_config);
 
-                (segments_telemetry, indexed_only_excluded_vectors)
+                Ok((segments_telemetry, indexed_only_excluded_vectors))
             });
-            AbortOnDropHandle::new(handle).await
+            AbortOnDropHandle::new(handle).await?
         };
 
-        if let Err(err) = &segments_data {
-            log::error!("Failed to get telemetry: {err}");
-        }
-
-        let (segments, index_only_excluded_vectors) = segments_data.unwrap_or_default();
+        let (segments, index_only_excluded_vectors) = segments_data?;
 
         let total_optimized_points = self.total_optimized_points.load(Ordering::Relaxed);
 
@@ -71,7 +91,7 @@ impl LocalShard {
             num_points,
         } = self.get_size_stats().await;
 
-        LocalShardTelemetry {
+        Ok(LocalShardTelemetry {
             variant_name: None,
             status: None,
             total_optimized_points,
@@ -94,7 +114,7 @@ impl LocalShard {
             async_scorer: Some(get_async_scorer()),
             indexed_only_excluded_vectors: (!index_only_excluded_vectors.is_empty())
                 .then_some(index_only_excluded_vectors),
-        }
+        })
     }
 
     pub async fn get_optimization_status(&self) -> OptimizersStatus {

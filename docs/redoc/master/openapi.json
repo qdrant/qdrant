@@ -244,6 +244,17 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for this request",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            }
           }
         ],
         "responses": {
@@ -322,6 +333,17 @@
             "required": false,
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for this request",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
             }
           }
         ],

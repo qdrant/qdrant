@@ -14,6 +14,7 @@ use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
     WithPayloadInterface, WithVector,
 };
+use shard::common::stopping_guard::StoppingGuard;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
@@ -356,8 +357,15 @@ impl ForwardProxyShard {
         self.wrapped_shard.trigger_optimizers();
     }
 
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
-        self.wrapped_shard.get_telemetry_data(detail).await
+    pub async fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        timeout: Duration,
+        is_stopped_guard: &StoppingGuard,
+    ) -> CollectionResult<LocalShardTelemetry> {
+        self.wrapped_shard
+            .get_telemetry_data(detail, timeout, is_stopped_guard)
+            .await
     }
 
     pub async fn get_optimization_status(&self) -> OptimizersStatus {
