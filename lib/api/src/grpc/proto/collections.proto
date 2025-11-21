@@ -440,6 +440,7 @@ message UpdateCollection {
   optional SparseVectorConfig sparse_vectors_config = 8; // New sparse vector parameters
   optional StrictModeConfig strict_mode_config = 9; // New strict mode configuration
   map<string, Value> metadata = 10; // Arbitrary JSON-like metadata for the collection, will be merged with already stored metadata
+  optional WalConfigDiff wal_config = 11; // New WAL parameters for the collection
 }
 
 message DeleteCollection {

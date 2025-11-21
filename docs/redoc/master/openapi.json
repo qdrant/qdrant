@@ -10002,6 +10002,17 @@
               }
             ]
           },
+          "wal_config": {
+            "description": "WAL parameters for the collection. Changes are effective only on Qdrant restart. If none - it is left unchanged.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WalConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "quantization_config": {
             "description": "Quantization parameters to update. If none - it is left unchanged.",
             "default": null,

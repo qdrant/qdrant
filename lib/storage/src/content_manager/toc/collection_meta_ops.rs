@@ -131,6 +131,7 @@ impl TableOfContent {
         let UpdateCollection {
             vectors,
             hnsw_config,
+            wal_config,
             params,
             optimizers_config,
             quantization_config,
@@ -154,6 +155,9 @@ impl TableOfContent {
         if let Some(diff) = hnsw_config {
             collection.update_hnsw_config_from_diff(diff).await?;
             recreate_optimizers = true;
+        }
+        if let Some(diff) = wal_config {
+            collection.update_wal_config_from_diff(diff).await?;
         }
         if let Some(diff) = vectors {
             collection.update_vectors_from_diff(&diff).await?;
