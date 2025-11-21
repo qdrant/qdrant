@@ -21,9 +21,10 @@ impl PyPointId {
     }
 }
 
-impl<'py> FromPyObject<'_, 'py> for PyPointId {
+impl FromPyObject<'_, '_> for PyPointId {
     type Error = PyErr;
-    fn extract(point_id: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+
+    fn extract(point_id: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         enum Helper {
             NumId(u64),
@@ -59,7 +60,7 @@ impl<'py> IntoPyObject<'py> for PyPointId {
     type Output = Bound<'py, PyAny>;
     type Error = PyErr; // Infallible
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
     }
 }
@@ -69,7 +70,7 @@ impl<'py> IntoPyObject<'py> for &PyPointId {
     type Output = Bound<'py, PyAny>;
     type Error = PyErr; // Infallible
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
             PointIdType::NumId(id) => id.into_bound_py_any(py),
             PointIdType::Uuid(uuid) => uuid.into_bound_py_any(py),

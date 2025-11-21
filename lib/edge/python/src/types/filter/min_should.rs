@@ -1,6 +1,7 @@
+use bytemuck::TransparentWrapperAlloc as _;
 use derive_more::Into;
 use pyo3::prelude::*;
-use segment::types::{Condition, MinShould};
+use segment::types::MinShould;
 
 use crate::types::filter::condition::PyCondition;
 
@@ -12,9 +13,8 @@ pub struct PyMinShould(pub MinShould);
 impl PyMinShould {
     #[new]
     pub fn new(conditions: Vec<PyCondition>, min_count: usize) -> Self {
-        let conditions = conditions.into_iter().map(Condition::from).collect();
         Self(MinShould {
-            conditions,
+            conditions: PyCondition::peel_vec(conditions),
             min_count,
         })
     }
