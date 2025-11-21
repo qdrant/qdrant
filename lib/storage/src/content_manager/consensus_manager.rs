@@ -111,10 +111,34 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         propose_sender: OperationSender,
         storage_path: &Path,
     ) -> Self {
+        let mut wal = ConsensusOpWal::new(storage_path);
+
+        // If WAL has more entries than we have applied, truncate them and resync
+        if let Ok(Some(last)) = wal.last_entry() {
+            let last_committed = persistent_state.state().hard_state.commit;
+            let last_wal_commit_applied =
+                last_committed.saturating_sub(persistent_state.latest_snapshot_meta.index);
+            let last_wal_commit = last.index;
+
+            debug_assert!(
+                last_wal_commit >= last_wal_commit_applied,
+                "consensus WAL is missing entries, last committed WAL index is {last_wal_commit} but WAL only goes up to {last_wal_commit_applied}",
+            );
+
+            let extra_entries = last_wal_commit.saturating_sub(last_wal_commit_applied);
+            if extra_entries > 0 {
+                log::warn!(
+                    "Consensus WAL has {extra_entries} unapplied entries, truncating from index {last_wal_commit_applied} onwards"
+                );
+                wal.truncate(last_wal_commit_applied)
+                    .expect("Failed to truncate WAL on startup");
+            }
+        }
+
         Self {
             persistent: RwLock::new(persistent_state),
             is_leader_established: Arc::new(IsReady::default()),
-            wal: Mutex::new(ConsensusOpWal::new(storage_path)),
+            wal: Mutex::new(wal),
             soft_state: RwLock::new(None),
             toc,
             on_consensus_op_apply: Default::default(),
@@ -554,13 +578,19 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         } = snapshot.get_data().try_into()?;
 
         self.toc.apply_collections_snapshot(collections_data)?;
-        self.wal.lock().clear()?;
         self.persistent.write().update_from_snapshot(
             meta,
             address_by_id,
             metadata_by_id,
             cluster_metadata,
         )?;
+
+        // Clear now obsolete WAL entries after persisting new Raft state
+        // This way we prevent a crash due to an empty WAL if we crash right after clearing it,
+        // without bumping the Raft state. If we now crash after persisting the new state but
+        // before clearing the WAL, we will clear the WAL on next startup by truncating all entries
+        // above our commit.
+        self.wal.lock().clear()?;
 
         Ok(Ok(()))
     }
@@ -794,6 +824,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     pub fn clear_wal(&self) -> Result<(), StorageError> {
         self.wal.lock().clear()
+    }
+
+    pub fn truncate(&self, from_index: u64) -> Result<(), StorageError> {
+        self.wal.lock().truncate(from_index)
     }
 
     pub fn compact_wal(&self, min_entries_to_compact: u64) -> Result<bool, StorageError> {
