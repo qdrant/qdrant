@@ -127,11 +127,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
             let extra_entries = last_wal_commit.saturating_sub(last_wal_commit_applied);
             if extra_entries > 0 {
-                let truncate_from = last_wal_commit_applied + 1;
                 log::warn!(
-                    "Consensus WAL has {extra_entries} unapplied entries, truncating from index {truncate_from} onwards"
+                    "Consensus WAL has {extra_entries} unapplied entries, truncating from index {last_wal_commit_applied} onwards"
                 );
-                wal.truncate(truncate_from)
+                wal.truncate(last_wal_commit_applied)
                     .expect("Failed to truncate WAL on startup");
             }
         }
