@@ -261,7 +261,7 @@ jobs:
       - name: Verify Docker image
         run: docker images | grep qdrant
       - name: Run e2e tests
-        run: poetry --project tests run pytest -n 4 tests/e2e_tests -v --tb=short --durations=5
+        run: poetry --project tests run pytest -n 4 tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
         shell: bash
         timeout-minutes: 5
       - name: Upload test logs on failure

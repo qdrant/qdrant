@@ -19,6 +19,12 @@ retry = "^0.9.2"
 docker = "^7.1.0"
 pytest-xdist = "^3.8.0"
 qdrant-client = "^1.15.1"
+tqdm = "^4.67.1"
+
+[tool.pytest.ini_options]
+markers = [
+    "longrunning: marks tests as long-running (deselect with '-m \"not longrunning\"')",
+]
 
 [build-system]
 requires = ["poetry-core"]

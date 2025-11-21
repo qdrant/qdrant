@@ -4,6 +4,7 @@ import random
 import requests
 import time
 import uuid
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Generator, Tuple
 
 from qdrant_client import QdrantClient, models
@@ -80,6 +81,62 @@ class ClientUtils:
             raise Exception(f"Failed to get collection info for '{collection_name}': {e}") from e
 
     @staticmethod
+    def generate_random_payload(payloads_map: dict) -> Dict[str, Any]:
+        """Generate a random payload based on the payloads_map.
+
+        Args:
+            payloads_map: Dictionary mapping payload types to field names, e.g.:
+                {
+                    "keyword": "keyword_field",
+                    "integer": "integer_field",
+                    "float": "float_field",
+                    "timestamp": "timestamp_field",
+                    "uuid": "chunk_id",
+                    "geo": "geo",
+                    "text": "text"
+                }
+
+        Returns:
+            Dictionary with randomly generated payload values
+        """
+        # Sample data for text and keyword fields
+        sample_keywords = ["urgent", "normal", "low", "high", "critical", "pending", "completed", "active"]
+        sample_texts = [
+            "The quick brown fox jumps over the lazy dog",
+            "Lorem ipsum dolor sit amet consectetur adipiscing elit",
+            "Machine learning models require training data",
+            "Natural language processing is fascinating",
+            "Database indexing improves query performance",
+            "Cloud computing enables scalable solutions"
+        ]
+
+        payload = {}
+        for payload_type, field_name in payloads_map.items():
+            if payload_type == "keyword":
+                payload[field_name] = random.choice(sample_keywords)
+            elif payload_type == "integer":
+                payload[field_name] = random.randint(1, 10000)
+            elif payload_type == "float":
+                payload[field_name] = round(random.uniform(0.0, 100.0), 2)
+            elif payload_type == "timestamp":
+                # Generate a random datetime in the past year
+                days_ago = random.randint(0, 365)
+                timestamp = datetime.now() - timedelta(days=days_ago)
+                payload[field_name] = timestamp.isoformat()
+            elif payload_type == "uuid":
+                payload[field_name] = str(uuid.uuid4())
+            elif payload_type == "geo":
+                # Generate random geo coordinates (lat, lon)
+                payload[field_name] = {
+                    "lat": round(random.uniform(-90.0, 90.0), 6),
+                    "lon": round(random.uniform(-180.0, 180.0), 6)
+                }
+            elif payload_type == "text":
+                payload[field_name] = random.choice(sample_texts)
+
+        return payload
+
+    @staticmethod
     def generate_points(amount: int, vector_size: int = VECTOR_SIZE) -> Generator[Dict[str, List[models.PointStruct]], None, None]:
         """Generate batches of points for insertion."""
         for _ in range(amount):
@@ -94,6 +151,31 @@ class ClientUtils:
                 )
             yield {"points": points}
 
+    @staticmethod
+    def generate_points_with_payload(amount: int, vector_size: int = VECTOR_SIZE, payloads_map: dict = None) -> Generator[Dict[str, List[models.PointStruct]], None, None]:
+        """Generate batches of points with specified payload for insertion.
+
+        Args:
+            amount: Number of batches to generate (each batch contains 100 points)
+            vector_size: Size of the vector for each point
+            payloads_map: Dictionary mapping payload types to field names
+        """
+        if payloads_map is None:
+            payloads_map = {}
+
+        for _ in range(amount):
+            points = []
+            for _ in range(100):
+                payload = ClientUtils.generate_random_payload(payloads_map)
+                points.append(
+                    models.PointStruct(
+                        id=str(uuid.uuid4()),
+                        vector=[round(random.uniform(0, 1), 2) for _ in range(vector_size)],
+                        payload=payload
+                    )
+                )
+            yield {"points": points}
+
     def create_collection(self, collection_name: str, collection_config: Dict[str, Any]) -> Dict[str, Any]:
         """Create a collection with the given configuration."""
         vectors_config = collection_config.get("vectors", {})
@@ -102,7 +184,8 @@ class ClientUtils:
         if isinstance(vectors_config, dict) and "size" in vectors_config:
             vector_params = models.VectorParams(
                 size=vectors_config["size"],
-                distance=models.Distance(vectors_config.get("distance", "Cosine"))
+                distance=models.Distance(vectors_config.get("distance", "Cosine")),
+                on_disk=vectors_config.get("on_disk")
             )
         else:
             vector_params = models.VectorParams(size=VECTOR_SIZE, distance=models.Distance.COSINE)
