@@ -47,6 +47,7 @@ impl ConsensusOpWal {
 
     pub fn clear(&mut self) -> Result<(), StorageError> {
         self.wal.clear()?;
+        self.wal.flush_open_segment()?;
         Ok(())
     }
 
