@@ -104,7 +104,7 @@ pub async fn transfer_shard(
 
         // Attempt to transfer WAL delta
         ShardTransferMethod::WalDelta => {
-            let result = transfer_wal_delta(
+            let result: Result<(), crate::operations::types::CollectionError> = transfer_wal_delta(
                 transfer_config.clone(),
                 shard_holder,
                 progress,
