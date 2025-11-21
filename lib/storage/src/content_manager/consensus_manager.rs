@@ -122,7 +122,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
             debug_assert!(
                 last_wal_commit >= last_wal_commit_applied,
-                "consensus WAL is missing entries, last committed index is {last_wal_commit} but WAL goes up to {last_wal_commit_applied}",
+                "consensus WAL is missing entries, last committed WAL index is {last_wal_commit} but WAL only goes up to {last_wal_commit_applied}",
             );
 
             let extra_entries = last_wal_commit.saturating_sub(last_wal_commit_applied);
