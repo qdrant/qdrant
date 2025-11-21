@@ -111,10 +111,26 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         propose_sender: OperationSender,
         storage_path: &Path,
     ) -> Self {
+        let mut wal = ConsensusOpWal::new(storage_path);
+
+        // If WAL has newer commits than what we have applied, truncate them and resync
+        let last_committed = persistent_state.state().hard_state.commit;
+        if let Ok(Some(last)) = wal.last_entry()
+            && last.index > last_committed
+        {
+            let extra_entries = last.index - last_committed;
+            let truncate_from = last_committed + 1;
+            log::warn!(
+                "Consensus WAL has {extra_entries} unapplied entries, truncating from index {truncate_from} onwards"
+            );
+            wal.truncate(truncate_from)
+                .expect("Failed to truncate WAL on startup");
+        }
+
         Self {
             persistent: RwLock::new(persistent_state),
             is_leader_established: Arc::new(IsReady::default()),
-            wal: Mutex::new(ConsensusOpWal::new(storage_path)),
+            wal: Mutex::new(wal),
             soft_state: RwLock::new(None),
             toc,
             on_consensus_op_apply: Default::default(),
@@ -554,13 +570,19 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         } = snapshot.get_data().try_into()?;
 
         self.toc.apply_collections_snapshot(collections_data)?;
-        self.wal.lock().clear()?;
         self.persistent.write().update_from_snapshot(
             meta,
             address_by_id,
             metadata_by_id,
             cluster_metadata,
         )?;
+
+        // Clear now obsolete WAL entries after persisting new Raft state
+        // This way we prevent a crash due to an empty WAL if we crash right after clearing it,
+        // without bumping the Raft state. If we now crash after persisting the new state but
+        // before clearing the WAL, we will clear the WAL on next startup by truncating all entries
+        // above our commit.
+        self.wal.lock().clear()?;
 
         Ok(Ok(()))
     }
@@ -794,6 +816,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     pub fn clear_wal(&self) -> Result<(), StorageError> {
         self.wal.lock().clear()
+    }
+
+    pub fn truncate(&self, from_index: u64) -> Result<(), StorageError> {
+        self.wal.lock().truncate(from_index)
     }
 
     pub fn compact_wal(&self, min_entries_to_compact: u64) -> Result<bool, StorageError> {
