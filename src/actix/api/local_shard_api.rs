@@ -1,6 +1,4 @@
-use std::num::NonZeroU64;
 use std::sync::Arc;
-use std::time::Duration;
 
 use actix_web::{Responder, post, web};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -11,13 +9,13 @@ use collection::operations::verification::{VerificationPass, new_unchecked_verif
 use collection::shards::shard::ShardId;
 use futures::FutureExt;
 use segment::types::{Condition, Filter};
-use serde::Deserialize;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
 use tokio::time::Instant;
 
+use crate::actix::api::local_shard_api::request_params::CleanParams;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
@@ -93,7 +91,7 @@ async fn scroll_points(
 
     let pass = match check_strict_mode(
         &request,
-        params.timeout_as_secs(),
+        params.timeout(),
         &path.collection,
         &dispatcher,
         &access,
@@ -167,7 +165,7 @@ async fn count_points(
 
     let pass = match check_strict_mode(
         &request,
-        params.timeout_as_secs(),
+        params.timeout(),
         &path.collection,
         &dispatcher,
         &access,
@@ -222,13 +220,32 @@ async fn count_points(
     process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]
-pub struct CleanParams {
-    /// Wait until cleanup is finished, or just acknowledge and return right away
-    #[serde(default)]
-    pub wait: bool,
-    /// Maximum time to wait, otherwise return acknowledged status
-    pub timeout: Option<NonZeroU64>,
+mod request_params {
+    use std::cmp;
+    use std::num::NonZeroU64;
+    use std::time::Duration;
+
+    use serde::Deserialize;
+
+    use crate::actix::api::read_params::HOUR_IN_SECONDS;
+
+    #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+    pub struct CleanParams {
+        /// Wait until cleanup is finished, or just acknowledge and return right away
+        #[serde(default)]
+        pub wait: bool,
+        /// Maximum time to wait, otherwise return acknowledged status
+        timeout: Option<NonZeroU64>,
+    }
+
+    impl CleanParams {
+        /// Returns the passed timeout, limited to 1h.
+        pub fn timeout(&self) -> Option<Duration> {
+            self.timeout
+                .map(|timeout| cmp::min(timeout.get(), HOUR_IN_SECONDS))
+                .map(Duration::from_secs)
+        }
+    }
 }
 
 #[post("/collections/{collection}/shards/{shard}/cleanup")]
@@ -243,7 +260,7 @@ async fn cleanup_shard(
 
     helpers::time(async move {
         let path = path.into_inner();
-        let timeout = params.timeout.map(|sec| Duration::from_secs(sec.get()));
+        let timeout = params.timeout();
         dispatcher
             .toc(&access, &pass)
             .cleanup_local_shard(&path.collection, path.shard, access, params.wait, timeout)

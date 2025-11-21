@@ -32,7 +32,7 @@ async fn facet(
 
     let pass = match check_strict_mode(
         &facet_request,
-        params.timeout_as_secs(),
+        params.timeout(),
         &collection.name,
         &dispatcher,
         &access,

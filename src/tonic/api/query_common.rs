@@ -39,6 +39,7 @@ use crate::common::inference::query_requests_grpc::{
 };
 use crate::common::query::*;
 use crate::common::strict_mode::*;
+use crate::tonic::api::limit_timeout_opt;
 
 pub(crate) fn convert_shard_selector_for_read(
     shard_id_selector: Option<ShardId>,
@@ -83,6 +84,8 @@ pub async fn search(
         sparse_indices,
     } = search_points;
 
+    let timeout = limit_timeout_opt(timeout);
+
     let vector_internal =
         VectorInternal::from_vector_and_indices(vector, sparse_indices.map(|v| v.data));
 
@@ -107,12 +110,7 @@ pub async fn search(
     };
 
     let toc = toc_provider
-        .check_strict_mode(
-            &search_request,
-            &collection_name,
-            timeout.map(|i| i as usize),
-            &access,
-        )
+        .check_strict_mode(&search_request, &collection_name, timeout, &access)
         .await?;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
@@ -125,7 +123,7 @@ pub async fn search(
         read_consistency,
         shard_selector,
         access,
-        timeout.map(Duration::from_secs),
+        timeout,
         hw_measurement_acc.get_counter(),
     )
     .await?;
@@ -152,13 +150,7 @@ pub async fn core_search_batch(
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let toc = toc_provider
-        .check_strict_mode_batch(
-            &requests,
-            |i| &i.0,
-            collection_name,
-            timeout.map(|i| i.as_secs() as usize),
-            &access,
-        )
+        .check_strict_mode_batch(&requests, |i| &i.0, collection_name, timeout, &access)
         .await?;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
@@ -267,13 +259,10 @@ pub async fn search_groups(
         ..
     } = search_point_groups;
 
+    let timeout = limit_timeout_opt(timeout);
+
     let toc = toc_provider
-        .check_strict_mode(
-            &search_groups_request,
-            &collection_name,
-            timeout.map(|i| i as usize),
-            &access,
-        )
+        .check_strict_mode(&search_groups_request, &collection_name, timeout, &access)
         .await?;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
@@ -288,7 +277,7 @@ pub async fn search_groups(
         read_consistency,
         shard_selector,
         access,
-        timeout.map(Duration::from_secs),
+        timeout,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -315,23 +304,17 @@ pub async fn recommend(
     let collection_name = recommend_points.collection_name.clone();
     let read_consistency = recommend_points.read_consistency.clone();
     let shard_key_selector = recommend_points.shard_key_selector.clone();
-    let timeout = recommend_points.timeout;
+    let timeout = limit_timeout_opt(recommend_points.timeout);
 
     let request =
         collection::operations::types::RecommendRequestInternal::try_from(recommend_points)?;
 
     let toc = toc_provider
-        .check_strict_mode(
-            &request,
-            &collection_name,
-            timeout.map(|i| i as usize),
-            &access,
-        )
+        .check_strict_mode(&request, &collection_name, timeout, &access)
         .await?;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
-    let timeout = timeout.map(Duration::from_secs);
 
     let timing = Instant::now();
     let recommended_points = toc
@@ -378,13 +361,7 @@ pub async fn recommend_batch(
     }
 
     let toc = toc_provider
-        .check_strict_mode_batch(
-            &requests,
-            |i| &i.0,
-            collection_name,
-            timeout.map(|i| i.as_secs() as usize),
-            &access,
-        )
+        .check_strict_mode_batch(&requests, |i| &i.0, collection_name, timeout, &access)
         .await?;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
@@ -431,11 +408,13 @@ pub async fn recommend_groups(
         ..
     } = recommend_point_groups;
 
+    let timeout = limit_timeout_opt(timeout);
+
     let toc = toc_provider
         .check_strict_mode(
             &recommend_groups_request,
             &collection_name,
-            timeout.map(|i| i as usize),
+            timeout,
             &access,
         )
         .await?;
@@ -452,7 +431,7 @@ pub async fn recommend_groups(
         read_consistency,
         shard_selector,
         access,
-        timeout.map(Duration::from_secs),
+        timeout,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -479,12 +458,7 @@ pub async fn discover(
         try_discover_request_from_grpc(discover_points)?;
 
     let toc = toc_provider
-        .check_strict_mode(
-            &request,
-            &collection_name,
-            timeout.map(|i| i.as_secs() as usize),
-            &access,
-        )
+        .check_strict_mode(&request, &collection_name, timeout, &access)
         .await?;
 
     let timing = Instant::now();
@@ -536,13 +510,7 @@ pub async fn discover_batch(
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let toc = toc_provider
-        .check_strict_mode_batch(
-            &requests,
-            |i| &i.0,
-            collection_name,
-            timeout.map(|i| i.as_secs() as usize),
-            &access,
-        )
+        .check_strict_mode_batch(&requests, |i| &i.0, collection_name, timeout, &access)
         .await?;
 
     let timing = Instant::now();
@@ -591,6 +559,8 @@ pub async fn scroll(
         timeout,
     } = scroll_points;
 
+    let timeout = limit_timeout_opt(timeout);
+
     let scroll_request = ScrollRequestInternal {
         offset: offset.map(|o| o.try_into()).transpose()?,
         limit: limit.map(|l| l as usize),
@@ -606,15 +576,9 @@ pub async fn scroll(
     };
 
     let toc = toc_provider
-        .check_strict_mode(
-            &scroll_request,
-            &collection_name,
-            timeout.map(|i| i as usize),
-            &access,
-        )
+        .check_strict_mode(&scroll_request, &collection_name, timeout, &access)
         .await?;
 
-    let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
@@ -666,21 +630,17 @@ pub async fn count(
         timeout,
     } = count_points;
 
+    let timeout = limit_timeout_opt(timeout);
+
     let count_request = collection::operations::types::CountRequestInternal {
         filter: filter.map(|f| f.try_into()).transpose()?,
         exact: exact.unwrap_or_else(default_exact_count),
     };
 
     let toc = toc_provider
-        .check_strict_mode(
-            &count_request,
-            &collection_name,
-            timeout.map(|i| i as usize),
-            access,
-        )
+        .check_strict_mode(&count_request, &collection_name, timeout, access)
         .await?;
 
-    let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
@@ -725,6 +685,8 @@ pub async fn get(
         timeout,
     } = get_points;
 
+    let timeout = limit_timeout_opt(timeout);
+
     let point_request = PointRequestInternal {
         ids: ids
             .into_iter()
@@ -742,15 +704,8 @@ pub async fn get(
     let timing = Instant::now();
 
     let toc = toc_provider
-        .check_strict_mode(
-            &point_request,
-            &collection_name,
-            timeout.map(|i| i as usize),
-            &access,
-        )
+        .check_strict_mode(&point_request, &collection_name, timeout, &access)
         .await?;
-
-    let timeout = timeout.map(Duration::from_secs);
 
     let records = do_get_points(
         toc,
@@ -789,20 +744,13 @@ pub async fn query(
         .map(TryFrom::try_from)
         .transpose()?;
     let collection_name = query_points.collection_name.clone();
-    let timeout = query_points.timeout;
+    let timeout = limit_timeout_opt(query_points.timeout);
     let (request, inference_usage) =
         convert_query_points_from_grpc(query_points, inference_token).await?;
 
     let toc = toc_provider
-        .check_strict_mode(
-            &request,
-            &collection_name,
-            timeout.map(|i| i as usize),
-            &access,
-        )
+        .check_strict_mode(&request, &collection_name, timeout, &access)
         .await?;
-
-    let timeout = timeout.map(Duration::from_secs);
 
     let timing = Instant::now();
     let scored_points = do_query_points(
@@ -854,13 +802,7 @@ pub async fn query_batch(
     }
 
     let toc = toc_provider
-        .check_strict_mode_batch(
-            &requests,
-            |i| &i.0,
-            collection_name,
-            timeout.map(|i| i.as_secs() as usize),
-            &access,
-        )
+        .check_strict_mode_batch(&requests, |i| &i.0, collection_name, timeout, &access)
         .await?;
 
     let timing = Instant::now();
@@ -908,21 +850,15 @@ pub async fn query_groups(
         .clone()
         .map(TryFrom::try_from)
         .transpose()?;
-    let timeout = query_points.timeout;
+    let timeout = limit_timeout_opt(query_points.timeout);
     let collection_name = query_points.collection_name.clone();
     let (request, inference_usage) =
         convert_query_point_groups_from_grpc(query_points, inference_token).await?;
 
     let toc = toc_provider
-        .check_strict_mode(
-            &request,
-            &collection_name,
-            timeout.map(|i| i as usize),
-            &access,
-        )
+        .check_strict_mode(&request, &collection_name, timeout, &access)
         .await?;
 
-    let timeout = timeout.map(Duration::from_secs);
     let timing = Instant::now();
 
     let groups_result = do_query_point_groups(
@@ -966,6 +902,8 @@ pub async fn facet(
         timeout,
     } = facet_counts;
 
+    let timeout = limit_timeout_opt(timeout);
+
     let facet_request = FacetParams {
         key: json_path_from_proto(&key)?,
         filter: filter.map(TryInto::try_into).transpose()?,
@@ -978,15 +916,9 @@ pub async fn facet(
     };
 
     let toc = toc_provider
-        .check_strict_mode(
-            &facet_request,
-            &collection_name,
-            timeout.map(|i| i as usize),
-            &access,
-        )
+        .check_strict_mode(&facet_request, &collection_name, timeout, &access)
         .await?;
 
-    let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
@@ -1032,6 +964,8 @@ pub async fn search_points_matrix(
         timeout,
     } = search_matrix_points;
 
+    let timeout = limit_timeout_opt(timeout);
+
     let search_matrix_request = CollectionSearchMatrixRequest {
         filter: filter.map(TryInto::try_into).transpose()?,
         sample_size: sample
@@ -1048,15 +982,9 @@ pub async fn search_points_matrix(
     };
 
     let toc = toc_provider
-        .check_strict_mode(
-            &search_matrix_request,
-            &collection_name,
-            timeout.map(|i| i as usize),
-            &access,
-        )
+        .check_strict_mode(&search_matrix_request, &collection_name, timeout, &access)
         .await?;
 
-    let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;

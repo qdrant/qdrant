@@ -36,6 +36,7 @@ use crate::common::inference::{InferenceToken, extract_token};
 use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
+use crate::tonic::api::{limit_timeout, limit_timeout_opt};
 
 const FULL_ACCESS: Access = Access::full("Internal API");
 
@@ -337,6 +338,8 @@ pub async fn query_batch_internal(
     timeout: Option<Duration>,
     request_hw_data: RequestHwCounter,
 ) -> Result<Response<QueryBatchResponseInternal>, Status> {
+    let timeout = timeout.map(|i| limit_timeout(i.as_secs()));
+
     let batch_requests: Vec<_> = query_points
         .into_iter()
         .map(ShardQueryRequest::try_from)
@@ -401,6 +404,8 @@ async fn facet_counts_internal(
         timeout,
     } = request;
 
+    let timeout = limit_timeout_opt(timeout);
+
     let shard_selection = ShardSelectorInternal::ShardId(shard_id);
 
     let request = FacetParams {
@@ -416,7 +421,7 @@ async fn facet_counts_internal(
             &collection_name,
             request,
             shard_selection,
-            timeout.map(Duration::from_secs),
+            timeout,
             request_hw_data.get_counter(),
         )
         .await?;
@@ -638,7 +643,7 @@ impl PointsInternal for PointsInternalService {
             timeout,
         } = request.into_inner();
 
-        let timeout = timeout.map(Duration::from_secs);
+        let timeout = limit_timeout_opt(timeout);
 
         // Individual `read_consistency` values are ignored by `core_search_batch`...
         //
@@ -805,7 +810,7 @@ impl PointsInternal for PointsInternalService {
             timeout,
         } = request.into_inner();
 
-        let timeout = timeout.map(Duration::from_secs);
+        let timeout = limit_timeout_opt(timeout);
 
         let hw_data =
             self.get_request_collection_hw_usage_counter_for_internal(collection_name.clone());

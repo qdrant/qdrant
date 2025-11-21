@@ -41,7 +41,7 @@ async fn recommend_points(
 
     let pass = match check_strict_mode(
         &recommend_request,
-        params.timeout_as_secs(),
+        params.timeout(),
         &collection.name,
         &dispatcher,
         &access,
@@ -132,7 +132,7 @@ async fn recommend_batch_points(
 ) -> impl Responder {
     let pass = match check_strict_mode_batch(
         request.searches.iter().map(|i| &i.recommend_request),
-        params.timeout_as_secs(),
+        params.timeout(),
         &collection.name,
         &dispatcher,
         &access,
@@ -192,7 +192,7 @@ async fn recommend_point_groups(
 
     let pass = match check_strict_mode(
         &recommend_group_request,
-        params.timeout_as_secs(),
+        params.timeout(),
         &collection.name,
         &dispatcher,
         &access,

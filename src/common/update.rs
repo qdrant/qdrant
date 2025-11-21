@@ -816,7 +816,7 @@ pub async fn do_create_index(
     // Check strict mode before submitting consensus operation
     let pass = check_strict_mode(
         &operation,
-        wait_timeout.map(|d| d.as_secs() as usize),
+        wait_timeout,
         &collection_name,
         &dispatcher,
         &access,

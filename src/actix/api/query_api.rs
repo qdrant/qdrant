@@ -61,7 +61,7 @@ async fn query_points(
 
         let pass = check_strict_mode(
             &request,
-            params.timeout_as_secs(),
+            params.timeout(),
             &collection.name,
             &dispatcher,
             &access,
@@ -146,7 +146,7 @@ async fn query_points_batch(
 
         let pass = check_strict_mode_batch(
             batch.iter().map(|i| &i.0),
-            params.timeout_as_secs(),
+            params.timeout(),
             &collection.name,
             &dispatcher,
             &access,
@@ -221,7 +221,7 @@ async fn query_points_groups(
 
         let pass = check_strict_mode(
             &request,
-            params.timeout_as_secs(),
+            params.timeout(),
             &collection.name,
             &dispatcher,
             &access,

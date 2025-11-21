@@ -317,6 +317,7 @@ impl Collections for CollectionsService {
 }
 
 trait WithTimeout {
+    // Returns the passed timeout, limited to 1h.
     fn wait_timeout(&self) -> Option<Duration>;
 }
 
@@ -324,7 +325,9 @@ macro_rules! impl_with_timeout {
     ($operation:ty) => {
         impl WithTimeout for $operation {
             fn wait_timeout(&self) -> Option<Duration> {
-                self.timeout.map(Duration::from_secs)
+                self.timeout
+                    .map(|i| std::cmp::min(i, crate::actix::api::read_params::HOUR_IN_SECONDS))
+                    .map(Duration::from_secs)
             }
         }
     };
