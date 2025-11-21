@@ -89,11 +89,12 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         borrowed_id_tracker.deleted_point_bitslice(),
         5,
     );
-    let mut results = searcher
+    let closest = searcher
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+        .unwrap()
+        .into_iter()
+        .exactly_one()
         .unwrap();
-    assert_eq!(results.len(), 1);
-    let closest = results.pop().unwrap();
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
     assert_eq!(closest[1].idx, 1);
