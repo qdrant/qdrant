@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 
@@ -182,13 +183,11 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         borrowed_id_tracker.deleted_point_bitslice(),
         5,
     );
-    let mut results = searcher
+    let results = searcher
         .peek_top_iter(&mut [0, 1, 2, 3, 4, 5].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap();
 
-    assert_eq!(results.len(), 1);
-
-    let closest = results.pop().unwrap();
+    let closest = results.into_iter().exactly_one().unwrap();
 
     assert_eq!(
         closest.len(),

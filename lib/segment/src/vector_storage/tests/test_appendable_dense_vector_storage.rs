@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use itertools::Itertools;
 use tempfile::Builder;
 
 #[cfg(feature = "rocksdb")]
@@ -71,7 +72,8 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let closest = searcher
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap()
-        .pop()
+        .into_iter()
+        .exactly_one()
         .unwrap();
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
@@ -98,7 +100,8 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let closest = searcher
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap()
-        .pop()
+        .into_iter()
+        .exactly_one()
         .unwrap();
     assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
     assert_eq!(closest[0].idx, 4);
@@ -124,7 +127,8 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let closest = searcher
         .peek_top_all(&DEFAULT_STOPPED)
         .unwrap()
-        .pop()
+        .into_iter()
+        .exactly_one()
         .unwrap();
     assert!(closest.is_empty(), "must have no results, all deleted");
 }
@@ -183,7 +187,8 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let closest = searcher
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap()
-        .pop()
+        .into_iter()
+        .exactly_one()
         .unwrap();
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
@@ -232,7 +237,8 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     let closest = searcher
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap()
-        .pop()
+        .into_iter()
+        .exactly_one()
         .unwrap();
 
     let top_idx = match closest.first() {
@@ -270,7 +276,8 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     let closest = searcher
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
         .unwrap()
-        .pop()
+        .into_iter()
+        .exactly_one()
         .unwrap();
 
     let query_points = vec![0, 1, 2, 3, 4];
