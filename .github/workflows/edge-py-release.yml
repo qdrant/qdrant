@@ -1,0 +1,68 @@
+name: Qdrant Edge Release Build
+
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ '**' ]
+  workflow_dispatch:
+
+jobs:
+  edge-py-linux:
+    name: Build Python wheels [Linux]
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        build-spec:
+          - target: x86_64
+            manylinux: manylinux_2_17
+
+          - target: x86_64
+            manylinux: manylinux_2_28
+
+          - target: aarch64
+            manylinux: manylinux_2_28
+
+          - arch: x86_64
+            target: x86_64-unknown-linux-musl
+            manylinux: musllinux_1_2
+
+          - arch: aarch64
+            target: aarch64-unknown-linux-musl
+            manylinux: musllinux_1_2
+
+    steps:
+      - name: Checkout Qdrant
+        uses: actions/checkout@v5
+
+      - name: Build Python wheel [Linux]
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --interpreter python3.10 --out dist
+          working-directory: lib/edge/python
+          target: ${{ matrix.build-spec.target }}
+          manylinux: ${{ matrix.build-spec.manylinux }}
+          before-script-linux: |
+            if command -v unzip; then
+                :
+            elif command -v apt-get; then
+                apt-get update -y && apt-get install -y unzip
+            elif command -v yum; then
+                yum install -y unzip
+            elif command -v dnf; then
+                dnf install -y unzip
+            elif command -v apk; then
+                apk add --no-cache unzip
+            fi
+
+            curl -f -L https://github.com/protocolbuffers/protobuf/releases/download/v33.1/protoc-33.1-linux-x86_64.zip -o protoc.zip
+            unzip protoc.zip -d /usr
+
+      - name: Upload Python wheel [Linux]
+        uses: actions/upload-artifact@v4
+        with:
+          name: qdrant-edge-${{ matrix.build-spec.arch || matrix.build-spec.target }}-${{ matrix.build-spec.manylinux }}
+          path: lib/edge/python/dist
