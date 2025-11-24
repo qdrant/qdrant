@@ -30,7 +30,7 @@ use crate::tracing;
 pub struct TelemetryParam {
     pub anonymize: Option<bool>,
     pub details_level: Option<usize>,
-    #[validate(range(min = 1, max = 10))]
+    #[validate(range(min = 1))]
     pub timeout: Option<u64>,
 }
 
@@ -72,7 +72,7 @@ fn telemetry(
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct MetricsParam {
     pub anonymize: Option<bool>,
-    #[validate(range(min = 1, max = 10))]
+    #[validate(range(min = 1))]
     pub timeout: Option<u64>,
 }
 

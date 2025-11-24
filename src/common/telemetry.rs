@@ -25,7 +25,7 @@ use crate::common::telemetry_ops::requests_telemetry::{
 };
 use crate::settings::Settings;
 
-const DEFAULT_TELEMETRY_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_TELEMETRY_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct TelemetryCollector {
     process_id: Uuid,

@@ -46,7 +46,6 @@ paths:
           schema:
             type: integer
             minimum: 1
-            maximum: 10
       responses: #@ response(reference("TelemetryData"))
 
   /metrics:
@@ -70,7 +69,6 @@ paths:
           schema:
             type: integer
             minimum: 1
-            maximum: 10
       responses:
         "200":
           description: Metrics data in Prometheus format
