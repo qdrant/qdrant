@@ -218,7 +218,7 @@ def qdrant_container_factory(docker_client, qdrant_image, request):
 
 
 @pytest.fixture(scope="function")
-def temp_storage_dir(request) -> Generator[Path, None, None]:
+def temp_storage_dir(request, docker_client) -> Generator[Path, None, None]:
     """
     Create a temporary storage directory and ensure its removal after test.
 
@@ -245,8 +245,22 @@ def temp_storage_dir(request) -> Generator[Path, None, None]:
             try:
                 shutil.rmtree(test_dir)
                 print(f"Cleaned up temp storage directory: {test_dir}")
-            except Exception as e:
+            except (PermissionError, OSError) as e:
                 print(f"Warning: Failed to remove temp storage directory {test_dir}: {e}")
+                print(f"Using Docker to clean up root-owned files...")
+
+                try:
+                    docker_client.containers.run(
+                        "alpine:latest",
+                        command=["rm", "-rf", f"/cleanup/{folder_name}"],
+                        volumes={str(Path(__file__).parent): {"bind": "/cleanup", "mode": "rw"}},
+                        remove=True,
+                        user="root"
+                    )
+                    print(f"Successfully cleaned up temp storage directory with Docker: {test_dir}")
+                except Exception as docker_error:
+                    print(f"Failed to cleanup with Docker: {docker_error}")
+                    print(f"WARNING: Test directory may not be fully cleaned up: {test_dir}")
 
 
 @pytest.fixture(scope="function")
