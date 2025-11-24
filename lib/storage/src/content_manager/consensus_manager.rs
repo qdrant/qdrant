@@ -823,10 +823,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         self.wal.lock().clear()
     }
 
-    pub fn truncate(&self, from_index: u64) -> Result<(), StorageError> {
-        self.wal.lock().truncate(from_index)
-    }
-
     pub fn compact_wal(&self, min_entries_to_compact: u64) -> Result<bool, StorageError> {
         if min_entries_to_compact == 0 {
             return Ok(false);

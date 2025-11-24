@@ -52,16 +52,6 @@ impl ConsensusOpWal {
         Ok(())
     }
 
-    /// Truncate WAL from the given index
-    ///
-    /// Truncate the WAL from the given WAL index (not Raft index!). The index is inclusive,
-    /// meaning the given index is also removed.
-    pub fn truncate(&mut self, from_index: u64) -> Result<(), StorageError> {
-        self.wal.truncate(from_index)?;
-        self.wal.flush_open_segment()?;
-        Ok(())
-    }
-
     pub fn entry(&self, raft_index: u64) -> raft::Result<RaftEntry> {
         // Raft entries are expected to have index starting from 1
         if raft_index < 1 {
