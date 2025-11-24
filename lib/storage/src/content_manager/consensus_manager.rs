@@ -113,26 +113,23 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Self {
         let mut wal = ConsensusOpWal::new(storage_path);
 
-        // If WAL has more entries than we have applied, truncate them and resync
-        if let Ok(Some(last)) = wal.last_entry() {
-            let last_committed = persistent_state.state().hard_state.commit;
-            let last_wal_commit_applied =
-                last_committed.saturating_sub(persistent_state.latest_snapshot_meta.index);
-            let last_wal_commit = last.index;
-
-            debug_assert!(
-                last_wal_commit >= last_wal_commit_applied,
-                "consensus WAL is missing entries, last committed WAL index is {last_wal_commit} but WAL only goes up to {last_wal_commit_applied}",
+        // When our Raft index and last snapshot index match, the last thing we did is apply a Raft
+        // snapshot. It is possible that we crashed before clearing the WAL, so we still do it now.
+        // Specifically, if the last opeation was applying a snapshot and our WAL does still have
+        // older Raft entries, we clear the whole WAL. Consensus will take care of us catching up
+        // with the rest.
+        // See `apply_snapshot` function and <https://github.com/qdrant/qdrant/pull/7577>.
+        let raft_index = persistent_state.state().hard_state.commit;
+        let snapshot_index = persistent_state.latest_snapshot_meta.index;
+        let last_operation_was_snapshot = raft_index == persistent_state.latest_snapshot_meta.index;
+        if last_operation_was_snapshot
+            && let Ok(Some(last)) = wal.last_entry()
+            && last.index < snapshot_index
+        {
+            log::warn!(
+                "Consensus WAL was not cleared after applying consensus snapshot, clearing it now"
             );
-
-            let extra_entries = last_wal_commit.saturating_sub(last_wal_commit_applied);
-            if extra_entries > 0 {
-                log::warn!(
-                    "Consensus WAL has {extra_entries} unapplied entries, truncating from index {last_wal_commit_applied} onwards"
-                );
-                wal.truncate(last_wal_commit_applied)
-                    .expect("Failed to truncate WAL on startup");
-            }
+            wal.clear().expect("Failed to truncate WAL on startup");
         }
 
         Self {
