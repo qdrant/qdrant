@@ -10,10 +10,21 @@ from e2e_tests.utils import extract_archive
 
 
 class TestStorageCompatibility:
-    """Test storage and snapshot compatibility with defined previous Qdrant versions."""
+    """Test storage and snapshot compatibility with defined previous Qdrant versions.
 
-    PREV_PATCH_VERSION = "v1.16.0"
-    PREV_MINOR_VERSION = "v1.15.5"
+    These tests are grouped to run sequentially on the same worker using xdist_group marker.
+    This prevents parallel downloads of large archives and disk saturation.
+    """
+
+    VERSIONS = [
+        "v1.16.0",
+        "v1.15.5",
+        "v1.15.4",
+        "v1.15.3",
+        "v1.15.2",
+        "v1.15.1",
+        # "v1.15.0", # TODO when restoring Qdrant adds a missing payload_storage folder owned by `root` which messes up the cleanup
+    ]
 
     EXPECTED_COLLECTIONS = [
         "test_collection_vector_memory",
@@ -32,7 +43,15 @@ class TestStorageCompatibility:
 
     @staticmethod
     def _download_compatibility_data(version: str, storage_test_dir: Path):
-        """Download compatibility data for a specific version."""
+        """Download compatibility data for a specific version.
+
+        Args:
+            version: Version string (e.g., "v1.16.0")
+            storage_test_dir: Directory to download the archive to
+
+        Returns:
+            Path to the downloaded compatibility archive
+        """
         # Use test-specific filename to avoid conflicts in parallel execution
         test_id = str(uuid.uuid4())[:8]
         compatibility_file = storage_test_dir / f"compatibility_{version}_{test_id}.tar"
@@ -106,8 +125,10 @@ class TestStorageCompatibility:
         return True
 
 
-    @pytest.mark.parametrize("version", [PREV_PATCH_VERSION, PREV_MINOR_VERSION])
-    def test_storage_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version, qdrant_container_factory):
+    @pytest.mark.xdist_group("compatibility")
+    @pytest.mark.parametrize("version", VERSIONS)
+    def test_storage_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version,
+                                   qdrant_container_factory):
         """Test storage compatibility with previous versions."""
         compatibility_file = self._download_compatibility_data(version, temp_storage_dir)
         storage_dir = self._extract_storage_data(compatibility_file, temp_storage_dir)
@@ -125,8 +146,10 @@ class TestStorageCompatibility:
         if not self._check_collections(container_info.host, container_info.http_port):
             pytest.fail(f"Storage compatibility failed for {version}")
 
-    @pytest.mark.parametrize("version", [PREV_PATCH_VERSION, PREV_MINOR_VERSION])
-    def test_snapshot_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version, qdrant_container_factory):
+    @pytest.mark.xdist_group("compatibility")
+    @pytest.mark.parametrize("version", VERSIONS)
+    def test_snapshot_compatibility(self, docker_client, qdrant_image, temp_storage_dir, version,
+                                    qdrant_container_factory):
         """Test snapshot recovery compatibility with previous versions."""
         compatibility_file = self._download_compatibility_data(version, temp_storage_dir)
         self._extract_storage_data(compatibility_file, temp_storage_dir)
