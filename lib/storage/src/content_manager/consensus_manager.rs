@@ -115,7 +115,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         // When our Raft index and last snapshot index match, the last thing we did is apply a Raft
         // snapshot. It is possible that we crashed before clearing the WAL, so we still do it now.
-        // Specifically, if the last opeation was applying a snapshot and our WAL does still have
+        // Specifically, if the last operation was applying a snapshot and our WAL does still have
         // older Raft entries, we clear the whole WAL. Consensus will take care of us catching up
         // with the rest.
         // See `apply_snapshot` function and <https://github.com/qdrant/qdrant/pull/7577>.
