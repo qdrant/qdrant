@@ -3,6 +3,7 @@ use std::mem;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
+use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use segment::types::*;
 
@@ -160,24 +161,115 @@ impl From<PyVectorStorageType> for VectorStorageType {
     }
 }
 
-#[pyclass(name = "Indexes")]
 #[derive(Clone, Debug, Into)]
 pub struct PyIndexes(Indexes);
 
-#[pymethods]
-impl PyIndexes {
-    #[classattr]
-    pub const PLAIN: Self = Self(Indexes::Plain {});
+impl FromPyObject<'_, '_> for PyIndexes {
+    type Error = PyErr;
 
-    // TODO: HNSW
+    fn extract(indexes: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Helper {
+            Plain(PyPlainIndexConfig),
+            Hnsw(PyHnswIndexConfig),
+        }
+
+        fn _variants(indexes: Indexes) {
+            match indexes {
+                Indexes::Plain {} => (),
+                Indexes::Hnsw(_) => (),
+            }
+        }
+
+        let indexes = match indexes.extract()? {
+            Helper::Plain(_) => Indexes::Plain {},
+            Helper::Hnsw(hnsw) => Indexes::Hnsw(HnswConfig::from(hnsw)),
+        };
+
+        Ok(Self(indexes))
+    }
 }
 
-impl PyIndexes {
-    fn _variants(indexes: Indexes) {
-        match indexes {
-            Indexes::Plain {} => (),
-            Indexes::Hnsw(_) => (), // TODO
+impl<'py> IntoPyObject<'py> for PyIndexes {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        match self.0 {
+            Indexes::Plain {} => PyPlainIndexConfig.into_bound_py_any(py),
+            Indexes::Hnsw(hnsw) => PyHnswIndexConfig(hnsw).into_bound_py_any(py),
         }
+    }
+}
+
+#[pyclass(name = "PlainIndexConfig")]
+#[derive(Copy, Clone, Debug, Into)]
+pub struct PyPlainIndexConfig;
+
+#[pymethods]
+impl PyPlainIndexConfig {
+    #[new]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[pyclass(name = "HnswIndexConfig")]
+#[derive(Copy, Clone, Debug, Into)]
+pub struct PyHnswIndexConfig(HnswConfig);
+
+#[pymethods]
+impl PyHnswIndexConfig {
+    #[new]
+    #[pyo3(signature = (m, ef_construct, full_scan_threshold, on_disk=None, payload_m=None, inline_storage=None))]
+    pub fn new(
+        m: usize,
+        ef_construct: usize,
+        full_scan_threshold: usize,
+        on_disk: Option<bool>,
+        payload_m: Option<usize>,
+        inline_storage: Option<bool>,
+    ) -> Self {
+        Self(HnswConfig {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads: 0,
+            on_disk,
+            payload_m,
+            inline_storage,
+        })
+    }
+
+    #[getter]
+    pub fn m(&self) -> usize {
+        self.0.m
+    }
+
+    #[getter]
+    pub fn ef_construct(&self) -> usize {
+        self.0.ef_construct
+    }
+
+    #[getter]
+    pub fn full_scan_threshold(&self) -> usize {
+        self.0.full_scan_threshold
+    }
+
+    #[getter]
+    pub fn on_disk(&self) -> Option<bool> {
+        self.0.on_disk
+    }
+
+    #[getter]
+    pub fn payload_m(&self) -> Option<usize> {
+        self.0.payload_m
+    }
+
+    #[getter]
+    pub fn inline_storage(&self) -> Option<bool> {
+        self.0.inline_storage
     }
 }
 
