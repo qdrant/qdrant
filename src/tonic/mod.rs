@@ -131,7 +131,7 @@ impl QdrantInternal for QdrantInternalService {
         &self,
         _request: Request<GetPeerTelemetryRequest>,
     ) -> Result<Response<GetPeerTelemetryResponse>, Status> {
-        todo!()
+        Err(Status::unimplemented("Not implemented"))
     }
 }
 
