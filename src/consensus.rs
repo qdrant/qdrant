@@ -1495,6 +1495,7 @@ mod tests {
             operation_sender,
             Path::new(storage_path),
         )
+        .expect("initialize consensus manager")
         .into();
         let dispatcher =
             Dispatcher::new(toc_arc.clone()).with_consensus(consensus_state.clone(), true);

@@ -399,6 +399,7 @@ fn main() -> anyhow::Result<()> {
             propose_operation_sender.unwrap(),
             Path::new(storage_path),
         )
+        .expect("initialize consensus manager")
         .into();
         let is_new_deployment = consensus_state.is_new_deployment();
 
