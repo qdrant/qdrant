@@ -12242,10 +12242,10 @@ pub struct CollectionTelemetry {
     pub id: ::prost::alloc::string::String,
     /// Shard transfers in progress
     #[prost(message, repeated, tag = "5")]
-    pub transfers: ::prost::alloc::vec::Vec<ShardTransferInfo>,
+    pub transfers: ::prost::alloc::vec::Vec<ShardTransferTelemetry>,
     /// Resharding(s) in progress
     #[prost(message, repeated, tag = "6")]
-    pub resharding: ::prost::alloc::vec::Vec<ReshardingInfo>,
+    pub resharding: ::prost::alloc::vec::Vec<ReshardingTelemetry>,
     /// Tasks that clean points after completing a resharding sequence
     #[prost(map = "uint32, message", tag = "7")]
     pub shard_clean_tasks: ::std::collections::HashMap<u32, ShardCleanTelemetry>,

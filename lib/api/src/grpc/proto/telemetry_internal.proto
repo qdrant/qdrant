@@ -25,8 +25,8 @@ message CollectionTelemetry {
     reserved 2; // init_time_ms
     reserved 3; // config
     reserved 4; // shards
-    repeated ShardTransferInfo transfers = 5; // Shard transfers in progress
-    repeated ReshardingInfo resharding = 6; // Resharding(s) in progress
+    repeated ShardTransferTelemetry transfers = 5; // Shard transfers in progress
+    repeated ReshardingTelemetry resharding = 6; // Resharding(s) in progress
     map<uint32, ShardCleanTelemetry> shard_clean_tasks = 7; // Tasks that clean points after completing a resharding sequence
 }
 
