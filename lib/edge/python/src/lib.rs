@@ -23,7 +23,11 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::PyShard;
     #[pymodule_export]
-    use super::config::quantization::PyQuantizationConfig;
+    use super::config::quantization::{
+        PyBinaryQuantizationConfig, PyBinaryQuantizationEncoding,
+        PyBinaryQuantizationQueryEncoding, PyCompressionRatio, PyProductQuantizationConfig,
+        PyScalarQuantizationConfig, PyScalarType,
+    };
     #[pymodule_export]
     use super::config::sparse_vector_data::PySparseVectorDataConfig;
     #[pymodule_export]
