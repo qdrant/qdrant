@@ -79,11 +79,9 @@ static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(No
 impl InferenceService {
     pub fn new(config: Option<InferenceConfig>) -> Self {
         let config = config.unwrap_or_default();
-        let timeout = Duration::from_secs(config.timeout);
         Self {
             config,
             client: Client::builder()
-                .timeout(timeout)
                 .build()
                 .expect("Invalid timeout value for HTTP client"),
         }
