@@ -12211,6 +12211,243 @@ pub mod points_internal_server {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetPeerTelemetryRequest {
+    /// The peer id to ask for telemetry
+    #[prost(uint64, tag = "1")]
+    pub peer_id: u64,
+    /// The level of detail needed
+    #[prost(uint32, tag = "2")]
+    pub details_level: u32,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetPeerTelemetryResponse {
+    /// Mapping from collection name to its telemetry
+    #[prost(map = "string, message", tag = "3")]
+    pub collections: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        CollectionTelemetry,
+    >,
+    /// Telemetry about the cluster and peers
+    #[prost(message, optional, tag = "4")]
+    pub cluster: ::core::option::Option<ClusterTelemetry>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionTelemetry {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// Shard transfers in progress
+    #[prost(message, repeated, tag = "5")]
+    pub transfers: ::prost::alloc::vec::Vec<ShardTransferInfo>,
+    /// Resharding(s) in progress
+    #[prost(message, repeated, tag = "6")]
+    pub resharding: ::prost::alloc::vec::Vec<ReshardingInfo>,
+    /// Tasks that clean points after completing a resharding sequence
+    #[prost(map = "uint32, message", tag = "7")]
+    pub shard_clean_tasks: ::std::collections::HashMap<u32, ShardCleanTelemetry>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardTransferTelemetry {
+    /// Local shard id
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    /// Target shard ID if different than source shard ID.
+    /// Used exclusively with `ReshardStreamRecords` transfer method.
+    #[prost(uint32, optional, tag = "2")]
+    pub to_shard_id: ::core::option::Option<u32>,
+    /// From peer id
+    #[prost(uint64, tag = "3")]
+    pub from: u64,
+    /// To peer id
+    #[prost(uint64, tag = "4")]
+    pub to: u64,
+    /// If `true` transfer is a synchronization of replicas;
+    /// If `false` transfer is a moving of a shard from one peer to another.
+    #[prost(bool, tag = "5")]
+    pub sync: bool,
+    /// Method of transferring points
+    #[prost(enumeration = "ShardTransferMethod", tag = "6")]
+    pub method: i32,
+    /// Freeform string. Typically reports progress
+    #[prost(string, tag = "7")]
+    pub comment: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReshardingTelemetry {
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    #[prost(uint64, tag = "2")]
+    pub peer_id: u64,
+    #[prost(message, optional, tag = "3")]
+    pub shard_key: ::core::option::Option<ShardKey>,
+    #[prost(enumeration = "ReshardingDirection", tag = "4")]
+    pub direction: i32,
+    #[prost(enumeration = "ReshardingStage", tag = "5")]
+    pub stage: i32,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardCleanTelemetry {
+    #[prost(oneof = "shard_clean_telemetry::Variant", tags = "1, 2, 3")]
+    pub variant: ::core::option::Option<shard_clean_telemetry::Variant>,
+}
+/// Nested message and enum types in `ShardCleanTelemetry`.
+pub mod shard_clean_telemetry {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(enumeration = "super::ShardCleanStatusTelemetry", tag = "1")]
+        Status(i32),
+        #[prost(message, tag = "2")]
+        Progress(super::ShardCleanProgressTelemetry),
+        #[prost(message, tag = "3")]
+        Failed(super::ShardCleanFailedTelemetry),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardCleanProgressTelemetry {
+    #[prost(uint64, tag = "1")]
+    pub deleted_points: u64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardCleanFailedTelemetry {
+    #[prost(string, tag = "1")]
+    pub reason: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClusterTelemetry {
+    #[prost(message, optional, tag = "1")]
+    pub status: ::core::option::Option<ClusterStatusTelemetry>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClusterStatusTelemetry {
+    #[prost(uint64, tag = "2")]
+    pub term: u64,
+    #[prost(uint64, tag = "3")]
+    pub commit: u64,
+    #[prost(uint64, tag = "4")]
+    pub pending_operations: u64,
+    #[prost(enumeration = "StateRole", tag = "5")]
+    pub role: i32,
+    #[prost(bool, tag = "6")]
+    pub is_voter: bool,
+    #[prost(uint64, tag = "7")]
+    pub peer_id: u64,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ReshardingStage {
+    MigratingPoints = 0,
+    ReadHashRingCommitted = 1,
+    WriteHashRingCommitted = 2,
+}
+impl ReshardingStage {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ReshardingStage::MigratingPoints => "MIGRATING_POINTS",
+            ReshardingStage::ReadHashRingCommitted => "READ_HASH_RING_COMMITTED",
+            ReshardingStage::WriteHashRingCommitted => "WRITE_HASH_RING_COMMITTED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "MIGRATING_POINTS" => Some(Self::MigratingPoints),
+            "READ_HASH_RING_COMMITTED" => Some(Self::ReadHashRingCommitted),
+            "WRITE_HASH_RING_COMMITTED" => Some(Self::WriteHashRingCommitted),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ShardCleanStatusTelemetry {
+    Started = 0,
+    Cancelled = 1,
+    Done = 2,
+}
+impl ShardCleanStatusTelemetry {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ShardCleanStatusTelemetry::Started => "STARTED",
+            ShardCleanStatusTelemetry::Cancelled => "CANCELLED",
+            ShardCleanStatusTelemetry::Done => "DONE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "STARTED" => Some(Self::Started),
+            "CANCELLED" => Some(Self::Cancelled),
+            "DONE" => Some(Self::Done),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum StateRole {
+    Follower = 0,
+    Candidate = 1,
+    Leader = 2,
+    PreCandidate = 3,
+}
+impl StateRole {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            StateRole::Follower => "FOLLOWER",
+            StateRole::Candidate => "CANDIDATE",
+            StateRole::Leader => "LEADER",
+            StateRole::PreCandidate => "PRE_CANDIDATE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "FOLLOWER" => Some(Self::Follower),
+            "CANDIDATE" => Some(Self::Candidate),
+            "LEADER" => Some(Self::Leader),
+            "PRE_CANDIDATE" => Some(Self::PreCandidate),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetConsensusCommitRequest {}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -12330,7 +12567,7 @@ pub mod qdrant_internal_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// Get current commit and term on the target node.
+        /// Get current commit and term on the target peer.
         pub async fn get_consensus_commit(
             &mut self,
             request: impl tonic::IntoRequest<super::GetConsensusCommitRequest>,
@@ -12356,7 +12593,7 @@ pub mod qdrant_internal_client {
                 .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetConsensusCommit"));
             self.inner.unary(req, path, codec).await
         }
-        /// Wait until the target node reached the given commit ID.
+        /// Wait until the target peer reached the given commit ID.
         pub async fn wait_on_consensus_commit(
             &mut self,
             request: impl tonic::IntoRequest<super::WaitOnConsensusCommitRequest>,
@@ -12384,6 +12621,32 @@ pub mod qdrant_internal_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Get telemetry from a peer
+        pub async fn get_peer_telemetry(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetPeerTelemetryRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetPeerTelemetryResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.QdrantInternal/GetPeerTelemetry",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetPeerTelemetry"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -12393,7 +12656,7 @@ pub mod qdrant_internal_server {
     /// Generated trait containing gRPC methods that should be implemented for use with QdrantInternalServer.
     #[async_trait]
     pub trait QdrantInternal: Send + Sync + 'static {
-        /// Get current commit and term on the target node.
+        /// Get current commit and term on the target peer.
         async fn get_consensus_commit(
             &self,
             request: tonic::Request<super::GetConsensusCommitRequest>,
@@ -12401,12 +12664,20 @@ pub mod qdrant_internal_server {
             tonic::Response<super::GetConsensusCommitResponse>,
             tonic::Status,
         >;
-        /// Wait until the target node reached the given commit ID.
+        /// Wait until the target peer reached the given commit ID.
         async fn wait_on_consensus_commit(
             &self,
             request: tonic::Request<super::WaitOnConsensusCommitRequest>,
         ) -> std::result::Result<
             tonic::Response<super::WaitOnConsensusCommitResponse>,
+            tonic::Status,
+        >;
+        /// Get telemetry from a peer
+        async fn get_peer_telemetry(
+            &self,
+            request: tonic::Request<super::GetPeerTelemetryRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetPeerTelemetryResponse>,
             tonic::Status,
         >;
     }
@@ -12571,6 +12842,53 @@ pub mod qdrant_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = WaitOnConsensusCommitSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.QdrantInternal/GetPeerTelemetry" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetPeerTelemetrySvc<T: QdrantInternal>(pub Arc<T>);
+                    impl<
+                        T: QdrantInternal,
+                    > tonic::server::UnaryService<super::GetPeerTelemetryRequest>
+                    for GetPeerTelemetrySvc<T> {
+                        type Response = super::GetPeerTelemetryResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetPeerTelemetryRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as QdrantInternal>::get_peer_telemetry(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetPeerTelemetrySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

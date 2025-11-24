@@ -3,16 +3,23 @@ syntax = "proto3";
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
+import "telemetry_internal.proto";
+
 service QdrantInternal {
   /*
-  Get current commit and term on the target node.
+  Get current commit and term on the target peer.
    */
   rpc GetConsensusCommit (GetConsensusCommitRequest) returns (GetConsensusCommitResponse) {}
 
   /*
-  Wait until the target node reached the given commit ID.
+  Wait until the target peer reached the given commit ID.
   */
   rpc WaitOnConsensusCommit (WaitOnConsensusCommitRequest) returns (WaitOnConsensusCommitResponse) {}
+
+  /*
+  Get telemetry from a peer
+  */
+  rpc GetPeerTelemetry (GetPeerTelemetryRequest) returns (GetPeerTelemetryResponse) {}
 }
 
 message GetConsensusCommitRequest {}
