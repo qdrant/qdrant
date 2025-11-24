@@ -110,7 +110,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         toc: Arc<C>,
         propose_sender: OperationSender,
         storage_path: &Path,
-    ) -> Self {
+    ) -> Result<Self, StorageError> {
         let mut wal = ConsensusOpWal::new(storage_path);
 
         // When our Raft index and last snapshot index match, the last thing we did is apply a Raft
@@ -129,10 +129,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             log::warn!(
                 "Consensus WAL was not cleared after applying consensus snapshot, clearing it now"
             );
-            wal.clear().expect("Failed to truncate WAL on startup");
+            wal.clear()?;
         }
 
-        Self {
+        Ok(Self {
             persistent: RwLock::new(persistent_state),
             is_leader_established: Arc::new(IsReady::default()),
             wal: Mutex::new(wal),
@@ -145,7 +145,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }),
             message_send_failures: Default::default(),
             next_peer_metadata_update_attempt: Mutex::new(Instant::now()),
-        }
+        })
     }
 
     pub fn report_snapshot(
@@ -1304,7 +1304,8 @@ mod tests {
             Arc::new(NoCollections),
             OperationSender::new(sender),
             path,
-        );
+        )
+        .expect("initialize consensus manager");
         let mem_storage = MemStorage::new();
         mem_storage.wl().append(entries.as_ref()).unwrap();
         consensus_state.append_entries(entries).unwrap();
