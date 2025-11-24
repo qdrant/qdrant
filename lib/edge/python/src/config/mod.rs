@@ -26,21 +26,9 @@ impl PySegmentConfig {
         sparse_vector_data: HashMap<String, PySparseVectorDataConfig>,
         payload_storage_type: PyPayloadStorageType,
     ) -> Self {
-        // TODO: Transmute!?
-        let vector_data = vector_data
-            .into_iter()
-            .map(|(vector, config)| (vector, VectorDataConfig::from(config)))
-            .collect();
-
-        // TODO: Transmute!?
-        let sparse_vector_data = sparse_vector_data
-            .into_iter()
-            .map(|(vector, config)| (vector, SparseVectorDataConfig::from(config)))
-            .collect();
-
         Self(SegmentConfig {
-            vector_data,
-            sparse_vector_data,
+            vector_data: PyVectorDataConfig::peel_map(vector_data),
+            sparse_vector_data: PySparseVectorDataConfig::peel_map(sparse_vector_data),
             payload_storage_type: PayloadStorageType::from(payload_storage_type),
         })
     }

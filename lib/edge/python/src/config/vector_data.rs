@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::mem;
+
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
@@ -9,6 +12,15 @@ use super::quantization::*;
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyVectorDataConfig(VectorDataConfig);
+
+impl PyVectorDataConfig {
+    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorDataConfig>
+    where
+        Self: TransparentWrapper<VectorDataConfig>,
+    {
+        unsafe { mem::transmute(map) }
+    }
+}
 
 #[pymethods]
 impl PyVectorDataConfig {
