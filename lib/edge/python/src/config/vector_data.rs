@@ -35,61 +35,63 @@ impl PyVectorDataConfig {
 }
 
 #[pyclass(name = "Distance")]
-#[derive(Copy, Clone, Debug, Into)]
-pub struct PyDistance(Distance);
-
-#[pymethods]
-impl PyDistance {
-    #[classattr]
-    pub const COSINE: Self = Self(Distance::Cosine);
-
-    #[classattr]
-    pub const EUCLID: Self = Self(Distance::Euclid);
-
-    #[classattr]
-    pub const DOT: Self = Self(Distance::Dot);
-
-    #[classattr]
-    pub const MANHATTAN: Self = Self(Distance::Manhattan);
+#[derive(Copy, Clone, Debug)]
+pub enum PyDistance {
+    Cosine,
+    Euclid,
+    Dot,
+    Manhattan,
 }
 
-impl PyDistance {
-    fn _variants(distance: Distance) {
+impl From<Distance> for PyDistance {
+    fn from(distance: Distance) -> Self {
         match distance {
-            Distance::Cosine => (),
-            Distance::Euclid => (),
-            Distance::Dot => (),
-            Distance::Manhattan => (),
+            Distance::Cosine => PyDistance::Cosine,
+            Distance::Euclid => PyDistance::Euclid,
+            Distance::Dot => PyDistance::Dot,
+            Distance::Manhattan => PyDistance::Manhattan,
+        }
+    }
+}
+
+impl From<PyDistance> for Distance {
+    fn from(distance: PyDistance) -> Self {
+        match distance {
+            PyDistance::Cosine => Distance::Cosine,
+            PyDistance::Euclid => Distance::Euclid,
+            PyDistance::Dot => Distance::Dot,
+            PyDistance::Manhattan => Distance::Manhattan,
         }
     }
 }
 
 #[pyclass(name = "VectorStorageType")]
-#[derive(Copy, Clone, Debug, Into)]
-pub struct PyVectorStorageType(VectorStorageType);
-
-#[pymethods]
-impl PyVectorStorageType {
-    #[classattr]
-    pub const MEMORY: Self = Self(VectorStorageType::Memory);
-
-    #[classattr]
-    pub const MMAP: Self = Self(VectorStorageType::Mmap);
-
-    #[classattr]
-    pub const CHUNKED_MMAP: Self = Self(VectorStorageType::ChunkedMmap);
-
-    #[classattr]
-    pub const IN_RAM_CHUNKED_MMAP: Self = Self(VectorStorageType::InRamChunkedMmap);
+#[derive(Copy, Clone, Debug)]
+pub enum PyVectorStorageType {
+    Memory,
+    Mmap,
+    ChunkedMmap,
+    InRamChunkedMmap,
 }
 
-impl PyVectorStorageType {
-    fn _variants(storage_type: VectorStorageType) {
+impl From<VectorStorageType> for PyVectorStorageType {
+    fn from(storage_type: VectorStorageType) -> Self {
         match storage_type {
-            VectorStorageType::Memory => (),
-            VectorStorageType::Mmap => (),
-            VectorStorageType::ChunkedMmap => (),
-            VectorStorageType::InRamChunkedMmap => (),
+            VectorStorageType::Memory => PyVectorStorageType::Memory,
+            VectorStorageType::Mmap => PyVectorStorageType::Mmap,
+            VectorStorageType::ChunkedMmap => PyVectorStorageType::ChunkedMmap,
+            VectorStorageType::InRamChunkedMmap => PyVectorStorageType::InRamChunkedMmap,
+        }
+    }
+}
+
+impl From<PyVectorStorageType> for VectorStorageType {
+    fn from(storage_type: PyVectorStorageType) -> Self {
+        match storage_type {
+            PyVectorStorageType::Memory => VectorStorageType::Memory,
+            PyVectorStorageType::Mmap => VectorStorageType::Mmap,
+            PyVectorStorageType::ChunkedMmap => VectorStorageType::ChunkedMmap,
+            PyVectorStorageType::InRamChunkedMmap => VectorStorageType::InRamChunkedMmap,
         }
     }
 }
@@ -130,45 +132,51 @@ impl PyMultiVectorConfig {
 }
 
 #[pyclass(name = "MultiVectorComparator")]
-#[derive(Copy, Clone, Debug, Into)]
-pub struct PyMultiVectorComparator(MultiVectorComparator);
-
-#[pymethods]
-impl PyMultiVectorComparator {
-    #[classattr]
-    pub const MAX_SIM: Self = Self(MultiVectorComparator::MaxSim);
+#[derive(Copy, Clone, Debug)]
+pub enum PyMultiVectorComparator {
+    MaxSim,
 }
 
-impl PyMultiVectorComparator {
-    fn _variants(comparator: MultiVectorComparator) {
+impl From<MultiVectorComparator> for PyMultiVectorComparator {
+    fn from(comparator: MultiVectorComparator) -> Self {
         match comparator {
-            MultiVectorComparator::MaxSim => (),
+            MultiVectorComparator::MaxSim => PyMultiVectorComparator::MaxSim,
+        }
+    }
+}
+
+impl From<PyMultiVectorComparator> for MultiVectorComparator {
+    fn from(comparator: PyMultiVectorComparator) -> Self {
+        match comparator {
+            PyMultiVectorComparator::MaxSim => MultiVectorComparator::MaxSim,
         }
     }
 }
 
 #[pyclass(name = "VectorStorageDatatype")]
-#[derive(Copy, Clone, Debug, Into)]
-pub struct PyVectorStorageDatatype(VectorStorageDatatype);
-
-#[pymethods]
-impl PyVectorStorageDatatype {
-    #[classattr]
-    pub const FLOAT_32: Self = Self(VectorStorageDatatype::Float32);
-
-    #[classattr]
-    pub const FLOAT_16: Self = Self(VectorStorageDatatype::Float16);
-
-    #[classattr]
-    pub const UINT_8: Self = Self(VectorStorageDatatype::Uint8);
+#[derive(Copy, Clone, Debug)]
+pub enum PyVectorStorageDatatype {
+    Float32,
+    Float16,
+    Uint8,
 }
 
-impl PyVectorStorageDatatype {
-    fn _variants(storage_datatype: VectorStorageDatatype) {
-        match storage_datatype {
-            VectorStorageDatatype::Float32 => (),
-            VectorStorageDatatype::Float16 => (),
-            VectorStorageDatatype::Uint8 => (),
+impl From<VectorStorageDatatype> for PyVectorStorageDatatype {
+    fn from(datatype: VectorStorageDatatype) -> Self {
+        match datatype {
+            VectorStorageDatatype::Float32 => PyVectorStorageDatatype::Float32,
+            VectorStorageDatatype::Float16 => PyVectorStorageDatatype::Float16,
+            VectorStorageDatatype::Uint8 => PyVectorStorageDatatype::Uint8,
+        }
+    }
+}
+
+impl From<PyVectorStorageDatatype> for VectorStorageDatatype {
+    fn from(datatype: PyVectorStorageDatatype) -> Self {
+        match datatype {
+            PyVectorStorageDatatype::Float32 => VectorStorageDatatype::Float32,
+            PyVectorStorageDatatype::Float16 => VectorStorageDatatype::Float16,
+            PyVectorStorageDatatype::Uint8 => VectorStorageDatatype::Uint8,
         }
     }
 }

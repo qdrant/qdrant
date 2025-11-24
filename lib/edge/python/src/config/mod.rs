@@ -47,25 +47,28 @@ impl PySegmentConfig {
 }
 
 #[pyclass(name = "PayloadStorageType")]
-#[derive(Copy, Clone, Debug, Into)]
-pub struct PyPayloadStorageType(PayloadStorageType);
-
-#[pymethods]
-impl PyPayloadStorageType {
-    #[classattr]
-    pub const MMAP: Self = Self(PayloadStorageType::Mmap);
-
-    #[classattr]
-    pub const IN_RAM_MMAP: Self = Self(PayloadStorageType::InRamMmap);
+#[derive(Copy, Clone, Debug)]
+pub enum PyPayloadStorageType {
+    Mmap,
+    InRamMmap,
 }
 
-impl PyPayloadStorageType {
-    fn _variants(storage_type: PayloadStorageType) {
+impl From<PayloadStorageType> for PyPayloadStorageType {
+    fn from(storage_type: PayloadStorageType) -> Self {
         #[allow(unreachable_patterns)]
         match storage_type {
-            PayloadStorageType::Mmap => (),
-            PayloadStorageType::InRamMmap => (),
-            _ => todo!(), // TODO: Ignore RocksDB storage types
+            PayloadStorageType::Mmap => PyPayloadStorageType::Mmap,
+            PayloadStorageType::InRamMmap => PyPayloadStorageType::InRamMmap,
+            _ => unimplemented!("RocksDB-backed storage types are not supported by Qdrant Edge"),
+        }
+    }
+}
+
+impl From<PyPayloadStorageType> for PayloadStorageType {
+    fn from(storage_type: PyPayloadStorageType) -> Self {
+        match storage_type {
+            PyPayloadStorageType::Mmap => PayloadStorageType::Mmap,
+            PyPayloadStorageType::InRamMmap => PayloadStorageType::InRamMmap,
         }
     }
 }
