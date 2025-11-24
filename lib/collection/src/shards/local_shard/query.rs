@@ -133,6 +133,7 @@ impl LocalShard {
                 &(&with_payload).into(),
                 &with_vector,
                 &self.search_runtime,
+                timeout,
                 hw_measurement_acc,
             ),
         )

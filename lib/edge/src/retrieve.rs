@@ -1,4 +1,5 @@
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::common::operation_error::OperationResult;
@@ -24,6 +25,7 @@ impl Shard {
             point_ids,
             &with_payload,
             &with_vector,
+            Duration::from_hours(1),
             &AtomicBool::new(false),
             HwMeasurementAcc::disposable(),
         )?;

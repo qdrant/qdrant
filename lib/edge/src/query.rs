@@ -1,6 +1,7 @@
 use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -403,6 +404,7 @@ impl Shard {
             &point_ids,
             &WithPayload::from(with_payload),
             &with_vector,
+            Duration::from_hours(1),
             &AtomicBool::new(false),
             hw_measurement_acc,
         )?;

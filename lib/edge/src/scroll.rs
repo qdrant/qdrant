@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools as _;
@@ -109,6 +110,7 @@ impl Shard {
             &point_ids,
             &WithPayload::from(with_payload_interface),
             with_vector,
+            Duration::from_hours(1),
             &AtomicBool::new(false),
             hw_measurement_acc,
         )?;
@@ -162,6 +164,7 @@ impl Shard {
             &point_ids,
             &WithPayload::from(with_payload_interface),
             with_vector,
+            Duration::from_hours(1),
             &AtomicBool::new(false),
             hw_measurement_acc,
         )?;
@@ -265,6 +268,7 @@ impl Shard {
             &random_point_ids,
             &WithPayload::from(with_payload_interface),
             with_vector,
+            Duration::from_hours(1),
             &AtomicBool::new(false),
             hw_measurement_acc,
         )?
