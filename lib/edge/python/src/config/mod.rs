@@ -34,21 +34,13 @@ impl PySegmentConfig {
     }
 
     #[getter]
-    pub fn vector_data(&self) -> HashMap<String, PyVectorDataConfig> {
-        self.0
-            .vector_data
-            .iter()
-            .map(|(vector, conf)| (vector.clone(), PyVectorDataConfig(conf.clone())))
-            .collect()
+    pub fn vector_data(&self) -> &HashMap<String, PyVectorDataConfig> {
+        PyVectorDataConfig::wrap_map_ref(&self.0.vector_data)
     }
 
     #[getter]
-    pub fn sparse_vector_data(&self) -> HashMap<String, PySparseVectorDataConfig> {
-        self.0
-            .sparse_vector_data
-            .iter()
-            .map(|(vector, conf)| (vector.clone(), PySparseVectorDataConfig(conf.clone())))
-            .collect()
+    pub fn sparse_vector_data(&self) -> &HashMap<String, PySparseVectorDataConfig> {
+        PySparseVectorDataConfig::wrap_map_ref(&self.0.sparse_vector_data)
     }
 
     #[getter]

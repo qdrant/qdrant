@@ -20,6 +20,13 @@ impl PyVectorDataConfig {
     {
         unsafe { mem::transmute(map) }
     }
+
+    pub fn wrap_map_ref(map: &HashMap<String, VectorDataConfig>) -> &HashMap<String, Self>
+    where
+        Self: TransparentWrapper<VectorDataConfig>,
+    {
+        unsafe { mem::transmute(map) }
+    }
 }
 
 #[pymethods]
@@ -78,6 +85,16 @@ impl PyVectorDataConfig {
     #[getter]
     pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
         self.0.datatype.map(PyVectorStorageDatatype::from)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyVectorDataConfig {
+    type Target = PyVectorDataConfig;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        Bound::new(py, self.clone())
     }
 }
 

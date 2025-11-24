@@ -18,4 +18,21 @@ impl PySparseVectorDataConfig {
     {
         unsafe { mem::transmute(map) }
     }
+
+    pub fn wrap_map_ref(map: &HashMap<String, SparseVectorDataConfig>) -> &HashMap<String, Self>
+    where
+        Self: TransparentWrapper<SparseVectorDataConfig>,
+    {
+        unsafe { mem::transmute(map) }
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PySparseVectorDataConfig {
+    type Target = PySparseVectorDataConfig;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(*self, py)
+    }
 }
