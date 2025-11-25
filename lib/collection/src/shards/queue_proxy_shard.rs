@@ -16,6 +16,7 @@ use segment::types::{
     WithPayloadInterface, WithVector,
 };
 use semver::Version;
+use shard::common::stopping_guard::StoppingGuard;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
@@ -186,10 +187,15 @@ impl QueueProxyShard {
         self.inner_unchecked().wrapped_shard.trigger_optimizers();
     }
 
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+    pub async fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        timeout: Duration,
+        is_stopped_guard: &StoppingGuard,
+    ) -> CollectionResult<LocalShardTelemetry> {
         self.inner_unchecked()
             .wrapped_shard
-            .get_telemetry_data(detail)
+            .get_telemetry_data(detail, timeout, is_stopped_guard)
             .await
     }
 
