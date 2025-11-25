@@ -4,6 +4,7 @@ use std::time::Duration;
 use common::types::{DetailsLevel, TelemetryDetail};
 use reqwest::Client;
 use segment::common::anonymize::Anonymize;
+use storage::content_manager::errors::StorageResult;
 use storage::rbac::Access;
 use tokio::sync::Mutex;
 
@@ -36,28 +37,38 @@ impl TelemetryReporter {
         }
     }
 
-    async fn report(&self, client: &Client) {
+    async fn report(&self, client: &Client) -> StorageResult<()> {
         let data = self
             .telemetry
             .lock()
             .await
-            .prepare_data(&FULL_ACCESS, DETAIL)
-            .await
+            .prepare_data(&FULL_ACCESS, DETAIL, None)
+            .await?
             .anonymize();
-        let data = serde_json::to_string(&data).unwrap();
-        let _resp = client
+        let data = serde_json::to_string(&data)?;
+        let resp = client
             .post(&self.telemetry_url)
             .body(data)
             .header("Content-Type", "application/json")
             .send()
-            .await;
+            .await?;
+        if !resp.status().is_success() {
+            log::error!(
+                "Failed to report telemetry: resp status:{:?} resp body:{:?}",
+                resp.status(),
+                resp.text().await?
+            );
+        }
+        Ok(())
     }
 
     pub async fn run(telemetry: Arc<Mutex<TelemetryCollector>>) {
         let reporter = Self::new(telemetry);
         let client = Client::new();
         loop {
-            reporter.report(&client).await;
+            if let Err(err) = reporter.report(&client).await {
+                log::error!("Failed to report telemetry {err}")
+            }
             tokio::time::sleep(REPORTING_INTERVAL).await;
         }
     }

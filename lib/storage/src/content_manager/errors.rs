@@ -50,53 +50,62 @@ pub enum StorageError {
 }
 
 impl StorageError {
-    pub fn inference_error(description: impl Into<String>) -> StorageError {
-        StorageError::InferenceError {
+    pub fn inference_error(description: impl Into<String>) -> Self {
+        Self::InferenceError {
             description: description.into(),
         }
     }
 
-    pub fn service_error(description: impl Into<String>) -> StorageError {
-        StorageError::ServiceError {
+    pub fn service_error(description: impl Into<String>) -> Self {
+        Self::ServiceError {
             description: description.into(),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 
-    pub fn bad_request(description: impl Into<String>) -> StorageError {
-        StorageError::BadRequest {
+    pub fn bad_request(description: impl Into<String>) -> Self {
+        Self::BadRequest {
             description: description.into(),
         }
     }
 
-    pub fn bad_input(description: impl Into<String>) -> StorageError {
-        StorageError::BadInput {
+    pub fn bad_input(description: impl Into<String>) -> Self {
+        Self::BadInput {
             description: description.into(),
         }
     }
 
-    pub fn already_exists(description: impl Into<String>) -> StorageError {
-        StorageError::AlreadyExists {
+    pub fn already_exists(description: impl Into<String>) -> Self {
+        Self::AlreadyExists {
             description: description.into(),
         }
     }
 
-    pub fn not_found(description: impl Into<String>) -> StorageError {
-        StorageError::NotFound {
+    pub fn not_found(description: impl Into<String>) -> Self {
+        Self::NotFound {
             description: description.into(),
         }
     }
 
     pub fn checksum_mismatch(expected: impl Into<String>, actual: impl Into<String>) -> Self {
-        StorageError::ChecksumMismatch {
+        Self::ChecksumMismatch {
             expected: expected.into(),
             actual: actual.into(),
         }
     }
 
-    pub fn forbidden(description: impl Into<String>) -> StorageError {
-        StorageError::Forbidden {
+    pub fn forbidden(description: impl Into<String>) -> Self {
+        Self::Forbidden {
             description: description.into(),
+        }
+    }
+
+    pub fn timeout(timeout_sec: usize, operation: impl Into<String>) -> Self {
+        Self::Timeout {
+            description: format!(
+                "Operation '{}' timed out after {timeout_sec} seconds",
+                operation.into()
+            ),
         }
     }
 

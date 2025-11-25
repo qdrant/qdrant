@@ -1,6 +1,7 @@
 use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
+use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
@@ -8,6 +9,7 @@ use common::types::TelemetryDetail;
 use segment::data_types::manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{Filter, SizeStats, SnapshotFormat};
+use shard::common::stopping_guard::StoppingGuard;
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
@@ -70,23 +72,42 @@ impl Shard {
         }
     }
 
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+    pub async fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        timeout: Duration,
+        is_stopped_guard: &StoppingGuard,
+    ) -> CollectionResult<LocalShardTelemetry> {
         let mut telemetry = match self {
             Shard::Local(local_shard) => {
-                let mut shard_telemetry = local_shard.get_telemetry_data(detail).await;
+                let mut shard_telemetry = local_shard
+                    .get_telemetry_data(detail, timeout, is_stopped_guard)
+                    .await?;
 
                 // can't take sync locks in async fn so local_shard_status() has to be
                 // called outside get_telemetry_data()
                 shard_telemetry.status = Some(local_shard.local_shard_status().await.0);
                 shard_telemetry
             }
-            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(detail).await,
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(detail).await,
-            Shard::QueueProxy(proxy_shard) => proxy_shard.get_telemetry_data(detail).await,
+            Shard::Proxy(proxy_shard) => {
+                proxy_shard
+                    .get_telemetry_data(detail, timeout, is_stopped_guard)
+                    .await?
+            }
+            Shard::ForwardProxy(proxy_shard) => {
+                proxy_shard
+                    .get_telemetry_data(detail, timeout, is_stopped_guard)
+                    .await?
+            }
+            Shard::QueueProxy(proxy_shard) => {
+                proxy_shard
+                    .get_telemetry_data(detail, timeout, is_stopped_guard)
+                    .await?
+            }
             Shard::Dummy(dummy_shard) => dummy_shard.get_telemetry_data(),
         };
         telemetry.variant_name = Some(self.variant_name().to_string());
-        telemetry
+        Ok(telemetry)
     }
 
     pub async fn get_optimization_status(&self) -> OptimizersStatus {
