@@ -12943,7 +12943,7 @@
           "status": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ClusterStatusTelemetry"
+                "$ref": "#/components/schemas/cluster.StatusTelemetry"
               },
               {
                 "nullable": true
@@ -12981,7 +12981,7 @@
           }
         }
       },
-      "ClusterStatusTelemetry": {
+      "cluster.StatusTelemetry": {
         "type": "object",
         "required": [
           "commit",

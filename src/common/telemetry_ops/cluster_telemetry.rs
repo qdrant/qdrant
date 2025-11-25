@@ -49,6 +49,7 @@ impl From<&Settings> for ClusterConfigTelemetry {
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
+#[schemars(rename = "cluster.StatusTelemetry")]
 pub struct ClusterStatusTelemetry {
     #[anonymize(false)]
     pub number_of_peers: usize,
