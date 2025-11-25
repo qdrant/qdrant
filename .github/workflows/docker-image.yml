@@ -59,7 +59,7 @@ jobs:
         docker push $GITHUB_TAG
 
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
-        cosign sign --new-bundle-format=false --use-signing-config=false--yes "${DOCKERHUB_TAG}@${DIGEST}"
+        cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG}@${DIGEST}"
 
         # Build unprivileged image for Docker Hub
         DOCKERHUB_TAG_UNPRIVILEGED="qdrant/qdrant:${{ github.ref_name }}-unprivileged"
