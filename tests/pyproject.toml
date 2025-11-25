@@ -24,10 +24,6 @@ tqdm = "^4.67.1"
 [tool.pytest.ini_options]
 markers = [
     "longrunning: marks tests as long-running (deselect with '-m \"not longrunning\"')",
-]
-
-[tool.pytest.ini_options]
-markers = [
     "xdist_group: group tests to run on the same worker (for pytest-xdist)",
 ]
 addopts = """
