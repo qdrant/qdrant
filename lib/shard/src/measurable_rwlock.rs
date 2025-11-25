@@ -1,9 +1,6 @@
 use std::{
     ops::{Deref, DerefMut},
-    sync::{
-        Arc,
-        atomic::{self, AtomicU64},
-    },
+    sync::atomic,
     time::Instant,
 };
 
@@ -21,36 +18,40 @@ pub type MeasurableRwLockReadGuard<'rwlock, T> = RwLockReadGuard<'rwlock, T>;
 
 #[derive(Debug, Default)]
 pub struct MeasurableRwLockMetrics {
-    pub read_wait_time_us_counter: AtomicU64,
-    pub write_wait_time_us_counter: AtomicU64,
-    pub upgrade_wait_us_counter: AtomicU64,
+    pub read_wait_time_us_counter: atomic::AtomicU64,
+    pub write_wait_time_us_counter: atomic::AtomicU64,
+    pub upgrade_wait_us_counter: atomic::AtomicU64,
 }
+
+pub static MEASURABLE_RWLOCK_METRICS_DISABLED: MeasurableRwLockMetrics = MeasurableRwLockMetrics {
+    read_wait_time_us_counter: atomic::AtomicU64::new(0),
+    write_wait_time_us_counter: atomic::AtomicU64::new(0),
+    upgrade_wait_us_counter: atomic::AtomicU64::new(0),
+};
 
 #[derive(Debug)]
 pub struct MeasurableRwLock<T: ?Sized> {
-    metrics: Arc<MeasurableRwLockMetrics>,
+    metrics: &'static MeasurableRwLockMetrics,
     inner: RwLock<T>,
 }
 
 #[derive(Debug)]
 pub struct MeasurableRwLockUpgradableReadGuard<'rwlock, T: ?Sized> {
-    upgrade_wait_us_counter: &'rwlock AtomicU64,
+    upgrade_wait_us_counter: &'static atomic::AtomicU64,
     inner: RwLockUpgradableReadGuard<'rwlock, T>,
 }
 
 #[derive(Debug)]
 pub struct MeasurableRwLockWriteGuard<'rwlock, T: ?Sized> {
-    upgrade_wait_us_counter: &'rwlock AtomicU64,
+    upgrade_wait_us_counter: &'static atomic::AtomicU64,
     inner: RwLockWriteGuard<'rwlock, T>,
 }
 
 impl<T> MeasurableRwLock<T> {
-    pub fn new(
-        val: T,
-    ) -> Self {
+    pub fn new(val: T) -> Self {
         Self {
             inner: RwLock::new(val),
-            metrics: todo!(),
+            metrics: &MEASURABLE_RWLOCK_METRICS_DISABLED,
         }
     }
 
@@ -79,7 +80,8 @@ impl<T: ?Sized> MeasurableRwLock<T> {
         let start = Instant::now();
         let inner = self.inner.try_read_for(timeout);
         let elapsed = start.elapsed();
-        self.metrics.read_wait_time_us_counter
+        self.metrics
+            .read_wait_time_us_counter
             .fetch_add(elapsed.as_micros() as _, atomic::Ordering::Relaxed);
         inner
     }
@@ -102,7 +104,8 @@ impl<T: ?Sized> MeasurableRwLock<T> {
         let start = Instant::now();
         let inner = self.inner.write();
         let elapsed = start.elapsed();
-        self.metrics.write_wait_time_us_counter
+        self.metrics
+            .write_wait_time_us_counter
             .fetch_add(elapsed.as_micros() as _, atomic::Ordering::Relaxed);
         MeasurableRwLockWriteGuard {
             upgrade_wait_us_counter: &self.metrics.upgrade_wait_us_counter,
