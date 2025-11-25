@@ -20,8 +20,8 @@ def load_new_shard():
         vector_data={
             "": VectorDataConfig(
                 size=4,
-                distance=Distance.DOT,
-                storage_type=VectorStorageType.CHUNKED_MMAP,
+                distance=Distance.Dot,
+                storage_type=VectorStorageType.ChunkedMmap,
                 index=Indexes.PLAIN,
                 quantization_config=None,
                 multivector_config=None,
@@ -29,7 +29,7 @@ def load_new_shard():
             ),
         },
         sparse_vector_data={},
-        payload_storage_type=PayloadStorageType.IN_RAM_MMAP,
+        payload_storage_type=PayloadStorageType.InRamMmap,
     )
 
     return Shard(DATA_DIRECTORY, config)
@@ -48,4 +48,3 @@ def fill_dummy_data(shard: Shard):
         Point(9, [0.45, 0.55, 0.65, 0.75], {"color": "green", "city": ["Berlin"], "score": 0.92}),
         Point(10, [0.01, 0.02, 0.03, 0.04], {"color": "yellow", "city": None, "featured": False}),
     ]))
-
