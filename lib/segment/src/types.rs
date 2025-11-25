@@ -686,7 +686,7 @@ impl HnswConfig {
             payload_m,
             on_disk,
             inline_storage,
-        } = self.clone();
+        } = *self;
 
         m != other.m
             || ef_construct != other.ef_construct

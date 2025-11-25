@@ -313,7 +313,7 @@ pub(crate) fn open_vector_index(
             vector_storage,
             quantized_vectors,
             payload_index,
-            hnsw_config: hnsw_config.clone(),
+            hnsw_config: *hnsw_config,
         })?),
     })
 }
@@ -344,7 +344,7 @@ pub(crate) fn build_vector_index<R: Rng + ?Sized>(
                 vector_storage,
                 quantized_vectors,
                 payload_index,
-                hnsw_config: hnsw_config.clone(),
+                hnsw_config: *hnsw_config,
             },
             build_args,
         )?),

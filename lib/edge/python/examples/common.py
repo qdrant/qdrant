@@ -22,7 +22,7 @@ def load_new_shard():
                 size=4,
                 distance=Distance.Dot,
                 storage_type=VectorStorageType.ChunkedMmap,
-                index=Indexes.PLAIN,
+                index=PlainIndexConfig(),
                 quantization_config=None,
                 multivector_config=None,
                 datatype=None,
