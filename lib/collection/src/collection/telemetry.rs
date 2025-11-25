@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use common::types::{DetailsLevel, TelemetryDetail};
-use shard::common::stopping_guard::StoppingGuard;
 
 use crate::collection::Collection;
 use crate::operations::types::CollectionResult;
@@ -12,18 +11,13 @@ impl Collection {
         &self,
         detail: TelemetryDetail,
         timeout: Duration,
-        is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<CollectionTelemetry> {
         let (shards_telemetry, transfers, resharding) = {
             if detail.level >= DetailsLevel::Level3 {
                 let shards_holder = self.shards_holder.read().await;
                 let mut shards_telemetry = Vec::new();
                 for shard in shards_holder.all_shards() {
-                    shards_telemetry.push(
-                        shard
-                            .get_telemetry_data(detail, timeout, is_stopped_guard)
-                            .await?,
-                    )
+                    shards_telemetry.push(shard.get_telemetry_data(detail, timeout).await?)
                 }
                 (
                     Some(shards_telemetry),

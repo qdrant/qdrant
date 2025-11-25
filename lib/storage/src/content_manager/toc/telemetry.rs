@@ -54,11 +54,7 @@ impl TableOfContent {
                 break;
             }
             if let Ok(collection) = self.get_collection(collection_pass).await {
-                collection_telemetry.push(
-                    collection
-                        .get_telemetry_data(detail, timeout, is_stopped_guard)
-                        .await?,
-                );
+                collection_telemetry.push(collection.get_telemetry_data(detail, timeout).await?);
             }
         }
 
@@ -90,6 +86,7 @@ impl TableOfContent {
     pub async fn get_aggregated_telemetry_data(
         &self,
         access: &Access,
+        timeout: Duration,
         is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<Vec<CollectionsAggregatedTelemetry>> {
         let mut result = Vec::new();
@@ -99,7 +96,7 @@ impl TableOfContent {
                 break;
             }
             if let Ok(collection) = self.get_collection(collection_pass).await {
-                result.push(collection.get_aggregated_telemetry_data().await);
+                result.push(collection.get_aggregated_telemetry_data(timeout).await?);
             }
         }
         Ok(result)

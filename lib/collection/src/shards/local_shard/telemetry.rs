@@ -22,15 +22,14 @@ impl LocalShard {
         &self,
         detail: TelemetryDetail,
         timeout: Duration,
-        is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<LocalShardTelemetry> {
+        let start = std::time::Instant::now();
         let segments = self.segments.clone();
-
         let segments_data = if detail.level < DetailsLevel::Level4 {
             Ok((vec![], HashMap::default()))
         } else {
             let locked_collection_config = self.collection_config.clone();
-            let is_stopped_guard = is_stopped_guard.clone();
+            let is_stopped_guard = StoppingGuard::new();
             let handle = tokio::task::spawn_blocking(move || {
                 // blocking sync lock
                 let Some(segments_guard) = segments.try_read_for(timeout) else {
@@ -39,7 +38,6 @@ impl LocalShard {
                         "shard telemetry",
                     ));
                 };
-
                 let mut segments_telemetry = Vec::with_capacity(segments_guard.len());
                 for (_id, segment) in segments_guard.iter() {
                     if is_stopped_guard.is_stopped() {
@@ -67,7 +65,6 @@ impl LocalShard {
         };
 
         let (segments, index_only_excluded_vectors) = segments_data?;
-
         let total_optimized_points = self.total_optimized_points.load(Ordering::Relaxed);
 
         let optimizations: OperationDurationStatistics = self
@@ -81,7 +78,9 @@ impl LocalShard {
             })
             .fold(Default::default(), |total, stats| total + stats);
 
-        let status = self.get_optimization_status().await;
+        // update timeout
+        let timeout = timeout.saturating_sub(start.elapsed());
+        let status = self.get_optimization_status(timeout).await?;
 
         let SizeStats {
             num_vectors,
@@ -117,23 +116,27 @@ impl LocalShard {
         })
     }
 
-    pub async fn get_optimization_status(&self) -> OptimizersStatus {
+    pub async fn get_optimization_status(
+        &self,
+        timeout: Duration,
+    ) -> CollectionResult<OptimizersStatus> {
         let segments = self.segments.clone();
 
         let status = tokio::task::spawn_blocking(move || {
-            let segments = segments.read();
+            // blocking sync lock
+            let Some(segments) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(
+                    timeout.as_secs() as usize,
+                    "optimization status",
+                ));
+            };
 
             match &segments.optimizer_errors {
-                None => OptimizersStatus::Ok,
-                Some(err) => OptimizersStatus::Error(err.clone()),
+                None => Ok(OptimizersStatus::Ok),
+                Some(err) => Ok(OptimizersStatus::Error(err.clone())),
             }
         });
-        let status = AbortOnDropHandle::new(status).await;
-
-        match status {
-            Ok(status) => status,
-            Err(err) => OptimizersStatus::Error(format!("failed to get optimizers status: {err}")),
-        }
+        AbortOnDropHandle::new(status).await?
     }
 
     pub async fn get_size_stats(&self) -> SizeStats {

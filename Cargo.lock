@@ -1290,6 +1290,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "strum",
  "tango-bench",
  "tap",
  "tar",

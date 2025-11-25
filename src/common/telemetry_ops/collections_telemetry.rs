@@ -56,7 +56,7 @@ impl CollectionsTelemetry {
                 (collections, toc_telemetry.snapshot_telemetry)
             } else {
                 let collections = toc
-                    .get_aggregated_telemetry_data(access, is_stopped_guard)
+                    .get_aggregated_telemetry_data(access, timeout, is_stopped_guard)
                     .await?
                     .into_iter()
                     .map(CollectionTelemetryEnum::Aggregated)

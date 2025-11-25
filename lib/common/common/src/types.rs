@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
 use ordered_float::OrderedFloat;
+use strum::EnumIter;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 /// Type of vector matching score
@@ -35,7 +36,13 @@ pub struct TelemetryDetail {
     pub histograms: bool,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+impl TelemetryDetail {
+    pub fn new(level: DetailsLevel, histograms: bool) -> Self {
+        Self { level, histograms }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum DetailsLevel {
     /// Minimal information level
     /// - app info
