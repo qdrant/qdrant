@@ -16,7 +16,7 @@ jobs:
       packages: write
       id-token: write # needed for cosign keyless signing with OIDC
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: Swatinem/rust-cache@v2
     - name: Install cosign
       uses: sigstore/cosign-installer@v4.0.0
@@ -85,7 +85,7 @@ jobs:
       packages: write
       id-token: write # needed for cosign keyless signing with OIDC
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: Swatinem/rust-cache@v2
     - name: Install cosign
       uses: sigstore/cosign-installer@v4.0.0
