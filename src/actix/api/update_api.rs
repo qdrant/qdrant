@@ -17,7 +17,8 @@ use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_with_inference_usage,
 };
-use crate::common::inference::InferenceToken;
+use crate::common::inference::params::InferenceParams;
+use crate::common::inference::token::InferenceToken;
 use crate::common::strict_mode::*;
 use crate::common::update::*;
 use crate::settings::ServiceConfig;
@@ -48,6 +49,9 @@ async fn upsert_points(
     );
     let timing = Instant::now();
 
+    // Update operation doesn't have timeout yet
+    let inference_params = InferenceParams::new(inference_token, None);
+
     let result_with_usage = do_upsert_points(
         StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().name,
@@ -55,7 +59,7 @@ async fn upsert_points(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
-        inference_token,
+        inference_params,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -126,6 +130,8 @@ async fn update_vectors(
     );
     let timing = Instant::now();
 
+    let inference_params = InferenceParams::new(inference_token, None);
+
     let res = do_update_vectors(
         StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().name,
@@ -133,7 +139,7 @@ async fn update_vectors(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
-        inference_token,
+        inference_params,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -335,6 +341,9 @@ async fn update_batch(
         Some(params.wait),
     );
 
+    // Update operation doesn't have timeout yet
+    let inference_params = InferenceParams::new(inference_token.clone(), None);
+
     let timing = Instant::now();
 
     let result_with_usage = do_batch_update_points(
@@ -344,7 +353,7 @@ async fn update_batch(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
-        inference_token,
+        inference_params,
         request_hw_counter.get_counter(),
     )
     .await;

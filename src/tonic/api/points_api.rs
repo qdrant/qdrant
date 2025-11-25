@@ -25,7 +25,8 @@ use tonic::{Request, Response, Status};
 use super::query_common::*;
 use super::update_common::*;
 use super::validate;
-use crate::common::inference::extract_token;
+use crate::common::inference::params::InferenceParams;
+use crate::common::inference::token::extract_token;
 use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
@@ -68,6 +69,7 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
+        let inference_params = InferenceParams::new(inference_token, None);
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
@@ -78,7 +80,7 @@ impl Points for PointsService {
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
-            inference_token,
+            inference_params,
             hw_metrics,
         )
         .await
@@ -138,6 +140,7 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
+        let inference_params = InferenceParams::new(inference_token, None);
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
@@ -148,7 +151,7 @@ impl Points for PointsService {
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
-            inference_token,
+            inference_params,
             hw_metrics,
         )
         .await
@@ -279,6 +282,7 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
+        let inference_params = InferenceParams::new(inference_token, None);
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
@@ -289,7 +293,7 @@ impl Points for PointsService {
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
-            inference_token,
+            inference_params,
             hw_metrics,
         )
         .await
@@ -591,6 +595,10 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
+        let inference_params = InferenceParams::new(
+            inference_token,
+            request.get_ref().timeout.map(Duration::from_secs),
+        );
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
@@ -600,7 +608,7 @@ impl Points for PointsService {
             None,
             access,
             hw_metrics,
-            inference_token,
+            inference_params,
         )
         .await?;
 
@@ -614,6 +622,11 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
+        let inference_params = InferenceParams::new(
+            inference_token,
+            request.get_ref().timeout.map(Duration::from_secs),
+        );
+
         let request = request.into_inner();
         let QueryBatchPoints {
             collection_name,
@@ -632,7 +645,7 @@ impl Points for PointsService {
             access,
             timeout,
             hw_metrics,
-            inference_token,
+            inference_params,
         )
         .await?;
 
@@ -646,6 +659,10 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
+        let inference_params = InferenceParams::new(
+            inference_token,
+            request.get_ref().timeout.map(Duration::from_secs),
+        );
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
@@ -655,7 +672,7 @@ impl Points for PointsService {
             None,
             access,
             hw_metrics,
-            inference_token,
+            inference_params,
         )
         .await?;
 

@@ -13,11 +13,11 @@ use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use storage::content_manager::errors::StorageError;
 
-use crate::common::inference::InferenceToken;
 use crate::common::inference::batch_processing::{
     collect_query_groups_request, collect_query_request,
 };
 use crate::common::inference::infer_processing::BatchAccumInferred;
+use crate::common::inference::params::InferenceParams;
 use crate::common::inference::service::{InferenceData, InferenceType};
 
 pub struct CollectionQueryRequestWithUsage {
@@ -32,7 +32,7 @@ pub struct CollectionQueryGroupsRequestWithUsage {
 
 pub async fn convert_query_groups_request_from_rest(
     request: rest::QueryGroupsRequestInternal,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
 ) -> Result<CollectionQueryGroupsRequestWithUsage, StorageError> {
     let batch = collect_query_groups_request(&request);
     let rest::QueryGroupsRequestInternal {
@@ -49,7 +49,7 @@ pub async fn convert_query_groups_request_from_rest(
     } = request;
 
     let (inferred, usage) =
-        BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, &inference_token)
+        BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, &inference_params)
             .await?;
     let query = query
         .map(|q| convert_query_with_inferred(q, &inferred))
@@ -93,11 +93,12 @@ pub async fn convert_query_groups_request_from_rest(
 
 pub async fn convert_query_request_from_rest(
     request: rest::QueryRequestInternal,
-    inference_token: &InferenceToken,
+    inference_params: &InferenceParams,
 ) -> Result<CollectionQueryRequestWithUsage, StorageError> {
     let batch = collect_query_request(&request);
     let (inferred, usage) =
-        BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, inference_token).await?;
+        BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, inference_params)
+            .await?;
 
     let rest::QueryRequestInternal {
         prefetch,
