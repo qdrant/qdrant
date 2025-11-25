@@ -2,12 +2,12 @@ use std::cmp::{max, min};
 use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
 
-use crate::measurable_rwlock::measurable_parking_lot::{RwLock, RwLockReadGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::SegmentEntry;
 use segment::types::SeqNumberType;
 
 use crate::locked_segment::LockedSegment;
+use crate::measurable_rwlock::measurable_parking_lot::{RwLock, RwLockReadGuard};
 use crate::segment_holder::{SegmentHolder, SegmentId};
 
 impl SegmentHolder {

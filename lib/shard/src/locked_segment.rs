@@ -2,11 +2,11 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use crate::measurable_rwlock::measurable_parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 
+use crate::measurable_rwlock::measurable_parking_lot::RwLock;
 use crate::proxy_segment::ProxySegment;
 
 const DROP_SPIN_TIMEOUT: Duration = Duration::from_millis(10);

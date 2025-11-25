@@ -385,8 +385,9 @@ fn main() -> anyhow::Result<()> {
     toc.clear_all_tmp_directories()?;
 
     runtime_handle.spawn(async {
-        use tokio::signal::unix::{signal, SignalKind};
         use std::sync::atomic::Ordering::Relaxed;
+
+        use tokio::signal::unix::{SignalKind, signal};
 
         let mut stream = signal(SignalKind::user_defined1()).unwrap();
         loop {
@@ -401,7 +402,6 @@ fn main() -> anyhow::Result<()> {
                 "MeasurableRwLock wait times (us): read: {read}, write: {write}, upgrade: {upgrade}"
             );
         }
-
     });
 
     // Here we load all stored collections.

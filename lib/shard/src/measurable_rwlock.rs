@@ -1,17 +1,17 @@
-use std::{
-    ops::{Deref, DerefMut},
-    sync::atomic,
-    time::Instant,
-};
+use std::ops::{Deref, DerefMut};
+use std::sync::atomic;
+use std::time::Instant;
 
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 
 pub mod measurable_parking_lot {
-    pub use super::MeasurableRwLock as RwLock;
-    pub use super::MeasurableRwLockReadGuard as RwLockReadGuard;
-    pub use super::MeasurableRwLockUpgradableReadGuard as RwLockUpgradableReadGuard;
-    pub use super::MeasurableRwLockWriteGuard as RwLockWriteGuard;
     pub use ::parking_lot::Mutex;
+
+    pub use super::{
+        MeasurableRwLock as RwLock, MeasurableRwLockReadGuard as RwLockReadGuard,
+        MeasurableRwLockUpgradableReadGuard as RwLockUpgradableReadGuard,
+        MeasurableRwLockWriteGuard as RwLockWriteGuard,
+    };
 }
 
 pub type MeasurableRwLockReadGuard<'rwlock, T> = RwLockReadGuard<'rwlock, T>;
