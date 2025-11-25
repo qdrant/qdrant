@@ -180,6 +180,31 @@ impl BitsStoreType for u8 {
             }
         }
 
+        #[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+        if std::arch::is_loongarch_feature_detected!("lsx") {
+            unsafe {
+                if v1.len() > 16 {
+                    return impl_xor_popcnt_lsx_uint128(
+                        v1.as_ptr(),
+                        v2.as_ptr(),
+                        (v1.len() as u32) / 16,
+                    ) as usize;
+                } else if v1.len() > 8 {
+                    return impl_xor_popcnt_lsx_uint64(
+                        v1.as_ptr(),
+                        v2.as_ptr(),
+                        (v1.len() as u32) / 8,
+                    ) as usize;
+                } else if v1.len() > 4 {
+                    return impl_xor_popcnt_lsx_uint32(
+                        v1.as_ptr(),
+                        v2.as_ptr(),
+                        (v1.len() as u32) / 4,
+                    ) as usize;
+                }
+            }
+        }
+
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         if std::arch::is_aarch64_feature_detected!("neon") {
             unsafe {
@@ -251,6 +276,27 @@ impl BitsStoreType for u8 {
             }
         }
 
+        #[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+        if std::arch::is_loongarch_feature_detected!("lsx") {
+            if query_bits_count == 8 {
+                unsafe {
+                    return impl_xor_popcnt_scalar8_lsx_u8(
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
+                    ) as usize;
+                }
+            } else if query_bits_count == 4 {
+                unsafe {
+                    return impl_xor_popcnt_scalar4_lsx_u8(
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
+                    ) as usize;
+                }
+            }
+        }
+
         let mut result = 0;
         for (&b1, b2_chunk) in vector.iter().zip(query.chunks_exact(query_bits_count)) {
             for (i, &b2) in b2_chunk.iter().enumerate() {
@@ -305,6 +351,17 @@ impl BitsStoreType for u128 {
         if is_x86_feature_detected!("sse4.2") {
             unsafe {
                 return impl_xor_popcnt_sse_uint128(
+                    v1.as_ptr().cast::<u8>(),
+                    v2.as_ptr().cast::<u8>(),
+                    v1.len() as u32,
+                ) as usize;
+            }
+        }
+
+        #[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+        if std::arch::is_loongarch_feature_detected!("lsx") {
+            unsafe {
+                return impl_xor_popcnt_lsx_uint128(
                     v1.as_ptr().cast::<u8>(),
                     v2.as_ptr().cast::<u8>(),
                     v1.len() as u32,
@@ -388,6 +445,48 @@ impl BitsStoreType for u128 {
             } else if query_bits_count == 4 {
                 unsafe {
                     return impl_xor_popcnt_scalar4_sse_uint128(
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
+                    ) as usize;
+                }
+            }
+        }
+
+        #[cfg(all(target_arch = "loongarch64", target_feature = "lasx"))]
+        if std::arch::is_loongarch_feature_detected!("lasx") {
+            if query_bits_count == 8 {
+                unsafe {
+                    return impl_xor_popcnt_scalar8_lasx_uint128(
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
+                    ) as usize;
+                }
+            } else if query_bits_count == 4 {
+                unsafe {
+                    return impl_xor_popcnt_scalar4_lasx_uint128(
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
+                    ) as usize;
+                }
+            }
+        }
+
+        #[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+        if std::arch::is_loongarch_feature_detected!("lsx") {
+            if query_bits_count == 8 {
+                unsafe {
+                    return impl_xor_popcnt_scalar8_lsx_uint128(
+                        query.as_ptr().cast::<u8>(),
+                        vector.as_ptr().cast::<u8>(),
+                        vector.len() as u32,
+                    ) as usize;
+                }
+            } else if query_bits_count == 4 {
+                unsafe {
+                    return impl_xor_popcnt_scalar4_lsx_uint128(
                         query.as_ptr().cast::<u8>(),
                         vector.as_ptr().cast::<u8>(),
                         vector.len() as u32,
@@ -1002,6 +1101,51 @@ unsafe extern "C" {
     ) -> u32;
 
     fn impl_xor_popcnt_scalar4_sse_u8(
+        query_ptr: *const u8,
+        vector_ptr: *const u8,
+        count: u32,
+    ) -> u32;
+}
+
+#[cfg(all(target_arch = "loongarch64", target_feature = "lsx"))]
+unsafe extern "C" {
+    fn impl_xor_popcnt_lsx_uint128(query_ptr: *const u8, vector_ptr: *const u8, count: u32) -> u32;
+
+    fn impl_xor_popcnt_lsx_uint64(query_ptr: *const u8, vector_ptr: *const u8, count: u32) -> u32;
+
+    fn impl_xor_popcnt_lsx_uint32(query_ptr: *const u8, vector_ptr: *const u8, count: u32) -> u32;
+
+    fn impl_xor_popcnt_scalar8_lsx_uint128(
+        query_ptr: *const u8,
+        vector_ptr: *const u8,
+        count: u32,
+    ) -> u32;
+
+    fn impl_xor_popcnt_scalar4_lsx_uint128(
+        query_ptr: *const u8,
+        vector_ptr: *const u8,
+        count: u32,
+    ) -> u32;
+
+    fn impl_xor_popcnt_scalar8_lasx_uint128(
+        query_ptr: *const u8,
+        vector_ptr: *const u8,
+        count: u32,
+    ) -> u32;
+
+    fn impl_xor_popcnt_scalar4_lasx_uint128(
+        query_ptr: *const u8,
+        vector_ptr: *const u8,
+        count: u32,
+    ) -> u32;
+
+    fn impl_xor_popcnt_scalar8_lsx_u8(
+        query_ptr: *const u8,
+        vector_ptr: *const u8,
+        count: u32,
+    ) -> u32;
+
+    fn impl_xor_popcnt_scalar4_lsx_u8(
         query_ptr: *const u8,
         vector_ptr: *const u8,
         count: u32,
