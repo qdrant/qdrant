@@ -31,7 +31,7 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use tonic::{Response, Status};
 
-use crate::common::inference::InferenceToken;
+use crate::common::inference::params::InferenceParams;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::convert_point_struct;
 use crate::common::strict_mode::*;
@@ -42,7 +42,7 @@ pub async fn upsert(
     upsert_points: UpsertPoints,
     internal_params: InternalUpdateParams,
     access: Access,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpsertPoints {
@@ -74,7 +74,7 @@ pub async fn upsert(
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
-        inference_token,
+        inference_params,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -130,7 +130,7 @@ pub async fn update_vectors(
     update_point_vectors: UpdatePointVectors,
     internal_params: InternalUpdateParams,
     access: Access,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpdatePointVectors {
@@ -174,7 +174,7 @@ pub async fn update_vectors(
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
-        inference_token,
+        inference_params,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -414,7 +414,7 @@ pub async fn update_batch(
     update_batch_points: UpdateBatchPoints,
     internal_params: InternalUpdateParams,
     access: Access,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<UpdateBatchResponse>, Status> {
     let UpdateBatchPoints {
@@ -452,7 +452,7 @@ pub async fn update_batch(
                     },
                     internal_params,
                     access.clone(),
-                    inference_token.clone(),
+                    inference_params.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
@@ -585,7 +585,7 @@ pub async fn update_batch(
                     },
                     internal_params,
                     access.clone(),
-                    inference_token.clone(),
+                    inference_params.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
@@ -808,7 +808,7 @@ pub async fn sync(
     sync_points: SyncPoints,
     internal_params: InternalUpdateParams,
     access: Access,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
 ) -> Result<Response<(PointsOperationResponseInternal, InferenceUsage)>, Status> {
     let SyncPoints {
         collection_name,
@@ -826,7 +826,7 @@ pub async fn sync(
     // No actual inference should happen here, as we are just syncing existing points
     // So, this function is used for consistency only
     let (points, usage) =
-        convert_point_struct(point_structs?, InferenceType::Update, inference_token).await?;
+        convert_point_struct(point_structs?, InferenceType::Update, inference_params).await?;
 
     let operation = PointSyncOperation {
         points,
