@@ -517,7 +517,6 @@ mod test {
 
         let config = InferenceConfig {
             address: Some(server.url()), // Use mock's URL as address when doing inference.
-            timeout: 5,                  // Mock should answer fast enough.
             token: Some(String::default()),
         };
 
