@@ -204,7 +204,7 @@ impl<'py> IntoPyObject<'py> for PyIndexes {
 }
 
 #[pyclass(name = "PlainIndexConfig")]
-#[derive(Copy, Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Default, Into)]
 pub struct PyPlainIndexConfig;
 
 #[pymethods]
