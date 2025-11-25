@@ -1,10 +1,8 @@
 name: Long Integration Tests
 
 on:
-  push:
-    branches: [ master, e2e-test-on-many-collections ]
   schedule:
-    - cron: '30 3 * * *'  # At 03:30
+    - cron: '30 6 * * *'  # At 06:30
   workflow_dispatch:
 
 env:
