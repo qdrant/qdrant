@@ -11,7 +11,7 @@ use storage::rbac::Access;
 use self::claims::{Claims, ValueExists};
 use self::jwt_parser::JwtParser;
 use super::strings::ct_eq;
-use crate::common::inference::InferenceToken;
+use crate::common::inference::token::InferenceToken;
 use crate::settings::ServiceConfig;
 pub mod claims;
 pub mod jwt_parser;

@@ -15,8 +15,8 @@ use storage::content_manager::errors::StorageError;
 
 pub use super::inference_input::InferenceInput;
 use super::local_model;
-use crate::common::inference::InferenceToken;
 use crate::common::inference::config::InferenceConfig;
+use crate::common::inference::params::InferenceParams;
 
 #[derive(Debug, Serialize, Default, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
@@ -79,9 +79,23 @@ static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(No
 impl InferenceService {
     pub fn new(config: Option<InferenceConfig>) -> Self {
         let config = config.unwrap_or_default();
+        let InferenceConfig {
+            address: _,
+            timeout,
+            token: _,
+        } = &config;
+
+        let client_builder = Client::builder();
+
+        let client_builder = if let Some(timeout_secs) = timeout {
+            client_builder.timeout(Duration::from_secs(*timeout_secs))
+        } else {
+            client_builder
+        };
+
         Self {
             config,
-            client: Client::builder()
+            client: client_builder
                 .build()
                 .expect("Invalid timeout value for HTTP client"),
         }
@@ -119,7 +133,7 @@ impl InferenceService {
         &self,
         inference_inputs: Vec<InferenceInput>,
         inference_type: InferenceType,
-        inference_token: InferenceToken,
+        inference_params: InferenceParams,
     ) -> Result<InferenceResponse, StorageError> {
         let (
             (local_inference_inputs, local_inference_positions),
@@ -150,7 +164,7 @@ impl InferenceService {
         }
 
         let remote_result = self
-            .infer_remote(remote_inference_inputs, inference_type, inference_token)
+            .infer_remote(remote_inference_inputs, inference_type, inference_params)
             .await?;
 
         Ok(Self::merge_local_and_remote_result(
@@ -165,11 +179,16 @@ impl InferenceService {
         &self,
         inference_inputs: Vec<InferenceInput>,
         inference_type: InferenceType,
-        inference_token: InferenceToken,
+        inference_params: InferenceParams,
     ) -> Result<InferenceResponse, StorageError> {
         // Assume that either:
         // - User doesn't have access to generating random JWT tokens (like in serverless)
         // - Inference server checks validity of the tokens.
+
+        let InferenceParams {
+            token: inference_token,
+            timeout,
+        } = inference_params;
 
         let token = inference_token.0.or_else(|| self.config.token.clone());
 
@@ -179,13 +198,21 @@ impl InferenceService {
             ));
         };
 
-        let request = InferenceRequest {
+        let request_body = InferenceRequest {
             inputs: inference_inputs,
             inference: Some(inference_type),
             token,
         };
 
-        let response = self.client.post(url).json(&request).send().await;
+        let request = self.client.post(url);
+
+        let request = if let Some(timeout) = timeout {
+            request.timeout(timeout)
+        } else {
+            request
+        };
+
+        let response = request.json(&request_body).send().await;
 
         let (response_body, status, retry_after) = match response {
             Ok(response) => {
@@ -283,7 +310,7 @@ impl InferenceService {
                 // Try to extract error description from the response body, if it is a valid JSON
                 let parsed_body: Result<InferenceError, _> = serde_json::from_str(response_body);
                 match parsed_body {
-                    Ok(InferenceError { error}) => {
+                    Ok(InferenceError { error }) => {
                         Err(StorageError::bad_request(format!(
                             "Inference request validation failed: {error}",
                         )))
@@ -325,13 +352,13 @@ impl InferenceService {
                         "Unexpected inference error ({status}): {response_body}",
                     )))
                 }
-            },
+            }
         }
     }
 
     fn is_address_valid(&self) -> bool {
         self.config.address.is_none() // In BM25 we don't need an address so we allow InferenceService to have an empty address.
-        || self.config.address.as_ref().is_some_and(|i| !i.is_empty())
+            || self.config.address.as_ref().is_some_and(|i| !i.is_empty())
     }
 }
 
@@ -517,6 +544,7 @@ mod test {
 
         let config = InferenceConfig {
             address: Some(server.url()), // Use mock's URL as address when doing inference.
+            timeout: None,
             token: Some(String::default()),
         };
 
@@ -530,7 +558,7 @@ mod test {
             .infer(
                 inference_inputs,
                 InferenceType::Update,
-                InferenceToken::new("key".to_string()),
+                InferenceParams::new("key", None),
             )
             .await
             .expect("Failed to do inference");

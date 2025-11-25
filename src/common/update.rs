@@ -26,7 +26,7 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use validator::Validate;
 
-use crate::common::inference::InferenceToken;
+use crate::common::inference::params::InferenceParams;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::strict_mode::*;
@@ -282,7 +282,7 @@ pub async fn do_upsert_points(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     access: Access,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
     let toc = toc_provider
@@ -296,7 +296,7 @@ pub async fn do_upsert_points(
                 shard_key,
                 update_filter,
             } = batch;
-            let (batch, usage) = convert_batch(batch, inference_token).await?;
+            let (batch, usage) = convert_batch(batch, inference_params).await?;
             let operation = PointInsertOperationsInternal::PointsBatch(batch);
             (operation, shard_key, usage, update_filter)
         }
@@ -307,7 +307,7 @@ pub async fn do_upsert_points(
                 update_filter,
             } = list;
             let (list, usage) =
-                convert_point_struct(points, InferenceType::Update, inference_token).await?;
+                convert_point_struct(points, InferenceType::Update, inference_params).await?;
             let operation = PointInsertOperationsInternal::PointsList(list);
             (operation, shard_key, usage, update_filter)
         }
@@ -384,7 +384,7 @@ pub async fn do_update_vectors(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     access: Access,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
     let toc = toc_provider
@@ -398,7 +398,7 @@ pub async fn do_update_vectors(
     } = operation;
 
     let (points, usage) =
-        convert_point_vectors(points, InferenceType::Update, inference_token).await?;
+        convert_point_vectors(points, InferenceType::Update, inference_params).await?;
 
     let operation = CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(
         UpdateVectorsOp {
@@ -661,7 +661,7 @@ pub async fn do_batch_update_points(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     access: Access,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(Vec<UpdateResult>, Option<InferenceUsage>), StorageError> {
     // Check strict mode for all batch operations, *before applying* them
@@ -695,7 +695,7 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     access.clone(),
-                    inference_token.clone(),
+                    inference_params.clone(),
                     hw_measurement_acc.clone(),
                 )
                 .await?;
@@ -771,7 +771,7 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     access.clone(),
-                    inference_token.clone(),
+                    inference_params.clone(),
                     hw_measurement_acc.clone(),
                 )
                 .await?;
