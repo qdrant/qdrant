@@ -46,7 +46,9 @@ impl ConsensusOpWal {
     }
 
     pub fn clear(&mut self) -> Result<(), StorageError> {
+        log::debug!("Clearing consensus WAL");
         self.wal.clear()?;
+        self.wal.flush_open_segment()?;
         Ok(())
     }
 
@@ -295,7 +297,10 @@ impl ConsensusOpWal {
         );
 
         log::debug!(
-            "Compacting WAL until Raft index {until_raft_index}, WAL index {compact_until_wal_index}",
+            "Compacting WAL until Raft index {until_raft_index}/WAL index {compact_until_wal_index} \
+             (first WAL index {}, WAL size {})",
+            offset.wal_index,
+            self.wal.num_entries(),
         );
 
         // Compact WAL

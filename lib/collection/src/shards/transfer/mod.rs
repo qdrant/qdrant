@@ -504,57 +504,6 @@ pub trait ShardTransferConsensus: Send + Sync {
         from_state: Option<ReplicaState>,
     ) -> CollectionResult<()>;
 
-    /// Propose to set the shard replica state on this peer through consensus
-    ///
-    /// This internally confirms and retries a few times if needed to ensure consensus picks up the
-    /// operation.
-    async fn set_shard_replica_set_state_confirm_and_retry(
-        &self,
-        peer_id: Option<PeerId>,
-        collection_id: &CollectionId,
-        shard_id: ShardId,
-        state: ReplicaState,
-        from_state: Option<ReplicaState>,
-    ) -> CollectionResult<()> {
-        let mut result = Err(CollectionError::service_error(
-            "`set_shard_replica_set_state_confirm_and_retry` exit without attempting any work, \
-             this is a programming error",
-        ));
-
-        for attempt in 0..CONSENSUS_CONFIRM_RETRIES {
-            if attempt > 0 {
-                sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
-            }
-
-            log::trace!("Propose and confirm set shard replica set state");
-            result = self
-                .set_shard_replica_set_state(
-                    peer_id,
-                    collection_id.clone(),
-                    shard_id,
-                    state,
-                    from_state,
-                )
-                .await;
-
-            match &result {
-                Ok(()) => break,
-                Err(err) => {
-                    log::error!(
-                        "Failed to confirm set shard replica set state operation on consensus: {err}"
-                    );
-                }
-            }
-        }
-
-        result.map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to set shard replica set state through consensus \
-                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
-            ))
-        })
-    }
-
     /// Propose to commit the read hash ring.
     ///
     /// # Warning

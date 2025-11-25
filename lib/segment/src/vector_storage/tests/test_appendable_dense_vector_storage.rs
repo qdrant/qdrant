@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use itertools::Itertools;
 use tempfile::Builder;
 
 #[cfg(feature = "rocksdb")]
@@ -11,7 +12,7 @@ use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
 use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage;
 #[cfg(feature = "rocksdb")]
@@ -62,16 +63,22 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
 
     let vector = vec![0.0, 1.0, 1.1, 1.0];
     let query = vector.as_slice().into();
-    let scorer =
-        FilteredScorer::new_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice());
-    let closest = scorer
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+    let searcher = BatchFilteredSearcher::new_for_test(
+        std::slice::from_ref(&query),
+        storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+        5,
+    );
+    let closest = searcher
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+        .unwrap()
+        .into_iter()
+        .exactly_one()
         .unwrap();
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
     assert_eq!(closest[1].idx, 1);
     assert_eq!(closest[2].idx, 4);
-    drop(scorer);
 
     // Delete 1, redelete 2
     storage.delete_vector(1 as PointOffsetType).unwrap();
@@ -84,15 +91,21 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
 
     let vector = vec![1.0, 0.0, 0.0, 0.0];
     let query = vector.as_slice().into();
-    let scorer =
-        FilteredScorer::new_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice());
-    let closest = scorer
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+    let searcher = BatchFilteredSearcher::new_for_test(
+        std::slice::from_ref(&query),
+        storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+        5,
+    );
+    let closest = searcher
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+        .unwrap()
+        .into_iter()
+        .exactly_one()
         .unwrap();
     assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
     assert_eq!(closest[0].idx, 4);
     assert_eq!(closest[1].idx, 0);
-    drop(scorer);
 
     // Delete all
     storage.delete_vector(0 as PointOffsetType).unwrap();
@@ -105,9 +118,18 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
 
     let vector = vec![1.0, 0.0, 0.0, 0.0];
     let query = vector.as_slice().into();
-    let scorer =
-        FilteredScorer::new_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice());
-    let closest = scorer.peek_top_all(5, &DEFAULT_STOPPED).unwrap();
+    let searcher = BatchFilteredSearcher::new_for_test(
+        std::slice::from_ref(&query),
+        storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+        5,
+    );
+    let closest = searcher
+        .peek_top_all(&DEFAULT_STOPPED)
+        .unwrap()
+        .into_iter()
+        .exactly_one()
+        .unwrap();
     assert!(closest.is_empty(), "must have no results, all deleted");
 }
 
@@ -156,12 +178,18 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let vector = vec![0.0, 1.0, 1.1, 1.0];
     let query = vector.as_slice().into();
 
-    let scorer =
-        FilteredScorer::new_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice());
-    let closest = scorer
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+    let searcher = BatchFilteredSearcher::new_for_test(
+        std::slice::from_ref(&query),
+        storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+        5,
+    );
+    let closest = searcher
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+        .unwrap()
+        .into_iter()
+        .exactly_one()
         .unwrap();
-    drop(scorer);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
     assert_eq!(closest[1].idx, 1);
@@ -200,15 +228,18 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
 
     let query: QueryVector = [0.0, 1.0, 1.1, 1.0].into();
 
-    let scorer = FilteredScorer::new_for_test(
-        query.clone(),
+    let searcher = BatchFilteredSearcher::new_for_test(
+        std::slice::from_ref(&query),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
+        2,
     );
-    let closest = scorer
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, &DEFAULT_STOPPED)
+    let closest = searcher
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+        .unwrap()
+        .into_iter()
+        .exactly_one()
         .unwrap();
-    drop(scorer);
 
     let top_idx = match closest.first() {
         Some(scored_point) => {
@@ -223,7 +254,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         .unwrap();
 
     let mut raw_scorer = FilteredScorer::new(
-        query,
+        query.clone(),
         storage,
         None,
         None,
@@ -231,8 +262,22 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         HardwareCounterCell::new(),
     )
     .unwrap();
-    let closest = raw_scorer
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, &DEFAULT_STOPPED)
+
+    let searcher = BatchFilteredSearcher::new(
+        &[&query],
+        storage,
+        None,
+        None,
+        2,
+        borrowed_id_tracker.deleted_point_bitslice(),
+        HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let closest = searcher
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+        .unwrap()
+        .into_iter()
+        .exactly_one()
         .unwrap();
 
     let query_points = vec![0, 1, 2, 3, 4];
