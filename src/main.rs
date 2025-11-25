@@ -394,12 +394,15 @@ fn main() -> anyhow::Result<()> {
             stream.recv().await;
 
             let m = &shard::measurable_rwlock::MEASURABLE_RWLOCK_METRICS_DISABLED;
-            let read = m.read_wait_time_us_counter.load(Relaxed);
-            let write = m.write_wait_time_us_counter.load(Relaxed);
-            let upgrade = m.upgrade_wait_time_us_counter.load(Relaxed);
+            let read_time = m.read_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
+            let reads = m.read_counter.load(Relaxed);
+            let write_time = m.write_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
+            let writes = m.write_counter.load(Relaxed);
+            let upgrade_time = m.upgrade_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
+            let upgrades = m.upgrade_counter.load(Relaxed);
 
             log::info!(
-                "MeasurableRwLock wait times (us): read: {read}, write: {write}, upgrade: {upgrade}"
+                "MeasurableRwLock wait times (s): read: {read_time} ({reads}), write: {write_time} ({writes}), upgrade: {upgrade_time} ({upgrades})"
             );
         }
     });
