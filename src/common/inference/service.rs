@@ -76,6 +76,11 @@ pub struct InferenceService {
 
 static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(None);
 
+/// We assume that the inference provider will handle timeouts itself, if
+/// not provided by the user or configured. But we need ensurance, that we don't
+/// wait forever for a response.
+static DEFAULT_INFERENCE_TIMEOUT_SECS: u64 = 10 * 60; // 10 minutes
+
 impl InferenceService {
     pub fn new(config: Option<InferenceConfig>) -> Self {
         let config = config.unwrap_or_default();
@@ -85,13 +90,8 @@ impl InferenceService {
             token: _,
         } = &config;
 
-        let client_builder = Client::builder();
-
-        let client_builder = if let Some(timeout_secs) = timeout {
-            client_builder.timeout(Duration::from_secs(*timeout_secs))
-        } else {
-            client_builder
-        };
+        let timeout = timeout.unwrap_or(DEFAULT_INFERENCE_TIMEOUT_SECS);
+        let client_builder = Client::builder().timeout(Duration::from_secs(timeout));
 
         Self {
             config,
