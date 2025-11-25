@@ -19,11 +19,16 @@ pub mod measurable_parking_lot {
 
 pub type MeasurableRwLockReadGuard<'rwlock, T> = RwLockReadGuard<'rwlock, T>;
 
+#[derive(Debug, Default)]
+pub struct MeasurableRwLockMetrics {
+    pub read_wait_time_us_counter: AtomicU64,
+    pub write_wait_time_us_counter: AtomicU64,
+    pub upgrade_wait_us_counter: AtomicU64,
+}
+
 #[derive(Debug)]
 pub struct MeasurableRwLock<T: ?Sized> {
-    read_wait_time_us_counter: Arc<AtomicU64>,
-    write_wait_time_us_counter: Arc<AtomicU64>,
-    upgrade_wait_us_counter: Arc<AtomicU64>,
+    metrics: Arc<MeasurableRwLockMetrics>,
     inner: RwLock<T>,
 }
 
@@ -42,15 +47,10 @@ pub struct MeasurableRwLockWriteGuard<'rwlock, T: ?Sized> {
 impl<T> MeasurableRwLock<T> {
     pub fn new(
         val: T,
-        // read_wait_time_us_counter: Arc<AtomicU64>,
-        // write_wait_time_us_counter: Arc<AtomicU64>,
-        // upgrade_wait_us_counter: Arc<AtomicU64>,
     ) -> Self {
         Self {
             inner: RwLock::new(val),
-            read_wait_time_us_counter: todo!(),
-            write_wait_time_us_counter: todo!(),
-            upgrade_wait_us_counter: todo!(),
+            metrics: todo!(),
         }
     }
 
@@ -64,7 +64,7 @@ impl<T: ?Sized> MeasurableRwLock<T> {
         let start = Instant::now();
         let inner = self.inner.read();
         let elapsed = start.elapsed();
-        self.read_wait_time_us_counter.fetch_add(
+        self.metrics.read_wait_time_us_counter.fetch_add(
             elapsed.as_micros() as _, // No way a lock can wait for 584942 years.
             atomic::Ordering::Relaxed,
         );
@@ -79,7 +79,7 @@ impl<T: ?Sized> MeasurableRwLock<T> {
         let start = Instant::now();
         let inner = self.inner.try_read_for(timeout);
         let elapsed = start.elapsed();
-        self.read_wait_time_us_counter
+        self.metrics.read_wait_time_us_counter
             .fetch_add(elapsed.as_micros() as _, atomic::Ordering::Relaxed);
         inner
     }
@@ -88,13 +88,13 @@ impl<T: ?Sized> MeasurableRwLock<T> {
         let start = Instant::now();
         let inner = self.inner.upgradable_read();
         let elapsed = start.elapsed();
-        self.read_wait_time_us_counter.fetch_add(
+        self.metrics.read_wait_time_us_counter.fetch_add(
             elapsed.as_micros() as _, // No way a lock can wait for 584942 years.
             atomic::Ordering::Relaxed,
         );
         MeasurableRwLockUpgradableReadGuard {
             inner: inner,
-            upgrade_wait_us_counter: &self.upgrade_wait_us_counter,
+            upgrade_wait_us_counter: &self.metrics.upgrade_wait_us_counter,
         }
     }
 
@@ -102,10 +102,10 @@ impl<T: ?Sized> MeasurableRwLock<T> {
         let start = Instant::now();
         let inner = self.inner.write();
         let elapsed = start.elapsed();
-        self.write_wait_time_us_counter
+        self.metrics.write_wait_time_us_counter
             .fetch_add(elapsed.as_micros() as _, atomic::Ordering::Relaxed);
         MeasurableRwLockWriteGuard {
-            upgrade_wait_us_counter: &self.upgrade_wait_us_counter,
+            upgrade_wait_us_counter: &self.metrics.upgrade_wait_us_counter,
             inner,
         }
     }
@@ -114,7 +114,7 @@ impl<T: ?Sized> MeasurableRwLock<T> {
         self.inner
             .try_write()
             .map(|inner| MeasurableRwLockWriteGuard {
-                upgrade_wait_us_counter: &self.upgrade_wait_us_counter,
+                upgrade_wait_us_counter: &self.metrics.upgrade_wait_us_counter,
                 inner,
             })
     }
