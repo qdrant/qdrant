@@ -6,7 +6,7 @@ mod tests {
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, VectorParameters};
     use quantization::encoded_vectors_binary::{EncodedVectorsBin, QueryEncoding};
-    use quantization::encoded_vectors_u8::EncodedVectorsU8;
+    use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
     use tempfile::Builder;
 
     #[test]
@@ -33,6 +33,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            ScalarQuantizationMethod::Uint8,
             Some(meta_path.as_path()),
             &AtomicBool::new(false),
         )

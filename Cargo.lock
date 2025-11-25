@@ -5221,6 +5221,7 @@ dependencies = [
  "rand 0.9.2",
  "rand_distr",
  "rayon",
+ "rstest",
  "serde",
  "serde_json",
  "strum",

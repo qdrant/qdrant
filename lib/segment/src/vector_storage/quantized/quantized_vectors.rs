@@ -8,6 +8,7 @@ use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memory::fadvise::clear_disk_cache;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
+use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +24,7 @@ use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding,
     BinaryQuantizationQueryEncoding, CompressionRatio, Distance, MultiVectorConfig,
     ProductQuantization, ProductQuantizationConfig, QuantizationConfig, ScalarQuantization,
-    ScalarQuantizationConfig, VectorStorageDatatype,
+    ScalarQuantizationConfig, ScalarType, VectorStorageDatatype,
 };
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
     QuantizedChunkedMmapStorage, QuantizedChunkedMmapStorageBuilder,
@@ -1315,6 +1316,7 @@ impl QuantizedVectors {
             ));
         }
 
+        let encoding = Self::convert_scalar_encoding(scalar_config.r#type);
         let quantized_vector_size =
             EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(vector_parameters);
         let meta_path = Self::get_meta_path(path);
@@ -1332,6 +1334,7 @@ impl QuantizedVectors {
                 vector_parameters,
                 vectors_count,
                 scalar_config.quantile,
+                encoding,
                 Some(meta_path.as_path()),
                 stopped,
             )?))
@@ -1348,6 +1351,7 @@ impl QuantizedVectors {
                     vector_parameters,
                     vectors_count,
                     scalar_config.quantile,
+                    encoding,
                     Some(meta_path.as_path()),
                     stopped,
                 )?,
@@ -1375,6 +1379,7 @@ impl QuantizedVectors {
             ));
         }
 
+        let encoding = Self::convert_scalar_encoding(scalar_config.r#type);
         let quantized_vector_size =
             EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(vector_parameters);
         let meta_path = Self::get_meta_path(path);
@@ -1393,6 +1398,7 @@ impl QuantizedVectors {
                 vector_parameters,
                 inner_vectors_count,
                 scalar_config.quantile,
+                encoding,
                 Some(meta_path.as_path()),
                 stopped,
             )?;
@@ -1417,6 +1423,7 @@ impl QuantizedVectors {
                 vector_parameters,
                 inner_vectors_count,
                 scalar_config.quantile,
+                encoding,
                 Some(meta_path.as_path()),
                 stopped,
             )?;
@@ -1805,6 +1812,12 @@ impl QuantizedVectors {
                 quantization::encoded_vectors_binary::QueryEncoding::SameAsStorage
             }
             None => quantization::encoded_vectors_binary::QueryEncoding::SameAsStorage,
+        }
+    }
+
+    fn convert_scalar_encoding(encoding: ScalarType) -> ScalarQuantizationMethod {
+        match encoding {
+            ScalarType::Int8 => ScalarQuantizationMethod::Uint8,
         }
     }
 

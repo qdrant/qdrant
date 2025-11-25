@@ -4,7 +4,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use permutation_iterator::Permutor;
 use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-use quantization::encoded_vectors_u8::EncodedVectorsU8;
+use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
 use rand::Rng;
 
 fn encode_dot_bench(c: &mut Criterion) {
@@ -33,6 +33,7 @@ fn encode_dot_bench(c: &mut Criterion) {
         &vector_parameters,
         vectors_count,
         None,
+        ScalarQuantizationMethod::Uint8,
         None,
         &AtomicBool::new(false),
     )
@@ -137,6 +138,7 @@ fn encode_l1_bench(c: &mut Criterion) {
         &vector_parameters,
         vectors_count,
         None,
+        ScalarQuantizationMethod::Uint8,
         None,
         &AtomicBool::new(false),
     )

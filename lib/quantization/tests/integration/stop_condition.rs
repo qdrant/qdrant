@@ -5,7 +5,7 @@ mod tests {
 
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, VectorParameters};
-    use quantization::encoded_vectors_u8::EncodedVectorsU8;
+    use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
     use quantization::{EncodedVectorsPQ, EncodingError};
 
     #[test]
@@ -38,6 +38,7 @@ mod tests {
                 &vector_parameters,
                 vectors_count,
                 None,
+                ScalarQuantizationMethod::Uint8,
                 None,
                 stopped_ref,
             )

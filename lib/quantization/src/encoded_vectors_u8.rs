@@ -19,6 +19,12 @@ use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
 
 pub const ALIGNMENT: usize = 16;
 
+#[derive(Clone, PartialEq, Debug)]
+pub enum ScalarQuantizationMethod {
+    Uint8,
+    // Future methods can be added here
+}
+
 pub struct EncodedVectorsU8<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
@@ -44,15 +50,18 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         &self.encoded_vectors
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
         count: usize,
         quantile: Option<f32>,
+        method: ScalarQuantizationMethod,
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
+        assert_eq!(method, ScalarQuantizationMethod::Uint8);
         let actual_dim = Self::get_actual_dim(vector_parameters);
 
         if count == 0 {
