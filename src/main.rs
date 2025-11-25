@@ -384,6 +384,26 @@ fn main() -> anyhow::Result<()> {
 
     toc.clear_all_tmp_directories()?;
 
+    runtime_handle.spawn(async {
+        use tokio::signal::unix::{signal, SignalKind};
+        use std::sync::atomic::Ordering::Relaxed;
+
+        let mut stream = signal(SignalKind::user_defined1()).unwrap();
+        loop {
+            stream.recv().await;
+
+            let m = &shard::measurable_rwlock::MEASURABLE_RWLOCK_METRICS_DISABLED;
+            let read = m.read_wait_time_us_counter.load(Relaxed);
+            let write = m.write_wait_time_us_counter.load(Relaxed);
+            let upgrade = m.upgrade_wait_time_us_counter.load(Relaxed);
+
+            log::info!(
+                "MeasurableRwLock wait times (us): read: {read}, write: {write}, upgrade: {upgrade}"
+            );
+        }
+
+    });
+
     // Here we load all stored collections.
     runtime_handle.block_on(async {
         for collection in toc.all_collections(&FULL_ACCESS).await {

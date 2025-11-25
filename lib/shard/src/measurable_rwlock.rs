@@ -20,13 +20,13 @@ pub type MeasurableRwLockReadGuard<'rwlock, T> = RwLockReadGuard<'rwlock, T>;
 pub struct MeasurableRwLockMetrics {
     pub read_wait_time_us_counter: atomic::AtomicU64,
     pub write_wait_time_us_counter: atomic::AtomicU64,
-    pub upgrade_wait_us_counter: atomic::AtomicU64,
+    pub upgrade_wait_time_us_counter: atomic::AtomicU64,
 }
 
 pub static MEASURABLE_RWLOCK_METRICS_DISABLED: MeasurableRwLockMetrics = MeasurableRwLockMetrics {
     read_wait_time_us_counter: atomic::AtomicU64::new(0),
     write_wait_time_us_counter: atomic::AtomicU64::new(0),
-    upgrade_wait_us_counter: atomic::AtomicU64::new(0),
+    upgrade_wait_time_us_counter: atomic::AtomicU64::new(0),
 };
 
 #[derive(Debug)]
@@ -96,7 +96,7 @@ impl<T: ?Sized> MeasurableRwLock<T> {
         );
         MeasurableRwLockUpgradableReadGuard {
             inner: inner,
-            upgrade_wait_us_counter: &self.metrics.upgrade_wait_us_counter,
+            upgrade_wait_us_counter: &self.metrics.upgrade_wait_time_us_counter,
         }
     }
 
@@ -108,7 +108,7 @@ impl<T: ?Sized> MeasurableRwLock<T> {
             .write_wait_time_us_counter
             .fetch_add(elapsed.as_micros() as _, atomic::Ordering::Relaxed);
         MeasurableRwLockWriteGuard {
-            upgrade_wait_us_counter: &self.metrics.upgrade_wait_us_counter,
+            upgrade_wait_us_counter: &self.metrics.upgrade_wait_time_us_counter,
             inner,
         }
     }
@@ -117,7 +117,7 @@ impl<T: ?Sized> MeasurableRwLock<T> {
         self.inner
             .try_write()
             .map(|inner| MeasurableRwLockWriteGuard {
-                upgrade_wait_us_counter: &self.metrics.upgrade_wait_us_counter,
+                upgrade_wait_us_counter: &self.metrics.upgrade_wait_time_us_counter,
                 inner,
             })
     }
