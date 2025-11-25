@@ -252,7 +252,8 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 1,
+              "default": 60
             }
           }
         ],
@@ -341,7 +342,8 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 1,
+              "default": 60
             }
           }
         ],
