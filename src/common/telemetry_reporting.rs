@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::defaults::APP_USER_AGENT;
 use common::types::{DetailsLevel, TelemetryDetail};
 use reqwest::Client;
 use segment::common::anonymize::Anonymize;
@@ -9,7 +10,6 @@ use storage::rbac::Access;
 use tokio::sync::Mutex;
 
 use super::telemetry::TelemetryCollector;
-use crate::common::http_client::APP_USER_AGENT;
 
 const DETAIL: TelemetryDetail = TelemetryDetail {
     level: DetailsLevel::Level2,
@@ -66,7 +66,7 @@ impl TelemetryReporter {
     pub async fn run(telemetry: Arc<Mutex<TelemetryCollector>>) {
         let reporter = Self::new(telemetry);
         let client = Client::builder()
-            .user_agent(APP_USER_AGENT)
+            .user_agent(APP_USER_AGENT.as_str())
             .build()
             .unwrap();
         loop {

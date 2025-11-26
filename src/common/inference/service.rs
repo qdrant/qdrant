@@ -7,6 +7,7 @@ use actix_web::http::header::HttpDate;
 use api::rest::models::InferenceUsage;
 use api::rest::{Document, Image, InferenceObject};
 use collection::operations::point_ops::VectorPersisted;
+use common::defaults::APP_USER_AGENT;
 use itertools::{Either, Itertools};
 use parking_lot::RwLock;
 use reqwest::Client;
@@ -15,7 +16,6 @@ use storage::content_manager::errors::StorageError;
 
 pub use super::inference_input::InferenceInput;
 use super::local_model;
-use crate::common::http_client::APP_USER_AGENT;
 use crate::common::inference::config::InferenceConfig;
 use crate::common::inference::params::InferenceParams;
 
@@ -93,7 +93,7 @@ impl InferenceService {
 
         let timeout = timeout.unwrap_or(DEFAULT_INFERENCE_TIMEOUT_SECS);
         let client_builder = Client::builder()
-            .user_agent(APP_USER_AGENT)
+            .user_agent(APP_USER_AGENT.as_str())
             .timeout(Duration::from_secs(timeout));
 
         Self {

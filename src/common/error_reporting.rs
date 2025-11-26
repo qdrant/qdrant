@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::common::http_client::APP_USER_AGENT;
+use common::defaults::APP_USER_AGENT;
 
 pub struct ErrorReporter;
 
@@ -15,7 +15,7 @@ impl ErrorReporter {
 
     pub fn report(error: &str, reporting_id: &str, backtrace: Option<&str>) {
         let client = reqwest::blocking::Client::builder()
-            .user_agent(APP_USER_AGENT)
+            .user_agent(APP_USER_AGENT.as_str())
             .build()
             .unwrap();
 
