@@ -19,6 +19,7 @@ pub mod maybe_uninit;
 pub mod mmap_hashmap;
 pub mod num_traits;
 pub mod panic;
+pub mod progress_tracker;
 pub mod rate_limiting;
 pub mod save_on_disk;
 pub mod scope_tracker;

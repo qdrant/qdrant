@@ -1270,6 +1270,7 @@ dependencies = [
  "atomicwrites",
  "bitvec",
  "bytemuck",
+ "chrono",
  "common",
  "criterion",
  "fs-err",
