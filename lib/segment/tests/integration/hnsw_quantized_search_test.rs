@@ -7,6 +7,7 @@ use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
+use common::progress_tracker::ProgressTracker;
 use common::types::{ScoreType, ScoredPointOffset};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -143,6 +144,7 @@ fn hnsw_quantized_search_test(
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            progress: ProgressTracker::new_for_test(),
         },
     )
     .unwrap();
@@ -440,8 +442,9 @@ fn test_build_hnsw_using_quantization() {
 
     builder.update(&[&segment1], &stopped).unwrap();
 
+    let progress = ProgressTracker::new_for_test();
     let built_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter)
+        .build(permit, &stopped, &mut rng, &hw_counter, progress)
         .unwrap();
 
     // check if built segment has quantization and index

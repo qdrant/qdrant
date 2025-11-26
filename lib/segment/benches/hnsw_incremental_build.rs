@@ -9,6 +9,7 @@ use clap::Parser;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::{FeatureFlags, feature_flags, init_feature_flags};
+use common::progress_tracker::ProgressTracker;
 use common::types::ScoredPointOffset;
 use fs_err as fs;
 use fs_err::File;
@@ -399,6 +400,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             stopped: &AtomicBool::new(false),
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: feature_flags(),
+            progress: ProgressTracker::new_for_test(),
         },
     )
     .unwrap()

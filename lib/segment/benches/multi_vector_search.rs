@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
+use common::progress_tracker::ProgressTracker;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -131,6 +132,7 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
             rng,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            progress: ProgressTracker::new_for_test(),
         },
     )
     .unwrap();

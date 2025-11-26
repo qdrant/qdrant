@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
+use common::progress_tracker::ProgressTracker;
 use common::types::TelemetryDetail;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
@@ -147,6 +148,7 @@ fn test_gpu_filterable_hnsw() {
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            progress: ProgressTracker::new_for_test(),
         },
     )
     .unwrap();
