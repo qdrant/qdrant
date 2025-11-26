@@ -176,6 +176,9 @@ impl Dispatcher {
                 | CollectionMetaOperations::CreatePayloadIndex(_)
                 | CollectionMetaOperations::DropPayloadIndex(_)
                 | CollectionMetaOperations::Nop { .. } => false,
+
+                #[cfg(feature = "staging")]
+                CollectionMetaOperations::SlowDownNode(_) => false,
             };
 
             // During creation of a shard key, we must ensure that all replicas are ready to accept

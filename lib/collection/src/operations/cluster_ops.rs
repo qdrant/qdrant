@@ -375,6 +375,8 @@ pub struct SlowDownNodeOperation {
 #[cfg(feature = "staging")]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct SlowDownNode {
+    /// Target peer ID to execute the sleep on.
+    pub peer_id: PeerId,
     /// Duration of the sleep in milliseconds (default: 1000, max: 300000).
     #[serde(default = "default_slow_down_duration_ms")]
     #[validate(range(max = 300_000))]

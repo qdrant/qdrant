@@ -25,6 +25,15 @@ use validator::Validate;
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 
+/// Introduce artificial delay to a specific peer node.
+/// Used for testing and debugging purposes.
+#[cfg(feature = "staging")]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
+pub struct SlowDownNode {
+    pub peer_id: PeerId,
+    pub duration_ms: u64,
+}
+
 // *Operation wrapper structure is only required for better OpenAPI generation
 
 /// Create alternative name for a collection.
@@ -410,7 +419,12 @@ pub enum CollectionMetaOperations {
     DropShardKey(DropShardKey),
     CreatePayloadIndex(CreatePayloadIndex),
     DropPayloadIndex(DropPayloadIndex),
-    Nop { token: usize }, // Empty operation
+    Nop {
+        token: usize,
+    }, // Empty operation
+    /// Introduce artificial delay to a specific peer node
+    #[cfg(feature = "staging")]
+    SlowDownNode(SlowDownNode),
 }
 
 /// Use config of the existing collection to generate a create collection operation

@@ -28,6 +28,8 @@ use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
+#[cfg(feature = "staging")]
+use storage::content_manager::collection_meta_ops::SlowDownNode;
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
     SetShardReplicaState, ShardTransferOperations, UpdateCollectionOperation,
@@ -886,14 +888,18 @@ pub async fn do_update_collection_cluster(
 
         #[cfg(feature = "staging")]
         ClusterOperations::SlowDownNode(SlowDownNodeOperation { slow_down_node }) => {
-            let duration_ms = slow_down_node.duration_ms;
-            let this_peer_id = dispatcher.toc(&access, &pass).this_peer_id;
+            validate_peer_exists(slow_down_node.peer_id)?;
 
-            log::debug!("SlowDownNode: sleeping for {duration_ms}ms on peer {this_peer_id}");
-            tokio::time::sleep(Duration::from_millis(duration_ms)).await;
-            log::debug!("SlowDownNode: finished sleeping on peer {this_peer_id}");
-
-            Ok(true)
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::SlowDownNode(SlowDownNode {
+                        peer_id: slow_down_node.peer_id,
+                        duration_ms: slow_down_node.duration_ms,
+                    }),
+                    access,
+                    wait_timeout,
+                )
+                .await
         }
     }
 }
