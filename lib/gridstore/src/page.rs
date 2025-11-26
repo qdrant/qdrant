@@ -82,7 +82,7 @@ impl Page {
         })
     }
 
-    /// Helper to get the sequential mmap if available, otherwise use the main mmap
+    /// Helper to get a slice suited for sequential reads if available, otherwise use the main mmap
     #[inline]
     fn mmap_seq(&self) -> &[u8] {
         #[expect(clippy::used_underscore_binding)]
