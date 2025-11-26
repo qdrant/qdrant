@@ -5,6 +5,8 @@ use std::time::Duration;
 use api::grpc::qdrant::CollectionExists;
 use api::rest::models::{CollectionDescription, CollectionsResponse};
 use collection::config::ShardingMethod;
+#[cfg(feature = "staging")]
+use collection::operations::cluster_ops::SlowDownNodeOperation;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
     ReplicatePoints, ReplicatePointsOperation, ReplicateShardOperation, ReshardingDirection,
@@ -880,6 +882,18 @@ pub async fn do_update_collection_cluster(
                     wait_timeout,
                 )
                 .await
+        }
+
+        #[cfg(feature = "staging")]
+        ClusterOperations::SlowDownNode(SlowDownNodeOperation { slow_down_node }) => {
+            let duration_ms = slow_down_node.duration_ms;
+            let this_peer_id = dispatcher.toc(&access, &pass).this_peer_id;
+
+            log::debug!("SlowDownNode: sleeping for {duration_ms}ms on peer {this_peer_id}");
+            tokio::time::sleep(Duration::from_millis(duration_ms)).await;
+            log::debug!("SlowDownNode: finished sleeping on peer {this_peer_id}");
+
+            Ok(true)
         }
     }
 }

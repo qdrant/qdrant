@@ -47,6 +47,10 @@ pub enum ClusterOperations {
     AbortResharding(AbortReshardingOperation),
     /// Trigger replication of points between two shards
     ReplicatePoints(ReplicatePointsOperation),
+
+    /// Introduce artificial delay to a node
+    #[cfg(feature = "staging")]
+    SlowDownNode(SlowDownNodeOperation),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -124,6 +128,8 @@ impl Validate for ClusterOperations {
             ClusterOperations::FinishResharding(op) => op.validate(),
             ClusterOperations::AbortResharding(op) => op.validate(),
             ClusterOperations::ReplicatePoints(op) => op.validate(),
+            #[cfg(feature = "staging")]
+            ClusterOperations::SlowDownNode(op) => op.validate(),
         }
     }
 }
@@ -353,3 +359,24 @@ pub struct FinishResharding {}
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct AbortResharding {}
+
+#[cfg(feature = "staging")]
+fn default_slow_down_duration_ms() -> u64 {
+    1000
+}
+
+#[cfg(feature = "staging")]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct SlowDownNodeOperation {
+    #[validate(nested)]
+    pub slow_down_node: SlowDownNode,
+}
+
+#[cfg(feature = "staging")]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct SlowDownNode {
+    /// Duration of the sleep in milliseconds (default: 1000, max: 300000).
+    #[serde(default = "default_slow_down_duration_ms")]
+    #[validate(range(max = 300_000))]
+    pub duration_ms: u64,
+}
