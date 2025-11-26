@@ -572,9 +572,9 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseVolatileByte(_) => {} // Can't populate as it is not mmap
             #[cfg(test)]
             VectorStorageEnum::DenseVolatileHalf(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::DenseMemmap(vs) => vs.populate()?,
-            VectorStorageEnum::DenseMemmapByte(vs) => vs.populate()?,
-            VectorStorageEnum::DenseMemmapHalf(vs) => vs.populate()?,
+            VectorStorageEnum::DenseMemmap(vs) => vs.populate(),
+            VectorStorageEnum::DenseMemmapByte(vs) => vs.populate(),
+            VectorStorageEnum::DenseMemmapHalf(vs) => vs.populate(),
             VectorStorageEnum::DenseAppendableMemmap(vs) => vs.populate()?,
             VectorStorageEnum::DenseAppendableMemmapByte(vs) => vs.populate()?,
             VectorStorageEnum::DenseAppendableMemmapHalf(vs) => vs.populate()?,

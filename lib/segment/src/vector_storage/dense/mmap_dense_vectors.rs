@@ -252,12 +252,11 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         }
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self) {
         #[expect(clippy::used_underscore_binding)]
         if let Some(mmap_seq) = &self._mmap_seq {
             mmap_seq.populate();
         }
-        Ok(())
     }
 }
 
