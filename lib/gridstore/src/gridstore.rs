@@ -566,12 +566,19 @@ impl<V> Gridstore<V> {
     pub fn flusher(&self) -> Flusher {
         let pending_updates = self.tracker.read().pending_updates.clone();
 
-        let pages = self.pages.clone();
-        let tracker = self.tracker.clone();
-        let bitmask = self.bitmask.clone();
+        let pages = Arc::downgrade(&self.pages);
+        let tracker = Arc::downgrade(&self.tracker);
+        let bitmask = Arc::downgrade(&self.bitmask);
         let block_size_bytes = self.config.block_size_bytes;
 
         Box::new(move || {
+            let (Some(pages), Some(tracker), Some(bitmask)) =
+                (pages.upgrade(), tracker.upgrade(), bitmask.upgrade())
+            else {
+                log::debug!("Aborted flushing on a dropped Gridstore instance");
+                return Ok(());
+            };
+
             let mut bitmask_guard = bitmask.upgradable_read();
             bitmask_guard.flush()?;
             for page in pages.read().iter() {
