@@ -86,11 +86,17 @@ impl BufferedDynamicFlags {
 impl Drop for BufferedDynamicFlags {
     fn drop(&mut self) {
         // FIXME how to avoid cloning the Arc :(
-        if let Err(_storage) = try_unwrap_with_timeout(
-            self.storage.clone(),
-            DROP_SPIN_TIMEOUT,
-            DROP_SPIN_TIMEOUT * 10,
-        ) {
+        let storage = self.storage.clone(); // a
+        // safety: we need to own the storage to unwrap the Arc but there is no Default impl to use in mem::replace
+        unsafe {
+            let storage = self.storage.clone(); // a
+            let ptr = Arc::into_raw(storage);
+            Arc::decrement_strong_count(ptr); // a
+            Arc::decrement_strong_count(ptr); // b
+        }
+        if let Err(_storage) =
+            try_unwrap_with_timeout(storage, DROP_SPIN_TIMEOUT, DROP_SPIN_TIMEOUT * 10)
+        {
             log::error!("Cannot drop BufferedDynamicFlags because the storage is being flushed")
         }
     }
