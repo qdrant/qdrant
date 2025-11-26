@@ -248,6 +248,13 @@ ACTION_ACCESS = {
         "POST /collections/{collection_name}/shards/delete",
         "qdrant.Collections/DeleteShardKey",
     ),
+    "list_shard_keys": EndpointAccess(
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/shards",
+        "qdrant.Collections/ListShardKeys",
+    ),
     ### Payload Indexes ###
     "create_index": EndpointAccess(
         False,
@@ -1191,6 +1198,14 @@ def test_delete_shard_key():
             "collection_name": COLL_NAME,
             "request": {"shard_key": {"keyword": random_str()}},
         },
+    )
+
+
+def test_list_shard_keys():
+    check_access(
+        "list_shard_keys",
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME},
     )
 
 

@@ -48,20 +48,21 @@ use crate::grpc::qdrant::{
     AcornSearchParams, CollectionDescription, CollectionOperationResponse, Condition, Distance,
     FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition,
     HealthCheckReply, HnswConfigDiff, IntegerIndexParams, IsEmptyCondition, IsNullCondition,
-    ListCollectionsResponse, Match, MinShould, NamedVectors, NestedCondition,
-    PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
-    PayloadSchemaType, PointId, PointStruct, PointsOperationResponse,
+    ListCollectionsResponse, ListShardKeysResponse, Match, MinShould, NamedVectors,
+    NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams,
+    PayloadSchemaInfo, PayloadSchemaType, PointId, PointStruct, PointsOperationResponse,
     PointsOperationResponseInternal, ProductQuantization, QuantizationConfig,
     QuantizationSearchParams, QuantizationType, RepeatedIntegers, RepeatedStrings,
-    ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StopwordsSet, StrictModeConfig,
-    TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount,
-    VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key, with_vectors_selector,
+    ScalarQuantization, ScoredPoint, SearchParams, ShardKey, ShardKeyDescription, StopwordsSet,
+    StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
+    ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key,
+    with_vectors_selector,
 };
 use crate::grpc::{
     self, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, DecayParamsExpression,
     DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
 };
-use crate::rest::models::{CollectionsResponse, VersionInfo};
+use crate::rest::models::{CollectionsResponse, ShardKeysResponse, VersionInfo};
 use crate::rest::schema as rest;
 
 pub fn convert_shard_key_to_grpc(value: segment::types::ShardKey) -> ShardKey {
@@ -123,6 +124,24 @@ impl TryFrom<ShardKeySelector> for rest::ShardKeySelector {
             }
 
             Ok(rest::ShardKeySelector::ShardKeys(shard_keys))
+        }
+    }
+}
+
+impl From<(Instant, ShardKeysResponse)> for ListShardKeysResponse {
+    fn from(value: (Instant, ShardKeysResponse)) -> Self {
+        let (timing, response) = value;
+        let ShardKeysResponse { shard_keys } = response;
+        let shard_keys = shard_keys
+            .into_iter()
+            .map(|key_desc| {
+                let key = Some(convert_shard_key_to_grpc(key_desc.key));
+                ShardKeyDescription { key }
+            })
+            .collect();
+        Self {
+            shard_keys,
+            time: timing.elapsed().as_secs_f64(),
         }
     }
 }

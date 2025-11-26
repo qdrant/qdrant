@@ -3,7 +3,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use api::grpc::qdrant::CollectionExists;
-use api::rest::models::{CollectionDescription, CollectionsResponse};
+use api::rest::models::{
+    CollectionDescription, CollectionsResponse, ShardKeyDescription, ShardKeysResponse,
+};
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
@@ -86,6 +88,25 @@ pub async fn do_list_collections(
         .collect_vec();
 
     Ok(CollectionsResponse { collections })
+}
+
+pub async fn do_get_collection_shard_keys(
+    toc: &TableOfContent,
+    access: Access,
+    name: &str,
+) -> Result<ShardKeysResponse, StorageError> {
+    let collection_pass = access.check_collection_access(name, AccessRequirements::new())?;
+
+    let collection = toc.get_collection(&collection_pass).await?;
+
+    let state = collection.state().await;
+    let shard_keys = state
+        .shards_key_mapping
+        .iter_shard_keys()
+        .map(|k| ShardKeyDescription { key: k.clone() })
+        .collect();
+
+    Ok(ShardKeysResponse { shard_keys })
 }
 
 /// Construct shards-replicas layout for the shard from the given scope of peers
