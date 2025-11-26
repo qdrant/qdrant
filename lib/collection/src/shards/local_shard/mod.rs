@@ -959,6 +959,10 @@ impl LocalShard {
         &self.update_tracker
     }
 
+    pub fn optimizers_log(&self) -> Arc<ParkingMutex<TrackerLog>> {
+        Arc::clone(&self.optimizers_log)
+    }
+
     /// Get the recovery point for the current shard
     ///
     /// This is sourced from the last seen clocks from other nodes that we know about.

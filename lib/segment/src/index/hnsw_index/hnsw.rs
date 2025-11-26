@@ -286,8 +286,11 @@ impl HNSWIndex {
                 .map(|fields| {
                     let progress_additional_links = progress.subtask("additional_links");
                     let fields = fields
-                        .into_keys()
-                        .map(|f| (progress_additional_links.subtask(f.to_string()), f))
+                        .into_iter()
+                        .map(|(field, payload_schema)| {
+                            let subtask_name = format!("{}:{field}", payload_schema.name());
+                            (progress_additional_links.subtask(subtask_name), field)
+                        })
                         .collect::<Vec<_>>();
                     (progress_additional_links, fields)
                 });

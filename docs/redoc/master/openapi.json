@@ -1815,6 +1815,106 @@
         }
       }
     },
+    "/collections/{collection_name}/optimizations": {
+      "get": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Get optimization progress",
+        "description": "Get progress of ongoing and completed optimizations for a collection",
+        "operationId": "get_optimizations",
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "completed",
+            "in": "query",
+            "description": "Also include completed operations in the response.",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "completed_limit",
+            "in": "query",
+            "description": "Maximum number of completed optimizations to return. Ignored if completed is false.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 16
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/OptimizationsResponse"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/aliases": {
       "get": {
         "tags": [
@@ -16069,6 +16169,82 @@
         "properties": {
           "key": {
             "$ref": "#/components/schemas/ShardKey"
+          }
+        }
+      },
+      "OptimizationsResponse": {
+        "description": "Optimizations progress for the collection",
+        "type": "object",
+        "required": [
+          "ongoing"
+        ],
+        "properties": {
+          "ongoing": {
+            "description": "Ongoing optimizations from newest to oldest.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProgressTree"
+            }
+          },
+          "completed": {
+            "description": "Completed optimizations from newest to oldest.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProgressTree"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "ProgressTree": {
+        "type": "object",
+        "required": [
+          "children",
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "description": "Name of the operation.",
+            "type": "string"
+          },
+          "started_at": {
+            "description": "When the operation started.",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finished_at": {
+            "description": "When the operation finished.",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "duration_sec": {
+            "description": "For finished operations, how long they took, in seconds.",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "done": {
+            "description": "Number of completed units of work, if applicable.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "total": {
+            "description": "Total number of units of work, if applicable and known.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "children": {
+            "description": "Child operations.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProgressTree"
+            }
           }
         }
       }
