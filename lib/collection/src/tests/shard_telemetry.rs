@@ -59,7 +59,7 @@ async fn test_shard_telemetry() {
         let telemetry = shard
             .get_telemetry_data(details, Duration::from_millis(10))
             .await;
-        matches!(telemetry, Err(CollectionError::Timeout { .. }));
+        assert!(matches!(telemetry, Err(CollectionError::Timeout { .. })));
 
         drop(write_segment_holder_guard);
         let telemetry = shard
