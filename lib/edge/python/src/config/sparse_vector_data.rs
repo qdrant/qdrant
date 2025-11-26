@@ -144,6 +144,7 @@ pub enum PySparseVectorStorageType {
 impl From<SparseVectorStorageType> for PySparseVectorStorageType {
     fn from(storage_type: SparseVectorStorageType) -> Self {
         #[allow(unreachable_patterns)]
+        #[allow(clippy::match_wildcard_for_single_variants)]
         match storage_type {
             SparseVectorStorageType::Mmap => PySparseVectorStorageType::Mmap,
             _ => unimplemented!("RocksDB-backed storage types are not supported by Qdrant Edge"),
