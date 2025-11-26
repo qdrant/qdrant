@@ -16,7 +16,11 @@ pub const TEMP_FILE_EXTENSION: &str = "tmp";
 /// same piece of data. This variable allows disabling the use of multiple memory maps at runtime.
 /// An example of such environment is Docker on Windows with a mount into Windows.
 pub static MULTI_MMAP_IS_SUPPORTED: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
-    std::env::var_os("QDRANT_DISABLE_MULTI_MMAP").is_none_or(|val| val.is_empty())
+    let supported = std::env::var_os("QDRANT_NO_MULTI_MMAP").is_none_or(|val| val.is_empty());
+    if !supported {
+        log::warn!("QDRANT_NO_MULTI_MMAP is set, you may see reduced performance");
+    }
+    supported
 });
 
 pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> {
