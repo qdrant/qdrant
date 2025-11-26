@@ -6,8 +6,8 @@ use common::types::PointOffsetType;
 use parking_lot::{Mutex, RwLock};
 
 use super::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use crate::common::{DROP_SPIN_TIMEOUT, Flusher, try_unwrap_with_timeout};
 
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing, without interface for reading.
 ///
@@ -19,15 +19,19 @@ pub(crate) struct BufferedDynamicFlags {
 
     /// Pending changes to the storage flags.
     buffer: Arc<RwLock<AHashMap<PointOffsetType, bool>>>,
+
+    /// Lock to prevent concurrent flush and drop
+    pub is_alive_flush_lock: Arc<Mutex<bool>>,
 }
 
 impl BufferedDynamicFlags {
     pub fn new(mmap_flags: DynamicMmapFlags) -> Self {
         let buffer = Arc::new(RwLock::new(AHashMap::new()));
-
+        let is_alive_flush_lock = Arc::new(Mutex::new(true));
         Self {
             storage: Arc::new(Mutex::new(mmap_flags)),
             buffer,
+            is_alive_flush_lock,
         }
     }
 
@@ -58,7 +62,17 @@ impl BufferedDynamicFlags {
 
         // Weak reference to detect when the storage has been deleted
         let flags_arc = Arc::downgrade(&self.storage);
+        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+
         Box::new(move || {
+            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            let is_alive_flush_guard = is_alive_flush_lock.lock();
+
+            if !*is_alive_flush_guard {
+                // Storage is removed, skip flush
+                return Ok(());
+            }
+
             let Some(flags_arc) = flags_arc.upgrade() else {
                 log::debug!("skipping flushing on deleted storage");
                 return Ok(());
@@ -85,20 +99,8 @@ impl BufferedDynamicFlags {
 
 impl Drop for BufferedDynamicFlags {
     fn drop(&mut self) {
-        // FIXME how to avoid cloning the Arc :(
-        let storage = self.storage.clone(); // a
-        // safety: we need to own the storage to unwrap the Arc but there is no Default impl to use in mem::replace
-        unsafe {
-            let storage = self.storage.clone(); // a
-            let ptr = Arc::into_raw(storage);
-            Arc::decrement_strong_count(ptr); // a
-            Arc::decrement_strong_count(ptr); // b
-        }
-        if let Err(_storage) =
-            try_unwrap_with_timeout(storage, DROP_SPIN_TIMEOUT, DROP_SPIN_TIMEOUT * 10)
-        {
-            log::error!("Cannot drop BufferedDynamicFlags because the storage is being flushed")
-        }
+        // Wait for all background flush operations to finish
+        *self.is_alive_flush_lock.lock() = false;
     }
 }
 
