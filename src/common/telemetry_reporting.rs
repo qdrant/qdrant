@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::defaults::APP_USER_AGENT;
 use common::types::{DetailsLevel, TelemetryDetail};
 use reqwest::Client;
 use segment::common::anonymize::Anonymize;
@@ -64,7 +65,10 @@ impl TelemetryReporter {
 
     pub async fn run(telemetry: Arc<Mutex<TelemetryCollector>>) {
         let reporter = Self::new(telemetry);
-        let client = Client::new();
+        let client = Client::builder()
+            .user_agent(APP_USER_AGENT.as_str())
+            .build()
+            .unwrap();
         loop {
             if let Err(err) = reporter.report(&client).await {
                 log::error!("Failed to report telemetry {err}")

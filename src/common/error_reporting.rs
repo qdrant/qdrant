@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use common::defaults::APP_USER_AGENT;
+
 pub struct ErrorReporter;
 
 impl ErrorReporter {
@@ -12,7 +14,10 @@ impl ErrorReporter {
     }
 
     pub fn report(error: &str, reporting_id: &str, backtrace: Option<&str>) {
-        let client = reqwest::blocking::Client::new();
+        let client = reqwest::blocking::Client::builder()
+            .user_agent(APP_USER_AGENT.as_str())
+            .build()
+            .unwrap();
 
         let report = serde_json::json!({
             "id": reporting_id,

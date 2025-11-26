@@ -11,6 +11,9 @@ pub const QDRANT_VERSION_STRING: &str = "1.16.1";
 lazy_static! {
     /// Current Qdrant semver version
     pub static ref QDRANT_VERSION: Version = Version::parse(QDRANT_VERSION_STRING).expect("malformed version string");
+
+    /// User-agent string to use in HTTP clients
+    pub static ref APP_USER_AGENT: String = format!("Qdrant/{QDRANT_VERSION_STRING}");
 }
 
 /// Maximum number of segments to load concurrently when loading a collection.
