@@ -1,15 +1,14 @@
 use std::sync::Arc;
-use std::thread::sleep;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::{DROP_SPIN_TIMEOUT, try_unwrap_with_timeout};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 
 use crate::proxy_segment::ProxySegment;
 
-const DROP_SPIN_TIMEOUT: Duration = Duration::from_millis(10);
 const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
 /// Object, which unifies the access to different types of segments, but still allows to
@@ -18,27 +17,6 @@ const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 pub enum LockedSegment {
     Original(Arc<RwLock<Segment>>),
     Proxy(Arc<RwLock<ProxySegment>>),
-}
-
-fn try_unwrap_with_timeout<T>(
-    mut arc: Arc<T>,
-    spin: Duration,
-    timeout: Duration,
-) -> Result<T, Arc<T>> {
-    let start = Instant::now();
-
-    loop {
-        arc = match Arc::try_unwrap(arc) {
-            Ok(unwrapped) => return Ok(unwrapped),
-            Err(arc) => arc,
-        };
-
-        if start.elapsed() >= timeout {
-            return Err(arc);
-        }
-
-        sleep(spin);
-    }
 }
 
 impl LockedSegment {

@@ -6,8 +6,8 @@ use common::types::PointOffsetType;
 use parking_lot::{Mutex, RwLock};
 
 use super::dynamic_mmap_flags::DynamicMmapFlags;
-use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::common::{DROP_SPIN_TIMEOUT, Flusher, try_unwrap_with_timeout};
 
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing, without interface for reading.
 ///
@@ -56,8 +56,14 @@ impl BufferedDynamicFlags {
             (updates, required_len)
         };
 
-        let flags_arc = self.storage.clone();
+        // Weak reference to detect when the storage has been deleted
+        let flags_arc = Arc::downgrade(&self.storage);
         Box::new(move || {
+            let Some(flags_arc) = flags_arc.upgrade() else {
+                log::debug!("skipping flushing on deleted storage");
+                return Ok(());
+            };
+
             // lock for the entire flushing process
             let mut flags_guard = flags_arc.lock();
 
@@ -74,6 +80,19 @@ impl BufferedDynamicFlags {
 
             Ok(())
         })
+    }
+}
+
+impl Drop for BufferedDynamicFlags {
+    fn drop(&mut self) {
+        // FIXME how to avoid cloning the Arc :(
+        if let Err(_storage) = try_unwrap_with_timeout(
+            self.storage.clone(),
+            DROP_SPIN_TIMEOUT,
+            DROP_SPIN_TIMEOUT * 10,
+        ) {
+            log::error!("Cannot drop BufferedDynamicFlags because the storage is being flushed")
+        }
     }
 }
 

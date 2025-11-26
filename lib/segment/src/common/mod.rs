@@ -18,7 +18,9 @@ pub mod utils;
 pub mod validate_snapshot_archive;
 pub mod vector_utils;
 
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::{Duration, Instant};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
@@ -245,3 +247,27 @@ pub fn check_stopped(is_stopped: &AtomicBool) -> OperationResult<()> {
 }
 
 pub const BYTES_IN_KB: usize = 1024;
+
+pub const DROP_SPIN_TIMEOUT: Duration = Duration::from_millis(10);
+
+/// Spin lock to unwrap an Arc
+pub fn try_unwrap_with_timeout<T>(
+    mut arc: Arc<T>,
+    spin: Duration,
+    timeout: Duration,
+) -> Result<T, Arc<T>> {
+    let start = Instant::now();
+
+    loop {
+        arc = match Arc::try_unwrap(arc) {
+            Ok(unwrapped) => return Ok(unwrapped),
+            Err(arc) => arc,
+        };
+
+        if start.elapsed() >= timeout {
+            return Err(arc);
+        }
+
+        std::thread::sleep(spin);
+    }
+}

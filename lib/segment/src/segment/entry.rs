@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::thread;
+use std::time::Duration;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
@@ -711,6 +713,10 @@ impl SegmentEntry for Segment {
                 // Segment is removed, skip flush
                 return Ok(());
             }
+
+            // TODO remove before review :)
+            log::warn!("sleeping before applying segment flusher");
+            thread::sleep(Duration::from_secs(3));
 
             // Flush mapping first to prevent having orphan internal ids.
             id_tracker_mapping_flusher().map_err(|err| {
