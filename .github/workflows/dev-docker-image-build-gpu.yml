@@ -15,4 +15,4 @@ jobs:
             ghcr-password: ${{ secrets.GITHUB_TOKEN }}
             push-to-ghcr: true
             build-gpu: true
-            staging-build: ${{ github.ref_name == 'dev' }}
+            staging-build: ${{ github.ref_type == 'branch' && github.ref_name != 'master' }}
