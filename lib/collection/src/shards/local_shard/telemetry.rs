@@ -30,6 +30,7 @@ impl LocalShard {
         } else {
             let locked_collection_config = self.collection_config.clone();
             let is_stopped_guard = StoppingGuard::new();
+            let is_stopped = is_stopped_guard.get_is_stopped();
             let handle = tokio::task::spawn_blocking(move || {
                 // blocking sync lock
                 let Some(segments_guard) = segments.try_read_for(timeout) else {
@@ -40,7 +41,7 @@ impl LocalShard {
                 };
                 let mut segments_telemetry = Vec::with_capacity(segments_guard.len());
                 for (_id, segment) in segments_guard.iter() {
-                    if is_stopped_guard.is_stopped() {
+                    if is_stopped.load(Ordering::Relaxed) {
                         return Ok((vec![], HashMap::default()));
                     }
 

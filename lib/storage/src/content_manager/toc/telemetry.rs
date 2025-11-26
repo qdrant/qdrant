@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use collection::operations::types::CollectionResult;
@@ -9,7 +9,6 @@ use collection::telemetry::{
 use common::scope_tracker::{ScopeTracker, ScopeTrackerGuard};
 use common::types::TelemetryDetail;
 use dashmap::DashMap;
-use shard::common::stopping_guard::StoppingGuard;
 
 use crate::content_manager::toc::TableOfContent;
 use crate::rbac::Access;
@@ -45,12 +44,12 @@ impl TableOfContent {
         detail: TelemetryDetail,
         access: &Access,
         timeout: Duration,
-        is_stopped_guard: &StoppingGuard,
+        is_stopped: &AtomicBool,
     ) -> CollectionResult<TocTelemetryData> {
         let all_collections = self.all_collections_access(access).await;
         let mut collection_telemetry = Vec::new();
         for collection_pass in &all_collections {
-            if is_stopped_guard.is_stopped() {
+            if is_stopped.load(Ordering::Relaxed) {
                 break;
             }
             if let Ok(collection) = self.get_collection(collection_pass).await {
@@ -87,12 +86,12 @@ impl TableOfContent {
         &self,
         access: &Access,
         timeout: Duration,
-        is_stopped_guard: &StoppingGuard,
+        is_stopped: &AtomicBool,
     ) -> CollectionResult<Vec<CollectionsAggregatedTelemetry>> {
         let mut result = Vec::new();
         let all_collections = self.all_collections_access(access).await;
         for collection_pass in &all_collections {
-            if is_stopped_guard.is_stopped() {
+            if is_stopped.load(Ordering::Relaxed) {
                 break;
             }
             if let Ok(collection) = self.get_collection(collection_pass).await {
