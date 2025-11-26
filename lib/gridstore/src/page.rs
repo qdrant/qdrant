@@ -144,7 +144,7 @@ impl Page {
     /// Delete the page from the filesystem.
     #[allow(dead_code)]
     pub fn delete_page(self) {
-        drop(self.mmap);
+        drop((self.mmap, self.mmap_seq));
         fs::remove_file(&self.path).unwrap();
     }
 
