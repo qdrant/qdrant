@@ -118,8 +118,8 @@ enum ProgressState {
 
 /// Create a new root progress tracker.
 ///
-/// Returns a [`ProgressView`] to observe the progress, and a [`ProgressSpan`]
-/// to signal progress updates.
+/// Returns a [`ProgressView`] to observe the progress,
+/// and a [`ProgressTracker`] to signal progress updates.
 pub fn new_progress_tracker() -> (ProgressView, ProgressTracker) {
     let started_at = Utc::now();
     let started_instant = Instant::now();

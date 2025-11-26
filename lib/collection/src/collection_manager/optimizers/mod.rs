@@ -27,6 +27,12 @@ pub struct TrackerLog {
     descriptions: VecDeque<Tracker>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct IndexingProgressViews {
+    pub ongoing: Vec<ProgressView>,
+    pub completed: Vec<ProgressView>,
+}
+
 impl TrackerLog {
     /// Register a new optimizer tracker
     pub fn register(&mut self, description: Tracker) {
@@ -67,6 +73,22 @@ impl TrackerLog {
             .rev()
             .map(Tracker::to_telemetry)
             .collect()
+    }
+
+    pub fn progress_views(&self) -> IndexingProgressViews {
+        let mut ongoing = Vec::new();
+        let mut completed = Vec::new();
+        for tracker in self.descriptions.iter().rev() {
+            let state = tracker.state.lock();
+            match state.status {
+                TrackerStatus::Optimizing => ongoing.push(tracker.progress_view.clone()),
+
+                TrackerStatus::Done | TrackerStatus::Cancelled(_) | TrackerStatus::Error(_) => {
+                    completed.push(tracker.progress_view.clone());
+                }
+            }
+        }
+        IndexingProgressViews { ongoing, completed }
     }
 }
 

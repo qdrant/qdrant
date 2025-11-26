@@ -1,17 +1,20 @@
 use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use common::types::TelemetryDetail;
+use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{Filter, SizeStats, SnapshotFormat};
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
+use crate::collection_manager::optimizers::TrackerLog;
 use crate::operations::operation_effect::{EstimateOperationEffectArea, OperationEffectArea};
 use crate::operations::types::{CollectionError, CollectionResult, OptimizersStatus};
 use crate::shards::dummy_shard::DummyShard;
@@ -231,6 +234,18 @@ impl Shard {
         };
 
         Some(update_tracker)
+    }
+
+    pub fn optimizers_log(&self) -> Option<Arc<ParkingMutex<TrackerLog>>> {
+        let optimizers_log = match self {
+            Self::Local(local_shard) => local_shard.optimizers_log(),
+            Self::Proxy(proxy_shard) => proxy_shard.optimizers_log(),
+            Self::ForwardProxy(proxy_shard) => proxy_shard.optimizers_log(),
+            Self::QueueProxy(proxy_shard) => proxy_shard.optimizers_log(),
+            Self::Dummy(_) => return None,
+        };
+
+        Some(optimizers_log)
     }
 
     pub async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {

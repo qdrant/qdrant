@@ -18,6 +18,7 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
+use parking_lot::Mutex as ParkingMutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::types::{ExtendedPointId, Filter, ShardKey};
@@ -33,6 +34,7 @@ use super::local_shard::clock_map::RecoveryPoint;
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::collection_manager::optimizers::TrackerLog;
 use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;
@@ -1252,6 +1254,11 @@ impl ShardReplicaSet {
 
     pub(crate) fn payload_index_schema(&self) -> Arc<SaveOnDisk<PayloadIndexSchema>> {
         self.payload_index_schema.clone()
+    }
+
+    pub async fn optimizers_log(&self) -> Option<Arc<ParkingMutex<TrackerLog>>> {
+        let local = self.local.read().await;
+        local.as_ref().and_then(|shard| shard.optimizers_log())
     }
 }
 

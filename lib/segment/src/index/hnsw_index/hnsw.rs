@@ -579,10 +579,6 @@ impl HNSWIndex {
                     usize::MAX
                 };
 
-                payload_index_ref
-                    .payload_blocks(&field, full_scan_threshold)
-                    .count();
-
                 for payload_block in payload_index_ref.payload_blocks(&field, full_scan_threshold) {
                     check_process_stopped(stopped)?;
                     if payload_block.cardinality > max_block_size {
