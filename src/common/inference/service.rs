@@ -15,6 +15,7 @@ use storage::content_manager::errors::StorageError;
 
 pub use super::inference_input::InferenceInput;
 use super::local_model;
+use crate::common::http_client::APP_USER_AGENT;
 use crate::common::inference::config::InferenceConfig;
 use crate::common::inference::params::InferenceParams;
 
@@ -91,7 +92,9 @@ impl InferenceService {
         } = &config;
 
         let timeout = timeout.unwrap_or(DEFAULT_INFERENCE_TIMEOUT_SECS);
-        let client_builder = Client::builder().timeout(Duration::from_secs(timeout));
+        let client_builder = Client::builder()
+            .user_agent(APP_USER_AGENT)
+            .timeout(Duration::from_secs(timeout));
 
         Self {
             config,

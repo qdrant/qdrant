@@ -8,6 +8,8 @@ use storage::content_manager::errors::StorageError;
 use super::auth::HTTP_HEADER_API_KEY;
 use crate::settings::{Settings, TlsConfig};
 
+pub const APP_USER_AGENT: &str = concat!("Qdrant/", env!("CARGO_PKG_VERSION"));
+
 #[derive(Clone)]
 pub struct HttpClient {
     tls_config: Option<TlsConfig>,
@@ -62,7 +64,7 @@ fn https_client(
     tls_config: Option<&TlsConfig>,
     verify_https_client_certificate: bool,
 ) -> Result<reqwest::Client> {
-    let mut builder = reqwest::Client::builder();
+    let mut builder = reqwest::Client::builder().user_agent(APP_USER_AGENT);
 
     // Configure TLS root certificate and validation
     if let Some(tls_config) = tls_config {

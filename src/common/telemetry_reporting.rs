@@ -9,6 +9,7 @@ use storage::rbac::Access;
 use tokio::sync::Mutex;
 
 use super::telemetry::TelemetryCollector;
+use crate::common::http_client::APP_USER_AGENT;
 
 const DETAIL: TelemetryDetail = TelemetryDetail {
     level: DetailsLevel::Level2,
@@ -64,7 +65,10 @@ impl TelemetryReporter {
 
     pub async fn run(telemetry: Arc<Mutex<TelemetryCollector>>) {
         let reporter = Self::new(telemetry);
-        let client = Client::new();
+        let client = Client::builder()
+            .user_agent(APP_USER_AGENT)
+            .build()
+            .unwrap();
         loop {
             if let Err(err) = reporter.report(&client).await {
                 log::error!("Failed to report telemetry {err}")
