@@ -2549,6 +2549,7 @@ dependencies = [
  "fs-err",
  "io",
  "itertools 0.14.0",
+ "log",
  "lz4_flex",
  "memmap2",
  "memory",
