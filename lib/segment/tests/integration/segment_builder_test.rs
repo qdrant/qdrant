@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::progress_tracker::ProgressTracker;
 use fs_err as fs;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
@@ -80,9 +81,10 @@ fn test_building_new_segment() {
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hw_counter = HardwareCounterCell::new();
+    let progress = ProgressTracker::new_for_test();
 
     let merged_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter)
+        .build(permit, &stopped, &mut rng, &hw_counter, progress)
         .unwrap();
 
     let new_segment_count = fs::read_dir(dir.path()).unwrap().count();
@@ -166,9 +168,10 @@ fn test_building_new_defragmented_segment() {
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hw_counter = HardwareCounterCell::new();
+    let progress = ProgressTracker::new_for_test();
 
     let merged_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter)
+        .build(permit, &stopped, &mut rng, &hw_counter, progress)
         .unwrap();
 
     let new_segment_count = fs::read_dir(dir.path()).unwrap().count();
@@ -299,9 +302,10 @@ fn test_building_new_sparse_segment() {
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hw_counter = HardwareCounterCell::new();
+    let progress = ProgressTracker::new_for_test();
 
     let merged_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter)
+        .build(permit, &stopped, &mut rng, &hw_counter, progress)
         .unwrap();
 
     let new_segment_count = fs::read_dir(dir.path()).unwrap().count();
@@ -375,8 +379,9 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hw_counter = HardwareCounterCell::new();
+    let progress = ProgressTracker::new_for_test();
 
-    let res = builder.build(permit, &stopped, &mut rng, &hw_counter);
+    let res = builder.build(permit, &stopped, &mut rng, &hw_counter, progress);
 
     let is_cancelled = match res {
         Ok(_) => false,
@@ -442,9 +447,10 @@ fn test_building_new_segment_bug_5614() {
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hw_counter = HardwareCounterCell::new();
+    let progress = ProgressTracker::new_for_test();
 
     let merged_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter)
+        .build(permit, &stopped, &mut rng, &hw_counter, progress)
         .unwrap();
 
     // Assert correct point versions - must have latest
@@ -585,9 +591,10 @@ fn test_building_new_segment_with_mmap_payload() {
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hw_counter = HardwareCounterCell::new();
+    let progress = ProgressTracker::new_for_test();
 
     let new_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter)
+        .build(permit, &stopped, &mut rng, &hw_counter, progress)
         .unwrap();
     assert_eq!(
         new_segment.segment_config.payload_storage_type,

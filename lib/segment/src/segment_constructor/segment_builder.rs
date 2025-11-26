@@ -12,6 +12,7 @@ use bitvec::macros::internal::funty::Integral;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
+use common::progress_tracker::ProgressTracker;
 use common::small_uint::U24;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -465,6 +466,7 @@ impl SegmentBuilder {
         stopped: &AtomicBool,
         rng: &mut R,
         hw_counter: &HardwareCounterCell,
+        progress: ProgressTracker,
     ) -> Result<Segment, OperationError> {
         let (temp_dir, destination_path) = {
             let SegmentBuilder {
@@ -601,6 +603,7 @@ impl SegmentBuilder {
                         rng,
                         hnsw_global_config: &hnsw_global_config,
                         feature_flags: feature_flags(),
+                        progress: progress.running_subtask(vector_name),
                     },
                 )?;
 
