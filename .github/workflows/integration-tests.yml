@@ -112,6 +112,7 @@ jobs:
           load: true
           build-args: |
             PROFILE=ci
+            FEATURES=staging
       - name: Run integration tests - multiple peers - compose
         run: poetry run bash ./test_restart.sh
         working-directory: ./tests/consensus_tests
@@ -143,6 +144,7 @@ jobs:
           load: true
           build-args: |
             PROFILE=ci
+            FEATURES=staging
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -258,6 +260,7 @@ jobs:
           build-args: |
             PROFILE=ci
             FEATURES=data-consistency-check
+            FEATURES=staging
       - name: Verify Docker image
         run: docker images | grep qdrant
       - name: Run e2e tests
