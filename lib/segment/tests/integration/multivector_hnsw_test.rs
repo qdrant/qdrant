@@ -124,7 +124,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             vector_storage: vector_storage.clone(),
             quantized_vectors: quantized_vectors.clone(),
             payload_index: segment.payload_index.clone(),
-            hnsw_config: hnsw_config.clone(),
+            hnsw_config,
         },
         VectorIndexBuildArgs {
             permit: permit.clone(),

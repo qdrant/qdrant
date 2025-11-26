@@ -19,4 +19,14 @@ impl PyPointVectors {
             vector: VectorStructPersisted::from(vector),
         })
     }
+
+    #[getter]
+    fn id(&self) -> PyPointId {
+        PyPointId(self.0.id)
+    }
+
+    #[getter]
+    fn vector(&self) -> PyVector {
+        PyVector::from(self.0.vector.clone())
+    }
 }
