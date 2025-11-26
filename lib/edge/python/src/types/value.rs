@@ -21,9 +21,10 @@ impl PyValue {
     }
 }
 
-impl<'py> FromPyObject<'_, 'py> for PyValue {
+impl FromPyObject<'_, '_> for PyValue {
     type Error = PyErr;
-    fn extract(value: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+
+    fn extract(value: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         enum Helper {
             Bool(bool),
@@ -66,7 +67,7 @@ impl<'py> IntoPyObject<'py> for PyValue {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
     }
 }
@@ -76,7 +77,7 @@ impl<'py> IntoPyObject<'py> for &PyValue {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
             serde_json::Value::Null => Ok(py.None().into_bound(py)),
             serde_json::Value::Bool(bool) => bool.into_bound_py_any(py),
