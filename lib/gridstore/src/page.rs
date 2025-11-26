@@ -4,7 +4,9 @@ use fs_err as fs;
 use memmap2::{Mmap, MmapMut};
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
-use memory::mmap_ops::{create_and_ensure_length, open_read_mmap, open_write_mmap};
+use memory::mmap_ops::{
+    MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length, open_read_mmap, open_write_mmap,
+};
 
 use crate::tracker::BlockOffset;
 
@@ -33,13 +35,23 @@ impl Page {
         create_and_ensure_length(path, size).map_err(|err| err.to_string())?;
         let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)
             .map_err(|err| err.to_string())?;
-        let mmap_seq = open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
-            .map_err(|err| err.to_string())?;
+
+        // Only open second mmap for sequential reads if supported
+        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
+            Some(
+                open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
+                    .map_err(|err| err.to_string())?,
+            )
+        } else {
+            None
+        };
+
         let path = path.to_path_buf();
+
         Ok(Page {
             path,
             mmap,
-            _mmap_seq: Some(mmap_seq),
+            _mmap_seq: mmap_seq,
         })
     }
 
@@ -51,13 +63,22 @@ impl Page {
         }
         let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)
             .map_err(|err| err.to_string())?;
-        let mmap_seq = open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
-            .map_err(|err| err.to_string())?;
+
+        // Only open second mmap for sequential reads if supported
+        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
+            Some(
+                open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
+                    .map_err(|err| err.to_string())?,
+            )
+        } else {
+            None
+        };
+
         let path = path.to_path_buf();
         Ok(Page {
             path,
             mmap,
-            _mmap_seq: Some(mmap_seq),
+            _mmap_seq: mmap_seq,
         })
     }
 

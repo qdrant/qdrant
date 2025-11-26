@@ -10,6 +10,15 @@ use crate::madvise::{self, AdviceSetting, Madviseable};
 
 pub const TEMP_FILE_EXTENSION: &str = "tmp";
 
+/// If multiple mmaps to the same file are supported in this environment
+///
+/// Some environments corrupt data on the file system if multiple memory maps are opened on the
+/// same piece of data. This variable allows disabling the use of multiple memory maps at runtime.
+/// An example of such environment is Docker on Windows with a mount into Windows.
+pub static MULTI_MMAP_IS_SUPPORTED: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+    std::env::var_os("QDRANT_DISABLE_MULTI_MMAP").is_none_or(|val| val.is_empty())
+});
+
 pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> {
     if path.exists() {
         let file = OpenOptions::new()
