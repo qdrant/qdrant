@@ -426,6 +426,10 @@ pub trait SegmentOptimizer {
 
         check_process_stopped(stopped)?;
 
+        let progress_copy_data = progress.subtask("copy_data");
+        let progress_populate_storages = progress.subtask("populate_vector_storages");
+        let progress_wait_permit = progress.subtask("wait_cpu_permit");
+
         let segments: Vec<_> = optimizing_segments
             .iter()
             .map(|i| match i {
@@ -455,11 +459,13 @@ pub trait SegmentOptimizer {
         }
 
         {
+            progress_copy_data.start();
             let segment_guards = segments.iter().map(|segment| segment.read()).collect_vec();
             segment_builder.update(
                 &segment_guards.iter().map(Deref::deref).collect_vec(),
                 stopped,
             )?;
+            drop(progress_copy_data);
         }
 
         let proxy_index_changes = self.proxy_index_changes(proxies);
@@ -482,7 +488,9 @@ pub trait SegmentOptimizer {
 
         // Before switching from IO to CPU, make sure that vectors cache is heated up,
         // so indexing process won't need to wait for IO.
+        progress_populate_storages.start();
         segment_builder.populate_vector_storages()?;
+        drop(progress_populate_storages);
 
         // 000 - acquired
         // +++ - blocked on waiting
@@ -522,12 +530,14 @@ pub trait SegmentOptimizer {
 
         // Use same number of threads for indexing as for IO.
         // This ensures that IO is equally distributed between optimization jobs.
+        progress_wait_permit.start();
         let desired_cpus = permit.num_io as usize;
         let indexing_permit = resource_budget
             .replace_with(permit, desired_cpus, 0, stopped)
             .map_err(|_| {
                 CollectionError::cancelled("optimization cancelled while waiting for budget")
             })?;
+        drop(progress_wait_permit);
 
         let mut rng = rand::rng();
         let mut optimized_segment: Segment =
