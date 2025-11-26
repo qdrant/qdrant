@@ -1,6 +1,6 @@
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -43,8 +43,7 @@ const BATCH_SIZE: usize = 10;
 /// Number of times to retry transferring updates batch
 const BATCH_RETRIES: usize = MAX_RETRY_COUNT;
 
-static MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER: LazyLock<Version> =
-    LazyLock::new(|| Version::parse("1.14.1-dev").unwrap());
+const MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER: Version = Version::new(1, 14, 1);
 
 /// QueueProxyShard shard
 ///
