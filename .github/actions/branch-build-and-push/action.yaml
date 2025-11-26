@@ -20,8 +20,8 @@ inputs:
     description: 'Build GPU images instead of regular images'
     required: false
     default: 'false'
-  enable-benchmark:
-    description: 'Enable benchmark feature flag'
+  staging-build:
+    description: 'Enable staging feature flag'
     required: false
     default: 'false'
 
@@ -81,9 +81,9 @@ runs:
 
         # Prepare feature flags
         FEATURES_ARG=""
-        if [ "${{ inputs.enable-benchmark }}" = "true" ]; then
-          echo "Benchmark feature enabled"
-          FEATURES_ARG="--build-arg FEATURES=benchmark"
+        if [ "${{ inputs.staging-build }}" = "true" ]; then
+          echo "Staging feature enabled"
+          FEATURES_ARG="--build-arg FEATURES=staging"
         fi
 
         # Function to build and push with given suffix and build args

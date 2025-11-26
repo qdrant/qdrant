@@ -23,8 +23,8 @@ jobs:
             push-to-ghcr: true
             # Only push 'dev' branch to Docker Hub
             push-to-dockerhub: ${{ github.ref_name == 'dev' }}
-            # Enable benchmark feature for 'dev' branch
-            enable-benchmark: ${{ github.ref_name == 'add-new-feature-flag' }}
+            # Enable `staging` feature for 'dev' branch
+            staging-build: ${{ github.ref_name == 'add-new-feature-flag' }}
 
   triggered-branch-build-and-push:
     if: ${{ github.event.client_payload.triggered }}

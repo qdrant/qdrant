@@ -37,7 +37,7 @@ data-consistency-check = ["collection/data-consistency-check"]
 gpu = ["gpu/gpu", "segment/gpu"]
 deb = []
 rocksdb = ["collection/rocksdb", "segment/rocksdb"]
-benchmark = []
+staging = []
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
