@@ -231,3 +231,116 @@ fn _test_filterable_hnsw(
     ); // Not more than X% failures
     eprintln!("hits = {hits:#?} out of {attempts}");
 }
+
+#[rstest]
+#[case::plain(50, 16 * 1024)]
+#[case::index(1_000, 1)]
+fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_threshold_kb: usize) {
+    let stopped = AtomicBool::new(false);
+
+    let dim = 8;
+    let m = 8;
+    let ef_construct = 16;
+    let distance = Distance::Cosine;
+    let indexing_threshold = 500; // num vectors
+    let num_payload_values = 2;
+
+    let mut rng = StdRng::seed_from_u64(42);
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+
+    let int_key = "int";
+
+    let hw_counter = HardwareCounterCell::new();
+    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    for n in 0..num_vectors {
+        let idx = n.into();
+        let vector = random_vector(&mut rng, dim);
+
+        let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
+        let payload = payload_json! {int_key: int_payload};
+
+        segment
+            .upsert_point(
+                n as SeqNumberType,
+                idx,
+                only_default_vector(&vector),
+                &hw_counter,
+            )
+            .unwrap();
+        segment
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .unwrap();
+    }
+
+    let payload_index_ptr = segment.payload_index.clone();
+
+    let hnsw_config = HnswConfig {
+        m,
+        ef_construct,
+        full_scan_threshold: full_scan_threshold_kb,
+        max_indexing_threads: 2,
+        on_disk: Some(false),
+        payload_m: None,
+        inline_storage: None,
+    };
+
+    let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
+    let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
+
+    payload_index_ptr
+        .borrow_mut()
+        .set_indexed(
+            &JsonPath::new(int_key),
+            PayloadSchemaType::Integer,
+            &hw_counter,
+        )
+        .unwrap();
+    let borrowed_payload_index = payload_index_ptr.borrow();
+    let blocks = borrowed_payload_index
+        .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
+        .collect_vec();
+    for block in blocks.iter() {
+        assert!(
+            block.condition.range.is_some(),
+            "only range conditions should be generated for this type of payload"
+        );
+    }
+
+    let permit_cpu_count = 1; // single-threaded for deterministic build
+    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let hnsw_index = HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path: hnsw_dir.path(),
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            quantized_vectors: quantized_vectors.clone(),
+            payload_index: payload_index_ptr.clone(),
+            hnsw_config,
+        },
+        VectorIndexBuildArgs {
+            permit,
+            old_indices: &[],
+            gpu_device: None,
+            rng: &mut rng,
+            stopped: &stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
+            feature_flags: FeatureFlags::default(),
+        },
+    )
+    .unwrap();
+
+    let top = 0;
+    let query = random_query(&QueryVariant::Nearest, &mut rng, dim);
+
+    hnsw_index
+        .search(
+            &[&query],
+            None,
+            top,
+            Some(&Default::default()),
+            &Default::default(),
+        )
+        .unwrap();
+}
