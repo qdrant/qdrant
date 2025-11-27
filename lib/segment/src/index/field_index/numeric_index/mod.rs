@@ -638,7 +638,7 @@ where
     delegate! {
         to self.inner {
             pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool, hw_counter: &HardwareCounterCell) -> bool;
-            pub fn cleanup(self) -> OperationResult<()>;
+            pub fn wipe(self) -> OperationResult<()>;
             pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry;
             pub fn values_count(&self, idx: PointOffsetType) -> usize;
             pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
@@ -883,7 +883,7 @@ where
         self.get_points_count()
     }
 
-    fn cleanup(self) -> OperationResult<()> {
+    fn wipe(self) -> OperationResult<()> {
         match self {
             NumericIndexInner::Mutable(index) => index.wipe(),
             NumericIndexInner::Immutable(index) => index.wipe(),
