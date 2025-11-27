@@ -890,11 +890,14 @@ pub async fn do_update_collection_cluster(
         ClusterOperations::SlowDownNode(SlowDownNodeOperation { slow_down_node }) => {
             validate_peer_exists(slow_down_node.peer_id)?;
 
+            // Convert seconds (f64) to milliseconds (u64)
+            let duration_ms = (slow_down_node.duration_secs * 1000.0) as u64;
+
             dispatcher
                 .submit_collection_meta_op(
                     CollectionMetaOperations::SlowDownNode(SlowDownNode {
                         peer_id: slow_down_node.peer_id,
-                        duration_ms: slow_down_node.duration_ms,
+                        duration_ms,
                     }),
                     access,
                     wait_timeout,

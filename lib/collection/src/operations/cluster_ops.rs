@@ -361,8 +361,8 @@ pub struct FinishResharding {}
 pub struct AbortResharding {}
 
 #[cfg(feature = "staging")]
-fn default_slow_down_duration_ms() -> u64 {
-    1000
+fn default_slow_down_duration_secs() -> f64 {
+    1.0
 }
 
 #[cfg(feature = "staging")]
@@ -377,8 +377,8 @@ pub struct SlowDownNodeOperation {
 pub struct SlowDownNode {
     /// Target peer ID to execute the sleep on.
     pub peer_id: PeerId,
-    /// Duration of the sleep in milliseconds (default: 1000, max: 300000).
-    #[serde(default = "default_slow_down_duration_ms")]
-    #[validate(range(max = 300_000))]
-    pub duration_ms: u64,
+    /// Duration of the sleep in seconds (default: 1.0, max: 300.0).
+    #[serde(default = "default_slow_down_duration_secs")]
+    #[validate(range(max = 300.0))]
+    pub duration_secs: f64,
 }
