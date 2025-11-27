@@ -41,6 +41,8 @@ pub struct Gridstore<V> {
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
+    ///
+    /// Additionally, this is also used as a barrier to wait for a flush to finish when [`wipe`](Self::wipe)'ing.
     bitmask: Arc<RwLock<Bitmask>>,
     /// Path of the directory where the storage files are stored
     base_path: PathBuf,
@@ -479,12 +481,18 @@ impl<V: Blob> Gridstore<V> {
     /// Wipe the storage, drop all pages and delete the base directory
     ///
     /// Takes ownership because this function leaves Gridstore in an inconsistent state which does
-    /// not allow further usage. Use [`clear`] instead to clear and reuse the storage.
+    /// not allow further usage. Use [`clear`](Self::clear) instead to clear and reuse the storage.
     pub fn wipe(self) -> Result<()> {
-        // clear pages
-        self.pages.write().clear();
+        let base_path = self.base_path.clone();
+
+        // Barrier to wait for any ongoing flush to finish
+        drop(self.bitmask.write());
+
+        // Make sure strong references are dropped, to avoid starting another flush
+        drop(self);
+
         // deleted base directory
-        fs::remove_dir_all(&self.base_path)
+        fs::remove_dir_all(base_path)
             .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))
     }
 
