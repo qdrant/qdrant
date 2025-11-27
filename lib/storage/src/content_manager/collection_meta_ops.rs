@@ -30,7 +30,8 @@ use crate::content_manager::shard_distribution::ShardDistributionProposal;
 #[cfg(feature = "staging")]
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub struct TestSlowDown {
-    pub peer_id: PeerId,
+    /// If None, execute on all peers.
+    pub peer_id: Option<PeerId>,
     pub duration_ms: u64,
 }
 

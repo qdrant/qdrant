@@ -122,7 +122,12 @@ impl TableOfContent {
             }
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestSlowDown(test_slow_down) => {
-                if test_slow_down.peer_id == self.this_peer_id {
+                // Execute on this peer if: peer_id is None (all peers) OR peer_id matches this peer
+                let should_execute = test_slow_down
+                    .peer_id
+                    .is_none_or(|peer_id| peer_id == self.this_peer_id);
+
+                if should_execute {
                     log::debug!(
                         "TestSlowDown: sleeping for {}ms on peer {}",
                         test_slow_down.duration_ms,

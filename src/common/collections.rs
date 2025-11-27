@@ -888,7 +888,9 @@ pub async fn do_update_collection_cluster(
 
         #[cfg(feature = "staging")]
         ClusterOperations::TestSlowDown(TestSlowDownOperation { test_slow_down }) => {
-            validate_peer_exists(test_slow_down.peer_id)?;
+            if let Some(peer_id) = test_slow_down.peer_id {
+                validate_peer_exists(peer_id)?;
+            }
 
             // Convert seconds (f64) to milliseconds (u64)
             let duration_ms = (test_slow_down.duration_secs * 1000.0) as u64;

@@ -376,7 +376,9 @@ pub struct TestSlowDownOperation {
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct TestSlowDown {
     /// Target peer ID to execute the sleep on.
-    pub peer_id: PeerId,
+    /// If not specified, the operation will be executed on all peers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_id: Option<PeerId>,
     /// Duration of the sleep in seconds (default: 1.0, max: 300.0).
     #[serde(default = "default_test_slow_down_duration_secs")]
     #[validate(range(min = 0.0, max = 300.0))]
