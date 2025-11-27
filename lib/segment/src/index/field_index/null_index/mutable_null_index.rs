@@ -220,8 +220,11 @@ impl PayloadFieldIndex for MutableNullIndex {
     }
 
     fn cleanup(self) -> OperationResult<()> {
-        if self.base_dir.is_dir() {
-            fs::remove_dir_all(&self.base_dir)?;
+        let base_dir = self.base_dir.clone();
+        // drop mmap handles before deleting files
+        drop(self);
+        if base_dir.is_dir() {
+            fs::remove_dir_all(&base_dir)?;
         }
         Ok(())
     }
