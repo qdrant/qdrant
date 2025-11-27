@@ -15,7 +15,7 @@ impl TryFrom<grpc::ClusterStatusTelemetry> for ClusterStatusTelemetry {
 
         let role = Some(
             grpc::StateRole::try_from(value.role)
-                .map_err(|err| Status::invalid_argument(format!("Invalid state role: {}", err)))?
+                .map_err(|err| Status::invalid_argument(format!("Invalid state role: {err}")))?
                 .into(),
         );
 
