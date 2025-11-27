@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use collection::operations::types::CollectionResult;
@@ -8,7 +9,6 @@ use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
-use shard::common::stopping_guard::StoppingGuard;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
 
@@ -38,13 +38,13 @@ impl CollectionsTelemetry {
         access: &Access,
         toc: &TableOfContent,
         timeout: Duration,
-        is_stopped_guard: &StoppingGuard,
+        is_stopped: &AtomicBool,
     ) -> CollectionResult<Self> {
         let number_of_collections = toc.all_collections(access).await.len();
         let (collections, snapshots) = if detail.level >= DetailsLevel::Level1 {
             let telemetry_data = if detail.level >= DetailsLevel::Level2 {
                 let toc_telemetry = toc
-                    .get_telemetry_data(detail, access, timeout, is_stopped_guard)
+                    .get_telemetry_data(detail, access, timeout, is_stopped)
                     .await?;
 
                 let collections: Vec<_> = toc_telemetry
@@ -56,7 +56,7 @@ impl CollectionsTelemetry {
                 (collections, toc_telemetry.snapshot_telemetry)
             } else {
                 let collections = toc
-                    .get_aggregated_telemetry_data(access, is_stopped_guard)
+                    .get_aggregated_telemetry_data(access, timeout, is_stopped)
                     .await?
                     .into_iter()
                     .map(CollectionTelemetryEnum::Aggregated)
