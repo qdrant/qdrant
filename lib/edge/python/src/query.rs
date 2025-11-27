@@ -269,18 +269,18 @@ pub struct PyMmr(MmrInternal);
 impl PyMmr {
     #[new]
     pub fn new(
-        vector: PyNamedVector,
+        vector: PyNamedVectorInternal,
         using: Option<String>,
         lambda: f32,
         candidates_limit: usize,
-    ) -> PyResult<Self> {
+    ) -> Self {
         let mmr = MmrInternal {
-            vector: VectorInternal::try_from(vector)?,
+            vector: VectorInternal::from(vector),
             using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
             lambda: OrderedFloat(lambda),
             candidates_limit,
         };
 
-        Ok(Self(mmr))
+        Self(mmr)
     }
 }

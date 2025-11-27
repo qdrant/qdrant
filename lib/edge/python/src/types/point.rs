@@ -29,8 +29,8 @@ impl PyPoint {
     }
 
     #[getter]
-    pub fn vector(&self) -> PyVector {
-        PyVector::from(self.0.vector.clone())
+    pub fn vector(&self) -> &PyVector {
+        PyVector::wrap_ref(&self.0.vector)
     }
 
     #[getter]

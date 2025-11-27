@@ -1,154 +1,150 @@
 use std::collections::HashMap;
+use std::mem;
 
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
-use pyo3::exceptions::PyValueError;
+use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
-use segment::data_types::vectors::*;
 use segment::types::VectorNameBuf;
 use shard::operations::point_ops::{VectorPersisted, VectorStructPersisted};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
-#[derive(Clone, Debug, FromPyObject, IntoPyObject)]
-pub enum PyVector {
-    // Put Int first so ints don't get parsed as floats (since f64 can extract from ints).
-    Single(DenseVector),
-    MultiDense(Vec<DenseVector>),
-    Named(HashMap<VectorNameBuf, PyNamedVector>),
-}
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyVector(VectorStructPersisted);
 
-impl From<VectorStructPersisted> for PyVector {
-    fn from(value: VectorStructPersisted) -> Self {
-        match value {
-            VectorStructPersisted::Single(dense) => PyVector::Single(dense),
-            VectorStructPersisted::MultiDense(multi) => PyVector::MultiDense(multi),
-            VectorStructPersisted::Named(named) => PyVector::Named(
-                named
-                    .into_iter()
-                    .map(|(k, v)| (k, PyNamedVector::from(v)))
-                    .collect::<HashMap<_, _>>(),
-            ),
-        }
-    }
-}
-
-impl From<VectorStructInternal> for PyVector {
-    fn from(value: VectorStructInternal) -> Self {
-        match value {
-            VectorStructInternal::Single(dense) => PyVector::Single(dense),
-            VectorStructInternal::MultiDense(multi) => {
-                PyVector::MultiDense(multi.into_multi_vectors())
-            }
-            VectorStructInternal::Named(named) => PyVector::Named(
-                named
-                    .into_iter()
-                    .map(|(k, v)| (k, PyNamedVector::from(v)))
-                    .collect::<HashMap<_, _>>(),
-            ),
-        }
-    }
-}
-
-impl From<PyVector> for VectorStructPersisted {
-    fn from(value: PyVector) -> Self {
-        match value {
-            PyVector::Single(dense) => VectorStructPersisted::Single(dense),
-            PyVector::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
-            PyVector::Named(named) => VectorStructPersisted::Named(
-                named
-                    .into_iter()
-                    .map(|(k, v)| (k, VectorPersisted::from(v)))
-                    .collect::<HashMap<_, _>>(),
-            ),
-        }
-    }
-}
-
-impl TryFrom<PyVector> for VectorStructInternal {
+impl FromPyObject<'_, '_> for PyVector {
     type Error = PyErr;
 
-    fn try_from(vector: PyVector) -> PyResult<Self> {
-        let vector = match vector {
-            PyVector::Single(dense) => VectorStructInternal::Single(dense),
-            PyVector::MultiDense(multi) => {
-                VectorStructInternal::MultiDense(flat_multi_dense_from_nested(multi)?)
+    fn extract(vector: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Helper {
+            Single(Vec<f32>),
+            MultiDense(Vec<Vec<f32>>),
+            Named(HashMap<VectorNameBuf, PyNamedVector>),
+        }
+
+        fn _variants(vector: VectorStructPersisted) {
+            match vector {
+                VectorStructPersisted::Single(_) => {}
+                VectorStructPersisted::MultiDense(_) => {}
+                VectorStructPersisted::Named(_) => {}
             }
-            PyVector::Named(named) => VectorStructInternal::Named(
-                named
-                    .into_iter()
-                    .map(|(key, val)| VectorInternal::try_from(val).map(move |val| (key, val)))
-                    .collect::<Result<_, _>>()?,
-            ),
+        }
+
+        let vector = match vector.extract()? {
+            Helper::Single(single) => VectorStructPersisted::Single(single),
+            Helper::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
+            Helper::Named(named) => VectorStructPersisted::Named(PyNamedVector::peel_map(named)),
         };
 
-        Ok(vector)
+        Ok(Self(vector))
     }
 }
 
-#[derive(Clone, Debug, FromPyObject, IntoPyObject)]
-pub enum PyNamedVector {
-    // Put Int first so ints don't get parsed as floats (since f64 can extract from ints).
-    Dense(DenseVector),
-    MultiDense(Vec<DenseVector>),
-    Sparse(PySparseVector),
-}
-
-impl From<VectorPersisted> for PyNamedVector {
-    fn from(value: VectorPersisted) -> Self {
-        match value {
-            VectorPersisted::Dense(dense) => PyNamedVector::Dense(dense),
-            VectorPersisted::MultiDense(multi) => PyNamedVector::MultiDense(multi),
-            VectorPersisted::Sparse(sparse) => PyNamedVector::Sparse(PySparseVector(sparse)),
-        }
-    }
-}
-
-impl From<VectorInternal> for PyNamedVector {
-    fn from(value: VectorInternal) -> Self {
-        match value {
-            VectorInternal::Dense(dense) => PyNamedVector::Dense(dense),
-            VectorInternal::MultiDense(multi) => {
-                PyNamedVector::MultiDense(multi.into_multi_vectors())
-            }
-            VectorInternal::Sparse(sparse) => PyNamedVector::Sparse(PySparseVector(sparse)),
-        }
-    }
-}
-
-impl From<PyNamedVector> for VectorPersisted {
-    fn from(value: PyNamedVector) -> Self {
-        match value {
-            PyNamedVector::Dense(dense) => VectorPersisted::Dense(dense),
-            PyNamedVector::MultiDense(multi) => VectorPersisted::MultiDense(multi),
-            PyNamedVector::Sparse(sparse) => VectorPersisted::Sparse(sparse.0),
-        }
-    }
-}
-
-impl TryFrom<PyNamedVector> for VectorInternal {
+impl<'py> IntoPyObject<'py> for PyVector {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
 
-    fn try_from(value: PyNamedVector) -> PyResult<Self> {
-        let vector = match value {
-            PyNamedVector::Dense(dense) => VectorInternal::Dense(dense),
-            PyNamedVector::MultiDense(multi) => {
-                VectorInternal::MultiDense(flat_multi_dense_from_nested(multi)?)
-            }
-            PyNamedVector::Sparse(sparse) => VectorInternal::Sparse(sparse.0),
-        };
-
-        Ok(vector)
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(&self, py)
     }
 }
 
-fn flat_multi_dense_from_nested(multi: Vec<Vec<f32>>) -> PyResult<TypedMultiDenseVector<f32>> {
-    TypedMultiDenseVector::try_from_matrix(multi)
-        .map_err(|err| PyValueError::new_err(format!("invalid multi-dense vector: {err}")))
+impl<'py> IntoPyObject<'py> for &PyVector {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        match &self.0 {
+            VectorStructPersisted::Single(single) => single.into_bound_py_any(py),
+            VectorStructPersisted::MultiDense(multi) => multi.into_bound_py_any(py),
+            VectorStructPersisted::Named(named) => {
+                PyNamedVector::wrap_map_ref(named).into_bound_py_any(py)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyNamedVector(VectorPersisted);
+
+impl PyNamedVector {
+    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorPersisted>
+    where
+        Self: TransparentWrapper<VectorPersisted>,
+    {
+        unsafe { mem::transmute(map) }
+    }
+
+    pub fn wrap_map_ref(map: &HashMap<String, VectorPersisted>) -> &HashMap<String, Self>
+    where
+        Self: TransparentWrapper<VectorPersisted>,
+    {
+        unsafe { mem::transmute(map) }
+    }
+}
+
+impl FromPyObject<'_, '_> for PyNamedVector {
+    type Error = PyErr;
+
+    fn extract(vector: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Helper {
+            Dense(Vec<f32>),
+            Sparse(PySparseVector),
+            MultiDense(Vec<Vec<f32>>),
+        }
+
+        fn _variants(vector: VectorPersisted) {
+            match vector {
+                VectorPersisted::Dense(_) => {}
+                VectorPersisted::Sparse(_) => {}
+                VectorPersisted::MultiDense(_) => {}
+            }
+        }
+
+        let vector = match vector.extract()? {
+            Helper::Dense(dense) => VectorPersisted::Dense(dense),
+            Helper::Sparse(sparse) => VectorPersisted::Sparse(SparseVector::from(sparse)),
+            Helper::MultiDense(multi) => VectorPersisted::MultiDense(multi),
+        };
+
+        Ok(Self(vector))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for PyNamedVector {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(&self, py)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyNamedVector {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        match &self.0 {
+            VectorPersisted::Dense(dense) => dense.into_bound_py_any(py),
+            VectorPersisted::Sparse(sparse) => PySparseVector(sparse.clone()).into_bound_py_any(py),
+            VectorPersisted::MultiDense(multi) => multi.into_bound_py_any(py),
+        }
+    }
 }
 
 #[pyclass(name = "SparseVector")]
 #[derive(Clone, Debug, Into)]
-pub struct PySparseVector(SparseVector);
+pub struct PySparseVector(pub SparseVector);
 
 #[pymethods]
 impl PySparseVector {

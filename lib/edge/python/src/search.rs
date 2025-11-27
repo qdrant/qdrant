@@ -282,8 +282,8 @@ impl PyScoredPoint {
     }
 
     #[getter]
-    pub fn vector(&self) -> Option<PyVector> {
-        self.0.vector.clone().map(PyVector::from)
+    pub fn vector(&self) -> Option<&PyVectorInternal> {
+        self.0.vector.as_ref().map(PyVectorInternal::wrap_ref)
     }
 
     #[getter]

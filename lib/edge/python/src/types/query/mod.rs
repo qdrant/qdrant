@@ -17,7 +17,7 @@ impl FromPyObject<'_, '_> for PyQuery {
     fn extract(query: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let query = match query.extract()? {
             PyQueryInterface::Nearest { query, using } => QueryEnum::Nearest(NamedQuery {
-                query: VectorInternal::try_from(query)?,
+                query: VectorInternal::from(query),
                 using,
             }),
 
@@ -65,7 +65,7 @@ impl<'py> IntoPyObject<'py> for PyQuery {
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         let query = match self.0 {
             QueryEnum::Nearest(NamedQuery { query, using }) => PyQueryInterface::Nearest {
-                query: PyNamedVector::from(query),
+                query: PyNamedVectorInternal(query),
                 using,
             },
 
@@ -110,7 +110,7 @@ impl<'py> IntoPyObject<'py> for PyQuery {
 pub enum PyQueryInterface {
     #[pyo3(constructor = (query, using = None))]
     Nearest {
-        query: PyNamedVector,
+        query: PyNamedVectorInternal,
         using: Option<String>,
     },
 
@@ -152,21 +152,14 @@ pub struct PyRecommendQuery(RecoQuery<VectorInternal>);
 #[pymethods]
 impl PyRecommendQuery {
     #[new]
-    pub fn new(positives: Vec<PyNamedVector>, negatives: Vec<PyNamedVector>) -> PyResult<Self> {
-        let positives = positives
-            .into_iter()
-            .map(VectorInternal::try_from)
-            .collect::<Result<_, _>>()?;
-
-        let negatives = negatives
-            .into_iter()
-            .map(VectorInternal::try_from)
-            .collect::<Result<_, _>>()?;
-
-        Ok(Self(RecoQuery {
-            positives,
-            negatives,
-        }))
+    pub fn new(
+        positives: Vec<PyNamedVectorInternal>,
+        negatives: Vec<PyNamedVectorInternal>,
+    ) -> Self {
+        Self(RecoQuery {
+            positives: PyNamedVectorInternal::peel_vec(positives),
+            negatives: PyNamedVectorInternal::peel_vec(negatives),
+        })
     }
 }
 
@@ -177,11 +170,11 @@ pub struct PyDiscoverQuery(DiscoveryQuery<VectorInternal>);
 #[pymethods]
 impl PyDiscoverQuery {
     #[new]
-    pub fn new(target: PyNamedVector, pairs: Vec<PyContextPair>) -> PyResult<Self> {
-        Ok(Self(DiscoveryQuery {
-            target: VectorInternal::try_from(target)?,
+    pub fn new(target: PyNamedVectorInternal, pairs: Vec<PyContextPair>) -> Self {
+        Self(DiscoveryQuery {
+            target: VectorInternal::from(target),
             pairs: PyContextPair::peel_vec(pairs),
-        }))
+        })
     }
 }
 
@@ -207,11 +200,11 @@ pub struct PyContextPair(ContextPair<VectorInternal>);
 #[pymethods]
 impl PyContextPair {
     #[new]
-    pub fn new(positive: PyNamedVector, negative: PyNamedVector) -> PyResult<Self> {
-        Ok(Self(ContextPair {
-            positive: VectorInternal::try_from(positive)?,
-            negative: VectorInternal::try_from(negative)?,
-        }))
+    pub fn new(positive: PyNamedVectorInternal, negative: PyNamedVectorInternal) -> Self {
+        Self(ContextPair {
+            positive: VectorInternal::from(positive),
+            negative: VectorInternal::from(negative),
+        })
     }
 }
 
@@ -223,15 +216,15 @@ pub struct PyFeedbackSimpleQuery(FeedbackQueryInternal<VectorInternal, SimpleFee
 impl PyFeedbackSimpleQuery {
     #[new]
     pub fn new(
-        target: PyNamedVector,
+        target: PyNamedVectorInternal,
         feedback: Vec<PyFeedbackItem>,
         strategy: PySimpleFeedbackStrategy,
-    ) -> PyResult<Self> {
-        Ok(Self(FeedbackQueryInternal {
-            target: VectorInternal::try_from(target)?,
+    ) -> Self {
+        Self(FeedbackQueryInternal {
+            target: VectorInternal::from(target),
             feedback: PyFeedbackItem::peel_vec(feedback),
             strategy: SimpleFeedbackStrategy::from(strategy),
-        }))
+        })
     }
 }
 
@@ -243,11 +236,11 @@ pub struct PyFeedbackItem(FeedbackItem<VectorInternal>);
 #[pymethods]
 impl PyFeedbackItem {
     #[new]
-    pub fn new(vector: PyNamedVector, score: f32) -> PyResult<Self> {
-        Ok(Self(FeedbackItem {
-            vector: VectorInternal::try_from(vector)?,
+    pub fn new(vector: PyNamedVectorInternal, score: f32) -> Self {
+        Self(FeedbackItem {
+            vector: VectorInternal::from(vector),
             score: OrderedFloat(score),
-        }))
+        })
     }
 }
 
