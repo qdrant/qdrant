@@ -219,7 +219,7 @@ impl PayloadFieldIndex for MutableNullIndex {
         self.storage.has_values_flags.len()
     }
 
-    fn cleanup(self) -> OperationResult<()> {
+    fn wipe(self) -> OperationResult<()> {
         let base_dir = self.base_dir.clone();
         // drop mmap handles before deleting files
         drop(self);

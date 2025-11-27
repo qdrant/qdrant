@@ -272,11 +272,11 @@ impl StructPayloadIndex {
             }
             self.config.skip_rocksdb.replace(true);
 
-            // Clean-up all existing indices
+            // Wipe all existing indices
             for index in indexes.drain(..) {
-                index.cleanup().map_err(|err| {
+                index.wipe().map_err(|err| {
                     OperationError::service_error(format!(
-                        "Failed to clean up payload index for field `{field}` before rebuild: {err}"
+                        "Failed to delete existing payload index for field `{field}` before rebuild: {err}"
                     ))
                 })?;
             }
@@ -897,7 +897,7 @@ impl PayloadIndex for StructPayloadIndex {
 
         if let Some(indexes) = removed_indexes {
             for index in indexes {
-                index.cleanup()?;
+                index.wipe()?;
             }
         }
 
