@@ -47,6 +47,10 @@ pub enum ClusterOperations {
     AbortResharding(AbortReshardingOperation),
     /// Trigger replication of points between two shards
     ReplicatePoints(ReplicatePointsOperation),
+
+    /// Introduce artificial delay to a node
+    #[cfg(feature = "staging")]
+    TestSlowDown(TestSlowDownOperation),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -124,6 +128,8 @@ impl Validate for ClusterOperations {
             ClusterOperations::FinishResharding(op) => op.validate(),
             ClusterOperations::AbortResharding(op) => op.validate(),
             ClusterOperations::ReplicatePoints(op) => op.validate(),
+            #[cfg(feature = "staging")]
+            ClusterOperations::TestSlowDown(op) => op.validate(),
         }
     }
 }
@@ -353,3 +359,6 @@ pub struct FinishResharding {}
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct AbortResharding {}
+
+#[cfg(feature = "staging")]
+pub use super::staging::{TestSlowDown, TestSlowDownOperation};

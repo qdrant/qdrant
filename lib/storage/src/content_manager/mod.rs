@@ -14,6 +14,8 @@ pub mod conversions;
 pub mod errors;
 pub mod shard_distribution;
 pub mod snapshots;
+#[cfg(feature = "staging")]
+pub mod staging;
 pub mod toc;
 
 pub mod consensus_ops {
