@@ -787,13 +787,17 @@ impl Collection {
         &self,
         timeout: Duration,
     ) -> CollectionResult<CollectionsAggregatedTelemetry> {
+        let start = std::time::Instant::now();
         let shards_holder = self.shards_holder.read().await;
 
         let mut shard_optimization_statuses = Vec::new();
         let mut vectors = 0;
 
         for shard in shards_holder.all_shards() {
-            let shard_optimization_status = match shard.get_optimization_status(timeout).await {
+            let shard_optimization_status = match shard
+                .get_optimization_status(timeout.saturating_sub(start.elapsed()))
+                .await
+            {
                 None => OptimizersStatus::Ok,
                 Some(status) => status?,
             };
