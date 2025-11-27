@@ -47,8 +47,6 @@ use crate::vector_storage::{
 ///  │ [RawScorer] ◄───┼──┤ QueryScorer ◄─┼── (ditto)
 ///  │                 │  └───────────────┘
 ///  │ FilterContext   │
-///  │                 │
-///  │ top             │
 ///  └─────────────────┘
 /// ```
 pub struct FilteredScorer<'a> {
@@ -270,7 +268,6 @@ struct BatchSearch<'a> {
 pub struct BatchFilteredSearcher<'a> {
     scorer_batch: SmallVec<[BatchSearch<'a>; 1]>,
     filters: ScorerFilters<'a>,
-    top: usize,
 }
 
 impl<'a> BatchFilteredSearcher<'a> {
@@ -309,7 +306,6 @@ impl<'a> BatchFilteredSearcher<'a> {
         Ok(Self {
             scorer_batch,
             filters,
-            top,
         })
     }
 
@@ -347,7 +343,6 @@ impl<'a> BatchFilteredSearcher<'a> {
                 point_deleted,
                 vec_deleted: vector_storage.deleted_vector_bitslice(),
             },
-            top,
         }
     }
 
@@ -368,10 +363,6 @@ impl<'a> BatchFilteredSearcher<'a> {
         mut points: impl Iterator<Item = PointOffsetType>,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
-        if self.top == 0 {
-            return Ok(vec![vec![]; self.scorer_batch.len()]);
-        }
-
         // Reuse the same buffer for all chunks, to avoid reallocation
         let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
         let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
