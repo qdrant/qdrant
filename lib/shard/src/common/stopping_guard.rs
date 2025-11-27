@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 /// Structure that ensures that `is_stopped` flag is set to `true` when dropped.
-#[derive(Clone)]
 pub struct StoppingGuard {
     is_stopped: Arc<AtomicBool>,
 }
@@ -17,10 +16,6 @@ impl StoppingGuard {
 
     pub fn get_is_stopped(&self) -> Arc<AtomicBool> {
         self.is_stopped.clone()
-    }
-
-    pub fn is_stopped(&self) -> bool {
-        self.is_stopped.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

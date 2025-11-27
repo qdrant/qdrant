@@ -85,6 +85,8 @@ impl TelemetryCollector {
     ) -> StorageResult<TelemetryData> {
         let timeout = timeout.unwrap_or(DEFAULT_TELEMETRY_TIMEOUT);
         // Use blocking pool because the collection telemetry acquires several sync. locks.
+        let is_stopped_guard = StoppingGuard::new();
+        let is_stopped = is_stopped_guard.get_is_stopped();
         let collections_telemetry_handle = {
             let toc = self
                 .dispatcher
@@ -92,7 +94,6 @@ impl TelemetryCollector {
                 .clone();
             let runtime_handle = toc.general_runtime_handle().clone();
             let access_collection = access.clone();
-            let is_stopped_guard = StoppingGuard::new();
 
             let handle = runtime_handle.spawn_blocking(move || {
                 // Re-enter the async runtime in this blocking thread
@@ -102,7 +103,7 @@ impl TelemetryCollector {
                         &access_collection,
                         &toc,
                         timeout,
-                        &is_stopped_guard,
+                        &is_stopped,
                     )
                     .await
                 })

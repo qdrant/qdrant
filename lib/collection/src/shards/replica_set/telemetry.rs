@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use common::types::TelemetryDetail;
 use segment::types::SizeStats;
-use shard::common::stopping_guard::StoppingGuard;
 
 use crate::operations::types::{CollectionResult, OptimizersStatus};
 use crate::shards::replica_set::ShardReplicaSet;
@@ -14,17 +13,12 @@ impl ShardReplicaSet {
         &self,
         detail: TelemetryDetail,
         timeout: Duration,
-        is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<ReplicaSetTelemetry> {
         let local_shard = self.local.read().await;
         let local = local_shard.as_ref();
 
         let local_telemetry = match local {
-            Some(local_shard) => Some(
-                local_shard
-                    .get_telemetry_data(detail, timeout, is_stopped_guard)
-                    .await?,
-            ),
+            Some(local_shard) => Some(local_shard.get_telemetry_data(detail, timeout).await?),
             None => None,
         };
 
@@ -50,14 +44,17 @@ impl ShardReplicaSet {
         })
     }
 
-    pub(crate) async fn get_optimization_status(&self) -> Option<OptimizersStatus> {
+    pub(crate) async fn get_optimization_status(
+        &self,
+        timeout: Duration,
+    ) -> Option<CollectionResult<OptimizersStatus>> {
         let local_shard = self.local.read().await;
 
         let Some(local) = local_shard.deref() else {
             return None;
         };
 
-        Some(local.get_optimization_status().await)
+        Some(local.get_optimization_status(timeout).await)
     }
 
     pub(crate) async fn get_size_stats(&self) -> SizeStats {
