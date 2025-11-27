@@ -67,7 +67,7 @@ impl Access {
             }
             CollectionMetaOperations::Nop { token: _ } => (),
             #[cfg(feature = "staging")]
-            CollectionMetaOperations::SlowDownNode(_) => {
+            CollectionMetaOperations::TestSlowDown(_) => {
                 self.check_global_access(AccessRequirements::new().manage())?;
             }
         }

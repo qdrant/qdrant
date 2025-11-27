@@ -6,7 +6,7 @@ use api::grpc::qdrant::CollectionExists;
 use api::rest::models::{CollectionDescription, CollectionsResponse};
 use collection::config::ShardingMethod;
 #[cfg(feature = "staging")]
-use collection::operations::cluster_ops::SlowDownNodeOperation;
+use collection::operations::cluster_ops::TestSlowDownOperation;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
     ReplicatePoints, ReplicatePointsOperation, ReplicateShardOperation, ReshardingDirection,
@@ -29,7 +29,7 @@ use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 #[cfg(feature = "staging")]
-use storage::content_manager::collection_meta_ops::SlowDownNode;
+use storage::content_manager::collection_meta_ops::TestSlowDown;
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
     SetShardReplicaState, ShardTransferOperations, UpdateCollectionOperation,
@@ -887,16 +887,16 @@ pub async fn do_update_collection_cluster(
         }
 
         #[cfg(feature = "staging")]
-        ClusterOperations::SlowDownNode(SlowDownNodeOperation { slow_down_node }) => {
-            validate_peer_exists(slow_down_node.peer_id)?;
+        ClusterOperations::TestSlowDown(TestSlowDownOperation { test_slow_down }) => {
+            validate_peer_exists(test_slow_down.peer_id)?;
 
             // Convert seconds (f64) to milliseconds (u64)
-            let duration_ms = (slow_down_node.duration_secs * 1000.0) as u64;
+            let duration_ms = (test_slow_down.duration_secs * 1000.0) as u64;
 
             dispatcher
                 .submit_collection_meta_op(
-                    CollectionMetaOperations::SlowDownNode(SlowDownNode {
-                        peer_id: slow_down_node.peer_id,
+                    CollectionMetaOperations::TestSlowDown(TestSlowDown {
+                        peer_id: test_slow_down.peer_id,
                         duration_ms,
                     }),
                     access,

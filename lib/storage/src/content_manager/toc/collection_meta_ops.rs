@@ -121,19 +121,19 @@ impl TableOfContent {
                     .map(|()| true)
             }
             #[cfg(feature = "staging")]
-            CollectionMetaOperations::SlowDownNode(slow_down_node) => {
-                if slow_down_node.peer_id == self.this_peer_id {
+            CollectionMetaOperations::TestSlowDown(test_slow_down) => {
+                if test_slow_down.peer_id == self.this_peer_id {
                     log::debug!(
-                        "SlowDownNode: sleeping for {}ms on peer {}",
-                        slow_down_node.duration_ms,
+                        "TestSlowDown: sleeping for {}ms on peer {}",
+                        test_slow_down.duration_ms,
                         self.this_peer_id
                     );
                     tokio::time::sleep(std::time::Duration::from_millis(
-                        slow_down_node.duration_ms,
+                        test_slow_down.duration_ms,
                     ))
                     .await;
                     log::debug!(
-                        "SlowDownNode: finished sleeping on peer {}",
+                        "TestSlowDown: finished sleeping on peer {}",
                         self.this_peer_id
                     );
                 }

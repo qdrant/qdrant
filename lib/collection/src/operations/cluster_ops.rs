@@ -50,7 +50,7 @@ pub enum ClusterOperations {
 
     /// Introduce artificial delay to a node
     #[cfg(feature = "staging")]
-    SlowDownNode(SlowDownNodeOperation),
+    TestSlowDown(TestSlowDownOperation),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -129,7 +129,7 @@ impl Validate for ClusterOperations {
             ClusterOperations::AbortResharding(op) => op.validate(),
             ClusterOperations::ReplicatePoints(op) => op.validate(),
             #[cfg(feature = "staging")]
-            ClusterOperations::SlowDownNode(op) => op.validate(),
+            ClusterOperations::TestSlowDown(op) => op.validate(),
         }
     }
 }
@@ -361,24 +361,24 @@ pub struct FinishResharding {}
 pub struct AbortResharding {}
 
 #[cfg(feature = "staging")]
-fn default_slow_down_duration_secs() -> f64 {
+fn default_test_slow_down_duration_secs() -> f64 {
     1.0
 }
 
 #[cfg(feature = "staging")]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
-pub struct SlowDownNodeOperation {
+pub struct TestSlowDownOperation {
     #[validate(nested)]
-    pub slow_down_node: SlowDownNode,
+    pub test_slow_down: TestSlowDown,
 }
 
 #[cfg(feature = "staging")]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
-pub struct SlowDownNode {
+pub struct TestSlowDown {
     /// Target peer ID to execute the sleep on.
     pub peer_id: PeerId,
     /// Duration of the sleep in seconds (default: 1.0, max: 300.0).
-    #[serde(default = "default_slow_down_duration_secs")]
+    #[serde(default = "default_test_slow_down_duration_secs")]
     #[validate(range(max = 300.0))]
     pub duration_secs: f64,
 }

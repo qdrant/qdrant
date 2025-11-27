@@ -29,7 +29,7 @@ use crate::content_manager::shard_distribution::ShardDistributionProposal;
 /// Used for testing and debugging purposes.
 #[cfg(feature = "staging")]
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
-pub struct SlowDownNode {
+pub struct TestSlowDown {
     pub peer_id: PeerId,
     pub duration_ms: u64,
 }
@@ -424,7 +424,7 @@ pub enum CollectionMetaOperations {
     }, // Empty operation
     /// Introduce artificial delay to a specific peer node
     #[cfg(feature = "staging")]
-    SlowDownNode(SlowDownNode),
+    TestSlowDown(TestSlowDown),
 }
 
 /// Use config of the existing collection to generate a create collection operation
