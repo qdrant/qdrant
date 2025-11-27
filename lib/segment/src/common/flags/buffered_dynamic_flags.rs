@@ -21,17 +21,17 @@ pub(crate) struct BufferedDynamicFlags {
     buffer: Arc<RwLock<AHashMap<PointOffsetType, bool>>>,
 
     /// Lock to prevent concurrent flush and drop
-    is_alive_flush_lock: Arc<Mutex<bool>>,
+    flushing_lock: Arc<Mutex<()>>,
 }
 
 impl BufferedDynamicFlags {
     pub fn new(mmap_flags: DynamicMmapFlags) -> Self {
         let buffer = Arc::new(RwLock::new(AHashMap::new()));
-        let is_alive_flush_lock = Arc::new(Mutex::new(true));
+        let flushing_lock = Arc::new(Mutex::new(()));
         Self {
             storage: Arc::new(Mutex::new(mmap_flags)),
             buffer,
-            is_alive_flush_lock,
+            flushing_lock,
         }
     }
 
@@ -60,23 +60,20 @@ impl BufferedDynamicFlags {
             (updates, required_len)
         };
 
-        // Weak reference to detect when the storage has been deleted
+        // Weak references to detect if the instance has been already dropped
         let flags_arc = Arc::downgrade(&self.storage);
-        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+        let flushing_lock = Arc::downgrade(&self.flushing_lock);
 
         Box::new(move || {
-            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
-            let is_alive_flush_guard = is_alive_flush_lock.lock();
-
-            if !*is_alive_flush_guard {
-                // Storage is removed, skip flush
-                return Ok(());
-            }
-
-            let Some(flags_arc) = flags_arc.upgrade() else {
-                log::debug!("skipping flushing on deleted storage");
+            let (Some(flags_arc), Some(flushing_lock)) =
+                (flags_arc.upgrade(), flushing_lock.upgrade())
+            else {
+                log::debug!("Aborted flushing on a dropped instance");
                 return Ok(());
             };
+
+            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            let _flushing_lock_guard = flushing_lock.lock();
 
             // lock for the entire flushing process
             let mut flags_guard = flags_arc.lock();
@@ -91,7 +88,6 @@ impl BufferedDynamicFlags {
             }
 
             flags_guard.flusher()()?;
-
             Ok(())
         })
     }
@@ -100,7 +96,7 @@ impl BufferedDynamicFlags {
 impl Drop for BufferedDynamicFlags {
     fn drop(&mut self) {
         // Wait for all background flush operations to finish, and cancel future flushes
-        *self.is_alive_flush_lock.lock() = false;
+        _ = self.flushing_lock.lock();
     }
 }
 
