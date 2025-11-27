@@ -481,10 +481,18 @@ impl<V: Blob> Gridstore<V> {
     /// Takes ownership because this function leaves Gridstore in an inconsistent state which does
     /// not allow further usage. Use [`clear`] instead to clear and reuse the storage.
     pub fn wipe(self) -> Result<()> {
-        // clear pages
-        self.pages.write().clear();
+        let base_path = self.base_path.clone();
+
+        // make sure we are not deleting files mid-flush
+        {
+            let _ = self.bitmask.write();
+        }
+
+        // Make sure strong references are dropped, to avoid starting another flush
+        drop(self);
+
         // deleted base directory
-        fs::remove_dir_all(&self.base_path)
+        fs::remove_dir_all(base_path)
             .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))
     }
 
