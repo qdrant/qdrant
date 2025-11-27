@@ -86,8 +86,8 @@ impl ProxyShard {
             .await
     }
 
-    pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
-        self.wrapped_shard.snapshot_manifest()
+    pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
+        self.wrapped_shard.snapshot_manifest().await
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
