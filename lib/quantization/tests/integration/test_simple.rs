@@ -45,7 +45,8 @@ mod tests {
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let score = encoded.score_point_simple(&query_u8, quantized_vector);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -86,7 +87,8 @@ mod tests {
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let score = encoded.score_point_simple(&query_u8, quantized_vector);
             let orginal_score = l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -131,7 +133,8 @@ mod tests {
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let score = encoded.score_point_simple(&query_u8, quantized_vector);
             let orginal_score = l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -172,7 +175,8 @@ mod tests {
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let score = encoded.score_point_simple(&query_u8, quantized_vector);
             let orginal_score = -dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -213,7 +217,8 @@ mod tests {
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let score = encoded.score_point_simple(&query_u8, quantized_vector);
             let orginal_score = -l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -258,7 +263,8 @@ mod tests {
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let score = encoded.score_point_simple(&query_u8, quantized_vector);
             let orginal_score = -l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -379,7 +385,8 @@ mod tests {
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let score = encoded.score_point_simple(&query_u8, quantized_vector);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
