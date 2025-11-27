@@ -128,7 +128,9 @@ trait MetricsProvider {
 
 impl MetricsProvider for TelemetryData {
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
-        self.app.add_metrics(metrics, prefix);
+        if let Some(app) = &self.app {
+            app.add_metrics(metrics, prefix);
+        }
 
         let this_peer_id = self.cluster.as_ref().and_then(|i| i.this_peer_id());
         self.collections.add_metrics(metrics, prefix, this_peer_id);
