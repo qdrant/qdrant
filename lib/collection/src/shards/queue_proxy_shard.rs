@@ -149,8 +149,11 @@ impl QueueProxyShard {
             .await
     }
 
-    pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
-        self.inner_unchecked().wrapped_shard.snapshot_manifest()
+    pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
+        self.inner_unchecked()
+            .wrapped_shard
+            .snapshot_manifest()
+            .await
     }
 
     /// Transfer all updates that the remote missed from WAL
