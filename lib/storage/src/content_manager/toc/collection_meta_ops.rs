@@ -120,6 +120,11 @@ impl TableOfContent {
                     .await
                     .map(|()| true)
             }
+            #[cfg(feature = "staging")]
+            CollectionMetaOperations::TestSlowDown(test_slow_down) => {
+                test_slow_down.execute(self.this_peer_id).await;
+                Ok(true)
+            }
         }
     }
 
