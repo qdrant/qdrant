@@ -41,7 +41,7 @@ pub trait PayloadFieldIndex {
     fn count_indexed_points(&self) -> usize;
 
     /// Remove db content or files of the current payload index
-    fn cleanup(self) -> OperationResult<()>;
+    fn wipe(self) -> OperationResult<()>;
 
     /// Return function that flushes all pending updates to disk.
     fn flusher(&self) -> Flusher;
@@ -213,19 +213,19 @@ impl FieldIndex {
         }
     }
 
-    pub fn cleanup(self) -> OperationResult<()> {
+    pub fn wipe(self) -> OperationResult<()> {
         match self {
-            FieldIndex::IntIndex(index) => index.cleanup(),
-            FieldIndex::DatetimeIndex(index) => index.cleanup(),
-            FieldIndex::IntMapIndex(index) => index.cleanup(),
-            FieldIndex::KeywordIndex(index) => index.cleanup(),
-            FieldIndex::FloatIndex(index) => index.cleanup(),
-            FieldIndex::GeoIndex(index) => index.cleanup(),
-            FieldIndex::BoolIndex(index) => index.cleanup(),
-            FieldIndex::FullTextIndex(index) => index.cleanup(),
-            FieldIndex::UuidIndex(index) => index.cleanup(),
-            FieldIndex::UuidMapIndex(index) => index.cleanup(),
-            FieldIndex::NullIndex(index) => index.cleanup(),
+            FieldIndex::IntIndex(index) => index.wipe(),
+            FieldIndex::DatetimeIndex(index) => index.wipe(),
+            FieldIndex::IntMapIndex(index) => index.wipe(),
+            FieldIndex::KeywordIndex(index) => index.wipe(),
+            FieldIndex::FloatIndex(index) => index.wipe(),
+            FieldIndex::GeoIndex(index) => index.wipe(),
+            FieldIndex::BoolIndex(index) => index.wipe(),
+            FieldIndex::FullTextIndex(index) => index.wipe(),
+            FieldIndex::UuidIndex(index) => index.wipe(),
+            FieldIndex::UuidMapIndex(index) => index.wipe(),
+            FieldIndex::NullIndex(index) => index.wipe(),
         }
     }
 
