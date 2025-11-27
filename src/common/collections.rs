@@ -893,7 +893,7 @@ pub async fn do_update_collection_cluster(
             }
 
             // Convert seconds (f64) to milliseconds (u64)
-            let duration_ms = (test_slow_down.duration_secs * 1000.0) as u64;
+            let duration_ms = (test_slow_down.duration * 1000.0) as u64;
 
             dispatcher
                 .submit_collection_meta_op(

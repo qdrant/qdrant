@@ -22,18 +22,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
+// Re-export staging types when the feature is enabled
+#[cfg(feature = "staging")]
+pub use super::staging::TestSlowDown;
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-
-/// Introduce artificial delay to a specific peer node.
-/// Used for testing and debugging purposes.
-#[cfg(feature = "staging")]
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
-pub struct TestSlowDown {
-    /// If None, execute on all peers.
-    pub peer_id: Option<PeerId>,
-    pub duration_ms: u64,
-}
 
 // *Operation wrapper structure is only required for better OpenAPI generation
 
