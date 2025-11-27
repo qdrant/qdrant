@@ -33,7 +33,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
-            ScalarQuantizationMethod::Uint8,
+            ScalarQuantizationMethod::Int8,
             Some(meta_path.as_path()),
             &AtomicBool::new(false),
         )

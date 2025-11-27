@@ -38,7 +38,7 @@ mod tests {
                 &vector_parameters,
                 vectors_count,
                 None,
-                ScalarQuantizationMethod::Uint8,
+                ScalarQuantizationMethod::Int8,
                 None,
                 stopped_ref,
             )

@@ -21,7 +21,7 @@ pub const ALIGNMENT: usize = 16;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum ScalarQuantizationMethod {
-    Uint8,
+    Int8,
     // Future methods can be added here
 }
 
@@ -61,7 +61,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
-        assert_eq!(method, ScalarQuantizationMethod::Uint8);
+        assert_eq!(method, ScalarQuantizationMethod::Int8);
         let actual_dim = Self::get_actual_dim(vector_parameters);
 
         if count == 0 {

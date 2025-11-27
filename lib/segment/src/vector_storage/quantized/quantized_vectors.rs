@@ -1817,7 +1817,7 @@ impl QuantizedVectors {
 
     fn convert_scalar_encoding(encoding: ScalarType) -> ScalarQuantizationMethod {
         match encoding {
-            ScalarType::Int8 => ScalarQuantizationMethod::Uint8,
+            ScalarType::Int8 => ScalarQuantizationMethod::Int8,
         }
     }
 

@@ -12,7 +12,7 @@ mod tests {
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_dot_sse(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
@@ -56,7 +56,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_l2_sse(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
@@ -100,7 +100,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_l1_sse(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;

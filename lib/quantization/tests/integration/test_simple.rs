@@ -12,7 +12,7 @@ mod tests {
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_dot_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
@@ -56,7 +56,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_l2_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
@@ -100,7 +100,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_l1_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
@@ -148,7 +148,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_dot_inverted_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_l2_inverted_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
@@ -236,7 +236,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_l1_inverted_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_dot_internal_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count: usize = 129;
         let vector_dim = 65;
@@ -326,7 +326,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_dot_inverted_internal_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count: usize = 129;
         let vector_dim = 65;
@@ -368,7 +368,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_u8_large_quantile(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
@@ -412,7 +412,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Uint8)]
+    #[case(ScalarQuantizationMethod::Int8)]
     fn test_sq_u8_encode_internal(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 70;

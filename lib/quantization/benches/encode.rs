@@ -33,7 +33,7 @@ fn encode_dot_bench(c: &mut Criterion) {
         &vector_parameters,
         vectors_count,
         None,
-        ScalarQuantizationMethod::Uint8,
+        ScalarQuantizationMethod::Int8,
         None,
         &AtomicBool::new(false),
     )
@@ -138,7 +138,7 @@ fn encode_l1_bench(c: &mut Criterion) {
         &vector_parameters,
         vectors_count,
         None,
-        ScalarQuantizationMethod::Uint8,
+        ScalarQuantizationMethod::Int8,
         None,
         &AtomicBool::new(false),
     )
