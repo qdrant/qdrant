@@ -12248,7 +12248,7 @@ pub struct CollectionTelemetry {
     pub resharding: ::prost::alloc::vec::Vec<ReshardingTelemetry>,
     /// Tasks that clean points after completing a resharding sequence
     #[prost(map = "uint32, message", tag = "7")]
-    pub shard_clean_tasks: ::std::collections::HashMap<u32, ShardCleanTelemetry>,
+    pub shard_clean_tasks: ::std::collections::HashMap<u32, ShardCleanStatusTelemetry>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -12282,51 +12282,72 @@ pub struct ShardTransferTelemetry {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReshardingTelemetry {
-    #[prost(uint32, tag = "1")]
+    #[prost(string, tag = "1")]
+    pub uuid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
     pub shard_id: u32,
-    #[prost(uint64, tag = "2")]
+    #[prost(uint64, tag = "3")]
     pub peer_id: u64,
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "4")]
     pub shard_key: ::core::option::Option<ShardKey>,
-    #[prost(enumeration = "ReshardingDirection", tag = "4")]
+    #[prost(enumeration = "ReshardingDirection", tag = "5")]
     pub direction: i32,
-    #[prost(enumeration = "ReshardingStage", tag = "5")]
+    #[prost(enumeration = "ReshardingStage", tag = "6")]
     pub stage: i32,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardCleanTelemetry {
-    #[prost(oneof = "shard_clean_telemetry::Variant", tags = "1, 2, 3")]
-    pub variant: ::core::option::Option<shard_clean_telemetry::Variant>,
+pub struct ShardCleanStatusTelemetry {
+    #[prost(oneof = "shard_clean_status_telemetry::Variant", tags = "1, 2, 3, 4, 5")]
+    pub variant: ::core::option::Option<shard_clean_status_telemetry::Variant>,
 }
-/// Nested message and enum types in `ShardCleanTelemetry`.
-pub mod shard_clean_telemetry {
+/// Nested message and enum types in `ShardCleanStatusTelemetry`.
+pub mod shard_clean_status_telemetry {
+    /// Marker message
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Started {}
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Progress {
+        #[prost(uint64, tag = "1")]
+        pub deleted_points: u64,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Failed {
+        #[prost(string, tag = "1")]
+        pub reason: ::prost::alloc::string::String,
+    }
+    /// Marker message
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Cancelled {}
+    /// Marker message
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Done {}
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
-        #[prost(enumeration = "super::ShardCleanStatusTelemetry", tag = "1")]
-        Status(i32),
+        #[prost(message, tag = "1")]
+        Started(Started),
         #[prost(message, tag = "2")]
-        Progress(super::ShardCleanProgressTelemetry),
+        Progress(Progress),
         #[prost(message, tag = "3")]
-        Failed(super::ShardCleanFailedTelemetry),
+        Failed(Failed),
+        #[prost(message, tag = "4")]
+        Cancelled(Cancelled),
+        #[prost(message, tag = "5")]
+        Done(Done),
     }
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardCleanProgressTelemetry {
-    #[prost(uint64, tag = "1")]
-    pub deleted_points: u64,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ShardCleanFailedTelemetry {
-    #[prost(string, tag = "1")]
-    pub reason: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -12339,6 +12360,8 @@ pub struct ClusterTelemetry {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClusterStatusTelemetry {
+    #[prost(uint32, tag = "1")]
+    pub num_peers: u32,
     #[prost(uint64, tag = "2")]
     pub term: u64,
     #[prost(uint64, tag = "3")]
@@ -12351,6 +12374,49 @@ pub struct ClusterStatusTelemetry {
     pub is_voter: bool,
     #[prost(uint64, tag = "7")]
     pub peer_id: u64,
+    #[prost(message, optional, tag = "8")]
+    pub consensus_thread_status: ::core::option::Option<ConsensusThreadStatus>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ConsensusThreadStatus {
+    #[prost(oneof = "consensus_thread_status::Status", tags = "1, 2, 3")]
+    pub status: ::core::option::Option<consensus_thread_status::Status>,
+}
+/// Nested message and enum types in `ConsensusThreadStatus`.
+pub mod consensus_thread_status {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Working {
+        /// Unix timestamp in milliseconds
+        #[prost(int64, tag = "1")]
+        pub last_update_ms: i64,
+    }
+    /// Marker message for stopped state
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Stopped {}
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct StoppedWithErr {
+        #[prost(string, tag = "1")]
+        pub err: ::prost::alloc::string::String,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Status {
+        #[prost(message, tag = "1")]
+        Working(Working),
+        #[prost(message, tag = "2")]
+        Stopped(Stopped),
+        #[prost(message, tag = "3")]
+        StoppedWithErr(StoppedWithErr),
+    }
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -12378,36 +12444,6 @@ impl ReshardingStage {
             "MIGRATING_POINTS" => Some(Self::MigratingPoints),
             "READ_HASH_RING_COMMITTED" => Some(Self::ReadHashRingCommitted),
             "WRITE_HASH_RING_COMMITTED" => Some(Self::WriteHashRingCommitted),
-            _ => None,
-        }
-    }
-}
-#[derive(serde::Serialize)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum ShardCleanStatusTelemetry {
-    Started = 0,
-    Cancelled = 1,
-    Done = 2,
-}
-impl ShardCleanStatusTelemetry {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            ShardCleanStatusTelemetry::Started => "STARTED",
-            ShardCleanStatusTelemetry::Cancelled => "CANCELLED",
-            ShardCleanStatusTelemetry::Done => "DONE",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "STARTED" => Some(Self::Started),
-            "CANCELLED" => Some(Self::Cancelled),
-            "DONE" => Some(Self::Done),
             _ => None,
         }
     }
