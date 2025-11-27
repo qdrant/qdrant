@@ -379,6 +379,6 @@ pub struct TestSlowDown {
     pub peer_id: PeerId,
     /// Duration of the sleep in seconds (default: 1.0, max: 300.0).
     #[serde(default = "default_test_slow_down_duration_secs")]
-    #[validate(range(max = 300.0))]
+    #[validate(range(min = 0.0, max = 300.0))]
     pub duration_secs: f64,
 }
