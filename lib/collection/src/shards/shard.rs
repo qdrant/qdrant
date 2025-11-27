@@ -169,12 +169,12 @@ impl Shard {
         }
     }
 
-    pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
+    pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         match self {
-            Shard::Local(local_shard) => local_shard.snapshot_manifest(),
-            Shard::Proxy(proxy_shard) => proxy_shard.snapshot_manifest(),
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.snapshot_manifest(),
-            Shard::QueueProxy(proxy_shard) => proxy_shard.snapshot_manifest(),
+            Shard::Local(local_shard) => local_shard.snapshot_manifest().await,
+            Shard::Proxy(proxy_shard) => proxy_shard.snapshot_manifest().await,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.snapshot_manifest().await,
+            Shard::QueueProxy(proxy_shard) => proxy_shard.snapshot_manifest().await,
             Shard::Dummy(dummy_shard) => dummy_shard.snapshot_manifest(),
         }
     }
