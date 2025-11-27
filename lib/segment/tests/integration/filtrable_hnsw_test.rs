@@ -232,16 +232,16 @@ fn _test_filterable_hnsw(
     eprintln!("hits = {hits:#?} out of {attempts}");
 }
 
-#[test]
-fn test_hnsw_search_top_zero() {
+#[rstest]
+#[case::plain(50, 16 * 1024)]
+#[case::index(1_000, 1)]
+fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_threshold_kb: usize) {
     let stopped = AtomicBool::new(false);
 
     let dim = 8;
     let m = 8;
-    let num_vectors: u64 = 5_0; // intentionally small number to force a linear scan
     let ef_construct = 16;
     let distance = Distance::Cosine;
-    let full_scan_threshold = 16 * 1024; // KB
     let indexing_threshold = 500; // num vectors
     let num_payload_values = 2;
 
@@ -279,7 +279,7 @@ fn test_hnsw_search_top_zero() {
     let hnsw_config = HnswConfig {
         m,
         ef_construct,
-        full_scan_threshold,
+        full_scan_threshold: full_scan_threshold_kb,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
