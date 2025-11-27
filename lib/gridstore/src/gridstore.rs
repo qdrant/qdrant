@@ -485,7 +485,7 @@ impl<V: Blob> Gridstore<V> {
 
         // make sure we are not deleting files mid-flush
         {
-            let _ = self.bitmask.write();
+            let _guard = self.bitmask.write();
         }
 
         // Make sure strong references are dropped, to avoid starting another flush
