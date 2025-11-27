@@ -41,8 +41,9 @@ pub struct TelemetryCollector {
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct TelemetryData {
     #[anonymize(false)]
-    id: String,
-    pub(crate) app: AppBuildTelemetry,
+    pub(crate) id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) app: Option<AppBuildTelemetry>,
     pub(crate) collections: CollectionsTelemetry,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) cluster: Option<ClusterTelemetry>,
@@ -119,7 +120,11 @@ impl TelemetryCollector {
         Ok(TelemetryData {
             id: self.process_id.to_string(),
             collections: collections_telemetry,
-            app: AppBuildTelemetry::collect(detail, &self.app_telemetry_collector, &self.settings),
+            app: Some(AppBuildTelemetry::collect(
+                detail,
+                &self.app_telemetry_collector,
+                &self.settings,
+            )),
             cluster: ClusterTelemetry::collect(access, detail, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(
                 access,

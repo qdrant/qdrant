@@ -37,8 +37,10 @@ impl Collection {
 
         Ok(CollectionTelemetry {
             id: self.name().to_string(),
-            init_time_ms: self.init_time.as_millis() as u64,
-            config: CollectionConfigTelemetry::from(self.collection_config.read().await.clone()),
+            init_time_ms: Some(self.init_time.as_millis() as u64),
+            config: Some(CollectionConfigTelemetry::from(
+                self.collection_config.read().await.clone(),
+            )),
             shards: shards_telemetry,
             transfers,
             resharding,
