@@ -111,9 +111,9 @@ trait MetricsProvider {
 
 impl MetricsProvider for TelemetryData {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
-        self.app
-            .as_ref()
-            .map(|app| app.add_metrics(metrics, prefix));
+        if let Some(app) = &self.app {
+            app.add_metrics(metrics, prefix);
+        }
         self.collections.add_metrics(metrics, prefix);
         if let Some(cluster) = &self.cluster {
             cluster.add_metrics(metrics, prefix);
