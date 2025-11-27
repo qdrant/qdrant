@@ -68,10 +68,19 @@ impl MmapBitSliceBufferedUpdateWrapper {
 
     pub fn flusher(&self) -> Flusher {
         let pending_updates = self.pending_updates.lock().clone();
-        let bitslice = self.bitslice.clone();
-        let pending_updates_arc = self.pending_updates.clone();
+        let bitslice = Arc::downgrade(&self.bitslice);
+        let pending_updates_arc = Arc::downgrade(&self.pending_updates);
 
         Box::new(move || {
+            let (Some(bitslice), Some(pending_updates_arc)) =
+                (bitslice.upgrade(), pending_updates_arc.upgrade())
+            else {
+                log::debug!(
+                    "Aborted flushing on a dropped MmapBitSliceBufferedUpdateWrapper instance"
+                );
+                return Ok(());
+            };
+
             let mut mmap_slice_write = bitslice.write();
             for (index, value) in pending_updates.iter() {
                 mmap_slice_write.set(*index, *value);
