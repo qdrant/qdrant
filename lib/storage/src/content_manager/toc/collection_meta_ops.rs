@@ -501,7 +501,7 @@ impl TableOfContent {
                     )));
                 };
 
-                if old_transfer.method == Some(transfer_restart.method) {
+                if old_transfer.method == transfer_restart.method {
                     return Err(StorageError::bad_request(format!(
                         "Cannot restart transfer for shard {} from {} to {}, its configuration did not change",
                         transfer_restart.shard_id, transfer_restart.from, transfer_restart.to,
@@ -524,7 +524,7 @@ impl TableOfContent {
                     from: transfer_restart.from,
                     to: transfer_restart.to,
                     sync: old_transfer.sync, // Preserve sync flag from the old transfer
-                    method: Some(transfer_restart.method),
+                    method: transfer_restart.method,
                     filter: None,
                 };
 

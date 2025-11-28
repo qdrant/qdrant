@@ -43,9 +43,9 @@ pub struct ShardTransfer {
     /// If this flag is true, this is a replication related transfer of shard from 1 peer to another
     /// Shard on original peer will not be deleted in this case
     pub sync: bool,
-    /// Method to transfer shard with. `None` to choose automatically.
+    /// Method to transfer shard with.
     #[serde(default)]
-    pub method: Option<ShardTransferMethod>,
+    pub method: ShardTransferMethod,
 
     // Optional filter to apply when transferring points
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -63,13 +63,13 @@ impl ShardTransfer {
     }
 
     pub fn is_resharding(&self) -> bool {
-        self.method.is_some_and(|method| method.is_resharding())
+        self.method.is_resharding()
     }
 
     /// Check if this transfer is related to a specific resharding operation
     pub fn is_related_to_resharding(&self, key: &ReshardKey) -> bool {
         // Must be a resharding transfer
-        if !self.method.is_some_and(|method| method.is_resharding()) {
+        if !self.method.is_resharding() {
             return false;
         }
 
@@ -112,7 +112,7 @@ impl From<ShardTransfer> for ShardTransferRestart {
             to_shard_id: transfer.to_shard_id,
             from: transfer.from,
             to: transfer.to,
-            method: transfer.method.unwrap_or_default(),
+            method: transfer.method,
         }
     }
 }
@@ -159,7 +159,12 @@ pub enum ShardTransferMethod {
 
 impl ShardTransferMethod {
     pub fn is_resharding(&self) -> bool {
-        matches!(self, Self::ReshardingStreamRecords)
+        match self {
+            ShardTransferMethod::StreamRecords
+            | ShardTransferMethod::Snapshot
+            | ShardTransferMethod::WalDelta => false,
+            ShardTransferMethod::ReshardingStreamRecords => true,
+        }
     }
 }
 

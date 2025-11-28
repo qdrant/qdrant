@@ -57,7 +57,7 @@ pub async fn transfer_shard(
     // Prepare the remote for receiving the shard, waits for the correct state on the remote
     remote_shard.initiate_transfer().await?;
 
-    match transfer_config.method.unwrap_or_default() {
+    match transfer_config.method {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
             transfer_stream_records(
@@ -153,7 +153,7 @@ pub async fn transfer_shard_fallback_default(
 ) -> CollectionResult<bool> {
     // Do not attempt to fall back to the same method
     let old_method = transfer_config.method;
-    if old_method.is_some_and(|method| method == fallback_method) {
+    if old_method == fallback_method {
         log::warn!(
             "Failed shard transfer fallback, because it would use the same transfer method: {fallback_method:?}",
         );
@@ -161,7 +161,7 @@ pub async fn transfer_shard_fallback_default(
     }
 
     // Propose to restart transfer with a different method
-    transfer_config.method.replace(fallback_method);
+    transfer_config.method = fallback_method;
     consensus
         .restart_shard_transfer_confirm_and_retry(&transfer_config, collection_id)
         .await?;

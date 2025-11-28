@@ -331,8 +331,14 @@ async fn _do_recover_from_snapshot(
                     // Replica is the source of truth, we need to sync recovered data with this replica
                     let (replica_peer_id, _state) =
                         other_active_replicas.into_iter().next().unwrap();
+
+                    let method = toc
+                        .get_collection(&collection_pass)
+                        .await?
+                        .default_transfer_method();
+
                     log::debug!(
-                        "Running synchronization for shard {shard_id} of collection {collection_pass} from {replica_peer_id}"
+                        "Running synchronization for shard {shard_id} of collection {collection_pass} from {replica_peer_id} with `{method:#?}` method"
                     );
 
                     // assume that if there is another peers, the server is distributed
@@ -342,7 +348,7 @@ async fn _do_recover_from_snapshot(
                         *replica_peer_id,
                         this_peer_id,
                         true,
-                        None,
+                        method,
                     )?;
                 }
 

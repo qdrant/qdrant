@@ -22,6 +22,12 @@ use crate::shards::transfer::{
 use crate::shards::{shard_initializing_flag_path, transfer};
 
 impl Collection {
+    pub fn default_transfer_method(&self) -> ShardTransferMethod {
+        self.shared_storage_config
+            .default_shard_transfer_method
+            .unwrap_or_default()
+    }
+
     pub async fn get_related_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
         self.shards_holder.read().await.get_transfers(|transfer| {
             transfer.from == current_peer_id || transfer.to == current_peer_id
@@ -37,7 +43,7 @@ impl Collection {
 
     pub async fn start_shard_transfer<T, F>(
         &self,
-        mut shard_transfer: ShardTransfer,
+        shard_transfer: ShardTransfer,
         consensus: Box<dyn ShardTransferConsensus>,
         temp_dir: PathBuf,
         on_finish: T,
@@ -47,16 +53,6 @@ impl Collection {
         T: Future<Output = ()> + Send + 'static,
         F: Future<Output = ()> + Send + 'static,
     {
-        // Select transfer method
-        if shard_transfer.method.is_none() {
-            let method = self
-                .shared_storage_config
-                .default_shard_transfer_method
-                .unwrap_or_default();
-            log::warn!("No shard transfer method selected, defaulting to {method:?}");
-            shard_transfer.method.replace(method);
-        }
-
         let do_transfer = {
             let this_peer_id = consensus.this_peer_id();
             let is_receiver = this_peer_id == shard_transfer.to;
@@ -81,7 +77,7 @@ impl Collection {
             let from_is_local = from_replica_set.is_local().await;
             let to_is_local = to_replica_set.is_local().await;
 
-            let initial_state = match shard_transfer.method.unwrap_or_default() {
+            let initial_state = match shard_transfer.method {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
 
                 ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta => {
@@ -157,10 +153,6 @@ impl Collection {
         let task_result = active_transfer_tasks.stop_task(&transfer.key()).await;
 
         debug_assert!(task_result.is_none(), "Transfer task already exists");
-        debug_assert!(
-            transfer.method.is_some(),
-            "When sending shard, a transfer method must have been selected",
-        );
 
         let shard_holder = self.shards_holder.clone();
         let collection_id = self.id.clone();
@@ -215,7 +207,7 @@ impl Collection {
             None => shard_holder_guard.insert(self.shards_holder.read().await),
         };
 
-        let is_resharding_transfer = transfer.method.is_some_and(|method| method.is_resharding());
+        let is_resharding_transfer = transfer.method.is_resharding();
 
         // Handle *destination* replica
         let mut is_dest_replica_active = false;

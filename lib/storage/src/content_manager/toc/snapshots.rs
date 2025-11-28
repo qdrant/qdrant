@@ -129,7 +129,7 @@ impl TableOfContent {
         from_peer: PeerId,
         to_peer: PeerId,
         sync: bool,
-        method: Option<ShardTransferMethod>,
+        method: ShardTransferMethod,
     ) -> Result<(), StorageError> {
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
             let transfer_request = ShardTransfer {

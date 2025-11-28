@@ -132,7 +132,7 @@ pub fn validate_transfer(
         )));
     }
 
-    if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
+    if transfer.method == ShardTransferMethod::ReshardingStreamRecords {
         let Some(destination_replicas) = destination_replicas else {
             return Err(CollectionError::service_error(format!(
                 "Destination shard {} does not exist",

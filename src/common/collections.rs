@@ -266,6 +266,12 @@ pub async fn do_update_collection_cluster(
             validate_peer_exists(move_shard.to_peer_id)?;
             validate_peer_exists(move_shard.from_peer_id)?;
 
+            let method = move_shard.method.unwrap_or_else(|| {
+                let method = collection.default_transfer_method();
+                log::warn!("No shard transfer method selected, defaulting to {method:?}");
+                method
+            });
+
             // submit operation to consensus
             dispatcher
                 .submit_collection_meta_op(
@@ -277,7 +283,7 @@ pub async fn do_update_collection_cluster(
                             to: move_shard.to_peer_id,
                             from: move_shard.from_peer_id,
                             sync: false,
-                            method: move_shard.method,
+                            method,
                             filter: None,
                         }),
                     ),
@@ -303,6 +309,12 @@ pub async fn do_update_collection_cluster(
             // validate source peer exists
             validate_peer_exists(replicate_shard.from_peer_id)?;
 
+            let method = replicate_shard.method.unwrap_or_else(|| {
+                let method = collection.default_transfer_method();
+                log::warn!("No shard transfer method selected, defaulting to {method:?}");
+                method
+            });
+
             // submit operation to consensus
             dispatcher
                 .submit_collection_meta_op(
@@ -314,7 +326,7 @@ pub async fn do_update_collection_cluster(
                             to: replicate_shard.to_peer_id,
                             from: replicate_shard.from_peer_id,
                             sync: true,
-                            method: replicate_shard.method,
+                            method,
                             filter: None,
                         }),
                     ),
@@ -375,7 +387,7 @@ pub async fn do_update_collection_cluster(
                             from: from_peer_id,
                             to: to_peer_id,
                             sync: true,
-                            method: Some(ShardTransferMethod::StreamRecords),
+                            method: ShardTransferMethod::StreamRecords,
                             filter,
                         }),
                     ),
