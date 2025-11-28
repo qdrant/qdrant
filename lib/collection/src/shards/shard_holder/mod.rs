@@ -30,7 +30,7 @@ use tokio_util::io::SyncIoBridge;
 
 use super::replica_set::snapshots::RecoveryType;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
-use super::resharding::{ReshardStage, ReshardState};
+use super::resharding::{ReshardingStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::collection_size_stats::CollectionSizeStats;
@@ -292,7 +292,7 @@ impl ShardHolder {
 
             ring.start_resharding(state.shard_id, state.direction);
 
-            if state.stage >= ReshardStage::WriteHashRingCommitted {
+            if state.stage >= ReshardingStage::WriteHashRingCommitted {
                 ring.commit_resharding();
             }
         }
@@ -565,7 +565,7 @@ impl ShardHolder {
                         self.resharding_state.read().clone().is_some_and(|state| {
                             state.direction == ReshardingDirection::Up
                                 && state.shard_id == shard_id
-                                && state.stage < ReshardStage::ReadHashRingCommitted
+                                && state.stage < ReshardingStage::ReadHashRingCommitted
                         });
                     if resharding_migrating_up {
                         continue;

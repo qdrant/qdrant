@@ -191,6 +191,7 @@ mod internal_conversions {
 
     use super::*;
     use crate::operations::cluster_ops::ReshardingDirection;
+    use crate::shards::resharding::ReshardingStage;
     use crate::shards::transfer::ShardTransferMethod;
 
     impl From<grpc::ReshardingDirection> for ReshardingDirection {
