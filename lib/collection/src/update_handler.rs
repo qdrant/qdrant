@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::time::Instant;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -10,21 +9,18 @@ use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::{Mutex as TokioMutex, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::common::stoppable_task::StoppableTaskHandle;
 use crate::operations::CollectionUpdateOperations;
-use crate::operations::generalizer::Generalizer;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{CollectionError, CollectionResult};
-use crate::profiling::interface::log_request_to_collector;
+use crate::operations::types::CollectionResult;
 use crate::shards::CollectionId;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::shards::update_tracker::UpdateTracker;
@@ -201,7 +197,7 @@ impl UpdateHandler {
         let scroll_read_lock = self.scroll_read_lock.clone();
         let update_tracker = self.update_tracker.clone();
         let collection_name = self.collection_name.clone();
-        self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
+        self.update_worker = Some(self.runtime_handle.spawn(UpdateWorkers::update_worker_fn(
             collection_name,
             update_receiver,
             tx,
@@ -295,133 +291,5 @@ impl UpdateHandler {
         });
 
         (has_triggered_any_optimizers, has_suboptimal_optimizers)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn update_worker_internal(
-        collection_name: CollectionId,
-        operation: CollectionUpdateOperations,
-        op_num: SeqNumberType,
-        wait: bool,
-        wal: LockedWal,
-        segments: LockedSegmentHolder,
-        update_operation_lock: Arc<tokio::sync::RwLock<()>>,
-        update_tracker: UpdateTracker,
-        hw_measurements: HwMeasurementAcc,
-    ) -> CollectionResult<usize> {
-        // If wait flag is set, explicitly flush WAL first
-        if wait {
-            wal.blocking_lock().flush().map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Can't flush WAL before operation {op_num} - {err}"
-                ))
-            })?;
-        }
-
-        let start_time = Instant::now();
-
-        // This represents the operation without vectors and payloads for logging purposes
-        // Do not use for anything else
-        let loggable_operation = operation.remove_details();
-
-        let result = CollectionUpdater::update(
-            &segments,
-            op_num,
-            operation,
-            update_operation_lock,
-            update_tracker,
-            &hw_measurements.get_counter_cell(),
-        );
-
-        let duration = start_time.elapsed();
-
-        log_request_to_collector(&collection_name, duration, move || loggable_operation);
-
-        result
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn update_worker_fn(
-        collection_name: CollectionId,
-        mut receiver: Receiver<UpdateSignal>,
-        optimize_sender: Sender<OptimizerSignal>,
-        wal: LockedWal,
-        segments: LockedSegmentHolder,
-        update_operation_lock: Arc<tokio::sync::RwLock<()>>,
-        update_tracker: UpdateTracker,
-    ) {
-        while let Some(signal) = receiver.recv().await {
-            match signal {
-                UpdateSignal::Operation(OperationData {
-                    op_num,
-                    operation,
-                    sender,
-                    wait,
-                    hw_measurements,
-                }) => {
-                    let collection_name_clone = collection_name.clone();
-                    let wal_clone = wal.clone();
-                    let segments_clone = segments.clone();
-                    let update_operation_lock_clone = update_operation_lock.clone();
-                    let update_tracker_clone = update_tracker.clone();
-
-                    let operation_result = tokio::task::spawn_blocking(move || {
-                        Self::update_worker_internal(
-                            collection_name_clone,
-                            operation,
-                            op_num,
-                            wait,
-                            wal_clone,
-                            segments_clone,
-                            update_operation_lock_clone,
-                            update_tracker_clone,
-                            hw_measurements,
-                        )
-                    })
-                    .await;
-
-                    let res = match operation_result {
-                        Ok(Ok(update_res)) => optimize_sender
-                            .send(OptimizerSignal::Operation(op_num))
-                            .await
-                            .and(Ok(update_res))
-                            .map_err(|send_err| send_err.into()),
-                        Ok(Err(err)) => Err(err),
-                        Err(err) => Err(CollectionError::from(err)),
-                    };
-
-                    if let Some(feedback) = sender {
-                        feedback.send(res).unwrap_or_else(|_| {
-                            log::debug!("Can't report operation {op_num} result. Assume already not required");
-                        });
-                    };
-                }
-                UpdateSignal::Stop => {
-                    optimize_sender
-                        .send(OptimizerSignal::Stop)
-                        .await
-                        .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
-                    break;
-                }
-                UpdateSignal::Nop => optimize_sender
-                    .send(OptimizerSignal::Nop)
-                    .await
-                    .unwrap_or_else(|_| {
-                        log::info!(
-                            "Can't notify optimizers, assume process is dead. Restart is required"
-                        );
-                    }),
-                UpdateSignal::Plunger(callback_sender) => {
-                    callback_sender.send(()).unwrap_or_else(|_| {
-                        log::debug!("Can't notify sender, assume nobody is waiting anymore");
-                    });
-                }
-            }
-        }
-        // Transmitter was destroyed
-        optimize_sender
-            .send(OptimizerSignal::Stop)
-            .await
-            .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
     }
 }
