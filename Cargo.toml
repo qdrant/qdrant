@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.16.1-dev"
+version = "1.16.2-dev"
 description = "Qdrant - Vector Search engine"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
@@ -18,7 +18,7 @@ default-run = "qdrant"
 workspace = true
 
 [features]
-default = ["rocksdb"]
+default = []
 service_debug = ["parking_lot/deadlock_detection"]
 tracing = [
     "api/tracing",
@@ -37,6 +37,7 @@ data-consistency-check = ["collection/data-consistency-check"]
 gpu = ["gpu/gpu", "segment/gpu"]
 deb = []
 rocksdb = ["collection/rocksdb", "segment/rocksdb"]
+staging = ["collection/staging", "storage/staging"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
@@ -226,7 +227,7 @@ http = "1.3.1"
 humantime = "2.3.0"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.18.3", features = ["rayon"] }
-integer-encoding = "4.0.2"
+integer-encoding = "4.1.0"
 itertools = "0.14.0"
 log = "0.4.28"
 memmap2 = "0.9.8"

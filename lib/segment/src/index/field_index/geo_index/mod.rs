@@ -670,7 +670,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         self.points_count()
     }
 
-    fn cleanup(self) -> OperationResult<()> {
+    fn wipe(self) -> OperationResult<()> {
         match self {
             GeoMapIndex::Mutable(index) => index.wipe(),
             GeoMapIndex::Immutable(index) => index.wipe(),

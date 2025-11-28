@@ -85,8 +85,8 @@ impl ProxyShard {
             .await
     }
 
-    pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
-        self.wrapped_shard.snapshot_manifest()
+    pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
+        self.wrapped_shard.snapshot_manifest().await
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
@@ -144,12 +144,19 @@ impl ProxyShard {
         Ok(())
     }
 
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
-        self.wrapped_shard.get_telemetry_data(detail).await
+    pub async fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        timeout: Duration,
+    ) -> CollectionResult<LocalShardTelemetry> {
+        self.wrapped_shard.get_telemetry_data(detail, timeout).await
     }
 
-    pub async fn get_optimization_status(&self) -> OptimizersStatus {
-        self.wrapped_shard.get_optimization_status().await
+    pub async fn get_optimization_status(
+        &self,
+        timeout: Duration,
+    ) -> CollectionResult<OptimizersStatus> {
+        self.wrapped_shard.get_optimization_status(timeout).await
     }
 
     pub async fn get_size_stats(&self) -> SizeStats {

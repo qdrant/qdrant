@@ -1,6 +1,8 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Duration;
 
+use collection::operations::types::CollectionResult;
 use collection::telemetry::{
     CollectionSnapshotTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
 };
@@ -41,12 +43,17 @@ impl TableOfContent {
         &self,
         detail: TelemetryDetail,
         access: &Access,
-    ) -> TocTelemetryData {
-        let mut collection_telemetry = Vec::new();
+        timeout: Duration,
+        is_stopped: &AtomicBool,
+    ) -> CollectionResult<TocTelemetryData> {
         let all_collections = self.all_collections_access(access).await;
+        let mut collection_telemetry = Vec::new();
         for collection_pass in &all_collections {
+            if is_stopped.load(Ordering::Relaxed) {
+                break;
+            }
             if let Ok(collection) = self.get_collection(collection_pass).await {
-                collection_telemetry.push(collection.get_telemetry_data(detail).await);
+                collection_telemetry.push(collection.get_telemetry_data(detail, timeout).await?);
             }
         }
 
@@ -69,24 +76,29 @@ impl TableOfContent {
             })
             .collect();
 
-        TocTelemetryData {
+        Ok(TocTelemetryData {
             collection_telemetry,
             snapshot_telemetry,
-        }
+        })
     }
 
     pub async fn get_aggregated_telemetry_data(
         &self,
         access: &Access,
-    ) -> Vec<CollectionsAggregatedTelemetry> {
+        timeout: Duration,
+        is_stopped: &AtomicBool,
+    ) -> CollectionResult<Vec<CollectionsAggregatedTelemetry>> {
         let mut result = Vec::new();
         let all_collections = self.all_collections_access(access).await;
         for collection_pass in &all_collections {
+            if is_stopped.load(Ordering::Relaxed) {
+                break;
+            }
             if let Ok(collection) = self.get_collection(collection_pass).await {
-                result.push(collection.get_aggregated_telemetry_data().await);
+                result.push(collection.get_aggregated_telemetry_data(timeout).await?);
             }
         }
-        result
+        Ok(result)
     }
 
     pub fn max_collections(&self) -> Option<usize> {

@@ -20,6 +20,10 @@ inputs:
     description: 'Build GPU images instead of regular images'
     required: false
     default: 'false'
+  staging-build:
+    description: 'Enable staging feature flag'
+    required: false
+    default: 'false'
 
 runs:
   using: "composite"
@@ -75,6 +79,13 @@ runs:
           exit 1
         fi
 
+        # Prepare feature flags
+        FEATURES_ARG=""
+        if [ "${{ inputs.staging-build }}" = "true" ]; then
+          echo "Staging feature enabled"
+          FEATURES_ARG="--build-arg FEATURES=staging"
+        fi
+
         # Function to build and push with given suffix and build args
         build_image() {
           local suffix="$1"
@@ -91,6 +102,7 @@ runs:
           echo "Building with tags: ${build_tags[*]}"
           docker buildx build --platform="$platform" \
             --build-arg GIT_COMMIT_ID="${GIT_COMMIT_ID}" \
+            $FEATURES_ARG \
             $build_args \
             "${build_tags[@]}" \
             --push --label "org.opencontainers.image.revision"="${GIT_COMMIT_ID}" .

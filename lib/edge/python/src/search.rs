@@ -97,9 +97,10 @@ impl PyAcornSearchParams {
 #[derive(Clone, Debug, Into)]
 pub struct PyWithVector(WithVector);
 
-impl<'py> FromPyObject<'_, 'py> for PyWithVector {
+impl FromPyObject<'_, '_> for PyWithVector {
     type Error = PyErr;
-    fn extract(with_vector: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+
+    fn extract(with_vector: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         enum Helper {
             Bool(bool),
@@ -127,7 +128,7 @@ impl<'py> IntoPyObject<'py> for PyWithVector {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
     }
 }
@@ -137,7 +138,7 @@ impl<'py> IntoPyObject<'py> for &PyWithVector {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
             WithVector::Bool(bool) => bool.into_bound_py_any(py),
             WithVector::Selector(vectors) => vectors.into_bound_py_any(py),
@@ -148,9 +149,10 @@ impl<'py> IntoPyObject<'py> for &PyWithVector {
 #[derive(Clone, Debug, Into)]
 pub struct PyWithPayload(WithPayloadInterface);
 
-impl<'py> FromPyObject<'_, 'py> for PyWithPayload {
+impl FromPyObject<'_, '_> for PyWithPayload {
     type Error = PyErr;
-    fn extract(with_payload: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+
+    fn extract(with_payload: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         enum Helper {
             Bool(bool),
@@ -183,7 +185,7 @@ impl<'py> IntoPyObject<'py> for PyWithPayload {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
     }
 }
@@ -193,7 +195,7 @@ impl<'py> IntoPyObject<'py> for &PyWithPayload {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
             WithPayloadInterface::Bool(bool) => bool.into_bound_py_any(py),
             WithPayloadInterface::Fields(fields) => {
@@ -210,9 +212,10 @@ impl<'py> IntoPyObject<'py> for &PyWithPayload {
 #[repr(transparent)]
 pub struct PyPayloadSelector(PayloadSelector);
 
-impl<'py> FromPyObject<'_, 'py> for PyPayloadSelector {
+impl FromPyObject<'_, '_> for PyPayloadSelector {
     type Error = PyErr;
-    fn extract(selector: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+
+    fn extract(selector: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let selector = match selector.extract()? {
             PyPayloadSelectorInterface::Include(keys) => {
                 PayloadSelector::Include(PayloadSelectorInclude {
@@ -235,7 +238,7 @@ impl<'py> IntoPyObject<'py> for PyPayloadSelector {
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         let selector = match self.0 {
             PayloadSelector::Include(PayloadSelectorInclude { include }) => {
                 PyPayloadSelectorInterface::Include(PyJsonPath::wrap_vec(include))

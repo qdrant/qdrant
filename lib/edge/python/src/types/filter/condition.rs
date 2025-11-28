@@ -2,6 +2,7 @@ use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
+use segment::json_path::JsonPath;
 use segment::types::*;
 use segment::utils::maybe_arc::MaybeArc;
 
@@ -11,9 +12,10 @@ use crate::types::*;
 #[repr(transparent)]
 pub struct PyCondition(pub Condition);
 
-impl<'py> FromPyObject<'_, 'py> for PyCondition {
+impl FromPyObject<'_, '_> for PyCondition {
     type Error = PyErr;
-    fn extract(condition: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+
+    fn extract(condition: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
         #[expect(clippy::large_enum_variant)]
         enum Helper {
@@ -45,7 +47,7 @@ impl<'py> IntoPyObject<'py> for PyCondition {
     type Output = Bound<'py, PyAny>;
     type Error = PyErr; // Infallible
 
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
             Condition::Field(field) => PyFieldCondition(field).into_bound_py_any(py),
             Condition::IsEmpty(is_empty) => PyIsEmptyCondition(is_empty).into_bound_py_any(py),
@@ -72,7 +74,9 @@ impl PyIsEmptyCondition {
     #[new]
     pub fn new(key: PyJsonPath) -> Result<Self, PyErr> {
         Ok(Self(IsEmptyCondition {
-            is_empty: PayloadField { key: key.into() },
+            is_empty: PayloadField {
+                key: JsonPath::from(key),
+            },
         }))
     }
 }
@@ -86,7 +90,9 @@ impl PyIsNullCondition {
     #[new]
     pub fn new(key: PyJsonPath) -> Result<Self, PyErr> {
         Ok(Self(IsNullCondition {
-            is_null: PayloadField { key: key.into() },
+            is_null: PayloadField {
+                key: JsonPath::from(key),
+            },
         }))
     }
 }

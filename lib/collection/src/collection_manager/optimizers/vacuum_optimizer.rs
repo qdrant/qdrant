@@ -482,7 +482,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params.clone(),
-            hnsw_config.clone(),
+            hnsw_config,
             HnswGlobalConfig::default(),
             Default::default(),
         );

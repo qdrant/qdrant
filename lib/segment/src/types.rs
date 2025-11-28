@@ -629,7 +629,9 @@ impl Indexes {
 }
 
 /// Config of HNSW index
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq, Eq)]
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Anonymize,
+)]
 #[serde(rename_all = "snake_case")]
 #[anonymize(false)]
 pub struct HnswConfig {
@@ -684,7 +686,7 @@ impl HnswConfig {
             payload_m,
             on_disk,
             inline_storage,
-        } = self.clone();
+        } = *self;
 
         m != other.m
             || ef_construct != other.ef_construct
@@ -730,7 +732,7 @@ pub enum CompressionRatio {
     X64,
 }
 
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ScalarType {
     #[default]

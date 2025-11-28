@@ -23,7 +23,7 @@ class TestStorageCompatibility:
         "v1.15.3",
         "v1.15.2",
         "v1.15.1",
-        # "v1.15.0", # TODO when restoring Qdrant adds a missing payload_storage folder owned by `root` which messes up the cleanup
+        # "v1.15.0", the archive triggers debug_assertion for the UUID payload index https://github.com/qdrant/qdrant/pull/6916
     ]
 
     EXPECTED_COLLECTIONS = [
