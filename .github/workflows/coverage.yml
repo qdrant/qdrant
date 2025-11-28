@@ -6,7 +6,7 @@ on:
     - cron: "0 0 * * *" # Every day at midnight UTC
 
 env:
-  POETRY_VERSION: 2.1.3
+  POETRY_VERSION: 2.2.1
 
 jobs:
   unit-coverage:
