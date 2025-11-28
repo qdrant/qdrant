@@ -100,11 +100,16 @@ pub async fn do_get_collection_shard_keys(
     let collection = toc.get_collection(&collection_pass).await?;
 
     let state = collection.state().await;
-    let shard_keys = state
-        .shards_key_mapping
-        .iter_shard_keys()
-        .map(|k| ShardKeyDescription { key: k.clone() })
-        .collect();
+    let shard_keys = match state.config.params.sharding_method.unwrap_or_default() {
+        ShardingMethod::Auto => None,
+        ShardingMethod::Custom => Some(
+            state
+                .shards_key_mapping
+                .iter_shard_keys()
+                .map(|k| ShardKeyDescription { key: k.clone() })
+                .collect(),
+        ),
+    };
 
     Ok(ShardKeysResponse { shard_keys })
 }

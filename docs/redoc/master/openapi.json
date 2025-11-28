@@ -16007,15 +16007,14 @@
       },
       "ShardKeysResponse": {
         "type": "object",
-        "required": [
-          "shard_keys"
-        ],
         "properties": {
           "shard_keys": {
+            "description": "The existing shard keys. Only available when sharding method is `custom`",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ShardKeyDescription"
-            }
+            },
+            "nullable": true
           }
         }
       },

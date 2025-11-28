@@ -171,5 +171,7 @@ pub struct ShardKeyDescription {
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct ShardKeysResponse {
-    pub shard_keys: Vec<ShardKeyDescription>,
+    /// The existing shard keys. Only available when sharding method is `custom`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shard_keys: Option<Vec<ShardKeyDescription>>,
 }

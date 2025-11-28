@@ -134,6 +134,7 @@ impl From<(Instant, ShardKeysResponse)> for ListShardKeysResponse {
         let ShardKeysResponse { shard_keys } = response;
         let shard_keys = shard_keys
             .into_iter()
+            .flatten()
             .map(|key_desc| {
                 let key = Some(convert_shard_key_to_grpc(key_desc.key));
                 ShardKeyDescription { key }
