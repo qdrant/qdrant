@@ -14,7 +14,7 @@ use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::point_ops::{ConditionalInsertOperationInternal, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
-use crate::shards::resharding::{ReshardKey, ReshardingStage, ReshardState};
+use crate::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use crate::shards::shard::ShardId;
 
 impl ShardHolder {
@@ -149,7 +149,10 @@ impl ShardHolder {
     }
 
     pub fn commit_read_hashring(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
-        self.check_resharding(resharding_key, check_stage(ReshardingStage::MigratingPoints))?;
+        self.check_resharding(
+            resharding_key,
+            check_stage(ReshardingStage::MigratingPoints),
+        )?;
 
         self.resharding_state.write(|state| {
             let Some(state) = state else {

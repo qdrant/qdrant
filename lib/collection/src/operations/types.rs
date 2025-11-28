@@ -337,7 +337,7 @@ pub struct ReshardingInfo {
     /// Only included in peer telemetry
     #[serde(skip)]
     #[anonymize(false)]
-    pub stage: ReshardingStage
+    pub stage: ReshardingStage,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
