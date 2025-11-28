@@ -6,12 +6,15 @@ pub(super) mod query;
 pub(super) mod scroll;
 pub(super) mod search;
 pub(super) mod shard_ops;
+
 mod snapshot;
 mod telemetry;
+pub(super) mod updaters;
 
 #[cfg(test)]
 mod snapshot_tests;
 
+mod drop;
 #[cfg(feature = "testing")]
 pub mod testing;
 
@@ -629,16 +632,6 @@ impl LocalShard {
         Ok(())
     }
 
-    pub async fn stop_flush_worker(&self) {
-        let mut update_handler = self.update_handler.lock().await;
-        update_handler.stop_flush_worker()
-    }
-
-    pub async fn wait_update_workers_stop(&self) -> CollectionResult<()> {
-        let mut update_handler = self.update_handler.lock().await;
-        update_handler.wait_workers_stops().await
-    }
-
     /// Loads latest collection operations from WAL
     pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
         let mut newest_clocks = self.wal.newest_clocks.lock().await;
@@ -789,36 +782,6 @@ impl LocalShard {
         Ok(())
     }
 
-    pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
-        let config = self.collection_config.read().await;
-        let mut update_handler = self.update_handler.lock().await;
-
-        let (update_sender, update_receiver) =
-            mpsc::channel(self.shared_storage_config.update_queue_size);
-        // makes sure that the Stop signal is the last one in this channel
-        let old_sender = self.update_sender.swap(Arc::new(update_sender));
-        old_sender.send(UpdateSignal::Stop).await?;
-        update_handler.stop_flush_worker();
-
-        update_handler.wait_workers_stops().await?;
-        let new_optimizers = build_optimizers(
-            &self.path,
-            &config.params,
-            &config.optimizer_config,
-            &config.hnsw_config,
-            &self.shared_storage_config.hnsw_global_config,
-            &config.quantization_config,
-        );
-        update_handler.optimizers = new_optimizers;
-        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
-        update_handler.run_workers(update_receiver);
-
-        self.update_sender.load().send(UpdateSignal::Nop).await?;
-
-        Ok(())
-    }
-
     /// Apply shard's strict mode configuration update
     /// - Update read rate limiter
     pub async fn on_strict_mode_config_update(&mut self) {
@@ -837,26 +800,6 @@ impl LocalShard {
         }
         // remove read rate limiter for all other situations
         self.read_rate_limiter.take();
-    }
-
-    pub fn trigger_optimizers(&self) {
-        // Send a trigger signal and ignore errors because all error cases are acceptable:
-        // - If receiver is already dead - we do not care
-        // - If channel is full - optimization will be triggered by some other signal
-        let _ = self.update_sender.load().try_send(UpdateSignal::Nop);
-    }
-
-    /// Finishes ongoing update tasks
-    pub async fn stop_gracefully(&self) {
-        if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {
-            log::warn!("Error sending stop signal to update handler: {err}");
-        }
-
-        self.stop_flush_worker().await;
-
-        if let Err(err) = self.wait_update_workers_stop().await {
-            log::warn!("Update workers failed with: {err}");
-        }
     }
 
     pub async fn estimate_cardinality<'a>(
@@ -1058,21 +1001,6 @@ impl LocalShard {
                 })?;
         }
         Ok(())
-    }
-}
-
-impl Drop for LocalShard {
-    fn drop(&mut self) {
-        thread::scope(|s| {
-            let handle = thread::Builder::new()
-                .name("drop-shard".to_string())
-                .spawn_scoped(s, || {
-                    // Needs dedicated thread to avoid `Cannot start a runtime from within a runtime` error.
-                    self.update_runtime
-                        .block_on(async { self.stop_gracefully().await })
-                });
-            handle.expect("Failed to create thread for shard drop");
-        })
     }
 }
 
