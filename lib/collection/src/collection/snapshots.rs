@@ -326,7 +326,8 @@ impl Collection {
 
         // `ShardHolder::restore_shard_snapshot` is *not* cancel safe, so we spawn it onto runtime,
         // so that it won't be cancelled if current future is dropped
-        let restore = self.update_runtime.spawn(async move {
+        // TODO(timvisee): properly fix LocalShard::drop to not be blocking, then use update runtime here!
+        let restore = self.general_runtime.spawn(async move {
             shard_holder
                 .restore_shard_snapshot(
                     &snapshot_path,

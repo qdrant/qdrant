@@ -80,6 +80,8 @@ pub struct Collection {
     // Lock is acquired for read on update operation and can be acquired for write externally,
     // which will block all update operations until the lock is released.
     updates_lock: Arc<RwLock<()>>,
+    // General runtime handle.
+    general_runtime: Handle,
     // Update runtime handle.
     update_runtime: Handle,
     // Search runtime handle.
@@ -111,6 +113,7 @@ impl Collection {
         on_replica_failure: ChangePeerFromState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
+        general_runtime: Option<Handle>,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
@@ -190,6 +193,7 @@ impl Collection {
             init_time: start_time.elapsed(),
             is_initialized: Default::default(),
             updates_lock: Default::default(),
+            general_runtime: general_runtime.unwrap_or_else(Handle::current),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_resource_budget,
@@ -209,6 +213,7 @@ impl Collection {
         on_replica_failure: replica_set::ChangePeerFromState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
+        general_runtime: Option<Handle>,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
@@ -306,6 +311,7 @@ impl Collection {
             init_time: start_time.elapsed(),
             is_initialized: Default::default(),
             updates_lock: Default::default(),
+            general_runtime: general_runtime.unwrap_or_else(Handle::current),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_resource_budget,

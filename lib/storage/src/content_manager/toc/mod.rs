@@ -157,6 +157,7 @@ impl TableOfContent {
                     consensus_proposal_sender.clone(),
                     collection_name.clone(),
                 ),
+                Some(general_runtime.handle().clone()),
                 Some(search_runtime.handle().clone()),
                 Some(update_runtime.handle().clone()),
                 optimizer_resource_budget.clone(),

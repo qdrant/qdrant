@@ -201,6 +201,7 @@ impl TableOfContent {
                             self.consensus_proposal_sender.clone(),
                             id.clone(),
                         ),
+                        Some(self.general_runtime.handle().clone()),
                         Some(self.search_runtime.handle().clone()),
                         Some(self.update_runtime.handle().clone()),
                         self.optimizer_resource_budget.clone(),
