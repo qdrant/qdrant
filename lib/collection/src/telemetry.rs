@@ -191,6 +191,7 @@ mod internal_conversions {
 
     use super::*;
     use crate::operations::cluster_ops::ReshardingDirection;
+    use crate::shards::resharding::ReshardingStage;
     use crate::shards::transfer::ShardTransferMethod;
 
     impl From<grpc::ReshardingDirection> for ReshardingDirection {
@@ -198,6 +199,20 @@ mod internal_conversions {
             match value {
                 grpc::ReshardingDirection::Up => ReshardingDirection::Up,
                 grpc::ReshardingDirection::Down => ReshardingDirection::Down,
+            }
+        }
+    }
+
+    impl From<grpc::ReshardingStage> for ReshardingStage {
+        fn from(value: grpc::ReshardingStage) -> Self {
+            match value {
+                grpc::ReshardingStage::MigratingPoints => ReshardingStage::MigratingPoints,
+                grpc::ReshardingStage::ReadHashRingCommitted => {
+                    ReshardingStage::ReadHashRingCommitted
+                }
+                grpc::ReshardingStage::WriteHashRingCommitted => {
+                    ReshardingStage::WriteHashRingCommitted
+                }
             }
         }
     }
@@ -241,6 +256,11 @@ mod internal_conversions {
                 shard_id: value.shard_id,
                 peer_id: value.peer_id,
                 shard_key: convert_shard_key_from_grpc_opt(value.shard_key),
+                stage: ReshardingStage::from(
+                    grpc::ReshardingStage::try_from(value.stage).map_err(|err| {
+                        Status::invalid_argument(format!("cannot decode ReshardingStage {err}"))
+                    })?,
+                ),
             })
         }
     }
