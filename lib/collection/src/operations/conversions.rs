@@ -1416,6 +1416,7 @@ impl From<ReshardingInfo> for api::grpc::qdrant::ReshardingInfo {
             shard_id,
             peer_id,
             shard_key,
+            stage: _, // only communicated for ReshardingTelemetry (internal service)
         } = value;
         Self {
             shard_id,

@@ -15,7 +15,7 @@ pub struct ReshardState {
     pub shard_id: ShardId,
     pub shard_key: Option<ShardKey>,
     pub direction: ReshardingDirection,
-    pub stage: ReshardStage,
+    pub stage: ReshardingStage,
 }
 
 impl ReshardState {
@@ -32,7 +32,7 @@ impl ReshardState {
             peer_id,
             shard_id,
             shard_key,
-            stage: ReshardStage::MigratingPoints,
+            stage: ReshardingStage::MigratingPoints,
         }
     }
 
@@ -55,14 +55,14 @@ impl ReshardState {
     }
 }
 
-/// Reshard stages
+/// Resharding stages
 ///
 /// # Warning
 ///
 /// This enum is ordered!
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ReshardStage {
+pub enum ReshardingStage {
     #[default]
     MigratingPoints,
     ReadHashRingCommitted,

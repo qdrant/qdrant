@@ -127,7 +127,7 @@ trait MetricsProvider {
 }
 
 impl MetricsProvider for TelemetryData {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, prefix: Option<&str>) {
+    fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         if let Some(app) = &self.app {
             app.add_metrics(metrics, prefix);
         }
