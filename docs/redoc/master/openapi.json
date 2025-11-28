@@ -11403,6 +11403,7 @@
         "type": "object",
         "required": [
           "from",
+          "method",
           "shard_id",
           "sync",
           "to"
@@ -11437,14 +11438,7 @@
             "type": "boolean"
           },
           "method": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ShardTransferMethod"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ShardTransferMethod"
           },
           "comment": {
             "description": "A human-readable report of the transfer progress. Available only on the source peer.",
