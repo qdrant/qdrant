@@ -71,6 +71,48 @@ impl PyPrefetch {
             score_threshold: score_threshold.map(OrderedFloat),
         })
     }
+
+    #[getter]
+    pub fn prefetches(&self) -> &[PyPrefetch] {
+        PyPrefetch::wrap_slice(&self.0.prefetches)
+    }
+
+    #[getter]
+    pub fn query(&self) -> Option<PyScoringQuery> {
+        self.0.query.clone().map(PyScoringQuery)
+    }
+
+    #[getter]
+    pub fn limit(&self) -> usize {
+        self.0.limit
+    }
+
+    #[getter]
+    pub fn params(&self) -> Option<PySearchParams> {
+        self.0.params.map(PySearchParams)
+    }
+
+    #[getter]
+    pub fn filter(&self) -> Option<PyFilter> {
+        self.0.filter.clone().map(PyFilter)
+    }
+
+    #[getter]
+    pub fn score_threshold(&self) -> Option<f32> {
+        self.0
+            .score_threshold
+            .map(|threshold| threshold.into_inner())
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyPrefetch {
+    type Target = PyPrefetch;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(self.clone(), py)
+    }
 }
 
 #[derive(Clone, Debug, Into)]
@@ -114,6 +156,16 @@ impl FromPyObject<'_, '_> for PyScoringQuery {
     }
 }
 
+impl<'py> IntoPyObject<'py> for PyScoringQuery {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        todo!()
+    }
+}
+
 #[pyclass(name = "Fusion")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -150,6 +202,21 @@ impl PyOrderBy {
 
         Ok(Self(order_by))
     }
+
+    #[getter]
+    pub fn key(&self) -> &PyJsonPath {
+        PyJsonPath::wrap_ref(&self.0.key)
+    }
+
+    #[getter]
+    pub fn direction(&self) -> Option<PyDirection> {
+        self.0.direction.map(PyDirection::from)
+    }
+
+    #[getter]
+    pub fn start_from(&self) -> Option<PyStartFrom> {
+        self.0.start_from.map(PyStartFrom)
+    }
 }
 
 #[pyclass(name = "Direction")]
@@ -177,7 +244,7 @@ impl From<PyDirection> for Direction {
     }
 }
 
-#[derive(Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into)]
 pub struct PyStartFrom(StartFrom);
 
 impl FromPyObject<'_, '_> for PyStartFrom {
@@ -282,5 +349,25 @@ impl PyMmr {
         };
 
         Self(mmr)
+    }
+
+    #[getter]
+    pub fn vector(&self) -> &PyNamedVectorInternal {
+        PyNamedVectorInternal::wrap_ref(&self.0.vector)
+    }
+
+    #[getter]
+    pub fn using(&self) -> &str {
+        &self.0.using
+    }
+
+    #[getter]
+    pub fn lambda(&self) -> f32 {
+        self.0.lambda.into_inner()
+    }
+
+    #[getter]
+    pub fn candidates_limit(&self) -> usize {
+        self.0.candidates_limit
     }
 }
