@@ -127,9 +127,9 @@ message ClusterStatusTelemetry {
   uint64 term = 2;
   uint64 commit = 3;
   uint64 pending_operations = 4;
-  StateRole role = 5;
+  optional StateRole role = 5;
   bool is_voter = 6;
-  uint64 peer_id = 7;
+  optional uint64 peer_id = 7;
   ConsensusThreadStatus consensus_thread_status = 8;
 }
 

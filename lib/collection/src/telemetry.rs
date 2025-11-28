@@ -185,7 +185,7 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
 
 // Internal telemetry service conversions
 mod internal_conversions {
-    use api::grpc::conversions::convert_shard_key_from_grpc_opt;
+    use api::grpc::conversions::{convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc};
     use api::grpc::qdrant as grpc;
     use tonic::Status;
 
@@ -193,29 +193,6 @@ mod internal_conversions {
     use crate::operations::cluster_ops::ReshardingDirection;
     use crate::shards::resharding::ReshardingStage;
     use crate::shards::transfer::ShardTransferMethod;
-
-    impl From<grpc::ReshardingDirection> for ReshardingDirection {
-        fn from(value: grpc::ReshardingDirection) -> Self {
-            match value {
-                grpc::ReshardingDirection::Up => ReshardingDirection::Up,
-                grpc::ReshardingDirection::Down => ReshardingDirection::Down,
-            }
-        }
-    }
-
-    impl From<grpc::ReshardingStage> for ReshardingStage {
-        fn from(value: grpc::ReshardingStage) -> Self {
-            match value {
-                grpc::ReshardingStage::MigratingPoints => ReshardingStage::MigratingPoints,
-                grpc::ReshardingStage::ReadHashRingCommitted => {
-                    ReshardingStage::ReadHashRingCommitted
-                }
-                grpc::ReshardingStage::WriteHashRingCommitted => {
-                    ReshardingStage::WriteHashRingCommitted
-                }
-            }
-        }
-    }
 
     impl TryFrom<grpc::ShardTransferTelemetry> for ShardTransferInfo {
         type Error = Status;
@@ -241,6 +218,48 @@ mod internal_conversions {
         }
     }
 
+    impl From<grpc::ReshardingStage> for ReshardingStage {
+        fn from(value: grpc::ReshardingStage) -> Self {
+            match value {
+                grpc::ReshardingStage::MigratingPoints => ReshardingStage::MigratingPoints,
+                grpc::ReshardingStage::ReadHashRingCommitted => {
+                    ReshardingStage::ReadHashRingCommitted
+                }
+                grpc::ReshardingStage::WriteHashRingCommitted => {
+                    ReshardingStage::WriteHashRingCommitted
+                }
+            }
+        }
+    }
+
+    impl From<ReshardingStage> for grpc::ReshardingStage {
+        fn from(value: ReshardingStage) -> Self {
+            match value {
+                ReshardingStage::MigratingPoints => grpc::ReshardingStage::MigratingPoints,
+                ReshardingStage::ReadHashRingCommitted => {
+                    grpc::ReshardingStage::ReadHashRingCommitted
+                }
+                ReshardingStage::WriteHashRingCommitted => {
+                    grpc::ReshardingStage::WriteHashRingCommitted
+                }
+            }
+        }
+    }
+
+    impl From<ShardTransferInfo> for grpc::ShardTransferTelemetry {
+        fn from(value: ShardTransferInfo) -> Self {
+            grpc::ShardTransferTelemetry {
+                shard_id: value.shard_id,
+                to_shard_id: value.to_shard_id,
+                from: value.from,
+                to: value.to,
+                sync: value.sync,
+                method: grpc::ShardTransferMethod::from(value.method.unwrap_or_default()) as i32,
+                comment: value.comment.unwrap_or_default(),
+            }
+        }
+    }
+
     impl TryFrom<grpc::ReshardingTelemetry> for ReshardingInfo {
         type Error = Status;
 
@@ -262,6 +281,19 @@ mod internal_conversions {
                     })?,
                 ),
             })
+        }
+    }
+
+    impl From<ReshardingInfo> for grpc::ReshardingTelemetry {
+        fn from(value: ReshardingInfo) -> Self {
+            grpc::ReshardingTelemetry {
+                uuid: value.uuid.to_string(),
+                direction: grpc::ReshardingDirection::from(value.direction) as i32,
+                shard_id: value.shard_id,
+                peer_id: value.peer_id,
+                shard_key: value.shard_key.map(convert_shard_key_to_grpc),
+                stage: grpc::ReshardingStage::from(value.stage) as i32,
+            }
         }
     }
 
@@ -292,6 +324,30 @@ mod internal_conversions {
             };
 
             Ok(out)
+        }
+    }
+
+    impl From<ShardCleanStatusTelemetry> for grpc::ShardCleanStatusTelemetry {
+        fn from(value: ShardCleanStatusTelemetry) -> Self {
+            use grpc::shard_clean_status_telemetry::*;
+
+            let variant = match value {
+                ShardCleanStatusTelemetry::Started => Variant::Started(Started {}),
+                ShardCleanStatusTelemetry::Progress(ShardCleanStatusProgressTelemetry {
+                    deleted_points,
+                }) => Variant::Progress(Progress {
+                    deleted_points: deleted_points as u64,
+                }),
+                ShardCleanStatusTelemetry::Done => Variant::Done(Done {}),
+                ShardCleanStatusTelemetry::Failed(ShardCleanStatusFailedTelemetry { reason }) => {
+                    Variant::Failed(Failed { reason })
+                }
+                ShardCleanStatusTelemetry::Cancelled => Variant::Cancelled(Cancelled {}),
+            };
+
+            grpc::ShardCleanStatusTelemetry {
+                variant: Some(variant),
+            }
         }
     }
 
@@ -354,6 +410,41 @@ mod internal_conversions {
                 resharding,
                 shard_clean_tasks,
             })
+        }
+    }
+
+    impl From<CollectionTelemetry> for grpc::CollectionTelemetry {
+        fn from(value: CollectionTelemetry) -> Self {
+            let CollectionTelemetry {
+                id,
+                init_time_ms: _,
+                config: _,
+                shards: _,
+                transfers,
+                resharding,
+                shard_clean_tasks,
+            } = value;
+
+            grpc::CollectionTelemetry {
+                id,
+                transfers: transfers
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(grpc::ShardTransferTelemetry::from)
+                    .collect(),
+                resharding: resharding
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(grpc::ReshardingTelemetry::from)
+                    .collect(),
+                shard_clean_tasks: shard_clean_tasks
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(shard_id, telemetry)| {
+                        (shard_id, grpc::ShardCleanStatusTelemetry::from(telemetry))
+                    })
+                    .collect(),
+            }
         }
     }
 }

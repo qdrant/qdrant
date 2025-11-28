@@ -12606,12 +12606,12 @@ pub struct ClusterStatusTelemetry {
     pub commit: u64,
     #[prost(uint64, tag = "4")]
     pub pending_operations: u64,
-    #[prost(enumeration = "StateRole", tag = "5")]
-    pub role: i32,
+    #[prost(enumeration = "StateRole", optional, tag = "5")]
+    pub role: ::core::option::Option<i32>,
     #[prost(bool, tag = "6")]
     pub is_voter: bool,
-    #[prost(uint64, tag = "7")]
-    pub peer_id: u64,
+    #[prost(uint64, optional, tag = "7")]
+    pub peer_id: ::core::option::Option<u64>,
     #[prost(message, optional, tag = "8")]
     pub consensus_thread_status: ::core::option::Option<ConsensusThreadStatus>,
 }
