@@ -305,6 +305,17 @@ impl From<grpc::StateRole> for StateRole {
     }
 }
 
+impl From<StateRole> for grpc::StateRole {
+    fn from(role: StateRole) -> Self {
+        match role {
+            StateRole::Follower => grpc::StateRole::Follower,
+            StateRole::Candidate => grpc::StateRole::Candidate,
+            StateRole::Leader => grpc::StateRole::Leader,
+            StateRole::PreCandidate => grpc::StateRole::PreCandidate,
+        }
+    }
+}
+
 impl TryFrom<grpc::ConsensusThreadStatus> for ConsensusThreadStatus {
     type Error = Status;
 
@@ -330,6 +341,33 @@ impl TryFrom<grpc::ConsensusThreadStatus> for ConsensusThreadStatus {
                 })
             }
             None => Ok(ConsensusThreadStatus::Stopped),
+        }
+    }
+}
+
+impl From<ConsensusThreadStatus> for grpc::ConsensusThreadStatus {
+    fn from(status: ConsensusThreadStatus) -> Self {
+        match status {
+            ConsensusThreadStatus::Working { last_update } => {
+                let timestamp = last_update.timestamp_millis();
+                grpc::ConsensusThreadStatus {
+                    status: Some(grpc::consensus_thread_status::Status::Working(
+                        grpc::consensus_thread_status::Working {
+                            last_update_ms: timestamp,
+                        },
+                    )),
+                }
+            }
+            ConsensusThreadStatus::Stopped => grpc::ConsensusThreadStatus {
+                status: Some(grpc::consensus_thread_status::Status::Stopped(
+                    grpc::consensus_thread_status::Stopped {},
+                )),
+            },
+            ConsensusThreadStatus::StoppedWithErr { err } => grpc::ConsensusThreadStatus {
+                status: Some(grpc::consensus_thread_status::Status::StoppedWithErr(
+                    grpc::consensus_thread_status::StoppedWithErr { err },
+                )),
+            },
         }
     }
 }
