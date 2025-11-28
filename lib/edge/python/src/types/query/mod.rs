@@ -161,6 +161,16 @@ impl PyRecommendQuery {
             negatives: PyNamedVectorInternal::peel_vec(negatives),
         })
     }
+
+    #[getter]
+    pub fn positives(&self) -> &[PyNamedVectorInternal] {
+        PyNamedVectorInternal::wrap_slice(&self.0.positives)
+    }
+
+    #[getter]
+    pub fn negatives(&self) -> &[PyNamedVectorInternal] {
+        PyNamedVectorInternal::wrap_slice(&self.0.negatives)
+    }
 }
 
 #[pyclass(name = "DiscoveryQuery")]
@@ -176,6 +186,16 @@ impl PyDiscoverQuery {
             pairs: PyContextPair::peel_vec(pairs),
         })
     }
+
+    #[getter]
+    pub fn target(&self) -> &PyNamedVectorInternal {
+        PyNamedVectorInternal::wrap_ref(&self.0.target)
+    }
+
+    #[getter]
+    pub fn pairs(&self) -> &[PyContextPair] {
+        PyContextPair::wrap_slice(&self.0.pairs)
+    }
 }
 
 #[pyclass(name = "ContextQuery")]
@@ -189,6 +209,11 @@ impl PyContextQuery {
         Self(ContextQuery {
             pairs: PyContextPair::peel_vec(pairs),
         })
+    }
+
+    #[getter]
+    pub fn pairs(&self) -> &[PyContextPair] {
+        PyContextPair::wrap_slice(&self.0.pairs)
     }
 }
 
@@ -205,6 +230,26 @@ impl PyContextPair {
             positive: VectorInternal::from(positive),
             negative: VectorInternal::from(negative),
         })
+    }
+
+    #[getter]
+    pub fn positive(&self) -> &PyNamedVectorInternal {
+        PyNamedVectorInternal::wrap_ref(&self.0.positive)
+    }
+
+    #[getter]
+    pub fn negative(&self) -> &PyNamedVectorInternal {
+        PyNamedVectorInternal::wrap_ref(&self.0.negative)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyContextPair {
+    type Target = PyContextPair;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        Bound::new(py, self.clone())
     }
 }
 
@@ -226,6 +271,21 @@ impl PyFeedbackSimpleQuery {
             strategy: SimpleFeedbackStrategy::from(strategy),
         })
     }
+
+    #[getter]
+    pub fn target(&self) -> &PyNamedVectorInternal {
+        PyNamedVectorInternal::wrap_ref(&self.0.target)
+    }
+
+    #[getter]
+    pub fn feedback(&self) -> &[PyFeedbackItem] {
+        PyFeedbackItem::wrap_slice(&self.0.feedback)
+    }
+
+    #[getter]
+    pub fn strategy(&self) -> PySimpleFeedbackStrategy {
+        PySimpleFeedbackStrategy(self.0.strategy)
+    }
 }
 
 #[pyclass(name = "FeedbackItem")]
@@ -242,10 +302,30 @@ impl PyFeedbackItem {
             score: OrderedFloat(score),
         })
     }
+
+    #[getter]
+    pub fn vector(&self) -> &PyNamedVectorInternal {
+        PyNamedVectorInternal::wrap_ref(&self.0.vector)
+    }
+
+    #[getter]
+    pub fn score(&self) -> f32 {
+        self.0.score.into_inner()
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyFeedbackItem {
+    type Target = PyFeedbackItem;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        Bound::new(py, self.clone())
+    }
 }
 
 #[pyclass(name = "SimpleFeedbackStrategy")]
-#[derive(Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into)]
 pub struct PySimpleFeedbackStrategy(SimpleFeedbackStrategy);
 
 #[pymethods]
@@ -257,5 +337,20 @@ impl PySimpleFeedbackStrategy {
             b: OrderedFloat(b),
             c: OrderedFloat(c),
         })
+    }
+
+    #[getter]
+    pub fn a(&self) -> f32 {
+        self.0.a.into_inner()
+    }
+
+    #[getter]
+    pub fn b(&self) -> f32 {
+        self.0.b.into_inner()
+    }
+
+    #[getter]
+    pub fn c(&self) -> f32 {
+        self.0.c.into_inner()
     }
 }
