@@ -537,6 +537,7 @@ mod test {
             dummy_abort_shard_transfer(),
             None,
             None,
+            None,
             ResourceBudget::default(),
             None,
         )

@@ -91,6 +91,7 @@ async fn fixture() -> Collection {
         dummy_abort_shard_transfer(),
         None,
         None,
+        None,
         ResourceBudget::default(),
         None,
     )

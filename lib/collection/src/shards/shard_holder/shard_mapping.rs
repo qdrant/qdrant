@@ -206,6 +206,7 @@ mod test {
             dummy_abort_shard_transfer(),
             None,
             None,
+            None,
             ResourceBudget::default(),
             None,
         )
@@ -293,6 +294,7 @@ mod test {
                 dummy_on_replica_failure(),
                 dummy_request_shard_transfer(),
                 dummy_abort_shard_transfer(),
+                None,
                 None,
                 None,
                 ResourceBudget::default(),

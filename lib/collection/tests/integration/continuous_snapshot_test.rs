@@ -86,6 +86,7 @@ async fn test_continuous_snapshot() {
         dummy_abort_shard_transfer(),
         None,
         None,
+        None,
         ResourceBudget::default(),
         None,
     )
