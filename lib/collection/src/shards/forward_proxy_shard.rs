@@ -639,7 +639,7 @@ impl ShardOperation for ForwardProxyShard {
             .await
     }
 
-    async fn stop_gracefully(&self) {
+    async fn stop_gracefully(self) {
         self.wrapped_shard.stop_gracefully().await
     }
 }

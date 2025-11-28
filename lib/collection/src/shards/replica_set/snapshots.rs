@@ -251,7 +251,6 @@ impl ShardReplicaSet {
 
                         // Shard is no longer needed and can be dropped
                         shard.stop_gracefully().await;
-                        drop(shard);
 
                         Some(local_manifest)
                     }

@@ -366,8 +366,8 @@ impl ShardOperation for ProxyShard {
             .await
     }
 
-    async fn stop_gracefully(&self) {
-        let local_shard = &self.wrapped_shard;
+    async fn stop_gracefully(self) {
+        let local_shard = self.wrapped_shard;
         local_shard.stop_gracefully().await;
     }
 }

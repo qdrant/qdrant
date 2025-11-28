@@ -201,5 +201,5 @@ impl ShardOperation for DummyShard {
         self.dummy()
     }
 
-    async fn stop_gracefully(&self) {}
+    async fn stop_gracefully(self) {}
 }

@@ -1347,7 +1347,7 @@ impl ShardOperation for RemoteShard {
         Ok(result)
     }
 
-    async fn stop_gracefully(&self) {
+    async fn stop_gracefully(self) {
         // No background operations to stop on RemoteShard
     }
 }
